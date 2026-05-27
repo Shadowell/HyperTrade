@@ -111,7 +111,7 @@ test("renders harness observability from live overview", async () => {
   expect(screen.getByText("Tool Call Trace")).toBeInTheDocument();
   expect(screen.getAllByText("OKX SWAP").length).toBeGreaterThanOrEqual(1);
   expect(await screen.findByText("344")).toBeInTheDocument();
-  expect(screen.getByText("DeepSeek / deepseek-v4-flash")).toBeInTheDocument();
+  expect(screen.getAllByText("DeepSeek / deepseek-v4-flash").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("run_live")).toBeInTheDocument();
   expect(screen.getByText("BTC-USDT-SWAP")).toBeInTheDocument();
 });

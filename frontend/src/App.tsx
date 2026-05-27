@@ -14,9 +14,10 @@ import {
   Radio,
   RefreshCw,
   Send,
+  Sparkles,
   TerminalSquare
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Language = "zh" | "en";
 
@@ -122,7 +123,14 @@ const copy = {
     configured: "已配置",
     missing: "未配置",
     noRuns: "暂无运行记录",
-    noMarket: "暂无行情快照"
+    noMarket: "暂无行情快照",
+    operator: "Operator",
+    password: "Password",
+    providerMesh: "Provider Mesh",
+    dataPlane: "Data Plane",
+    agentPlane: "Agent Plane",
+    lastSync: "Last Sync",
+    overviewLoading: "正在同步运行态"
   },
   en: {
     product: "HyperTrade",
@@ -150,7 +158,14 @@ const copy = {
     configured: "Configured",
     missing: "Missing",
     noRuns: "No runs yet",
-    noMarket: "No market snapshot"
+    noMarket: "No market snapshot",
+    operator: "Operator",
+    password: "Password",
+    providerMesh: "Provider Mesh",
+    dataPlane: "Data Plane",
+    agentPlane: "Agent Plane",
+    lastSync: "Last Sync",
+    overviewLoading: "Syncing runtime state"
   }
 } satisfies Record<Language, Record<string, string>>;
 
@@ -385,16 +400,27 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-paper text-ink">
-      <div className="grid min-h-screen grid-cols-[240px_1fr] max-lg:grid-cols-1">
-        <aside className="border-r border-ink/15 bg-ink px-5 py-6 text-paper">
+    <div className="min-h-[100dvh] bg-paper text-ink">
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_20%_10%,rgba(184,137,59,0.10),transparent_28%),linear-gradient(rgba(17,21,19,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(17,21,19,0.035)_1px,transparent_1px)] bg-[size:auto,28px_28px,28px_28px]" />
+      <div className="relative grid min-h-[100dvh] grid-cols-[260px_1fr] max-lg:grid-cols-1">
+        <aside className="border-r border-ink/15 bg-ink px-5 py-6 text-paper shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)]">
           <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-md border border-paper/20 bg-paper text-ink">
+            <div className="grid h-10 w-10 place-items-center rounded-md border border-paper/20 bg-paper text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
               <Activity size={19} />
             </div>
             <div>
               <div className="text-base font-semibold tracking-normal">{t.product}</div>
-              <div className="text-xs text-paper/55">Agent Trading OS</div>
+              <div className="text-xs text-paper/55">Agent Trading Console</div>
+            </div>
+          </div>
+
+          <div className="mt-7 rounded-md border border-paper/10 bg-paper/[0.04] px-3 py-3">
+            <div className="flex items-center justify-between text-xs text-paper/55">
+              <span>{t.providerMesh}</span>
+              <StatusDot enabled={Boolean(defaultProvider?.enabled)} />
+            </div>
+            <div className="mt-2 truncate font-mono text-xs text-paper/85">
+              {providerLabel(defaultProvider, t)}
             </div>
           </div>
 
@@ -417,21 +443,27 @@ function App() {
             </a>
           </nav>
 
-          <form className="mt-8 space-y-2" onSubmit={handleLogin}>
+          <form className="mt-8 space-y-3" onSubmit={handleLogin}>
             <div className="text-xs uppercase text-paper/45">{t.login}</div>
-            <input
-              autoComplete="username"
-              className="field-dark"
-              name="username"
-              placeholder="admin"
-            />
-            <input
-              autoComplete="current-password"
-              className="field-dark"
-              name="password"
-              placeholder="password"
-              type="password"
-            />
+            <label className="field-group-dark">
+              <span>{t.operator}</span>
+              <input
+                autoComplete="username"
+                className="field-dark"
+                name="username"
+                placeholder="admin"
+              />
+            </label>
+            <label className="field-group-dark">
+              <span>{t.password}</span>
+              <input
+                autoComplete="current-password"
+                className="field-dark"
+                name="password"
+                placeholder="password"
+                type="password"
+              />
+            </label>
             <button className="button-dark" type="submit">
               <Lock size={15} />
               {loginState === "ok" ? "OK" : t.login}
@@ -449,37 +481,57 @@ function App() {
           </button>
         </aside>
 
-        <main className="px-8 py-7 max-lg:px-4">
-          <header className="flex items-start justify-between gap-4 border-b border-ink/15 pb-5">
+        <main className="mx-auto w-full max-w-[1480px] px-8 py-7 max-lg:px-4">
+          <header className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-ink/15 pb-5 max-md:grid-cols-1">
             <div>
-              <div className="text-xs font-semibold uppercase text-brass">{t.risk}</div>
-              <h1 className="mt-1 text-3xl font-semibold tracking-normal">Harness</h1>
-              <div className="mt-2 text-sm text-ink/55">
-                {overview ? activeOverview.generated_at : t.preview}
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase text-brass">
+                <span>{t.risk}</span>
+                <span className="h-1 w-1 rounded-full bg-brass/45" />
+                <span>{overview ? t.lastSync : t.preview}</span>
+              </div>
+              <h1 className="mt-2 text-4xl font-semibold tracking-tight max-sm:text-3xl">
+                Harness
+              </h1>
+              <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-ink/55">
+                <span>{overview ? activeOverview.generated_at : t.preview}</span>
+                {refreshing ? (
+                  <span className="inline-flex items-center gap-2 text-brass">
+                    <span className="skeleton-pulse h-1.5 w-1.5 rounded-full bg-brass" />
+                    {t.overviewLoading}
+                  </span>
+                ) : null}
               </div>
             </div>
-            <div className="flex items-center gap-2 rounded-md border border-ink/15 bg-white px-3 py-2 text-sm">
-              <CheckCircle2 className="text-signal" size={17} />
-              {t.okx}
+            <div className="runtime-pill">
+              <div>
+                <span>{t.dataPlane}</span>
+                <strong>{t.okx}</strong>
+              </div>
+              <CheckCircle2 className="text-signal" size={18} />
             </div>
           </header>
 
-          <section className="mt-6 grid grid-cols-4 gap-3 max-xl:grid-cols-2 max-sm:grid-cols-1">
-            {metrics.map((metric) => (
-              <div className="panel" key={metric.label}>
-                <div className="flex items-center justify-between">
+          <section className="telemetry-grid mt-6">
+            {metrics.map((metric, index) => (
+              <div className="telemetry-cell" key={metric.label} style={cascadeStyle(index)}>
+                <div className="flex items-start justify-between gap-4">
                   <metric.icon className={`metric-${metric.tone}`} size={18} />
-                  <span className="font-mono text-xs text-ink/45">{metric.value}</span>
+                  <span className="font-mono text-2xl font-semibold tracking-tight text-ink">
+                    {metric.value}
+                  </span>
                 </div>
-                <div className="mt-5 text-sm text-ink/60">{metric.label}</div>
+                <div className="mt-4 text-xs uppercase text-ink/45">{metric.label}</div>
               </div>
             ))}
           </section>
 
           <section className="mt-5 grid grid-cols-[1.1fr_0.9fr] gap-5 max-xl:grid-cols-1">
-            <div className="panel">
+            <div className="panel panel-command">
               <div className="flex items-center justify-between gap-4">
-                <h2 className="section-title">{t.tools}</h2>
+                <div>
+                  <h2 className="section-title">{t.tools}</h2>
+                  <p className="mt-1 text-sm text-ink/50">{t.agentPlane}</p>
+                </div>
                 <div className="flex items-center gap-2">
                   <button className="icon-button" onClick={refreshOverview} type="button">
                     <RefreshCw className={refreshing ? "animate-spin" : ""} size={16} />
@@ -488,9 +540,13 @@ function App() {
                   <Cable size={18} className="text-brass" />
                 </div>
               </div>
-              <div className="mt-5 space-y-3">
+              <div className="mt-5 trace-list">
                 {traceEvents.map((event, index) => (
-                  <div className="trace-row" key={`${event.tool_name}-${event.id ?? index}`}>
+                  <div
+                    className="trace-row"
+                    key={`${event.tool_name}-${event.id ?? index}`}
+                    style={cascadeStyle(index)}
+                  >
                     <span className="font-mono text-xs text-ink/45">
                       {String(index + 1).padStart(2, "0")}
                     </span>
@@ -502,7 +558,7 @@ function App() {
                 ))}
               </div>
 
-              <div className="mt-6 grid grid-cols-3 gap-3 max-md:grid-cols-1">
+              <div className="mt-6 grid grid-cols-[1.2fr_0.9fr_0.9fr] gap-3 max-md:grid-cols-1">
                 <div className="mini-block">
                   <span>{t.providers}</span>
                   <strong>{providerLabel(defaultProvider, t)}</strong>
@@ -537,11 +593,14 @@ function App() {
 
             <div className="panel" id="market">
               <div className="flex items-center justify-between gap-4">
-                <h2 className="section-title">{t.market}</h2>
-                <AlertTriangle size={18} className="text-danger" />
+                <div>
+                  <h2 className="section-title">{t.market}</h2>
+                  <p className="mt-1 text-sm text-ink/50">{t.prompt}</p>
+                </div>
+                <Sparkles size={18} className="text-brass" />
               </div>
               <textarea
-                className="mt-5 min-h-24 w-full resize-none rounded-md border border-ink/15 bg-white p-3 text-sm outline-none focus:border-brass"
+                className="prompt-box"
                 onChange={(event) => setPrompt(event.target.value)}
                 value={prompt}
               />
@@ -560,7 +619,7 @@ function App() {
                   {feishuState || t.sendFeishu}
                 </button>
               </div>
-              <pre className="report-block">{run.report_markdown}</pre>
+              <pre className="report-block">{busy ? `${t.overviewLoading}...` : run.report_markdown}</pre>
             </div>
           </section>
 
@@ -574,10 +633,13 @@ function App() {
                 {activeOverview.market.top_movers.length === 0 ? (
                   <div className="empty-row">{t.noMarket}</div>
                 ) : (
-                  activeOverview.market.top_movers.map((ticker) => (
+                  activeOverview.market.top_movers.map((ticker, index) => (
                     <div className="ticker-row" key={ticker.inst_id}>
-                      <span className="font-mono text-xs">{ticker.inst_id}</span>
-                      <span>{ticker.last}</span>
+                      <span className="font-mono text-[11px] text-ink/45">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <span className="font-mono text-xs font-semibold">{ticker.inst_id}</span>
+                      <span className="font-mono">{ticker.last}</span>
                       <span className={ticker.change_utc0_pct.startsWith("-") ? "text-danger" : "text-signal"}>
                         {ticker.change_utc0_pct}%
                       </span>
@@ -596,8 +658,8 @@ function App() {
                 {activeOverview.agent_runs.recent.length === 0 ? (
                   <div className="empty-row">{t.noRuns}</div>
                 ) : (
-                  activeOverview.agent_runs.recent.map((recentRun) => (
-                    <div className="run-row" key={recentRun.id}>
+                  activeOverview.agent_runs.recent.map((recentRun, index) => (
+                    <div className="run-row" key={recentRun.id} style={cascadeStyle(index)}>
                       <span className="font-mono text-xs text-ink/55">{recentRun.id}</span>
                       <span className="min-w-0 truncate text-sm">{recentRun.prompt}</span>
                       <span className="rounded border border-signal/25 px-2 py-1 text-xs text-signal">
@@ -610,16 +672,19 @@ function App() {
             </div>
           </section>
 
-          <section className="mt-5 grid grid-cols-3 gap-5 max-xl:grid-cols-1">
+          <section className="mt-5 grid grid-cols-[1.5fr_1fr_0.8fr] gap-5 max-xl:grid-cols-1">
             <div className="wide-strip">
+              <AlertTriangle size={16} className="text-danger" />
               <span>{t.severe}</span>
               <strong>Feishu Webhook</strong>
             </div>
             <div className="wide-strip">
+              <Brain size={16} className="text-brass" />
               <span>PostgreSQL</span>
               <strong>pgvector / jobs</strong>
             </div>
             <div className="wide-strip">
+              <Radio size={16} className="text-signal" />
               <span>Deploy</span>
               <strong>3333 / 3334</strong>
             </div>
@@ -637,6 +702,19 @@ function providerLabel(provider: ProviderStatus | undefined, t: Record<string, s
   }
   const model = provider.model || provider.name;
   return `${provider.display_name} / ${model}`;
+}
+
+function StatusDot({ enabled }: { enabled: boolean }) {
+  return (
+    <span
+      className={`status-dot ${enabled ? "status-dot-on" : "status-dot-off"}`}
+      aria-label={enabled ? "configured" : "missing"}
+    />
+  );
+}
+
+function cascadeStyle(index: number): CSSProperties & Record<"--index", number> {
+  return { "--index": index };
 }
 
 function formatMetricNumber(value: number): string {
