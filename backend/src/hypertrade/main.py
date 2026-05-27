@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import httpx
@@ -7,11 +8,20 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from itsdangerous import BadSignature, URLSafeSerializer
 from pydantic import BaseModel
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 
 from hypertrade.agent.kernel import AgentKernel, CompletedAgentRun
 from hypertrade.config import Settings, get_settings
-from hypertrade.db import AgentRun, Database, MemoryItem, TraceEvent
+from hypertrade.db import (
+    AgentRun,
+    Database,
+    MarketTicker,
+    MemoryItem,
+    RagChunk,
+    RagDocument,
+    TraceEvent,
+    utc_now,
+)
 from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
 from hypertrade.providers.runtime import ProviderRuntime
@@ -106,6 +116,62 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     @app.get("/api/harness/tools")
     def tools(_: AdminUser) -> dict[str, list[dict[str, object]]]:
         return {"tools": [_tool_to_dict(tool) for tool in ToolRegistry.default().list_tools()]}
+
+    @app.get("/api/harness/overview")
+    def harness_overview(_: AdminUser) -> dict[str, Any]:
+        providers_payload = ProviderRuntime(app_settings).list_providers()
+        tools_payload = [_tool_to_dict(tool) for tool in ToolRegistry.default().list_tools()]
+        top_movers = [
+            {
+                "inst_id": row.inst_id,
+                "last": str(row.last),
+                "volume_ccy_24h": str(row.volume_ccy_24h),
+                "change_utc0_pct": str(row.change_utc0_pct),
+            }
+            for row in MarketRepository(database).top_movers(limit=8)
+        ]
+
+        with database.session() as session:
+            latest_market_at = session.scalar(select(func.max(MarketTicker.updated_at)))
+            latest_memory_at = session.scalar(select(func.max(MemoryItem.created_at)))
+            runs = session.scalars(
+                select(AgentRun).order_by(desc(AgentRun.created_at)).limit(6)
+            ).all()
+            trace_events = session.scalars(
+                select(TraceEvent).order_by(desc(TraceEvent.created_at)).limit(12)
+            ).all()
+            return {
+                "generated_at": utc_now().isoformat(),
+                "providers": providers_payload,
+                "tools": tools_payload,
+                "market": {
+                    "ticker_count": _count_rows(session, MarketTicker),
+                    "latest_ticker_at": _iso_or_none(latest_market_at),
+                    "latest_update_age_seconds": _age_seconds(latest_market_at),
+                    "top_movers": top_movers,
+                },
+                "agent_runs": {
+                    "total_count": _count_rows(session, AgentRun),
+                    "recent": [_run_summary_to_dict(run) for run in runs],
+                },
+                "rag": {
+                    "document_count": _count_rows(session, RagDocument),
+                    "chunk_count": _count_rows(session, RagChunk),
+                },
+                "memory": {
+                    "active_count": _count_rows(
+                        session,
+                        MemoryItem,
+                        MemoryItem.disabled.is_(False),
+                    ),
+                    "total_count": _count_rows(session, MemoryItem),
+                    "latest_created_at": _iso_or_none(latest_memory_at),
+                },
+                "trace": {
+                    "total_count": _count_rows(session, TraceEvent),
+                    "recent_events": [_trace_to_dict(event) for event in trace_events],
+                },
+            }
 
     @app.post("/api/agent/runs")
     def create_run(payload: AgentRunPayload, _: AdminUser) -> dict[str, Any]:
@@ -231,6 +297,37 @@ def _memory_to_dict(item: MemoryItem) -> dict[str, Any]:
         "source_tool": item.source_tool,
         "created_at": item.created_at.isoformat(),
     }
+
+
+def _run_summary_to_dict(run: AgentRun) -> dict[str, Any]:
+    return {
+        "id": run.id,
+        "prompt": run.prompt,
+        "status": run.status,
+        "created_at": run.created_at.isoformat(),
+        "updated_at": run.updated_at.isoformat(),
+        "error": run.error,
+    }
+
+
+def _count_rows(session: Any, model: type[Any], where_clause: Any | None = None) -> int:
+    statement = select(func.count()).select_from(model)
+    if where_clause is not None:
+        statement = statement.where(where_clause)
+    return int(session.scalar(statement) or 0)
+
+
+def _iso_or_none(value: object) -> str | None:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return None
+
+
+def _age_seconds(value: object) -> int | None:
+    if not isinstance(value, datetime):
+        return None
+    measured_at = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    return max(0, int((utc_now() - measured_at).total_seconds()))
 
 
 app = create_app()

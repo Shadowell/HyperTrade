@@ -49,3 +49,14 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     assert body["status"] == "completed"
     assert "BTC-USDT-SWAP" in body["report_markdown"]
     assert body["trace_events"][0]["tool_name"] == "market.summary"
+
+    overview = client.get("/api/harness/overview").json()
+
+    assert overview["market"]["ticker_count"] == 1
+    assert overview["market"]["top_movers"][0]["inst_id"] == "BTC-USDT-SWAP"
+    assert overview["agent_runs"]["total_count"] == 1
+    assert overview["rag"]["document_count"] == 1
+    assert overview["memory"]["active_count"] == 1
+    assert overview["trace"]["total_count"] == 3
+    assert overview["providers"][0]["name"] == "deepseek"
+    assert overview["tools"][-1]["requires_approval"] is True
