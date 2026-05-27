@@ -62,6 +62,16 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     assert overview["trace"]["total_count"] == 3
     assert overview["providers"][0]["name"] == "deepseek"
     assert overview["tools"][-1]["requires_approval"] is True
+    assert overview["paper"]["session"]["status"] == "running"
+
+    paper_status = client.get("/api/paper/status").json()
+    assert paper_status["session"]["status"] == "running"
+
+    pause = client.post("/api/paper/control", json={"action": "pause"}).json()
+    assert pause["session"]["status"] == "paused"
+
+    paused_overview = client.get("/api/harness/overview").json()
+    assert paused_overview["paper"]["session"]["status"] == "paused"
 
 
 def test_login_cookie_secure_flag_is_configurable():

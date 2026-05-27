@@ -82,6 +82,37 @@ const overview = {
         created_at: "2026-05-27T00:00:00+08:00"
       }
     ]
+  },
+  paper: {
+    session: {
+      id: "paper_live",
+      status: "running",
+      cash: "100000",
+      equity: "100000",
+      realized_pnl: "0"
+    },
+    positions: [
+      {
+        inst_id: "AAA-USDT-SWAP",
+        side: "long",
+        quantity: "99.98",
+        entry_price: "10.002",
+        mark_price: "10.002",
+        notional: "1000",
+        unrealized_pnl: "0"
+      }
+    ],
+    recent_fills: [
+      {
+        inst_id: "AAA-USDT-SWAP",
+        side: "long",
+        quantity: "99.98",
+        price: "10.002",
+        fee: "0.5",
+        created_at: "2026-05-27T00:00:00+08:00"
+      }
+    ],
+    recent_events: []
   }
 };
 
@@ -114,6 +145,9 @@ test("renders harness observability from live overview", async () => {
   expect(screen.getAllByText("DeepSeek / deepseek-v4-flash").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("run_live")).toBeInTheDocument();
   expect(screen.getByText("BTC-USDT-SWAP")).toBeInTheDocument();
+  expect(screen.getByText("Paper Runtime")).toBeInTheDocument();
+  expect(screen.getAllByText("running").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("AAA-USDT-SWAP").length).toBeGreaterThanOrEqual(1);
 });
 
 function jsonResponse(body: unknown, status = 200): Response {

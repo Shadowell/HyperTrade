@@ -114,6 +114,71 @@ class Job(Base, TimestampMixin):
     last_error: Mapped[str] = mapped_column(Text, default="")
 
 
+class PaperSession(Base, TimestampMixin):
+    __tablename__ = "paper_sessions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("paper"))
+    name: Mapped[str] = mapped_column(String(128), default="Default Paper Session")
+    status: Mapped[str] = mapped_column(String(32), default="running", index=True)
+    cash: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    equity: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    realized_pnl: Mapped[Decimal] = mapped_column(Numeric(30, 12), default=Decimal("0"))
+    config_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class PaperPosition(Base, TimestampMixin):
+    __tablename__ = "paper_positions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("pos"))
+    session_id: Mapped[str] = mapped_column(String(32), index=True)
+    inst_id: Mapped[str] = mapped_column(String(64), index=True)
+    side: Mapped[str] = mapped_column(String(16), index=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    entry_price: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    mark_price: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    notional: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    unrealized_pnl: Mapped[Decimal] = mapped_column(Numeric(30, 12), default=Decimal("0"))
+    status: Mapped[str] = mapped_column(String(32), default="open", index=True)
+
+
+class PaperOrder(Base, TimestampMixin):
+    __tablename__ = "paper_orders"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ord"))
+    session_id: Mapped[str] = mapped_column(String(32), index=True)
+    inst_id: Mapped[str] = mapped_column(String(64), index=True)
+    side: Mapped[str] = mapped_column(String(16))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    target_notional: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+
+
+class PaperFill(Base, TimestampMixin):
+    __tablename__ = "paper_fills"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("fill"))
+    order_id: Mapped[str] = mapped_column(String(32), index=True)
+    session_id: Mapped[str] = mapped_column(String(32), index=True)
+    inst_id: Mapped[str] = mapped_column(String(64), index=True)
+    side: Mapped[str] = mapped_column(String(16))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    price: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    fee: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    slippage_bps: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    source_ticker_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PaperEvent(Base, TimestampMixin):
+    __tablename__ = "paper_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("pevt"))
+    session_id: Mapped[str] = mapped_column(String(32), index=True)
+    kind: Mapped[str] = mapped_column(String(64), index=True)
+    message: Mapped[str] = mapped_column(Text)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class Database:
     def __init__(self, url: str, *, echo: bool = False) -> None:
         connect_args: dict[str, Any] = {}

@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket
@@ -24,6 +24,7 @@ from hypertrade.db import (
 )
 from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
+from hypertrade.paper.service import PaperTradingService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.tools.registry import ToolDefinition, ToolRegistry
 
@@ -37,6 +38,10 @@ class LoginPayload(BaseModel):
 
 class AgentRunPayload(BaseModel):
     prompt: str
+
+
+class PaperControlPayload(BaseModel):
+    action: Literal["pause", "resume"]
 
 
 def create_app(settings: Settings | None = None, db: Database | None = None) -> FastAPI:
@@ -171,6 +176,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
                     "total_count": _count_rows(session, TraceEvent),
                     "recent_events": [_trace_to_dict(event) for event in trace_events],
                 },
+                "paper": PaperTradingService(database, settings=app_settings).status(),
             }
 
     @app.post("/api/agent/runs")
@@ -220,6 +226,17 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
                 for row in rows
             ]
         }
+
+    @app.get("/api/paper/status")
+    def paper_status(_: AdminUser) -> dict[str, Any]:
+        return PaperTradingService(database, settings=app_settings).status()
+
+    @app.post("/api/paper/control")
+    def paper_control(payload: PaperControlPayload, _: AdminUser) -> dict[str, Any]:
+        service = PaperTradingService(database, settings=app_settings)
+        if payload.action == "pause":
+            return service.pause()
+        return service.resume()
 
     @app.get("/api/memory")
     def list_memory(_: AdminUser) -> dict[str, list[dict[str, Any]]]:

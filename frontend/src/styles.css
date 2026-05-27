@@ -132,6 +132,10 @@ body {
     animation-delay: calc(var(--index) * 45ms);
   }
 
+  .paper-row {
+    @apply grid grid-cols-[1fr_0.35fr_0.55fr] items-center gap-3 border-t border-ink/10 px-1 py-2.5 text-sm first:border-t-0 hover:bg-white/55;
+  }
+
   .empty-row {
     @apply rounded-md border border-dashed border-ink/20 bg-white/55 px-3 py-6 text-center text-sm text-ink/45;
   }

@@ -6,6 +6,8 @@ import {
   Cable,
   CheckCircle2,
   Clock3,
+  CirclePause,
+  CirclePlay,
   Languages,
   Layers3,
   LineChart,
@@ -67,6 +69,25 @@ type TickerSummary = {
   change_utc0_pct: string;
 };
 
+type PaperPosition = {
+  inst_id: string;
+  side: string;
+  quantity: string;
+  entry_price: string;
+  mark_price: string;
+  notional: string;
+  unrealized_pnl: string;
+};
+
+type PaperFill = {
+  inst_id: string;
+  side: string;
+  quantity: string;
+  price: string;
+  fee: string;
+  created_at?: string;
+};
+
 type HarnessOverview = {
   generated_at: string;
   providers: ProviderStatus[];
@@ -93,6 +114,18 @@ type HarnessOverview = {
   trace: {
     total_count: number;
     recent_events: TraceEvent[];
+  };
+  paper: {
+    session: {
+      id: string;
+      status: string;
+      cash: string;
+      equity: string;
+      realized_pnl: string;
+    };
+    positions: PaperPosition[];
+    recent_fills: PaperFill[];
+    recent_events: Array<Record<string, unknown>>;
   };
 };
 
@@ -130,7 +163,17 @@ const copy = {
     dataPlane: "Data Plane",
     agentPlane: "Agent Plane",
     lastSync: "Last Sync",
-    overviewLoading: "正在同步运行态"
+    overviewLoading: "正在同步运行态",
+    paperRuntime: "Paper Runtime",
+    pause: "暂停",
+    resume: "恢复",
+    equity: "权益",
+    cash: "现金",
+    realizedPnl: "已实现 PnL",
+    positions: "持仓",
+    fills: "成交",
+    noPositions: "暂无模拟持仓",
+    noFills: "暂无模拟成交"
   },
   en: {
     product: "HyperTrade",
@@ -165,7 +208,17 @@ const copy = {
     dataPlane: "Data Plane",
     agentPlane: "Agent Plane",
     lastSync: "Last Sync",
-    overviewLoading: "Syncing runtime state"
+    overviewLoading: "Syncing runtime state",
+    paperRuntime: "Paper Runtime",
+    pause: "Pause",
+    resume: "Resume",
+    equity: "Equity",
+    cash: "Cash",
+    realizedPnl: "Realized PnL",
+    positions: "Positions",
+    fills: "Fills",
+    noPositions: "No paper positions",
+    noFills: "No paper fills"
   }
 } satisfies Record<Language, Record<string, string>>;
 
@@ -249,6 +302,18 @@ const previewOverview: HarnessOverview = {
   trace: {
     total_count: 0,
     recent_events: seedRun.trace_events
+  },
+  paper: {
+    session: {
+      id: "paper_preview",
+      status: "ready",
+      cash: "100000",
+      equity: "100000",
+      realized_pnl: "0"
+    },
+    positions: [],
+    recent_fills: [],
+    recent_events: []
   }
 };
 
@@ -396,6 +461,18 @@ function App() {
     if (response.ok) {
       const payload = (await response.json()) as { status: string };
       setFeishuState(payload.status);
+    }
+  }
+
+  async function handlePaperControl(action: "pause" | "resume") {
+    const response = await fetch("/api/paper/control", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action })
+    });
+    if (response.ok) {
+      await refreshOverview();
     }
   }
 
@@ -620,6 +697,93 @@ function App() {
                 </button>
               </div>
               <pre className="report-block">{busy ? `${t.overviewLoading}...` : run.report_markdown}</pre>
+            </div>
+          </section>
+
+          <section className="mt-5 grid grid-cols-[0.9fr_1.1fr] gap-5 max-xl:grid-cols-1">
+            <div className="panel">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="section-title">{t.paperRuntime}</h2>
+                  <p className="mt-1 font-mono text-xs text-ink/45">
+                    {activeOverview.paper.session.id}
+                  </p>
+                </div>
+                <span className="rounded border border-signal/25 px-2 py-1 text-xs text-signal">
+                  {activeOverview.paper.session.status}
+                </span>
+              </div>
+              <div className="mt-5 grid grid-cols-3 gap-3 max-sm:grid-cols-1">
+                <div className="mini-block">
+                  <span>{t.equity}</span>
+                  <strong className="font-mono">{activeOverview.paper.session.equity}</strong>
+                </div>
+                <div className="mini-block">
+                  <span>{t.cash}</span>
+                  <strong className="font-mono">{activeOverview.paper.session.cash}</strong>
+                </div>
+                <div className="mini-block">
+                  <span>{t.realizedPnl}</span>
+                  <strong className="font-mono">
+                    {activeOverview.paper.session.realized_pnl}
+                  </strong>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  className="button-secondary"
+                  onClick={() => handlePaperControl("pause")}
+                  type="button"
+                >
+                  <CirclePause size={16} />
+                  {t.pause}
+                </button>
+                <button
+                  className="button-primary"
+                  onClick={() => handlePaperControl("resume")}
+                  type="button"
+                >
+                  <CirclePlay size={16} />
+                  {t.resume}
+                </button>
+              </div>
+            </div>
+
+            <div className="panel">
+              <div className="grid grid-cols-2 gap-5 max-md:grid-cols-1">
+                <div>
+                  <h3 className="section-title">{t.positions}</h3>
+                  <div className="mt-3 rounded-md border border-ink/10 bg-paper/60 px-3">
+                    {activeOverview.paper.positions.length === 0 ? (
+                      <div className="empty-row my-3">{t.noPositions}</div>
+                    ) : (
+                      activeOverview.paper.positions.slice(0, 6).map((position) => (
+                        <div className="paper-row" key={position.inst_id}>
+                          <span className="font-mono text-xs">{position.inst_id}</span>
+                          <span>{position.side}</span>
+                          <span className="font-mono">{position.unrealized_pnl}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="section-title">{t.fills}</h3>
+                  <div className="mt-3 rounded-md border border-ink/10 bg-paper/60 px-3">
+                    {activeOverview.paper.recent_fills.length === 0 ? (
+                      <div className="empty-row my-3">{t.noFills}</div>
+                    ) : (
+                      activeOverview.paper.recent_fills.slice(0, 6).map((fill, index) => (
+                        <div className="paper-row" key={`${fill.inst_id}-${index}`}>
+                          <span className="font-mono text-xs">{fill.inst_id}</span>
+                          <span>{fill.side}</span>
+                          <span className="font-mono">{fill.price}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 

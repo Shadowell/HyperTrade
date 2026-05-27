@@ -47,6 +47,20 @@ class Settings(BaseSettings):
         default=300,
         alias="OKX_REST_SUPPLEMENT_INTERVAL_SECONDS",
     )
+    paper_enabled: bool = Field(default=True, alias="PAPER_ENABLED")
+    paper_loop_interval_seconds: int = Field(default=30, alias="PAPER_LOOP_INTERVAL_SECONDS")
+    paper_starting_equity_usdt: str = Field(
+        default="100000",
+        alias="PAPER_STARTING_EQUITY_USDT",
+    )
+    paper_max_positions: int = Field(default=10, alias="PAPER_MAX_POSITIONS")
+    paper_max_symbol_notional_pct: str = Field(
+        default="0.20",
+        alias="PAPER_MAX_SYMBOL_NOTIONAL_PCT",
+    )
+    paper_max_leverage: str = Field(default="5", alias="PAPER_MAX_LEVERAGE")
+    paper_taker_fee_bps: str = Field(default="5", alias="PAPER_TAKER_FEE_BPS")
+    paper_slippage_bps: str = Field(default="2", alias="PAPER_SLIPPAGE_BPS")
 
     feishu_webhook_url: str = Field(default="", alias="FEISHU_WEBHOOK_URL")
     rag_scan_interval_seconds: int = Field(default=600, alias="RAG_SCAN_INTERVAL_SECONDS")
