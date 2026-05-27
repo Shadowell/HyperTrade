@@ -9,6 +9,7 @@
 ## Active Contract
 
 - `docs/contracts/sprint-01-agent-market-summary.md`
+- Planned next: `docs/contracts/sprint-02-paper-trading-runtime.md`
 
 ## Latest Completed Work
 
@@ -37,6 +38,6 @@
 
 ## Recommended Next Steps
 
-1. Add and register self-hosted runner label `hypertrade-production` so GitHub Actions can replace manual SSH deploys.
-2. Start Sprint 02 automatic paper trading contract.
+1. Implement Sprint 02 automatic paper trading runtime from `docs/superpowers/plans/2026-05-27-paper-trading-runtime.md`.
+2. Add and register self-hosted runner label `hypertrade-production` so GitHub Actions can replace manual SSH deploys.
 3. Add HTTPS before setting `COOKIE_SECURE=true`.
