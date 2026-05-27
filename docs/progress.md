@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 03 strategy/backtest workflow verified locally; deployment pending.
+- Last verified state: Sprint 03 strategy/backtest workflow deployed to `47.79.36.92` at SHA `e38f3e3`.
 
 ## Active Contract
 
@@ -32,6 +32,8 @@
 - Server authenticated `/api/harness/overview` through Nginx verified with 344 OKX SWAP tickers, 3 Agent runs, DeepSeek configured, 1 RAG document, 3 active Memory items, and 9 trace events.
 - Server authenticated `/api/paper/status` through Nginx verified paper session `running`, equity `100000`, 10 positions, and 10 recent fills.
 - Worker logs verified `paper_trading tick status=running fills=10`.
+- Server deployment ran Alembic `0003_strategy_backtest`, rebuilt API/worker images, and deployed SHA `e38f3e3`.
+- Server authenticated strategy/backtest smoke created research `srch_12196a7d8aff4fbda649`, backtest `bt_9fc24eda9bff4e02bde0`, strategy `momentum_breakout_v1`, return `0.019000`, trade count `1`, and confirmed `/api/harness/overview.strategy_lab`.
 
 ## Known Gaps
 
@@ -42,6 +44,6 @@
 
 ## Recommended Next Steps
 
-1. Deploy Sprint 03 to `47.79.36.92` and run authenticated strategy/backtest smoke checks.
-2. Add OKX historical K-line ingestion for research-grade backtests.
+1. Add OKX historical K-line ingestion for research-grade backtests.
+2. Add strategy parameter optimization sweeps.
 3. Add HTTPS before setting `COOKIE_SECURE=true`.

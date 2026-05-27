@@ -18,7 +18,7 @@
 - [x] Add research/backtest services and API endpoints.
 - [x] Extend `/api/harness/overview`.
 - [x] Add `/harness` Strategy Lab panel.
-- [ ] Run `./scripts/check.sh`, deploy, and verify server smoke.
+- [x] Run `./scripts/check.sh`, deploy, and verify server smoke.
 
 ## Scope Notes
 
