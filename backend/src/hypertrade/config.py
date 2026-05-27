@@ -42,6 +42,10 @@ class Settings(BaseSettings):
         default="wss://ws.okx.com:8443/ws/v5/public", alias="OKX_PUBLIC_WS_URL"
     )
     okx_rest_url: str = Field(default="https://www.okx.com", alias="OKX_REST_URL")
+    okx_rest_supplement_interval_seconds: int = Field(
+        default=300,
+        alias="OKX_REST_SUPPLEMENT_INTERVAL_SECONDS",
+    )
 
     feishu_webhook_url: str = Field(default="", alias="FEISHU_WEBHOOK_URL")
     rag_scan_interval_seconds: int = Field(default=600, alias="RAG_SCAN_INTERVAL_SECONDS")

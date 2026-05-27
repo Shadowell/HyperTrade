@@ -23,6 +23,7 @@
 - `uv run pytest -q` -> 7 passed.
 - `npm exec --yes pnpm@10 -- -C frontend test` -> 1 passed.
 - Playwright opened `http://127.0.0.1:3333`, logged in, and triggered an Agent market summary.
+- Server deployment verified `http://47.79.36.92:3333/api/health`, authenticated Agent run, DeepSeek provider enabled, and 344 OKX SWAP tickers ingested by REST supplement.
 
 ## Known Gaps
 

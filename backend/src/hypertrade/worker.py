@@ -25,11 +25,27 @@ async def market_ingestion_loop(db: Database) -> None:
     await ingestor.ingest_ws_forever()
 
 
+async def market_rest_supplement_loop(db: Database) -> None:
+    settings = get_settings()
+    ingestor = MarketIngestor(settings, MarketRepository(db))
+    while True:
+        try:
+            count = await ingestor.ingest_rest_once()
+            logger.info("okx_rest_supplement tickers=%s", count)
+        except Exception:
+            logger.exception("okx_rest_supplement failed")
+        await asyncio.sleep(settings.okx_rest_supplement_interval_seconds)
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     settings = get_settings()
     db = Database(settings.database_url)
-    await asyncio.gather(rag_scanner_loop(db), market_ingestion_loop(db))
+    await asyncio.gather(
+        rag_scanner_loop(db),
+        market_ingestion_loop(db),
+        market_rest_supplement_loop(db),
+    )
 
 
 if __name__ == "__main__":
