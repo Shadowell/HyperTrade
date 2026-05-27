@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 01 backend and frontend tests pass locally.
+- Last verified state: `/harness` live observability deployed to `47.79.36.92` at SHA `1a728c7`.
 
 ## Active Contract
 
@@ -26,7 +26,8 @@
 - `npm exec --yes pnpm@10 -- -C frontend test` -> 1 passed.
 - `npm exec --yes pnpm@10 -- -C frontend build` -> production build passed.
 - Playwright opened `http://127.0.0.1:3333`, logged in, and triggered an Agent market summary.
-- Server deployment verified `http://47.79.36.92:3333/api/health`, authenticated Agent run, DeepSeek provider enabled, and 344 OKX SWAP tickers ingested by REST supplement.
+- Server deployment verified `http://47.79.36.92:3333/api/health`.
+- Server authenticated `/api/harness/overview` through Nginx verified with 344 OKX SWAP tickers, 3 Agent runs, DeepSeek configured, 1 RAG document, 3 active Memory items, and 9 trace events.
 
 ## Known Gaps
 
@@ -36,7 +37,6 @@
 
 ## Recommended Next Steps
 
-1. Run `./scripts/check.sh`.
-2. Push `main` to `Shadowell/HyperTrade`.
-3. Deploy the new `/harness` observability build to `47.79.36.92`.
-4. Add and register self-hosted runner label `hypertrade-production`.
+1. Add and register self-hosted runner label `hypertrade-production` so GitHub Actions can replace manual SSH deploys.
+2. Start Sprint 02 automatic paper trading contract.
+3. Add HTTPS before setting `COOKIE_SECURE=true`.
