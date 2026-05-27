@@ -5,6 +5,7 @@ description = "Agent-first crypto trading research and execution harness."
 requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.17.0",
+  "backtrader>=1.9.78",
   "fastapi>=0.122.0",
   "httpx>=0.28.0",
   "itsdangerous>=2.2.0",

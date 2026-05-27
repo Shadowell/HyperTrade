@@ -113,6 +113,33 @@ const overview = {
       }
     ],
     recent_events: []
+  },
+  strategy_lab: {
+    latest_research: {
+      id: "srch_live",
+      prompt: "研究一个趋势突破策略",
+      strategy_key: "momentum_breakout_v1",
+      title: "趋势突破 V1",
+      report_markdown: "# 趋势突破 V1",
+      spec_json: {},
+      created_at: "2026-05-27T00:00:00+08:00"
+    },
+    latest_backtest: {
+      id: "bt_live",
+      research_id: "srch_live",
+      strategy_key: "momentum_breakout_v1",
+      status: "completed",
+      metrics: {
+        start_cash: "100000",
+        end_value: "100014",
+        total_return_pct: "0.014000",
+        max_drawdown_pct: "0",
+        trade_count: 1
+      },
+      report_markdown: "# Backtest Report",
+      report_json: {},
+      created_at: "2026-05-27T00:00:00+08:00"
+    }
   }
 };
 
@@ -148,6 +175,10 @@ test("renders harness observability from live overview", async () => {
   expect(screen.getByText("Paper Runtime")).toBeInTheDocument();
   expect(screen.getAllByText("running").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("AAA-USDT-SWAP").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("Strategy Lab")).toBeInTheDocument();
+  expect(screen.getByText("momentum_breakout_v1")).toBeInTheDocument();
+  expect(screen.getByText("bt_live")).toBeInTheDocument();
+  expect(screen.getByText("0.014000%")).toBeInTheDocument();
 });
 
 function jsonResponse(body: unknown, status = 200): Response {

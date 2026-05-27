@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 02 paper runtime deployed to `47.79.36.92` at SHA `c094449`.
+- Last verified state: Sprint 03 strategy/backtest workflow verified locally; deployment pending.
 
 ## Active Contract
 
-- `docs/contracts/sprint-02-paper-trading-runtime.md`
+- `docs/contracts/sprint-03-strategy-backtest-workflow.md`
 
 ## Latest Completed Work
 
@@ -19,10 +19,11 @@
 - Added `/api/harness/overview` and wired `/harness` to live Provider, Tool, market, Agent run, RAG, Memory, and trace state.
 - Added configurable `COOKIE_SECURE` so the current HTTP `3333` deployment can keep admin sessions, while HTTPS deployments can opt in to secure cookies.
 - Added Sprint 02 automatic paper trading runtime with paper sessions, deterministic signals, simulated fills/positions, pause/resume API, worker loop, and `/harness` Paper Runtime panel.
+- Added Sprint 03 strategy research and Backtrader backtest workflow with persisted research records, backtest runs, Markdown/JSON reports, API endpoints, and `/harness` Strategy Lab panel.
 
 ## Verification Evidence
 
-- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 17 tests.
 - `uv run pytest -q` -> 15 passed.
 - `npm exec --yes pnpm@10 -- -C frontend test` -> 1 passed.
 - `npm exec --yes pnpm@10 -- -C frontend build` -> production build passed.
@@ -36,10 +37,11 @@
 
 - OKX live WebSocket ingestion is implemented but not exercised against the remote server in this local run.
 - V1 does not include automatic PostgreSQL backup.
-- Strategy backtesting and Testnet order execution remain documented as later sprints.
+- Sprint 03 uses deterministic sample candles unless the caller supplies candle payloads; no historical OKX candle backfill yet.
+- Testnet order execution remains documented as a later sprint.
 
 ## Recommended Next Steps
 
-1. Add and register self-hosted runner label `hypertrade-production` so GitHub Actions can replace manual SSH deploys.
-2. Start Sprint 03 strategy research/backtest workflow or Testnet order-intent approval path.
+1. Deploy Sprint 03 to `47.79.36.92` and run authenticated strategy/backtest smoke checks.
+2. Add OKX historical K-line ingestion for research-grade backtests.
 3. Add HTTPS before setting `COOKIE_SECURE=true`.

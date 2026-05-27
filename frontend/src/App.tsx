@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Send,
   Sparkles,
+  TestTube2,
   TerminalSquare
 } from "lucide-react";
 import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -88,6 +89,33 @@ type PaperFill = {
   created_at?: string;
 };
 
+type StrategyResearchSummary = {
+  id: string;
+  prompt: string;
+  strategy_key: string;
+  title: string;
+  report_markdown: string;
+  spec_json: Record<string, unknown>;
+  created_at: string;
+};
+
+type BacktestSummary = {
+  id: string;
+  research_id: string;
+  strategy_key: string;
+  status: string;
+  metrics: {
+    start_cash: string;
+    end_value: string;
+    total_return_pct: string;
+    max_drawdown_pct: string;
+    trade_count: number;
+  };
+  report_markdown: string;
+  report_json: Record<string, unknown>;
+  created_at: string;
+};
+
 type HarnessOverview = {
   generated_at: string;
   providers: ProviderStatus[];
@@ -126,6 +154,10 @@ type HarnessOverview = {
     positions: PaperPosition[];
     recent_fills: PaperFill[];
     recent_events: Array<Record<string, unknown>>;
+  };
+  strategy_lab: {
+    latest_research: StrategyResearchSummary | null;
+    latest_backtest: BacktestSummary | null;
   };
 };
 
@@ -173,7 +205,18 @@ const copy = {
     positions: "持仓",
     fills: "成交",
     noPositions: "暂无模拟持仓",
-    noFills: "暂无模拟成交"
+    noFills: "暂无模拟成交",
+    strategyLab: "Strategy Lab",
+    researchPrompt: "策略研究主题",
+    runResearch: "生成研究",
+    runBacktest: "运行回测",
+    latestResearch: "最新研究",
+    latestBacktest: "最新回测",
+    noResearch: "暂无策略研究",
+    noBacktest: "暂无回测记录",
+    returnPct: "收益率",
+    maxDrawdown: "最大回撤",
+    trades: "成交数"
   },
   en: {
     product: "HyperTrade",
@@ -218,7 +261,18 @@ const copy = {
     positions: "Positions",
     fills: "Fills",
     noPositions: "No paper positions",
-    noFills: "No paper fills"
+    noFills: "No paper fills",
+    strategyLab: "Strategy Lab",
+    researchPrompt: "Research Prompt",
+    runResearch: "Create Research",
+    runBacktest: "Run Backtest",
+    latestResearch: "Latest Research",
+    latestBacktest: "Latest Backtest",
+    noResearch: "No strategy research",
+    noBacktest: "No backtest yet",
+    returnPct: "Return",
+    maxDrawdown: "Max Drawdown",
+    trades: "Trades"
   }
 } satisfies Record<Language, Record<string, string>>;
 
@@ -314,6 +368,10 @@ const previewOverview: HarnessOverview = {
     positions: [],
     recent_fills: [],
     recent_events: []
+  },
+  strategy_lab: {
+    latest_research: null,
+    latest_backtest: null
   }
 };
 
@@ -326,6 +384,8 @@ function App() {
   const [harnessError, setHarnessError] = useState("");
   const [feishuState, setFeishuState] = useState("");
   const [busy, setBusy] = useState(false);
+  const [strategyPrompt, setStrategyPrompt] = useState("研究一个趋势突破策略");
+  const [strategyBusy, setStrategyBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const t = copy[language];
   const activeOverview = overview ?? previewOverview;
@@ -473,6 +533,42 @@ function App() {
     });
     if (response.ok) {
       await refreshOverview();
+    }
+  }
+
+  async function handleStrategyResearch() {
+    setStrategyBusy(true);
+    try {
+      const response = await fetch("/api/strategy/research", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: strategyPrompt })
+      });
+      if (response.ok) {
+        await refreshOverview();
+      }
+    } finally {
+      setStrategyBusy(false);
+    }
+  }
+
+  async function handleBacktest() {
+    setStrategyBusy(true);
+    try {
+      const response = await fetch("/api/backtests", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          research_id: activeOverview.strategy_lab.latest_research?.id ?? ""
+        })
+      });
+      if (response.ok) {
+        await refreshOverview();
+      }
+    } finally {
+      setStrategyBusy(false);
     }
   }
 
@@ -782,6 +878,114 @@ function App() {
                       ))
                     )}
                   </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="mt-5 grid grid-cols-[0.9fr_1.1fr] gap-5 max-xl:grid-cols-1">
+            <div className="panel">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="section-title">{t.strategyLab}</h2>
+                  <p className="mt-1 text-sm text-ink/50">{t.researchPrompt}</p>
+                </div>
+                <TestTube2 size={18} className="text-brass" />
+              </div>
+              <textarea
+                className="prompt-box"
+                onChange={(event) => setStrategyPrompt(event.target.value)}
+                value={strategyPrompt}
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  className="button-primary"
+                  disabled={strategyBusy}
+                  onClick={handleStrategyResearch}
+                  type="button"
+                >
+                  {strategyBusy ? (
+                    <RefreshCw className="animate-spin" size={16} />
+                  ) : (
+                    <Sparkles size={16} />
+                  )}
+                  {t.runResearch}
+                </button>
+                <button
+                  className="button-secondary"
+                  disabled={strategyBusy}
+                  onClick={handleBacktest}
+                  type="button"
+                >
+                  <LineChart size={16} />
+                  {t.runBacktest}
+                </button>
+              </div>
+            </div>
+
+            <div className="panel">
+              <div className="grid grid-cols-2 gap-5 max-md:grid-cols-1">
+                <div>
+                  <h3 className="section-title">{t.latestResearch}</h3>
+                  {activeOverview.strategy_lab.latest_research ? (
+                    <div className="mt-3 strategy-card">
+                      <span className="font-mono text-xs text-ink/45">
+                        {activeOverview.strategy_lab.latest_research.id}
+                      </span>
+                      <strong>{activeOverview.strategy_lab.latest_research.title}</strong>
+                      <p>{activeOverview.strategy_lab.latest_research.prompt}</p>
+                      <span className="font-mono text-xs text-brass">
+                        {activeOverview.strategy_lab.latest_research.strategy_key}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="empty-row mt-3">{t.noResearch}</div>
+                  )}
+                </div>
+                <div>
+                  <h3 className="section-title">{t.latestBacktest}</h3>
+                  {activeOverview.strategy_lab.latest_backtest ? (
+                    <div className="mt-3 grid gap-3">
+                      <div className="status-row">
+                        <span className="font-mono text-xs">
+                          {activeOverview.strategy_lab.latest_backtest.id}
+                        </span>
+                        <span className="rounded border border-signal/25 px-2 py-1 text-xs text-signal">
+                          {activeOverview.strategy_lab.latest_backtest.status}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 max-sm:grid-cols-1">
+                        <div className="mini-block">
+                          <span>{t.returnPct}</span>
+                          <strong className="font-mono">
+                            {
+                              activeOverview.strategy_lab.latest_backtest.metrics
+                                .total_return_pct
+                            }
+                            %
+                          </strong>
+                        </div>
+                        <div className="mini-block">
+                          <span>{t.maxDrawdown}</span>
+                          <strong className="font-mono">
+                            {
+                              activeOverview.strategy_lab.latest_backtest.metrics
+                                .max_drawdown_pct
+                            }
+                            %
+                          </strong>
+                        </div>
+                        <div className="mini-block">
+                          <span>{t.trades}</span>
+                          <strong className="font-mono">
+                            {activeOverview.strategy_lab.latest_backtest.metrics.trade_count}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="empty-row mt-3">{t.noBacktest}</div>
+                  )}
                 </div>
               </div>
             </div>

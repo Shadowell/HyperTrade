@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Annotated, Any, Literal
 
 import httpx
@@ -11,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 
 from hypertrade.agent.kernel import AgentKernel, CompletedAgentRun
+from hypertrade.backtest.service import BacktestService
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import (
     AgentRun,
@@ -26,6 +28,8 @@ from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
 from hypertrade.paper.service import PaperTradingService
 from hypertrade.providers.runtime import ProviderRuntime
+from hypertrade.strategy.sdk import Candle
+from hypertrade.strategy.service import StrategyResearchService
 from hypertrade.tools.registry import ToolDefinition, ToolRegistry
 
 SESSION_COOKIE = "hypertrade_session"
@@ -42,6 +46,17 @@ class AgentRunPayload(BaseModel):
 
 class PaperControlPayload(BaseModel):
     action: Literal["pause", "resume"]
+
+
+class StrategyResearchPayload(BaseModel):
+    prompt: str
+
+
+class BacktestPayload(BaseModel):
+    research_id: str = ""
+    strategy_key: str = "momentum_breakout_v1"
+    initial_cash: str = "100000"
+    candles: list[Candle] | None = None
 
 
 def create_app(settings: Settings | None = None, db: Database | None = None) -> FastAPI:
@@ -177,6 +192,10 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
                     "recent_events": [_trace_to_dict(event) for event in trace_events],
                 },
                 "paper": PaperTradingService(database, settings=app_settings).status(),
+                "strategy_lab": {
+                    "latest_research": StrategyResearchService(database).latest(),
+                    "latest_backtest": BacktestService(database).latest(),
+                },
             }
 
     @app.post("/api/agent/runs")
@@ -237,6 +256,33 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         if payload.action == "pause":
             return service.pause()
         return service.resume()
+
+    @app.post("/api/strategy/research")
+    def create_strategy_research(
+        payload: StrategyResearchPayload,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        return StrategyResearchService(database).create(payload.prompt)
+
+    @app.get("/api/strategy/research")
+    def list_strategy_research(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+        return {"items": StrategyResearchService(database).list_recent()}
+
+    @app.post("/api/backtests")
+    def create_backtest(payload: BacktestPayload, _: AdminUser) -> dict[str, Any]:
+        try:
+            return BacktestService(database).run(
+                research_id=payload.research_id,
+                strategy_key=payload.strategy_key,
+                candles=payload.candles,
+                initial_cash=Decimal(payload.initial_cash),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Research not found") from exc
+
+    @app.get("/api/backtests")
+    def list_backtests(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+        return {"items": BacktestService(database).list_recent()}
 
     @app.get("/api/memory")
     def list_memory(_: AdminUser) -> dict[str, list[dict[str, Any]]]:

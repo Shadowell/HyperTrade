@@ -136,6 +136,18 @@ body {
     @apply grid grid-cols-[1fr_0.35fr_0.55fr] items-center gap-3 border-t border-ink/10 px-1 py-2.5 text-sm first:border-t-0 hover:bg-white/55;
   }
 
+  .strategy-card {
+    @apply grid gap-2 rounded-md border border-ink/10 bg-paper/70 p-3;
+  }
+
+  .strategy-card strong {
+    @apply text-sm font-semibold text-ink;
+  }
+
+  .strategy-card p {
+    @apply m-0 line-clamp-3 text-sm leading-6 text-ink/60;
+  }
+
   .empty-row {
     @apply rounded-md border border-dashed border-ink/20 bg-white/55 px-3 py-6 text-center text-sm text-ink/45;
   }

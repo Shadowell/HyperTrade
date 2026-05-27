@@ -179,6 +179,34 @@ class PaperEvent(Base, TimestampMixin):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class StrategyResearch(Base, TimestampMixin):
+    __tablename__ = "strategy_research"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("srch"))
+    prompt: Mapped[str] = mapped_column(Text)
+    strategy_key: Mapped[str] = mapped_column(String(128), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    report_markdown: Mapped[str] = mapped_column(Text)
+    spec_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class BacktestRun(Base, TimestampMixin):
+    __tablename__ = "backtest_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("bt"))
+    research_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    strategy_key: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="completed", index=True)
+    start_cash: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    end_value: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    total_return_pct: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    max_drawdown_pct: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    trade_count: Mapped[int] = mapped_column(Integer, default=0)
+    report_markdown: Mapped[str] = mapped_column(Text, default="")
+    report_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    error: Mapped[str] = mapped_column(Text, default="")
+
+
 class Database:
     def __init__(self, url: str, *, echo: bool = False) -> None:
         connect_args: dict[str, Any] = {}
