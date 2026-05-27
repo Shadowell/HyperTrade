@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
     admin_password: str = Field(default="hypertrade-admin", alias="ADMIN_PASSWORD")
     session_secret: str = Field(default="dev-session-secret-change-me", alias="SESSION_SECRET")
+    cookie_secure: bool = Field(default=False, alias="COOKIE_SECURE")
 
     deepseek_base_url: str = Field(default="https://api.deepseek.com", alias="DEEPSEEK_BASE_URL")
     deepseek_api_key: str = Field(default="", alias="DEEPSEEK_API_KEY")

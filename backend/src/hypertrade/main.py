@@ -96,7 +96,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
             serializer().dumps(payload.username),
             httponly=True,
             samesite="lax",
-            secure=app_settings.app_env == "production",
+            secure=app_settings.cookie_secure,
         )
         return {"status": "ok", "username": payload.username}
 

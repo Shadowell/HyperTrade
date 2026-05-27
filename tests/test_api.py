@@ -35,10 +35,12 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     client = TestClient(app)
 
     assert client.get("/api/health").json()["status"] == "ok"
-    assert (
-        client.post("/api/auth/login", json={"username": "admin", "password": "secret"}).status_code
-        == 200
+    login_response = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "secret"},
     )
+    assert login_response.status_code == 200
+    assert "secure" not in login_response.headers["set-cookie"].lower()
     assert client.get("/api/harness/tools").json()["tools"][-1]["requires_approval"] is True
     assert client.get("/api/harness/providers").json()["providers"][0]["name"] == "deepseek"
 
@@ -60,3 +62,18 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     assert overview["trace"]["total_count"] == 3
     assert overview["providers"][0]["name"] == "deepseek"
     assert overview["tools"][-1]["requires_approval"] is True
+
+
+def test_login_cookie_secure_flag_is_configurable():
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    app = create_app(
+        settings=Settings(ADMIN_PASSWORD="secret", COOKIE_SECURE=True),
+        db=db,
+    )
+    client = TestClient(app)
+
+    response = client.post("/api/auth/login", json={"username": "admin", "password": "secret"})
+
+    assert response.status_code == 200
+    assert "secure" in response.headers["set-cookie"].lower()

@@ -19,6 +19,8 @@ sudo bash deploy/setup-server.sh
 sudo vim /opt/hypertrade/.env
 ```
 
+For the current port-only HTTP deployment on `3333`, keep `COOKIE_SECURE=false`. Set it to `true` only after Nginx serves the site through HTTPS; otherwise admin login succeeds but subsequent browser requests will not send the session cookie.
+
 Register a GitHub Actions self-hosted runner on the server with label:
 
 ```text
@@ -45,4 +47,3 @@ docker exec hypertrade-postgres pg_dump -U hypertrade hypertrade > /opt/hypertra
 ```
 
 V1 does not schedule automatic backups.
-

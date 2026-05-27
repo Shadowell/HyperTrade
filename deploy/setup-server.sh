@@ -23,6 +23,7 @@ POSTGRES_PASSWORD=change-me
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=change-me
 SESSION_SECRET=change-me
+COOKIE_SECURE=false
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
 QWEN_EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
@@ -35,4 +36,3 @@ fi
 
 echo "[setup] install GitHub runner separately with label hypertrade-production"
 echo "[setup] edit $ROOT_DIR/.env before first deployment"
-

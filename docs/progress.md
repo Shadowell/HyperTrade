@@ -17,11 +17,12 @@
 - Added React/Vite `/harness` and market summary frontend surface.
 - Added Docker Compose, Nginx config, self-hosted GitHub Actions deployment.
 - Added `/api/harness/overview` and wired `/harness` to live Provider, Tool, market, Agent run, RAG, Memory, and trace state.
+- Added configurable `COOKIE_SECURE` so the current HTTP `3333` deployment can keep admin sessions, while HTTPS deployments can opt in to secure cookies.
 
 ## Verification Evidence
 
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed.
-- `uv run pytest -q` -> 7 passed.
+- `uv run pytest -q` -> 8 passed.
 - `npm exec --yes pnpm@10 -- -C frontend test` -> 1 passed.
 - `npm exec --yes pnpm@10 -- -C frontend build` -> production build passed.
 - Playwright opened `http://127.0.0.1:3333`, logged in, and triggered an Agent market summary.
