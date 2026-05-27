@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  font-family: "Avenir Next", ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+@layer components {
+  .nav-item {
+    @apply flex items-center gap-3 rounded-md px-3 py-2 text-paper/70 transition hover:bg-paper/10 hover:text-paper;
+  }
+
+  .nav-item-active {
+    @apply bg-paper text-ink hover:bg-paper hover:text-ink;
+  }
+
+  .panel {
+    @apply rounded-md border border-ink/15 bg-white p-5 shadow-[0_12px_34px_rgba(17,21,19,0.07)];
+  }
+
+  .section-title {
+    @apply text-base font-semibold tracking-normal;
+  }
+
+  .trace-row {
+    @apply flex items-center gap-3 rounded-md border border-ink/10 bg-paper px-3 py-3 text-sm;
+  }
+
+  .mini-block {
+    @apply rounded-md border border-ink/10 bg-paper px-3 py-3;
+  }
+
+  .mini-block span,
+  .wide-strip span {
+    @apply block text-xs uppercase text-ink/45;
+  }
+
+  .mini-block strong,
+  .wide-strip strong {
+    @apply mt-1 block text-sm font-semibold;
+  }
+
+  .wide-strip {
+    @apply rounded-md border border-ink/15 bg-white px-4 py-4;
+  }
+
+  .field-dark {
+    @apply w-full rounded-md border border-paper/15 bg-paper/10 px-3 py-2 text-sm text-paper outline-none placeholder:text-paper/35 focus:border-brass;
+  }
+
+  .button-dark {
+    @apply flex w-full items-center justify-center gap-2 rounded-md bg-paper px-3 py-2 text-sm font-semibold text-ink;
+  }
+
+  .button-primary {
+    @apply inline-flex items-center gap-2 rounded-md bg-ink px-3 py-2 text-sm font-semibold text-paper disabled:opacity-60;
+  }
+
+  .button-secondary {
+    @apply inline-flex items-center gap-2 rounded-md border border-ink/15 bg-white px-3 py-2 text-sm font-semibold text-ink;
+  }
+
+  .report-block {
+    @apply mt-4 max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-ink/10 bg-ink p-4 font-mono text-xs leading-6 text-paper;
+  }
+}
+
+.metric-signal {
+  color: #16a085;
+}
+
+.metric-brass {
+  color: #b8893b;
+}
+
+.metric-night {
+  color: #202738;
+}
+
+.metric-danger {
+  color: #c74732;
+}
+

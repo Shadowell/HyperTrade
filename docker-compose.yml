@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: hypertrade-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hypertrade}
+      POSTGRES_USER: ${POSTGRES_USER:-hypertrade}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hypertrade}
+    volumes:
+      - /opt/hypertrade/data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hypertrade} -d ${POSTGRES_DB:-hypertrade}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - hypertrade
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: hypertrade-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hypertrade}:${POSTGRES_PASSWORD:-hypertrade}@postgres:5432/${POSTGRES_DB:-hypertrade}
+    ports:
+      - "127.0.0.1:3334:3334"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hypertrade
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: hypertrade-worker
+    restart: unless-stopped
+    command: ["python", "-m", "hypertrade.worker"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hypertrade}:${POSTGRES_PASSWORD:-hypertrade}@postgres:5432/${POSTGRES_DB:-hypertrade}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hypertrade
+
+networks:
+  hypertrade:
+    name: hypertrade
+

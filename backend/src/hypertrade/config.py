@@ -1,0 +1,55 @@
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    app_env: str = Field(default="development", alias="APP_ENV")
+    app_name: str = Field(default="HyperTrade", alias="APP_NAME")
+    api_host: str = Field(default="0.0.0.0", alias="API_HOST")
+    api_port: int = Field(default=3334, alias="API_PORT")
+    frontend_origin: str = Field(default="http://localhost:3333", alias="FRONTEND_ORIGIN")
+    database_url: str = Field(
+        default="postgresql+psycopg://hypertrade:hypertrade@postgres:5432/hypertrade",
+        alias="DATABASE_URL",
+    )
+
+    admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
+    admin_password: str = Field(default="hypertrade-admin", alias="ADMIN_PASSWORD")
+    session_secret: str = Field(default="dev-session-secret-change-me", alias="SESSION_SECRET")
+
+    deepseek_base_url: str = Field(default="https://api.deepseek.com", alias="DEEPSEEK_BASE_URL")
+    deepseek_api_key: str = Field(default="", alias="DEEPSEEK_API_KEY")
+    deepseek_model: str = Field(default="deepseek-v4-flash", alias="DEEPSEEK_MODEL")
+
+    qwen_embedding_base_url: str = Field(
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        alias="QWEN_EMBEDDING_BASE_URL",
+    )
+    qwen_api_key: str = Field(default="", alias="QWEN_API_KEY")
+    qwen_embedding_model: str = Field(default="text-embedding-v4", alias="QWEN_EMBEDDING_MODEL")
+    qwen_embedding_dimensions: int = Field(default=1024, alias="QWEN_EMBEDDING_DIMENSIONS")
+
+    okx_api_key: str = Field(default="", alias="OKX_API_KEY")
+    okx_api_secret: str = Field(default="", alias="OKX_API_SECRET")
+    okx_passphrase: str = Field(default="", alias="OKX_PASSPHRASE")
+    okx_testnet: bool = Field(default=True, alias="OKX_TESTNET")
+    okx_public_ws_url: str = Field(
+        default="wss://ws.okx.com:8443/ws/v5/public", alias="OKX_PUBLIC_WS_URL"
+    )
+    okx_rest_url: str = Field(default="https://www.okx.com", alias="OKX_REST_URL")
+
+    feishu_webhook_url: str = Field(default="", alias="FEISHU_WEBHOOK_URL")
+    rag_scan_interval_seconds: int = Field(default=600, alias="RAG_SCAN_INTERVAL_SECONDS")
+    knowledge_dir: Path = Field(default=Path("docs/knowledge"), alias="KNOWLEDGE_DIR")
+    raw_market_retention_days: int = Field(default=7, alias="RAW_MARKET_RETENTION_DAYS")
+    llm_daily_soft_budget_usd: float = Field(default=5.0, alias="LLM_DAILY_SOFT_BUDGET_USD")
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

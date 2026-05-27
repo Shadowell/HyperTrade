@@ -1,0 +1,51 @@
+[project]
+name = "hypertrade"
+version = "0.1.0"
+description = "Agent-first crypto trading research and execution harness."
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.17.0",
+  "fastapi>=0.122.0",
+  "httpx>=0.28.0",
+  "itsdangerous>=2.2.0",
+  "langgraph>=1.0.0",
+  "openai>=2.0.0",
+  "psycopg[binary]>=3.2.0",
+  "pydantic-settings>=2.8.0",
+  "python-multipart>=0.0.20",
+  "sqlalchemy>=2.0.36",
+  "uvicorn[standard]>=0.34.0",
+  "websockets>=15.0.0",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.14.0",
+  "pytest>=8.3.0",
+  "pytest-cov>=6.0.0",
+  "ruff>=0.9.0",
+]
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+where = ["backend/src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["backend/src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+mypy_path = ["backend/src"]
+

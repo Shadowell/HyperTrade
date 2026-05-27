@@ -1,0 +1,86 @@
+name: Deploy HyperTrade
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: "Deploy even if this SHA was already deployed"
+        required: false
+        default: "false"
+
+concurrency:
+  group: hypertrade-production-${{ github.event_name == 'schedule' && 'schedule' || 'push' }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, hypertrade-production]
+    steps:
+      - name: Read deployed SHA
+        id: deployed
+        shell: bash
+        run: |
+          if [ -f /opt/hypertrade/deploy/last_deployed_sha ]; then
+            echo "sha=$(cat /opt/hypertrade/deploy/last_deployed_sha)" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip unchanged deployment
+        if: steps.deployed.outputs.sha == github.sha && github.event.inputs.force_deploy != 'true'
+        run: echo "SHA ${{ github.sha }} is already deployed"
+
+      - name: Checkout
+        if: steps.deployed.outputs.sha != github.sha || github.event.inputs.force_deploy == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Node
+        if: steps.deployed.outputs.sha != github.sha || github.event.inputs.force_deploy == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "25"
+
+      - name: Build frontend
+        if: steps.deployed.outputs.sha != github.sha || github.event.inputs.force_deploy == 'true'
+        shell: bash
+        run: |
+          npm exec --yes pnpm@10 -- -C frontend install --frozen-lockfile
+          npm exec --yes pnpm@10 -- -C frontend build
+
+      - name: Sync release to /opt/hypertrade
+        if: steps.deployed.outputs.sha != github.sha || github.event.inputs.force_deploy == 'true'
+        shell: bash
+        run: |
+          mkdir -p /opt/hypertrade/frontend/dist /opt/hypertrade/deploy
+          rsync -a --delete \
+            --exclude '.git' \
+            --exclude '.venv' \
+            --exclude '.pytest_cache' \
+            --exclude 'frontend/node_modules' \
+            --exclude 'frontend/dist' \
+            --exclude '.env' \
+            --exclude 'data' \
+            --exclude 'logs' \
+            --exclude 'workspace' \
+            ./ /opt/hypertrade/
+          rsync -a --delete frontend/dist/ /opt/hypertrade/frontend/dist/
+
+      - name: Deploy
+        if: steps.deployed.outputs.sha != github.sha || github.event.inputs.force_deploy == 'true'
+        shell: bash
+        run: |
+          chmod +x /opt/hypertrade/deploy/deploy.sh
+          /opt/hypertrade/deploy/deploy.sh
+
+      - name: Record deployed SHA
+        if: steps.deployed.outputs.sha != github.sha || github.event.inputs.force_deploy == 'true'
+        shell: bash
+        run: echo "${{ github.sha }}" > /opt/hypertrade/deploy/last_deployed_sha
+
