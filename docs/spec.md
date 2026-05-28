@@ -38,6 +38,7 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Sprint 05 standalone hybrid CLI runtime with local AgentKernel mode and remote API mode.
 - Sprint 06 CLI slash commands for status, tools, runs, memory, strategy research, and backtests.
 - Sprint 07 CLI shortcuts `/research` and `/backtest` for strategy workflow triggers.
+- Sprint 08 LLM-driven `AgentPlanner` using DeepSeek function calling; hardcoded fallback when no key.
 
 ## V1 Out of Scope
 

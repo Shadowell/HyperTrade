@@ -200,7 +200,11 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
 
     @app.post("/api/agent/runs")
     def create_run(payload: AgentRunPayload, _: AdminUser) -> dict[str, Any]:
-        kernel = AgentKernel(database, knowledge_dir=str(app_settings.knowledge_dir))
+        kernel = AgentKernel(
+            database,
+            knowledge_dir=str(app_settings.knowledge_dir),
+            settings=app_settings,
+        )
         run = kernel.run_chat(payload.prompt)
         return _run_to_dict(run)
 
@@ -225,7 +229,11 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     @app.get("/api/agent/runs/{run_id}")
     def get_run(run_id: str, _: AdminUser) -> dict[str, Any]:
         try:
-            kernel = AgentKernel(database, knowledge_dir=str(app_settings.knowledge_dir))
+            kernel = AgentKernel(
+                database,
+                knowledge_dir=str(app_settings.knowledge_dir),
+                settings=app_settings,
+            )
             run = kernel.get_run(run_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Run not found") from exc
@@ -297,7 +305,11 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     async def send_feishu(run_id: str, _: AdminUser) -> dict[str, object]:
         if not app_settings.feishu_webhook_url:
             return {"status": "skipped", "configured": False}
-        run = AgentKernel(database, knowledge_dir=str(app_settings.knowledge_dir)).get_run(run_id)
+        run = AgentKernel(
+            database,
+            knowledge_dir=str(app_settings.knowledge_dir),
+            settings=app_settings,
+        ).get_run(run_id)
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(
                 app_settings.feishu_webhook_url,

@@ -209,7 +209,11 @@ class LocalAgentClient:
         return None
 
     def run_agent(self, prompt: str) -> dict[str, Any]:
-        run = AgentKernel(self.db, knowledge_dir=str(self.settings.knowledge_dir)).run_chat(prompt)
+        run = AgentKernel(
+            self.db,
+            knowledge_dir=str(self.settings.knowledge_dir),
+            settings=self.settings,
+        ).run_chat(prompt)
         return _completed_run_to_dict(run)
 
     def list_tools(self) -> list[dict[str, Any]]:

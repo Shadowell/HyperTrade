@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -5,12 +7,16 @@ from typing import Any
 
 from sqlalchemy import select
 
-from hypertrade.config import get_settings
+from hypertrade.agent.planner import AgentPlanner, PlannerResult, ToolExecutor
+from hypertrade.backtest.service import BacktestService
+from hypertrade.config import Settings, get_settings
 from hypertrade.db import AgentRun, Database, TraceEvent
 from hypertrade.market.client import OkxRestClient
 from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
+from hypertrade.providers.deepseek import DeepSeekClient
 from hypertrade.rag.service import RagService
+from hypertrade.strategy.service import StrategyResearchService
 from hypertrade.tools.registry import ToolRegistry
 
 
@@ -24,54 +30,155 @@ class CompletedAgentRun:
 
 
 class AgentKernel:
-    def __init__(self, db: Database, *, knowledge_dir: str = "docs/knowledge") -> None:
+    def __init__(
+        self,
+        db: Database,
+        *,
+        knowledge_dir: str = "docs/knowledge",
+        settings: Settings | None = None,
+    ) -> None:
         self.db = db
+        self._settings = settings
         self.market = MarketRepository(db)
         self.memory = MemoryService(db)
         self.rag = RagService(db, knowledge_dir=knowledge_dir)
         self.tools = ToolRegistry.default()
 
     def run_chat(self, prompt: str) -> CompletedAgentRun:
+        settings = self._settings if self._settings is not None else get_settings()
         run_id = self._create_run(prompt)
         try:
-            market_payload = self._market_summary_payload()
-            self._trace(run_id, "market.summary", {"prompt": prompt}, market_payload)
-
-            self.rag.scan_once()
-            rag_hits = [
-                {"source_path": hit.source_path, "content": hit.content[:240], "score": hit.score}
-                for hit in self.rag.search("volume risk market funding open interest", limit=3)
-            ]
-            self._trace(run_id, "rag.search", {"query": "market risk"}, {"hits": rag_hits})
-
-            memory_item = self.memory.write(
-                content=f"Latest market summary requested by user prompt: {prompt[:120]}",
-                kind="market_summary",
-                source_run_id=run_id,
-                source_tool="memory.write",
-            )
-            self._trace(
-                run_id,
-                "memory.write",
-                {"kind": "market_summary"},
-                {"memory_id": memory_item.id},
-            )
-
-            report_json = {
-                "market_scope": "OKX SWAP",
-                "trigger": "user_request",
-                "top_movers": market_payload["top_movers"],
-                "data_source": market_payload.get("data_source", "db_fallback"),
-                "as_of_utc": market_payload.get("as_of_utc", datetime.now(UTC).isoformat()),
-                "rag_hits": rag_hits,
-                "disclaimer": "Research output only. Not investment advice.",
-            }
-            report_markdown = self._render_market_report(report_json)
-            self._complete_run(run_id, report_markdown, report_json)
+            if settings.deepseek_api_key:
+                self._run_with_planner(run_id, prompt, settings)
+            else:
+                self._run_hardcoded(run_id, prompt)
         except Exception as exc:
             self._fail_run(run_id, str(exc))
             raise
         return self.get_run(run_id)
+
+    # ------------------------------------------------------------------
+    # LLM-planned path
+    # ------------------------------------------------------------------
+
+    def _run_with_planner(self, run_id: str, prompt: str, settings: Any) -> None:
+        llm = DeepSeekClient(
+            api_key=str(settings.deepseek_api_key),
+            base_url=str(settings.deepseek_base_url),
+            model=str(settings.deepseek_model),
+        )
+        planner = AgentPlanner(llm)
+        executor = self._build_executor(run_id)
+        result: PlannerResult = planner.run(prompt, executor)
+
+        for record in result.tool_calls:
+            self._trace(run_id, record.tool_name, record.input_json, record.output_json)
+
+        report_json: dict[str, Any] = {
+            "market_scope": "OKX SWAP",
+            "trigger": "user_request",
+            "planner": "deepseek",
+            "tool_calls": [
+                {"tool": r.tool_name, "input": r.input_json}
+                for r in result.tool_calls
+            ],
+            "disclaimer": "Research output only. Not investment advice.",
+        }
+        self._complete_run(run_id, result.final_message, report_json)
+
+    def _build_executor(self, run_id: str) -> ToolExecutor:
+        def executor(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+            if tool_name == "market_summary":
+                return self._market_summary_payload()
+            if tool_name == "rag_search":
+                self.rag.scan_once()
+                query = str(args.get("query", "market risk"))
+                limit = int(args.get("limit", 3))
+                hits = self.rag.search(query, limit=limit)
+                return {
+                    "hits": [
+                        {
+                            "source_path": h.source_path,
+                            "content": h.content[:240],
+                            "score": h.score,
+                        }
+                        for h in hits
+                    ]
+                }
+            if tool_name == "memory_write":
+                content = str(args.get("content", ""))
+                kind = str(args.get("kind", "agent_note"))
+                item = self.memory.write(
+                    content=content,
+                    kind=kind,
+                    source_run_id=run_id,
+                    source_tool="memory.write",
+                )
+                return {"memory_id": item.id}
+            if tool_name == "memory_search":
+                items = self.memory.list_active()
+                return {
+                    "items": [
+                        {"id": m.id, "kind": m.kind, "content": m.content[:200]}
+                        for m in items[-10:]
+                    ]
+                }
+            if tool_name == "strategy_draft":
+                research_prompt = str(args.get("prompt", ""))
+                return StrategyResearchService(self.db).create(research_prompt)
+            if tool_name == "backtest_run":
+                research_id = str(args.get("research_id", ""))
+                strategy_key = str(args.get("strategy_key", "momentum_breakout_v1"))
+                return BacktestService(self.db).run(
+                    research_id=research_id,
+                    strategy_key=strategy_key,
+                )
+            return {"error": f"unknown tool: {tool_name}"}
+
+        return executor
+
+    # ------------------------------------------------------------------
+    # Hardcoded fallback path (no API key configured)
+    # ------------------------------------------------------------------
+
+    def _run_hardcoded(self, run_id: str, prompt: str) -> None:
+        market_payload = self._market_summary_payload()
+        self._trace(run_id, "market.summary", {"prompt": prompt}, market_payload)
+
+        self.rag.scan_once()
+        rag_hits = [
+            {"source_path": hit.source_path, "content": hit.content[:240], "score": hit.score}
+            for hit in self.rag.search("volume risk market funding open interest", limit=3)
+        ]
+        self._trace(run_id, "rag.search", {"query": "market risk"}, {"hits": rag_hits})
+
+        memory_item = self.memory.write(
+            content=f"Latest market summary requested by user prompt: {prompt[:120]}",
+            kind="market_summary",
+            source_run_id=run_id,
+            source_tool="memory.write",
+        )
+        self._trace(
+            run_id,
+            "memory.write",
+            {"kind": "market_summary"},
+            {"memory_id": memory_item.id},
+        )
+
+        report_json = {
+            "market_scope": "OKX SWAP",
+            "trigger": "user_request",
+            "top_movers": market_payload["top_movers"],
+            "data_source": market_payload.get("data_source", "db_fallback"),
+            "as_of_utc": market_payload.get("as_of_utc", datetime.now(UTC).isoformat()),
+            "rag_hits": rag_hits,
+            "disclaimer": "Research output only. Not investment advice.",
+        }
+        self._complete_run(run_id, self._render_market_report(report_json), report_json)
+
+    # ------------------------------------------------------------------
+    # DB helpers
+    # ------------------------------------------------------------------
 
     def get_run(self, run_id: str) -> CompletedAgentRun:
         with self.db.session() as session:
@@ -140,7 +247,6 @@ class AgentKernel:
             )
 
     def _market_summary_payload(self) -> dict[str, Any]:
-        # Strict mode: require a fresh REST snapshot for every summary request.
         source, error = self._refresh_market_snapshot()
         if source != "okx_rest":
             return {
@@ -181,7 +287,6 @@ class AgentKernel:
                 )
             return ("okx_rest", "")
         except Exception as exc:
-            # Do not fall back to stale snapshots for market summary output.
             return ("unavailable", str(exc)[:160])
 
     @staticmethod

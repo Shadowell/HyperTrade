@@ -223,7 +223,11 @@ def test_local_agent_client_runs_kernel(tmp_path) -> None:
     db = Database("sqlite:///:memory:")
     db.create_all()
     client = LocalAgentClient(
-        settings=Settings(DATABASE_URL="sqlite:///:memory:", KNOWLEDGE_DIR=tmp_path),
+        settings=Settings(
+            DATABASE_URL="sqlite:///:memory:",
+            KNOWLEDGE_DIR=tmp_path,
+            DEEPSEEK_API_KEY="",
+        ),
         db=db,
     )
 

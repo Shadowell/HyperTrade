@@ -8,7 +8,7 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-07-cli-strategy-workflow-shortcuts.md` (completed locally; pending deploy)
+- `docs/contracts/sprint-08-llm-agent-planner.md` (completed locally; pending deploy)
 
 ## Latest Completed Work
 
@@ -25,7 +25,12 @@
 - Added Sprint 06 CLI slash commands for `/help`, `/status`, `/model`, `/providers`, `/tools`, `/runs`, `/memory`, `/strategy`, and `/backtests` in local and remote interactive chat.
 - Added Sprint 07 CLI workflow shortcuts `/research <prompt>` and `/backtest` to trigger strategy research and Backtrader backtests without a full Agent run.
 
-## Verification Evidence
+- Added Sprint 08 LLM-driven agent planner: `DeepSeekClient`, `AgentPlanner` multi-turn tool-calling loop, and updated `AgentKernel` to use real DeepSeek function calling when `DEEPSEEK_API_KEY` is configured, with hardcoded fallback when not.
+
+- `uv run pytest -q` -> 33 passed (5 new planner tests).
+- `uv run ruff check` and `uv run mypy` -> clean.
+
+## Verification Evidence (previous sprints)
 
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 17 tests.
 - `uv run pytest -q` -> 15 passed.

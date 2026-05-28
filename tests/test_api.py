@@ -29,6 +29,7 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
             ADMIN_USERNAME="admin",
             ADMIN_PASSWORD="secret",
             KNOWLEDGE_DIR=knowledge_dir,
+            DEEPSEEK_API_KEY="",
         ),
         db=db,
     )
