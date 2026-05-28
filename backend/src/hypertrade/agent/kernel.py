@@ -61,6 +61,8 @@ class AgentKernel:
                 "market_scope": "OKX SWAP",
                 "trigger": "user_request",
                 "top_movers": market_payload["top_movers"],
+                "data_source": market_payload.get("data_source", "db_fallback"),
+                "as_of_utc": market_payload.get("as_of_utc", datetime.now(UTC).isoformat()),
                 "rag_hits": rag_hits,
                 "disclaimer": "Research output only. Not investment advice.",
             }
