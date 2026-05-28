@@ -338,9 +338,6 @@ def run_chat(
 
 
 def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
-    status = client.get_status()
-    mode = str(status.get("mode", "unknown"))
-    endpoint = status.get("api_url") or status.get("database_url") or "n/a"
     color = _banner_colors(output)
     print(
         f"{color['border']}╔══════════════════════════════════════════════════════════════╗{color['reset']}",
@@ -369,8 +366,7 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
         file=output,
     )
     print(
-        f"{color['label']}Runtime:{color['reset']} {color['value']}{mode}{color['reset']} | "
-        f"{color['label']}Endpoint:{color['reset']} {color['value']}{endpoint}{color['reset']}",
+        f"{color['muted']}风险提示：本工具仅用于研究与学习，不构成投资建议。{color['reset']}",
         file=output,
     )
     print("", file=output)

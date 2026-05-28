@@ -197,11 +197,4 @@ class AgentKernel:
                 "24h 成交额 {volume_ccy_24h}"
             )
             lines.append(line.format(**mover))
-        lines.extend(
-            [
-                "",
-                "## 风险提示",
-                "- 本报告仅用于研究和学习，不构成投资建议。",
-            ]
-        )
         return "\n".join(lines)
