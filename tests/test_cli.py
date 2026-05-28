@@ -11,6 +11,8 @@ class FakeAgentClient:
     def __init__(self) -> None:
         self.logged_in = False
         self.prompts: list[str] = []
+        self.research_prompts: list[str] = []
+        self.backtest_calls: list[tuple[str, str]] = []
 
     def login(self) -> None:
         self.logged_in = True
@@ -69,6 +71,31 @@ class FakeAgentClient:
             "agent_runs": 1,
             "memory_items": 1,
             "tools": 2,
+        }
+
+    def create_strategy_research(self, prompt: str) -> dict[str, Any]:
+        self.research_prompts.append(prompt)
+        return {
+            "id": "srch_cli",
+            "strategy_key": "momentum_breakout_v1",
+            "title": "趋势突破",
+            "report_markdown": "# Research\n\nBTC breakout study.",
+        }
+
+    def run_backtest(
+        self,
+        *,
+        research_id: str = "",
+        strategy_key: str = "momentum_breakout_v1",
+    ) -> dict[str, Any]:
+        self.backtest_calls.append((research_id, strategy_key))
+        return {
+            "id": "bt_cli",
+            "research_id": research_id,
+            "strategy_key": strategy_key,
+            "status": "completed",
+            "metrics": {"total_return_pct": "0.019000", "trade_count": 1},
+            "report_markdown": "# Backtest\n\nReturn 1.9%.",
         }
 
     def get_model_status(self) -> dict[str, Any]:
@@ -246,6 +273,97 @@ def test_api_client_logs_in_and_posts_agent_run() -> None:
         ("POST", "/api/auth/login", {"username": "admin", "password": "secret"}),
         ("POST", "/api/agent/runs", {"prompt": "hello"}),
     ]
+
+
+def test_chat_runs_research_and_backtest_shortcuts(capsys) -> None:
+    client = FakeAgentClient()
+    inputs = iter(
+        [
+            "/research 研究BTC趋势突破",
+            "/backtest latest",
+            "exit",
+        ]
+    )
+
+    run_chat(client=client, input_fn=_next_input(inputs))
+
+    assert client.research_prompts == ["研究BTC趋势突破"]
+    assert client.backtest_calls == [("srch_recent", "momentum_breakout_v1")]
+    output = capsys.readouterr().out
+    assert "srch_cli" in output
+    assert "Strategy research created" in output
+    assert "bt_cli" in output
+    assert "Backtest completed" in output
+    assert "Return 1.9%" in output
+
+
+def test_api_client_creates_research_and_backtest() -> None:
+    seen: list[tuple[str, str, dict[str, Any]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = {}
+        if request.content:
+            payload = dict(httpx.Response(200, content=request.content).json())
+        seen.append((request.method, request.url.path, payload))
+        if request.url.path == "/api/auth/login":
+            return httpx.Response(200, json={"status": "ok"})
+        if request.url.path == "/api/strategy/research":
+            return httpx.Response(
+                200,
+                json={
+                    "id": "srch_api_new",
+                    "strategy_key": "momentum_breakout_v1",
+                    "title": "趋势突破",
+                    "report_markdown": "# Research",
+                },
+            )
+        if request.url.path == "/api/backtests":
+            return httpx.Response(
+                200,
+                json={
+                    "id": "bt_api_new",
+                    "research_id": payload.get("research_id", ""),
+                    "strategy_key": payload.get("strategy_key", ""),
+                    "status": "completed",
+                    "metrics": {"total_return_pct": "0.019000", "trade_count": 1},
+                    "report_markdown": "# Backtest",
+                },
+            )
+        raise AssertionError(request.url.path)
+
+    client = AgentApiClient(
+        CliConfig(api_url="http://example.test/", username="admin", password="secret"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    research = client.create_strategy_research("研究ETH动量")
+    backtest = client.run_backtest(research_id="srch_api_new")
+
+    assert research["id"] == "srch_api_new"
+    assert backtest["id"] == "bt_api_new"
+    assert ("POST", "/api/strategy/research", {"prompt": "研究ETH动量"}) in seen
+    backtest_call = next(item for item in seen if item[1] == "/api/backtests")
+    assert backtest_call[2]["research_id"] == "srch_api_new"
+
+
+def test_local_client_runs_strategy_workflow(tmp_path) -> None:
+    from hypertrade.config import Settings
+    from hypertrade.db import Database
+
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    client = LocalAgentClient(
+        settings=Settings(DATABASE_URL="sqlite:///:memory:", KNOWLEDGE_DIR=tmp_path),
+        db=db,
+    )
+
+    research = client.create_strategy_research("研究SOL突破")
+    backtest = client.run_backtest(research_id=str(research["id"]))
+
+    assert research["id"].startswith("srch_")
+    assert backtest["id"].startswith("bt_")
+    assert backtest["research_id"] == research["id"]
+    assert backtest["metrics"]["trade_count"] == 1
 
 
 def test_api_client_lists_slash_command_resources() -> None:

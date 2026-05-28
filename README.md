@@ -59,5 +59,7 @@ In interactive chat, slash commands inspect harness state without starting a new
 /runs
 /memory
 /strategy
-/backtests
+/research 研究BTC趋势突破
+/backtest
+/backtest latest
 ```

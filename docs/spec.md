@@ -37,6 +37,7 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Sprint 03 strategy research and Backtrader backtest workflow with persisted Markdown/JSON reports.
 - Sprint 05 standalone hybrid CLI runtime with local AgentKernel mode and remote API mode.
 - Sprint 06 CLI slash commands for status, tools, runs, memory, strategy research, and backtests.
+- Sprint 07 CLI shortcuts `/research` and `/backtest` for strategy workflow triggers.
 
 ## V1 Out of Scope
 
@@ -55,5 +56,6 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - User can create a strategy research record and run a deterministic Backtrader backtest.
 - Developer can run `hypertrade` as a standalone CLI Agent and see run id, tool calls, and report output.
 - Developer can use CLI slash commands such as `/tools`, `/runs`, `/memory`, `/strategy`, and `/backtests` in interactive chat.
+- Developer can run `/research <prompt>` and `/backtest` from interactive CLI chat to create research and backtest records.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.

@@ -22,6 +22,7 @@ Before substantial work, read:
 4. Never commit secrets, OKX credentials, provider keys, database files, or production `.env`.
 5. Update `docs/progress.md` after meaningful implementation steps.
 6. If requirements, architecture, or API contracts change, update `docs/spec.md` and the active contract in the same change.
+7. After `./scripts/check.sh` passes for implementation work on `main`, commit and push to `origin/main` so GitHub Actions deploys to production (`47.79.36.92`). Do not push secrets or unfinished work.
 
 ## Standard Loop
 
@@ -31,6 +32,7 @@ Before substantial work, read:
 4. Run verification.
 5. Record QA findings if needed.
 6. Update progress and next step.
+7. Commit and push to `origin/main` when verification passes.
 
 ## Verification
 

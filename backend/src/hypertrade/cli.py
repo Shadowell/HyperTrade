@@ -34,6 +34,15 @@ class AgentClient(Protocol):
 
     def list_backtests(self) -> list[dict[str, Any]]: ...
 
+    def create_strategy_research(self, prompt: str) -> dict[str, Any]: ...
+
+    def run_backtest(
+        self,
+        *,
+        research_id: str = "",
+        strategy_key: str = "momentum_breakout_v1",
+    ) -> dict[str, Any]: ...
+
     def get_status(self) -> dict[str, Any]: ...
 
     def get_model_status(self) -> dict[str, Any]: ...
@@ -109,6 +118,24 @@ class AgentApiClient:
     def list_backtests(self) -> list[dict[str, Any]]:
         return self._get_list("/api/backtests", "items")
 
+    def create_strategy_research(self, prompt: str) -> dict[str, Any]:
+        return self._post_object("/api/strategy/research", {"prompt": prompt})
+
+    def run_backtest(
+        self,
+        *,
+        research_id: str = "",
+        strategy_key: str = "momentum_breakout_v1",
+    ) -> dict[str, Any]:
+        return self._post_object(
+            "/api/backtests",
+            {
+                "research_id": research_id,
+                "strategy_key": strategy_key,
+                "initial_cash": "100000",
+            },
+        )
+
     def get_status(self) -> dict[str, Any]:
         overview = self._get_object("/api/harness/overview")
         return {
@@ -164,6 +191,14 @@ class AgentApiClient:
             raise TypeError(f"{path} response must be a JSON object")
         return dict(payload)
 
+    def _post_object(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        response = self.client.post(self._url(path), json=body)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError(f"{path} response must be a JSON object")
+        return dict(payload)
+
 
 class LocalAgentClient:
     def __init__(self, *, settings: Settings | None = None, db: Database | None = None) -> None:
@@ -209,6 +244,20 @@ class LocalAgentClient:
 
     def list_backtests(self) -> list[dict[str, Any]]:
         return BacktestService(self.db).list_recent(limit=10)
+
+    def create_strategy_research(self, prompt: str) -> dict[str, Any]:
+        return StrategyResearchService(self.db).create(prompt)
+
+    def run_backtest(
+        self,
+        *,
+        research_id: str = "",
+        strategy_key: str = "momentum_breakout_v1",
+    ) -> dict[str, Any]:
+        return BacktestService(self.db).run(
+            research_id=research_id,
+            strategy_key=strategy_key,
+        )
 
     def get_status(self) -> dict[str, Any]:
         return {
@@ -306,8 +355,12 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
         render_memory(client.list_memory(), output=output)
     elif name in {"/strategy", "/strategies"}:
         render_strategy_research(client.list_strategy_research(), output=output)
-    elif name in {"/backtest", "/backtests"}:
+    elif name == "/backtests":
         render_backtests(client.list_backtests(), output=output)
+    elif name == "/backtest":
+        handle_backtest_command(command, client=client, output=output)
+    elif name in {"/research", "/sr"}:
+        handle_research_command(command, client=client, output=output)
     else:
         print(f"Unknown command: {name}", file=output)
         render_slash_help(output=output)
@@ -324,6 +377,93 @@ def render_slash_help(*, output: TextIO) -> None:
     print("- /memory      List active audited memory.", file=output)
     print("- /strategy    List recent strategy research.", file=output)
     print("- /backtests   List recent backtest runs.", file=output)
+    print("- /research    Create strategy research from a prompt.", file=output)
+    print("- /backtest    Run backtest on latest research.", file=output)
+    print("- /backtest list                 List recent backtests.", file=output)
+    print("- /backtest latest|srch_*|<key>  Run a specific backtest.", file=output)
+
+
+def handle_research_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    parts = command.split(maxsplit=1)
+    if len(parts) == 1:
+        print("Usage: /research <prompt>", file=output)
+        print("Example: /research 研究BTC趋势突破策略", file=output)
+        return
+    try:
+        research = client.create_strategy_research(parts[1].strip())
+    except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+        print(f"Research failed: {exc}", file=output)
+        return
+    render_strategy_research_result(research, output=output)
+
+
+def handle_backtest_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    parts = command.split()
+    if len(parts) == 1:
+        _run_backtest_for_target(client, target="latest", output=output)
+        return
+    subcommand = parts[1].lower()
+    if subcommand in {"list", "ls"}:
+        render_backtests(client.list_backtests(), output=output)
+        return
+    if subcommand == "run":
+        target = parts[2] if len(parts) > 2 else "latest"
+        _run_backtest_for_target(client, target=target, output=output)
+        return
+    _run_backtest_for_target(client, target=parts[1], output=output)
+
+
+def _run_backtest_for_target(client: AgentClient, *, target: str, output: TextIO) -> None:
+    research_id = ""
+    strategy_key = "momentum_breakout_v1"
+    if target.startswith("srch_"):
+        research_id = target
+    elif target == "latest":
+        latest = _latest_strategy_research(client)
+        if latest is None:
+            print("No strategy research found. Run /research <prompt> first.", file=output)
+            return
+        research_id = str(latest["id"])
+    else:
+        strategy_key = target
+    try:
+        result = client.run_backtest(research_id=research_id, strategy_key=strategy_key)
+    except KeyError:
+        print(f"Research not found: {research_id}", file=output)
+        return
+    except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+        print(f"Backtest failed: {exc}", file=output)
+        return
+    render_backtest_result(result, output=output)
+
+
+def _latest_strategy_research(client: AgentClient) -> dict[str, Any] | None:
+    items = client.list_strategy_research()
+    return items[0] if items else None
+
+
+def render_strategy_research_result(research: dict[str, Any], *, output: TextIO) -> None:
+    print("Strategy research created:", file=output)
+    print(f"- ID: {research.get('id', 'unknown')}", file=output)
+    print(f"- Strategy: {research.get('strategy_key', 'unknown')}", file=output)
+    print(f"- Title: {research.get('title', '')}", file=output)
+    print("- Next: /backtest latest", file=output)
+    print("", file=output)
+    print(str(research.get("report_markdown", "")), file=output)
+
+
+def render_backtest_result(result: dict[str, Any], *, output: TextIO) -> None:
+    metrics = result.get("metrics", {})
+    if not isinstance(metrics, dict):
+        metrics = {}
+    print("Backtest completed:", file=output)
+    print(f"- ID: {result.get('id', 'unknown')}", file=output)
+    print(f"- Research: {result.get('research_id') or 'n/a'}", file=output)
+    print(f"- Strategy: {result.get('strategy_key', 'unknown')}", file=output)
+    print(f"- Return: {metrics.get('total_return_pct', 'n/a')}%", file=output)
+    print(f"- Trades: {metrics.get('trade_count', 'n/a')}", file=output)
+    print("", file=output)
+    print(str(result.get("report_markdown", "")), file=output)
 
 
 def render_status(status: dict[str, Any], *, output: TextIO) -> None:

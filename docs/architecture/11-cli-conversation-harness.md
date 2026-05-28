@@ -18,8 +18,11 @@ Interactive chat also supports slash commands for harness inspection without sta
 - `/help`, `/status`, `/model`, `/providers`
 - `/tools`, `/runs`, `/memory`
 - `/strategy`, `/backtests`
+- `/research <prompt>`, `/backtest`, `/backtest latest`
 
 Local mode reads these from `ToolRegistry`, `AgentRun`, `MemoryService`, `StrategyResearchService`, and `BacktestService`. Remote mode calls the matching FastAPI list endpoints and `/api/harness/overview` for status/model summaries.
+
+Workflow shortcuts call `StrategyResearchService.create()` and `BacktestService.run()` locally, or `POST /api/strategy/research` and `POST /api/backtests` remotely.
 
 This keeps Provider configuration, Tool Call policy, RAG, Memory, approval gates, and trace persistence in one runtime boundary. The terminal becomes another harness surface alongside `/harness`.
 
@@ -41,7 +44,10 @@ CLI 是开发者 Harness，支持两种运行模式：
 - `/help`、`/status`、`/model`、`/providers`
 - `/tools`、`/runs`、`/memory`
 - `/strategy`、`/backtests`
+- `/research <prompt>`、`/backtest`、`/backtest latest`
 
 本地模式从 `ToolRegistry`、`AgentRun`、`MemoryService`、`StrategyResearchService` 和 `BacktestService` 读取；远程模式调用对应的 FastAPI 列表接口，并通过 `/api/harness/overview` 汇总状态与模型信息。
+
+工作流快捷命令在本地直接调用 `StrategyResearchService.create()` 与 `BacktestService.run()`，远程则调用 `POST /api/strategy/research` 与 `POST /api/backtests`。
 
 这样 Provider 配置、Tool Call 策略、RAG、Memory、审批门和 trace 持久化仍保持在同一个运行边界内。终端只是 `/harness` 之外的另一个 Harness 入口。
