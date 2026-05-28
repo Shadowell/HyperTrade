@@ -24,6 +24,22 @@ docker compose run --rm api alembic upgrade head
 echo "[deploy] starting app services"
 docker compose up -d api worker
 
+echo "[deploy] installing host cli wrapper"
+cat > /usr/local/bin/hypertrade <<'WRAPPER'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+cd /opt/hypertrade
+
+if [ -t 0 ] && [ -t 1 ]; then
+  exec docker compose exec api hypertrade "$@"
+fi
+
+exec docker compose exec -T api hypertrade "$@"
+WRAPPER
+chmod 755 /usr/local/bin/hypertrade
+
 echo "[deploy] installing nginx config"
 cp "$ROOT_DIR/deploy/hypertrade.nginx" /etc/nginx/sites-available/hypertrade
 ln -sfn /etc/nginx/sites-available/hypertrade /etc/nginx/sites-enabled/hypertrade
@@ -43,4 +59,3 @@ echo "[deploy] health failed"
 docker compose ps
 docker compose logs --tail=120 api
 exit 1
-
