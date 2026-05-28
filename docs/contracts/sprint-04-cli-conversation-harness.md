@@ -46,11 +46,9 @@ Server smoke:
 
 ```bash
 cd /opt/hypertrade
-set -a && . /opt/hypertrade/.env && set +a
-HYPERTRADE_API_URL=http://127.0.0.1:3334 \
-HYPERTRADE_USERNAME="$ADMIN_USERNAME" \
-HYPERTRADE_PASSWORD="$ADMIN_PASSWORD" \
-uv run hypertrade ask "请做行情归纳"
+docker compose exec -T \
+  -e HYPERTRADE_API_URL=http://127.0.0.1:3334 \
+  api hypertrade ask "请做行情归纳"
 ```
 
 ## Handoff

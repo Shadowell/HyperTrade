@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 04 CLI conversation harness implemented locally; deployment pending.
+- Last verified state: Sprint 04 CLI conversation harness deployed to `47.79.36.92` at SHA `8528171`.
 
 ## Active Contract
 
@@ -37,6 +37,8 @@
 - Server authenticated strategy/backtest smoke created research `srch_12196a7d8aff4fbda649`, backtest `bt_9fc24eda9bff4e02bde0`, strategy `momentum_breakout_v1`, return `0.019000`, trade count `1`, and confirmed `/api/harness/overview.strategy_lab`.
 - `uv run pytest tests/test_cli.py -q` -> 3 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 20 tests.
+- Server deployed SHA `8528171`; external `GET /api/health` returned OK.
+- Server container CLI smoke passed with `docker compose exec -T -e HYPERTRADE_API_URL=http://127.0.0.1:3334 api hypertrade ask "请做行情归纳"`, producing run `run_24d3927e3e324496bac3` with `market.summary`, `rag.search`, and `memory.write` tool calls.
 
 ## Known Gaps
 
@@ -47,6 +49,6 @@
 
 ## Recommended Next Steps
 
-1. Deploy Sprint 04 to `47.79.36.92` and verify `uv run hypertrade ask` on the server.
-2. Add Agent workflow planning over strategy research/backtest tools.
+1. Add Agent workflow planning over strategy research/backtest tools.
+2. Add CLI commands for strategy research/backtest workflow shortcuts.
 3. Add HTTPS before setting `COOKIE_SECURE=true`.
