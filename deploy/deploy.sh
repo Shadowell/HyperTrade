@@ -39,6 +39,7 @@ fi
 exec docker compose exec -T api hypertrade "$@"
 WRAPPER
 chmod 755 /usr/local/bin/hypertrade
+ln -sfn /usr/local/bin/hypertrade /usr/local/bin/ht
 
 echo "[deploy] installing nginx config"
 cp "$ROOT_DIR/deploy/hypertrade.nginx" /etc/nginx/sites-available/hypertrade
