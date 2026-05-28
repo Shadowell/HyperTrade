@@ -320,7 +320,7 @@ def run_chat(
 ) -> None:
     output = output or sys.stdout
     client.login()
-    print("HyperTrade CLI chat. Type exit, quit, or :q to leave.", file=output)
+    render_welcome_banner(client=client, output=output)
     while True:
         try:
             prompt = input_fn("hypertrade> ").strip()
@@ -335,6 +335,31 @@ def run_chat(
             handle_slash_command(prompt, client=client, output=output)
             continue
         render_run(client.run_agent(prompt), output=output)
+
+
+def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
+    status = client.get_status()
+    mode = str(status.get("mode", "unknown"))
+    endpoint = status.get("api_url") or status.get("database_url") or "n/a"
+    print("=== HyperTrade ===", file=output)
+    print(
+        "Agent-first crypto trading research and execution harness.",
+        file=output,
+    )
+    print("Research only. Not investment advice.", file=output)
+    print("", file=output)
+    print(f"Mode: {mode}", file=output)
+    print(f"Endpoint: {endpoint}", file=output)
+    print("", file=output)
+    print("Quick commands:", file=output)
+    print("- /status      Runtime status", file=output)
+    print("- /tools       Registered tools", file=output)
+    print("- /research    Create strategy research", file=output)
+    print("- /backtest    Run backtest from latest research", file=output)
+    print("- /help        Show all commands", file=output)
+    print("", file=output)
+    print("HyperTrade CLI chat.", file=output)
+    print("Type exit, quit, or :q to leave.", file=output)
 
 
 def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -> None:
