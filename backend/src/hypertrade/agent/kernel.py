@@ -1,9 +1,12 @@
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
 
+from hypertrade.config import get_settings
 from hypertrade.db import AgentRun, Database, TraceEvent
+from hypertrade.market.client import OkxRestClient
 from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
 from hypertrade.rag.service import RagService
@@ -134,6 +137,8 @@ class AgentKernel:
             )
 
     def _market_summary_payload(self) -> dict[str, Any]:
+        # Prefer a fresh REST snapshot on each summary request.
+        self._refresh_market_snapshot()
         top_movers = [
             {
                 "inst_id": row.inst_id,
@@ -144,6 +149,23 @@ class AgentKernel:
             for row in self.market.top_movers(limit=10)
         ]
         return {"market_scope": "OKX SWAP", "top_movers": top_movers}
+
+    def _refresh_market_snapshot(self) -> None:
+        try:
+            settings = get_settings()
+            tickers = asyncio.run(OkxRestClient(settings).fetch_swap_tickers())
+            for ticker in tickers:
+                self.market.upsert_ticker_snapshot(
+                    inst_id=ticker.inst_id,
+                    inst_type=ticker.inst_type,
+                    last=ticker.last,
+                    volume_ccy_24h=ticker.volume_ccy_24h,
+                    change_utc0_pct=ticker.change_utc0_pct,
+                    raw=ticker.raw,
+                )
+        except Exception:
+            # Keep CLI/API responsive if upstream REST is temporarily unavailable.
+            return
 
     @staticmethod
     def _render_market_report(report: dict[str, Any]) -> str:
