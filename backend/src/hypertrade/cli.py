@@ -341,21 +341,76 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
     status = client.get_status()
     mode = str(status.get("mode", "unknown"))
     endpoint = status.get("api_url") or status.get("database_url") or "n/a"
-    print("╔══════════════════════════════════════════════════════════════╗", file=output)
-    print("║                         HyperTrade                          ║", file=output)
-    print("║         Agent-First Crypto Research and Execution CLI       ║", file=output)
-    print("╚══════════════════════════════════════════════════════════════╝", file=output)
-    print("Research only. Not investment advice.", file=output)
-    print(f"Runtime: {mode} | Endpoint: {endpoint}", file=output)
+    color = _banner_colors(output)
+    print(
+        f"{color['border']}╔══════════════════════════════════════════════════════════════╗{color['reset']}",
+        file=output,
+    )
+    print(
+        f"{color['border']}║{color['reset']}"
+        f"{color['title']}                         HyperTrade                          "
+        f"{color['reset']}"
+        f"{color['border']}║{color['reset']}",
+        file=output,
+    )
+    print(
+        f"{color['border']}║{color['reset']}"
+        f"{color['subtitle']}         Agent-First Crypto Research and Execution CLI       "
+        f"{color['reset']}"
+        f"{color['border']}║{color['reset']}",
+        file=output,
+    )
+    print(
+        f"{color['border']}╚══════════════════════════════════════════════════════════════╝{color['reset']}",
+        file=output,
+    )
+    print(
+        f"{color['muted']}Research only. Not investment advice.{color['reset']}",
+        file=output,
+    )
+    print(
+        f"{color['label']}Runtime:{color['reset']} {color['value']}{mode}{color['reset']} | "
+        f"{color['label']}Endpoint:{color['reset']} {color['value']}{endpoint}{color['reset']}",
+        file=output,
+    )
     print("", file=output)
-    print("Quick Start", file=output)
-    print("- /status        Runtime and session status", file=output)
-    print("- /tools         Registered tool catalog", file=output)
-    print("- /research ...  Create strategy research", file=output)
-    print("- /backtest      Run backtest from latest research", file=output)
-    print("- /help          Show full slash command list", file=output)
+    print(f"{color['section']}Quick Start{color['reset']}", file=output)
+    print(f"{color['cmd']}- /status{color['reset']}        Runtime and session status", file=output)
+    print(f"{color['cmd']}- /tools{color['reset']}         Registered tool catalog", file=output)
+    print(f"{color['cmd']}- /research ...{color['reset']}  Create strategy research", file=output)
+    print(
+        f"{color['cmd']}- /backtest{color['reset']}      Run backtest from latest research",
+        file=output,
+    )
+    print(
+        f"{color['cmd']}- /help{color['reset']}          Show full slash command list",
+        file=output,
+    )
     print("", file=output)
-    print("HyperTrade CLI chat. Type exit, quit, or :q to leave.", file=output)
+    print(
+        f"{color['muted']}HyperTrade CLI chat. Type exit, quit, or :q to leave.{color['reset']}",
+        file=output,
+    )
+
+
+def _banner_colors(output: TextIO) -> dict[str, str]:
+    supports_color = not os.getenv("NO_COLOR") and bool(getattr(output, "isatty", lambda: False)())
+    if not supports_color:
+        return dict.fromkeys(
+            ("reset", "border", "title", "subtitle", "section", "cmd", "label", "value", "muted"),
+            "",
+        )
+    return {
+        "reset": "\033[0m",
+        "border": "\033[38;5;81m",
+        "title": "\033[1;38;5;45m",
+        "subtitle": "\033[38;5;117m",
+        "section": "\033[1;38;5;183m",
+        "cmd": "\033[38;5;121m",
+        "label": "\033[38;5;110m",
+        "value": "\033[1;38;5;159m",
+        "muted": "\033[38;5;246m",
+    }
 
 
 def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -> None:

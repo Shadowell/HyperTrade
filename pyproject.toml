@@ -21,6 +21,7 @@ dependencies = [
 
 [project.scripts]
 hypertrade = "hypertrade.cli:entrypoint"
+ht = "hypertrade.cli:entrypoint"
 
 [dependency-groups]
 dev = [

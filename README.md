@@ -28,6 +28,8 @@ Start the standalone terminal Agent:
 
 ```bash
 uv run hypertrade
+# short alias
+uv run ht
 ```
 
 Run one prompt locally:
