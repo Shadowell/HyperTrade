@@ -24,17 +24,28 @@ uv run uvicorn hypertrade.main:app --app-dir backend/src --host 0.0.0.0 --port 3
 
 ## CLI
 
-Use the terminal harness against a running API:
+Start the standalone terminal Agent:
 
 ```bash
-HYPERTRADE_API_URL=http://47.79.36.92:3333 \
-HYPERTRADE_USERNAME=admin \
-HYPERTRADE_PASSWORD='***' \
+uv run hypertrade
+```
+
+Run one prompt locally:
+
+```bash
 uv run hypertrade ask "请做行情归纳"
 ```
 
-Interactive mode:
+Use the terminal harness against a running API:
 
 ```bash
-uv run hypertrade chat
+HYPERTRADE_USERNAME=admin \
+HYPERTRADE_PASSWORD='***' \
+uv run hypertrade --remote http://47.79.36.92:3333 ask "请做行情归纳"
+```
+
+Force local mode even when `HYPERTRADE_API_URL` is set:
+
+```bash
+uv run hypertrade --local
 ```

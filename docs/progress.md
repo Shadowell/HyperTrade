@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 04 CLI conversation harness deployed to `47.79.36.92` at SHA `8528171`.
+- Last verified state: Sprint 05 standalone hybrid CLI runtime implemented locally; deployment pending.
 
 ## Active Contract
 
-- `docs/contracts/sprint-04-cli-conversation-harness.md`
+- `docs/contracts/sprint-05-standalone-hybrid-cli.md`
 
 ## Latest Completed Work
 
@@ -21,6 +21,7 @@
 - Added Sprint 02 automatic paper trading runtime with paper sessions, deterministic signals, simulated fills/positions, pause/resume API, worker loop, and `/harness` Paper Runtime panel.
 - Added Sprint 03 strategy research and Backtrader backtest workflow with persisted research records, backtest runs, Markdown/JSON reports, API endpoints, and `/harness` Strategy Lab panel.
 - Added Sprint 04 CLI conversation harness with `hypertrade ask` and `hypertrade chat` over the same FastAPI Agent runtime.
+- Added Sprint 05 standalone hybrid CLI runtime so bare `hypertrade` starts an Agent terminal, `--local` forces local AgentKernel mode, and `--remote` connects to a deployed API.
 
 ## Verification Evidence
 
@@ -39,6 +40,7 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 20 tests.
 - Server deployed SHA `8528171`; external `GET /api/health` returned OK.
 - Server container CLI smoke passed with `docker compose exec -T -e HYPERTRADE_API_URL=http://127.0.0.1:3334 api hypertrade ask "请做行情归纳"`, producing run `run_24d3927e3e324496bac3` with `market.summary`, `rag.search`, and `memory.write` tool calls.
+- `uv run pytest tests/test_cli.py -q` -> 6 passed.
 
 ## Known Gaps
 
@@ -49,6 +51,6 @@
 
 ## Recommended Next Steps
 
-1. Add Agent workflow planning over strategy research/backtest tools.
-2. Add CLI commands for strategy research/backtest workflow shortcuts.
+1. Deploy Sprint 05 to `47.79.36.92` and verify local/remote CLI modes in the container.
+2. Add CLI slash commands for strategy research/backtest workflow shortcuts.
 3. Add HTTPS before setting `COOKIE_SECURE=true`.

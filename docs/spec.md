@@ -20,7 +20,7 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 4. Agent calls market, RAG, and memory tools, then stores trace and report.
 5. User reviews the report and can manually forward it to Feishu.
 6. User creates an auditable strategy research record and runs a Backtrader backtest from `/harness`.
-7. Developer uses `hypertrade ask` or `hypertrade chat` to exercise the same Agent runtime from CLI.
+7. Developer runs `hypertrade` for a standalone terminal Agent, or `hypertrade --remote <url>` to connect to a deployed API.
 
 ## V1 In Scope
 
@@ -35,7 +35,7 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - React `/harness` and market summary UI.
 - Docker Compose and host Nginx deployment on ports `3333/3334`.
 - Sprint 03 strategy research and Backtrader backtest workflow with persisted Markdown/JSON reports.
-- Sprint 04 CLI conversation harness over the deployed API.
+- Sprint 05 standalone hybrid CLI runtime with local AgentKernel mode and remote API mode.
 
 ## V1 Out of Scope
 
@@ -52,6 +52,6 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - `/api/harness/tools` shows live order approval gating.
 - User can create an Agent market-summary run and inspect trace events.
 - User can create a strategy research record and run a deterministic Backtrader backtest.
-- Developer can run `hypertrade ask` against a running API and see run id, tool calls, and report output.
+- Developer can run `hypertrade` as a standalone CLI Agent and see run id, tool calls, and report output.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.
