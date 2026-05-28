@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -138,7 +139,7 @@ class AgentKernel:
 
     def _market_summary_payload(self) -> dict[str, Any]:
         # Prefer a fresh REST snapshot on each summary request.
-        self._refresh_market_snapshot()
+        source = self._refresh_market_snapshot()
         top_movers = [
             {
                 "inst_id": row.inst_id,
@@ -148,9 +149,14 @@ class AgentKernel:
             }
             for row in self.market.top_movers(limit=10)
         ]
-        return {"market_scope": "OKX SWAP", "top_movers": top_movers}
+        return {
+            "market_scope": "OKX SWAP",
+            "top_movers": top_movers,
+            "data_source": source,
+            "as_of_utc": datetime.now(UTC).isoformat(),
+        }
 
-    def _refresh_market_snapshot(self) -> None:
+    def _refresh_market_snapshot(self) -> str:
         try:
             settings = get_settings()
             tickers = asyncio.run(OkxRestClient(settings).fetch_swap_tickers())
@@ -163,9 +169,10 @@ class AgentKernel:
                     change_utc0_pct=ticker.change_utc0_pct,
                     raw=ticker.raw,
                 )
+            return "okx_rest"
         except Exception:
             # Keep CLI/API responsive if upstream REST is temporarily unavailable.
-            return
+            return "db_fallback"
 
     @staticmethod
     def _render_market_report(report: dict[str, Any]) -> str:
@@ -175,6 +182,8 @@ class AgentKernel:
             "",
             "**范围**: OKX 全市场 SWAP",
             "**触发方式**: 用户按需发起",
+            f"**数据时间(UTC)**: {report.get('as_of_utc', 'n/a')}",
+            f"**数据来源**: {report.get('data_source', 'unknown')}",
             "",
             "## 异动榜",
         ]
