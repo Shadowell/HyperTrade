@@ -140,8 +140,16 @@ class AgentKernel:
             )
 
     def _market_summary_payload(self) -> dict[str, Any]:
-        # Prefer a fresh REST snapshot on each summary request.
-        source = self._refresh_market_snapshot()
+        # Strict mode: require a fresh REST snapshot for every summary request.
+        source, error = self._refresh_market_snapshot()
+        if source != "okx_rest":
+            return {
+                "market_scope": "OKX SWAP",
+                "top_movers": [],
+                "data_source": source,
+                "as_of_utc": datetime.now(UTC).isoformat(),
+                "unavailable_reason": error or "okx_rest_unavailable",
+            }
         top_movers = [
             {
                 "inst_id": row.inst_id,
@@ -158,7 +166,7 @@ class AgentKernel:
             "as_of_utc": datetime.now(UTC).isoformat(),
         }
 
-    def _refresh_market_snapshot(self) -> str:
+    def _refresh_market_snapshot(self) -> tuple[str, str]:
         try:
             settings = get_settings()
             tickers = asyncio.run(OkxRestClient(settings).fetch_swap_tickers())
@@ -171,10 +179,10 @@ class AgentKernel:
                     change_utc0_pct=ticker.change_utc0_pct,
                     raw=ticker.raw,
                 )
-            return "okx_rest"
-        except Exception:
-            # Keep CLI/API responsive if upstream REST is temporarily unavailable.
-            return "db_fallback"
+            return ("okx_rest", "")
+        except Exception as exc:
+            # Do not fall back to stale snapshots for market summary output.
+            return ("unavailable", str(exc)[:160])
 
     @staticmethod
     def _render_market_report(report: dict[str, Any]) -> str:
@@ -190,7 +198,10 @@ class AgentKernel:
             "## 异动榜",
         ]
         if not movers:
-            lines.append("- 暂无行情快照。")
+            lines.append("- 当前无法获取实时 OKX 行情，未输出异动榜。")
+            reason = report.get("unavailable_reason")
+            if isinstance(reason, str) and reason:
+                lines.append(f"- 原因: {reason}")
         for mover in movers:
             line = (
                 "- {inst_id}: 最新价 {last}, UTC0 涨跌幅 {change_utc0_pct}%, "

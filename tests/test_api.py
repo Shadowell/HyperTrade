@@ -49,7 +49,12 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "completed"
-    assert "BTC-USDT-SWAP" in body["report_markdown"]
+    assert (
+        "BTC-USDT-SWAP" in body["report_markdown"]
+        or "当前无法获取实时 OKX 行情" in body["report_markdown"]
+    )
+    if "当前无法获取实时 OKX 行情" in body["report_markdown"]:
+        assert body["report_json"]["data_source"] == "unavailable"
     assert body["trace_events"][0]["tool_name"] == "market.summary"
 
     overview = client.get("/api/harness/overview").json()

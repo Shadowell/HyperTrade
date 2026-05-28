@@ -36,7 +36,12 @@ def test_agent_chat_market_summary_creates_report_trace_and_memory(tmp_path):
     run = kernel.run_chat("请归纳一下当前 OKX 永续合约行情")
 
     assert run.status == "completed"
-    assert "BTC-USDT-SWAP" in run.report_markdown
+    assert (
+        "BTC-USDT-SWAP" in run.report_markdown
+        or "当前无法获取实时 OKX 行情" in run.report_markdown
+    )
+    if "当前无法获取实时 OKX 行情" in run.report_markdown:
+        assert run.report_json["data_source"] == "unavailable"
     assert run.report_json["market_scope"] == "OKX SWAP"
     assert [event.tool_name for event in run.trace_events] == [
         "market.summary",
