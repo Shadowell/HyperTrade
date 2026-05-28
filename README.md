@@ -49,3 +49,15 @@ Force local mode even when `HYPERTRADE_API_URL` is set:
 ```bash
 uv run hypertrade --local
 ```
+
+In interactive chat, slash commands inspect harness state without starting a new Agent run:
+
+```text
+/help
+/status
+/tools
+/runs
+/memory
+/strategy
+/backtests
+```

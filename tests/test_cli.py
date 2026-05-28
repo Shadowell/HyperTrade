@@ -27,6 +27,66 @@ class FakeAgentClient:
             ],
         }
 
+    def list_tools(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": "market.summary",
+                "category": "market",
+                "requires_approval": False,
+                "description": "Summarize market.",
+            },
+            {
+                "name": "live.order_intent",
+                "category": "live",
+                "requires_approval": True,
+                "description": "Create order intent.",
+            },
+        ]
+
+    def list_runs(self) -> list[dict[str, Any]]:
+        return [{"id": "run_recent", "status": "completed", "prompt": "请做行情归纳"}]
+
+    def list_memory(self) -> list[dict[str, Any]]:
+        return [{"id": "mem_recent", "kind": "market_summary", "content": "BTC was reviewed"}]
+
+    def list_strategy_research(self) -> list[dict[str, Any]]:
+        return [{"id": "srch_recent", "strategy_key": "momentum_breakout_v1", "title": "趋势突破"}]
+
+    def list_backtests(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "bt_recent",
+                "strategy_key": "momentum_breakout_v1",
+                "status": "completed",
+                "metrics": {"total_return_pct": "0.019000", "trade_count": 1},
+            }
+        ]
+
+    def get_status(self) -> dict[str, Any]:
+        return {
+            "mode": "test",
+            "database_url": "sqlite:///:memory:",
+            "agent_runs": 1,
+            "memory_items": 1,
+            "tools": 2,
+        }
+
+    def get_model_status(self) -> dict[str, Any]:
+        return {
+            "default_provider": "deepseek",
+            "model": "deepseek-v4-flash",
+            "providers": [
+                {
+                    "name": "deepseek",
+                    "display_name": "DeepSeek",
+                    "model": "deepseek-v4-flash",
+                    "enabled": True,
+                    "default": True,
+                    "key_status": "configured",
+                }
+            ],
+        }
+
 
 def test_ask_prints_agent_run_trace_and_report(capsys) -> None:
     client = FakeAgentClient()
@@ -53,6 +113,43 @@ def test_chat_reuses_client_until_exit(capsys) -> None:
     output = capsys.readouterr().out
     assert "run_cli" in output
     assert "memory.write" in output
+
+
+def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
+    client = FakeAgentClient()
+    inputs = iter(
+        [
+            "/help",
+            "/commands",
+            "/status",
+            "/model",
+            "/model gpt-5",
+            "/providers",
+            "/tools",
+            "/runs",
+            "/memory",
+            "/strategy",
+            "/backtests",
+            "exit",
+        ]
+    )
+
+    run_chat(client=client, input_fn=_next_input(inputs))
+
+    assert client.logged_in is True
+    assert client.prompts == []
+    output = capsys.readouterr().out
+    assert "/tools" in output
+    assert "Status:" in output
+    assert "Model:" in output
+    assert "model switching is not implemented" in output
+    assert "Providers:" in output
+    assert "market.summary" in output
+    assert "live.order_intent" in output
+    assert "run_recent" in output
+    assert "mem_recent" in output
+    assert "srch_recent" in output
+    assert "bt_recent" in output
 
 
 def test_bare_command_starts_chat_loop(capsys) -> None:
@@ -148,6 +245,59 @@ def test_api_client_logs_in_and_posts_agent_run() -> None:
     assert seen == [
         ("POST", "/api/auth/login", {"username": "admin", "password": "secret"}),
         ("POST", "/api/agent/runs", {"prompt": "hello"}),
+    ]
+
+
+def test_api_client_lists_slash_command_resources() -> None:
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        payloads: dict[str, dict[str, Any]] = {
+            "/api/harness/tools": {"tools": [{"name": "market.summary"}]},
+            "/api/agent/runs": {"runs": [{"id": "run_api"}]},
+            "/api/memory": {"items": [{"id": "mem_api"}]},
+            "/api/strategy/research": {"items": [{"id": "srch_api"}]},
+            "/api/backtests": {"items": [{"id": "bt_api"}]},
+            "/api/harness/overview": {
+                "agent_runs": {"total_count": 2},
+                "memory": {"active_count": 1},
+                "tools": [{"name": "market.summary"}],
+                "market": {"ticker_count": 344, "latest_update_age_seconds": 3},
+                "providers": [
+                    {
+                        "name": "deepseek",
+                        "display_name": "DeepSeek",
+                        "model": "deepseek-v4-flash",
+                        "enabled": True,
+                        "default": True,
+                        "key_status": "configured",
+                    }
+                ],
+            },
+        }
+        return httpx.Response(200, json=payloads[request.url.path])
+
+    client = AgentApiClient(
+        CliConfig(api_url="http://example.test/", username="admin", password="secret"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert client.list_tools()[0]["name"] == "market.summary"
+    assert client.list_runs()[0]["id"] == "run_api"
+    assert client.list_memory()[0]["id"] == "mem_api"
+    assert client.list_strategy_research()[0]["id"] == "srch_api"
+    assert client.list_backtests()[0]["id"] == "bt_api"
+    assert client.get_status()["agent_runs"] == 2
+    assert client.get_model_status()["model"] == "deepseek-v4-flash"
+    assert seen == [
+        ("GET", "/api/harness/tools"),
+        ("GET", "/api/agent/runs"),
+        ("GET", "/api/memory"),
+        ("GET", "/api/strategy/research"),
+        ("GET", "/api/backtests"),
+        ("GET", "/api/harness/overview"),
+        ("GET", "/api/harness/overview"),
     ]
 
 

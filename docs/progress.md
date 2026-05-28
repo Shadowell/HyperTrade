@@ -8,7 +8,7 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-05-standalone-hybrid-cli.md`
+- `docs/contracts/sprint-06-cli-slash-commands.md` (completed locally; pending deploy)
 
 ## Latest Completed Work
 
@@ -22,6 +22,7 @@
 - Added Sprint 03 strategy research and Backtrader backtest workflow with persisted research records, backtest runs, Markdown/JSON reports, API endpoints, and `/harness` Strategy Lab panel.
 - Added Sprint 04 CLI conversation harness with `hypertrade ask` and `hypertrade chat` over the same FastAPI Agent runtime.
 - Added Sprint 05 standalone hybrid CLI runtime so bare `hypertrade` starts an Agent terminal, `--local` forces local AgentKernel mode, and `--remote` connects to a deployed API.
+- Added Sprint 06 CLI slash commands for `/help`, `/status`, `/model`, `/providers`, `/tools`, `/runs`, `/memory`, `/strategy`, and `/backtests` in local and remote interactive chat.
 
 ## Verification Evidence
 
@@ -47,6 +48,8 @@
 - Server remote CLI smoke passed with `docker compose exec -T api hypertrade --remote http://127.0.0.1:3334 ask "请做行情归纳"`, producing run `run_d5b161b8d5a54f659328`.
 - Server bare interactive CLI smoke passed with `printf ":q\n" | docker compose exec -T api hypertrade`.
 - Server host CLI wrapper installed at `/usr/local/bin/hypertrade` via `deploy/deploy.sh`; root shell `hypertrade` enters chat and `hypertrade ask "请做行情归纳"` produced run `run_83db62b8e9184eadaab7`.
+- `uv run pytest tests/test_cli.py -q` -> 9 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 25 tests.
 
 ## Known Gaps
 
@@ -57,6 +60,6 @@
 
 ## Recommended Next Steps
 
-1. Add CLI slash commands for strategy research/backtest workflow shortcuts.
-2. Add Agent workflow planning over strategy research/backtest tools.
+1. Add Agent workflow planning over strategy research/backtest tools.
+2. Add slash shortcuts to trigger strategy research/backtest workflows from the CLI.
 3. Add HTTPS before setting `COOKIE_SECURE=true`.
