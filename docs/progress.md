@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 05 standalone hybrid CLI runtime implemented locally; deployment pending.
+- Last verified state: Sprint 05 standalone hybrid CLI runtime deployed to `47.79.36.92` at SHA `d125406`.
 
 ## Active Contract
 
@@ -41,6 +41,11 @@
 - Server deployed SHA `8528171`; external `GET /api/health` returned OK.
 - Server container CLI smoke passed with `docker compose exec -T -e HYPERTRADE_API_URL=http://127.0.0.1:3334 api hypertrade ask "请做行情归纳"`, producing run `run_24d3927e3e324496bac3` with `market.summary`, `rag.search`, and `memory.write` tool calls.
 - `uv run pytest tests/test_cli.py -q` -> 6 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 23 tests.
+- Server deployed SHA `d125406`; external `GET /api/health` returned OK.
+- Server local standalone CLI smoke passed with `docker compose exec -T api hypertrade ask "请做行情归纳"`, producing run `run_77da091e850346fa9da7` with `market.summary`, `rag.search`, and `memory.write`.
+- Server remote CLI smoke passed with `docker compose exec -T api hypertrade --remote http://127.0.0.1:3334 ask "请做行情归纳"`, producing run `run_d5b161b8d5a54f659328`.
+- Server bare interactive CLI smoke passed with `printf ":q\n" | docker compose exec -T api hypertrade`.
 
 ## Known Gaps
 
@@ -51,6 +56,6 @@
 
 ## Recommended Next Steps
 
-1. Deploy Sprint 05 to `47.79.36.92` and verify local/remote CLI modes in the container.
-2. Add CLI slash commands for strategy research/backtest workflow shortcuts.
+1. Add CLI slash commands for strategy research/backtest workflow shortcuts.
+2. Add Agent workflow planning over strategy research/backtest tools.
 3. Add HTTPS before setting `COOKIE_SECURE=true`.
