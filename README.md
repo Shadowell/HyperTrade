@@ -22,3 +22,19 @@ uv run uvicorn hypertrade.main:app --app-dir backend/src --host 0.0.0.0 --port 3
 ./scripts/check.sh
 ```
 
+## CLI
+
+Use the terminal harness against a running API:
+
+```bash
+HYPERTRADE_API_URL=http://47.79.36.92:3333 \
+HYPERTRADE_USERNAME=admin \
+HYPERTRADE_PASSWORD='***' \
+uv run hypertrade ask "请做行情归纳"
+```
+
+Interactive mode:
+
+```bash
+uv run hypertrade chat
+```

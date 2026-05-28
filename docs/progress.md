@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 03 strategy/backtest workflow deployed to `47.79.36.92` at SHA `e38f3e3`.
+- Last verified state: Sprint 04 CLI conversation harness implemented locally; deployment pending.
 
 ## Active Contract
 
-- `docs/contracts/sprint-03-strategy-backtest-workflow.md`
+- `docs/contracts/sprint-04-cli-conversation-harness.md`
 
 ## Latest Completed Work
 
@@ -20,6 +20,7 @@
 - Added configurable `COOKIE_SECURE` so the current HTTP `3333` deployment can keep admin sessions, while HTTPS deployments can opt in to secure cookies.
 - Added Sprint 02 automatic paper trading runtime with paper sessions, deterministic signals, simulated fills/positions, pause/resume API, worker loop, and `/harness` Paper Runtime panel.
 - Added Sprint 03 strategy research and Backtrader backtest workflow with persisted research records, backtest runs, Markdown/JSON reports, API endpoints, and `/harness` Strategy Lab panel.
+- Added Sprint 04 CLI conversation harness with `hypertrade ask` and `hypertrade chat` over the same FastAPI Agent runtime.
 
 ## Verification Evidence
 
@@ -34,6 +35,8 @@
 - Worker logs verified `paper_trading tick status=running fills=10`.
 - Server deployment ran Alembic `0003_strategy_backtest`, rebuilt API/worker images, and deployed SHA `e38f3e3`.
 - Server authenticated strategy/backtest smoke created research `srch_12196a7d8aff4fbda649`, backtest `bt_9fc24eda9bff4e02bde0`, strategy `momentum_breakout_v1`, return `0.019000`, trade count `1`, and confirmed `/api/harness/overview.strategy_lab`.
+- `uv run pytest tests/test_cli.py -q` -> 3 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 20 tests.
 
 ## Known Gaps
 
@@ -44,6 +47,6 @@
 
 ## Recommended Next Steps
 
-1. Add OKX historical K-line ingestion for research-grade backtests.
-2. Add strategy parameter optimization sweeps.
+1. Deploy Sprint 04 to `47.79.36.92` and verify `uv run hypertrade ask` on the server.
+2. Add Agent workflow planning over strategy research/backtest tools.
 3. Add HTTPS before setting `COOKIE_SECURE=true`.
