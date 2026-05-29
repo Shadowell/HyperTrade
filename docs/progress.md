@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 09 specific market ticker tool deployed to `47.79.36.92` at SHA `16b4ac6`; stable ticker report block pending deploy.
+- Last verified state: Sprint 09 specific market ticker tool deployed to `47.79.36.92` at SHA `38f484f`.
 
 ## Active Contract
 
@@ -41,6 +41,8 @@
 - Server `/tools` slash command shows `market.ticker [market]`.
 - Server non-BTC CLI smoke `hypertrade ask "看下ETH行情"` produced run `run_d745abf2ec4246a38315` with `market_ticker`, `market_summary`, and `memory_write` tool calls.
 - Server trace query verified `market_ticker` output `inst_id=ETH-USDT-SWAP`, `found=true`, `data_source=okx_rest`.
+- Server deployed SHA `38f484f`; external `GET /api/health` returned OK.
+- Server non-BTC CLI smoke `hypertrade ask "看下ETH行情"` produced run `run_674ab692117a443cb969` with `market_ticker` and `rag_search`, and the final answer included the stable exact ticker block for `ETH-USDT-SWAP`.
 - Server deployed SHA `8d91748`; external `GET /api/health` returned OK.
 - Server `/status` slash command smoke passed through host `hypertrade`.
 - Server DeepSeek planner smoke passed with `hypertrade ask "看下比特币行情"`, producing run `run_363a592c965141a8b914` with `market_summary`, `rag_search`, `memory_search`, and `memory_write` tool calls.
@@ -83,6 +85,6 @@
 
 ## Recommended Next Steps
 
-1. Run full `./scripts/check.sh` for stable ticker report rendering and deploy to `47.79.36.92`.
-2. Add historical K-line lookup for richer single-symbol reports.
-3. Add multi-symbol comparison support, such as `比较 ETH 和 SOL`.
+1. Add historical K-line lookup for richer single-symbol reports.
+2. Add multi-symbol comparison support, such as `比较 ETH 和 SOL`.
+3. Add CLI streaming so long DeepSeek calls show incremental output.
