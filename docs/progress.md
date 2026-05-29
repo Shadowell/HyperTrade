@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 08 LLM agent planner deployed to `47.79.36.92` at SHA `8d91748`.
+- Last verified state: Sprint 09 specific market ticker tool deployed to `47.79.36.92` at SHA `16b4ac6`.
 
 ## Active Contract
 
-- `docs/contracts/sprint-09-specific-market-ticker-tool.md` (in progress)
+- `docs/contracts/sprint-09-specific-market-ticker-tool.md` (completed and deployed)
 
 ## Latest Completed Work
 
@@ -34,6 +34,10 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 34 tests.
 - `uv run pytest tests/test_market_ticker_tool.py tests/test_agent_planner.py -q` -> 10 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 38 tests.
+- Server deployed SHA `16b4ac6`; external `GET /api/health` returned OK.
+- Server `/tools` slash command shows `market.ticker [market]`.
+- Server non-BTC CLI smoke `hypertrade ask "看下ETH行情"` produced run `run_d745abf2ec4246a38315` with `market_ticker`, `market_summary`, and `memory_write` tool calls.
+- Server trace query verified `market_ticker` output `inst_id=ETH-USDT-SWAP`, `found=true`, `data_source=okx_rest`.
 - Server deployed SHA `8d91748`; external `GET /api/health` returned OK.
 - Server `/status` slash command smoke passed through host `hypertrade`.
 - Server DeepSeek planner smoke passed with `hypertrade ask "看下比特币行情"`, producing run `run_363a592c965141a8b914` with `market_summary`, `rag_search`, `memory_search`, and `memory_write` tool calls.
@@ -76,6 +80,6 @@
 
 ## Recommended Next Steps
 
-1. Deploy Sprint 09 to `47.79.36.92`.
-2. Server-smoke a non-BTC prompt such as `看下ETH行情` and confirm `market_ticker` appears in the tool trace.
-3. Add historical K-line lookup for richer single-symbol reports.
+1. Add historical K-line lookup for richer single-symbol reports.
+2. Improve the final LLM report template so exact ticker payload values are always surfaced in the answer, not only in trace.
+3. Add multi-symbol comparison support, such as `比较 ETH 和 SOL`.
