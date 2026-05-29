@@ -11,7 +11,9 @@ from hypertrade.agent.planner import AgentPlanner, PlannerResult, ToolExecutor
 from hypertrade.backtest.service import BacktestService
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import AgentRun, Database, TraceEvent
+from hypertrade.market.analysis import summarize_candles
 from hypertrade.market.client import OkxRestClient
+from hypertrade.market.okx import OkxCandle
 from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
 from hypertrade.providers.deepseek import DeepSeekClient
@@ -93,6 +95,12 @@ class AgentKernel:
                 return self._market_summary_payload()
             if tool_name == "market_ticker":
                 return self._market_ticker_payload(str(args.get("symbol", "")))
+            if tool_name == "market_candles":
+                return self._market_candles_payload(
+                    symbol=str(args.get("symbol", "")),
+                    bar=str(args.get("bar", "1H")),
+                    limit=int(args.get("limit", 100)),
+                )
             if tool_name == "rag_search":
                 self.rag.scan_once()
                 query = str(args.get("query", "market risk"))
@@ -302,6 +310,56 @@ class AgentKernel:
             "as_of_utc": datetime.now(UTC).isoformat(),
         }
 
+    def _market_candles_payload(
+        self,
+        *,
+        symbol: str,
+        bar: str = "1H",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        inst_id = _normalize_swap_inst_id(symbol)
+        safe_limit = max(1, min(limit, 300))
+        safe_bar = _normalize_okx_bar(bar)
+        try:
+            candles = self._fetch_market_candles(inst_id, safe_bar, safe_limit)
+            summary = summarize_candles(inst_id, safe_bar, candles)
+            summary.update(
+                {
+                    "market_scope": "OKX SWAP",
+                    "symbol": symbol,
+                    "data_source": "okx_rest",
+                    "as_of_utc": datetime.now(UTC).isoformat(),
+                }
+            )
+            return summary
+        except Exception as exc:
+            return {
+                "market_scope": "OKX SWAP",
+                "symbol": symbol,
+                "inst_id": inst_id,
+                "bar": safe_bar,
+                "found": False,
+                "candle_count": 0,
+                "data_source": "unavailable",
+                "as_of_utc": datetime.now(UTC).isoformat(),
+                "unavailable_reason": str(exc)[:160],
+            }
+
+    def _fetch_market_candles(
+        self,
+        inst_id: str,
+        bar: str,
+        limit: int,
+    ) -> list[OkxCandle]:
+        settings = self._settings if self._settings is not None else get_settings()
+        return asyncio.run(
+            OkxRestClient(settings).fetch_candles(
+                inst_id=inst_id,
+                bar=bar,
+                limit=limit,
+            )
+        )
+
     def _refresh_market_snapshot(self) -> tuple[str, str]:
         try:
             settings = get_settings()
@@ -351,6 +409,7 @@ class AgentKernel:
         tool_calls: list[Any],
     ) -> str:
         ticker_lines: list[str] = []
+        candle_lines: list[str] = []
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "market_ticker":
                 continue
@@ -368,9 +427,36 @@ class AgentKernel:
                     "",
                 ]
             )
-        if not ticker_lines:
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "market_candles":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or not payload.get("found"):
+                continue
+            candle_lines.extend(
+                [
+                    f"- 标的: {payload.get('inst_id', 'unknown')}",
+                    f"- 周期: {payload.get('bar', 'n/a')}",
+                    f"- K线数量 {payload.get('candle_count', 'n/a')}",
+                    f"- 区间涨跌幅 {payload.get('return_pct', 'n/a')}%",
+                    f"- 区间振幅 {payload.get('range_pct', 'n/a')}%",
+                    f"- 收盘区间位置 {payload.get('close_position_pct', 'n/a')}%",
+                    f"- MA20 {payload.get('ma20', 'n/a')}",
+                    f"- MA60 {payload.get('ma60', 'n/a')}",
+                    f"- 趋势偏向 {payload.get('trend_bias', 'unknown')}",
+                    f"- 数据来源 {payload.get('data_source', 'unknown')}",
+                    f"- 数据时间(UTC) {payload.get('as_of_utc', 'n/a')}",
+                    "",
+                ]
+            )
+        sections: list[str] = []
+        if ticker_lines:
+            sections.extend(["## 单标的行情", "", *ticker_lines])
+        if candle_lines:
+            sections.extend(["## K线趋势特征", "", *candle_lines])
+        if not sections:
             return final_message
-        return "\n".join(["## 单标的行情", "", *ticker_lines, final_message])
+        return "\n".join([*sections, final_message])
 
 
 def _normalize_swap_inst_id(symbol: str) -> str:
@@ -384,3 +470,14 @@ def _normalize_swap_inst_id(symbol: str) -> str:
     if "-" not in value:
         return f"{value}-USDT-SWAP"
     return f"{value}-SWAP"
+
+
+def _normalize_okx_bar(bar: str) -> str:
+    value = bar.strip()
+    if not value:
+        return "1H"
+    if value.lower().endswith("h"):
+        return f"{value[:-1]}H"
+    if value.lower().endswith("d"):
+        return f"{value[:-1]}D"
+    return value

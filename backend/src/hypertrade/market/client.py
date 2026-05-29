@@ -7,7 +7,7 @@ import httpx
 import websockets
 
 from hypertrade.config import Settings
-from hypertrade.market.okx import OkxTicker, parse_okx_ticker
+from hypertrade.market.okx import OkxCandle, OkxTicker, parse_okx_candle, parse_okx_ticker
 from hypertrade.market.repository import MarketRepository
 
 
@@ -28,6 +28,22 @@ class OkxRestClient:
             response.raise_for_status()
             payload = response.json()
         return list(payload.get("data", []))
+
+    async def fetch_candles(
+        self,
+        *,
+        inst_id: str,
+        bar: str = "1H",
+        limit: int = 100,
+    ) -> list[OkxCandle]:
+        async with httpx.AsyncClient(base_url=self.settings.okx_rest_url, timeout=15) as client:
+            response = await client.get(
+                "/api/v5/market/candles",
+                params={"instId": inst_id, "bar": bar, "limit": str(limit)},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        return [parse_okx_candle(item) for item in payload.get("data", [])]
 
 
 class OkxWsTickerStream:

@@ -8,7 +8,7 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-09-specific-market-ticker-tool.md` (completed and deployed)
+- `docs/contracts/sprint-10-market-candles-research.md` (in progress)
 
 ## Latest Completed Work
 
@@ -29,6 +29,7 @@
 - Fixed DeepSeek thinking-mode compatibility by preserving `reasoning_content` across tool-call turns.
 - Added Sprint 09 exact market ticker path: `market_ticker` planner tool, `market.ticker` registry entry, exact `MarketRepository.get_ticker()`, and symbol normalization for any listed OKX USDT SWAP symbol such as ETH, SOL, DOGE, or PEPE.
 - Added stable planner report rendering for successful `market_ticker` calls so CLI/API answers always include exact price, UTC0 change, 24h volume, source, and timestamp.
+- Added Sprint 10 market candles research path locally: OKX candle parsing, REST candle fetcher, deterministic trend feature extraction, `market_candles` planner tool, `market.candles` registry entry, AgentKernel execution, and stable K-line trend report block.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
@@ -37,6 +38,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 38 tests.
 - `uv run pytest tests/test_market_ticker_tool.py tests/test_agent_planner.py -q` -> 11 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 39 tests.
+- `uv run pytest tests/test_market_candles_tool.py tests/test_agent_planner.py -q` -> 12 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 44 tests.
 - Server deployed SHA `16b4ac6`; external `GET /api/health` returned OK.
 - Server `/tools` slash command shows `market.ticker [market]`.
 - Server non-BTC CLI smoke `hypertrade ask "看下ETH行情"` produced run `run_d745abf2ec4246a38315` with `market_ticker`, `market_summary`, and `memory_write` tool calls.
@@ -85,6 +88,6 @@
 
 ## Recommended Next Steps
 
-1. Add historical K-line lookup for richer single-symbol reports.
-2. Add multi-symbol comparison support, such as `比较 ETH 和 SOL`.
-3. Add CLI streaming so long DeepSeek calls show incremental output.
+1. Run full `./scripts/check.sh` for Sprint 10 and deploy to `47.79.36.92`.
+2. Server-smoke a non-BTC trend prompt such as `看下ETH这两天走势` and confirm `market_candles` appears.
+3. Add multi-symbol comparison support, such as `比较 ETH 和 SOL`.

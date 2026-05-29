@@ -13,8 +13,11 @@ Data flow:
 5. The agent reads latest movers from PostgreSQL when the user asks for a summary.
 6. The agent reads one exact `market_tickers.inst_id` when the user asks for a specific listed
    symbol through the `market_ticker` tool.
+7. The agent fetches recent candles from OKX REST on demand for `market_candles`; Sprint 10 does not
+   persist historical candles.
 
 Raw ticker snapshots are retained for short-term operational use; aggregated summaries are kept long term.
+Candles are used as short-lived research input only in Sprint 10.
 
 ## 中文
 
@@ -29,5 +32,8 @@ Sprint 01 覆盖 OKX 全市场永续合约 `SWAP`。行情使用 mainnet；交�
 5. 用户发起归纳时，Agent 从 PostgreSQL 读取最新异动。
 6. 用户询问具体已上线标的时，Agent 通过 `market_ticker` 精确读取一个
    `market_tickers.inst_id`。
+7. 用户询问走势或 K 线研究时，Agent 通过 `market_candles` 按需从 OKX REST 获取近期 K 线；
+   Sprint 10 不持久化历史 K 线。
 
 原始 ticker 用于短期运行，聚合摘要长期保留。
+K 线在 Sprint 10 中只作为短生命周期研究输入。

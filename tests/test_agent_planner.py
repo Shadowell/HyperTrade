@@ -81,6 +81,43 @@ class TestAgentPlannerSpecificTickerTool:
         assert result.tool_calls[0].output_json["inst_id"] == "ETH-USDT-SWAP"
 
 
+class TestAgentPlannerMarketCandlesTool:
+    def test_can_call_market_candles_for_trend_question(self) -> None:
+        tool_call = ToolCallRequest(
+            id="call_eth_candles",
+            name="market_candles",
+            arguments={"symbol": "ETH", "bar": "1H", "limit": 100},
+        )
+        llm = _fake_llm(
+            ChatResponse(content="", tool_calls=[tool_call]),
+            ChatResponse(
+                content="ETH trend checked. Research output only. Not investment advice.",
+                tool_calls=[],
+            ),
+        )
+        planner = AgentPlanner(llm)
+        result = planner.run(
+            "看下ETH这两天走势",
+            _static_executor(
+                {
+                    "market_candles": {
+                        "inst_id": "ETH-USDT-SWAP",
+                        "bar": "1H",
+                        "return_pct": "3.2",
+                        "found": True,
+                    }
+                }
+            ),
+        )
+
+        assert result.tool_calls[0].tool_name == "market_candles"
+        assert result.tool_calls[0].input_json == {
+            "symbol": "ETH",
+            "bar": "1H",
+            "limit": 100,
+        }
+
+
 class TestAgentPlannerMultiTurnChain:
     def test_research_then_backtest_chain(self) -> None:
         research_call = ToolCallRequest(

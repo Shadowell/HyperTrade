@@ -40,6 +40,7 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Sprint 07 CLI shortcuts `/research` and `/backtest` for strategy workflow triggers.
 - Sprint 08 LLM-driven `AgentPlanner` using DeepSeek function calling; hardcoded fallback when no key.
 - Sprint 09 exact `market_ticker` tool for any listed OKX USDT SWAP symbol or instrument id.
+- Sprint 10 `market_candles` tool for recent OKX candles and deterministic trend features.
 
 ## V1 Out of Scope
 
@@ -57,6 +58,8 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - User can create an Agent market-summary run and inspect trace events.
 - User can ask for a specific listed OKX SWAP symbol, such as ETH/SOL/DOGE/PEPE, and the Agent can
   call the exact ticker tool instead of returning only the all-market movers list.
+- User can ask for a specific symbol's recent trend and the Agent can call the candle research tool
+  to return OHLCV-derived features.
 - User can create a strategy research record and run a deterministic Backtrader backtest.
 - Developer can run `hypertrade` as a standalone CLI Agent and see run id, tool calls, and report output.
 - Developer can use CLI slash commands such as `/tools`, `/runs`, `/memory`, `/strategy`, and `/backtests` in interactive chat.

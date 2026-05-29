@@ -24,6 +24,11 @@ class ToolRegistry:
                     "market",
                 ),
                 ToolDefinition(
+                    "market.candles",
+                    "Read OKX SWAP candles and derived trend features.",
+                    "market",
+                ),
+                ToolDefinition(
                     "market.tickers",
                     "Read latest OKX SWAP ticker snapshots.",
                     "market",
