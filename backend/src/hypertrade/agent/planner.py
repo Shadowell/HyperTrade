@@ -23,6 +23,26 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "market_ticker",
+            "description": (
+                "Fetch one OKX SWAP ticker for any requested listed symbol, "
+                "for example ETH, SOL-USDT, or PEPE-USDT-SWAP."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or OKX instrument id.",
+                    },
+                },
+                "required": ["symbol"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "rag_search",
             "description": "Search the project knowledge base for relevant trading context.",
             "parameters": {
@@ -107,6 +127,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 _SYSTEM_PROMPT = """\
 You are HyperTrade, an agent-first crypto research assistant.
 You have market data tools, RAG search, long-term memory, strategy research, and backtesting.
+Use market_ticker when the user asks about any specific listed coin or one OKX
+instrument, such as ETH, SOL, DOGE, PEPE-USDT, or BTC-USDT-SWAP.
 Plan which tools to call, execute them, then write a concise Markdown report.
 Always end with: "Research output only. Not investment advice."
 """.strip()

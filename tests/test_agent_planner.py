@@ -48,6 +48,39 @@ class TestAgentPlannerSingleToolThenFinalAnswer:
         assert llm.chat.call_count == 2
 
 
+class TestAgentPlannerSpecificTickerTool:
+    def test_can_call_specific_market_ticker_tool(self) -> None:
+        tool_call = ToolCallRequest(
+            id="call_eth",
+            name="market_ticker",
+            arguments={"symbol": "ETH"},
+        )
+        llm = _fake_llm(
+            ChatResponse(content="", tool_calls=[tool_call]),
+            ChatResponse(
+                content="ETH checked. Research output only. Not investment advice.",
+                tool_calls=[],
+            ),
+        )
+        planner = AgentPlanner(llm)
+        result = planner.run(
+            "看下ETH行情",
+            _static_executor(
+                {
+                    "market_ticker": {
+                        "inst_id": "ETH-USDT-SWAP",
+                        "last": "3500",
+                        "found": True,
+                    }
+                }
+            ),
+        )
+
+        assert result.tool_calls[0].tool_name == "market_ticker"
+        assert result.tool_calls[0].input_json == {"symbol": "ETH"}
+        assert result.tool_calls[0].output_json["inst_id"] == "ETH-USDT-SWAP"
+
+
 class TestAgentPlannerMultiTurnChain:
     def test_research_then_backtest_chain(self) -> None:
         research_call = ToolCallRequest(

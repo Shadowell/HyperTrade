@@ -90,6 +90,8 @@ class AgentKernel:
         def executor(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
             if tool_name == "market_summary":
                 return self._market_summary_payload()
+            if tool_name == "market_ticker":
+                return self._market_ticker_payload(str(args.get("symbol", "")))
             if tool_name == "rag_search":
                 self.rag.scan_once()
                 query = str(args.get("query", "market risk"))
@@ -272,6 +274,33 @@ class AgentKernel:
             "as_of_utc": datetime.now(UTC).isoformat(),
         }
 
+    def _market_ticker_payload(self, symbol: str) -> dict[str, Any]:
+        inst_id = _normalize_swap_inst_id(symbol)
+        source, error = self._refresh_market_snapshot()
+        ticker = self.market.get_ticker(inst_id)
+        if ticker is None:
+            return {
+                "market_scope": "OKX SWAP",
+                "symbol": symbol,
+                "inst_id": inst_id,
+                "found": False,
+                "data_source": source,
+                "as_of_utc": datetime.now(UTC).isoformat(),
+                "unavailable_reason": error if source != "okx_rest" else "",
+            }
+        return {
+            "market_scope": "OKX SWAP",
+            "symbol": symbol,
+            "inst_id": ticker.inst_id,
+            "found": True,
+            "last": str(ticker.last),
+            "volume_ccy_24h": str(ticker.volume_ccy_24h),
+            "change_utc0_pct": str(ticker.change_utc0_pct),
+            "ticker_updated_at": ticker.updated_at.isoformat(),
+            "data_source": source if source == "okx_rest" else "db_fallback",
+            "as_of_utc": datetime.now(UTC).isoformat(),
+        }
+
     def _refresh_market_snapshot(self) -> tuple[str, str]:
         try:
             settings = get_settings()
@@ -314,3 +343,16 @@ class AgentKernel:
             )
             lines.append(line.format(**mover))
         return "\n".join(lines)
+
+
+def _normalize_swap_inst_id(symbol: str) -> str:
+    value = symbol.strip().upper().replace("_", "-").replace("/", "-")
+    if not value:
+        return "BTC-USDT-SWAP"
+    if value.endswith("-SWAP"):
+        return value
+    if value.endswith("-USDT"):
+        return f"{value}-SWAP"
+    if "-" not in value:
+        return f"{value}-USDT-SWAP"
+    return f"{value}-SWAP"

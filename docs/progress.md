@@ -8,7 +8,7 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-08-llm-agent-planner.md` (completed locally; pending deploy)
+- `docs/contracts/sprint-09-specific-market-ticker-tool.md` (in progress)
 
 ## Latest Completed Work
 
@@ -27,10 +27,13 @@
 
 - Added Sprint 08 LLM-driven agent planner: `DeepSeekClient`, `AgentPlanner` multi-turn tool-calling loop, and updated `AgentKernel` to use real DeepSeek function calling when `DEEPSEEK_API_KEY` is configured, with hardcoded fallback when not.
 - Fixed DeepSeek thinking-mode compatibility by preserving `reasoning_content` across tool-call turns.
+- Added Sprint 09 exact market ticker path: `market_ticker` planner tool, `market.ticker` registry entry, exact `MarketRepository.get_ticker()`, and symbol normalization for any listed OKX USDT SWAP symbol such as ETH, SOL, DOGE, or PEPE.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 34 tests.
+- `uv run pytest tests/test_market_ticker_tool.py tests/test_agent_planner.py -q` -> 10 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 38 tests.
 - Server deployed SHA `8d91748`; external `GET /api/health` returned OK.
 - Server `/status` slash command smoke passed through host `hypertrade`.
 - Server DeepSeek planner smoke passed with `hypertrade ask "看下比特币行情"`, producing run `run_363a592c965141a8b914` with `market_summary`, `rag_search`, `memory_search`, and `memory_write` tool calls.
@@ -73,6 +76,6 @@
 
 ## Recommended Next Steps
 
-1. Add Agent workflow planning over strategy research/backtest tools.
-2. Deploy Sprint 06 and Sprint 07 CLI changes to `47.79.36.92`.
-3. Add HTTPS before setting `COOKIE_SECURE=true`.
+1. Deploy Sprint 09 to `47.79.36.92`.
+2. Server-smoke a non-BTC prompt such as `看下ETH行情` and confirm `market_ticker` appears in the tool trace.
+3. Add historical K-line lookup for richer single-symbol reports.

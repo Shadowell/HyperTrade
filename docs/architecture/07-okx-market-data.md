@@ -11,6 +11,8 @@ Data flow:
 3. REST tickers are also used as fallback after repeated WS failures.
 4. Parsed tickers are upserted into `market_tickers`.
 5. The agent reads latest movers from PostgreSQL when the user asks for a summary.
+6. The agent reads one exact `market_tickers.inst_id` when the user asks for a specific listed
+   symbol through the `market_ticker` tool.
 
 Raw ticker snapshots are retained for short-term operational use; aggregated summaries are kept long term.
 
@@ -25,5 +27,7 @@ Sprint 01 覆盖 OKX 全市场永续合约 `SWAP`。行情使用 mainnet；交�
 3. WS 连续失败后也用 REST tickers 降级。
 4. 解析后的 ticker upsert 到 `market_tickers`。
 5. 用户发起归纳时，Agent 从 PostgreSQL 读取最新异动。
+6. 用户询问具体已上线标的时，Agent 通过 `market_ticker` 精确读取一个
+   `market_tickers.inst_id`。
 
 原始 ticker 用于短期运行，聚合摘要长期保留。

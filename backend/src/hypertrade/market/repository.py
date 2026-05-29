@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -13,6 +14,17 @@ class MarketSummaryRow:
     last: Decimal
     volume_ccy_24h: Decimal
     change_utc0_pct: Decimal
+
+
+@dataclass(frozen=True)
+class MarketTickerSnapshot:
+    inst_id: str
+    inst_type: str
+    last: Decimal
+    volume_ccy_24h: Decimal
+    change_utc0_pct: Decimal
+    updated_at: datetime
+    raw: dict[str, Any]
 
 
 class MarketRepository:
@@ -81,3 +93,18 @@ class MarketRepository:
                 )
                 for row in rows
             ]
+
+    def get_ticker(self, inst_id: str) -> MarketTickerSnapshot | None:
+        with self.db.session() as session:
+            row = session.scalar(select(MarketTicker).where(MarketTicker.inst_id == inst_id))
+            if row is None:
+                return None
+            return MarketTickerSnapshot(
+                inst_id=row.inst_id,
+                inst_type=row.inst_type,
+                last=row.last,
+                volume_ccy_24h=row.volume_ccy_24h,
+                change_utc0_pct=row.change_utc0_pct,
+                updated_at=row.updated_at,
+                raw=row.raw,
+            )

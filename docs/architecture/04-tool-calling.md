@@ -11,6 +11,15 @@ Policy:
 - every tool call must create a trace event
 - large outputs should be summarized before entering model context
 
+Specific ticker lookup:
+
+- `market_summary` is for all-market OKX SWAP summaries and top movers.
+- `market_ticker` is for one listed OKX USDT perpetual swap symbol or instrument id.
+- Common user inputs are normalized to OKX instrument ids: `eth` -> `ETH-USDT-SWAP`,
+  `SOL-USDT` -> `SOL-USDT-SWAP`, `doge_usdt` -> `DOGE-USDT-SWAP`.
+- The planner prompt instructs the LLM to choose `market_ticker` for any specific listed coin, not
+  only BTC examples.
+
 ## 中文
 
 ToolRegistry 是 Agent 可调用工具的唯一目录。Sprint 01 包含行情归纳、ticker 读取、RAG 搜索、Memory 写入/搜索，以及策略、回测、模拟盘、实盘订单意图的扩展位。
@@ -22,3 +31,10 @@ ToolRegistry 是 Agent 可调用工具的唯一目录。Sprint 01 包含行情�
 - 每次工具调用必须生成 trace event
 - 大结果进入模型上下文前要摘要
 
+单标的精确行情：
+
+- `market_summary` 用于 OKX SWAP 全市场归纳和异动榜。
+- `market_ticker` 用于一个已上线 OKX USDT 永续标的或 instrument id。
+- 常见输入会归一化为 OKX instrument id：`eth` -> `ETH-USDT-SWAP`，
+  `SOL-USDT` -> `SOL-USDT-SWAP`，`doge_usdt` -> `DOGE-USDT-SWAP`。
+- planner prompt 明确要求：用户问任意具体币种时使用 `market_ticker`，不是只支持 BTC。

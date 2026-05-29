@@ -19,6 +19,11 @@ class ToolRegistry:
             [
                 ToolDefinition("market.summary", "Summarize OKX SWAP market state.", "market"),
                 ToolDefinition(
+                    "market.ticker",
+                    "Read one OKX SWAP ticker by symbol or instrument id.",
+                    "market",
+                ),
+                ToolDefinition(
                     "market.tickers",
                     "Read latest OKX SWAP ticker snapshots.",
                     "market",
