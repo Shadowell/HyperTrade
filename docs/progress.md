@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 05 standalone hybrid CLI runtime deployed to `47.79.36.92` at SHA `d125406`.
+- Last verified state: Sprint 08 LLM agent planner deployed to `47.79.36.92` at SHA `8d91748`.
 
 ## Active Contract
 
@@ -31,6 +31,9 @@
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 34 tests.
+- Server deployed SHA `8d91748`; external `GET /api/health` returned OK.
+- Server `/status` slash command smoke passed through host `hypertrade`.
+- Server DeepSeek planner smoke passed with `hypertrade ask "看下比特币行情"`, producing run `run_363a592c965141a8b914` with `market_summary`, `rag_search`, `memory_search`, and `memory_write` tool calls.
 
 ## Verification Evidence (previous sprints)
 
