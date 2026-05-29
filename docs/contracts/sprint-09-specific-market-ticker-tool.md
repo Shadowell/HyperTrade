@@ -19,6 +19,8 @@ specific symbol, while still keeping all-market summaries available.
 - Add repository support for exact `market_tickers.inst_id` reads.
 - Add `market.ticker` to the ToolRegistry catalog so `/tools` and `/harness` show the capability.
 - Keep REST refresh + PostgreSQL fallback behavior consistent with the existing market summary tool.
+- Add a stable report block so exact ticker values are visible in CLI/API output even if the LLM
+  final prose is brief.
 - Add tests proving the behavior is not BTC-specific.
 - Update project docs and progress.
 
@@ -34,6 +36,7 @@ specific symbol, while still keeping all-market summaries available.
 - AgentPlanner can call `market_ticker` for a non-BTC symbol.
 - AgentKernel can return an exact ticker payload for any normalized OKX USDT SWAP instrument in
   PostgreSQL.
+- AgentKernel final report includes the exact ticker values for successful `market_ticker` calls.
 - `./scripts/check.sh` passes.
 - Server CLI smoke verifies a non-BTC prompt uses `market_ticker`.
 

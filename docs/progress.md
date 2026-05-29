@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 09 specific market ticker tool deployed to `47.79.36.92` at SHA `16b4ac6`.
+- Last verified state: Sprint 09 specific market ticker tool deployed to `47.79.36.92` at SHA `16b4ac6`; stable ticker report block pending deploy.
 
 ## Active Contract
 
@@ -28,12 +28,15 @@
 - Added Sprint 08 LLM-driven agent planner: `DeepSeekClient`, `AgentPlanner` multi-turn tool-calling loop, and updated `AgentKernel` to use real DeepSeek function calling when `DEEPSEEK_API_KEY` is configured, with hardcoded fallback when not.
 - Fixed DeepSeek thinking-mode compatibility by preserving `reasoning_content` across tool-call turns.
 - Added Sprint 09 exact market ticker path: `market_ticker` planner tool, `market.ticker` registry entry, exact `MarketRepository.get_ticker()`, and symbol normalization for any listed OKX USDT SWAP symbol such as ETH, SOL, DOGE, or PEPE.
+- Added stable planner report rendering for successful `market_ticker` calls so CLI/API answers always include exact price, UTC0 change, 24h volume, source, and timestamp.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 34 tests.
 - `uv run pytest tests/test_market_ticker_tool.py tests/test_agent_planner.py -q` -> 10 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 38 tests.
+- `uv run pytest tests/test_market_ticker_tool.py tests/test_agent_planner.py -q` -> 11 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 39 tests.
 - Server deployed SHA `16b4ac6`; external `GET /api/health` returned OK.
 - Server `/tools` slash command shows `market.ticker [market]`.
 - Server non-BTC CLI smoke `hypertrade ask "看下ETH行情"` produced run `run_d745abf2ec4246a38315` with `market_ticker`, `market_summary`, and `memory_write` tool calls.
@@ -80,6 +83,6 @@
 
 ## Recommended Next Steps
 
-1. Add historical K-line lookup for richer single-symbol reports.
-2. Improve the final LLM report template so exact ticker payload values are always surfaced in the answer, not only in trace.
+1. Run full `./scripts/check.sh` for stable ticker report rendering and deploy to `47.79.36.92`.
+2. Add historical K-line lookup for richer single-symbol reports.
 3. Add multi-symbol comparison support, such as `比较 ETH 和 SOL`.

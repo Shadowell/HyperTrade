@@ -84,7 +84,8 @@ class AgentKernel:
             ],
             "disclaimer": "Research output only. Not investment advice.",
         }
-        self._complete_run(run_id, result.final_message, report_json)
+        report_markdown = self._render_planner_report(result.final_message, result.tool_calls)
+        self._complete_run(run_id, report_markdown, report_json)
 
     def _build_executor(self, run_id: str) -> ToolExecutor:
         def executor(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -343,6 +344,33 @@ class AgentKernel:
             )
             lines.append(line.format(**mover))
         return "\n".join(lines)
+
+    @staticmethod
+    def _render_planner_report(
+        final_message: str,
+        tool_calls: list[Any],
+    ) -> str:
+        ticker_lines: list[str] = []
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "market_ticker":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or not payload.get("found"):
+                continue
+            ticker_lines.extend(
+                [
+                    f"- 标的: {payload.get('inst_id', 'unknown')}",
+                    f"- 最新价 {payload.get('last', 'n/a')}",
+                    f"- UTC0 涨跌幅 {payload.get('change_utc0_pct', 'n/a')}%",
+                    f"- 24h 成交额 {payload.get('volume_ccy_24h', 'n/a')}",
+                    f"- 数据来源 {payload.get('data_source', 'unknown')}",
+                    f"- 数据时间(UTC) {payload.get('as_of_utc', 'n/a')}",
+                    "",
+                ]
+            )
+        if not ticker_lines:
+            return final_message
+        return "\n".join(["## 单标的行情", "", *ticker_lines, final_message])
 
 
 def _normalize_swap_inst_id(symbol: str) -> str:
