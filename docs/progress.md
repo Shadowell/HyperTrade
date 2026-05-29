@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 09 specific market ticker tool deployed to `47.79.36.92` at SHA `38f484f`.
+- Last verified state: Sprint 10 market candles research deployed to `47.79.36.92` at SHA `a258e05`.
 
 ## Active Contract
 
-- `docs/contracts/sprint-10-market-candles-research.md` (in progress)
+- `docs/contracts/sprint-10-market-candles-research.md` (completed and deployed)
 
 ## Latest Completed Work
 
@@ -40,6 +40,9 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 39 tests.
 - `uv run pytest tests/test_market_candles_tool.py tests/test_agent_planner.py -q` -> 12 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 44 tests.
+- Server deployed SHA `a258e05`; external `GET /api/health` returned OK.
+- Server `/tools` slash command shows `market.candles [market]`.
+- Server non-BTC trend smoke `hypertrade ask "看下ETH这两天走势"` produced run `run_f6d262efb67147eca905` with `market_ticker` and two `market_candles` calls, and the final answer included stable K-line trend blocks for `ETH-USDT-SWAP` 1H and 1D.
 - Server deployed SHA `16b4ac6`; external `GET /api/health` returned OK.
 - Server `/tools` slash command shows `market.ticker [market]`.
 - Server non-BTC CLI smoke `hypertrade ask "看下ETH行情"` produced run `run_d745abf2ec4246a38315` with `market_ticker`, `market_summary`, and `memory_write` tool calls.
@@ -88,6 +91,6 @@
 
 ## Recommended Next Steps
 
-1. Run full `./scripts/check.sh` for Sprint 10 and deploy to `47.79.36.92`.
-2. Server-smoke a non-BTC trend prompt such as `看下ETH这两天走势` and confirm `market_candles` appears.
-3. Add multi-symbol comparison support, such as `比较 ETH 和 SOL`.
+1. Add multi-symbol comparison support, such as `比较 ETH 和 SOL`.
+2. Add CLI streaming so long DeepSeek calls show incremental output.
+3. Add candle-backed Backtrader input so strategy backtests can use live OKX historical candles instead of deterministic samples.
