@@ -71,6 +71,35 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "market_compare",
+            "description": (
+                "Compare relative strength across multiple OKX SWAP symbols using "
+                "recent candle trend features."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbols": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Coin symbols or OKX instrument ids to compare.",
+                    },
+                    "bar": {
+                        "type": "string",
+                        "description": "OKX candle bar such as 15m, 1H, 4H, or 1D.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of candles to fetch per symbol, default 100.",
+                    },
+                },
+                "required": ["symbols"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "rag_search",
             "description": "Search the project knowledge base for relevant trading context.",
             "parameters": {
@@ -159,6 +188,8 @@ Use market_ticker when the user asks about any specific listed coin or one OKX
 instrument, such as ETH, SOL, DOGE, PEPE-USDT, or BTC-USDT-SWAP.
 Use market_candles when the user asks about trend,走势, K线, breakthrough, pullback,
 support/resistance, or multi-period market research for a specific symbol.
+Use market_compare when the user asks to compare two or more symbols, relative
+strength, 哪个更强, 跑赢, 强弱, or leader/laggard.
 Plan which tools to call, execute them, then write a concise Markdown report.
 Always end with: "Research output only. Not investment advice."
 """.strip()

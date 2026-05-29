@@ -8,7 +8,7 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-10-market-candles-research.md` (completed and deployed)
+- `docs/contracts/sprint-11-market-relative-strength.md` (in progress)
 
 ## Latest Completed Work
 
@@ -30,6 +30,7 @@
 - Added Sprint 09 exact market ticker path: `market_ticker` planner tool, `market.ticker` registry entry, exact `MarketRepository.get_ticker()`, and symbol normalization for any listed OKX USDT SWAP symbol such as ETH, SOL, DOGE, or PEPE.
 - Added stable planner report rendering for successful `market_ticker` calls so CLI/API answers always include exact price, UTC0 change, 24h volume, source, and timestamp.
 - Added Sprint 10 market candles research path locally: OKX candle parsing, REST candle fetcher, deterministic trend feature extraction, `market_candles` planner tool, `market.candles` registry entry, AgentKernel execution, and stable K-line trend report block.
+- Added Sprint 11 market relative-strength compare locally: `market_compare` planner tool, `market.compare` registry entry, deterministic strength scoring, ranking payload, and stable multi-symbol comparison report block.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
@@ -40,6 +41,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 39 tests.
 - `uv run pytest tests/test_market_candles_tool.py tests/test_agent_planner.py -q` -> 12 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 44 tests.
+- `uv run pytest tests/test_market_compare_tool.py tests/test_agent_planner.py -q` -> 11 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 47 tests.
 - Server deployed SHA `a258e05`; external `GET /api/health` returned OK.
 - Server `/tools` slash command shows `market.candles [market]`.
 - Server non-BTC trend smoke `hypertrade ask "看下ETH这两天走势"` produced run `run_f6d262efb67147eca905` with `market_ticker` and two `market_candles` calls, and the final answer included stable K-line trend blocks for `ETH-USDT-SWAP` 1H and 1D.
@@ -91,6 +94,6 @@
 
 ## Recommended Next Steps
 
-1. Add multi-symbol comparison support, such as `比较 ETH 和 SOL`.
-2. Add CLI streaming so long DeepSeek calls show incremental output.
-3. Add candle-backed Backtrader input so strategy backtests can use live OKX historical candles instead of deterministic samples.
+1. Run full `./scripts/check.sh` for Sprint 11 and deploy to `47.79.36.92`.
+2. Server-smoke `比较 ETH 和 SOL 哪个更强` and confirm `market_compare` appears.
+3. Add CLI streaming so long DeepSeek calls show incremental output.

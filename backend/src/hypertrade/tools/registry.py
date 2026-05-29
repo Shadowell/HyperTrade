@@ -29,6 +29,11 @@ class ToolRegistry:
                     "market",
                 ),
                 ToolDefinition(
+                    "market.compare",
+                    "Compare relative strength across OKX SWAP symbols.",
+                    "market",
+                ),
+                ToolDefinition(
                     "market.tickers",
                     "Read latest OKX SWAP ticker snapshots.",
                     "market",

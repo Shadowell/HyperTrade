@@ -118,6 +118,42 @@ class TestAgentPlannerMarketCandlesTool:
         }
 
 
+class TestAgentPlannerMarketCompareTool:
+    def test_can_call_market_compare_for_relative_strength_question(self) -> None:
+        tool_call = ToolCallRequest(
+            id="call_compare",
+            name="market_compare",
+            arguments={"symbols": ["ETH", "SOL"], "bar": "4H", "limit": 100},
+        )
+        llm = _fake_llm(
+            ChatResponse(content="", tool_calls=[tool_call]),
+            ChatResponse(
+                content="ETH is stronger. Research output only. Not investment advice.",
+                tool_calls=[],
+            ),
+        )
+        planner = AgentPlanner(llm)
+        result = planner.run(
+            "比较 ETH 和 SOL 哪个更强",
+            _static_executor(
+                {
+                    "market_compare": {
+                        "leader": "ETH-USDT-SWAP",
+                        "rankings": [],
+                        "found": True,
+                    }
+                }
+            ),
+        )
+
+        assert result.tool_calls[0].tool_name == "market_compare"
+        assert result.tool_calls[0].input_json == {
+            "symbols": ["ETH", "SOL"],
+            "bar": "4H",
+            "limit": 100,
+        }
+
+
 class TestAgentPlannerMultiTurnChain:
     def test_research_then_backtest_chain(self) -> None:
         research_call = ToolCallRequest(

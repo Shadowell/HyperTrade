@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import select
@@ -99,6 +100,14 @@ class AgentKernel:
                 return self._market_candles_payload(
                     symbol=str(args.get("symbol", "")),
                     bar=str(args.get("bar", "1H")),
+                    limit=int(args.get("limit", 100)),
+                )
+            if tool_name == "market_compare":
+                raw_symbols = args.get("symbols", [])
+                symbols = raw_symbols if isinstance(raw_symbols, list) else [raw_symbols]
+                return self._market_compare_payload(
+                    symbols=[str(symbol) for symbol in symbols],
+                    bar=str(args.get("bar", "4H")),
                     limit=int(args.get("limit", 100)),
                 )
             if tool_name == "rag_search":
@@ -345,6 +354,59 @@ class AgentKernel:
                 "unavailable_reason": str(exc)[:160],
             }
 
+    def _market_compare_payload(
+        self,
+        *,
+        symbols: list[str],
+        bar: str = "4H",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        safe_bar = _normalize_okx_bar(bar)
+        unique_symbols = _unique_symbols(symbols)
+        rankings: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for symbol in unique_symbols:
+            payload = self._market_candles_payload(symbol=symbol, bar=safe_bar, limit=limit)
+            if not payload.get("found"):
+                errors.append(
+                    {
+                        "symbol": symbol,
+                        "reason": str(payload.get("unavailable_reason", "not_found")),
+                    }
+                )
+                continue
+            score = _strength_score(payload)
+            rankings.append(
+                {
+                    "rank": 0,
+                    "symbol": symbol,
+                    "inst_id": payload.get("inst_id", _normalize_swap_inst_id(symbol)),
+                    "strength_score": _decimal_text(score),
+                    "return_pct": str(payload.get("return_pct", "0")),
+                    "range_pct": str(payload.get("range_pct", "0")),
+                    "close_position_pct": str(payload.get("close_position_pct", "0")),
+                    "trend_bias": str(payload.get("trend_bias", "range")),
+                    "ma20": str(payload.get("ma20", "0")),
+                    "ma60": str(payload.get("ma60", "0")),
+                    "data_source": str(payload.get("data_source", "unknown")),
+                }
+            )
+        rankings.sort(key=lambda row: _as_decimal(row["strength_score"]), reverse=True)
+        for index, row in enumerate(rankings, start=1):
+            row["rank"] = index
+        return {
+            "market_scope": "OKX SWAP",
+            "symbols": unique_symbols,
+            "bar": safe_bar,
+            "limit": max(1, min(limit, 300)),
+            "found": bool(rankings),
+            "leader": rankings[0]["inst_id"] if rankings else "",
+            "rankings": rankings,
+            "errors": errors,
+            "data_source": "okx_rest" if rankings else "unavailable",
+            "as_of_utc": datetime.now(UTC).isoformat(),
+        }
+
     def _fetch_market_candles(
         self,
         inst_id: str,
@@ -410,6 +472,7 @@ class AgentKernel:
     ) -> str:
         ticker_lines: list[str] = []
         candle_lines: list[str] = []
+        compare_lines: list[str] = []
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "market_ticker":
                 continue
@@ -449,11 +512,44 @@ class AgentKernel:
                     "",
                 ]
             )
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "market_compare":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or not payload.get("found"):
+                continue
+            compare_lines.extend(
+                [
+                    f"- 周期: {payload.get('bar', 'n/a')}",
+                    f"- 领先标的: {payload.get('leader', 'unknown')}",
+                    "",
+                ]
+            )
+            rankings = payload.get("rankings", [])
+            if isinstance(rankings, list):
+                for row in rankings:
+                    if not isinstance(row, dict):
+                        continue
+                    compare_lines.append(
+                        "{rank}. {inst_id}: 强弱分 {strength_score}, "
+                        "涨跌幅 {return_pct}%, 收盘位置 {close_position_pct}%, "
+                        "趋势 {trend_bias}".format(
+                            rank=row.get("rank", "?"),
+                            inst_id=row.get("inst_id", "unknown"),
+                            strength_score=row.get("strength_score", "n/a"),
+                            return_pct=row.get("return_pct", "n/a"),
+                            close_position_pct=row.get("close_position_pct", "n/a"),
+                            trend_bias=row.get("trend_bias", "unknown"),
+                        )
+                    )
+                compare_lines.append("")
         sections: list[str] = []
         if ticker_lines:
             sections.extend(["## 单标的行情", "", *ticker_lines])
         if candle_lines:
             sections.extend(["## K线趋势特征", "", *candle_lines])
+        if compare_lines:
+            sections.extend(["## 多标的强弱比较", "", *compare_lines])
         if not sections:
             return final_message
         return "\n".join([*sections, final_message])
@@ -481,3 +577,38 @@ def _normalize_okx_bar(bar: str) -> str:
     if value.lower().endswith("d"):
         return f"{value[:-1]}D"
     return value
+
+
+def _unique_symbols(symbols: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for symbol in symbols:
+        value = symbol.strip()
+        key = value.upper()
+        if not value or key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+    return result[:6]
+
+
+def _strength_score(payload: dict[str, Any]) -> Decimal:
+    return_pct = _as_decimal(payload.get("return_pct", "0"))
+    close_position = _as_decimal(payload.get("close_position_pct", "0"))
+    trend_bonus = {
+        "up": Decimal("15"),
+        "range": Decimal("0"),
+        "down": Decimal("-15"),
+    }.get(str(payload.get("trend_bias", "range")), Decimal("0"))
+    return return_pct * Decimal("3") + close_position + trend_bonus
+
+
+def _as_decimal(value: object) -> Decimal:
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return Decimal("0")
+
+
+def _decimal_text(value: Decimal) -> str:
+    return str(value.quantize(Decimal("0.000001")))
