@@ -8,7 +8,7 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-11-market-relative-strength.md` (completed and deployed)
+- `docs/contracts/sprint-12-cli-streaming.md` (in progress)
 
 ## Latest Completed Work
 
@@ -31,6 +31,7 @@
 - Added stable planner report rendering for successful `market_ticker` calls so CLI/API answers always include exact price, UTC0 change, 24h volume, source, and timestamp.
 - Added Sprint 10 market candles research path locally: OKX candle parsing, REST candle fetcher, deterministic trend feature extraction, `market_candles` planner tool, `market.candles` registry entry, AgentKernel execution, and stable K-line trend report block.
 - Added Sprint 11 market relative-strength compare locally: `market_compare` planner tool, `market.compare` registry entry, deterministic strength scoring, ranking payload, and stable multi-symbol comparison report block.
+- Added Sprint 12 CLI/API streaming locally: AgentKernel progress event emission, `POST /api/agent/runs/stream` SSE endpoint, remote SSE parsing, local streaming rendering, and CLI progress lines for run/tool events.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
@@ -43,6 +44,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 44 tests.
 - `uv run pytest tests/test_market_compare_tool.py tests/test_agent_planner.py -q` -> 11 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 47 tests.
+- `uv run pytest tests/test_cli.py tests/test_api.py -q` -> 15 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 49 tests.
 - Server deployed SHA `4de0a4b`; external `GET /api/health` returned OK.
 - Server `/tools` slash command shows `market.compare [market]`.
 - Server comparison smoke `hypertrade ask "比较 ETH 和 SOL 哪个更强"` produced run `run_7b35c4bfa1e34c899425` with `market_compare` calls, and the final answer included stable relative-strength ranking blocks for ETH/SOL across 1H, 4H, and 1D.
@@ -97,6 +100,6 @@
 
 ## Recommended Next Steps
 
-1. Add CLI streaming so long DeepSeek calls show incremental output.
-2. Add candle-backed Backtrader input so strategy backtests can use live OKX historical candles instead of deterministic samples.
-3. Add a lightweight `/compare` CLI shortcut for deterministic comparisons without waiting for LLM planning.
+1. Run full `./scripts/check.sh` for Sprint 12 and deploy to `47.79.36.92`.
+2. Server-smoke `hypertrade ask "比较 ETH 和 SOL 哪个更强"` and confirm progress lines appear before the final report.
+3. Add candle-backed Backtrader input so strategy backtests can use live OKX historical candles instead of deterministic samples.

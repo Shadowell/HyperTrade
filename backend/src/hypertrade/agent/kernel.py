@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -48,30 +49,55 @@ class AgentKernel:
         self.tools = ToolRegistry.default()
 
     def run_chat(self, prompt: str) -> CompletedAgentRun:
+        return self.run_chat_with_events(prompt)
+
+    def run_chat_with_events(
+        self,
+        prompt: str,
+        *,
+        event_sink: Callable[[dict[str, Any]], None] | None = None,
+    ) -> CompletedAgentRun:
         settings = self._settings if self._settings is not None else get_settings()
         run_id = self._create_run(prompt)
+        _emit(event_sink, {"event": "run_started", "run_id": run_id, "status": "running"})
         try:
             if settings.deepseek_api_key:
-                self._run_with_planner(run_id, prompt, settings)
+                self._run_with_planner(run_id, prompt, settings, event_sink=event_sink)
             else:
-                self._run_hardcoded(run_id, prompt)
+                self._run_hardcoded(run_id, prompt, event_sink=event_sink)
         except Exception as exc:
             self._fail_run(run_id, str(exc))
+            _emit(
+                event_sink,
+                {"event": "run_failed", "run_id": run_id, "status": "failed", "error": str(exc)},
+            )
             raise
-        return self.get_run(run_id)
+        run = self.get_run(run_id)
+        _emit(
+            event_sink,
+            {"event": "run_completed", "run_id": run.id, "status": run.status},
+        )
+        return run
 
     # ------------------------------------------------------------------
     # LLM-planned path
     # ------------------------------------------------------------------
 
-    def _run_with_planner(self, run_id: str, prompt: str, settings: Any) -> None:
+    def _run_with_planner(
+        self,
+        run_id: str,
+        prompt: str,
+        settings: Any,
+        *,
+        event_sink: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
         llm = DeepSeekClient(
             api_key=str(settings.deepseek_api_key),
             base_url=str(settings.deepseek_base_url),
             model=str(settings.deepseek_model),
         )
         planner = AgentPlanner(llm)
-        executor = self._build_executor(run_id)
+        executor = self._build_executor(run_id, event_sink=event_sink)
         result: PlannerResult = planner.run(prompt, executor)
 
         for record in result.tool_calls:
@@ -90,32 +116,46 @@ class AgentKernel:
         report_markdown = self._render_planner_report(result.final_message, result.tool_calls)
         self._complete_run(run_id, report_markdown, report_json)
 
-    def _build_executor(self, run_id: str) -> ToolExecutor:
+    def _build_executor(
+        self,
+        run_id: str,
+        *,
+        event_sink: Callable[[dict[str, Any]], None] | None = None,
+    ) -> ToolExecutor:
         def executor(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+            _emit(
+                event_sink,
+                {
+                    "event": "tool_started",
+                    "run_id": run_id,
+                    "tool_name": tool_name,
+                    "input_json": args,
+                },
+            )
             if tool_name == "market_summary":
-                return self._market_summary_payload()
-            if tool_name == "market_ticker":
-                return self._market_ticker_payload(str(args.get("symbol", "")))
-            if tool_name == "market_candles":
-                return self._market_candles_payload(
+                result = self._market_summary_payload()
+            elif tool_name == "market_ticker":
+                result = self._market_ticker_payload(str(args.get("symbol", "")))
+            elif tool_name == "market_candles":
+                result = self._market_candles_payload(
                     symbol=str(args.get("symbol", "")),
                     bar=str(args.get("bar", "1H")),
                     limit=int(args.get("limit", 100)),
                 )
-            if tool_name == "market_compare":
+            elif tool_name == "market_compare":
                 raw_symbols = args.get("symbols", [])
                 symbols = raw_symbols if isinstance(raw_symbols, list) else [raw_symbols]
-                return self._market_compare_payload(
+                result = self._market_compare_payload(
                     symbols=[str(symbol) for symbol in symbols],
                     bar=str(args.get("bar", "4H")),
                     limit=int(args.get("limit", 100)),
                 )
-            if tool_name == "rag_search":
+            elif tool_name == "rag_search":
                 self.rag.scan_once()
                 query = str(args.get("query", "market risk"))
                 limit = int(args.get("limit", 3))
                 hits = self.rag.search(query, limit=limit)
-                return {
+                result = {
                     "hits": [
                         {
                             "source_path": h.source_path,
@@ -125,7 +165,7 @@ class AgentKernel:
                         for h in hits
                     ]
                 }
-            if tool_name == "memory_write":
+            elif tool_name == "memory_write":
                 content = str(args.get("content", ""))
                 kind = str(args.get("kind", "agent_note"))
                 item = self.memory.write(
@@ -134,26 +174,38 @@ class AgentKernel:
                     source_run_id=run_id,
                     source_tool="memory.write",
                 )
-                return {"memory_id": item.id}
-            if tool_name == "memory_search":
+                result = {"memory_id": item.id}
+            elif tool_name == "memory_search":
                 items = self.memory.list_active()
-                return {
+                result = {
                     "items": [
                         {"id": m.id, "kind": m.kind, "content": m.content[:200]}
                         for m in items[-10:]
                     ]
                 }
-            if tool_name == "strategy_draft":
+            elif tool_name == "strategy_draft":
                 research_prompt = str(args.get("prompt", ""))
-                return StrategyResearchService(self.db).create(research_prompt)
-            if tool_name == "backtest_run":
+                result = StrategyResearchService(self.db).create(research_prompt)
+            elif tool_name == "backtest_run":
                 research_id = str(args.get("research_id", ""))
                 strategy_key = str(args.get("strategy_key", "momentum_breakout_v1"))
-                return BacktestService(self.db).run(
+                result = BacktestService(self.db).run(
                     research_id=research_id,
                     strategy_key=strategy_key,
                 )
-            return {"error": f"unknown tool: {tool_name}"}
+            else:
+                result = {"error": f"unknown tool: {tool_name}"}
+            _emit(
+                event_sink,
+                {
+                    "event": "tool_completed",
+                    "run_id": run_id,
+                    "tool_name": tool_name,
+                    "status": "completed",
+                    "output_json": result,
+                },
+            )
+            return result
 
         return executor
 
@@ -161,17 +213,49 @@ class AgentKernel:
     # Hardcoded fallback path (no API key configured)
     # ------------------------------------------------------------------
 
-    def _run_hardcoded(self, run_id: str, prompt: str) -> None:
+    def _run_hardcoded(
+        self,
+        run_id: str,
+        prompt: str,
+        *,
+        event_sink: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
+        _emit(
+            event_sink,
+            {"event": "tool_started", "run_id": run_id, "tool_name": "market.summary"},
+        )
         market_payload = self._market_summary_payload()
         self._trace(run_id, "market.summary", {"prompt": prompt}, market_payload)
+        _emit(
+            event_sink,
+            {
+                "event": "tool_completed",
+                "run_id": run_id,
+                "tool_name": "market.summary",
+                "status": "completed",
+                "output_json": market_payload,
+            },
+        )
 
+        _emit(event_sink, {"event": "tool_started", "run_id": run_id, "tool_name": "rag.search"})
         self.rag.scan_once()
         rag_hits = [
             {"source_path": hit.source_path, "content": hit.content[:240], "score": hit.score}
             for hit in self.rag.search("volume risk market funding open interest", limit=3)
         ]
         self._trace(run_id, "rag.search", {"query": "market risk"}, {"hits": rag_hits})
+        _emit(
+            event_sink,
+            {
+                "event": "tool_completed",
+                "run_id": run_id,
+                "tool_name": "rag.search",
+                "status": "completed",
+                "output_json": {"hits": rag_hits},
+            },
+        )
 
+        _emit(event_sink, {"event": "tool_started", "run_id": run_id, "tool_name": "memory.write"})
         memory_item = self.memory.write(
             content=f"Latest market summary requested by user prompt: {prompt[:120]}",
             kind="market_summary",
@@ -183,6 +267,16 @@ class AgentKernel:
             "memory.write",
             {"kind": "market_summary"},
             {"memory_id": memory_item.id},
+        )
+        _emit(
+            event_sink,
+            {
+                "event": "tool_completed",
+                "run_id": run_id,
+                "tool_name": "memory.write",
+                "status": "completed",
+                "output_json": {"memory_id": memory_item.id},
+            },
         )
 
         report_json = {
@@ -612,3 +706,11 @@ def _as_decimal(value: object) -> Decimal:
 
 def _decimal_text(value: Decimal) -> str:
     return str(value.quantize(Decimal("0.000001")))
+
+
+def _emit(
+    event_sink: Callable[[dict[str, Any]], None] | None,
+    event: dict[str, Any],
+) -> None:
+    if event_sink is not None:
+        event_sink(event)

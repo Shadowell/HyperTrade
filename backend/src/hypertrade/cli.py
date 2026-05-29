@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, TextIO
 
@@ -23,6 +24,8 @@ class AgentClient(Protocol):
     def login(self) -> None: ...
 
     def run_agent(self, prompt: str) -> dict[str, Any]: ...
+
+    def run_agent_events(self, prompt: str) -> Iterator[dict[str, Any]]: ...
 
     def list_tools(self) -> list[dict[str, Any]]: ...
 
@@ -102,6 +105,29 @@ class AgentApiClient:
         if not isinstance(payload, dict):
             raise TypeError("Agent run response must be a JSON object")
         return payload
+
+    def run_agent_events(self, prompt: str) -> Iterator[dict[str, Any]]:
+        with self.client.stream(
+            "POST",
+            self._url("/api/agent/runs/stream"),
+            json={"prompt": prompt},
+        ) as response:
+            response.raise_for_status()
+            event_name = "message"
+            data_lines: list[str] = []
+            for line in response.iter_lines():
+                if line == "":
+                    if data_lines:
+                        yield _parse_sse_event(event_name, data_lines)
+                    event_name = "message"
+                    data_lines = []
+                    continue
+                if line.startswith("event:"):
+                    event_name = line.split(":", 1)[1].strip()
+                elif line.startswith("data:"):
+                    data_lines.append(line.split(":", 1)[1].strip())
+            if data_lines:
+                yield _parse_sse_event(event_name, data_lines)
 
     def list_tools(self) -> list[dict[str, Any]]:
         return self._get_list("/api/harness/tools", "tools")
@@ -216,6 +242,16 @@ class LocalAgentClient:
         ).run_chat(prompt)
         return _completed_run_to_dict(run)
 
+    def run_agent_events(self, prompt: str) -> Iterator[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        run = AgentKernel(
+            self.db,
+            knowledge_dir=str(self.settings.knowledge_dir),
+            settings=self.settings,
+        ).run_chat_with_events(prompt, event_sink=events.append)
+        yield from events
+        yield {"event": "final", "run": _completed_run_to_dict(run)}
+
     def list_tools(self) -> list[dict[str, Any]]:
         return [_tool_to_dict(tool) for tool in ToolRegistry.default().list_tools()]
 
@@ -309,7 +345,7 @@ def main(
         if not prompt:
             parser.error("ask requires a prompt")
         agent_client.login()
-        render_run(agent_client.run_agent(prompt), output=output)
+        render_run_stream(agent_client, prompt, output=output)
         return 0
 
     run_chat(client=agent_client, input_fn=input_fn, output=output)
@@ -338,7 +374,7 @@ def run_chat(
         if prompt.startswith("/"):
             handle_slash_command(prompt, client=client, output=output)
             continue
-        render_run(client.run_agent(prompt), output=output)
+        render_run_stream(client, prompt, output=output)
 
 
 def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
@@ -676,6 +712,48 @@ def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
     print(str(run.get("report_markdown", "")), file=output)
 
 
+def render_run_stream(
+    client: AgentClient,
+    prompt: str,
+    *,
+    output: TextIO | None = None,
+) -> None:
+    output = output or sys.stdout
+    try:
+        events = client.run_agent_events(prompt)
+    except AttributeError:
+        render_run(client.run_agent(prompt), output=output)
+        return
+    final_run: dict[str, Any] | None = None
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_name = str(event.get("event", "message"))
+        if event_name == "run_started":
+            print(f"Run started: {event.get('run_id', 'pending')}", file=output)
+        elif event_name == "tool_started":
+            print(f"Tool call: {event.get('tool_name', 'unknown')}", file=output)
+        elif event_name == "tool_completed":
+            print(
+                f"Tool result: {event.get('tool_name', 'unknown')} "
+                f"{event.get('status', 'completed')}",
+                file=output,
+            )
+        elif event_name == "run_completed":
+            print(f"Run completed: {event.get('run_id', 'unknown')}", file=output)
+            if isinstance(event.get("run"), dict):
+                final_run = dict(event["run"])
+        elif event_name == "final" and isinstance(event.get("run"), dict):
+            final_run = dict(event["run"])
+        elif event_name == "error":
+            print(f"Run failed: {event.get('error', 'unknown error')}", file=output)
+    if final_run is not None:
+        print("", file=output)
+        render_run(final_run, output=output)
+    else:
+        print("Run stream ended without final report.", file=output)
+
+
 def entrypoint() -> None:
     raise SystemExit(main())
 
@@ -766,3 +844,11 @@ def _trace_to_dict(event: TraceEvent) -> dict[str, Any]:
         "output_json": event.output_json,
         "created_at": event.created_at.isoformat(),
     }
+
+
+def _parse_sse_event(event_name: str, data_lines: list[str]) -> dict[str, Any]:
+    payload = json.loads("\n".join(data_lines))
+    if isinstance(payload, dict):
+        payload.setdefault("event", event_name)
+        return payload
+    return {"event": event_name, "data": payload}

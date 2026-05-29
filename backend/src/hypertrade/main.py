@@ -1,12 +1,16 @@
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
+from queue import Queue
+from threading import Thread
 from typing import Annotated, Any, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from itsdangerous import BadSignature, URLSafeSerializer
 from pydantic import BaseModel
 from sqlalchemy import desc, func, select
@@ -208,6 +212,13 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         run = kernel.run_chat(payload.prompt)
         return _run_to_dict(run)
 
+    @app.post("/api/agent/runs/stream")
+    def stream_run(payload: AgentRunPayload, _: AdminUser) -> StreamingResponse:
+        return StreamingResponse(
+            _agent_run_sse(database, app_settings, payload.prompt),
+            media_type="text/event-stream",
+        )
+
     @app.get("/api/agent/runs")
     def list_runs(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
         with database.session() as session:
@@ -331,6 +342,36 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         await websocket.close()
 
     return app
+
+
+def _agent_run_sse(database: Database, settings: Settings, prompt: str) -> Any:
+    events: Queue[dict[str, Any] | None] = Queue()
+
+    def worker() -> None:
+        try:
+            kernel = AgentKernel(
+                database,
+                knowledge_dir=str(settings.knowledge_dir),
+                settings=settings,
+            )
+            run = kernel.run_chat_with_events(prompt, event_sink=events.put)
+            events.put({"event": "final", "run": _run_to_dict(run)})
+        except Exception as exc:  # noqa: BLE001 - stream API errors to client
+            events.put({"event": "error", "error": str(exc)})
+        finally:
+            events.put(None)
+
+    Thread(target=worker, daemon=True).start()
+    while True:
+        event = events.get()
+        if event is None:
+            break
+        yield _format_sse(event)
+
+
+def _format_sse(event: dict[str, Any]) -> str:
+    event_name = str(event.get("event", "message"))
+    return f"event: {event_name}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
 def _tool_to_dict(tool: ToolDefinition) -> dict[str, object]:

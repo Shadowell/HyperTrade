@@ -80,6 +80,41 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     assert paused_overview["paper"]["session"]["status"] == "paused"
 
 
+def test_api_streams_agent_run_events(tmp_path):
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    knowledge_dir = tmp_path / "knowledge"
+    knowledge_dir.mkdir()
+    app = create_app(
+        settings=Settings(
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            KNOWLEDGE_DIR=knowledge_dir,
+            DEEPSEEK_API_KEY="",
+        ),
+        db=db,
+    )
+    client = TestClient(app)
+    assert client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "secret"},
+    ).status_code == 200
+
+    with client.stream(
+        "POST",
+        "/api/agent/runs/stream",
+        json={"prompt": "请做行情归纳"},
+    ) as response:
+        body = response.read().decode()
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: run_started" in body
+    assert "event: tool_started" in body
+    assert "event: tool_completed" in body
+    assert "event: run_completed" in body
+
+
 def test_login_cookie_secure_flag_is_configurable():
     db = Database("sqlite:///:memory:")
     db.create_all()

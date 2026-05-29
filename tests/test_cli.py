@@ -29,6 +29,24 @@ class FakeAgentClient:
             ],
         }
 
+    def run_agent_events(self, prompt: str):
+        self.prompts.append(prompt)
+        yield {"event": "run_started", "run_id": "pending", "status": "running"}
+        yield {"event": "tool_started", "tool_name": "market.summary"}
+        yield {"event": "tool_completed", "tool_name": "market.summary", "status": "completed"}
+        yield {
+            "event": "run_completed",
+            "run": {
+                "id": "run_cli",
+                "status": "completed",
+                "report_markdown": "# CLI Report\n\nResearch only. Not investment advice.",
+                "trace_events": [
+                    {"tool_name": "market.summary", "status": "completed"},
+                    {"tool_name": "memory.write", "status": "completed"},
+                ],
+            },
+        }
+
     def list_tools(self) -> list[dict[str, Any]]:
         return [
             {
@@ -126,6 +144,19 @@ def test_ask_prints_agent_run_trace_and_report(capsys) -> None:
     output = capsys.readouterr().out
     assert "run_cli" in output
     assert "market.summary" in output
+    assert "# CLI Report" in output
+
+
+def test_ask_streams_agent_run_progress(capsys) -> None:
+    client = FakeAgentClient()
+
+    exit_code = main(["ask", "请做行情归纳"], client=client)
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "Run started" in output
+    assert "Tool call: market.summary" in output
+    assert "Tool result: market.summary completed" in output
     assert "# CLI Report" in output
 
 
