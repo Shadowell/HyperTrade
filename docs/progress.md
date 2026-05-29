@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 11 market relative-strength compare deployed to `47.79.36.92` at SHA `4de0a4b`.
+- Last verified state: Sprint 12 CLI streaming deployed to `47.79.36.92` at SHA `4ce55f8`.
 
 ## Active Contract
 
-- `docs/contracts/sprint-12-cli-streaming.md` (in progress)
+- `docs/contracts/sprint-12-cli-streaming.md` (completed and deployed)
 
 ## Latest Completed Work
 
@@ -46,6 +46,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 47 tests.
 - `uv run pytest tests/test_cli.py tests/test_api.py -q` -> 15 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 49 tests.
+- Server deployed SHA `4ce55f8`; external `GET /api/health` returned OK.
+- Server streaming smoke `hypertrade ask "比较 ETH 和 SOL 哪个更强"` produced run `run_c6909801a50243649c32` and printed progress lines before the final report: `Run started`, `Tool call`, `Tool result`, and `Run completed`.
 - Server deployed SHA `4de0a4b`; external `GET /api/health` returned OK.
 - Server `/tools` slash command shows `market.compare [market]`.
 - Server comparison smoke `hypertrade ask "比较 ETH 和 SOL 哪个更强"` produced run `run_7b35c4bfa1e34c899425` with `market_compare` calls, and the final answer included stable relative-strength ranking blocks for ETH/SOL across 1H, 4H, and 1D.
@@ -100,6 +102,6 @@
 
 ## Recommended Next Steps
 
-1. Run full `./scripts/check.sh` for Sprint 12 and deploy to `47.79.36.92`.
-2. Server-smoke `hypertrade ask "比较 ETH 和 SOL 哪个更强"` and confirm progress lines appear before the final report.
-3. Add candle-backed Backtrader input so strategy backtests can use live OKX historical candles instead of deterministic samples.
+1. Add candle-backed Backtrader input so strategy backtests can use live OKX historical candles instead of deterministic samples.
+2. Add a lightweight `/compare` CLI shortcut for deterministic comparisons without waiting for LLM planning.
+3. Add `/harness` live run event view backed by the same SSE event stream.
