@@ -19,6 +19,7 @@ class ToolCallRequest:
 @dataclass
 class ChatResponse:
     content: str
+    reasoning_content: str = ""
     tool_calls: list[ToolCallRequest] = field(default_factory=list)
 
 
@@ -51,4 +52,9 @@ class DeepSeekClient:
                 tool_calls.append(
                     ToolCallRequest(id=tc.id, name=tc.function.name, arguments=args)
                 )
-        return ChatResponse(content=message.content or "", tool_calls=tool_calls)
+        reasoning_content = str(getattr(message, "reasoning_content", "") or "")
+        return ChatResponse(
+            content=message.content or "",
+            reasoning_content=reasoning_content,
+            tool_calls=tool_calls,
+        )

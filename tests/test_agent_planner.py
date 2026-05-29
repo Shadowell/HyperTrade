@@ -136,3 +136,24 @@ class TestAgentPlannerExecutorPassthrough:
         planner.run("rag query test", tracking_executor)
 
         assert received == [("rag_search", {"query": "funding rate risk", "limit": 5})]
+
+
+class TestAgentPlannerDeepSeekReasoningContent:
+    def test_preserves_reasoning_content_for_next_tool_turn(self) -> None:
+        call = ToolCallRequest(id="call_market", name="market_summary", arguments={})
+        llm = _fake_llm(
+            ChatResponse(content="", reasoning_content="thinking tokens", tool_calls=[call]),
+            ChatResponse(
+                content="Done. Research output only. Not investment advice.",
+                tool_calls=[],
+            ),
+        )
+        planner = AgentPlanner(llm)
+
+        planner.run("market", _static_executor({"market_summary": {"ok": True}}))
+
+        second_messages = llm.chat.call_args_list[1].args[0]
+        assistant_messages = [
+            message for message in second_messages if message.get("role") == "assistant"
+        ]
+        assert assistant_messages[-1]["reasoning_content"] == "thinking tokens"

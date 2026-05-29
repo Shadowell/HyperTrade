@@ -159,6 +159,8 @@ class AgentPlanner:
                     for tc in response.tool_calls
                 ],
             }
+            if response.reasoning_content:
+                assistant_msg["reasoning_content"] = response.reasoning_content
             messages.append(assistant_msg)
 
             for tc in response.tool_calls:
