@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 15 CLI market shortcuts deployed to `47.79.36.92` at SHA `d17828a`.
+- Last verified state: Sprint 16 structured CLI renderer deployed to `47.79.36.92` at SHA `fee6be7`.
 
 ## Active Contract
 
@@ -60,6 +60,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 57 tests.
 - `uv run pytest tests/test_cli.py -q` -> 15 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 59 tests.
+- Server deployed SHA `fee6be7`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
+- Server structured CLI smoke passed with `hypertrade ask "看下ETH行情"`: output showed `Agent Report`, `Ticker`, and multiple `Trend` sections rendered from structured trace outputs instead of raw Markdown.
 - Server deployed SHA `e975d00`; server-local `GET 127.0.0.1:3334/api/health` and `GET 127.0.0.1:3333/api/health` returned OK.
 - Server CLI shortcut smoke passed through host `hypertrade`: `/price ETH`, `/candles ETH --bar 1H --limit 50`, and `/compare ETH SOL --bar 4H --limit 100` returned exact ticker, K-line trend, and relative-strength output with `okx_rest` data source.
 - Server CLI Agent status smoke passed with `hypertrade ask "看下ETH行情"`: output showed run creation, planning, tool execution, tool completion, final report generation, and completed report.
@@ -123,6 +125,6 @@
 
 ## Recommended Next Steps
 
-1. Deploy Sprint 16 to `47.79.36.92`.
-2. Server-smoke structured CLI output with `hypertrade ask "看下ETH行情"`.
-3. Check cloud security group / caller IP whitelist for public port `3333`.
+1. Check cloud security group / caller IP whitelist for public port `3333`.
+2. Start paper-trading controls in CLI, keeping live order tools behind approval gates.
+3. Add BitPro historical K-line import as a separate archived-data source for backtests.
