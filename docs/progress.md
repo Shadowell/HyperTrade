@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 12 CLI streaming deployed to `47.79.36.92` at SHA `4ce55f8`.
+- Last verified state: Sprint 13 live candle backtest deployed to `47.79.36.92` at SHA `48859cb`.
 
 ## Active Contract
 
-- `docs/contracts/sprint-13-live-candle-backtest.md` (in progress)
+- `docs/contracts/sprint-13-live-candle-backtest.md` (completed)
 
 ## Latest Completed Work
 
@@ -49,6 +49,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 49 tests.
 - `uv run pytest tests/test_live_candle_backtest.py tests/test_strategy_backtest_api.py tests/test_cli.py -q` -> 16 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 52 tests.
+- Server deployed SHA `48859cb`; external `GET /api/health` returned OK.
+- Server live-candle backtest smoke passed with host `hypertrade`: `/research 研究ETH趋势突破` created `srch_987a780e0715494a99a3`, then `/backtest --live --symbol ETH --bar 1H --limit 100` created `bt_480d647199dd4d16b960` using `okx_rest_candles`, `ETH-USDT-SWAP`, `1H`, and 100 candles.
 - Server deployed SHA `4ce55f8`; external `GET /api/health` returned OK.
 - Server streaming smoke `hypertrade ask "比较 ETH 和 SOL 哪个更强"` produced run `run_c6909801a50243649c32` and printed progress lines before the final report: `Run started`, `Tool call`, `Tool result`, and `Run completed`.
 - Server deployed SHA `4de0a4b`; external `GET /api/health` returned OK.
@@ -105,6 +107,6 @@
 
 ## Recommended Next Steps
 
-1. Deploy Sprint 13 to `47.79.36.92`.
-2. Server-smoke `/backtest --live --symbol ETH --bar 1H --limit 100` through host `hypertrade`.
-3. Add a lightweight `/compare` CLI shortcut for deterministic comparisons without waiting for LLM planning.
+1. Add a lightweight `/compare` CLI shortcut for deterministic comparisons without waiting for LLM planning.
+2. Add a `/candles` CLI shortcut for deterministic K-line trend reports.
+3. Start Sprint 14 paper-trading controls in CLI, keeping live order tools behind approval gates.
