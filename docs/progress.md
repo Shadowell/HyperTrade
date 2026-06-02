@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 21 live order intent approval gate in local implementation.
+- Last verified state: Sprint 21 live order intent approval gate deployed to `47.79.36.92` at SHA `9f02367`.
 
 ## Active Contract
 
@@ -48,6 +48,8 @@
 - `uv run pytest tests/test_live_order_intents.py tests/test_api.py tests/test_cli.py -q` -> 23 passed.
 - `uv run ruff check backend tests`, `uv run mypy backend/src` -> clean.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 67 tests.
+- Server deployed SHA `9f02367`; Alembic migrated `0003_strategy_backtest -> 0004_live_order_intents`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
+- Server host CLI smoke passed: `/paper status` rendered the running paper session, `/live intent ETH buy 0.01 --reason deploy smoke` created pending testnet intent `loi_10c5e2b8e34f469cb5e7`, and `/live reject loi_10c5e2b8e34f469cb5e7 --reason deploy smoke cleanup` moved it to `rejected`.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
