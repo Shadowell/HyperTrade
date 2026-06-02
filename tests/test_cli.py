@@ -13,6 +13,9 @@ class FakeAgentClient:
         self.prompts: list[str] = []
         self.research_prompts: list[str] = []
         self.backtest_calls: list[dict[str, Any]] = []
+        self.price_symbols: list[str] = []
+        self.candle_calls: list[dict[str, Any]] = []
+        self.compare_calls: list[dict[str, Any]] = []
 
     def login(self) -> None:
         self.logged_in = True
@@ -129,6 +132,75 @@ class FakeAgentClient:
             "report_markdown": "# Backtest\n\nReturn 1.9%.",
         }
 
+    def get_market_ticker(self, symbol: str) -> dict[str, Any]:
+        self.price_symbols.append(symbol)
+        return {
+            "found": True,
+            "inst_id": f"{symbol.upper()}-USDT-SWAP",
+            "last": "3500.000000000000",
+            "change_utc0_pct": "1.230000",
+            "volume_ccy_24h": "987654.000000000000",
+            "data_source": "okx_rest",
+            "as_of_utc": "2026-06-02T08:00:00+00:00",
+        }
+
+    def get_market_candles(
+        self,
+        *,
+        symbol: str,
+        bar: str = "1H",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        self.candle_calls.append({"symbol": symbol, "bar": bar, "limit": limit})
+        return {
+            "found": True,
+            "inst_id": f"{symbol.upper()}-USDT-SWAP",
+            "bar": bar,
+            "candle_count": limit,
+            "return_pct": "2.400000",
+            "range_pct": "7.500000",
+            "close_position_pct": "72.000000",
+            "ma20": "2000.000000000000",
+            "ma60": "1975.000000000000",
+            "trend_bias": "up",
+            "data_source": "okx_rest",
+            "as_of_utc": "2026-06-02T08:00:00+00:00",
+        }
+
+    def compare_markets(
+        self,
+        *,
+        symbols: list[str],
+        bar: str = "4H",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        self.compare_calls.append({"symbols": symbols, "bar": bar, "limit": limit})
+        return {
+            "found": True,
+            "bar": bar,
+            "leader": "ETH-USDT-SWAP",
+            "rankings": [
+                {
+                    "rank": 1,
+                    "inst_id": "ETH-USDT-SWAP",
+                    "strength_score": "75.000000",
+                    "return_pct": "2.500000",
+                    "close_position_pct": "70.000000",
+                    "trend_bias": "up",
+                },
+                {
+                    "rank": 2,
+                    "inst_id": "SOL-USDT-SWAP",
+                    "strength_score": "20.000000",
+                    "return_pct": "-3.000000",
+                    "close_position_pct": "25.000000",
+                    "trend_bias": "down",
+                },
+            ],
+            "data_source": "okx_rest",
+            "as_of_utc": "2026-06-02T08:00:00+00:00",
+        }
+
     def get_model_status(self) -> dict[str, Any]:
         return {
             "default_provider": "deepseek",
@@ -167,9 +239,10 @@ def test_ask_streams_agent_run_progress(capsys) -> None:
 
     assert exit_code == 0
     output = capsys.readouterr().out
-    assert "Run started" in output
-    assert "Tool call: market.summary" in output
-    assert "Tool result: market.summary completed" in output
+    assert "Agent status: run created" in output
+    assert "Agent status: executing tool market.summary" in output
+    assert "Agent status: tool market.summary completed" in output
+    assert "Agent status: generating final report" in output
     assert "# CLI Report" in output
 
 
@@ -201,6 +274,9 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
             "/memory",
             "/strategy",
             "/backtests",
+            "/price ETH",
+            "/candles ETH --bar 1H --limit 50",
+            "/compare ETH SOL --bar 4H --limit 100",
             "exit",
         ]
     )
@@ -221,6 +297,12 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
     assert "mem_recent" in output
     assert "srch_recent" in output
     assert "bt_recent" in output
+    assert "ETH-USDT-SWAP" in output
+    assert "K-line trend:" in output
+    assert "Relative strength:" in output
+    assert client.price_symbols == ["ETH"]
+    assert client.candle_calls == [{"symbol": "ETH", "bar": "1H", "limit": 50}]
+    assert client.compare_calls == [{"symbols": ["ETH", "SOL"], "bar": "4H", "limit": 100}]
 
 
 def test_bare_command_starts_chat_loop(capsys) -> None:

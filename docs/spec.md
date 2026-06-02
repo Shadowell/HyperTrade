@@ -45,6 +45,7 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Sprint 12 CLI/API run streaming with run and tool progress events.
 - Sprint 13 live OKX candle input for Backtrader backtests.
 - Sprint 14 Agent acceptance tests for tool selection, traceability, RAG, Memory, strategy research, backtesting, and output quality.
+- Sprint 15 deterministic CLI market shortcuts and clearer Agent run status display.
 
 ## V1 Out of Scope
 
@@ -73,5 +74,7 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Developer can run `/research <prompt>` and `/backtest` from interactive CLI chat to create research and backtest records.
 - Developer can run Backtrader backtests with recent OKX candles through API or CLI options.
 - Developer can run Agent acceptance tests and review a documented test plan for expected tool calls, trace output, and report quality.
+- Developer can run deterministic CLI market commands such as `/price`, `/candles`, and `/compare` without waiting for LLM planning.
+- Developer can see readable Agent progress statuses while free-form prompts are running.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.

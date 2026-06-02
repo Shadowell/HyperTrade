@@ -67,6 +67,12 @@ class BacktestPayload(BaseModel):
     candle_limit: int = 100
 
 
+class MarketComparePayload(BaseModel):
+    symbols: list[str]
+    bar: str = "4H"
+    limit: int = 100
+
+
 def create_app(settings: Settings | None = None, db: Database | None = None) -> FastAPI:
     app_settings = settings or get_settings()
     database = db or Database(app_settings.database_url)
@@ -268,6 +274,39 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
                 for row in rows
             ]
         }
+
+    @app.get("/api/market/ticker/{symbol}")
+    def market_ticker(symbol: str, _: AdminUser) -> dict[str, Any]:
+        return AgentKernel(
+            database,
+            knowledge_dir=str(app_settings.knowledge_dir),
+            settings=app_settings,
+        )._market_ticker_payload(symbol)
+
+    @app.get("/api/market/candles/{symbol}")
+    def market_candles(
+        symbol: str,
+        _: AdminUser,
+        bar: str = "1H",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return AgentKernel(
+            database,
+            knowledge_dir=str(app_settings.knowledge_dir),
+            settings=app_settings,
+        )._market_candles_payload(symbol=symbol, bar=bar, limit=limit)
+
+    @app.post("/api/market/compare")
+    def market_compare(payload: MarketComparePayload, _: AdminUser) -> dict[str, Any]:
+        return AgentKernel(
+            database,
+            knowledge_dir=str(app_settings.knowledge_dir),
+            settings=app_settings,
+        )._market_compare_payload(
+            symbols=payload.symbols,
+            bar=payload.bar,
+            limit=payload.limit,
+        )
 
     @app.get("/api/paper/status")
     def paper_status(_: AdminUser) -> dict[str, Any]:

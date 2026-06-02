@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
+from hypertrade.agent.kernel import AgentKernel
 from hypertrade.config import Settings
 from hypertrade.db import Database
 from hypertrade.main import create_app
@@ -113,6 +114,78 @@ def test_api_streams_agent_run_events(tmp_path):
     assert "event: tool_started" in body
     assert "event: tool_completed" in body
     assert "event: run_completed" in body
+
+
+def test_api_exposes_deterministic_market_shortcuts(monkeypatch, tmp_path):
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    MarketRepository(db).upsert_ticker_snapshot(
+        inst_id="ETH-USDT-SWAP",
+        inst_type="SWAP",
+        last=Decimal("3500"),
+        volume_ccy_24h=Decimal("987654"),
+        change_utc0_pct=Decimal("1.23"),
+    )
+    app = create_app(
+        settings=Settings(
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            KNOWLEDGE_DIR=tmp_path,
+            DEEPSEEK_API_KEY="",
+        ),
+        db=db,
+    )
+    client = TestClient(app)
+    assert client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "secret"},
+    ).status_code == 200
+
+    monkeypatch.setattr(
+        AgentKernel,
+        "_market_candles_payload",
+        lambda self, *, symbol, bar, limit: {
+            "found": True,
+            "inst_id": f"{symbol.upper()}-USDT-SWAP",
+            "bar": bar,
+            "candle_count": limit,
+            "return_pct": "2.400000",
+            "data_source": "okx_rest",
+        },
+    )
+    monkeypatch.setattr(
+        AgentKernel,
+        "_market_compare_payload",
+        lambda self, *, symbols, bar, limit: {
+            "found": True,
+            "symbols": symbols,
+            "bar": bar,
+            "limit": limit,
+            "leader": "ETH-USDT-SWAP",
+            "rankings": [{"rank": 1, "inst_id": "ETH-USDT-SWAP"}],
+            "data_source": "okx_rest",
+        },
+    )
+
+    ticker = client.get("/api/market/ticker/ETH").json()
+    candles = client.get("/api/market/candles/ETH?bar=1H&limit=50").json()
+    compare = client.post(
+        "/api/market/compare",
+        json={"symbols": ["ETH", "SOL"], "bar": "4H", "limit": 100},
+    ).json()
+
+    assert ticker["inst_id"] == "ETH-USDT-SWAP"
+    assert ticker["found"] is True
+    assert candles == {
+        "found": True,
+        "inst_id": "ETH-USDT-SWAP",
+        "bar": "1H",
+        "candle_count": 50,
+        "return_pct": "2.400000",
+        "data_source": "okx_rest",
+    }
+    assert compare["leader"] == "ETH-USDT-SWAP"
+    assert compare["symbols"] == ["ETH", "SOL"]
 
 
 def test_login_cookie_secure_flag_is_configurable():

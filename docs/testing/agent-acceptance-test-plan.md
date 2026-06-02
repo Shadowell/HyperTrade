@@ -55,12 +55,15 @@ After deploying to `47.79.36.92`, run:
 ```bash
 hypertrade ask "看下ETH行情"
 hypertrade ask "看下ETH走势，并和SOL比较哪个更强"
+printf "/price ETH\n/candles ETH --bar 1H --limit 50\n/compare ETH SOL --bar 4H --limit 100\n:q\n" | hypertrade
 printf "/research 研究ETH趋势突破\n/backtest --live --symbol ETH --bar 1H --limit 100\n:q\n" | hypertrade
 ```
 
 Expected server observations:
 
 - CLI prints run id and tool progress lines.
+- Free-form prompts print readable Agent statuses for run creation, planning, tool execution, tool completion, and final report generation.
+- Deterministic market shortcuts print exact ticker, K-line trend, and relative-strength blocks without starting an LLM-planned Agent run.
 - Specific-symbol prompt includes exact instrument such as `ETH-USDT-SWAP`.
 - Compare prompt includes relative-strength ranking.
 - Backtest command prints data source `okx_rest_candles`, instrument, bar, candle count, return, and trade count.

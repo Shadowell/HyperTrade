@@ -54,6 +54,24 @@ class AgentClient(Protocol):
 
     def get_model_status(self) -> dict[str, Any]: ...
 
+    def get_market_ticker(self, symbol: str) -> dict[str, Any]: ...
+
+    def get_market_candles(
+        self,
+        *,
+        symbol: str,
+        bar: str = "1H",
+        limit: int = 100,
+    ) -> dict[str, Any]: ...
+
+    def compare_markets(
+        self,
+        *,
+        symbols: list[str],
+        bar: str = "4H",
+        limit: int = 100,
+    ) -> dict[str, Any]: ...
+
 
 class AgentClientFactory(Protocol):
     def __call__(self, config: CliConfig, local: bool) -> AgentClient: ...
@@ -211,6 +229,28 @@ class AgentApiClient:
             "providers": [dict(provider) for provider in providers if isinstance(provider, dict)],
         }
 
+    def get_market_ticker(self, symbol: str) -> dict[str, Any]:
+        return self._get_object(f"/api/market/ticker/{symbol}")
+
+    def get_market_candles(
+        self,
+        *,
+        symbol: str,
+        bar: str = "1H",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return self._get_object(f"/api/market/candles/{symbol}?bar={bar}&limit={limit}")
+
+    def compare_markets(
+        self,
+        *,
+        symbols: list[str],
+        bar: str = "4H",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        body = {"symbols": symbols, "bar": bar, "limit": limit}
+        return self._post_object("/api/market/compare", body)
+
     def _url(self, path: str) -> str:
         return f"{self.config.api_url.rstrip('/')}{path}"
 
@@ -343,6 +383,39 @@ class LocalAgentClient:
             "providers": [provider],
         }
 
+    def get_market_ticker(self, symbol: str) -> dict[str, Any]:
+        return AgentKernel(
+            self.db,
+            knowledge_dir=str(self.settings.knowledge_dir),
+            settings=self.settings,
+        )._market_ticker_payload(symbol)
+
+    def get_market_candles(
+        self,
+        *,
+        symbol: str,
+        bar: str = "1H",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return AgentKernel(
+            self.db,
+            knowledge_dir=str(self.settings.knowledge_dir),
+            settings=self.settings,
+        )._market_candles_payload(symbol=symbol, bar=bar, limit=limit)
+
+    def compare_markets(
+        self,
+        *,
+        symbols: list[str],
+        bar: str = "4H",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return AgentKernel(
+            self.db,
+            knowledge_dir=str(self.settings.knowledge_dir),
+            settings=self.settings,
+        )._market_compare_payload(symbols=symbols, bar=bar, limit=limit)
+
 
 def main(
     argv: Sequence[str] | None = None,
@@ -433,6 +506,8 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
     print(f"{color['section']}Quick Start{color['reset']}", file=output)
     print(f"{color['cmd']}- /status{color['reset']}        Runtime and session status", file=output)
     print(f"{color['cmd']}- /tools{color['reset']}         Registered tool catalog", file=output)
+    print(f"{color['cmd']}- /price ETH{color['reset']}     Exact ticker shortcut", file=output)
+    print(f"{color['cmd']}- /compare ETH SOL{color['reset']} Relative strength", file=output)
     print(f"{color['cmd']}- /research ...{color['reset']}  Create strategy research", file=output)
     print(
         f"{color['cmd']}- /backtest{color['reset']}      Run backtest from latest research",
@@ -493,6 +568,12 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
         handle_backtest_command(command, client=client, output=output)
     elif name in {"/research", "/sr"}:
         handle_research_command(command, client=client, output=output)
+    elif name in {"/price", "/ticker"}:
+        handle_price_command(command, client=client, output=output)
+    elif name in {"/candles", "/kline", "/klines"}:
+        handle_candles_command(command, client=client, output=output)
+    elif name == "/compare":
+        handle_compare_command(command, client=client, output=output)
     else:
         print(f"Unknown command: {name}", file=output)
         render_slash_help(output=output)
@@ -509,6 +590,9 @@ def render_slash_help(*, output: TextIO) -> None:
     print("- /memory      List active audited memory.", file=output)
     print("- /strategy    List recent strategy research.", file=output)
     print("- /backtests   List recent backtest runs.", file=output)
+    print("- /price ETH   Fetch exact ticker without LLM planning.", file=output)
+    print("- /candles ETH --bar 1H --limit 100", file=output)
+    print("- /compare ETH SOL --bar 4H --limit 100", file=output)
     print("- /research    Create strategy research from a prompt.", file=output)
     print("- /backtest    Run backtest on latest research.", file=output)
     print("- /backtest list                 List recent backtests.", file=output)
@@ -586,6 +670,64 @@ def _run_backtest_for_target(
     render_backtest_result(result, output=output)
 
 
+def handle_price_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    parts = command.split()
+    if len(parts) < 2:
+        print("Usage: /price <symbol>", file=output)
+        print("Example: /price ETH", file=output)
+        return
+    try:
+        render_market_ticker(client.get_market_ticker(parts[1]), output=output)
+    except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+        print(f"Price lookup failed: {exc}", file=output)
+
+
+def handle_candles_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    parts = command.split()
+    if len(parts) < 2:
+        print("Usage: /candles <symbol> [--bar 1H] [--limit 100]", file=output)
+        print("Example: /candles ETH --bar 1H --limit 100", file=output)
+        return
+    options = _parse_market_options(parts[2:], default_bar="1H", default_limit=100)
+    try:
+        payload = client.get_market_candles(
+            symbol=parts[1],
+            bar=str(options["bar"]),
+            limit=int(options["limit"]),
+        )
+        render_market_candles(payload, output=output)
+    except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+        print(f"Candle lookup failed: {exc}", file=output)
+
+
+def handle_compare_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    parts = command.split()
+    symbols: list[str] = []
+    option_parts: list[str] = []
+    index = 1
+    while index < len(parts):
+        part = parts[index]
+        if part.startswith("--"):
+            option_parts.extend(parts[index:])
+            break
+        symbols.append(part)
+        index += 1
+    if len(symbols) < 2:
+        print("Usage: /compare <symbol> <symbol> [more...] [--bar 4H] [--limit 100]", file=output)
+        print("Example: /compare ETH SOL --bar 4H --limit 100", file=output)
+        return
+    options = _parse_market_options(option_parts, default_bar="4H", default_limit=100)
+    try:
+        payload = client.compare_markets(
+            symbols=symbols,
+            bar=str(options["bar"]),
+            limit=int(options["limit"]),
+        )
+        render_market_compare(payload, output=output)
+    except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+        print(f"Compare failed: {exc}", file=output)
+
+
 def _parse_backtest_options(parts: list[str]) -> dict[str, Any]:
     options: dict[str, Any] = {
         "positionals": [],
@@ -610,6 +752,26 @@ def _parse_backtest_options(parts: list[str]) -> dict[str, Any]:
             options["candle_limit"] = int(parts[index])
         else:
             options["positionals"].append(part)
+        index += 1
+    return options
+
+
+def _parse_market_options(
+    parts: list[str],
+    *,
+    default_bar: str,
+    default_limit: int,
+) -> dict[str, Any]:
+    options: dict[str, Any] = {"bar": default_bar, "limit": default_limit}
+    index = 0
+    while index < len(parts):
+        part = parts[index]
+        if part == "--bar" and index + 1 < len(parts):
+            index += 1
+            options["bar"] = parts[index]
+        elif part == "--limit" and index + 1 < len(parts):
+            index += 1
+            options["limit"] = int(parts[index])
         index += 1
     return options
 
@@ -641,6 +803,70 @@ def render_backtest_result(result: dict[str, Any], *, output: TextIO) -> None:
     print(f"- Trades: {metrics.get('trade_count', 'n/a')}", file=output)
     print("", file=output)
     print(str(result.get("report_markdown", "")), file=output)
+
+
+def render_market_ticker(payload: dict[str, Any], *, output: TextIO) -> None:
+    print("Price:", file=output)
+    if not payload.get("found", True):
+        print(f"- Instrument: {payload.get('inst_id', 'unknown')}", file=output)
+        reason = payload.get("unavailable_reason", "not found")
+        print(f"- Status: unavailable ({reason})", file=output)
+        return
+    print(f"- Instrument: {payload.get('inst_id', 'unknown')}", file=output)
+    print(f"- Last: {payload.get('last', 'n/a')}", file=output)
+    print(f"- UTC0 change: {payload.get('change_utc0_pct', 'n/a')}%", file=output)
+    print(f"- 24h volume: {payload.get('volume_ccy_24h', 'n/a')}", file=output)
+    print(f"- Source: {payload.get('data_source', 'unknown')}", file=output)
+    print(f"- As of UTC: {payload.get('as_of_utc', 'n/a')}", file=output)
+    print("Research output only. Not investment advice.", file=output)
+
+
+def render_market_candles(payload: dict[str, Any], *, output: TextIO) -> None:
+    print("K-line trend:", file=output)
+    if not payload.get("found", True):
+        print(f"- Instrument: {payload.get('inst_id', 'unknown')}", file=output)
+        reason = payload.get("unavailable_reason", "not found")
+        print(f"- Status: unavailable ({reason})", file=output)
+        return
+    print(f"- Instrument: {payload.get('inst_id', 'unknown')}", file=output)
+    print(f"- Bar: {payload.get('bar', 'n/a')}", file=output)
+    print(f"- Candles: {payload.get('candle_count', 'n/a')}", file=output)
+    print(f"- Return: {payload.get('return_pct', 'n/a')}%", file=output)
+    print(f"- Range: {payload.get('range_pct', 'n/a')}%", file=output)
+    print(f"- Close position: {payload.get('close_position_pct', 'n/a')}%", file=output)
+    print(f"- MA20: {payload.get('ma20', 'n/a')}", file=output)
+    print(f"- MA60: {payload.get('ma60', 'n/a')}", file=output)
+    print(f"- Bias: {payload.get('trend_bias', 'unknown')}", file=output)
+    print(f"- Source: {payload.get('data_source', 'unknown')}", file=output)
+    print("Research output only. Not investment advice.", file=output)
+
+
+def render_market_compare(payload: dict[str, Any], *, output: TextIO) -> None:
+    print("Relative strength:", file=output)
+    if not payload.get("found", True):
+        print("- Status: unavailable", file=output)
+        return
+    print(f"- Bar: {payload.get('bar', 'n/a')}", file=output)
+    print(f"- Leader: {payload.get('leader', 'unknown')}", file=output)
+    rankings = payload.get("rankings", [])
+    if isinstance(rankings, list):
+        for row in rankings:
+            if not isinstance(row, dict):
+                continue
+            print(
+                "- {rank}. {inst_id}: score={score}, return={return_pct}%, "
+                "close_position={close_position_pct}%, bias={trend_bias}".format(
+                    rank=row.get("rank", "?"),
+                    inst_id=row.get("inst_id", "unknown"),
+                    score=row.get("strength_score", "n/a"),
+                    return_pct=row.get("return_pct", "n/a"),
+                    close_position_pct=row.get("close_position_pct", "n/a"),
+                    trend_bias=row.get("trend_bias", "unknown"),
+                ),
+                file=output,
+            )
+    print(f"- Source: {payload.get('data_source', 'unknown')}", file=output)
+    print("Research output only. Not investment advice.", file=output)
 
 
 def render_status(status: dict[str, Any], *, output: TextIO) -> None:
@@ -795,17 +1021,23 @@ def render_run_stream(
             continue
         event_name = str(event.get("event", "message"))
         if event_name == "run_started":
-            print(f"Run started: {event.get('run_id', 'pending')}", file=output)
+            print(f"Agent status: run created ({event.get('run_id', 'pending')})", file=output)
+            print("Agent status: planning next tool call", file=output)
         elif event_name == "tool_started":
-            print(f"Tool call: {event.get('tool_name', 'unknown')}", file=output)
+            print(
+                f"Agent status: executing tool {event.get('tool_name', 'unknown')}",
+                file=output,
+            )
         elif event_name == "tool_completed":
             print(
-                f"Tool result: {event.get('tool_name', 'unknown')} "
+                f"Agent status: tool {event.get('tool_name', 'unknown')} "
                 f"{event.get('status', 'completed')}",
                 file=output,
             )
+            print("Agent status: planning next step", file=output)
         elif event_name == "run_completed":
-            print(f"Run completed: {event.get('run_id', 'unknown')}", file=output)
+            print("Agent status: generating final report", file=output)
+            print(f"Agent status: run completed ({event.get('run_id', 'unknown')})", file=output)
             if isinstance(event.get("run"), dict):
                 final_run = dict(event["run"])
         elif event_name == "final" and isinstance(event.get("run"), dict):
