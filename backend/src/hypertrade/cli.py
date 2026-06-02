@@ -48,6 +48,7 @@ class AgentClient(Protocol):
         symbol: str = "BTC",
         bar: str = "1H",
         candle_limit: int = 100,
+        candle_source: str = "sample",
     ) -> dict[str, Any]: ...
 
     def get_status(self) -> dict[str, Any]: ...
@@ -182,6 +183,7 @@ class AgentApiClient:
         symbol: str = "BTC",
         bar: str = "1H",
         candle_limit: int = 100,
+        candle_source: str = "sample",
     ) -> dict[str, Any]:
         return self._post_object(
             "/api/backtests",
@@ -193,6 +195,7 @@ class AgentApiClient:
                 "symbol": symbol,
                 "bar": bar,
                 "candle_limit": candle_limit,
+                "candle_source": candle_source,
             },
         )
 
@@ -359,14 +362,16 @@ class LocalAgentClient:
         symbol: str = "BTC",
         bar: str = "1H",
         candle_limit: int = 100,
+        candle_source: str = "sample",
     ) -> dict[str, Any]:
-        return BacktestService(self.db).run(
+        return BacktestService(self.db, settings=self.settings).run(
             research_id=research_id,
             strategy_key=strategy_key,
             use_live_candles=use_live_candles,
             symbol=symbol,
             bar=bar,
             candle_limit=candle_limit,
+            candle_source=candle_source,
         )
 
     def get_status(self) -> dict[str, Any]:
@@ -689,6 +694,7 @@ def _run_backtest_for_target(
             symbol=str(options["symbol"]),
             bar=str(options["bar"]),
             candle_limit=int(options["candle_limit"]),
+            candle_source=str(options["candle_source"]),
         )
     except KeyError:
         print(f"Research not found: {research_id}", file=output)
@@ -786,12 +792,17 @@ def _parse_backtest_options(parts: list[str]) -> dict[str, Any]:
         "symbol": "BTC",
         "bar": "1H",
         "candle_limit": 100,
+        "candle_source": "sample",
     }
     index = 0
     while index < len(parts):
         part = parts[index]
         if part == "--live":
             options["use_live_candles"] = True
+            options["candle_source"] = "okx"
+        elif part == "--source" and index + 1 < len(parts):
+            index += 1
+            options["candle_source"] = parts[index].strip().lower()
         elif part == "--symbol" and index + 1 < len(parts):
             index += 1
             options["symbol"] = parts[index]

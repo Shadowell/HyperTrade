@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 18 paper CLI controls deployed to `47.79.36.92` at SHA `9f3fa0c`.
+- Last verified state: Sprint 18 paper CLI controls deployed to `47.79.36.92` at SHA `227eedc`.
 
 ## Active Contract
 
-- `docs/contracts/sprint-18-paper-cli-controls.md` (completed)
+- `docs/contracts/sprint-19-bitpro-archive-backtest-source.md` (completed)
 
 ## Latest Completed Work
 
@@ -41,6 +41,7 @@
 - Added Sprint 17 Rich CLI rendering locally: structured market reports can render as terminal panels/tables when `HYPERTRADE_RENDERER=rich` or when running on a TTY, while `HYPERTRADE_RENDERER=plain` keeps script-friendly output.
 - Updated the host CLI wrapper to pass safe display environment variables (`HYPERTRADE_RENDERER`, `NO_COLOR`) into the API container.
 - Added Sprint 18 paper CLI controls locally: `/paper status`, `/paper pause`, and `/paper resume` call the existing paper runtime without starting an Agent run.
+- Added Sprint 19 BitPro archived K-line backtest source locally: `BITPRO_SQLITE_PATH` can point to a BitPro SQLite DB, and `/backtest --source bitpro --symbol ETH --bar 1H --limit 500` routes archived K-lines into Backtrader.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
@@ -67,6 +68,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 60 tests.
 - `uv run pytest tests/test_cli.py -q` -> 16 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 60 tests.
+- `uv run pytest tests/test_bitpro_archive_backtest.py tests/test_cli.py -q` -> 19 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 63 tests.
 - Server deployed SHA `9f3fa0c`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
 - Server paper CLI smoke passed through host `hypertrade`: `/paper status` printed session, positions, fills, and events; `/paper pause` reported paused; `/paper resume` reported running.
 - Server deployed SHA `cb02da6`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
@@ -136,6 +139,6 @@
 
 ## Recommended Next Steps
 
-1. Add BitPro historical K-line import as a separate archived-data source for backtests.
-2. Check cloud security group / caller IP whitelist for public port `3333`.
-3. Add richer paper CLI actions later, such as close-position and reset-session, behind explicit confirmations.
+1. Deploy Sprint 19 to `47.79.36.92`.
+2. Configure server `BITPRO_SQLITE_PATH=/opt/bitpro/data/crypto_data.db` and smoke `/backtest --source bitpro --symbol BTC --bar 1H --limit 200`.
+3. Check cloud security group / caller IP whitelist for public port `3333`.

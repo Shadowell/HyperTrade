@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import desc, select
 
+from hypertrade.backtest.bitpro import BitProKlineArchive
 from hypertrade.backtest.engine import BacktestEngine
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import BacktestRun, Database
@@ -30,6 +31,7 @@ class BacktestService:
         symbol: str = "BTC",
         bar: str = "1H",
         candle_limit: int = 100,
+        candle_source: str = "sample",
     ) -> dict[str, Any]:
         if research_id:
             research = StrategyResearchService(self.db).get(research_id)
@@ -39,11 +41,20 @@ class BacktestService:
         data_source = "provided_candles" if candles else "sample_candles"
         inst_id = ""
         normalized_bar = _normalize_okx_bar(bar)
-        if use_live_candles:
+        selected_source = "okx" if use_live_candles else candle_source.strip().lower()
+        if selected_source == "okx":
             inst_id = _normalize_swap_inst_id(symbol)
             okx_candles = self._fetch_okx_candles(inst_id, normalized_bar, candle_limit)
             candles = _okx_candles_to_strategy_candles(okx_candles)
             data_source = "okx_rest_candles"
+        elif selected_source == "bitpro":
+            inst_id = _normalize_swap_inst_id(symbol)
+            candles = self._fetch_bitpro_candles(
+                symbol=symbol,
+                bar=normalized_bar,
+                limit=candle_limit,
+            )
+            data_source = "bitpro_sqlite_candles"
         result = self.engine.run(
             strategy_key=strategy_key,
             candles=candles or sample_candles(),
@@ -54,7 +65,7 @@ class BacktestService:
             {
                 "data_source": data_source,
                 "inst_id": inst_id,
-                "bar": normalized_bar if use_live_candles else "",
+                "bar": normalized_bar if selected_source in {"okx", "bitpro"} else "",
                 "candle_count": len(candles or sample_candles()),
             }
         )
@@ -62,7 +73,7 @@ class BacktestService:
             result.report_markdown,
             data_source=data_source,
             inst_id=inst_id,
-            bar=normalized_bar if use_live_candles else "",
+            bar=normalized_bar if selected_source in {"okx", "bitpro"} else "",
             candle_count=len(candles or sample_candles()),
         )
         with self.db.session() as session:
@@ -88,6 +99,19 @@ class BacktestService:
         return asyncio.run(
             OkxRestClient(settings).fetch_candles(inst_id=inst_id, bar=bar, limit=safe_limit)
         )
+
+    def _fetch_bitpro_candles(self, *, symbol: str, bar: str, limit: int) -> list[Candle]:
+        settings = self.settings or get_settings()
+        if not settings.bitpro_sqlite_path:
+            raise FileNotFoundError("BITPRO_SQLITE_PATH is not configured")
+        candles = BitProKlineArchive(settings.bitpro_sqlite_path).read_candles(
+            symbol=symbol,
+            bar=bar,
+            limit=limit,
+        )
+        if not candles:
+            raise ValueError(f"No BitPro candles found for {symbol} {bar}")
+        return candles
 
     def latest(self) -> dict[str, Any] | None:
         with self.db.session() as session:

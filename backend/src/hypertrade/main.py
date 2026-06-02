@@ -65,6 +65,7 @@ class BacktestPayload(BaseModel):
     symbol: str = "BTC"
     bar: str = "1H"
     candle_limit: int = 100
+    candle_source: str = "sample"
 
 
 class MarketComparePayload(BaseModel):
@@ -342,6 +343,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
                 symbol=payload.symbol,
                 bar=payload.bar,
                 candle_limit=payload.candle_limit,
+                candle_source=payload.candle_source,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Research not found") from exc

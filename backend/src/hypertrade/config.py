@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     knowledge_dir: Path = Field(default=Path("docs/knowledge"), alias="KNOWLEDGE_DIR")
     raw_market_retention_days: int = Field(default=7, alias="RAW_MARKET_RETENTION_DAYS")
     llm_daily_soft_budget_usd: float = Field(default=5.0, alias="LLM_DAILY_SOFT_BUDGET_USD")
+    bitpro_sqlite_path: Path = Field(default=Path(""), alias="BITPRO_SQLITE_PATH")
 
 
 @lru_cache

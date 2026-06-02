@@ -165,6 +165,7 @@ class FakeAgentClient:
         symbol: str = "BTC",
         bar: str = "1H",
         candle_limit: int = 100,
+        candle_source: str = "sample",
     ) -> dict[str, Any]:
         self.backtest_calls.append(
             {
@@ -174,6 +175,7 @@ class FakeAgentClient:
                 "symbol": symbol,
                 "bar": bar,
                 "candle_limit": candle_limit,
+                "candle_source": candle_source,
             }
         )
         return {
@@ -615,6 +617,7 @@ def test_chat_runs_research_and_backtest_shortcuts(capsys) -> None:
             "symbol": "BTC",
             "bar": "1H",
             "candle_limit": 100,
+            "candle_source": "sample",
         }
     ]
     output = capsys.readouterr().out
@@ -639,6 +642,27 @@ def test_chat_runs_live_candle_backtest_shortcut(capsys) -> None:
             "symbol": "ETH",
             "bar": "1H",
             "candle_limit": 24,
+            "candle_source": "okx",
+        }
+    ]
+    assert "Backtest completed" in capsys.readouterr().out
+
+
+def test_chat_runs_bitpro_archive_backtest_shortcut(capsys) -> None:
+    client = FakeAgentClient()
+    inputs = iter(["/backtest --source bitpro --symbol ETH --bar 1H --limit 24", "exit"])
+
+    run_chat(client=client, input_fn=_next_input(inputs))
+
+    assert client.backtest_calls == [
+        {
+            "research_id": "srch_recent",
+            "strategy_key": "momentum_breakout_v1",
+            "use_live_candles": False,
+            "symbol": "ETH",
+            "bar": "1H",
+            "candle_limit": 24,
+            "candle_source": "bitpro",
         }
     ]
     assert "Backtest completed" in capsys.readouterr().out

@@ -49,6 +49,7 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Sprint 16 structured CLI report rendering that prefers JSON/trace payloads over raw Markdown when possible.
 - Sprint 17 Rich CLI renderer for terminal panels/tables with plain text fallback.
 - Sprint 18 paper-trading CLI controls for status, pause, and resume.
+- Sprint 19 BitPro archived SQLite K-line source for Backtrader backtests.
 
 ## V1 Out of Scope
 
@@ -82,5 +83,6 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Developer can read structured CLI report sections for market runs, with Markdown kept as fallback.
 - Developer can enable Rich terminal rendering for structured CLI reports while keeping plain output for scripts.
 - Developer can inspect and control the simulated paper runtime from CLI slash commands.
+- Developer can run backtests from archived BitPro K-line data without copying BitPro business logic.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.
