@@ -8,7 +8,7 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-12-cli-streaming.md` (completed and deployed)
+- `docs/contracts/sprint-13-live-candle-backtest.md` (in progress)
 
 ## Latest Completed Work
 
@@ -32,6 +32,7 @@
 - Added Sprint 10 market candles research path locally: OKX candle parsing, REST candle fetcher, deterministic trend feature extraction, `market_candles` planner tool, `market.candles` registry entry, AgentKernel execution, and stable K-line trend report block.
 - Added Sprint 11 market relative-strength compare locally: `market_compare` planner tool, `market.compare` registry entry, deterministic strength scoring, ranking payload, and stable multi-symbol comparison report block.
 - Added Sprint 12 CLI/API streaming locally: AgentKernel progress event emission, `POST /api/agent/runs/stream` SSE endpoint, remote SSE parsing, local streaming rendering, and CLI progress lines for run/tool events.
+- Added Sprint 13 live candle backtest path locally: BacktestService can fetch OKX candles, convert them into Strategy SDK candles, accept API live-candle options, and pass `/backtest --live --symbol ETH --bar 1H --limit 100` from CLI.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
@@ -46,6 +47,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 47 tests.
 - `uv run pytest tests/test_cli.py tests/test_api.py -q` -> 15 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 49 tests.
+- `uv run pytest tests/test_live_candle_backtest.py tests/test_strategy_backtest_api.py tests/test_cli.py -q` -> 16 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 52 tests.
 - Server deployed SHA `4ce55f8`; external `GET /api/health` returned OK.
 - Server streaming smoke `hypertrade ask "比较 ETH 和 SOL 哪个更强"` produced run `run_c6909801a50243649c32` and printed progress lines before the final report: `Run started`, `Tool call`, `Tool result`, and `Run completed`.
 - Server deployed SHA `4de0a4b`; external `GET /api/health` returned OK.
@@ -97,11 +100,11 @@
 
 - OKX live WebSocket ingestion is implemented but not exercised against the remote server in this local run.
 - V1 does not include automatic PostgreSQL backup.
-- Sprint 03 uses deterministic sample candles unless the caller supplies candle payloads; no historical OKX candle backfill yet.
+- Sprint 13 adds live OKX candle input, but does not persist historical candles to PostgreSQL.
 - Testnet order execution remains documented as a later sprint.
 
 ## Recommended Next Steps
 
-1. Add candle-backed Backtrader input so strategy backtests can use live OKX historical candles instead of deterministic samples.
-2. Add a lightweight `/compare` CLI shortcut for deterministic comparisons without waiting for LLM planning.
-3. Add `/harness` live run event view backed by the same SSE event stream.
+1. Deploy Sprint 13 to `47.79.36.92`.
+2. Server-smoke `/backtest --live --symbol ETH --bar 1H --limit 100` through host `hypertrade`.
+3. Add a lightweight `/compare` CLI shortcut for deterministic comparisons without waiting for LLM planning.

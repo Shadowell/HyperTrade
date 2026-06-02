@@ -1,17 +1,22 @@
+import asyncio
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import desc, select
 
 from hypertrade.backtest.engine import BacktestEngine
+from hypertrade.config import Settings, get_settings
 from hypertrade.db import BacktestRun, Database
+from hypertrade.market.client import OkxRestClient
+from hypertrade.market.okx import OkxCandle
 from hypertrade.strategy.sdk import Candle, sample_candles
 from hypertrade.strategy.service import StrategyResearchService
 
 
 class BacktestService:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, *, settings: Settings | None = None) -> None:
         self.db = db
+        self.settings = settings
         self.engine = BacktestEngine()
 
     def run(
@@ -21,16 +26,44 @@ class BacktestService:
         strategy_key: str = "momentum_breakout_v1",
         candles: list[Candle] | None = None,
         initial_cash: Decimal = Decimal("100000"),
+        use_live_candles: bool = False,
+        symbol: str = "BTC",
+        bar: str = "1H",
+        candle_limit: int = 100,
     ) -> dict[str, Any]:
         if research_id:
             research = StrategyResearchService(self.db).get(research_id)
             if research is None:
                 raise KeyError(research_id)
             strategy_key = str(research["strategy_key"])
+        data_source = "provided_candles" if candles else "sample_candles"
+        inst_id = ""
+        normalized_bar = _normalize_okx_bar(bar)
+        if use_live_candles:
+            inst_id = _normalize_swap_inst_id(symbol)
+            okx_candles = self._fetch_okx_candles(inst_id, normalized_bar, candle_limit)
+            candles = _okx_candles_to_strategy_candles(okx_candles)
+            data_source = "okx_rest_candles"
         result = self.engine.run(
             strategy_key=strategy_key,
             candles=candles or sample_candles(),
             initial_cash=initial_cash,
+        )
+        report_json = dict(result.report_json)
+        report_json.update(
+            {
+                "data_source": data_source,
+                "inst_id": inst_id,
+                "bar": normalized_bar if use_live_candles else "",
+                "candle_count": len(candles or sample_candles()),
+            }
+        )
+        report_markdown = _append_data_source(
+            result.report_markdown,
+            data_source=data_source,
+            inst_id=inst_id,
+            bar=normalized_bar if use_live_candles else "",
+            candle_count=len(candles or sample_candles()),
         )
         with self.db.session() as session:
             run = BacktestRun(
@@ -42,12 +75,19 @@ class BacktestService:
                 total_return_pct=result.total_return_pct,
                 max_drawdown_pct=result.max_drawdown_pct,
                 trade_count=result.trade_count,
-                report_markdown=result.report_markdown,
-                report_json=result.report_json,
+                report_markdown=report_markdown,
+                report_json=report_json,
             )
             session.add(run)
             session.flush()
             return _run_to_dict(run)
+
+    def _fetch_okx_candles(self, inst_id: str, bar: str, limit: int) -> list[OkxCandle]:
+        settings = self.settings or get_settings()
+        safe_limit = max(6, min(limit, 300))
+        return asyncio.run(
+            OkxRestClient(settings).fetch_candles(inst_id=inst_id, bar=bar, limit=safe_limit)
+        )
 
     def latest(self) -> dict[str, Any] | None:
         with self.db.session() as session:
@@ -81,3 +121,65 @@ def _run_to_dict(run: BacktestRun) -> dict[str, Any]:
         "report_json": run.report_json,
         "created_at": run.created_at.isoformat(),
     }
+
+
+def _okx_candles_to_strategy_candles(okx_candles: list[OkxCandle]) -> list[Candle]:
+    ordered = sorted(okx_candles, key=lambda candle: candle.open_time)
+    return [
+        Candle(
+            timestamp=candle.open_time.isoformat(),
+            open=candle.open,
+            high=candle.high,
+            low=candle.low,
+            close=candle.close,
+            volume=candle.volume_ccy,
+        )
+        for candle in ordered
+    ]
+
+
+def _normalize_swap_inst_id(symbol: str) -> str:
+    value = symbol.strip().upper().replace("_", "-").replace("/", "-")
+    if not value:
+        return "BTC-USDT-SWAP"
+    if value.endswith("-SWAP"):
+        return value
+    if value.endswith("-USDT"):
+        return f"{value}-SWAP"
+    if "-" not in value:
+        return f"{value}-USDT-SWAP"
+    return f"{value}-SWAP"
+
+
+def _normalize_okx_bar(bar: str) -> str:
+    value = bar.strip()
+    if not value:
+        return "1H"
+    if value.lower().endswith("h"):
+        return f"{value[:-1]}H"
+    if value.lower().endswith("d"):
+        return f"{value[:-1]}D"
+    return value
+
+
+def _append_data_source(
+    report_markdown: str,
+    *,
+    data_source: str,
+    inst_id: str,
+    bar: str,
+    candle_count: int,
+) -> str:
+    lines = [
+        report_markdown,
+        "",
+        "## Data Source",
+        "",
+        f"- Source: {data_source}",
+        f"- Candle count: {candle_count}",
+    ]
+    if inst_id:
+        lines.append(f"- Instrument: {inst_id}")
+    if bar:
+        lines.append(f"- Bar: {bar}")
+    return "\n".join(lines)

@@ -61,6 +61,10 @@ class BacktestPayload(BaseModel):
     strategy_key: str = "momentum_breakout_v1"
     initial_cash: str = "100000"
     candles: list[Candle] | None = None
+    use_live_candles: bool = False
+    symbol: str = "BTC"
+    bar: str = "1H"
+    candle_limit: int = 100
 
 
 def create_app(settings: Settings | None = None, db: Database | None = None) -> FastAPI:
@@ -295,6 +299,10 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
                 strategy_key=payload.strategy_key,
                 candles=payload.candles,
                 initial_cash=Decimal(payload.initial_cash),
+                use_live_candles=payload.use_live_candles,
+                symbol=payload.symbol,
+                bar=payload.bar,
+                candle_limit=payload.candle_limit,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Research not found") from exc

@@ -43,6 +43,7 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Sprint 10 `market_candles` tool for recent OKX candles and deterministic trend features.
 - Sprint 11 `market_compare` tool for multi-symbol relative strength ranking.
 - Sprint 12 CLI/API run streaming with run and tool progress events.
+- Sprint 13 live OKX candle input for Backtrader backtests.
 
 ## V1 Out of Scope
 
@@ -69,5 +70,6 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Developer can see run/tool progress while `hypertrade ask` or interactive chat is still running.
 - Developer can use CLI slash commands such as `/tools`, `/runs`, `/memory`, `/strategy`, and `/backtests` in interactive chat.
 - Developer can run `/research <prompt>` and `/backtest` from interactive CLI chat to create research and backtest records.
+- Developer can run Backtrader backtests with recent OKX candles through API or CLI options.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.

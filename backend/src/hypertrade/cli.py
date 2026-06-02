@@ -44,6 +44,10 @@ class AgentClient(Protocol):
         *,
         research_id: str = "",
         strategy_key: str = "momentum_breakout_v1",
+        use_live_candles: bool = False,
+        symbol: str = "BTC",
+        bar: str = "1H",
+        candle_limit: int = 100,
     ) -> dict[str, Any]: ...
 
     def get_status(self) -> dict[str, Any]: ...
@@ -152,6 +156,10 @@ class AgentApiClient:
         *,
         research_id: str = "",
         strategy_key: str = "momentum_breakout_v1",
+        use_live_candles: bool = False,
+        symbol: str = "BTC",
+        bar: str = "1H",
+        candle_limit: int = 100,
     ) -> dict[str, Any]:
         return self._post_object(
             "/api/backtests",
@@ -159,6 +167,10 @@ class AgentApiClient:
                 "research_id": research_id,
                 "strategy_key": strategy_key,
                 "initial_cash": "100000",
+                "use_live_candles": use_live_candles,
+                "symbol": symbol,
+                "bar": bar,
+                "candle_limit": candle_limit,
             },
         )
 
@@ -293,10 +305,18 @@ class LocalAgentClient:
         *,
         research_id: str = "",
         strategy_key: str = "momentum_breakout_v1",
+        use_live_candles: bool = False,
+        symbol: str = "BTC",
+        bar: str = "1H",
+        candle_limit: int = 100,
     ) -> dict[str, Any]:
         return BacktestService(self.db).run(
             research_id=research_id,
             strategy_key=strategy_key,
+            use_live_candles=use_live_candles,
+            symbol=symbol,
+            bar=bar,
+            candle_limit=candle_limit,
         )
 
     def get_status(self) -> dict[str, Any]:
@@ -493,6 +513,7 @@ def render_slash_help(*, output: TextIO) -> None:
     print("- /backtest    Run backtest on latest research.", file=output)
     print("- /backtest list                 List recent backtests.", file=output)
     print("- /backtest latest|srch_*|<key>  Run a specific backtest.", file=output)
+    print("- /backtest --live --symbol ETH --bar 1H --limit 100", file=output)
 
 
 def handle_research_command(command: str, *, client: AgentClient, output: TextIO) -> None:
@@ -511,21 +532,30 @@ def handle_research_command(command: str, *, client: AgentClient, output: TextIO
 
 def handle_backtest_command(command: str, *, client: AgentClient, output: TextIO) -> None:
     parts = command.split()
+    options = _parse_backtest_options(parts)
+    positional = options["positionals"]
     if len(parts) == 1:
-        _run_backtest_for_target(client, target="latest", output=output)
+        _run_backtest_for_target(client, target="latest", options=options, output=output)
         return
-    subcommand = parts[1].lower()
+    subcommand = str(positional[1]).lower() if len(positional) > 1 else ""
     if subcommand in {"list", "ls"}:
         render_backtests(client.list_backtests(), output=output)
         return
     if subcommand == "run":
-        target = parts[2] if len(parts) > 2 else "latest"
-        _run_backtest_for_target(client, target=target, output=output)
+        target = str(positional[2]) if len(positional) > 2 else "latest"
+        _run_backtest_for_target(client, target=target, options=options, output=output)
         return
-    _run_backtest_for_target(client, target=parts[1], output=output)
+    target = str(positional[1]) if len(positional) > 1 else "latest"
+    _run_backtest_for_target(client, target=target, options=options, output=output)
 
 
-def _run_backtest_for_target(client: AgentClient, *, target: str, output: TextIO) -> None:
+def _run_backtest_for_target(
+    client: AgentClient,
+    *,
+    target: str,
+    options: dict[str, Any],
+    output: TextIO,
+) -> None:
     research_id = ""
     strategy_key = "momentum_breakout_v1"
     if target.startswith("srch_"):
@@ -539,7 +569,14 @@ def _run_backtest_for_target(client: AgentClient, *, target: str, output: TextIO
     else:
         strategy_key = target
     try:
-        result = client.run_backtest(research_id=research_id, strategy_key=strategy_key)
+        result = client.run_backtest(
+            research_id=research_id,
+            strategy_key=strategy_key,
+            use_live_candles=bool(options["use_live_candles"]),
+            symbol=str(options["symbol"]),
+            bar=str(options["bar"]),
+            candle_limit=int(options["candle_limit"]),
+        )
     except KeyError:
         print(f"Research not found: {research_id}", file=output)
         return
@@ -547,6 +584,34 @@ def _run_backtest_for_target(client: AgentClient, *, target: str, output: TextIO
         print(f"Backtest failed: {exc}", file=output)
         return
     render_backtest_result(result, output=output)
+
+
+def _parse_backtest_options(parts: list[str]) -> dict[str, Any]:
+    options: dict[str, Any] = {
+        "positionals": [],
+        "use_live_candles": False,
+        "symbol": "BTC",
+        "bar": "1H",
+        "candle_limit": 100,
+    }
+    index = 0
+    while index < len(parts):
+        part = parts[index]
+        if part == "--live":
+            options["use_live_candles"] = True
+        elif part == "--symbol" and index + 1 < len(parts):
+            index += 1
+            options["symbol"] = parts[index]
+        elif part == "--bar" and index + 1 < len(parts):
+            index += 1
+            options["bar"] = parts[index]
+        elif part == "--limit" and index + 1 < len(parts):
+            index += 1
+            options["candle_limit"] = int(parts[index])
+        else:
+            options["positionals"].append(part)
+        index += 1
+    return options
 
 
 def _latest_strategy_research(client: AgentClient) -> dict[str, Any] | None:

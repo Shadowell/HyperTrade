@@ -35,6 +35,10 @@ Sprint 03 adds a small built-in strategy lab:
 - `momentum_breakout_v1` is the first deterministic Strategy SDK template.
 - `/api/strategy/research` and `/api/backtests` provide the research-to-backtest loop.
 - `/harness` shows the latest strategy research and latest backtest metrics.
+- Sprint 13 adds optional OKX REST candle input for Backtrader through
+  `use_live_candles`, `symbol`, `bar`, and `candle_limit`.
+- When live candles are enabled, `backtest_runs.report_json` records `data_source`,
+  `inst_id`, `bar`, and `candle_count`.
 
 Sprint 03 增加一个小型策略实验室：
 
@@ -43,3 +47,7 @@ Sprint 03 增加一个小型策略实验室：
 - `momentum_breakout_v1` 是第一个确定性的 Strategy SDK 模板。
 - `/api/strategy/research` 与 `/api/backtests` 提供研究到回测的闭环。
 - `/harness` 展示最新策略研究和最新回测指标。
+- Sprint 13 增加可选的 OKX REST K 线回测输入，通过 `use_live_candles`、`symbol`、
+  `bar` 和 `candle_limit` 控制。
+- 启用 live candles 时，`backtest_runs.report_json` 会记录 `data_source`、`inst_id`、
+  `bar` 和 `candle_count`。

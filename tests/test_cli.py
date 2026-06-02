@@ -12,7 +12,7 @@ class FakeAgentClient:
         self.logged_in = False
         self.prompts: list[str] = []
         self.research_prompts: list[str] = []
-        self.backtest_calls: list[tuple[str, str]] = []
+        self.backtest_calls: list[dict[str, Any]] = []
 
     def login(self) -> None:
         self.logged_in = True
@@ -105,8 +105,21 @@ class FakeAgentClient:
         *,
         research_id: str = "",
         strategy_key: str = "momentum_breakout_v1",
+        use_live_candles: bool = False,
+        symbol: str = "BTC",
+        bar: str = "1H",
+        candle_limit: int = 100,
     ) -> dict[str, Any]:
-        self.backtest_calls.append((research_id, strategy_key))
+        self.backtest_calls.append(
+            {
+                "research_id": research_id,
+                "strategy_key": strategy_key,
+                "use_live_candles": use_live_candles,
+                "symbol": symbol,
+                "bar": bar,
+                "candle_limit": candle_limit,
+            }
+        )
         return {
             "id": "bt_cli",
             "research_id": research_id,
@@ -323,13 +336,41 @@ def test_chat_runs_research_and_backtest_shortcuts(capsys) -> None:
     run_chat(client=client, input_fn=_next_input(inputs))
 
     assert client.research_prompts == ["研究BTC趋势突破"]
-    assert client.backtest_calls == [("srch_recent", "momentum_breakout_v1")]
+    assert client.backtest_calls == [
+        {
+            "research_id": "srch_recent",
+            "strategy_key": "momentum_breakout_v1",
+            "use_live_candles": False,
+            "symbol": "BTC",
+            "bar": "1H",
+            "candle_limit": 100,
+        }
+    ]
     output = capsys.readouterr().out
     assert "srch_cli" in output
     assert "Strategy research created" in output
     assert "bt_cli" in output
     assert "Backtest completed" in output
     assert "Return 1.9%" in output
+
+
+def test_chat_runs_live_candle_backtest_shortcut(capsys) -> None:
+    client = FakeAgentClient()
+    inputs = iter(["/backtest --live --symbol ETH --bar 1H --limit 24", "exit"])
+
+    run_chat(client=client, input_fn=_next_input(inputs))
+
+    assert client.backtest_calls == [
+        {
+            "research_id": "srch_recent",
+            "strategy_key": "momentum_breakout_v1",
+            "use_live_candles": True,
+            "symbol": "ETH",
+            "bar": "1H",
+            "candle_limit": 24,
+        }
+    ]
+    assert "Backtest completed" in capsys.readouterr().out
 
 
 def test_api_client_creates_research_and_backtest() -> None:
