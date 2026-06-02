@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 13 live candle backtest deployed to `47.79.36.92` at SHA `53ff224`.
+- Last verified state: Sprint 14 Agent acceptance tests deployed to `47.79.36.92` at SHA `0afb197`.
 
 ## Active Contract
 
@@ -53,6 +53,7 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 52 tests.
 - `uv run pytest tests/test_agent_acceptance.py -q` -> 4 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 56 tests.
+- Server deployed SHA `0afb197`; external `GET /api/health` returned OK.
 - Server deployed SHA `48859cb`; external `GET /api/health` returned OK.
 - Server live-candle backtest smoke passed with host `hypertrade`: `/research 研究ETH趋势突破` created `srch_987a780e0715494a99a3`, then `/backtest --live --symbol ETH --bar 1H --limit 100` created `bt_480d647199dd4d16b960` using `okx_rest_candles`, `ETH-USDT-SWAP`, `1H`, and 100 candles.
 - Server deployed SHA `4ce55f8`; external `GET /api/health` returned OK.
@@ -111,6 +112,6 @@
 
 ## Recommended Next Steps
 
-1. Deploy Sprint 14 test documentation update to `47.79.36.92`.
-2. Add a lightweight `/compare` CLI shortcut for deterministic comparisons without waiting for LLM planning.
-3. Add a `/candles` CLI shortcut for deterministic K-line trend reports.
+1. Add a lightweight `/compare` CLI shortcut for deterministic comparisons without waiting for LLM planning.
+2. Add a `/candles` CLI shortcut for deterministic K-line trend reports.
+3. Start paper-trading controls in CLI, keeping live order tools behind approval gates.
