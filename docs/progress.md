@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 13 live candle backtest deployed to `47.79.36.92` at SHA `48859cb`.
+- Last verified state: Sprint 13 live candle backtest deployed to `47.79.36.92` at SHA `53ff224`.
 
 ## Active Contract
 
-- `docs/contracts/sprint-13-live-candle-backtest.md` (completed)
+- `docs/contracts/sprint-14-agent-acceptance-tests.md` (completed)
 
 ## Latest Completed Work
 
@@ -33,6 +33,8 @@
 - Added Sprint 11 market relative-strength compare locally: `market_compare` planner tool, `market.compare` registry entry, deterministic strength scoring, ranking payload, and stable multi-symbol comparison report block.
 - Added Sprint 12 CLI/API streaming locally: AgentKernel progress event emission, `POST /api/agent/runs/stream` SSE endpoint, remote SSE parsing, local streaming rendering, and CLI progress lines for run/tool events.
 - Added Sprint 13 live candle backtest path locally: BacktestService can fetch OKX candles, convert them into Strategy SDK candles, accept API live-candle options, and pass `/backtest --live --symbol ETH --bar 1H --limit 100` from CLI.
+- Added Sprint 14 Agent acceptance tests locally: deterministic replay tests now cover exact-symbol ticker output, K-line trend plus relative-strength comparison, RAG + Memory auditability, strategy research + backtest chaining, and report quality guardrails.
+- Added `docs/testing/agent-acceptance-test-plan.md` with automated cases, server smoke commands, expected output checks, and forbidden advice phrases.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
@@ -49,6 +51,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 49 tests.
 - `uv run pytest tests/test_live_candle_backtest.py tests/test_strategy_backtest_api.py tests/test_cli.py -q` -> 16 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 52 tests.
+- `uv run pytest tests/test_agent_acceptance.py -q` -> 4 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 56 tests.
 - Server deployed SHA `48859cb`; external `GET /api/health` returned OK.
 - Server live-candle backtest smoke passed with host `hypertrade`: `/research 研究ETH趋势突破` created `srch_987a780e0715494a99a3`, then `/backtest --live --symbol ETH --bar 1H --limit 100` created `bt_480d647199dd4d16b960` using `okx_rest_candles`, `ETH-USDT-SWAP`, `1H`, and 100 candles.
 - Server deployed SHA `4ce55f8`; external `GET /api/health` returned OK.
@@ -107,6 +111,6 @@
 
 ## Recommended Next Steps
 
-1. Add a lightweight `/compare` CLI shortcut for deterministic comparisons without waiting for LLM planning.
-2. Add a `/candles` CLI shortcut for deterministic K-line trend reports.
-3. Start Sprint 14 paper-trading controls in CLI, keeping live order tools behind approval gates.
+1. Deploy Sprint 14 test documentation update to `47.79.36.92`.
+2. Add a lightweight `/compare` CLI shortcut for deterministic comparisons without waiting for LLM planning.
+3. Add a `/candles` CLI shortcut for deterministic K-line trend reports.
