@@ -207,6 +207,23 @@ class BacktestRun(Base, TimestampMixin):
     error: Mapped[str] = mapped_column(Text, default="")
 
 
+class LiveOrderIntent(Base, TimestampMixin):
+    __tablename__ = "live_order_intents"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("loi"))
+    environment: Mapped[str] = mapped_column(String(32), default="testnet", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending_approval", index=True)
+    inst_id: Mapped[str] = mapped_column(String(64), index=True)
+    side: Mapped[str] = mapped_column(String(16))
+    order_type: Mapped[str] = mapped_column(String(32), default="market")
+    size: Mapped[Decimal] = mapped_column(Numeric(30, 12))
+    price: Mapped[Decimal | None] = mapped_column(Numeric(30, 12), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(64), default="operator")
+    source_run_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    decision_reason: Mapped[str] = mapped_column(Text, default="")
+
+
 class Database:
     def __init__(self, url: str, *, echo: bool = False) -> None:
         connect_args: dict[str, Any] = {}

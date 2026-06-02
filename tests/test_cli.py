@@ -18,6 +18,7 @@ class FakeAgentClient:
         self.candle_calls: list[dict[str, Any]] = []
         self.compare_calls: list[dict[str, Any]] = []
         self.paper_actions: list[str] = []
+        self.live_decisions: list[dict[str, str]] = []
 
     def login(self) -> None:
         self.logged_in = True
@@ -126,8 +127,37 @@ class FakeAgentClient:
             ],
         }
 
-    def control_paper(self, action: str) -> dict[str, Any]:
+    def control_paper(self, action: str, *, symbol: str | None = None) -> dict[str, Any]:
         self.paper_actions.append(action)
+        if action == "close":
+            return {
+                "session": {
+                    "id": "paper_cli",
+                    "status": "running",
+                    "cash": "100050",
+                    "equity": "100050",
+                    "realized_pnl": "50",
+                },
+                "closed_count": 1,
+                "closed": [
+                    {
+                        "inst_id": f"{(symbol or 'ETH').upper()}-USDT-SWAP",
+                        "side": "long",
+                        "exit_price": "2000",
+                        "realized_pnl": "50",
+                    }
+                ],
+            }
+        if action == "reset":
+            return {
+                "session": {
+                    "id": "paper_new",
+                    "status": "running",
+                    "cash": "100000",
+                    "equity": "100000",
+                    "realized_pnl": "0",
+                }
+            }
         return {
             "session": {
                 "id": "paper_cli",
@@ -270,6 +300,64 @@ class FakeAgentClient:
                     "key_status": "configured",
                 }
             ],
+        }
+
+    def list_live_order_intents(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "loi_recent",
+                "environment": "testnet",
+                "status": "pending_approval",
+                "inst_id": "ETH-USDT-SWAP",
+                "side": "buy",
+                "order_type": "market",
+                "size": "0.01",
+                "price": None,
+                "reason": "test intent",
+            }
+        ]
+
+    def create_live_order_intent(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        size: str,
+        order_type: str = "market",
+        price: str | None = None,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        return {
+            "id": "loi_new",
+            "environment": "testnet",
+            "status": "pending_approval",
+            "inst_id": f"{symbol.upper()}-USDT-SWAP",
+            "side": side,
+            "order_type": order_type,
+            "size": size,
+            "price": price,
+            "reason": reason,
+        }
+
+    def decide_live_order_intent(
+        self,
+        intent_id: str,
+        *,
+        decision: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        self.live_decisions.append({"intent_id": intent_id, "decision": decision, "reason": reason})
+        return {
+            "id": intent_id,
+            "environment": "testnet",
+            "status": "approved" if decision == "approve" else "rejected",
+            "inst_id": "ETH-USDT-SWAP",
+            "side": "buy",
+            "order_type": "market",
+            "size": "0.01",
+            "price": None,
+            "reason": "test intent",
+            "decision_reason": reason,
         }
 
 
@@ -462,6 +550,12 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
             "/paper status",
             "/paper pause",
             "/paper resume",
+            "/paper close ETH",
+            "/paper reset",
+            "/live intents",
+            "/live intent ETH buy 0.01 --reason test order",
+            "/live approve loi_new --reason checked",
+            "/live reject loi_old --reason no",
             "exit",
         ]
     )
@@ -488,12 +582,19 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
     assert client.price_symbols == ["ETH"]
     assert client.candle_calls == [{"symbol": "ETH", "bar": "1H", "limit": 50}]
     assert client.compare_calls == [{"symbols": ["ETH", "SOL"], "bar": "4H", "limit": 100}]
-    assert client.paper_actions == ["pause", "resume"]
+    assert client.paper_actions == ["pause", "resume", "close", "reset"]
     assert "Paper trading:" in output
     assert "paper_cli" in output
     assert "ETH-USDT-SWAP" in output
     assert "Paper control: paused" in output
     assert "Paper control: running" in output
+    assert "Paper close: 1 positions" in output
+    assert "Paper reset: new session paper_new" in output
+    assert "Live order intents:" in output
+    assert "loi_recent" in output
+    assert "loi_new pending_approval testnet ETH-USDT-SWAP buy 0.01 market" in output
+    assert "loi_new approved testnet ETH-USDT-SWAP buy 0.01 market" in output
+    assert "loi_old rejected testnet ETH-USDT-SWAP buy 0.01 market" in output
 
 
 def test_bare_command_starts_chat_loop(capsys) -> None:

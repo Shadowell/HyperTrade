@@ -179,6 +179,40 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "live_order_intent",
+            "description": (
+                "Create a testnet/live order intent that must be approved by a human. "
+                "This tool never executes an exchange order."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or OKX instrument id.",
+                    },
+                    "side": {"type": "string", "enum": ["buy", "sell"]},
+                    "size": {
+                        "type": "string",
+                        "description": "Contract/order size as decimal text.",
+                    },
+                    "order_type": {"type": "string", "enum": ["market", "limit"]},
+                    "price": {
+                        "type": "string",
+                        "description": "Limit price, if order_type is limit.",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Why this order is being proposed.",
+                    },
+                },
+                "required": ["symbol", "side", "size"],
+            },
+        },
+    },
 ]
 
 _SYSTEM_PROMPT = """\
@@ -191,6 +225,8 @@ support/resistance, or multi-period market research for a specific symbol.
 Use market_compare when the user asks to compare two or more symbols, relative
 strength, 哪个更强, 跑赢, 强弱, or leader/laggard.
 Plan which tools to call, execute them, then write a concise Markdown report.
+When the user asks to place or prepare an order, use live_order_intent only to
+create a pending human approval item. Never claim that an exchange order was executed.
 Always end with: "Research output only. Not investment advice."
 """.strip()
 

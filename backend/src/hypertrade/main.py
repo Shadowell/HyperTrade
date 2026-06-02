@@ -21,6 +21,7 @@ from hypertrade.config import Settings, get_settings
 from hypertrade.db import (
     AgentRun,
     Database,
+    LiveOrderIntent,
     MarketTicker,
     MemoryItem,
     RagChunk,
@@ -28,6 +29,7 @@ from hypertrade.db import (
     TraceEvent,
     utc_now,
 )
+from hypertrade.live.service import LiveOrderIntentService
 from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
 from hypertrade.paper.service import PaperTradingService
@@ -49,7 +51,8 @@ class AgentRunPayload(BaseModel):
 
 
 class PaperControlPayload(BaseModel):
-    action: Literal["pause", "resume"]
+    action: Literal["pause", "resume", "close", "reset"]
+    symbol: str | None = None
 
 
 class StrategyResearchPayload(BaseModel):
@@ -72,6 +75,19 @@ class MarketComparePayload(BaseModel):
     symbols: list[str]
     bar: str = "4H"
     limit: int = 100
+
+
+class LiveOrderIntentPayload(BaseModel):
+    symbol: str
+    side: Literal["buy", "sell"]
+    size: str
+    order_type: Literal["market", "limit"] = "market"
+    price: str | None = None
+    reason: str = ""
+
+
+class LiveOrderDecisionPayload(BaseModel):
+    reason: str = ""
 
 
 def create_app(settings: Settings | None = None, db: Database | None = None) -> FastAPI:
@@ -211,6 +227,17 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
                     "latest_research": StrategyResearchService(database).latest(),
                     "latest_backtest": BacktestService(database).latest(),
                 },
+                "live_orders": {
+                    "total_count": _count_rows(session, LiveOrderIntent),
+                    "pending_approval_count": _count_rows(
+                        session,
+                        LiveOrderIntent,
+                        LiveOrderIntent.status == "pending_approval",
+                    ),
+                    "recent": LiveOrderIntentService(database, settings=app_settings).list_recent(
+                        limit=5
+                    ),
+                },
             }
 
     @app.post("/api/agent/runs")
@@ -318,7 +345,11 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         service = PaperTradingService(database, settings=app_settings)
         if payload.action == "pause":
             return service.pause()
-        return service.resume()
+        if payload.action == "resume":
+            return service.resume()
+        if payload.action == "close":
+            return service.close(symbol=payload.symbol)
+        return service.reset()
 
     @app.post("/api/strategy/research")
     def create_strategy_research(
@@ -351,6 +382,60 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     @app.get("/api/backtests")
     def list_backtests(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
         return {"items": BacktestService(database).list_recent()}
+
+    @app.post("/api/live/order-intents")
+    def create_live_order_intent(
+        payload: LiveOrderIntentPayload,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return LiveOrderIntentService(database, settings=app_settings).create(
+                symbol=payload.symbol,
+                side=payload.side,
+                size=payload.size,
+                order_type=payload.order_type,
+                price=payload.price,
+                reason=payload.reason,
+                source="api",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/live/order-intents")
+    def list_live_order_intents(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+        return {"items": LiveOrderIntentService(database, settings=app_settings).list_recent()}
+
+    @app.post("/api/live/order-intents/{intent_id}/approve")
+    def approve_live_order_intent(
+        intent_id: str,
+        payload: LiveOrderDecisionPayload,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return LiveOrderIntentService(database, settings=app_settings).approve(
+                intent_id,
+                reason=payload.reason,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Order intent not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/live/order-intents/{intent_id}/reject")
+    def reject_live_order_intent(
+        intent_id: str,
+        payload: LiveOrderDecisionPayload,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return LiveOrderIntentService(database, settings=app_settings).reject(
+                intent_id,
+                reason=payload.reason,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Order intent not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/memory")
     def list_memory(_: AdminUser) -> dict[str, list[dict[str, Any]]]:

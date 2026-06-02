@@ -75,7 +75,28 @@ class AgentClient(Protocol):
 
     def get_paper_status(self) -> dict[str, Any]: ...
 
-    def control_paper(self, action: str) -> dict[str, Any]: ...
+    def control_paper(self, action: str, *, symbol: str | None = None) -> dict[str, Any]: ...
+
+    def list_live_order_intents(self) -> list[dict[str, Any]]: ...
+
+    def create_live_order_intent(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        size: str,
+        order_type: str = "market",
+        price: str | None = None,
+        reason: str = "",
+    ) -> dict[str, Any]: ...
+
+    def decide_live_order_intent(
+        self,
+        intent_id: str,
+        *,
+        decision: str,
+        reason: str = "",
+    ) -> dict[str, Any]: ...
 
 
 class AgentClientFactory(Protocol):
@@ -261,8 +282,48 @@ class AgentApiClient:
     def get_paper_status(self) -> dict[str, Any]:
         return self._get_object("/api/paper/status")
 
-    def control_paper(self, action: str) -> dict[str, Any]:
-        return self._post_object("/api/paper/control", {"action": action})
+    def control_paper(self, action: str, *, symbol: str | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"action": action}
+        if symbol:
+            body["symbol"] = symbol
+        return self._post_object("/api/paper/control", body)
+
+    def list_live_order_intents(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/live/order-intents", "items")
+
+    def create_live_order_intent(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        size: str,
+        order_type: str = "market",
+        price: str | None = None,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        return self._post_object(
+            "/api/live/order-intents",
+            {
+                "symbol": symbol,
+                "side": side,
+                "size": size,
+                "order_type": order_type,
+                "price": price,
+                "reason": reason,
+            },
+        )
+
+    def decide_live_order_intent(
+        self,
+        intent_id: str,
+        *,
+        decision: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/live/order-intents/{intent_id}/{decision}",
+            {"reason": reason},
+        )
 
     def _url(self, path: str) -> str:
         return f"{self.config.api_url.rstrip('/')}{path}"
@@ -436,7 +497,7 @@ class LocalAgentClient:
 
         return PaperTradingService(self.db, settings=self.settings).status()
 
-    def control_paper(self, action: str) -> dict[str, Any]:
+    def control_paper(self, action: str, *, symbol: str | None = None) -> dict[str, Any]:
         from hypertrade.paper.service import PaperTradingService
 
         service = PaperTradingService(self.db, settings=self.settings)
@@ -444,7 +505,54 @@ class LocalAgentClient:
             return service.pause()
         if action == "resume":
             return service.resume()
+        if action == "close":
+            return service.close(symbol=symbol)
+        if action == "reset":
+            return service.reset()
         raise ValueError(f"unknown paper action: {action}")
+
+    def list_live_order_intents(self) -> list[dict[str, Any]]:
+        from hypertrade.live.service import LiveOrderIntentService
+
+        return LiveOrderIntentService(self.db, settings=self.settings).list_recent()
+
+    def create_live_order_intent(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        size: str,
+        order_type: str = "market",
+        price: str | None = None,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        from hypertrade.live.service import LiveOrderIntentService
+
+        return LiveOrderIntentService(self.db, settings=self.settings).create(
+            symbol=symbol,
+            side=side,
+            size=size,
+            order_type=order_type,
+            price=price,
+            reason=reason,
+            source="cli",
+        )
+
+    def decide_live_order_intent(
+        self,
+        intent_id: str,
+        *,
+        decision: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        from hypertrade.live.service import LiveOrderIntentService
+
+        service = LiveOrderIntentService(self.db, settings=self.settings)
+        if decision == "approve":
+            return service.approve(intent_id, reason=reason)
+        if decision == "reject":
+            return service.reject(intent_id, reason=reason)
+        raise ValueError(f"unknown live order decision: {decision}")
 
 
 def main(
@@ -539,6 +647,8 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
     print(f"{color['cmd']}- /price ETH{color['reset']}     Exact ticker shortcut", file=output)
     print(f"{color['cmd']}- /compare ETH SOL{color['reset']} Relative strength", file=output)
     print(f"{color['cmd']}- /paper status{color['reset']}  Paper trading state", file=output)
+    print(f"{color['cmd']}- /paper close ETH{color['reset']} Close paper position", file=output)
+    print(f"{color['cmd']}- /live intents{color['reset']} Pending order approvals", file=output)
     print(f"{color['cmd']}- /research ...{color['reset']}  Create strategy research", file=output)
     print(
         f"{color['cmd']}- /backtest{color['reset']}      Run backtest from latest research",
@@ -607,6 +717,8 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
         handle_compare_command(command, client=client, output=output)
     elif name == "/paper":
         handle_paper_command(command, client=client, output=output)
+    elif name == "/live":
+        handle_live_command(command, client=client, output=output)
     else:
         print(f"Unknown command: {name}", file=output)
         render_slash_help(output=output)
@@ -626,7 +738,11 @@ def render_slash_help(*, output: TextIO) -> None:
     print("- /price ETH   Fetch exact ticker without LLM planning.", file=output)
     print("- /candles ETH --bar 1H --limit 100", file=output)
     print("- /compare ETH SOL --bar 4H --limit 100", file=output)
-    print("- /paper status|pause|resume", file=output)
+    print("- /paper status|pause|resume|close [symbol]|reset", file=output)
+    print("- /live intents", file=output)
+    print("- /live intent ETH buy 0.01 [--type limit --price 3500 --reason text]", file=output)
+    print("- /live approve loi_* [--reason text]", file=output)
+    print("- /live reject loi_* [--reason text]", file=output)
     print("- /research    Create strategy research from a prompt.", file=output)
     print("- /backtest    Run backtest on latest research.", file=output)
     print("- /backtest list                 List recent backtests.", file=output)
@@ -782,7 +898,90 @@ def handle_paper_command(command: str, *, client: AgentClient, output: TextIO) -
         status = session.get("status", "unknown") if isinstance(session, dict) else "unknown"
         print(f"Paper control: {status}", file=output)
         return
-    print("Usage: /paper status|pause|resume", file=output)
+    if subcommand == "close":
+        symbol = parts[2] if len(parts) > 2 else None
+        try:
+            result = client.control_paper("close", symbol=symbol)
+        except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+            print(f"Paper close failed: {exc}", file=output)
+            return
+        print(f"Paper close: {result.get('closed_count', 0)} positions", file=output)
+        closed = result.get("closed", [])
+        if isinstance(closed, list):
+            for row in closed[:10]:
+                if not isinstance(row, dict):
+                    continue
+                print(
+                    "- {inst_id} {side} exit={exit_price} realized_pnl={realized_pnl}".format(
+                        inst_id=row.get("inst_id", "unknown"),
+                        side=row.get("side", "unknown"),
+                        exit_price=row.get("exit_price", "n/a"),
+                        realized_pnl=row.get("realized_pnl", "n/a"),
+                    ),
+                    file=output,
+                )
+        return
+    if subcommand == "reset":
+        try:
+            result = client.control_paper("reset")
+        except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+            print(f"Paper reset failed: {exc}", file=output)
+            return
+        session = result.get("session", {})
+        session_id = session.get("id", "unknown") if isinstance(session, dict) else "unknown"
+        print(f"Paper reset: new session {session_id}", file=output)
+        return
+    print("Usage: /paper status|pause|resume|close [symbol]|reset", file=output)
+
+
+def handle_live_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    parts = command.split()
+    subcommand = parts[1].lower() if len(parts) > 1 else "intents"
+    if subcommand in {"intents", "list", "ls"}:
+        try:
+            render_live_order_intents(client.list_live_order_intents(), output=output)
+        except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+            print(f"Live intents failed: {exc}", file=output)
+        return
+    if subcommand == "intent":
+        if len(parts) < 5:
+            print(
+                "Usage: /live intent <symbol> <buy|sell> <size> [--type market|limit]",
+                file=output,
+            )
+            return
+        options = _parse_live_intent_options(parts[5:])
+        try:
+            intent = client.create_live_order_intent(
+                symbol=parts[2],
+                side=parts[3],
+                size=parts[4],
+                order_type=str(options["order_type"]),
+                price=options["price"],
+                reason=str(options["reason"]),
+            )
+        except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+            print(f"Live intent failed: {exc}", file=output)
+            return
+        render_live_order_intent(intent, output=output)
+        return
+    if subcommand in {"approve", "reject"}:
+        if len(parts) < 3:
+            print(f"Usage: /live {subcommand} <intent_id> [--reason text]", file=output)
+            return
+        options = _parse_reason_option(parts[3:])
+        try:
+            intent = client.decide_live_order_intent(
+                parts[2],
+                decision=subcommand,
+                reason=str(options["reason"]),
+            )
+        except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+            print(f"Live {subcommand} failed: {exc}", file=output)
+            return
+        render_live_order_intent(intent, output=output)
+        return
+    print("Usage: /live intents|intent|approve|reject", file=output)
 
 
 def _parse_backtest_options(parts: list[str]) -> dict[str, Any]:
@@ -835,6 +1034,32 @@ def _parse_market_options(
             index += 1
             options["limit"] = int(parts[index])
         index += 1
+    return options
+
+
+def _parse_live_intent_options(parts: list[str]) -> dict[str, Any]:
+    options: dict[str, Any] = {"order_type": "market", "price": None, "reason": ""}
+    index = 0
+    while index < len(parts):
+        part = parts[index]
+        if part in {"--type", "--order-type"} and index + 1 < len(parts):
+            index += 1
+            options["order_type"] = parts[index]
+        elif part == "--price" and index + 1 < len(parts):
+            index += 1
+            options["price"] = parts[index]
+        elif part == "--reason" and index + 1 < len(parts):
+            options["reason"] = " ".join(parts[index + 1 :])
+            break
+        index += 1
+    return options
+
+
+def _parse_reason_option(parts: list[str]) -> dict[str, Any]:
+    options: dict[str, Any] = {"reason": ""}
+    if "--reason" in parts:
+        index = parts.index("--reason")
+        options["reason"] = " ".join(parts[index + 1 :])
     return options
 
 
@@ -990,6 +1215,37 @@ def render_paper_status(payload: dict[str, Any], *, output: TextIO) -> None:
             print(f"- {row.get('kind', 'event')}: {row.get('message', '')}", file=output)
     else:
         print("- none", file=output)
+
+
+def render_live_order_intents(items: list[dict[str, Any]], *, output: TextIO) -> None:
+    print("Live order intents:", file=output)
+    if not items:
+        print("- none", file=output)
+        return
+    for item in items[:20]:
+        render_live_order_intent(item, output=output)
+
+
+def render_live_order_intent(intent: dict[str, Any], *, output: TextIO) -> None:
+    print(
+        "- {id} {status} {environment} {inst_id} {side} {size} {order_type}{price}".format(
+            id=intent.get("id", "unknown"),
+            status=intent.get("status", "unknown"),
+            environment=intent.get("environment", "unknown"),
+            inst_id=intent.get("inst_id", "unknown"),
+            side=intent.get("side", "unknown"),
+            size=intent.get("size", "n/a"),
+            order_type=intent.get("order_type", "market"),
+            price=f" price={intent.get('price')}" if intent.get("price") else "",
+        ),
+        file=output,
+    )
+    reason = intent.get("reason")
+    if reason:
+        print(f"  reason: {reason}", file=output)
+    decision_reason = intent.get("decision_reason")
+    if decision_reason:
+        print(f"  decision: {decision_reason}", file=output)
 
 
 def render_status(status: dict[str, Any], *, output: TextIO) -> None:

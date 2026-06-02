@@ -76,9 +76,32 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
 
     pause = client.post("/api/paper/control", json={"action": "pause"}).json()
     assert pause["session"]["status"] == "paused"
+    reset = client.post("/api/paper/control", json={"action": "reset"}).json()
+    assert reset["session"]["status"] == "running"
+    close = client.post("/api/paper/control", json={"action": "close", "symbol": "BTC"}).json()
+    assert close["closed_count"] == 0
+
+    intent = client.post(
+        "/api/live/order-intents",
+        json={"symbol": "ETH", "side": "buy", "size": "0.01", "reason": "api smoke"},
+    ).json()
+    assert intent["status"] == "pending_approval"
+    assert intent["inst_id"] == "ETH-USDT-SWAP"
+    assert client.get("/api/live/order-intents").json()["items"][0]["id"] == intent["id"]
+    approved = client.post(
+        f"/api/live/order-intents/{intent['id']}/approve",
+        json={"reason": "checked"},
+    ).json()
+    assert approved["status"] == "approved"
+    duplicate_approval = client.post(
+        f"/api/live/order-intents/{intent['id']}/approve",
+        json={"reason": "again"},
+    )
+    assert duplicate_approval.status_code == 400
 
     paused_overview = client.get("/api/harness/overview").json()
-    assert paused_overview["paper"]["session"]["status"] == "paused"
+    assert paused_overview["paper"]["session"]["status"] == "running"
+    assert paused_overview["live_orders"]["total_count"] == 1
 
 
 def test_api_streams_agent_run_events(tmp_path):

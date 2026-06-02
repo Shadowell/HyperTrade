@@ -4,7 +4,7 @@ from typing import Any
 from sqlalchemy import desc, select
 
 from hypertrade.config import Settings, get_settings
-from hypertrade.db import Database, PaperEvent, PaperFill, PaperPosition, PaperSession
+from hypertrade.db import Database, PaperEvent, PaperFill, PaperPosition, PaperSession, utc_now
 from hypertrade.paper.engine import PaperExecutionEngine, PaperSignalEngine
 from hypertrade.paper.models import PaperRunResult, PaperSessionSnapshot
 from hypertrade.paper.repository import PaperRepository
@@ -18,15 +18,13 @@ class PaperTradingService:
 
     def ensure_default_session(self) -> PaperSessionSnapshot:
         with self.db.session() as session:
-            paper_session = session.scalar(select(PaperSession).order_by(PaperSession.created_at))
+            paper_session = session.scalar(
+                select(PaperSession)
+                .where(PaperSession.status != "reset")
+                .order_by(desc(PaperSession.created_at))
+            )
             if paper_session is None:
-                starting_equity = Decimal(self.settings.paper_starting_equity_usdt)
-                paper_session = PaperSession(
-                    cash=starting_equity,
-                    equity=starting_equity,
-                    realized_pnl=Decimal("0"),
-                    config_json=self._config_json(),
-                )
+                paper_session = self._new_session()
                 session.add(paper_session)
                 session.flush()
             return _session_snapshot(paper_session)
@@ -94,6 +92,74 @@ class PaperTradingService:
     def resume(self) -> dict[str, Any]:
         return self._set_status("running")
 
+    def close(self, *, symbol: str | None = None) -> dict[str, Any]:
+        paper_session = self.ensure_default_session()
+        target = _normalize_symbol(symbol) if symbol else None
+        positions = [
+            position
+            for position in self.repository.open_positions(paper_session.id)
+            if target is None or position.inst_id == target
+        ]
+        closed: list[dict[str, str]] = []
+        for position in positions:
+            latest = self.repository.latest_ticker_price(position.inst_id)
+            source_ticker_updated_at: object
+            if latest is None:
+                exit_price = position.mark_price
+                source_ticker_updated_at = utc_now()
+                data_source = "position_mark"
+            else:
+                exit_price, source_ticker_updated_at = latest
+                data_source = "latest_ticker"
+            closed_row = self.repository.close_position(
+                session_id=paper_session.id,
+                position_id=position.id,
+                exit_price=exit_price,
+                source_ticker_updated_at=source_ticker_updated_at,
+                taker_fee_bps=Decimal(self.settings.paper_taker_fee_bps),
+                reason="operator_close",
+            )
+            closed_row["data_source"] = data_source
+            closed.append(closed_row)
+        self.repository.record_event(
+            session_id=paper_session.id,
+            kind="close",
+            message=_close_message(target=target, closed_count=len(closed)),
+            payload={"target": target or "all", "closed_count": len(closed), "closed": closed},
+        )
+        return {
+            "session": self.ensure_default_session().__dict__,
+            "closed_count": len(closed),
+            "closed": closed,
+        }
+
+    def reset(self) -> dict[str, Any]:
+        current = self.ensure_default_session()
+        with self.db.session() as session:
+            old_session = session.get(PaperSession, current.id)
+            if old_session is not None:
+                old_session.status = "reset"
+                session.add(
+                    PaperEvent(
+                        session_id=old_session.id,
+                        kind="reset",
+                        message="Paper session reset by operator",
+                        payload={"previous_session_id": old_session.id},
+                    )
+                )
+            new_session = self._new_session()
+            session.add(new_session)
+            session.flush()
+            session.add(
+                PaperEvent(
+                    session_id=new_session.id,
+                    kind="reset",
+                    message="New paper session created by reset",
+                    payload={"previous_session_id": current.id},
+                )
+            )
+            return {"session": _session_snapshot(new_session).__dict__}
+
     def status(self) -> dict[str, Any]:
         paper_session = self.ensure_default_session()
         return {
@@ -106,12 +172,25 @@ class PaperTradingService:
     def _set_status(self, status: str) -> dict[str, Any]:
         self.ensure_default_session()
         with self.db.session() as session:
-            paper_session = session.scalar(select(PaperSession).order_by(PaperSession.created_at))
+            paper_session = session.scalar(
+                select(PaperSession)
+                .where(PaperSession.status != "reset")
+                .order_by(desc(PaperSession.created_at))
+            )
             if paper_session is None:
                 raise RuntimeError("paper session bootstrap failed")
             paper_session.status = status
             session.flush()
             return {"session": _session_snapshot(paper_session).__dict__}
+
+    def _new_session(self) -> PaperSession:
+        starting_equity = Decimal(self.settings.paper_starting_equity_usdt)
+        return PaperSession(
+            cash=starting_equity,
+            equity=starting_equity,
+            realized_pnl=Decimal("0"),
+            config_json=self._config_json(),
+        )
 
     def _config_json(self) -> dict[str, Any]:
         return {
@@ -203,3 +282,20 @@ def _session_snapshot(session: PaperSession) -> PaperSessionSnapshot:
 def _decimal_to_string(value: Decimal) -> str:
     text = format(value, "f")
     return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def _normalize_symbol(symbol: str | None) -> str | None:
+    if symbol is None:
+        return None
+    text = symbol.strip().upper()
+    if not text:
+        return None
+    if "-" in text:
+        return text
+    return f"{text}-USDT-SWAP"
+
+
+def _close_message(*, target: str | None, closed_count: int) -> str:
+    if target is None:
+        return f"Closed {closed_count} paper positions"
+    return f"Closed {closed_count} paper positions for {target}"

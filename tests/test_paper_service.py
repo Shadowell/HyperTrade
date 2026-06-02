@@ -62,6 +62,42 @@ def test_paper_service_respects_max_positions():
         assert session.query(PaperPosition).count() == 10
 
 
+def test_paper_service_close_symbol_realizes_pnl_and_closes_position():
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    _seed_ticker(db, "ETH-USDT-SWAP", "100", "1000", "4.2")
+    service = PaperTradingService(db)
+    service.run_once()
+    _update_ticker(db, "ETH-USDT-SWAP", "110")
+
+    result = service.close(symbol="ETH")
+
+    assert result["closed_count"] == 1
+    assert result["closed"][0]["inst_id"] == "ETH-USDT-SWAP"
+    with db.session() as session:
+        position = session.query(PaperPosition).one()
+        paper_session = session.query(PaperSession).one()
+        assert position.status == "closed"
+        assert paper_session.realized_pnl > 0
+        assert session.query(PaperFill).count() == 2
+
+
+def test_paper_service_reset_archives_session_and_creates_new_one():
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    service = PaperTradingService(db)
+    original = service.ensure_default_session()
+
+    result = service.reset()
+
+    assert result["session"]["id"] != original.id
+    assert result["session"]["status"] == "running"
+    assert service.ensure_default_session().id == result["session"]["id"]
+    with db.session() as session:
+        statuses = {row.status for row in session.query(PaperSession).all()}
+        assert statuses == {"reset", "running"}
+
+
 def _seed_ticker(
     db: Database,
     inst_id: str,
@@ -80,3 +116,9 @@ def _seed_ticker(
                 raw={},
             )
         )
+
+
+def _update_ticker(db: Database, inst_id: str, last: str) -> None:
+    with db.session() as session:
+        ticker = session.query(MarketTicker).filter(MarketTicker.inst_id == inst_id).one()
+        ticker.last = Decimal(last)

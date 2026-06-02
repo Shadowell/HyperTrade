@@ -13,6 +13,7 @@ from hypertrade.agent.planner import AgentPlanner, PlannerResult, ToolExecutor
 from hypertrade.backtest.service import BacktestService
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import AgentRun, Database, TraceEvent
+from hypertrade.live.service import LiveOrderIntentService
 from hypertrade.market.analysis import summarize_candles
 from hypertrade.market.client import OkxRestClient
 from hypertrade.market.okx import OkxCandle
@@ -192,6 +193,17 @@ class AgentKernel:
                 result = BacktestService(self.db).run(
                     research_id=research_id,
                     strategy_key=strategy_key,
+                )
+            elif tool_name == "live_order_intent":
+                result = LiveOrderIntentService(self.db, settings=self._settings).create(
+                    symbol=str(args.get("symbol", "")),
+                    side=str(args.get("side", "")),
+                    size=str(args.get("size", "")),
+                    order_type=str(args.get("order_type", "market")),
+                    price=str(args["price"]) if args.get("price") else None,
+                    reason=str(args.get("reason", "")),
+                    source="agent",
+                    source_run_id=run_id,
                 )
             else:
                 result = {"error": f"unknown tool: {tool_name}"}
