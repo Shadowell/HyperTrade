@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 14 Agent acceptance tests deployed to `47.79.36.92` at SHA `5bd0ef6`.
+- Last verified state: Sprint 15 CLI market shortcuts deployed to `47.79.36.92` at SHA `e975d00`.
 
 ## Active Contract
 
@@ -57,6 +57,9 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 56 tests.
 - `uv run pytest tests/test_cli.py tests/test_api.py -q` -> 17 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 57 tests.
+- Server deployed SHA `e975d00`; server-local `GET 127.0.0.1:3334/api/health` and `GET 127.0.0.1:3333/api/health` returned OK.
+- Server CLI shortcut smoke passed through host `hypertrade`: `/price ETH`, `/candles ETH --bar 1H --limit 50`, and `/compare ETH SOL --bar 4H --limit 100` returned exact ticker, K-line trend, and relative-strength output with `okx_rest` data source.
+- Server CLI Agent status smoke passed with `hypertrade ask "看下ETH行情"`: output showed run creation, planning, tool execution, tool completion, final report generation, and completed report.
 - Server deployed SHA `0afb197`; external `GET /api/health` returned OK.
 - Server deployed SHA `48859cb`; external `GET /api/health` returned OK.
 - Server live-candle backtest smoke passed with host `hypertrade`: `/research 研究ETH趋势突破` created `srch_987a780e0715494a99a3`, then `/backtest --live --symbol ETH --bar 1H --limit 100` created `bt_480d647199dd4d16b960` using `okx_rest_candles`, `ETH-USDT-SWAP`, `1H`, and 100 candles.
@@ -113,9 +116,10 @@
 - V1 does not include automatic PostgreSQL backup.
 - Sprint 13 adds live OKX candle input, but does not persist historical candles to PostgreSQL.
 - Testnet order execution remains documented as a later sprint.
+- Public `http://47.79.36.92:3333/api/health` timed out from the current local environment after Sprint 15 deploy, while server-local Nginx/API health checks passed; likely requires cloud security group or caller IP whitelist review.
 
 ## Recommended Next Steps
 
-1. Deploy Sprint 15 to `47.79.36.92`.
-2. Server-smoke `/price ETH`, `/candles ETH --bar 1H --limit 50`, and `/compare ETH SOL --bar 4H --limit 100`.
-3. Start paper-trading controls in CLI, keeping live order tools behind approval gates.
+1. Check cloud security group / caller IP whitelist for public port `3333`.
+2. Start paper-trading controls in CLI, keeping live order tools behind approval gates.
+3. Add BitPro historical K-line import as a separate archived-data source for backtests.
