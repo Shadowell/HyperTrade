@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 17 Rich CLI renderer deployed to `47.79.36.92` at SHA `f765859`.
+- Last verified state: Sprint 18 paper CLI controls deployed to `47.79.36.92` at SHA `9f3fa0c`.
 
 ## Active Contract
 
@@ -67,6 +67,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 60 tests.
 - `uv run pytest tests/test_cli.py -q` -> 16 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 60 tests.
+- Server deployed SHA `9f3fa0c`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
+- Server paper CLI smoke passed through host `hypertrade`: `/paper status` printed session, positions, fills, and events; `/paper pause` reported paused; `/paper resume` reported running.
 - Server deployed SHA `cb02da6`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
 - Server Rich CLI smoke passed with `HYPERTRADE_RENDERER=rich hypertrade ask "看下ETH行情"`: output showed Rich panels and tables for run header, tool trace, `Agent Report`, and `Ticker`.
 - Server deployed SHA `fee6be7`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
@@ -134,6 +136,6 @@
 
 ## Recommended Next Steps
 
-1. Deploy Sprint 18 to `47.79.36.92`.
-2. Server-smoke `/paper status`, `/paper pause`, and `/paper resume`.
-3. Add BitPro historical K-line import as a separate archived-data source for backtests.
+1. Add BitPro historical K-line import as a separate archived-data source for backtests.
+2. Check cloud security group / caller IP whitelist for public port `3333`.
+3. Add richer paper CLI actions later, such as close-position and reset-session, behind explicit confirmations.
