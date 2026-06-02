@@ -39,6 +39,7 @@
 - Improved CLI Agent streaming status text so free-form runs show run creation, planning, tool execution, tool completion, and final report generation.
 - Added Sprint 16 structured CLI report rendering locally: market-summary `report_json` and market tool trace outputs now render as structured CLI sections before falling back to Markdown.
 - Added Sprint 17 Rich CLI rendering locally: structured market reports can render as terminal panels/tables when `HYPERTRADE_RENDERER=rich` or when running on a TTY, while `HYPERTRADE_RENDERER=plain` keeps script-friendly output.
+- Updated the host CLI wrapper to pass safe display environment variables (`HYPERTRADE_RENDERER`, `NO_COLOR`) into the API container.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
