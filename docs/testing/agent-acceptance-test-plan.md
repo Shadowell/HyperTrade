@@ -63,6 +63,7 @@ Expected server observations:
 
 - CLI prints run id and tool progress lines.
 - Free-form prompts print readable Agent statuses for run creation, planning, tool execution, tool completion, and final report generation.
+- Free-form market prompts prefer structured CLI report sections such as `Agent Report`, `Ticker`, `Trend`, and `Relative strength` instead of raw Markdown when trace payloads are available.
 - Deterministic market shortcuts print exact ticker, K-line trend, and relative-strength blocks without starting an LLM-planned Agent run.
 - Specific-symbol prompt includes exact instrument such as `ETH-USDT-SWAP`.
 - Compare prompt includes relative-strength ranking.

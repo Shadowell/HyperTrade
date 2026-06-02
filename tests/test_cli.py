@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import httpx
-from hypertrade.cli import AgentApiClient, CliConfig, LocalAgentClient, main, run_chat
+from hypertrade.cli import AgentApiClient, CliConfig, LocalAgentClient, main, render_run, run_chat
 
 
 class FakeAgentClient:
@@ -230,6 +230,95 @@ def test_ask_prints_agent_run_trace_and_report(capsys) -> None:
     assert "run_cli" in output
     assert "market.summary" in output
     assert "# CLI Report" in output
+
+
+def test_render_run_prefers_structured_market_summary_over_raw_markdown(capsys) -> None:
+    render_run(
+        {
+            "id": "run_structured",
+            "status": "completed",
+            "report_markdown": "# Raw Markdown Should Not Render",
+            "report_json": {
+                "market_scope": "OKX SWAP",
+                "trigger": "user_request",
+                "data_source": "okx_rest",
+                "as_of_utc": "2026-06-02T08:00:00+00:00",
+                "top_movers": [
+                    {
+                        "inst_id": "ETH-USDT-SWAP",
+                        "last": "3500.000000000000",
+                        "change_utc0_pct": "1.230000",
+                        "volume_ccy_24h": "987654.000000000000",
+                    }
+                ],
+                "rag_hits": [{"source_path": "docs/knowledge/risk.md", "score": 0.91}],
+                "disclaimer": "Research output only. Not investment advice.",
+            },
+            "trace_events": [
+                {"tool_name": "market.summary", "status": "completed"},
+                {"tool_name": "rag.search", "status": "completed"},
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "Market Report" in output
+    assert "Scope: OKX SWAP" in output
+    assert "Source: okx_rest" in output
+    assert "Top movers:" in output
+    assert "ETH-USDT-SWAP" in output
+    assert "Knowledge hits:" in output
+    assert "Raw Markdown Should Not Render" not in output
+    assert "Research output only. Not investment advice." in output
+
+
+def test_render_run_prefers_structured_tool_outputs_over_planner_markdown(capsys) -> None:
+    render_run(
+        {
+            "id": "run_tools",
+            "status": "completed",
+            "report_markdown": "# Planner Markdown Should Not Render",
+            "report_json": {
+                "planner": "deepseek",
+                "disclaimer": "Research output only. Not investment advice.",
+            },
+            "trace_events": [
+                {
+                    "tool_name": "market_ticker",
+                    "status": "completed",
+                    "output_json": {
+                        "found": True,
+                        "inst_id": "ETH-USDT-SWAP",
+                        "last": "3500.000000000000",
+                        "change_utc0_pct": "1.230000",
+                        "volume_ccy_24h": "987654.000000000000",
+                        "data_source": "okx_rest",
+                    },
+                },
+                {
+                    "tool_name": "market_candles",
+                    "status": "completed",
+                    "output_json": {
+                        "found": True,
+                        "inst_id": "ETH-USDT-SWAP",
+                        "bar": "1H",
+                        "candle_count": 100,
+                        "return_pct": "2.400000",
+                        "trend_bias": "up",
+                        "data_source": "okx_rest",
+                    },
+                },
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "Agent Report" in output
+    assert "Ticker:" in output
+    assert "Trend:" in output
+    assert "ETH-USDT-SWAP" in output
+    assert "Planner Markdown Should Not Render" not in output
+    assert "Research output only. Not investment advice." in output
 
 
 def test_ask_streams_agent_run_progress(capsys) -> None:

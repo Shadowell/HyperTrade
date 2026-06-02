@@ -1000,7 +1000,145 @@ def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
                 file=output,
             )
     print("", file=output)
+    if _render_structured_report(run, output=output):
+        return
     print(str(run.get("report_markdown", "")), file=output)
+
+
+def _render_structured_report(run: dict[str, Any], *, output: TextIO) -> bool:
+    report = run.get("report_json", {})
+    if not isinstance(report, dict) or not report:
+        return False
+    if isinstance(report.get("top_movers"), list):
+        _render_structured_market_summary(report, output=output)
+        return True
+    trace_events = run.get("trace_events", [])
+    if isinstance(trace_events, list) and _has_structured_market_tool_output(trace_events):
+        _render_structured_tool_report(trace_events, report=report, output=output)
+        return True
+    return False
+
+
+def _render_structured_market_summary(report: dict[str, Any], *, output: TextIO) -> None:
+    print("Market Report", file=output)
+    print(f"Scope: {report.get('market_scope', 'unknown')}", file=output)
+    print(f"Trigger: {report.get('trigger', 'unknown')}", file=output)
+    print(f"Source: {report.get('data_source', 'unknown')}", file=output)
+    print(f"As of UTC: {report.get('as_of_utc', 'n/a')}", file=output)
+    print("", file=output)
+
+    movers = report.get("top_movers", [])
+    print("Top movers:", file=output)
+    if isinstance(movers, list) and movers:
+        for mover in movers[:10]:
+            if not isinstance(mover, dict):
+                continue
+            print(
+                "- {inst_id}: last={last}, utc0_change={change}%, volume_24h={volume}".format(
+                    inst_id=mover.get("inst_id", "unknown"),
+                    last=mover.get("last", "n/a"),
+                    change=mover.get("change_utc0_pct", "n/a"),
+                    volume=mover.get("volume_ccy_24h", "n/a"),
+                ),
+                file=output,
+            )
+    else:
+        reason = report.get("unavailable_reason", "no movers available")
+        print(f"- unavailable: {reason}", file=output)
+
+    hits = report.get("rag_hits", [])
+    if isinstance(hits, list) and hits:
+        print("", file=output)
+        print("Knowledge hits:", file=output)
+        for hit in hits[:5]:
+            if not isinstance(hit, dict):
+                continue
+            print(
+                f"- {hit.get('source_path', 'unknown')} score={hit.get('score', 'n/a')}",
+                file=output,
+            )
+
+    disclaimer = str(report.get("disclaimer", "Research output only. Not investment advice."))
+    print("", file=output)
+    print(disclaimer, file=output)
+
+
+def _has_structured_market_tool_output(trace_events: list[Any]) -> bool:
+    supported_tools = {"market_ticker", "market_candles", "market_compare"}
+    for event in trace_events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("tool_name") in supported_tools and isinstance(event.get("output_json"), dict):
+            return True
+    return False
+
+
+def _render_structured_tool_report(
+    trace_events: list[Any],
+    *,
+    report: dict[str, Any],
+    output: TextIO,
+) -> None:
+    print("Agent Report", file=output)
+    for event in trace_events:
+        if not isinstance(event, dict):
+            continue
+        payload = event.get("output_json", {})
+        if not isinstance(payload, dict) or not payload.get("found", True):
+            continue
+        tool_name = str(event.get("tool_name", ""))
+        if tool_name == "market_ticker":
+            _render_tool_ticker_block(payload, output=output)
+        elif tool_name == "market_candles":
+            _render_tool_candles_block(payload, output=output)
+        elif tool_name == "market_compare":
+            _render_tool_compare_block(payload, output=output)
+    disclaimer = str(report.get("disclaimer", "Research output only. Not investment advice."))
+    print("", file=output)
+    print(disclaimer, file=output)
+
+
+def _render_tool_ticker_block(payload: dict[str, Any], *, output: TextIO) -> None:
+    print("", file=output)
+    print("Ticker:", file=output)
+    print(f"- Instrument: {payload.get('inst_id', 'unknown')}", file=output)
+    print(f"- Last: {payload.get('last', 'n/a')}", file=output)
+    print(f"- UTC0 change: {payload.get('change_utc0_pct', 'n/a')}%", file=output)
+    print(f"- 24h volume: {payload.get('volume_ccy_24h', 'n/a')}", file=output)
+    print(f"- Source: {payload.get('data_source', 'unknown')}", file=output)
+
+
+def _render_tool_candles_block(payload: dict[str, Any], *, output: TextIO) -> None:
+    print("", file=output)
+    print("Trend:", file=output)
+    print(f"- Instrument: {payload.get('inst_id', 'unknown')}", file=output)
+    print(f"- Bar: {payload.get('bar', 'n/a')}", file=output)
+    print(f"- Candles: {payload.get('candle_count', 'n/a')}", file=output)
+    print(f"- Return: {payload.get('return_pct', 'n/a')}%", file=output)
+    print(f"- Bias: {payload.get('trend_bias', 'unknown')}", file=output)
+    print(f"- Source: {payload.get('data_source', 'unknown')}", file=output)
+
+
+def _render_tool_compare_block(payload: dict[str, Any], *, output: TextIO) -> None:
+    print("", file=output)
+    print("Relative strength:", file=output)
+    print(f"- Bar: {payload.get('bar', 'n/a')}", file=output)
+    print(f"- Leader: {payload.get('leader', 'unknown')}", file=output)
+    rankings = payload.get("rankings", [])
+    if isinstance(rankings, list):
+        for row in rankings:
+            if not isinstance(row, dict):
+                continue
+            print(
+                "- {rank}. {inst_id}: score={score}, return={return_pct}%, bias={bias}".format(
+                    rank=row.get("rank", "?"),
+                    inst_id=row.get("inst_id", "unknown"),
+                    score=row.get("strength_score", "n/a"),
+                    return_pct=row.get("return_pct", "n/a"),
+                    bias=row.get("trend_bias", "unknown"),
+                ),
+                file=output,
+            )
 
 
 def render_run_stream(
