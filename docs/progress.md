@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 18 paper CLI controls deployed to `47.79.36.92` at SHA `227eedc`.
+- Last verified state: Sprint 19 BitPro archived K-line backtest source deployed to `47.79.36.92` at SHA `bd58dd7`.
 
 ## Active Contract
 
@@ -70,6 +70,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 60 tests.
 - `uv run pytest tests/test_bitpro_archive_backtest.py tests/test_cli.py -q` -> 19 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 63 tests.
+- Server deployed SHA `bd58dd7`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
+- Server BitPro archive backtest smoke passed through host `hypertrade`: `/research 研究BTC趋势突破` created research `srch_c51a2aabfa4a448194c8`; `/backtest --source bitpro --symbol BTC --bar 1H --limit 200` created `bt_26ee2b9416b24f5db66c` using `bitpro_sqlite_candles`, `BTC-USDT-SWAP`, `1H`, and 200 candles.
 - Server deployed SHA `9f3fa0c`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
 - Server paper CLI smoke passed through host `hypertrade`: `/paper status` printed session, positions, fills, and events; `/paper pause` reported paused; `/paper resume` reported running.
 - Server deployed SHA `cb02da6`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
@@ -139,6 +141,6 @@
 
 ## Recommended Next Steps
 
-1. Deploy Sprint 19 to `47.79.36.92`.
-2. Configure server `BITPRO_SQLITE_PATH=/bitpro-data/crypto_data.db` and smoke `/backtest --source bitpro --symbol BTC --bar 1H --limit 200`.
-3. Check cloud security group / caller IP whitelist for public port `3333`.
+1. Check cloud security group / caller IP whitelist for public port `3333`.
+2. Add an archived candle source reader for BitPro file-store data if server data expands beyond SQLite.
+3. Start the next execution sprint: paper trading close/reset controls, position risk rules, or Testnet approval-gated order path.
