@@ -41,7 +41,7 @@
 - Added Sprint 17 Rich CLI rendering locally: structured market reports can render as terminal panels/tables when `HYPERTRADE_RENDERER=rich` or when running on a TTY, while `HYPERTRADE_RENDERER=plain` keeps script-friendly output.
 - Updated the host CLI wrapper to pass safe display environment variables (`HYPERTRADE_RENDERER`, `NO_COLOR`) into the API container.
 - Added Sprint 18 paper CLI controls locally: `/paper status`, `/paper pause`, and `/paper resume` call the existing paper runtime without starting an Agent run.
-- Added Sprint 19 BitPro archived K-line backtest source locally: `BITPRO_SQLITE_PATH` can point to a BitPro SQLite DB, and `/backtest --source bitpro --symbol ETH --bar 1H --limit 500` routes archived K-lines into Backtrader.
+- Added Sprint 19 BitPro archived K-line backtest source locally: `BITPRO_SQLITE_PATH` can point to a BitPro SQLite DB, `/backtest --source bitpro --symbol ETH --bar 1H --limit 500` routes archived K-lines into Backtrader, and Compose mounts `${BITPRO_HOST_DATA_DIR:-/opt/bitpro/data}` read-only at `/bitpro-data`.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
@@ -140,5 +140,5 @@
 ## Recommended Next Steps
 
 1. Deploy Sprint 19 to `47.79.36.92`.
-2. Configure server `BITPRO_SQLITE_PATH=/opt/bitpro/data/crypto_data.db` and smoke `/backtest --source bitpro --symbol BTC --bar 1H --limit 200`.
+2. Configure server `BITPRO_SQLITE_PATH=/bitpro-data/crypto_data.db` and smoke `/backtest --source bitpro --symbol BTC --bar 1H --limit 200`.
 3. Check cloud security group / caller IP whitelist for public port `3333`.

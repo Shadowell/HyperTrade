@@ -10,6 +10,7 @@ Allow HyperTrade to use archived BitPro K-line data as a backtest candle source 
 - Read BitPro tables such as `kline_1h`, `kline_4h`, and fallback `kline_history`.
 - Convert BitPro rows into HyperTrade `Candle` objects.
 - Add `BITPRO_SQLITE_PATH` configuration.
+- Mount BitPro's host data directory read-only into the API/worker containers.
 - Add `/backtest --source bitpro --symbol <symbol> --bar <bar> --limit <n>` support.
 - Preserve existing sample and OKX live candle sources.
 

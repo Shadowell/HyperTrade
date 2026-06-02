@@ -29,6 +29,8 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hypertrade}:${POSTGRES_PASSWORD:-hypertrade}@postgres:5432/${POSTGRES_DB:-hypertrade}
     ports:
       - "127.0.0.1:3334:3334"
+    volumes:
+      - ${BITPRO_HOST_DATA_DIR:-/opt/bitpro/data}:/bitpro-data:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,6 +48,8 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hypertrade}:${POSTGRES_PASSWORD:-hypertrade}@postgres:5432/${POSTGRES_DB:-hypertrade}
+    volumes:
+      - ${BITPRO_HOST_DATA_DIR:-/opt/bitpro/data}:/bitpro-data:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,4 +59,3 @@ services:
 networks:
   hypertrade:
     name: hypertrade
-
