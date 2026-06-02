@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 16 structured CLI renderer deployed to `47.79.36.92` at SHA `fee6be7`.
+- Last verified state: Sprint 16 structured CLI renderer deployed to `47.79.36.92` at SHA `a99fc1a`.
 
 ## Active Contract
 
-- `docs/contracts/sprint-16-structured-cli-renderer.md` (completed)
+- `docs/contracts/sprint-17-rich-cli-renderer.md` (completed)
 
 ## Latest Completed Work
 
@@ -38,6 +38,7 @@
 - Added Sprint 15 CLI market shortcuts locally: `/price`, `/candles`, and `/compare` call deterministic market payloads without waiting for LLM planning.
 - Improved CLI Agent streaming status text so free-form runs show run creation, planning, tool execution, tool completion, and final report generation.
 - Added Sprint 16 structured CLI report rendering locally: market-summary `report_json` and market tool trace outputs now render as structured CLI sections before falling back to Markdown.
+- Added Sprint 17 Rich CLI rendering locally: structured market reports can render as terminal panels/tables when `HYPERTRADE_RENDERER=rich` or when running on a TTY, while `HYPERTRADE_RENDERER=plain` keeps script-friendly output.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
@@ -60,6 +61,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 57 tests.
 - `uv run pytest tests/test_cli.py -q` -> 15 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 59 tests.
+- `uv run pytest tests/test_cli.py -q` -> 16 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 60 tests.
 - Server deployed SHA `fee6be7`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
 - Server structured CLI smoke passed with `hypertrade ask "看下ETH行情"`: output showed `Agent Report`, `Ticker`, and multiple `Trend` sections rendered from structured trace outputs instead of raw Markdown.
 - Server deployed SHA `e975d00`; server-local `GET 127.0.0.1:3334/api/health` and `GET 127.0.0.1:3333/api/health` returned OK.
@@ -125,6 +128,6 @@
 
 ## Recommended Next Steps
 
-1. Check cloud security group / caller IP whitelist for public port `3333`.
-2. Start paper-trading controls in CLI, keeping live order tools behind approval gates.
-3. Add BitPro historical K-line import as a separate archived-data source for backtests.
+1. Deploy Sprint 17 to `47.79.36.92`.
+2. Server-smoke `HYPERTRADE_RENDERER=rich hypertrade ask "看下ETH行情"`.
+3. Check cloud security group / caller IP whitelist for public port `3333`.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from io import StringIO
 from typing import Any
 
 import httpx
@@ -319,6 +320,44 @@ def test_render_run_prefers_structured_tool_outputs_over_planner_markdown(capsys
     assert "ETH-USDT-SWAP" in output
     assert "Planner Markdown Should Not Render" not in output
     assert "Research output only. Not investment advice." in output
+
+
+def test_render_run_can_use_rich_structured_output(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    output = StringIO()
+
+    render_run(
+        {
+            "id": "run_rich",
+            "status": "completed",
+            "report_markdown": "# Rich Markdown Should Not Render",
+            "report_json": {
+                "planner": "deepseek",
+                "disclaimer": "Research output only. Not investment advice.",
+            },
+            "trace_events": [
+                {
+                    "tool_name": "market_ticker",
+                    "status": "completed",
+                    "output_json": {
+                        "found": True,
+                        "inst_id": "ETH-USDT-SWAP",
+                        "last": "3500.000000000000",
+                        "change_utc0_pct": "1.230000",
+                        "volume_ccy_24h": "987654.000000000000",
+                        "data_source": "okx_rest",
+                    },
+                }
+            ],
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "┏" in rendered
+    assert "Agent Report" in rendered
+    assert "ETH-USDT-SWAP" in rendered
+    assert "Rich Markdown Should Not Render" not in rendered
 
 
 def test_ask_streams_agent_run_progress(capsys) -> None:

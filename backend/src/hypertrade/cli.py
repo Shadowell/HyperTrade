@@ -987,6 +987,8 @@ def render_backtests(items: list[dict[str, Any]], *, output: TextIO) -> None:
 
 def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
     output = output or sys.stdout
+    if _should_render_rich(output) and _render_rich_run(run, output=output):
+        return
     print(f"Run: {run.get('id', 'unknown')}", file=output)
     print(f"Status: {run.get('status', 'unknown')}", file=output)
     trace_events = run.get("trace_events", [])
@@ -1003,6 +1005,185 @@ def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
     if _render_structured_report(run, output=output):
         return
     print(str(run.get("report_markdown", "")), file=output)
+
+
+def _should_render_rich(output: TextIO) -> bool:
+    renderer = os.getenv("HYPERTRADE_RENDERER", "auto").strip().lower()
+    if renderer in {"plain", "text"}:
+        return False
+    if renderer == "rich":
+        return True
+    return bool(getattr(output, "isatty", lambda: False)())
+
+
+def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
+    try:
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+    except ImportError:
+        return False
+
+    console = Console(file=output, force_terminal=True, color_system=None, width=120)
+    trace_events = run.get("trace_events", [])
+    report = run.get("report_json", {})
+    has_structured_market_summary = isinstance(report, dict) and isinstance(
+        report.get("top_movers"),
+        list,
+    )
+    has_structured_tools = isinstance(trace_events, list) and _has_structured_market_tool_output(
+        trace_events
+    )
+    if not has_structured_market_summary and not has_structured_tools:
+        return False
+
+    header = Table.grid(expand=True)
+    header.add_column(ratio=1)
+    header.add_column(justify="right")
+    header.add_row(
+        Text(str(run.get("id", "unknown")), style="bold"),
+        Text(str(run.get("status", "unknown")), style="green"),
+    )
+    console.print(Panel(header, title="HyperTrade Run", border_style="cyan"))
+
+    if isinstance(trace_events, list) and trace_events:
+        tools = Table(title="Tool Trace", show_header=True, header_style="bold")
+        tools.add_column("Tool")
+        tools.add_column("Status")
+        for event in trace_events:
+            if not isinstance(event, dict):
+                continue
+            tools.add_row(str(event.get("tool_name", "unknown")), str(event.get("status", "n/a")))
+        console.print(tools)
+
+    if has_structured_market_summary and isinstance(report, dict):
+        _render_rich_market_summary(report, console=console)
+    elif has_structured_tools and isinstance(trace_events, list):
+        _render_rich_tool_report(trace_events, report=report, console=console)
+
+    disclaimer = "Research output only. Not investment advice."
+    if isinstance(report, dict):
+        disclaimer = str(report.get("disclaimer", disclaimer))
+    console.print(Panel(disclaimer, border_style="yellow"))
+    return True
+
+
+def _render_rich_market_summary(report: dict[str, Any], *, console: Any) -> None:
+    from rich.panel import Panel
+    from rich.table import Table
+
+    meta = Table.grid(expand=True)
+    meta.add_column()
+    meta.add_column()
+    meta.add_row("Scope", str(report.get("market_scope", "unknown")))
+    meta.add_row("Source", str(report.get("data_source", "unknown")))
+    meta.add_row("As of UTC", str(report.get("as_of_utc", "n/a")))
+    console.print(Panel(meta, title="Market Report", border_style="green"))
+
+    movers = Table(title="Top Movers", show_header=True, header_style="bold")
+    movers.add_column("Instrument")
+    movers.add_column("Last", justify="right")
+    movers.add_column("UTC0 %", justify="right")
+    movers.add_column("24h Volume", justify="right")
+    raw_movers = report.get("top_movers", [])
+    if isinstance(raw_movers, list):
+        for mover in raw_movers[:10]:
+            if not isinstance(mover, dict):
+                continue
+            movers.add_row(
+                str(mover.get("inst_id", "unknown")),
+                str(mover.get("last", "n/a")),
+                str(mover.get("change_utc0_pct", "n/a")),
+                str(mover.get("volume_ccy_24h", "n/a")),
+            )
+    console.print(movers)
+
+
+def _render_rich_tool_report(
+    trace_events: list[Any],
+    *,
+    report: object,
+    console: Any,
+) -> None:
+    from rich.panel import Panel
+
+    console.print(Panel("Agent Report", border_style="green"))
+    for event in trace_events:
+        if not isinstance(event, dict):
+            continue
+        payload = event.get("output_json", {})
+        if not isinstance(payload, dict) or not payload.get("found", True):
+            continue
+        tool_name = str(event.get("tool_name", ""))
+        if tool_name == "market_ticker":
+            _render_rich_ticker(payload, console=console)
+        elif tool_name == "market_candles":
+            _render_rich_candles(payload, console=console)
+        elif tool_name == "market_compare":
+            _render_rich_compare(payload, console=console)
+
+
+def _render_rich_ticker(payload: dict[str, Any], *, console: Any) -> None:
+    from rich.table import Table
+
+    table = Table(title="Ticker", show_header=True, header_style="bold")
+    table.add_column("Instrument")
+    table.add_column("Last", justify="right")
+    table.add_column("UTC0 %", justify="right")
+    table.add_column("24h Volume", justify="right")
+    table.add_column("Source")
+    table.add_row(
+        str(payload.get("inst_id", "unknown")),
+        str(payload.get("last", "n/a")),
+        str(payload.get("change_utc0_pct", "n/a")),
+        str(payload.get("volume_ccy_24h", "n/a")),
+        str(payload.get("data_source", "unknown")),
+    )
+    console.print(table)
+
+
+def _render_rich_candles(payload: dict[str, Any], *, console: Any) -> None:
+    from rich.table import Table
+
+    table = Table(title=f"Trend {payload.get('bar', 'n/a')}", show_header=True, header_style="bold")
+    table.add_column("Instrument")
+    table.add_column("Candles", justify="right")
+    table.add_column("Return %", justify="right")
+    table.add_column("Bias")
+    table.add_column("Source")
+    table.add_row(
+        str(payload.get("inst_id", "unknown")),
+        str(payload.get("candle_count", "n/a")),
+        str(payload.get("return_pct", "n/a")),
+        str(payload.get("trend_bias", "unknown")),
+        str(payload.get("data_source", "unknown")),
+    )
+    console.print(table)
+
+
+def _render_rich_compare(payload: dict[str, Any], *, console: Any) -> None:
+    from rich.table import Table
+
+    table = Table(title="Relative Strength", show_header=True, header_style="bold")
+    table.add_column("Rank", justify="right")
+    table.add_column("Instrument")
+    table.add_column("Score", justify="right")
+    table.add_column("Return %", justify="right")
+    table.add_column("Bias")
+    rankings = payload.get("rankings", [])
+    if isinstance(rankings, list):
+        for row in rankings:
+            if not isinstance(row, dict):
+                continue
+            table.add_row(
+                str(row.get("rank", "?")),
+                str(row.get("inst_id", "unknown")),
+                str(row.get("strength_score", "n/a")),
+                str(row.get("return_pct", "n/a")),
+                str(row.get("trend_bias", "unknown")),
+            )
+    console.print(table)
 
 
 def _render_structured_report(run: dict[str, Any], *, output: TextIO) -> bool:
