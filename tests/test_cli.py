@@ -17,6 +17,7 @@ class FakeAgentClient:
         self.price_symbols: list[str] = []
         self.candle_calls: list[dict[str, Any]] = []
         self.compare_calls: list[dict[str, Any]] = []
+        self.paper_actions: list[str] = []
 
     def login(self) -> None:
         self.logged_in = True
@@ -85,6 +86,57 @@ class FakeAgentClient:
                 "metrics": {"total_return_pct": "0.019000", "trade_count": 1},
             }
         ]
+
+    def get_paper_status(self) -> dict[str, Any]:
+        return {
+            "session": {
+                "id": "paper_cli",
+                "status": "running",
+                "cash": "100000",
+                "equity": "100250",
+                "realized_pnl": "12.5",
+            },
+            "positions": [
+                {
+                    "inst_id": "ETH-USDT-SWAP",
+                    "side": "long",
+                    "quantity": "1.2",
+                    "entry_price": "1900",
+                    "mark_price": "1980",
+                    "notional": "2376",
+                    "unrealized_pnl": "96",
+                }
+            ],
+            "recent_fills": [
+                {
+                    "inst_id": "ETH-USDT-SWAP",
+                    "side": "long",
+                    "quantity": "1.2",
+                    "price": "1900",
+                    "fee": "1.14",
+                    "created_at": "2026-06-02T08:00:00+00:00",
+                }
+            ],
+            "recent_events": [
+                {
+                    "kind": "fill",
+                    "message": "Paper long fill for ETH-USDT-SWAP",
+                    "created_at": "2026-06-02T08:00:00+00:00",
+                }
+            ],
+        }
+
+    def control_paper(self, action: str) -> dict[str, Any]:
+        self.paper_actions.append(action)
+        return {
+            "session": {
+                "id": "paper_cli",
+                "status": "paused" if action == "pause" else "running",
+                "cash": "100000",
+                "equity": "100250",
+                "realized_pnl": "12.5",
+            }
+        }
 
     def get_status(self) -> dict[str, Any]:
         return {
@@ -405,6 +457,9 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
             "/price ETH",
             "/candles ETH --bar 1H --limit 50",
             "/compare ETH SOL --bar 4H --limit 100",
+            "/paper status",
+            "/paper pause",
+            "/paper resume",
             "exit",
         ]
     )
@@ -431,6 +486,12 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
     assert client.price_symbols == ["ETH"]
     assert client.candle_calls == [{"symbol": "ETH", "bar": "1H", "limit": 50}]
     assert client.compare_calls == [{"symbols": ["ETH", "SOL"], "bar": "4H", "limit": 100}]
+    assert client.paper_actions == ["pause", "resume"]
+    assert "Paper trading:" in output
+    assert "paper_cli" in output
+    assert "ETH-USDT-SWAP" in output
+    assert "Paper control: paused" in output
+    assert "Paper control: running" in output
 
 
 def test_bare_command_starts_chat_loop(capsys) -> None:

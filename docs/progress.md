@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 17 Rich CLI renderer deployed to `47.79.36.92` at SHA `cb02da6`.
+- Last verified state: Sprint 17 Rich CLI renderer deployed to `47.79.36.92` at SHA `f765859`.
 
 ## Active Contract
 
-- `docs/contracts/sprint-17-rich-cli-renderer.md` (completed)
+- `docs/contracts/sprint-18-paper-cli-controls.md` (completed)
 
 ## Latest Completed Work
 
@@ -40,6 +40,7 @@
 - Added Sprint 16 structured CLI report rendering locally: market-summary `report_json` and market tool trace outputs now render as structured CLI sections before falling back to Markdown.
 - Added Sprint 17 Rich CLI rendering locally: structured market reports can render as terminal panels/tables when `HYPERTRADE_RENDERER=rich` or when running on a TTY, while `HYPERTRADE_RENDERER=plain` keeps script-friendly output.
 - Updated the host CLI wrapper to pass safe display environment variables (`HYPERTRADE_RENDERER`, `NO_COLOR`) into the API container.
+- Added Sprint 18 paper CLI controls locally: `/paper status`, `/paper pause`, and `/paper resume` call the existing paper runtime without starting an Agent run.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.
@@ -62,6 +63,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 57 tests.
 - `uv run pytest tests/test_cli.py -q` -> 15 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 59 tests.
+- `uv run pytest tests/test_cli.py -q` -> 16 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 60 tests.
 - `uv run pytest tests/test_cli.py -q` -> 16 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 60 tests.
 - Server deployed SHA `cb02da6`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
@@ -131,6 +134,6 @@
 
 ## Recommended Next Steps
 
-1. Check cloud security group / caller IP whitelist for public port `3333`.
-2. Start paper-trading controls in CLI, keeping live order tools behind approval gates.
+1. Deploy Sprint 18 to `47.79.36.92`.
+2. Server-smoke `/paper status`, `/paper pause`, and `/paper resume`.
 3. Add BitPro historical K-line import as a separate archived-data source for backtests.

@@ -72,6 +72,10 @@ class AgentClient(Protocol):
         limit: int = 100,
     ) -> dict[str, Any]: ...
 
+    def get_paper_status(self) -> dict[str, Any]: ...
+
+    def control_paper(self, action: str) -> dict[str, Any]: ...
+
 
 class AgentClientFactory(Protocol):
     def __call__(self, config: CliConfig, local: bool) -> AgentClient: ...
@@ -251,6 +255,12 @@ class AgentApiClient:
         body = {"symbols": symbols, "bar": bar, "limit": limit}
         return self._post_object("/api/market/compare", body)
 
+    def get_paper_status(self) -> dict[str, Any]:
+        return self._get_object("/api/paper/status")
+
+    def control_paper(self, action: str) -> dict[str, Any]:
+        return self._post_object("/api/paper/control", {"action": action})
+
     def _url(self, path: str) -> str:
         return f"{self.config.api_url.rstrip('/')}{path}"
 
@@ -416,6 +426,21 @@ class LocalAgentClient:
             settings=self.settings,
         )._market_compare_payload(symbols=symbols, bar=bar, limit=limit)
 
+    def get_paper_status(self) -> dict[str, Any]:
+        from hypertrade.paper.service import PaperTradingService
+
+        return PaperTradingService(self.db, settings=self.settings).status()
+
+    def control_paper(self, action: str) -> dict[str, Any]:
+        from hypertrade.paper.service import PaperTradingService
+
+        service = PaperTradingService(self.db, settings=self.settings)
+        if action == "pause":
+            return service.pause()
+        if action == "resume":
+            return service.resume()
+        raise ValueError(f"unknown paper action: {action}")
+
 
 def main(
     argv: Sequence[str] | None = None,
@@ -508,6 +533,7 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
     print(f"{color['cmd']}- /tools{color['reset']}         Registered tool catalog", file=output)
     print(f"{color['cmd']}- /price ETH{color['reset']}     Exact ticker shortcut", file=output)
     print(f"{color['cmd']}- /compare ETH SOL{color['reset']} Relative strength", file=output)
+    print(f"{color['cmd']}- /paper status{color['reset']}  Paper trading state", file=output)
     print(f"{color['cmd']}- /research ...{color['reset']}  Create strategy research", file=output)
     print(
         f"{color['cmd']}- /backtest{color['reset']}      Run backtest from latest research",
@@ -574,6 +600,8 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
         handle_candles_command(command, client=client, output=output)
     elif name == "/compare":
         handle_compare_command(command, client=client, output=output)
+    elif name == "/paper":
+        handle_paper_command(command, client=client, output=output)
     else:
         print(f"Unknown command: {name}", file=output)
         render_slash_help(output=output)
@@ -593,6 +621,7 @@ def render_slash_help(*, output: TextIO) -> None:
     print("- /price ETH   Fetch exact ticker without LLM planning.", file=output)
     print("- /candles ETH --bar 1H --limit 100", file=output)
     print("- /compare ETH SOL --bar 4H --limit 100", file=output)
+    print("- /paper status|pause|resume", file=output)
     print("- /research    Create strategy research from a prompt.", file=output)
     print("- /backtest    Run backtest on latest research.", file=output)
     print("- /backtest list                 List recent backtests.", file=output)
@@ -726,6 +755,28 @@ def handle_compare_command(command: str, *, client: AgentClient, output: TextIO)
         render_market_compare(payload, output=output)
     except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
         print(f"Compare failed: {exc}", file=output)
+
+
+def handle_paper_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    parts = command.split()
+    subcommand = parts[1].lower() if len(parts) > 1 else "status"
+    if subcommand in {"status", "show"}:
+        try:
+            render_paper_status(client.get_paper_status(), output=output)
+        except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+            print(f"Paper status failed: {exc}", file=output)
+        return
+    if subcommand in {"pause", "resume"}:
+        try:
+            result = client.control_paper(subcommand)
+        except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+            print(f"Paper control failed: {exc}", file=output)
+            return
+        session = result.get("session", {})
+        status = session.get("status", "unknown") if isinstance(session, dict) else "unknown"
+        print(f"Paper control: {status}", file=output)
+        return
+    print("Usage: /paper status|pause|resume", file=output)
 
 
 def _parse_backtest_options(parts: list[str]) -> dict[str, Any]:
@@ -867,6 +918,67 @@ def render_market_compare(payload: dict[str, Any], *, output: TextIO) -> None:
             )
     print(f"- Source: {payload.get('data_source', 'unknown')}", file=output)
     print("Research output only. Not investment advice.", file=output)
+
+
+def render_paper_status(payload: dict[str, Any], *, output: TextIO) -> None:
+    session = payload.get("session", {})
+    if not isinstance(session, dict):
+        session = {}
+    print("Paper trading:", file=output)
+    print(f"- Session: {session.get('id', 'unknown')}", file=output)
+    print(f"- Status: {session.get('status', 'unknown')}", file=output)
+    print(f"- Cash: {session.get('cash', 'n/a')}", file=output)
+    print(f"- Equity: {session.get('equity', 'n/a')}", file=output)
+    print(f"- Realized PnL: {session.get('realized_pnl', 'n/a')}", file=output)
+
+    positions = payload.get("positions", [])
+    print("Positions:", file=output)
+    if isinstance(positions, list) and positions:
+        for row in positions[:10]:
+            if not isinstance(row, dict):
+                continue
+            print(
+                "- {inst_id} {side} qty={quantity} entry={entry} mark={mark} pnl={pnl}".format(
+                    inst_id=row.get("inst_id", "unknown"),
+                    side=row.get("side", "unknown"),
+                    quantity=row.get("quantity", "n/a"),
+                    entry=row.get("entry_price", "n/a"),
+                    mark=row.get("mark_price", "n/a"),
+                    pnl=row.get("unrealized_pnl", "n/a"),
+                ),
+                file=output,
+            )
+    else:
+        print("- none", file=output)
+
+    fills = payload.get("recent_fills", [])
+    print("Recent fills:", file=output)
+    if isinstance(fills, list) and fills:
+        for row in fills[:5]:
+            if not isinstance(row, dict):
+                continue
+            print(
+                "- {inst_id} {side} qty={quantity} price={price} fee={fee}".format(
+                    inst_id=row.get("inst_id", "unknown"),
+                    side=row.get("side", "unknown"),
+                    quantity=row.get("quantity", "n/a"),
+                    price=row.get("price", "n/a"),
+                    fee=row.get("fee", "n/a"),
+                ),
+                file=output,
+            )
+    else:
+        print("- none", file=output)
+
+    events = payload.get("recent_events", [])
+    print("Recent events:", file=output)
+    if isinstance(events, list) and events:
+        for row in events[:5]:
+            if not isinstance(row, dict):
+                continue
+            print(f"- {row.get('kind', 'event')}: {row.get('message', '')}", file=output)
+    else:
+        print("- none", file=output)
 
 
 def render_status(status: dict[str, Any], *, output: TextIO) -> None:

@@ -56,6 +56,7 @@ After deploying to `47.79.36.92`, run:
 hypertrade ask "看下ETH行情"
 hypertrade ask "看下ETH走势，并和SOL比较哪个更强"
 printf "/price ETH\n/candles ETH --bar 1H --limit 50\n/compare ETH SOL --bar 4H --limit 100\n:q\n" | hypertrade
+printf "/paper status\n/paper pause\n/paper resume\n:q\n" | hypertrade
 printf "/research 研究ETH趋势突破\n/backtest --live --symbol ETH --bar 1H --limit 100\n:q\n" | hypertrade
 ```
 
@@ -66,6 +67,7 @@ Expected server observations:
 - Free-form market prompts prefer structured CLI report sections such as `Agent Report`, `Ticker`, `Trend`, and `Relative strength` instead of raw Markdown when trace payloads are available.
 - Rich terminal rendering can be forced with `HYPERTRADE_RENDERER=rich`; script-friendly plain text can be forced with `HYPERTRADE_RENDERER=plain`.
 - Deterministic market shortcuts print exact ticker, K-line trend, and relative-strength blocks without starting an LLM-planned Agent run.
+- Paper slash commands print the simulated session state and can pause/resume the paper runtime without touching live trading.
 - Specific-symbol prompt includes exact instrument such as `ETH-USDT-SWAP`.
 - Compare prompt includes relative-strength ranking.
 - Backtest command prints data source `okx_rest_candles`, instrument, bar, candle count, return, and trade count.
