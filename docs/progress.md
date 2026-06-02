@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 16 structured CLI renderer deployed to `47.79.36.92` at SHA `a99fc1a`.
+- Last verified state: Sprint 17 Rich CLI renderer deployed to `47.79.36.92` at SHA `cb02da6`.
 
 ## Active Contract
 
@@ -64,6 +64,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 59 tests.
 - `uv run pytest tests/test_cli.py -q` -> 16 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 60 tests.
+- Server deployed SHA `cb02da6`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
+- Server Rich CLI smoke passed with `HYPERTRADE_RENDERER=rich hypertrade ask "看下ETH行情"`: output showed Rich panels and tables for run header, tool trace, `Agent Report`, and `Ticker`.
 - Server deployed SHA `fee6be7`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
 - Server structured CLI smoke passed with `hypertrade ask "看下ETH行情"`: output showed `Agent Report`, `Ticker`, and multiple `Trend` sections rendered from structured trace outputs instead of raw Markdown.
 - Server deployed SHA `e975d00`; server-local `GET 127.0.0.1:3334/api/health` and `GET 127.0.0.1:3333/api/health` returned OK.
@@ -129,6 +131,6 @@
 
 ## Recommended Next Steps
 
-1. Deploy Sprint 17 to `47.79.36.92`.
-2. Server-smoke `HYPERTRADE_RENDERER=rich hypertrade ask "看下ETH行情"`.
-3. Check cloud security group / caller IP whitelist for public port `3333`.
+1. Check cloud security group / caller IP whitelist for public port `3333`.
+2. Start paper-trading controls in CLI, keeping live order tools behind approval gates.
+3. Add BitPro historical K-line import as a separate archived-data source for backtests.
