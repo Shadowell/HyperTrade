@@ -13,12 +13,15 @@ class FakeAgentClient:
         self.logged_in = False
         self.prompts: list[str] = []
         self.research_prompts: list[str] = []
+        self.experiment_prompts: list[str] = []
         self.backtest_calls: list[dict[str, Any]] = []
         self.price_symbols: list[str] = []
         self.candle_calls: list[dict[str, Any]] = []
         self.compare_calls: list[dict[str, Any]] = []
         self.paper_actions: list[str] = []
         self.live_decisions: list[dict[str, str]] = []
+        self.selected_model = "deepseek"
+        self.disabled_memory_ids: list[str] = []
 
     def login(self) -> None:
         self.logged_in = True
@@ -73,7 +76,50 @@ class FakeAgentClient:
         return [{"id": "run_recent", "status": "completed", "prompt": "请做行情归纳"}]
 
     def list_memory(self) -> list[dict[str, Any]]:
-        return [{"id": "mem_recent", "kind": "market_summary", "content": "BTC was reviewed"}]
+        return [
+            {
+                "id": "mem_recent",
+                "kind": "market_summary",
+                "content": "BTC was reviewed",
+                "tags": ["market_summary"],
+                "usage_count": 1,
+            }
+        ]
+
+    def search_memory(self, query: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "mem_search",
+                "kind": "user_preference",
+                "content": f"Memory match for {query}",
+                "tags": ["preference"],
+                "usage_count": 2,
+            }
+        ]
+
+    def disable_memory(self, memory_id: str) -> dict[str, Any]:
+        self.disabled_memory_ids.append(memory_id)
+        return {"status": "ok"}
+
+    def search_rag(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]:
+        return [
+            {
+                "source_path": "docs/knowledge/rag-usage.md",
+                "title": "RAG Usage",
+                "chunk_index": 0,
+                "score": 1.25,
+                "content_preview": f"Knowledge match for {query}",
+            }
+        ]
+
+    def get_evals_status(self) -> dict[str, Any]:
+        return {
+            "status": "passed",
+            "cases": [
+                {"name": "tool_selection", "status": "passed"},
+                {"name": "rag_citation", "status": "passed"},
+            ],
+        }
 
     def list_strategy_research(self) -> list[dict[str, Any]]:
         return [{"id": "srch_recent", "strategy_key": "momentum_breakout_v1", "title": "趋势突破"}]
@@ -186,6 +232,16 @@ class FakeAgentClient:
             "report_markdown": "# Research\n\nBTC breakout study.",
         }
 
+    def create_strategy_experiment(self, prompt: str) -> dict[str, Any]:
+        self.experiment_prompts.append(prompt)
+        return {
+            "id": "exp_cli",
+            "status": "completed",
+            "research_id": "srch_cli",
+            "backtest_id": "bt_cli",
+            "report_markdown": "# Experiment\n\nCritique and next experiment. 不构成投资建议。",
+        }
+
     def run_backtest(
         self,
         *,
@@ -288,7 +344,7 @@ class FakeAgentClient:
 
     def get_model_status(self) -> dict[str, Any]:
         return {
-            "default_provider": "deepseek",
+            "default_provider": self.selected_model,
             "model": "deepseek-v4-flash",
             "providers": [
                 {
@@ -301,6 +357,10 @@ class FakeAgentClient:
                 }
             ],
         }
+
+    def set_model(self, provider: str) -> dict[str, Any]:
+        self.selected_model = provider
+        return self.get_model_status()
 
     def list_live_order_intents(self) -> list[dict[str, Any]]:
         return [
@@ -358,6 +418,21 @@ class FakeAgentClient:
             "price": None,
             "reason": "test intent",
             "decision_reason": reason,
+        }
+
+    def execute_live_order_intent(self, intent_id: str) -> dict[str, Any]:
+        return {
+            "id": intent_id,
+            "environment": "testnet",
+            "status": "execution_failed",
+            "inst_id": "ETH-USDT-SWAP",
+            "side": "buy",
+            "order_type": "market",
+            "size": "0.01",
+            "price": None,
+            "reason": "test intent",
+            "risk_status": "allowed",
+            "exchange_order_id": "",
         }
 
 
@@ -537,16 +612,21 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
             "/commands",
             "/status",
             "/model",
-            "/model gpt-5",
+            "/model deepseek",
             "/providers",
             "/tools",
             "/runs",
             "/memory",
+            "/memory search 风控",
+            "/memory disable mem_recent",
+            "/rag 风控",
+            "/evals",
             "/strategy",
             "/backtests",
             "/price ETH",
             "/candles ETH --bar 1H --limit 50",
             "/compare ETH SOL --bar 4H --limit 100",
+            "/experiment 研究ETH突破",
             "/paper status",
             "/paper pause",
             "/paper resume",
@@ -555,6 +635,7 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
             "/live intents",
             "/live intent ETH buy 0.01 --reason test order",
             "/live approve loi_new --reason checked",
+            "/live execute loi_new",
             "/live reject loi_old --reason no",
             "exit",
         ]
@@ -568,17 +649,26 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
     assert "/tools" in output
     assert "Status:" in output
     assert "Model:" in output
-    assert "model switching is not implemented" in output
+    assert "Model switched: deepseek" in output
     assert "Providers:" in output
     assert "market.summary" in output
     assert "live.order_intent" in output
     assert "run_recent" in output
     assert "mem_recent" in output
+    assert "mem_search" in output
+    assert "Memory disable: ok" in output
+    assert "RAG hits:" in output
+    assert "rag-usage.md" in output
+    assert "Eval suite:" in output
+    assert "tool_selection passed" in output
+    assert client.disabled_memory_ids == ["mem_recent"]
     assert "srch_recent" in output
     assert "bt_recent" in output
     assert "ETH-USDT-SWAP" in output
     assert "K-line trend:" in output
     assert "Relative strength:" in output
+    assert "Strategy experiment completed" in output
+    assert client.experiment_prompts == ["研究ETH突破"]
     assert client.price_symbols == ["ETH"]
     assert client.candle_calls == [{"symbol": "ETH", "bar": "1H", "limit": 50}]
     assert client.compare_calls == [{"symbols": ["ETH", "SOL"], "bar": "4H", "limit": 100}]
@@ -594,6 +684,8 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
     assert "loi_recent" in output
     assert "loi_new pending_approval testnet ETH-USDT-SWAP buy 0.01 market" in output
     assert "loi_new approved testnet ETH-USDT-SWAP buy 0.01 market" in output
+    assert "loi_new execution_failed testnet ETH-USDT-SWAP buy 0.01 market" in output
+    assert "risk: allowed" in output
     assert "loi_old rejected testnet ETH-USDT-SWAP buy 0.01 market" in output
 
 
@@ -653,7 +745,10 @@ def test_local_agent_client_runs_kernel(tmp_path) -> None:
     run = client.run_agent("请做行情归纳")
 
     assert run["status"] == "completed"
-    assert run["trace_events"][0]["tool_name"] == "market.summary"
+    trace_names = [event["tool_name"] for event in run["trace_events"]]
+    assert trace_names[0] == "graph.intent_classify"
+    assert "market.summary" in trace_names
+    assert run["run_state_json"]["current_node"] == "final_report"
 
 
 def test_api_client_logs_in_and_posts_agent_run() -> None:

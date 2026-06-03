@@ -37,6 +37,33 @@ def test_strategy_research_and_backtest_api(tmp_path) -> None:
     assert overview["strategy_lab"]["latest_backtest"]["id"] == backtest["id"]
 
 
+def test_strategy_experiment_workflow_api(tmp_path) -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    app = create_app(
+        settings=Settings(ADMIN_USERNAME="admin", ADMIN_PASSWORD="secret", KNOWLEDGE_DIR=tmp_path),
+        db=db,
+    )
+    client = TestClient(app)
+    client.post("/api/auth/login", json={"username": "admin", "password": "secret"})
+
+    experiment = client.post(
+        "/api/strategy/experiments",
+        json={"prompt": "研究ETH趋势突破，给出回测和改进建议"},
+    ).json()
+    experiments = client.get("/api/strategy/experiments").json()["items"]
+    overview = client.get("/api/harness/overview").json()
+
+    assert experiment["id"].startswith("exp_")
+    assert experiment["status"] == "completed"
+    assert experiment["research_id"].startswith("srch_")
+    assert experiment["backtest_id"].startswith("bt_")
+    assert "critique" in experiment["report_json"]
+    assert "不构成投资建议" in experiment["report_markdown"]
+    assert experiments[0]["id"] == experiment["id"]
+    assert overview["strategy_lab"]["latest_experiment"]["id"] == experiment["id"]
+
+
 def test_backtest_api_accepts_live_okx_candle_options(monkeypatch, tmp_path) -> None:
     db = Database("sqlite:///:memory:")
     db.create_all()

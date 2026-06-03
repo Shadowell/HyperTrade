@@ -1,6 +1,8 @@
+from decimal import Decimal
+
 from sqlalchemy import select
 
-from hypertrade.db import Database, MemoryItem
+from hypertrade.db import Database, MemoryItem, utc_now
 
 
 class MemoryService:
@@ -14,13 +16,37 @@ class MemoryService:
         kind: str,
         source_run_id: str,
         source_tool: str,
+        tags: list[str] | None = None,
+        importance: float | Decimal | str = Decimal("0.50"),
+        confidence: float | Decimal | str = Decimal("0.70"),
     ) -> MemoryItem:
+        normalized_content = content.strip()
+        normalized_kind = _normalize_kind(kind)
+        normalized_tags = _normalize_tags(tags or [], normalized_kind)
         with self.db.session() as session:
+            existing = session.scalar(
+                select(MemoryItem)
+                .where(MemoryItem.disabled.is_(False))
+                .where(MemoryItem.kind == normalized_kind)
+                .where(MemoryItem.content == normalized_content)
+            )
+            if existing is not None:
+                existing.tags = sorted({*existing.tags, *normalized_tags})
+                existing.usage_count += 1
+                existing.last_used_at = utc_now()
+                session.flush()
+                session.expunge(existing)
+                return existing
             item = MemoryItem(
-                content=content,
-                kind=kind,
+                content=normalized_content,
+                kind=normalized_kind,
                 source_run_id=source_run_id,
                 source_tool=source_tool,
+                tags=normalized_tags,
+                importance=_decimal(importance),
+                confidence=_decimal(confidence),
+                usage_count=1,
+                last_used_at=utc_now(),
             )
             session.add(item)
             session.flush()
@@ -38,6 +64,43 @@ class MemoryService:
                 session.expunge(item)
             return list(items)
 
+    def search(
+        self,
+        *,
+        query: str = "",
+        kind: str = "",
+        tag: str = "",
+        limit: int = 20,
+    ) -> list[MemoryItem]:
+        normalized_query = query.casefold().strip()
+        normalized_kind = kind.strip()
+        normalized_tag = tag.casefold().strip()
+        with self.db.session() as session:
+            items = session.scalars(
+                select(MemoryItem)
+                .where(MemoryItem.disabled.is_(False))
+                .order_by(MemoryItem.created_at.desc())
+            ).all()
+            filtered: list[MemoryItem] = []
+            for item in items:
+                tags = [str(value).casefold() for value in item.tags]
+                if normalized_kind and item.kind != normalized_kind:
+                    continue
+                if normalized_tag and normalized_tag not in tags:
+                    continue
+                if normalized_query:
+                    haystack = " ".join([item.kind, item.content, *tags]).casefold()
+                    if normalized_query not in haystack:
+                        continue
+                item.usage_count += 1
+                item.last_used_at = utc_now()
+                filtered.append(item)
+            session.flush()
+            result = filtered[: max(1, min(limit, 100))]
+            for item in result:
+                session.expunge(item)
+            return list(result)
+
     def disable(self, memory_id: str) -> None:
         with self.db.session() as session:
             item = session.get(MemoryItem, memory_id)
@@ -49,3 +112,21 @@ class MemoryService:
             item = session.get(MemoryItem, memory_id)
             if item is not None:
                 session.delete(item)
+
+
+def _normalize_kind(kind: str) -> str:
+    value = kind.strip().casefold().replace("-", "_").replace(" ", "_")
+    return value or "observation"
+
+
+def _normalize_tags(tags: list[str], kind: str) -> list[str]:
+    values = {kind}
+    for tag in tags:
+        cleaned = tag.strip().casefold().replace(" ", "_")
+        if cleaned:
+            values.add(cleaned)
+    return sorted(values)
+
+
+def _decimal(value: float | Decimal | str) -> Decimal:
+    return Decimal(str(value)).quantize(Decimal("0.0001"))

@@ -19,7 +19,7 @@ from hypertrade.market.client import OkxRestClient
 from hypertrade.market.okx import OkxCandle
 from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
-from hypertrade.providers.deepseek import DeepSeekClient
+from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagService
 from hypertrade.strategy.service import StrategyResearchService
 from hypertrade.tools.registry import ToolRegistry
@@ -31,6 +31,7 @@ class CompletedAgentRun:
     status: str
     report_markdown: str
     report_json: dict[str, Any]
+    run_state_json: dict[str, Any]
     trace_events: list[TraceEvent]
 
 
@@ -41,9 +42,11 @@ class AgentKernel:
         *,
         knowledge_dir: str = "docs/knowledge",
         settings: Settings | None = None,
+        provider_name: str | None = None,
     ) -> None:
         self.db = db
         self._settings = settings
+        self.provider_name = provider_name
         self.market = MarketRepository(db)
         self.memory = MemoryService(db)
         self.rag = RagService(db, knowledge_dir=knowledge_dir)
@@ -62,7 +65,25 @@ class AgentKernel:
         run_id = self._create_run(prompt)
         _emit(event_sink, {"event": "run_started", "run_id": run_id, "status": "running"})
         try:
-            if settings.deepseek_api_key:
+            self._graph_node(
+                run_id,
+                "intent_classify",
+                {"prompt": prompt},
+                {"intent": _classify_intent(prompt)},
+                event_sink=event_sink,
+            )
+            provider = ProviderRuntime(settings).get_chat_provider(selected=self.provider_name)
+            self._graph_node(
+                run_id,
+                "plan_tools",
+                {"provider": self.provider_name or settings.active_chat_provider},
+                {
+                    "planner": provider.name if provider else "deterministic_fallback",
+                    "model": provider.model if provider else "",
+                },
+                event_sink=event_sink,
+            )
+            if provider is not None:
                 self._run_with_planner(run_id, prompt, settings, event_sink=event_sink)
             else:
                 self._run_hardcoded(run_id, prompt, event_sink=event_sink)
@@ -92,11 +113,10 @@ class AgentKernel:
         *,
         event_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
-        llm = DeepSeekClient(
-            api_key=str(settings.deepseek_api_key),
-            base_url=str(settings.deepseek_base_url),
-            model=str(settings.deepseek_model),
-        )
+        llm = ProviderRuntime(settings).get_chat_provider(selected=self.provider_name)
+        if llm is None:
+            self._run_hardcoded(run_id, prompt, event_sink=event_sink)
+            return
         planner = AgentPlanner(llm)
         executor = self._build_executor(run_id, event_sink=event_sink)
         result: PlannerResult = planner.run(prompt, executor)
@@ -104,17 +124,34 @@ class AgentKernel:
         for record in result.tool_calls:
             self._trace(run_id, record.tool_name, record.input_json, record.output_json)
 
+        self._graph_node(
+            run_id,
+            "reflect",
+            {"tool_count": len(result.tool_calls)},
+            {"summary": _reflection_summary(result)},
+            event_sink=event_sink,
+        )
         report_json: dict[str, Any] = {
             "market_scope": "OKX SWAP",
             "trigger": "user_request",
-            "planner": "deepseek",
+            "planner": llm.name,
+            "model": llm.model,
             "tool_calls": [
                 {"tool": r.tool_name, "input": r.input_json}
                 for r in result.tool_calls
             ],
+            "citations": _citations_from_tool_calls(result.tool_calls),
+            "graph": self._get_run_state(run_id).get("graph", []),
             "disclaimer": "Research output only. Not investment advice.",
         }
         report_markdown = self._render_planner_report(result.final_message, result.tool_calls)
+        self._graph_node(
+            run_id,
+            "final_report",
+            {"format": "markdown"},
+            {"characters": len(report_markdown)},
+            event_sink=event_sink,
+        )
         self._complete_run(run_id, report_markdown, report_json)
 
     def _build_executor(
@@ -124,6 +161,20 @@ class AgentKernel:
         event_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> ToolExecutor:
         def executor(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+            self._graph_node(
+                run_id,
+                "approval_check",
+                {"tool_name": tool_name},
+                {"requires_approval": tool_name == "live_order_intent"},
+                event_sink=event_sink,
+            )
+            self._graph_node(
+                run_id,
+                "execute_tool",
+                {"tool_name": tool_name, "args": args},
+                {"status": "started"},
+                event_sink=event_sink,
+            )
             _emit(
                 event_sink,
                 {
@@ -160,7 +211,9 @@ class AgentKernel:
                     "hits": [
                         {
                             "source_path": h.source_path,
-                            "content": h.content[:240],
+                            "title": h.title,
+                            "chunk_index": h.chunk_index,
+                            "content": h.content_preview,
                             "score": h.score,
                         }
                         for h in hits
@@ -177,10 +230,16 @@ class AgentKernel:
                 )
                 result = {"memory_id": item.id}
             elif tool_name == "memory_search":
-                items = self.memory.list_active()
+                items = self.memory.search(query=str(args.get("query", "")), limit=10)
                 result = {
                     "items": [
-                        {"id": m.id, "kind": m.kind, "content": m.content[:200]}
+                        {
+                            "id": m.id,
+                            "kind": m.kind,
+                            "content": m.content[:200],
+                            "tags": m.tags,
+                            "usage_count": m.usage_count,
+                        }
                         for m in items[-10:]
                     ]
                 }
@@ -232,6 +291,20 @@ class AgentKernel:
         *,
         event_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
+        self._graph_node(
+            run_id,
+            "approval_check",
+            {"tool_name": "market.summary"},
+            {"requires_approval": False},
+            event_sink=event_sink,
+        )
+        self._graph_node(
+            run_id,
+            "execute_tool",
+            {"tool_name": "market.summary"},
+            {"status": "started"},
+            event_sink=event_sink,
+        )
         _emit(
             event_sink,
             {"event": "tool_started", "run_id": run_id, "tool_name": "market.summary"},
@@ -250,9 +323,29 @@ class AgentKernel:
         )
 
         _emit(event_sink, {"event": "tool_started", "run_id": run_id, "tool_name": "rag.search"})
+        self._graph_node(
+            run_id,
+            "approval_check",
+            {"tool_name": "rag.search"},
+            {"requires_approval": False},
+            event_sink=event_sink,
+        )
+        self._graph_node(
+            run_id,
+            "execute_tool",
+            {"tool_name": "rag.search"},
+            {"status": "started"},
+            event_sink=event_sink,
+        )
         self.rag.scan_once()
         rag_hits = [
-            {"source_path": hit.source_path, "content": hit.content[:240], "score": hit.score}
+            {
+                "source_path": hit.source_path,
+                "title": hit.title,
+                "chunk_index": hit.chunk_index,
+                "content": hit.content[:240],
+                "score": hit.score,
+            }
             for hit in self.rag.search("volume risk market funding open interest", limit=3)
         ]
         self._trace(run_id, "rag.search", {"query": "market risk"}, {"hits": rag_hits})
@@ -268,6 +361,20 @@ class AgentKernel:
         )
 
         _emit(event_sink, {"event": "tool_started", "run_id": run_id, "tool_name": "memory.write"})
+        self._graph_node(
+            run_id,
+            "approval_check",
+            {"tool_name": "memory.write"},
+            {"requires_approval": False},
+            event_sink=event_sink,
+        )
+        self._graph_node(
+            run_id,
+            "execute_tool",
+            {"tool_name": "memory.write"},
+            {"status": "started"},
+            event_sink=event_sink,
+        )
         memory_item = self.memory.write(
             content=f"Latest market summary requested by user prompt: {prompt[:120]}",
             kind="market_summary",
@@ -298,8 +405,24 @@ class AgentKernel:
             "data_source": market_payload.get("data_source", "db_fallback"),
             "as_of_utc": market_payload.get("as_of_utc", datetime.now(UTC).isoformat()),
             "rag_hits": rag_hits,
+            "citations": rag_hits,
+            "graph": self._get_run_state(run_id).get("graph", []),
             "disclaimer": "Research output only. Not investment advice.",
         }
+        self._graph_node(
+            run_id,
+            "reflect",
+            {"tool_count": 3},
+            {"summary": "deterministic market summary fallback completed"},
+            event_sink=event_sink,
+        )
+        self._graph_node(
+            run_id,
+            "final_report",
+            {"format": "markdown"},
+            {"characters": len(self._render_market_report(report_json))},
+            event_sink=event_sink,
+        )
         self._complete_run(run_id, self._render_market_report(report_json), report_json)
 
     # ------------------------------------------------------------------
@@ -323,6 +446,7 @@ class AgentKernel:
                 status=run.status,
                 report_markdown=run.report_markdown,
                 report_json=run.report_json,
+                run_state_json=run.run_state_json,
                 trace_events=list(events),
             )
 
@@ -346,6 +470,7 @@ class AgentKernel:
             run.status = "completed"
             run.report_markdown = report_markdown
             run.report_json = report_json
+            run.run_state_json = {**(run.run_state_json or {}), "final_answer": report_markdown}
 
     def _fail_run(self, run_id: str, error: str) -> None:
         with self.db.session() as session:
@@ -371,6 +496,44 @@ class AgentKernel:
                     output_json=output_json,
                 )
             )
+
+    def _graph_node(
+        self,
+        run_id: str,
+        node: str,
+        input_json: dict[str, Any],
+        output_json: dict[str, Any],
+        *,
+        event_sink: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
+        self._trace(run_id, f"graph.{node}", input_json, output_json)
+        with self.db.session() as session:
+            run = session.get(AgentRun, run_id)
+            if run is None:
+                raise KeyError(run_id)
+            state = dict(run.run_state_json or {})
+            graph = list(state.get("graph", []))
+            graph.append({"node": node, "input": input_json, "output": output_json})
+            state["graph"] = graph
+            state["current_node"] = node
+            run.run_state_json = state
+        _emit(
+            event_sink,
+            {
+                "event": "graph_node",
+                "run_id": run_id,
+                "node": node,
+                "status": "completed",
+                "output_json": output_json,
+            },
+        )
+
+    def _get_run_state(self, run_id: str) -> dict[str, Any]:
+        with self.db.session() as session:
+            run = session.get(AgentRun, run_id)
+            if run is None:
+                return {}
+            return dict(run.run_state_json or {})
 
     def _market_summary_payload(self) -> dict[str, Any]:
         source, error = self._refresh_market_snapshot()
@@ -579,6 +742,7 @@ class AgentKernel:
         ticker_lines: list[str] = []
         candle_lines: list[str] = []
         compare_lines: list[str] = []
+        citation_lines: list[str] = []
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "market_ticker":
                 continue
@@ -656,9 +820,76 @@ class AgentKernel:
             sections.extend(["## K线趋势特征", "", *candle_lines])
         if compare_lines:
             sections.extend(["## 多标的强弱比较", "", *compare_lines])
+        citations = _citations_from_tool_calls(tool_calls)
+        if citations:
+            for index, citation in enumerate(citations, start=1):
+                citation_lines.append(
+                    "{index}. {title} - {source_path}#{chunk_index} (score {score})".format(
+                        index=index,
+                        title=citation.get("title") or "Knowledge",
+                        source_path=citation.get("source_path", "unknown"),
+                        chunk_index=citation.get("chunk_index", 0),
+                        score=citation.get("score", "n/a"),
+                    )
+                )
+            citation_lines.append("")
+            sections.extend(["## 引用来源", "", *citation_lines])
         if not sections:
             return final_message
         return "\n".join([*sections, final_message])
+
+
+def _classify_intent(prompt: str) -> str:
+    text = prompt.casefold()
+    if any(word in text for word in ("下单", "order", "buy", "sell", "做多", "做空")):
+        return "order"
+    if any(word in text for word in ("回测", "backtest", "策略", "strategy", "experiment")):
+        return "strategy"
+    if any(word in text for word in ("行情", "价格", "走势", "compare", "比较", "ticker")):
+        return "market"
+    return "general"
+
+
+def _reflection_summary(result: PlannerResult) -> str:
+    names = [record.tool_name for record in result.tool_calls]
+    if not names:
+        return "planner completed without tool calls"
+    return "planner completed with tools: " + ", ".join(names)
+
+
+def _citations_from_tool_calls(tool_calls: list[Any]) -> list[dict[str, Any]]:
+    citations: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    for record in tool_calls:
+        if getattr(record, "tool_name", "") not in {"rag_search", "rag.search"}:
+            continue
+        payload = getattr(record, "output_json", {})
+        if not isinstance(payload, dict):
+            continue
+        hits = payload.get("hits", [])
+        if not isinstance(hits, list):
+            continue
+        for hit in hits:
+            if not isinstance(hit, dict):
+                continue
+            source_path = str(hit.get("source_path", ""))
+            chunk_index = int(hit.get("chunk_index", 0) or 0)
+            key = (source_path, chunk_index)
+            if not source_path or key in seen:
+                continue
+            seen.add(key)
+            citations.append(
+                {
+                    "source_path": source_path,
+                    "title": str(hit.get("title", "")),
+                    "chunk_index": chunk_index,
+                    "score": hit.get("score", 0),
+                    "content_preview": str(
+                        hit.get("content", hit.get("content_preview", ""))
+                    )[:240],
+                }
+            )
+    return citations[:5]
 
 
 def _normalize_swap_inst_id(symbol: str) -> str:

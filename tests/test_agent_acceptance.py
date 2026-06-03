@@ -4,7 +4,6 @@ from collections.abc import Iterable
 from decimal import Decimal
 from typing import Any
 
-from hypertrade.agent import kernel as kernel_module
 from hypertrade.agent.kernel import AgentKernel
 from hypertrade.config import Settings
 from hypertrade.db import Database
@@ -24,6 +23,9 @@ FORBIDDEN_ADVICE_PHRASES = [
 
 
 class ReplayDeepSeekClient:
+    name = "deepseek"
+    model = "replay-model"
+
     def __init__(self, responses: Iterable[ChatResponse]) -> None:
         self._responses = list(responses)
         self.messages: list[list[dict[str, Any]]] = []
@@ -85,8 +87,9 @@ def test_agent_acceptance_specific_symbol_report_uses_exact_ticker_tool(
 
     assert run.status == "completed"
     assert _tool_names(run) == ["market_ticker"]
-    assert run.trace_events[0].input_json == {"symbol": "DOGE"}
-    assert run.trace_events[0].output_json["inst_id"] == "DOGE-USDT-SWAP"
+    ticker_event = _business_events(run)[0]
+    assert ticker_event.input_json == {"symbol": "DOGE"}
+    assert ticker_event.output_json["inst_id"] == "DOGE-USDT-SWAP"
     assert "## 单标的行情" in run.report_markdown
     assert "DOGE-USDT-SWAP" in run.report_markdown
     assert "最新价 0.200000000000" in run.report_markdown
@@ -203,8 +206,9 @@ def test_agent_acceptance_rag_memory_run_is_auditable(monkeypatch, tmp_path) -> 
     ).run_chat("结合知识库和记忆，说下资金费率风险")
 
     assert _tool_names(run) == ["rag_search", "memory_search", "memory_write"]
-    assert run.trace_events[0].output_json["hits"][0]["source_path"].endswith("risk.md")
-    assert run.trace_events[2].output_json["memory_id"].startswith("mem_")
+    events = _business_events(run)
+    assert events[0].output_json["hits"][0]["source_path"].endswith("risk.md")
+    assert events[2].output_json["memory_id"].startswith("mem_")
     assert run.report_json["planner"] == "deepseek"
     assert run.report_json["tool_calls"] == [
         {"tool": "rag_search", "input": {"query": "funding liquidity risk", "limit": 3}},
@@ -268,11 +272,12 @@ def test_agent_acceptance_strategy_research_and_backtest_chain(
     ).run_chat("研究ETH趋势突破并回测")
 
     assert _tool_names(run) == ["strategy_draft", "backtest_run"]
-    assert run.trace_events[0].output_json["id"].startswith("srch_")
-    assert run.trace_events[0].output_json["strategy_key"] == "momentum_breakout_v1"
-    assert run.trace_events[1].output_json["id"].startswith("bt_")
-    assert run.trace_events[1].output_json["status"] == "completed"
-    assert run.trace_events[1].output_json["metrics"]["trade_count"] >= 0
+    events = _business_events(run)
+    assert events[0].output_json["id"].startswith("srch_")
+    assert events[0].output_json["strategy_key"] == "momentum_breakout_v1"
+    assert events[1].output_json["id"].startswith("bt_")
+    assert events[1].output_json["status"] == "completed"
+    assert events[1].output_json["metrics"]["trade_count"] >= 0
     _assert_research_quality(run.report_markdown)
 
 
@@ -287,12 +292,19 @@ def _patch_replay_llm(
     responses: Iterable[ChatResponse],
 ) -> ReplayDeepSeekClient:
     replay = ReplayDeepSeekClient(responses)
-    monkeypatch.setattr(kernel_module, "DeepSeekClient", lambda **_: replay)
+    monkeypatch.setattr(
+        "hypertrade.providers.runtime.ProviderRuntime.get_chat_provider",
+        lambda self, selected=None: replay,
+    )
     return replay
 
 
 def _tool_names(run: Any) -> list[str]:
-    return [event.tool_name for event in run.trace_events]
+    return [event.tool_name for event in _business_events(run)]
+
+
+def _business_events(run: Any) -> list[Any]:
+    return [event for event in run.trace_events if not event.tool_name.startswith("graph.")]
 
 
 def _assert_research_quality(markdown: str) -> None:

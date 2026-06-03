@@ -50,10 +50,22 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Sprint 17 Rich CLI renderer for terminal panels/tables with plain text fallback.
 - Sprint 18 paper-trading CLI controls for status, pause, and resume.
 - Sprint 19 BitPro archived SQLite K-line source for Backtrader backtests.
+- Sprint 20 paper close/reset lifecycle controls.
+- Sprint 21 live/testnet order intent approval gate.
+- Sprint 22 frontend harness parity for market tools, paper controls, and live approval.
+- Sprint 23 Markdown report, Memory details, and complete backtest form UX.
+- Sprint 24 graph-style Agent runtime with observable graph nodes and run state.
+- Sprint 25 provider router and session model switching.
+- Sprint 26 RAG v2 citation-ready search through pgvector-compatible storage.
+- Sprint 27 Memory v2 with policy fields, dedupe, search, tags, and audit metadata.
+- Sprint 28 RiskEngine for live/testnet order intents.
+- Sprint 29 OKX Testnet signed order execution after approval and risk check.
+- Sprint 30 multi-step strategy experiment workflow.
+- Sprint 31 deterministic Agent eval suite and operations runbooks.
 
 ## V1 Out of Scope
 
-- Mainnet live order execution.
+- Mainnet live order execution. Mainnet intent creation may be audited, but execution is blocked.
 - Automatic investment advice or unattended real-money trading.
 - Milvus/Qdrant production vector clusters.
 - Historical K-line backfill, parameter optimization sweeps, and live/Testnet order generation from backtest results.
@@ -84,5 +96,11 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Developer can enable Rich terminal rendering for structured CLI reports while keeping plain output for scripts.
 - Developer can inspect and control the simulated paper runtime from CLI slash commands.
 - Developer can run backtests from archived BitPro K-line data without copying BitPro business logic.
+- Developer can inspect Agent graph state and graph trace nodes for each run.
+- Developer can switch chat providers from CLI/API/frontend without exposing provider keys.
+- Developer can search RAG citations and Memory from CLI/API/frontend.
+- Developer can create, approve, and execute OKX Testnet order intents after risk checks.
+- Developer can run `/experiment <prompt>` to create strategy research, backtest, critique, and next experiment report.
+- Developer can run `/evals` and inspect deterministic Agent eval status.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.

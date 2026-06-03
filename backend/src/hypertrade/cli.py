@@ -7,6 +7,7 @@ import sys
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, TextIO
+from urllib.parse import quote
 
 import httpx
 from sqlalchemy import desc, select
@@ -15,7 +16,10 @@ from hypertrade.agent.kernel import AgentKernel, CompletedAgentRun
 from hypertrade.backtest.service import BacktestService
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import AgentRun, Database, TraceEvent
+from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.memory.service import MemoryService
+from hypertrade.providers.runtime import ProviderRuntime
+from hypertrade.strategy.experiment import StrategyExperimentService
 from hypertrade.strategy.service import StrategyResearchService
 from hypertrade.tools.registry import ToolDefinition, ToolRegistry
 
@@ -33,11 +37,21 @@ class AgentClient(Protocol):
 
     def list_memory(self) -> list[dict[str, Any]]: ...
 
+    def search_memory(self, query: str) -> list[dict[str, Any]]: ...
+
+    def disable_memory(self, memory_id: str) -> dict[str, Any]: ...
+
+    def search_rag(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]: ...
+
+    def get_evals_status(self) -> dict[str, Any]: ...
+
     def list_strategy_research(self) -> list[dict[str, Any]]: ...
 
     def list_backtests(self) -> list[dict[str, Any]]: ...
 
     def create_strategy_research(self, prompt: str) -> dict[str, Any]: ...
+
+    def create_strategy_experiment(self, prompt: str) -> dict[str, Any]: ...
 
     def run_backtest(
         self,
@@ -54,6 +68,8 @@ class AgentClient(Protocol):
     def get_status(self) -> dict[str, Any]: ...
 
     def get_model_status(self) -> dict[str, Any]: ...
+
+    def set_model(self, provider: str) -> dict[str, Any]: ...
 
     def get_market_ticker(self, symbol: str) -> dict[str, Any]: ...
 
@@ -97,6 +113,8 @@ class AgentClient(Protocol):
         decision: str,
         reason: str = "",
     ) -> dict[str, Any]: ...
+
+    def execute_live_order_intent(self, intent_id: str) -> dict[str, Any]: ...
 
 
 class AgentClientFactory(Protocol):
@@ -186,6 +204,21 @@ class AgentApiClient:
     def list_memory(self) -> list[dict[str, Any]]:
         return self._get_list("/api/memory", "items")
 
+    def search_memory(self, query: str) -> list[dict[str, Any]]:
+        return self._get_list(f"/api/memory?query={quote(query)}", "items")
+
+    def disable_memory(self, memory_id: str) -> dict[str, Any]:
+        response = self.client.delete(self._url(f"/api/memory/{memory_id}"))
+        response.raise_for_status()
+        payload = response.json()
+        return dict(payload) if isinstance(payload, dict) else {"status": "ok"}
+
+    def search_rag(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]:
+        return self._get_list(f"/api/rag/search?query={quote(query)}&limit={limit}", "hits")
+
+    def get_evals_status(self) -> dict[str, Any]:
+        return self._get_object("/api/evals/status")
+
     def list_strategy_research(self) -> list[dict[str, Any]]:
         return self._get_list("/api/strategy/research", "items")
 
@@ -194,6 +227,9 @@ class AgentApiClient:
 
     def create_strategy_research(self, prompt: str) -> dict[str, Any]:
         return self._post_object("/api/strategy/research", {"prompt": prompt})
+
+    def create_strategy_experiment(self, prompt: str) -> dict[str, Any]:
+        return self._post_object("/api/strategy/experiments", {"prompt": prompt})
 
     def run_backtest(
         self,
@@ -256,6 +292,9 @@ class AgentApiClient:
             "model": default_provider.get("model", "unknown"),
             "providers": [dict(provider) for provider in providers if isinstance(provider, dict)],
         }
+
+    def set_model(self, provider: str) -> dict[str, Any]:
+        return self._post_object("/api/harness/provider-selection", {"provider": provider})
 
     def get_market_ticker(self, symbol: str) -> dict[str, Any]:
         return self._get_object(f"/api/market/ticker/{symbol}")
@@ -325,6 +364,9 @@ class AgentApiClient:
             {"reason": reason},
         )
 
+    def execute_live_order_intent(self, intent_id: str) -> dict[str, Any]:
+        return self._post_object(f"/api/live/order-intents/{intent_id}/execute", {})
+
     def _url(self, path: str) -> str:
         return f"{self.config.api_url.rstrip('/')}{path}"
 
@@ -356,6 +398,7 @@ class LocalAgentClient:
     def __init__(self, *, settings: Settings | None = None, db: Database | None = None) -> None:
         self.settings = settings or get_settings()
         self.db = db or Database(self.settings.database_url)
+        self.selected_provider = self.settings.active_chat_provider
 
     def login(self) -> None:
         return None
@@ -365,6 +408,7 @@ class LocalAgentClient:
             self.db,
             knowledge_dir=str(self.settings.knowledge_dir),
             settings=self.settings,
+            provider_name=self.selected_provider,
         ).run_chat(prompt)
         return _completed_run_to_dict(run)
 
@@ -374,6 +418,7 @@ class LocalAgentClient:
             self.db,
             knowledge_dir=str(self.settings.knowledge_dir),
             settings=self.settings,
+            provider_name=self.selected_provider,
         ).run_chat_with_events(prompt, event_sink=events.append)
         yield from events
         yield {"event": "final", "run": _completed_run_to_dict(run)}
@@ -401,9 +446,47 @@ class LocalAgentClient:
                 "kind": item.kind,
                 "content": item.content,
                 "source_run_id": item.source_run_id,
+                "tags": item.tags,
+                "usage_count": item.usage_count,
             }
             for item in MemoryService(self.db).list_active()[-10:]
         ]
+
+    def search_memory(self, query: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": item.id,
+                "kind": item.kind,
+                "content": item.content,
+                "source_run_id": item.source_run_id,
+                "tags": item.tags,
+                "usage_count": item.usage_count,
+            }
+            for item in MemoryService(self.db).search(query=query)
+        ]
+
+    def disable_memory(self, memory_id: str) -> dict[str, Any]:
+        MemoryService(self.db).disable(memory_id)
+        return {"status": "ok"}
+
+    def search_rag(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]:
+        from hypertrade.rag.service import RagService
+
+        service = RagService(self.db, knowledge_dir=str(self.settings.knowledge_dir))
+        service.scan_once()
+        return [
+            {
+                "source_path": hit.source_path,
+                "title": hit.title,
+                "chunk_index": hit.chunk_index,
+                "score": hit.score,
+                "content_preview": hit.content_preview,
+            }
+            for hit in service.search(query, limit=limit)
+        ]
+
+    def get_evals_status(self) -> dict[str, Any]:
+        return AgentEvalSuite().status()
 
     def list_strategy_research(self) -> list[dict[str, Any]]:
         return StrategyResearchService(self.db).list_recent(limit=10)
@@ -413,6 +496,9 @@ class LocalAgentClient:
 
     def create_strategy_research(self, prompt: str) -> dict[str, Any]:
         return StrategyResearchService(self.db).create(prompt)
+
+    def create_strategy_experiment(self, prompt: str) -> dict[str, Any]:
+        return StrategyExperimentService(self.db).create(prompt)
 
     def run_backtest(
         self,
@@ -445,18 +531,32 @@ class LocalAgentClient:
         }
 
     def get_model_status(self) -> dict[str, Any]:
-        provider = {
-            "name": "deepseek",
-            "display_name": "DeepSeek",
-            "model": self.settings.deepseek_model,
-            "enabled": bool(self.settings.deepseek_api_key),
-            "default": True,
-            "key_status": "configured" if self.settings.deepseek_api_key else "missing",
-        }
+        providers = ProviderRuntime(self.settings).list_providers(selected=self.selected_provider)
+        provider = next(
+            (
+                item
+                for item in providers
+                if item.get("name") == self.selected_provider
+            ),
+            providers[0],
+        )
         return {
             "default_provider": provider["name"],
             "model": provider["model"],
-            "providers": [provider],
+            "providers": providers,
+        }
+
+    def set_model(self, provider: str) -> dict[str, Any]:
+        requested = provider.strip().lower()
+        providers = ProviderRuntime(self.settings).list_providers(selected=requested)
+        if requested not in {str(item.get("name")) for item in providers}:
+            raise ValueError(f"unknown provider: {provider}")
+        self.selected_provider = requested
+        selected = next(item for item in providers if item.get("name") == requested)
+        return {
+            "default_provider": requested,
+            "model": selected.get("model", ""),
+            "providers": providers,
         }
 
     def get_market_ticker(self, symbol: str) -> dict[str, Any]:
@@ -553,6 +653,11 @@ class LocalAgentClient:
         if decision == "reject":
             return service.reject(intent_id, reason=reason)
         raise ValueError(f"unknown live order decision: {decision}")
+
+    def execute_live_order_intent(self, intent_id: str) -> dict[str, Any]:
+        from hypertrade.live.service import LiveOrderIntentService
+
+        return LiveOrderIntentService(self.db, settings=self.settings).execute(intent_id)
 
 
 def main(
@@ -700,7 +805,11 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
     elif name == "/runs":
         render_runs(client.list_runs(), output=output)
     elif name == "/memory":
-        render_memory(client.list_memory(), output=output)
+        handle_memory_command(command, client=client, output=output)
+    elif name == "/rag":
+        handle_rag_command(command, client=client, output=output)
+    elif name in {"/evals", "/eval"}:
+        render_evals_status(client.get_evals_status(), output=output)
     elif name in {"/strategy", "/strategies"}:
         render_strategy_research(client.list_strategy_research(), output=output)
     elif name == "/backtests":
@@ -709,6 +818,8 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
         handle_backtest_command(command, client=client, output=output)
     elif name in {"/research", "/sr"}:
         handle_research_command(command, client=client, output=output)
+    elif name in {"/experiment", "/exp"}:
+        handle_experiment_command(command, client=client, output=output)
     elif name in {"/price", "/ticker"}:
         handle_price_command(command, client=client, output=output)
     elif name in {"/candles", "/kline", "/klines"}:
@@ -733,6 +844,10 @@ def render_slash_help(*, output: TextIO) -> None:
     print("- /tools       List registered Agent tools.", file=output)
     print("- /runs        List recent Agent runs.", file=output)
     print("- /memory      List active audited memory.", file=output)
+    print("- /memory search <query>", file=output)
+    print("- /memory disable <mem_id>", file=output)
+    print("- /rag <query> Search knowledge chunks.", file=output)
+    print("- /evals       Show deterministic Agent eval status.", file=output)
     print("- /strategy    List recent strategy research.", file=output)
     print("- /backtests   List recent backtest runs.", file=output)
     print("- /price ETH   Fetch exact ticker without LLM planning.", file=output)
@@ -743,7 +858,9 @@ def render_slash_help(*, output: TextIO) -> None:
     print("- /live intent ETH buy 0.01 [--type limit --price 3500 --reason text]", file=output)
     print("- /live approve loi_* [--reason text]", file=output)
     print("- /live reject loi_* [--reason text]", file=output)
+    print("- /live execute loi_*", file=output)
     print("- /research    Create strategy research from a prompt.", file=output)
+    print("- /experiment  Run research + backtest + critique workflow.", file=output)
     print("- /backtest    Run backtest on latest research.", file=output)
     print("- /backtest list                 List recent backtests.", file=output)
     print("- /backtest latest|srch_*|<key>  Run a specific backtest.", file=output)
@@ -762,6 +879,20 @@ def handle_research_command(command: str, *, client: AgentClient, output: TextIO
         print(f"Research failed: {exc}", file=output)
         return
     render_strategy_research_result(research, output=output)
+
+
+def handle_experiment_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    parts = command.split(maxsplit=1)
+    if len(parts) == 1:
+        print("Usage: /experiment <prompt>", file=output)
+        print("Example: /experiment 研究ETH趋势突破并给出回测改进建议", file=output)
+        return
+    try:
+        experiment = client.create_strategy_experiment(parts[1].strip())
+    except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+        print(f"Experiment failed: {exc}", file=output)
+        return
+    render_strategy_experiment_result(experiment, output=output)
 
 
 def handle_backtest_command(command: str, *, client: AgentClient, output: TextIO) -> None:
@@ -981,7 +1112,18 @@ def handle_live_command(command: str, *, client: AgentClient, output: TextIO) ->
             return
         render_live_order_intent(intent, output=output)
         return
-    print("Usage: /live intents|intent|approve|reject", file=output)
+    if subcommand == "execute":
+        if len(parts) < 3:
+            print("Usage: /live execute <intent_id>", file=output)
+            return
+        try:
+            intent = client.execute_live_order_intent(parts[2])
+        except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+            print(f"Live execute failed: {exc}", file=output)
+            return
+        render_live_order_intent(intent, output=output)
+        return
+    print("Usage: /live intents|intent|approve|reject|execute", file=output)
 
 
 def _parse_backtest_options(parts: list[str]) -> dict[str, Any]:
@@ -1063,6 +1205,36 @@ def _parse_reason_option(parts: list[str]) -> dict[str, Any]:
     return options
 
 
+def handle_memory_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    parts = command.split(maxsplit=2)
+    if len(parts) == 1:
+        render_memory(client.list_memory(), output=output)
+        return
+    subcommand = parts[1].lower()
+    if subcommand == "search":
+        if len(parts) < 3 or not parts[2].strip():
+            print("Usage: /memory search <query>", file=output)
+            return
+        render_memory(client.search_memory(parts[2].strip()), output=output)
+        return
+    if subcommand == "disable":
+        if len(parts) < 3 or not parts[2].strip():
+            print("Usage: /memory disable <mem_id>", file=output)
+            return
+        result = client.disable_memory(parts[2].strip())
+        print(f"Memory disable: {result.get('status', 'ok')}", file=output)
+        return
+    print("Usage: /memory [search <query>|disable <mem_id>]", file=output)
+
+
+def handle_rag_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    parts = command.split(maxsplit=1)
+    if len(parts) == 1 or not parts[1].strip():
+        print("Usage: /rag <query>", file=output)
+        return
+    render_rag_hits(client.search_rag(parts[1].strip()), output=output)
+
+
 def _latest_strategy_research(client: AgentClient) -> dict[str, Any] | None:
     items = client.list_strategy_research()
     return items[0] if items else None
@@ -1076,6 +1248,16 @@ def render_strategy_research_result(research: dict[str, Any], *, output: TextIO)
     print("- Next: /backtest latest", file=output)
     print("", file=output)
     print(str(research.get("report_markdown", "")), file=output)
+
+
+def render_strategy_experiment_result(experiment: dict[str, Any], *, output: TextIO) -> None:
+    print("Strategy experiment completed:", file=output)
+    print(f"- ID: {experiment.get('id', 'unknown')}", file=output)
+    print(f"- Research: {experiment.get('research_id', 'n/a')}", file=output)
+    print(f"- Backtest: {experiment.get('backtest_id', 'n/a')}", file=output)
+    print(f"- Status: {experiment.get('status', 'unknown')}", file=output)
+    print("", file=output)
+    print(str(experiment.get("report_markdown", "")), file=output)
 
 
 def render_backtest_result(result: dict[str, Any], *, output: TextIO) -> None:
@@ -1246,6 +1428,12 @@ def render_live_order_intent(intent: dict[str, Any], *, output: TextIO) -> None:
     decision_reason = intent.get("decision_reason")
     if decision_reason:
         print(f"  decision: {decision_reason}", file=output)
+    risk_status = intent.get("risk_status")
+    if risk_status:
+        print(f"  risk: {risk_status}", file=output)
+    exchange_order_id = intent.get("exchange_order_id")
+    if exchange_order_id:
+        print(f"  exchange_order_id: {exchange_order_id}", file=output)
 
 
 def render_status(status: dict[str, Any], *, output: TextIO) -> None:
@@ -1269,13 +1457,16 @@ def render_model(command: str, *, client: AgentClient, output: TextIO) -> None:
         print("Model:", file=output)
         print(f"- Provider: {status.get('default_provider', 'unknown')}", file=output)
         print(f"- Model: {status.get('model', 'unknown')}", file=output)
-        print("- Switch: /model <name> is not implemented yet.", file=output)
+        print("- Switch: /model <provider>", file=output)
         return
     requested = parts[1].strip()
-    print(
-        f"Model switch requested for '{requested}', but model switching is not implemented yet.",
-        file=output,
-    )
+    try:
+        switched = client.set_model(requested)
+    except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+        print(f"Model switch failed: {exc}", file=output)
+        return
+    print(f"Model switched: {switched.get('default_provider', requested)}", file=output)
+    print(f"- Model: {switched.get('model', 'unknown')}", file=output)
 
 
 def render_providers(status: dict[str, Any], *, output: TextIO) -> None:
@@ -1328,9 +1519,52 @@ def render_memory(items: list[dict[str, Any]], *, output: TextIO) -> None:
         print("- none", file=output)
         return
     for item in items[:10]:
+        tags = item.get("tags", [])
+        tag_text = ",".join(str(tag) for tag in tags) if isinstance(tags, list) else ""
         print(
             f"- {item.get('id', 'unknown')} [{item.get('kind', 'unknown')}] "
             f"{str(item.get('content', ''))[:100]}",
+            file=output,
+        )
+        if tag_text:
+            print(
+                f"  tags: {tag_text} usage={item.get('usage_count', 0)}",
+                file=output,
+            )
+
+
+def render_rag_hits(items: list[dict[str, Any]], *, output: TextIO) -> None:
+    print("RAG hits:", file=output)
+    if not items:
+        print("- none", file=output)
+        return
+    for item in items[:10]:
+        print(
+            "- {title} {source_path}#{chunk_index} score={score}".format(
+                title=item.get("title", "Knowledge"),
+                source_path=item.get("source_path", "unknown"),
+                chunk_index=item.get("chunk_index", 0),
+                score=item.get("score", "n/a"),
+            ),
+            file=output,
+        )
+        preview = str(item.get("content_preview", "")).replace("\n", " ")[:160]
+        if preview:
+            print(f"  {preview}", file=output)
+
+
+def render_evals_status(payload: dict[str, Any], *, output: TextIO) -> None:
+    print("Eval suite:", file=output)
+    print(f"- Status: {payload.get('status', 'unknown')}", file=output)
+    cases = payload.get("cases", [])
+    if not isinstance(cases, list) or not cases:
+        print("- no cases", file=output)
+        return
+    for case in cases:
+        if not isinstance(case, dict):
+            continue
+        print(
+            f"- {case.get('name', 'unknown')} {case.get('status', 'unknown')}",
             file=output,
         )
 
@@ -1796,6 +2030,7 @@ def _completed_run_to_dict(run: CompletedAgentRun) -> dict[str, Any]:
         "status": run.status,
         "report_markdown": run.report_markdown,
         "report_json": run.report_json,
+        "run_state_json": run.run_state_json,
         "trace_events": [_trace_to_dict(event) for event in run.trace_events],
     }
 

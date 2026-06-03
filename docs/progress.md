@@ -8,7 +8,7 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-23-frontend-report-memory-backtest.md` (completed locally)
+- `docs/contracts/sprint-31-observability-evals-runbooks.md` (completed locally, pending commit/deploy)
 
 ## Latest Completed Work
 
@@ -46,6 +46,16 @@
 - Added Sprint 21 live/testnet order approval gate locally: `live_order_intents` schema/service/API/CLI, Agent planner `live_order_intent` tool, and approve/reject status transitions without exchange execution.
 - Added Sprint 22 frontend harness parity locally: `/harness` now includes Agent streaming status, market ticker/candle/compare shortcuts, paper close/reset controls, and Live Approval intent create/approve/reject UI.
 - Added Sprint 23 frontend UX locally: styled Markdown report reader with raw toggle, Memory Manager with inspect/disable, and full backtest parameter form for strategy/source/symbol/bar/limit/cash.
+- Added Sprint 24 Agent graph runtime locally: graph node trace events, `run_state_json`, streaming graph status, and deterministic fallback path.
+- Added Sprint 25 Provider Router locally: `ChatProvider` protocol, OpenAI-compatible adapter, provider selection API, CLI `/model <provider>`, and frontend provider switcher.
+- Added Sprint 26 RAG v2 locally: citation-ready RAG hits, deterministic vector fallback, `/api/rag/search`, CLI `/rag`, frontend RAG search, and Agent citation block support.
+- Added Sprint 27 Memory v2 locally: importance/tags/confidence/usage fields, exact dedupe, search API, CLI `/memory search` and `/memory disable`, and frontend Memory search/tag display.
+- Added Sprint 28 RiskEngine locally: Mainnet execution block, SWAP-only checks, max notional/open-intent checks, risk status persistence, and frontend/CLI risk display.
+- Added Sprint 29 OKX Testnet signed execution locally: signed REST client, execute endpoint, CLI `/live execute`, redacted execution audit, and frontend execute button for approved intents.
+- Added Sprint 30 strategy experiment workflow locally: hypothesis/data/backtest/critique/revision/report graph, `strategy_experiments`, API/CLI/frontend surfaces.
+- Added Sprint 31 observability/evals/runbooks locally: deterministic eval suite, `/api/evals/status`, CLI `/evals`, frontend eval panel, and operations runbooks.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 72 tests.
+- Local commit SHA is recorded by `git rev-parse --short HEAD` during deployment smoke.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 67 tests.
 - Server deployed SHA `3a83b18`; frontend build produced `index-BLcqGC9-.js` and `index-Dty7kLGl.css`.
 - Server smoke passed: API and Nginx health OK; authenticated overview returned `359` tickers, `17` active memory items, `0` pending live order intents; authenticated `/api/memory` returned `17` items.

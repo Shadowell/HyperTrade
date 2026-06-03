@@ -68,6 +68,22 @@ class Settings(BaseSettings):
     raw_market_retention_days: int = Field(default=7, alias="RAW_MARKET_RETENTION_DAYS")
     llm_daily_soft_budget_usd: float = Field(default=5.0, alias="LLM_DAILY_SOFT_BUDGET_USD")
     bitpro_sqlite_path: Path = Field(default=Path(""), alias="BITPRO_SQLITE_PATH")
+    active_chat_provider: str = Field(default="deepseek", alias="ACTIVE_CHAT_PROVIDER")
+    openai_base_url: str = Field(default="https://api.openai.com/v1", alias="OPENAI_BASE_URL")
+    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
+    openrouter_base_url: str = Field(
+        default="https://openrouter.ai/api/v1",
+        alias="OPENROUTER_BASE_URL",
+    )
+    openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
+    openrouter_model: str = Field(default="", alias="OPENROUTER_MODEL")
+    qwen_chat_model: str = Field(default="qwen-plus", alias="QWEN_CHAT_MODEL")
+    risk_max_order_notional_usdt: str = Field(
+        default="100",
+        alias="RISK_MAX_ORDER_NOTIONAL_USDT",
+    )
+    risk_max_open_intents: int = Field(default=5, alias="RISK_MAX_OPEN_INTENTS")
 
 
 @lru_cache

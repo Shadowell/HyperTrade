@@ -51,3 +51,19 @@ Sprint 03 增加一个小型策略实验室：
   `bar` 和 `candle_limit` 控制。
 - 启用 live candles 时，`backtest_runs.report_json` 会记录 `data_source`、`inst_id`、
   `bar` 和 `candle_count`。
+
+## Sprint 28-30 Update / Sprint 28-30 更新
+
+- RiskEngine now validates live/testnet order intents before creation approval and execution.
+- Mainnet execution is blocked; Testnet execution requires approval and a passing risk check.
+- OKX Testnet signed execution supports market/limit buy/sell SWAP orders through
+  `/api/live/order-intents/{id}/execute` and CLI `/live execute <id>`.
+- Strategy experiments persist a multi-step workflow: hypothesis, data selection, backtest,
+  critique, revision suggestion, and report.
+
+- RiskEngine 现在会在创建、审批、执行前校验 live/testnet order intent。
+- Mainnet 执行保持阻断；Testnet 执行必须先审批并通过风控。
+- OKX Testnet signed execution 支持 market/limit、buy/sell、SWAP 订单，通过
+  `/api/live/order-intents/{id}/execute` 和 CLI `/live execute <id>` 使用。
+- 策略实验会持久化多步骤 workflow：hypothesis、data selection、backtest、critique、
+  revision suggestion、report。

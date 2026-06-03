@@ -29,6 +29,19 @@ Run the full project check:
 | RAG + Memory | `结合知识库和记忆，说下资金费率风险` | `rag_search`, `memory_search`, `memory_write` | Trace links RAG hit source path, writes audited memory id, and records tool inputs in `report_json`. |
 | Strategy + backtest | `研究ETH趋势突破并回测` | `strategy_draft`, `backtest_run` | Trace contains `srch_*` research id, `bt_*` backtest id, completed status, metrics, and disclaimer. |
 
+## Sprint 24-31 Additions
+
+| Case | Entry point | Expected checks |
+| --- | --- | --- |
+| Agent graph trace | `hypertrade ask "看下ETH行情"` | Trace includes `graph.intent_classify`, `graph.plan_tools`, `graph.reflect`, and `graph.final_report`; business tools are still visible. |
+| Provider switch | `/model deepseek`, `/model openrouter` | CLI/API switch session provider without returning secrets; missing keys show `missing`. |
+| RAG citation search | `/rag 风控` | Hits show source path, title, chunk index, score, and preview. |
+| Memory v2 | `/memory search 风控` | Results show tags/usage and retain source run/tool. |
+| Risk refusal | Create Mainnet or oversized intent in tests | Intent becomes `risk_blocked` with structured violation. |
+| Testnet execution | `/live execute loi_*` | Approved Testnet intent records redacted request and exchange response or auditable failure. |
+| Strategy experiment | `/experiment 研究ETH趋势突破` | Creates `exp_*`, linked `srch_*`, linked `bt_*`, critique, next experiment, and disclaimer. |
+| Eval suite | `/evals` | Deterministic eval status shows tool selection, RAG citation, memory, risk refusal, and Testnet safety cases. |
+
 ## Output Quality Rules
 
 Every Agent report should:
@@ -59,6 +72,8 @@ printf "/price ETH\n/candles ETH --bar 1H --limit 50\n/compare ETH SOL --bar 4H 
 printf "/paper status\n/paper pause\n/paper resume\n:q\n" | hypertrade
 printf "/research 研究BTC趋势突破\n/backtest --source bitpro --symbol BTC --bar 1H --limit 200\n:q\n" | hypertrade
 printf "/research 研究ETH趋势突破\n/backtest --live --symbol ETH --bar 1H --limit 100\n:q\n" | hypertrade
+printf "/model deepseek\n/rag 风控\n/memory search 风控\n/evals\n:q\n" | hypertrade
+printf "/experiment 研究ETH趋势突破\n:q\n" | hypertrade
 ```
 
 Expected server observations:
@@ -73,6 +88,7 @@ Expected server observations:
 - Specific-symbol prompt includes exact instrument such as `ETH-USDT-SWAP`.
 - Compare prompt includes relative-strength ranking.
 - Backtest command prints data source `okx_rest_candles`, instrument, bar, candle count, return, and trade count.
+- Graph status, RAG citations, Memory search, provider status, and eval status are visible from CLI.
 
 ## Notes
 

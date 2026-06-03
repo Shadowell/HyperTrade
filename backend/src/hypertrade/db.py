@@ -58,6 +58,7 @@ class AgentRun(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     report_markdown: Mapped[str] = mapped_column(Text, default="")
     report_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    run_state_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     error: Mapped[str] = mapped_column(Text, default="")
 
 
@@ -87,9 +88,11 @@ class RagChunk(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("chk"))
     document_id: Mapped[str] = mapped_column(String(32), index=True)
     source_path: Mapped[str] = mapped_column(Text, index=True)
+    title: Mapped[str] = mapped_column(Text, default="")
     chunk_index: Mapped[int] = mapped_column(Integer, default=0)
     content: Mapped[str] = mapped_column(Text)
     embedding_json: Mapped[list[float]] = mapped_column(JSON, default=list)
+    embedding_vector: Mapped[list[float]] = mapped_column(JSON, default=list)
 
 
 class MemoryItem(Base, TimestampMixin):
@@ -101,6 +104,11 @@ class MemoryItem(Base, TimestampMixin):
     source_run_id: Mapped[str] = mapped_column(String(32), default="", index=True)
     source_tool: Mapped[str] = mapped_column(String(128), default="")
     disabled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    importance: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0.50"))
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0.70"))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Job(Base, TimestampMixin):
@@ -222,6 +230,23 @@ class LiveOrderIntent(Base, TimestampMixin):
     source: Mapped[str] = mapped_column(String(64), default="operator")
     source_run_id: Mapped[str] = mapped_column(String(32), default="", index=True)
     decision_reason: Mapped[str] = mapped_column(Text, default="")
+    risk_status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    risk_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    execution_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    exchange_order_id: Mapped[str] = mapped_column(String(128), default="")
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class StrategyExperiment(Base, TimestampMixin):
+    __tablename__ = "strategy_experiments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("exp"))
+    prompt: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="completed", index=True)
+    research_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    backtest_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    report_markdown: Mapped[str] = mapped_column(Text, default="")
+    report_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
 class Database:

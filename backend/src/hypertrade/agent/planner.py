@@ -7,7 +7,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from hypertrade.providers.deepseek import ChatResponse, DeepSeekClient
+from hypertrade.providers.chat import ChatProvider
+from hypertrade.providers.deepseek import ChatResponse
 
 ToolExecutor = Callable[[str, dict[str, Any]], dict[str, Any]]
 
@@ -247,7 +248,7 @@ class PlannerResult:
 class AgentPlanner:
     MAX_ITERATIONS = 8
 
-    def __init__(self, llm: DeepSeekClient) -> None:
+    def __init__(self, llm: ChatProvider) -> None:
         self._llm = llm
 
     def run(self, prompt: str, executor: ToolExecutor) -> PlannerResult:

@@ -44,7 +44,19 @@ def test_agent_chat_market_summary_creates_report_trace_and_memory(tmp_path):
     if "当前无法获取实时 OKX 行情" in run.report_markdown:
         assert run.report_json["data_source"] == "unavailable"
     assert run.report_json["market_scope"] == "OKX SWAP"
-    assert [event.tool_name for event in run.trace_events] == [
+    tool_names = [
+        event.tool_name
+        for event in run.trace_events
+        if not event.tool_name.startswith("graph.")
+    ]
+    graph_names = [
+        event.tool_name
+        for event in run.trace_events
+        if event.tool_name.startswith("graph.")
+    ]
+    assert "graph.intent_classify" in graph_names
+    assert "graph.final_report" in graph_names
+    assert tool_names == [
         "market.summary",
         "rag.search",
         "memory.write",

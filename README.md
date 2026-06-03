@@ -2,7 +2,7 @@
 
 [中文](README.zh-CN.md) | [English](README.en.md)
 
-HyperTrade is an agent-first crypto trading research and execution harness. Sprint 01 focuses on OKX perpetual swap market ingestion, user-triggered market summaries, tool-call tracing, RAG, audited memory, and a `/harness` frontend workbench.
+HyperTrade is an agent-first crypto trading research and execution harness. Current V1 covers observable Agent graph runs, provider routing, tool calling, RAG citations, audited Memory, OKX market research, paper trading, strategy experiments, risk-gated live intents, and OKX Testnet signed execution.
 
 > Research and learning project only. Nothing in this repository is investment advice.
 
@@ -64,4 +64,10 @@ In interactive chat, slash commands inspect harness state without starting a new
 /research 研究BTC趋势突破
 /backtest
 /backtest latest
+/rag risk
+/memory search risk
+/model deepseek
+/experiment 研究ETH趋势突破
+/live execute loi_...
+/evals
 ```

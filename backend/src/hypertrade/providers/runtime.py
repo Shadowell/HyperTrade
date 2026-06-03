@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
 from hypertrade.config import Settings
+from hypertrade.providers.chat import ChatProvider, OpenAICompatibleChatProvider
+from hypertrade.providers.deepseek import DeepSeekClient
 
 
 @dataclass(frozen=True)
@@ -17,7 +19,8 @@ class ProviderRuntime:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    def list_providers(self) -> list[dict[str, object]]:
+    def list_providers(self, *, selected: str | None = None) -> list[dict[str, object]]:
+        selected_name = selected or self.settings.active_chat_provider
         providers = [
             ProviderDefinition(
                 name="deepseek",
@@ -25,19 +28,34 @@ class ProviderRuntime:
                 base_url=self.settings.deepseek_base_url,
                 model=self.settings.deepseek_model,
                 enabled=bool(self.settings.deepseek_api_key),
-                default=True,
+                default=selected_name == "deepseek",
             ),
-            ProviderDefinition("openai", "OpenAI", "", "", False),
+            ProviderDefinition(
+                "openai",
+                "OpenAI",
+                self.settings.openai_base_url,
+                self.settings.openai_model,
+                bool(self.settings.openai_api_key),
+                selected_name == "openai",
+            ),
             ProviderDefinition("anthropic", "Anthropic", "", "", False),
             ProviderDefinition("gemini", "Gemini", "", "", False),
             ProviderDefinition(
                 "qwen",
                 "Qwen",
                 self.settings.qwen_embedding_base_url,
-                self.settings.qwen_embedding_model,
+                self.settings.qwen_chat_model,
                 bool(self.settings.qwen_api_key),
+                selected_name == "qwen",
             ),
-            ProviderDefinition("openrouter", "OpenRouter", "", "", False),
+            ProviderDefinition(
+                "openrouter",
+                "OpenRouter",
+                self.settings.openrouter_base_url,
+                self.settings.openrouter_model,
+                bool(self.settings.openrouter_api_key and self.settings.openrouter_model),
+                selected_name == "openrouter",
+            ),
             ProviderDefinition("ollama", "Ollama", "http://localhost:11434", "", False),
         ]
         return [
@@ -52,3 +70,38 @@ class ProviderRuntime:
             }
             for provider in providers
         ]
+
+    def get_chat_provider(self, *, selected: str | None = None) -> ChatProvider | None:
+        name = selected or self.settings.active_chat_provider
+        if name == "deepseek" and self.settings.deepseek_api_key:
+            return DeepSeekClient(
+                api_key=self.settings.deepseek_api_key,
+                base_url=self.settings.deepseek_base_url,
+                model=self.settings.deepseek_model,
+            )
+        if name == "openai" and self.settings.openai_api_key:
+            return OpenAICompatibleChatProvider(
+                name="openai",
+                api_key=self.settings.openai_api_key,
+                base_url=self.settings.openai_base_url,
+                model=self.settings.openai_model,
+            )
+        if (
+            name == "openrouter"
+            and self.settings.openrouter_api_key
+            and self.settings.openrouter_model
+        ):
+            return OpenAICompatibleChatProvider(
+                name="openrouter",
+                api_key=self.settings.openrouter_api_key,
+                base_url=self.settings.openrouter_base_url,
+                model=self.settings.openrouter_model,
+            )
+        if name == "qwen" and self.settings.qwen_api_key:
+            return OpenAICompatibleChatProvider(
+                name="qwen",
+                api_key=self.settings.qwen_api_key,
+                base_url=self.settings.qwen_embedding_base_url,
+                model=self.settings.qwen_chat_model,
+            )
+        return None

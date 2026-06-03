@@ -4,25 +4,39 @@ HyperTrade 是一个独立的 Agent 交易系统学习与作品项目。它不�
 
 > 本项目仅用于研究、学习和工程展示，不构成任何投资建议。
 
-## Sprint 01
+## 当前 V1 能力
 
-第一轮只跑通一条主闭环：
-
-- OKX 全市场永续合约 `SWAP` 行情采集。
-- WebSocket tickers 为主，REST 作为 instruments/funding/OI/K 线补充和降级。
-- 用户在自由聊天中按需发起行情归纳。
-- Agent 运行过程中记录 Tool Call、RAG 命中、Memory 写入和 trace。
-- 前端提供 `/harness` 和行情摘要页。
+- Agent graph runtime：可观察的 intent、plan、approval、tool、reflect、report 节点。
+- Provider Router：DeepSeek 默认，OpenAI/OpenRouter/Qwen chat 扩展位，CLI/API/前端可切换。
+- Tool Call：行情、RAG、Memory、策略、回测、paper、live intent、Testnet execute。
+- RAG：PostgreSQL/pgvector 兼容字段，citation-ready 命中。
+- Memory：去重、tags、importance、confidence、usage audit。
+- 交易边界：Mainnet 执行阻断；OKX Testnet 可在审批和风控后 signed order。
+- 策略工作流：研究、回测、critique、下一实验建议。
+- 可观测：`/harness`、CLI slash commands、deterministic eval suite。
 
 ## 技术栈
 
-- Agent：LangGraph 思路的 AgentKernel，显式 ToolRegistry、Trace、Memory、RAG。
+- Agent：LangGraph 思路的 AgentGraph/AgentKernel，显式 ToolRegistry、Trace、Memory、RAG。
 - Backend：FastAPI、SQLAlchemy 2、Alembic、uv、pytest、ruff、mypy。
 - Storage：PostgreSQL + pgvector。
 - RAG：Qwen `text-embedding-v4` 配置位，V1 本地测试使用确定性 embedding fallback。
 - LLM：DeepSeek 官方 API，默认 `deepseek-v4-flash`。
 - Frontend：React、Vite、TypeScript、Tailwind、shadcn 风格组件、lucide-react。
 - Deploy：Docker Compose、宿主机 Nginx、GitHub Actions self-hosted runner。
+
+## CLI 常用命令
+
+```text
+/status
+/model deepseek
+/rag 风控
+/memory search 风控
+/experiment 研究ETH趋势突破
+/live intents
+/live execute loi_...
+/evals
+```
 
 ## 本地启动
 
@@ -49,4 +63,3 @@ uv run uvicorn hypertrade.main:app --app-dir backend/src --host 0.0.0.0 --port 3
 - `docs/architecture/`：每个模块的中英双语架构说明。
 - `docs/contracts/`：Sprint 合同。
 - `deploy/`：Nginx 和服务器部署脚本。
-

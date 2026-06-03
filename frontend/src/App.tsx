@@ -46,6 +46,9 @@ type AgentRun = {
   id: string;
   status: string;
   report_markdown: string;
+  run_state_json?: {
+    current_node?: string;
+  };
   trace_events: TraceEvent[];
 };
 
@@ -127,6 +130,17 @@ type BacktestSummary = {
   created_at: string;
 };
 
+type StrategyExperimentSummary = {
+  id: string;
+  prompt: string;
+  status: string;
+  research_id: string;
+  backtest_id: string;
+  report_markdown: string;
+  report_json: Record<string, unknown>;
+  created_at: string;
+};
+
 type LiveOrderIntent = {
   id: string;
   environment: string;
@@ -138,6 +152,8 @@ type LiveOrderIntent = {
   price: string | null;
   reason: string;
   decision_reason: string;
+  risk_status?: string;
+  exchange_order_id?: string;
   created_at: string;
 };
 
@@ -147,7 +163,26 @@ type MemoryItem = {
   content: string;
   source_run_id: string;
   source_tool: string;
+  tags?: string[];
+  usage_count?: number;
+  importance?: string;
+  confidence?: string;
   created_at: string;
+};
+
+type RagHit = {
+  source_path: string;
+  title: string;
+  chunk_index: number;
+  score: number;
+  content_preview: string;
+};
+
+type EvalStatus = {
+  status: string;
+  case_count: number;
+  cases: Array<{ name: string; status: string; expectation?: string }>;
+  mode: string;
 };
 
 type HarnessOverview = {
@@ -192,12 +227,14 @@ type HarnessOverview = {
   strategy_lab: {
     latest_research: StrategyResearchSummary | null;
     latest_backtest: BacktestSummary | null;
+    latest_experiment: StrategyExperimentSummary | null;
   };
   live_orders: {
     total_count: number;
     pending_approval_count: number;
     recent: LiveOrderIntent[];
   };
+  evals: EvalStatus;
 };
 
 const copy = {
@@ -287,7 +324,15 @@ const copy = {
     initialCash: "初始资金",
     candleSource: "数据源",
     strategyKey: "策略",
-    fullBacktest: "完整回测"
+    fullBacktest: "完整回测",
+    switchProvider: "切换 Provider",
+    currentStage: "当前阶段",
+    searchRag: "搜索 RAG",
+    searchMemory: "搜索 Memory",
+    execute: "执行",
+    experiment: "实验工作流",
+    latestExperiment: "最新实验",
+    evals: "Agent 评测"
   },
   en: {
     product: "HyperTrade",
@@ -375,7 +420,15 @@ const copy = {
     initialCash: "Initial Cash",
     candleSource: "Source",
     strategyKey: "Strategy",
-    fullBacktest: "Full Backtest"
+    fullBacktest: "Full Backtest",
+    switchProvider: "Switch Provider",
+    currentStage: "Current Stage",
+    searchRag: "Search RAG",
+    searchMemory: "Search Memory",
+    execute: "Execute",
+    experiment: "Experiment Workflow",
+    latestExperiment: "Latest Experiment",
+    evals: "Agent Evals"
   }
 } satisfies Record<Language, Record<string, string>>;
 
@@ -474,12 +527,19 @@ const previewOverview: HarnessOverview = {
   },
   strategy_lab: {
     latest_research: null,
-    latest_backtest: null
+    latest_backtest: null,
+    latest_experiment: null
   },
   live_orders: {
     total_count: 0,
     pending_approval_count: 0,
     recent: []
+  },
+  evals: {
+    status: "preview",
+    case_count: 0,
+    mode: "deterministic",
+    cases: []
   }
 };
 
@@ -508,6 +568,10 @@ function App() {
   const [liveBusy, setLiveBusy] = useState(false);
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
   const [selectedMemoryId, setSelectedMemoryId] = useState("");
+  const [memoryQuery, setMemoryQuery] = useState("");
+  const [ragQuery, setRagQuery] = useState("risk");
+  const [ragHits, setRagHits] = useState<RagHit[]>([]);
+  const [providerBusy, setProviderBusy] = useState(false);
   const [showRawMarkdown, setShowRawMarkdown] = useState(false);
   const [backtestSymbol, setBacktestSymbol] = useState("BTC");
   const [backtestBar, setBacktestBar] = useState("1H");
@@ -559,8 +623,9 @@ function App() {
     [activeOverview, t]
   );
 
-  const refreshMemoryItems = useCallback(async () => {
-    const response = await fetch("/api/memory", { credentials: "include" });
+  const refreshMemoryItems = useCallback(async (query = "") => {
+    const path = query ? `/api/memory?query=${encodeURIComponent(query)}` : "/api/memory";
+    const response = await fetch(path, { credentials: "include" });
     if (response.ok) {
       const payload = (await response.json()) as { items: MemoryItem[] };
       setMemoryItems(payload.items);
@@ -736,6 +801,54 @@ function App() {
     }
   }
 
+  async function handleStrategyExperiment() {
+    setStrategyBusy(true);
+    try {
+      const response = await fetch("/api/strategy/experiments", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: strategyPrompt })
+      });
+      if (response.ok) {
+        await refreshOverview();
+      }
+    } finally {
+      setStrategyBusy(false);
+    }
+  }
+
+  async function handleProviderSwitch(provider: string) {
+    setProviderBusy(true);
+    try {
+      const response = await fetch("/api/harness/provider-selection", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider })
+      });
+      if (response.ok) {
+        await refreshOverview();
+      }
+    } finally {
+      setProviderBusy(false);
+    }
+  }
+
+  async function handleRagSearch() {
+    const response = await fetch(`/api/rag/search?query=${encodeURIComponent(ragQuery)}`, {
+      credentials: "include"
+    });
+    if (response.ok) {
+      const payload = (await response.json()) as { hits: RagHit[] };
+      setRagHits(payload.hits);
+    }
+  }
+
+  async function handleMemorySearch() {
+    await refreshMemoryItems(memoryQuery);
+  }
+
   async function handleMarketTool(kind: "price" | "candles" | "compare") {
     setMarketResult(`${t.overviewLoading}...`);
     const limit = Number.parseInt(marketLimit, 10) || 100;
@@ -800,6 +913,21 @@ function App() {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: `harness ${decision}` })
+      });
+      if (response.ok) {
+        await refreshOverview();
+      }
+    } finally {
+      setLiveBusy(false);
+    }
+  }
+
+  async function handleIntentExecute(intentId: string) {
+    setLiveBusy(true);
+    try {
+      const response = await fetch(`/api/live/order-intents/${intentId}/execute`, {
+        method: "POST",
+        credentials: "include"
       });
       if (response.ok) {
         await refreshOverview();
@@ -982,6 +1110,23 @@ function App() {
                 <div className="mini-block">
                   <span>{t.providers}</span>
                   <strong>{providerLabel(defaultProvider, t)}</strong>
+                  <label className="mt-3 grid gap-1.5">
+                    <span className="text-[11px] uppercase text-ink/45">
+                      {t.switchProvider}
+                    </span>
+                    <select
+                      className="field-light"
+                      disabled={providerBusy}
+                      onChange={(event) => void handleProviderSwitch(event.target.value)}
+                      value={defaultProvider?.name ?? "deepseek"}
+                    >
+                      {activeOverview.providers.map((provider) => (
+                        <option key={provider.name} value={provider.name}>
+                          {provider.name} / {provider.key_status}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
                 <div className="mini-block" id="rag">
                   <span>{t.rag}</span>
@@ -1008,6 +1153,43 @@ function App() {
                     </span>
                   </div>
                 ))}
+              </div>
+
+              <div className="mt-6 rounded-md border border-ink/10 bg-paper/60 p-3">
+                <div className="grid grid-cols-[1fr_auto] gap-2">
+                  <input
+                    className="field-light"
+                    onChange={(event) => setRagQuery(event.target.value)}
+                    placeholder={t.searchRag}
+                    value={ragQuery}
+                  />
+                  <button className="icon-button" onClick={handleRagSearch} type="button">
+                    <Brain size={14} />
+                    {t.query}
+                  </button>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {ragHits.length === 0 ? (
+                    <div className="empty-row">{t.rag}</div>
+                  ) : (
+                    ragHits.slice(0, 4).map((hit) => (
+                      <div className="status-row items-start" key={`${hit.source_path}-${hit.chunk_index}`}>
+                        <div className="min-w-0">
+                          <div className="font-semibold">{hit.title}</div>
+                          <div className="truncate font-mono text-xs text-ink/45">
+                            {hit.source_path}#{hit.chunk_index}
+                          </div>
+                          <p className="mt-1 max-h-9 overflow-hidden text-xs text-ink/55">
+                            {hit.content_preview}
+                          </p>
+                        </div>
+                        <span className="font-mono text-xs text-brass">
+                          {hit.score.toFixed(2)}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1042,6 +1224,13 @@ function App() {
               <div className="mt-4 trace-list">
                 <div className="px-1 py-2 text-xs font-semibold uppercase text-ink/45">
                   {t.agentProgress}
+                </div>
+                <div className="trace-row">
+                  <Bot size={14} className="text-brass" />
+                  <span className="text-xs">{t.currentStage}</span>
+                  <span className="ml-auto font-mono text-xs text-ink/55">
+                    {run.run_state_json?.current_node ?? "preview"}
+                  </span>
                 </div>
                 {agentProgress.length === 0 ? (
                   <div className="empty-row my-3">{t.overviewLoading}</div>
@@ -1088,6 +1277,18 @@ function App() {
                 </div>
                 <MemoryStick size={18} className="text-brass" />
               </div>
+              <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
+                <input
+                  className="field-light"
+                  onChange={(event) => setMemoryQuery(event.target.value)}
+                  placeholder={t.searchMemory}
+                  value={memoryQuery}
+                />
+                <button className="icon-button" onClick={handleMemorySearch} type="button">
+                  <Brain size={14} />
+                  {t.query}
+                </button>
+              </div>
               <div className="mt-4 space-y-2">
                 {memoryItems.length === 0 ? (
                   <div className="empty-row">{t.noMemoryItems}</div>
@@ -1106,6 +1307,11 @@ function App() {
                       <span className="rounded border border-ink/10 px-2 py-1 text-xs">
                         {item.kind}
                       </span>
+                      {item.usage_count ? (
+                        <span className="rounded border border-brass/25 px-2 py-1 text-xs text-brass">
+                          {item.usage_count}
+                        </span>
+                      ) : null}
                     </button>
                   ))
                 )}
@@ -1143,6 +1349,15 @@ function App() {
                     </div>
                   </div>
                   <div className="markdown-report">{renderMarkdown(selectedMemory.content)}</div>
+                  {selectedMemory.tags?.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedMemory.tags.map((tag) => (
+                        <span className="rounded border border-ink/10 px-2 py-1 text-xs" key={tag}>
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="empty-row mt-4">{t.noMemoryItems}</div>
@@ -1401,6 +1616,10 @@ function App() {
                         <div className="mt-1 text-xs text-ink/45">
                           {intent.environment} / {intent.status}
                         </div>
+                        <div className="mt-1 text-xs text-ink/45">
+                          risk: {intent.risk_status ?? "pending"}
+                          {intent.exchange_order_id ? ` / order ${intent.exchange_order_id}` : ""}
+                        </div>
                       </div>
                       {intent.status === "pending_approval" ? (
                         <div className="flex shrink-0 gap-2">
@@ -1423,6 +1642,16 @@ function App() {
                             {t.reject}
                           </button>
                         </div>
+                      ) : intent.status === "approved" ? (
+                        <button
+                          className="icon-button"
+                          disabled={liveBusy}
+                          onClick={() => handleIntentExecute(intent.id)}
+                          type="button"
+                        >
+                          <Send size={14} />
+                          {t.execute}
+                        </button>
                       ) : (
                         <span className="rounded border border-ink/15 px-2 py-1 text-xs">
                           {intent.status}
@@ -1528,11 +1757,20 @@ function App() {
                   <LineChart size={16} />
                   {t.fullBacktest}
                 </button>
+                <button
+                  className="button-secondary"
+                  disabled={strategyBusy}
+                  onClick={handleStrategyExperiment}
+                  type="button"
+                >
+                  <TestTube2 size={16} />
+                  {t.experiment}
+                </button>
               </div>
             </div>
 
             <div className="panel">
-              <div className="grid grid-cols-2 gap-5 max-md:grid-cols-1">
+              <div className="grid grid-cols-3 gap-5 max-xl:grid-cols-2 max-md:grid-cols-1">
                 <div>
                   <h3 className="section-title">{t.latestResearch}</h3>
                   {activeOverview.strategy_lab.latest_research ? (
@@ -1593,6 +1831,23 @@ function App() {
                     </div>
                   ) : (
                     <div className="empty-row mt-3">{t.noBacktest}</div>
+                  )}
+                </div>
+                <div>
+                  <h3 className="section-title">{t.latestExperiment}</h3>
+                  {activeOverview.strategy_lab.latest_experiment ? (
+                    <div className="mt-3 strategy-card">
+                      <span className="font-mono text-xs text-ink/45">
+                        {activeOverview.strategy_lab.latest_experiment.id}
+                      </span>
+                      <strong>{activeOverview.strategy_lab.latest_experiment.status}</strong>
+                      <p>{activeOverview.strategy_lab.latest_experiment.prompt}</p>
+                      <span className="font-mono text-xs text-brass">
+                        {activeOverview.strategy_lab.latest_experiment.backtest_id}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="empty-row mt-3">{t.latestExperiment}</div>
                   )}
                 </div>
               </div>
@@ -1656,13 +1911,31 @@ function App() {
             </div>
             <div className="wide-strip">
               <Brain size={16} className="text-brass" />
-              <span>PostgreSQL</span>
-              <strong>pgvector / jobs</strong>
+              <span>{t.evals}</span>
+              <strong>
+                {activeOverview.evals.status} / {activeOverview.evals.case_count}
+              </strong>
             </div>
             <div className="wide-strip">
               <Radio size={16} className="text-signal" />
               <span>Deploy</span>
               <strong>3333 / 3334</strong>
+            </div>
+          </section>
+          <section className="mt-5 panel">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="section-title">{t.evals}</h2>
+              <span className="font-mono text-xs text-ink/45">{activeOverview.evals.mode}</span>
+            </div>
+            <div className="mt-4 grid grid-cols-5 gap-2 max-xl:grid-cols-2 max-sm:grid-cols-1">
+              {activeOverview.evals.cases.map((item) => (
+                <div className="mini-block" key={item.name}>
+                  <span>{item.name}</span>
+                  <strong className={item.status === "passed" ? "text-signal" : "text-danger"}>
+                    {item.status}
+                  </strong>
+                </div>
+              ))}
             </div>
           </section>
           {harnessError ? <div className="mt-3 text-sm text-danger">API {harnessError}</div> : null}

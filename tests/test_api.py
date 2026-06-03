@@ -57,7 +57,13 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     )
     if "当前无法获取实时 OKX 行情" in body["report_markdown"]:
         assert body["report_json"]["data_source"] == "unavailable"
-    assert body["trace_events"][0]["tool_name"] == "market.summary"
+    trace_names = [event["tool_name"] for event in body["trace_events"]]
+    assert trace_names[0] == "graph.intent_classify"
+    assert "graph.plan_tools" in trace_names
+    assert "graph.reflect" in trace_names
+    assert "graph.final_report" in trace_names
+    assert "market.summary" in trace_names
+    assert body["run_state_json"]["current_node"] == "final_report"
 
     overview = client.get("/api/harness/overview").json()
 
@@ -66,13 +72,33 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     assert overview["agent_runs"]["total_count"] == 1
     assert overview["rag"]["document_count"] == 1
     assert overview["memory"]["active_count"] == 1
-    assert overview["trace"]["total_count"] == 3
+    assert overview["trace"]["total_count"] >= 9
     assert overview["providers"][0]["name"] == "deepseek"
     assert overview["tools"][-1]["requires_approval"] is True
     assert overview["paper"]["session"]["status"] == "running"
 
+    rag_hits = client.get("/api/rag/search?query=risk").json()["hits"]
+    assert rag_hits[0]["title"] == "risk"
+    assert "api_key" not in rag_hits[0]
+    memory_hits = client.get("/api/memory?query=market").json()["items"]
+    assert memory_hits[0]["tags"]
+    assert memory_hits[0]["usage_count"] >= 1
+
     paper_status = client.get("/api/paper/status").json()
     assert paper_status["session"]["status"] == "running"
+
+    evals = client.get("/api/evals/status").json()
+    assert evals["status"] == "passed"
+    expected_eval_cases = {
+        "tool_selection",
+        "rag_citation",
+        "memory_behavior",
+        "risk_refusal",
+        "testnet_order_safety",
+    }
+    assert expected_eval_cases == {
+        case["name"] for case in evals["cases"]
+    }
 
     pause = client.post("/api/paper/control", json={"action": "pause"}).json()
     assert pause["session"]["status"] == "paused"
@@ -98,6 +124,10 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
         json={"reason": "again"},
     )
     assert duplicate_approval.status_code == 400
+    executed = client.post(f"/api/live/order-intents/{intent['id']}/execute").json()
+    assert executed["status"] == "execution_failed"
+    assert executed["risk_status"] == "allowed"
+    assert executed["execution"]["request"]["api_key"] == ""
 
     paused_overview = client.get("/api/harness/overview").json()
     assert paused_overview["paper"]["session"]["status"] == "running"
@@ -137,6 +167,44 @@ def test_api_streams_agent_run_events(tmp_path):
     assert "event: tool_started" in body
     assert "event: tool_completed" in body
     assert "event: run_completed" in body
+
+
+def test_api_can_switch_active_provider_without_exposing_keys(tmp_path):
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    knowledge_dir = tmp_path / "knowledge"
+    knowledge_dir.mkdir()
+    app = create_app(
+        settings=Settings(
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            KNOWLEDGE_DIR=knowledge_dir,
+            DEEPSEEK_API_KEY="",
+            OPENROUTER_API_KEY="",
+        ),
+        db=db,
+    )
+    client = TestClient(app)
+    assert client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "secret"},
+    ).status_code == 200
+
+    switched = client.post(
+        "/api/harness/provider-selection",
+        json={"provider": "openrouter"},
+    )
+
+    assert switched.status_code == 200
+    body = switched.json()
+    assert body["default_provider"] == "openrouter"
+    assert all("api_key" not in provider for provider in body["providers"])
+    selected = next(provider for provider in body["providers"] if provider["name"] == "openrouter")
+    assert selected["default"] is True
+    assert selected["key_status"] == "missing"
+    run = client.post("/api/agent/runs", json={"prompt": "请做行情归纳"}).json()
+    assert run["status"] == "completed"
+    assert run["report_json"]["data_source"] in {"okx_rest", "unavailable"}
 
 
 def test_api_exposes_deterministic_market_shortcuts(monkeypatch, tmp_path):

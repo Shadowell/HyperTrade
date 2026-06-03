@@ -139,6 +139,16 @@ const overview = {
       report_markdown: "# Backtest Report",
       report_json: {},
       created_at: "2026-05-27T00:00:00+08:00"
+    },
+    latest_experiment: {
+      id: "exp_live",
+      prompt: "研究ETH趋势突破",
+      status: "completed",
+      research_id: "srch_live",
+      backtest_id: "bt_live",
+      report_markdown: "# Experiment",
+      report_json: {},
+      created_at: "2026-05-27T00:00:00+08:00"
     }
   },
   live_orders: {
@@ -156,8 +166,19 @@ const overview = {
         price: null,
         reason: "fixture",
         decision_reason: "",
+        risk_status: "allowed",
+        exchange_order_id: "",
         created_at: "2026-05-27T00:00:00+08:00"
       }
+    ]
+  },
+  evals: {
+    status: "passed",
+    case_count: 5,
+    mode: "deterministic",
+    cases: [
+      { name: "tool_selection", status: "passed" },
+      { name: "rag_citation", status: "passed" }
     ]
   }
 };
@@ -186,6 +207,8 @@ test("renders harness observability from live overview", async () => {
               content: "**ETH** trend reviewed",
               source_run_id: "run_live",
               source_tool: "memory.write",
+              tags: ["agent_note"],
+              usage_count: 1,
               created_at: "2026-05-27T00:00:00+08:00"
             }
           ]
@@ -210,13 +233,17 @@ test("renders harness observability from live overview", async () => {
   expect(screen.getAllByText("AAA-USDT-SWAP").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("Strategy Lab")).toBeInTheDocument();
   expect(screen.getByText("momentum_breakout_v1")).toBeInTheDocument();
-  expect(screen.getByText("bt_live")).toBeInTheDocument();
+  expect(screen.getAllByText("bt_live").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("exp_live")).toBeInTheDocument();
   expect(screen.getByText("0.014000%")).toBeInTheDocument();
   expect(screen.getByText("Live Approval")).toBeInTheDocument();
   expect(screen.getByText("loi_live")).toBeInTheDocument();
   expect(screen.getByText("ETH-USDT-SWAP buy 0.01")).toBeInTheDocument();
+  expect(screen.getByText("risk: allowed")).toBeInTheDocument();
   expect(screen.getByText("行情工具")).toBeInTheDocument();
   expect(screen.getByText("Memory 管理")).toBeInTheDocument();
+  expect(screen.getAllByText("Agent 评测").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("tool_selection")).toBeInTheDocument();
   expect((await screen.findAllByText("mem_live")).length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("报告阅读")).toBeInTheDocument();
   expect(screen.getByText("完整回测")).toBeInTheDocument();
