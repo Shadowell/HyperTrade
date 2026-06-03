@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 23 report, memory, and backtest UX deployed to `47.79.36.92` at SHA `3a83b18`.
+- Last verified state: Sprints 24-31 Agent capability roadmap deployed to `47.79.36.92` at SHA `4730898`.
 
 ## Active Contract
 
-- `docs/contracts/sprint-31-observability-evals-runbooks.md` (completed locally, pending commit/deploy)
+- `docs/contracts/sprint-31-observability-evals-runbooks.md` (completed and deployed)
 
 ## Latest Completed Work
 
@@ -55,7 +55,11 @@
 - Added Sprint 30 strategy experiment workflow locally: hypothesis/data/backtest/critique/revision/report graph, `strategy_experiments`, API/CLI/frontend surfaces.
 - Added Sprint 31 observability/evals/runbooks locally: deterministic eval suite, `/api/evals/status`, CLI `/evals`, frontend eval panel, and operations runbooks.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 72 tests.
-- Local commit SHA is recorded by `git rev-parse --short HEAD` during deployment smoke.
+- Implementation commit `4730898` pushed to `origin/main`; GitHub Actions run `26862283002` completed successfully and recorded deployed SHA `4730898c0b5bf9ce7778da230afb1930e427b910`.
+- Server smoke passed for Sprints 24-31: server-local API `GET 127.0.0.1:3334/api/health` and Nginx `GET 127.0.0.1:3333/api/health` returned OK.
+- Server authenticated `/api/harness/overview` smoke returned default provider `deepseek` with key status `configured`, `359` tickers, `12` tools, `4` RAG chunks, `17` active memory items, `33` Agent runs, `110` trace events, `0` pending live intents, and eval suite `passed` with `5` cases.
+- Server CLI smoke passed through host `hypertrade --remote http://127.0.0.1:3334`: `/status`, `/model`, `/evals`, `/rag 风控`, and `/memory search 风控` all returned stable output.
+- Server Agent graph smoke passed with `hypertrade --remote http://127.0.0.1:3334 ask "看下ETH行情"`: run `run_387de54f5531475f8d02` completed with graph trace events for `intent_classify`, `plan_tools`, `approval_check`, `execute_tool`, `reflect`, and `final_report`, plus market ticker/candle tool calls.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 67 tests.
 - Server deployed SHA `3a83b18`; frontend build produced `index-BLcqGC9-.js` and `index-Dty7kLGl.css`.
 - Server smoke passed: API and Nginx health OK; authenticated overview returned `359` tickers, `17` active memory items, `0` pending live order intents; authenticated `/api/memory` returned `17` items.
@@ -163,11 +167,11 @@
 - OKX live WebSocket ingestion is implemented but not exercised against the remote server in this local run.
 - V1 does not include automatic PostgreSQL backup.
 - Sprint 13 adds live OKX candle input, but does not persist historical candles to PostgreSQL.
-- Testnet order execution remains documented as a later sprint.
+- OKX Testnet signed execution is implemented and documented, but this smoke pass did not place an external Testnet order; use `docs/runbooks/okx-testnet-order-smoke.md` for an explicit tiny-size order smoke.
 - Public `http://47.79.36.92:3333/api/health` timed out from the current local environment after Sprint 15 deploy, while server-local Nginx/API health checks passed; likely requires cloud security group or caller IP whitelist review.
 
 ## Recommended Next Steps
 
 1. Check cloud security group / caller IP whitelist for public port `3333`.
 2. Add an archived candle source reader for BitPro file-store data if server data expands beyond SQLite.
-3. Start the next execution sprint: paper trading close/reset controls, position risk rules, or Testnet approval-gated order path.
+3. Run an explicit OKX Testnet tiny-size order smoke after confirming the server `.env` testnet credentials and desired symbol/size.
