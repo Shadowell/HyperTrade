@@ -62,6 +62,7 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Sprint 29 OKX Testnet signed order execution after approval and risk check.
 - Sprint 30 multi-step strategy experiment workflow.
 - Sprint 31 deterministic Agent eval suite and operations runbooks.
+- Sprint 32 learning-oriented source comments and tool usage guide.
 
 ## V1 Out of Scope
 
@@ -102,5 +103,6 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Developer can create, approve, and execute OKX Testnet order intents after risk checks.
 - Developer can run `/experiment <prompt>` to create strategy research, backtest, critique, and next experiment report.
 - Developer can run `/evals` and inspect deterministic Agent eval status.
+- Developer can use `docs/knowledge/tool-usage-guide.md` to learn each Agent tool surface and follow related source-code comments.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.

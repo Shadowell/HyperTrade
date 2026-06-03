@@ -1,3 +1,11 @@
+"""Markdown knowledge-base ingestion and citation-ready RAG search.
+
+This service is deliberately simple: it scans `docs/knowledge`, chunks Markdown,
+stores chunk metadata, and returns source-aware hits. The deterministic embedding
+fallback keeps tests keyless; a production embedding provider can replace the
+embedding function without changing API/CLI/frontend callers.
+"""
+
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -45,6 +53,8 @@ class RagService:
                 if existing is not None and existing.content_hash == digest:
                     continue
                 if existing is not None:
+                    # Hash-based incremental ingest lets the worker rescan every
+                    # few minutes without duplicating unchanged chunks.
                     session.execute(delete(RagChunk).where(RagChunk.document_id == existing.id))
                     existing.content_hash = digest
                     existing.title = self._title(content, path)
@@ -58,6 +68,8 @@ class RagService:
                     session.add(document)
                     session.flush()
                 for index, chunk in enumerate(self._chunk(content)):
+                    # `embedding_json` keeps backward compatibility with early
+                    # tests; `embedding_vector` is the v2 field used by search.
                     session.add(
                         RagChunk(
                             document_id=document.id,
@@ -80,6 +92,8 @@ class RagService:
             scored: list[RagHit] = []
             for chunk in chunks:
                 content_fold = chunk.content.casefold()
+                # Hybrid score: lexical matches help short Chinese/English
+                # queries, while cosine similarity gives vector-style behavior.
                 term_score = sum(1 for term in query_terms if term in content_fold)
                 vector_score = _cosine_similarity(query_embedding, chunk.embedding_vector or [])
                 score = float(term_score) + vector_score
@@ -120,6 +134,8 @@ class RagService:
 
     @staticmethod
     def _deterministic_embedding(content: str, *, dimensions: int = 16) -> list[float]:
+        # This is not a semantic model. It is a stable stand-in so tests can
+        # verify the RAG pipeline without external Qwen/OpenAI credentials.
         digest = sha256(content.encode("utf-8")).digest()
         return [digest[index % len(digest)] / 255 for index in range(dimensions)]
 

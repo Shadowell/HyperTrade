@@ -71,3 +71,9 @@ In interactive chat, slash commands inspect harness state without starting a new
 /live execute loi_...
 /evals
 ```
+
+## Learning Guide
+
+For a guided map of Agent graph, tool calls, provider routing, RAG, Memory,
+risk, Testnet execution, CLI, frontend, tests, and deployment smoke, read
+`docs/knowledge/tool-usage-guide.md`.

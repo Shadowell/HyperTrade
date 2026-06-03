@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprints 24-31 Agent capability roadmap deployed to `47.79.36.92` at SHA `4730898`.
+- Last verified state: Sprints 24-31 Agent capability roadmap deployed to `47.79.36.92` at SHA `8c8b178`.
 
 ## Active Contract
 
-- `docs/contracts/sprint-31-observability-evals-runbooks.md` (completed and deployed)
+- `docs/contracts/sprint-32-learning-comments-tool-guide.md` (in progress locally)
 
 ## Latest Completed Work
 
@@ -60,6 +60,7 @@
 - Server authenticated `/api/harness/overview` smoke returned default provider `deepseek` with key status `configured`, `359` tickers, `12` tools, `4` RAG chunks, `17` active memory items, `33` Agent runs, `110` trace events, `0` pending live intents, and eval suite `passed` with `5` cases.
 - Server CLI smoke passed through host `hypertrade --remote http://127.0.0.1:3334`: `/status`, `/model`, `/evals`, `/rag 风控`, and `/memory search 风控` all returned stable output.
 - Server Agent graph smoke passed with `hypertrade --remote http://127.0.0.1:3334 ask "看下ETH行情"`: run `run_387de54f5531475f8d02` completed with graph trace events for `intent_classify`, `plan_tools`, `approval_check`, `execute_tool`, `reflect`, and `final_report`, plus market ticker/candle tool calls.
+- Started Sprint 32 learning pass: added project rule for learning-oriented comments, created Sprint 32 contract, added explanatory comments across Agent graph/tool/provider/RAG/memory/risk/live/strategy/CLI/API modules, and added `docs/knowledge/tool-usage-guide.md`.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 67 tests.
 - Server deployed SHA `3a83b18`; frontend build produced `index-BLcqGC9-.js` and `index-Dty7kLGl.css`.
 - Server smoke passed: API and Nginx health OK; authenticated overview returned `359` tickers, `17` active memory items, `0` pending live order intents; authenticated `/api/memory` returned `17` items.

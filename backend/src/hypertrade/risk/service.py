@@ -1,3 +1,11 @@
+"""Pre-trade risk checks shared by paper/live execution surfaces.
+
+RiskEngine is the safety gate in front of order intents and Testnet execution.
+Mainnet execution is blocked here even if a caller accidentally reaches the
+live service. Keeping these rules centralized makes API, CLI, frontend, and
+Agent-created intents show the same risk result.
+"""
+
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -36,6 +44,8 @@ class RiskEngine:
             "max_order_notional_usdt": str(self._max_order_notional()),
             "max_open_intents": self.settings.risk_max_open_intents,
         }
+        # V1 only allows OKX Testnet execution. Mainnet may still create an
+        # auditable intent, but the execution path must remain blocked.
         if environment != "testnet":
             violations.append("mainnet execution is forbidden")
         if not inst_id.endswith("-SWAP"):
@@ -48,6 +58,8 @@ class RiskEngine:
         mark_price = price or self._latest_price(inst_id)
         checks["estimated_price"] = str(mark_price) if mark_price is not None else ""
         if mark_price is not None:
+            # Notional is estimated from the limit price when available; market
+            # orders use the latest stored ticker price.
             notional = size * mark_price
             checks["estimated_notional_usdt"] = str(notional)
             if notional > self._max_order_notional():

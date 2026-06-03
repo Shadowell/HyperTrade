@@ -1,3 +1,11 @@
+"""Terminal harness for learning and operating HyperTrade.
+
+The CLI has two modes: local AgentKernel execution for development, and remote
+API execution for the deployed server. Slash commands are intentionally mapped
+to concrete API/service calls so a learner can test each tool without asking the
+LLM to plan first.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -25,6 +33,8 @@ from hypertrade.tools.registry import ToolDefinition, ToolRegistry
 
 
 class AgentClient(Protocol):
+    """Shared interface implemented by local and remote CLI clients."""
+
     def login(self) -> None: ...
 
     def run_agent(self, prompt: str) -> dict[str, Any]: ...
@@ -708,6 +718,8 @@ def run_chat(
         if not prompt:
             continue
         if prompt.startswith("/"):
+            # Slash commands are deterministic shortcuts. They inspect or run a
+            # specific tool surface without starting a free-form Agent run.
             handle_slash_command(prompt, client=client, output=output)
             continue
         render_run_stream(client, prompt, output=output)
@@ -792,6 +804,8 @@ def _banner_colors(output: TextIO) -> dict[str, str]:
 
 def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -> None:
     name = command.split(maxsplit=1)[0].lower()
+    # Keep this dispatcher flat and explicit. It doubles as the learning map for
+    # CLI -> Agent/tool/API wiring.
     if name in {"/help", "/?", "/commands", "/command"}:
         render_slash_help(output=output)
     elif name == "/status":

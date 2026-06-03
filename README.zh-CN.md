@@ -38,6 +38,10 @@ HyperTrade 是一个独立的 Agent 交易系统学习与作品项目。它不�
 /evals
 ```
 
+## 学习指南
+
+如果想按 Agent 工具链学习代码，请从 `docs/knowledge/tool-usage-guide.md` 开始。它按 Agent graph、Tool Call、Provider、RAG、Memory、风控、Testnet 执行、CLI、前端、测试和部署 smoke 组织入口。
+
 ## 本地启动
 
 ```bash

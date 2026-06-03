@@ -24,6 +24,10 @@ Before substantial work, read:
 6. If requirements, architecture, or API contracts change, update `docs/spec.md` and the active contract in the same change.
 7. MANDATORY: after `./scripts/check.sh` passes for implementation work on `main`, you MUST commit and push to `origin/main` so GitHub Actions deploys to production (`47.79.36.92`). Never push secrets or unfinished work.
 
+## Learning-Oriented Comments
+
+HyperTrade is also a learning project. When adding or changing core Agent code, prefer concise comments that explain why a tool, provider, RAG, memory, risk, or execution boundary exists. Do not comment every line; comment the orchestration points where a reader needs to understand the Agent engineering workflow.
+
 ## Standard Loop
 
 1. Read current project state.
@@ -48,4 +52,3 @@ Preferred entrypoint:
 - Live order tools require approval gates.
 - Reports must remain research outputs and must not claim to be investment advice.
 - Server-only secrets live in `/opt/hypertrade/.env`.
-

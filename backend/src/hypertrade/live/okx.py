@@ -1,3 +1,11 @@
+"""Signed OKX REST client for approval-gated Testnet execution.
+
+Only the execution service should call this client. The client handles the OKX
+signature shape and adds the simulated-trading header when `OKX_TESTNET=true`.
+Secrets are never returned from this module; `redacted_order_request` exists so
+execution audits can store useful context without storing credentials.
+"""
+
 from __future__ import annotations
 
 import base64
@@ -37,6 +45,8 @@ class OkxSignedRestClient:
         path = "/api/v5/trade/order"
         body_text = json.dumps(body, separators=(",", ":"))
         timestamp = _timestamp()
+        # OKX signs timestamp + method + path + raw body. The body must match
+        # the exact bytes sent to the exchange.
         headers = {
             "OK-ACCESS-KEY": self.settings.okx_api_key,
             "OK-ACCESS-SIGN": _sign(
@@ -51,6 +61,7 @@ class OkxSignedRestClient:
             "Content-Type": "application/json",
         }
         if self.settings.okx_testnet:
+            # This header routes orders to the OKX simulated trading environment.
             headers["x-simulated-trading"] = "1"
         with httpx.Client(base_url=self.settings.okx_rest_url, timeout=15) as client:
             response = client.post(path, content=body_text, headers=headers)

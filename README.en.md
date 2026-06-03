@@ -38,6 +38,13 @@ HyperTrade is an independent agent-first crypto trading research and execution s
 /evals
 ```
 
+## Learning Guide
+
+Start with `docs/knowledge/tool-usage-guide.md` if you want to learn the code by
+Agent capability. It maps Agent graph, tool calling, providers, RAG, Memory,
+risk, Testnet execution, CLI, frontend, tests, and deployment smoke to the
+relevant commands and source files.
+
 ## Local Start
 
 ```bash

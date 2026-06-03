@@ -1,4 +1,9 @@
-"""LLM-driven agent planning loop using DeepSeek function calling."""
+"""LLM-driven planning loop using provider function/tool calling.
+
+AgentPlanner only decides which tool names and JSON arguments to request. It
+does not touch databases, exchanges, or secrets; AgentKernel owns trusted tool
+execution. This split makes provider output easy to test and safe to inspect.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +18,8 @@ from hypertrade.providers.deepseek import ChatResponse
 ToolExecutor = Callable[[str, dict[str, Any]], dict[str, Any]]
 
 TOOL_SCHEMAS: list[dict[str, Any]] = [
+    # These schemas are sent to OpenAI-compatible providers. Keep descriptions
+    # specific: good tool descriptions are the first layer of tool-choice quality.
     {
         "type": "function",
         "function": {

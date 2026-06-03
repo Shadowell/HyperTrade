@@ -1,3 +1,11 @@
+"""Multi-step strategy research workflow.
+
+The experiment service is a small deterministic workflow that mirrors how an
+Agent should research a strategy: form a hypothesis, select data, run backtest,
+critique the result, suggest the next experiment, and render a report. It is
+kept deterministic so acceptance tests can verify the workflow without LLM keys.
+"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -14,6 +22,8 @@ class StrategyExperimentService:
         self.db = db
 
     def create(self, prompt: str) -> dict[str, Any]:
+        # Step 1/2: create a research artifact, then run the current default
+        # backtest path against that artifact.
         research = StrategyResearchService(self.db).create(prompt)
         backtest = BacktestService(self.db).run(research_id=str(research["id"]))
         report_json = {
@@ -42,6 +52,8 @@ class StrategyExperimentService:
             },
             "critique": _critique(backtest),
             "revision_suggestion": {
+                # The workflow stops at a recommendation. It does not mutate git
+                # strategy code or auto-promote ideas to live trading.
                 "next_experiment": (
                     "Sweep breakout window and stop-loss settings before any testnet signal use."
                 ),

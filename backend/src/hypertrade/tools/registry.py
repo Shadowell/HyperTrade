@@ -1,3 +1,10 @@
+"""Static catalog of tools exposed to the Agent and harness surfaces.
+
+The registry is intentionally metadata-only. It tells the LLM, API, CLI, and
+frontend what tools exist and which ones need approval, while the actual trusted
+execution lives in `hypertrade.agent.kernel.AgentKernel`.
+"""
+
 from dataclasses import dataclass
 
 
@@ -15,6 +22,8 @@ class ToolRegistry:
 
     @classmethod
     def default(cls) -> "ToolRegistry":
+        # Dot-separated names are used by the harness UI. The planner uses
+        # snake_case function names, and AgentKernel maps between the two worlds.
         return cls(
             [
                 ToolDefinition("market.summary", "Summarize OKX SWAP market state.", "market"),

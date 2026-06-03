@@ -1,3 +1,10 @@
+"""Runtime provider router.
+
+ProviderRuntime is the single place that turns environment configuration into a
+chat provider. It never exposes API keys in status payloads; API, CLI, and the
+frontend only see provider names, model names, and key status.
+"""
+
 from dataclasses import dataclass
 
 from hypertrade.config import Settings
@@ -21,6 +28,8 @@ class ProviderRuntime:
 
     def list_providers(self, *, selected: str | None = None) -> list[dict[str, object]]:
         selected_name = selected or self.settings.active_chat_provider
+        # Missing providers are still listed so the harness can teach the full
+        # ecosystem without requiring every API key during local development.
         providers = [
             ProviderDefinition(
                 name="deepseek",
@@ -73,6 +82,8 @@ class ProviderRuntime:
 
     def get_chat_provider(self, *, selected: str | None = None) -> ChatProvider | None:
         name = selected or self.settings.active_chat_provider
+        # Returning None is intentional: AgentKernel will use the deterministic
+        # graph path, which keeps tests and first-run demos stable without keys.
         if name == "deepseek" and self.settings.deepseek_api_key:
             return DeepSeekClient(
                 api_key=self.settings.deepseek_api_key,

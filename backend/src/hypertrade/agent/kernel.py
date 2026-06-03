@@ -1,3 +1,12 @@
+"""Observable Agent runtime used by API, CLI, and streaming endpoints.
+
+This module is the best starting point for learning the HyperTrade Agent flow.
+`AgentKernel` keeps one public interface (`run_chat`) while the internals look
+like a small graph: classify intent, plan tools, check approval, execute tools,
+reflect, and write the final report. Every graph node is persisted as trace so
+the frontend harness and CLI can show what the Agent is doing.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -36,6 +45,8 @@ class CompletedAgentRun:
 
 
 class AgentKernel:
+    """Coordinate provider planning, tool execution, trace, RAG, and memory."""
+
     def __init__(
         self,
         db: Database,
@@ -65,6 +76,8 @@ class AgentKernel:
         run_id = self._create_run(prompt)
         _emit(event_sink, {"event": "run_started", "run_id": run_id, "status": "running"})
         try:
+            # The first two graph nodes are intentionally lightweight. They make
+            # a run observable before any LLM call or tool call can fail.
             self._graph_node(
                 run_id,
                 "intent_classify",
@@ -73,6 +86,9 @@ class AgentKernel:
                 event_sink=event_sink,
             )
             provider = ProviderRuntime(settings).get_chat_provider(selected=self.provider_name)
+            # Provider routing is isolated here: the planner can be DeepSeek,
+            # OpenRouter, Qwen, etc., while all downstream tool execution stays
+            # provider-agnostic.
             self._graph_node(
                 run_id,
                 "plan_tools",
@@ -121,6 +137,9 @@ class AgentKernel:
         executor = self._build_executor(run_id, event_sink=event_sink)
         result: PlannerResult = planner.run(prompt, executor)
 
+        # Planner tool records are written as business traces after the graph
+        # node traces. Keeping both lets learners inspect graph state and actual
+        # tool payloads separately.
         for record in result.tool_calls:
             self._trace(run_id, record.tool_name, record.input_json, record.output_json)
 
@@ -161,6 +180,8 @@ class AgentKernel:
         event_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> ToolExecutor:
         def executor(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+            # Only live order intent creation enters the approval family. Market,
+            # RAG, memory, and research tools remain auto-executable in V1.
             self._graph_node(
                 run_id,
                 "approval_check",
@@ -184,6 +205,9 @@ class AgentKernel:
                     "input_json": args,
                 },
             )
+            # This dispatch table is the Agent "tool call" bridge. The LLM only
+            # selects a name and JSON arguments; trusted Python code performs the
+            # actual database, OKX, RAG, memory, or strategy operation.
             if tool_name == "market_summary":
                 result = self._market_summary_payload()
             elif tool_name == "market_ticker":
@@ -291,6 +315,8 @@ class AgentKernel:
         *,
         event_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
+        # The fallback path is deliberately deterministic. It keeps local tests,
+        # demos, and first-time setup useful even when no provider API key exists.
         self._graph_node(
             run_id,
             "approval_check",
@@ -506,6 +532,9 @@ class AgentKernel:
         *,
         event_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
+        # Graph state is duplicated into both trace_events and run_state_json:
+        # trace_events are append-only audit records; run_state_json is a compact
+        # "current state" view for the harness UI and CLI.
         self._trace(run_id, f"graph.{node}", input_json, output_json)
         with self.db.session() as session:
             run = session.get(AgentRun, run_id)

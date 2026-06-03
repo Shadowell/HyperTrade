@@ -1,3 +1,11 @@
+"""Audited long-term memory for Agent runs.
+
+Memory is different from RAG: RAG reads curated documents, while Memory stores
+runtime observations and preferences produced by Agent/tool activity. Every item
+keeps source run/tool metadata so the harness can explain where a memory came
+from and let an operator disable it.
+"""
+
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -24,6 +32,8 @@ class MemoryService:
         normalized_kind = _normalize_kind(kind)
         normalized_tags = _normalize_tags(tags or [], normalized_kind)
         with self.db.session() as session:
+            # Exact dedupe keeps the Agent from writing the same observation on
+            # every run. Reuse is still audited through usage_count/last_used_at.
             existing = session.scalar(
                 select(MemoryItem)
                 .where(MemoryItem.disabled.is_(False))
@@ -84,6 +94,9 @@ class MemoryService:
             filtered: list[MemoryItem] = []
             for item in items:
                 tags = [str(value).casefold() for value in item.tags]
+                # Search is intentionally transparent for learning: query, kind,
+                # and tag filters are applied in Python before future vector or
+                # full-text ranking layers are added.
                 if normalized_kind and item.kind != normalized_kind:
                     continue
                 if normalized_tag and normalized_tag not in tags:

@@ -1,3 +1,12 @@
+"""Provider adapter layer for chat models.
+
+HyperTrade keeps model-specific details here so Agent planning can depend on a
+small `ChatProvider` protocol instead of DeepSeek/OpenAI/OpenRouter/Qwen SDK
+details. This is the same boundary many enterprise Agent systems use: provider
+configuration is outside the Agent graph, while tool schemas and messages stay
+inside the graph.
+"""
+
 from __future__ import annotations
 
 import json
@@ -22,6 +31,8 @@ class ChatResponse:
 
 
 class ChatProvider(Protocol):
+    """Minimal interface needed by the Agent planner."""
+
     name: str
     model: str
 
@@ -33,6 +44,8 @@ class ChatProvider(Protocol):
 
 
 class OpenAICompatibleChatProvider:
+    """Adapter for providers that implement the OpenAI chat-completions shape."""
+
     def __init__(self, *, name: str, api_key: str, base_url: str, model: str) -> None:
         self.name = name
         self.model = model
@@ -45,6 +58,8 @@ class OpenAICompatibleChatProvider:
     ) -> ChatResponse:
         kwargs: dict[str, Any] = {"model": self.model, "messages": messages}
         if tools:
+            # Function/tool calling is enabled only when the planner supplies
+            # tool schemas. Plain chat calls can reuse the same provider adapter.
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
         response = self._client.chat.completions.create(**kwargs)
@@ -56,6 +71,8 @@ class OpenAICompatibleChatProvider:
                 try:
                     args: dict[str, Any] = json.loads(raw)
                 except json.JSONDecodeError:
+                    # Tool arguments come from the model, so they are treated as
+                    # untrusted input and normalized before reaching AgentKernel.
                     args = {}
                 if not isinstance(args, dict):
                     args = {}

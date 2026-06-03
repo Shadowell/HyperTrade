@@ -1,3 +1,10 @@
+"""Live/Testnet order intent lifecycle.
+
+This service separates proposal, approval, risk re-check, and exchange
+execution. Agent tools can create intents, but only approved Testnet intents can
+reach `OkxSignedRestClient`. Mainnet execution stays blocked through RiskEngine.
+"""
+
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -38,6 +45,8 @@ class LiveOrderIntentService:
             raise ValueError("limit order requires price")
         environment = "testnet" if self.settings.okx_testnet else "mainnet"
         inst_id = _normalize_symbol(symbol)
+        # Risk is checked at creation so blocked intents are visible immediately
+        # in CLI/API/frontend instead of waiting for human approval.
         risk = RiskEngine(self.db, settings=self.settings).check_order_intent(
             environment=environment,
             inst_id=inst_id,
@@ -79,6 +88,8 @@ class LiveOrderIntentService:
                 raise KeyError(intent_id)
             if intent.status != "pending_approval":
                 raise ValueError(f"intent is already {intent.status}")
+            # Approval re-runs risk because market price, open intents, or
+            # environment settings may have changed since creation.
             risk = RiskEngine(self.db, settings=self.settings).check_order_intent(
                 environment=intent.environment,
                 inst_id=intent.inst_id,
@@ -107,6 +118,8 @@ class LiveOrderIntentService:
                 raise ValueError(
                     f"intent must be approved before execution; current={intent.status}"
                 )
+            # Execution performs the final risk check. This is the last boundary
+            # before the external exchange API call.
             risk = RiskEngine(self.db, settings=self.settings).check_order_intent(
                 environment=intent.environment,
                 inst_id=intent.inst_id,
@@ -127,6 +140,8 @@ class LiveOrderIntentService:
                 price=_decimal_to_string(intent.price) if intent.price is not None else None,
             )
             if risk["status"] == "blocked" or not self.settings.okx_testnet:
+                # Mainnet or blocked risk results are persisted as auditable
+                # failures; they do not call OKX.
                 intent.status = "risk_blocked"
                 intent.execution_json = {
                     "request": request,
