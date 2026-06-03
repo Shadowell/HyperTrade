@@ -8,6 +8,7 @@ import {
   Clock3,
   CirclePause,
   CirclePlay,
+  CopyCheck,
   Languages,
   Layers3,
   LineChart,
@@ -16,9 +17,11 @@ import {
   Radio,
   RefreshCw,
   Send,
+  ShieldCheck,
   Sparkles,
   TestTube2,
-  TerminalSquare
+  TerminalSquare,
+  XCircle
 } from "lucide-react";
 import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
@@ -116,6 +119,20 @@ type BacktestSummary = {
   created_at: string;
 };
 
+type LiveOrderIntent = {
+  id: string;
+  environment: string;
+  status: string;
+  inst_id: string;
+  side: string;
+  order_type: string;
+  size: string;
+  price: string | null;
+  reason: string;
+  decision_reason: string;
+  created_at: string;
+};
+
 type HarnessOverview = {
   generated_at: string;
   providers: ProviderStatus[];
@@ -158,6 +175,11 @@ type HarnessOverview = {
   strategy_lab: {
     latest_research: StrategyResearchSummary | null;
     latest_backtest: BacktestSummary | null;
+  };
+  live_orders: {
+    total_count: number;
+    pending_approval_count: number;
+    recent: LiveOrderIntent[];
   };
 };
 
@@ -216,7 +238,28 @@ const copy = {
     noBacktest: "暂无回测记录",
     returnPct: "收益率",
     maxDrawdown: "最大回撤",
-    trades: "成交数"
+    trades: "成交数",
+    closeAll: "全部平仓",
+    reset: "重置",
+    marketTools: "行情工具",
+    price: "价格",
+    candles: "K线",
+    compare: "强弱对比",
+    symbol: "标的",
+    bar: "周期",
+    limit: "数量",
+    query: "查询",
+    liveApproval: "Live Approval",
+    createIntent: "创建意图",
+    approve: "批准",
+    reject: "拒绝",
+    orderIntent: "订单意图",
+    size: "数量",
+    side: "方向",
+    reason: "理由",
+    pending: "待审批",
+    noIntents: "暂无订单意图",
+    agentProgress: "Agent 状态"
   },
   en: {
     product: "HyperTrade",
@@ -272,7 +315,28 @@ const copy = {
     noBacktest: "No backtest yet",
     returnPct: "Return",
     maxDrawdown: "Max Drawdown",
-    trades: "Trades"
+    trades: "Trades",
+    closeAll: "Close All",
+    reset: "Reset",
+    marketTools: "Market Tools",
+    price: "Price",
+    candles: "Candles",
+    compare: "Compare",
+    symbol: "Symbol",
+    bar: "Bar",
+    limit: "Limit",
+    query: "Query",
+    liveApproval: "Live Approval",
+    createIntent: "Create Intent",
+    approve: "Approve",
+    reject: "Reject",
+    orderIntent: "Order Intent",
+    size: "Size",
+    side: "Side",
+    reason: "Reason",
+    pending: "Pending",
+    noIntents: "No order intents",
+    agentProgress: "Agent Progress"
   }
 } satisfies Record<Language, Record<string, string>>;
 
@@ -372,6 +436,11 @@ const previewOverview: HarnessOverview = {
   strategy_lab: {
     latest_research: null,
     latest_backtest: null
+  },
+  live_orders: {
+    total_count: 0,
+    pending_approval_count: 0,
+    recent: []
   }
 };
 
@@ -387,6 +456,17 @@ function App() {
   const [strategyPrompt, setStrategyPrompt] = useState("研究一个趋势突破策略");
   const [strategyBusy, setStrategyBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [agentProgress, setAgentProgress] = useState<string[]>([]);
+  const [marketSymbol, setMarketSymbol] = useState("ETH");
+  const [marketCompare, setMarketCompare] = useState("ETH SOL");
+  const [marketBar, setMarketBar] = useState("1H");
+  const [marketLimit, setMarketLimit] = useState("100");
+  const [marketResult, setMarketResult] = useState("");
+  const [intentSymbol, setIntentSymbol] = useState("ETH");
+  const [intentSide, setIntentSide] = useState<"buy" | "sell">("buy");
+  const [intentSize, setIntentSize] = useState("0.01");
+  const [intentReason, setIntentReason] = useState("manual harness approval test");
+  const [liveBusy, setLiveBusy] = useState(false);
   const t = copy[language];
   const activeOverview = overview ?? previewOverview;
   const defaultProvider =
@@ -416,7 +496,12 @@ function App() {
       },
       {
         label: t.approval,
-        value: activeOverview.tools.some((tool) => tool.requires_approval) ? "Gate" : "Open",
+        value:
+          activeOverview.live_orders.pending_approval_count > 0
+            ? String(activeOverview.live_orders.pending_approval_count)
+            : activeOverview.tools.some((tool) => tool.requires_approval)
+              ? "Gate"
+              : "Open",
         icon: Lock,
         tone: "danger"
       }
@@ -494,13 +579,24 @@ function App() {
 
   async function handleRun() {
     setBusy(true);
+    setAgentProgress([]);
     try {
-      const response = await fetch("/api/agent/runs", {
+      const response = await fetch("/api/agent/runs/stream", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt })
       });
+      if (response.ok && response.body) {
+        const finalRun = await consumeAgentStream(response.body, (line) =>
+          setAgentProgress((items) => [...items.slice(-8), line])
+        );
+        if (finalRun) {
+          setRun(finalRun);
+        }
+        await refreshOverview();
+        return;
+      }
       if (response.ok) {
         setRun((await response.json()) as AgentRun);
         await refreshOverview();
@@ -524,7 +620,7 @@ function App() {
     }
   }
 
-  async function handlePaperControl(action: "pause" | "resume") {
+  async function handlePaperControl(action: "pause" | "resume" | "close" | "reset") {
     const response = await fetch("/api/paper/control", {
       method: "POST",
       credentials: "include",
@@ -569,6 +665,79 @@ function App() {
       }
     } finally {
       setStrategyBusy(false);
+    }
+  }
+
+  async function handleMarketTool(kind: "price" | "candles" | "compare") {
+    setMarketResult(`${t.overviewLoading}...`);
+    const limit = Number.parseInt(marketLimit, 10) || 100;
+    let response: Response;
+    if (kind === "price") {
+      response = await fetch(`/api/market/ticker/${encodeURIComponent(marketSymbol)}`, {
+        credentials: "include"
+      });
+    } else if (kind === "candles") {
+      response = await fetch(
+        `/api/market/candles/${encodeURIComponent(marketSymbol)}?bar=${encodeURIComponent(
+          marketBar
+        )}&limit=${limit}`,
+        { credentials: "include" }
+      );
+    } else {
+      response = await fetch("/api/market/compare", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbols: marketCompare.split(/\s+/).filter(Boolean),
+          bar: marketBar,
+          limit
+        })
+      });
+    }
+    if (response.ok) {
+      setMarketResult(JSON.stringify(await response.json(), null, 2));
+    } else {
+      setMarketResult(`API ${response.status}`);
+    }
+  }
+
+  async function handleCreateIntent() {
+    setLiveBusy(true);
+    try {
+      const response = await fetch("/api/live/order-intents", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: intentSymbol,
+          side: intentSide,
+          size: intentSize,
+          reason: intentReason
+        })
+      });
+      if (response.ok) {
+        await refreshOverview();
+      }
+    } finally {
+      setLiveBusy(false);
+    }
+  }
+
+  async function handleIntentDecision(intentId: string, decision: "approve" | "reject") {
+    setLiveBusy(true);
+    try {
+      const response = await fetch(`/api/live/order-intents/${intentId}/${decision}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: `harness ${decision}` })
+      });
+      if (response.ok) {
+        await refreshOverview();
+      }
+    } finally {
+      setLiveBusy(false);
     }
   }
 
@@ -792,6 +961,21 @@ function App() {
                   {feishuState || t.sendFeishu}
                 </button>
               </div>
+              <div className="mt-4 trace-list">
+                <div className="px-1 py-2 text-xs font-semibold uppercase text-ink/45">
+                  {t.agentProgress}
+                </div>
+                {agentProgress.length === 0 ? (
+                  <div className="empty-row my-3">{t.overviewLoading}</div>
+                ) : (
+                  agentProgress.map((item, index) => (
+                    <div className="trace-row" key={`${item}-${index}`} style={cascadeStyle(index)}>
+                      <Clock3 size={14} className="text-brass" />
+                      <span className="min-w-0 truncate font-mono text-xs">{item}</span>
+                    </div>
+                  ))
+                )}
+              </div>
               <pre className="report-block">{busy ? `${t.overviewLoading}...` : run.report_markdown}</pre>
             </div>
           </section>
@@ -842,6 +1026,22 @@ function App() {
                   <CirclePlay size={16} />
                   {t.resume}
                 </button>
+                <button
+                  className="button-secondary"
+                  onClick={() => handlePaperControl("close")}
+                  type="button"
+                >
+                  <CopyCheck size={16} />
+                  {t.closeAll}
+                </button>
+                <button
+                  className="button-secondary"
+                  onClick={() => handlePaperControl("reset")}
+                  type="button"
+                >
+                  <RefreshCw size={16} />
+                  {t.reset}
+                </button>
               </div>
             </div>
 
@@ -879,6 +1079,188 @@ function App() {
                     )}
                   </div>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1">
+            <div className="panel">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="section-title">{t.marketTools}</h2>
+                  <p className="mt-1 text-sm text-ink/50">OKX SWAP deterministic tools</p>
+                </div>
+                <Radio size={18} className="text-signal" />
+              </div>
+              <div className="mt-4 grid grid-cols-[1fr_0.7fr_0.55fr] gap-3 max-md:grid-cols-1">
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] uppercase text-ink/45">{t.symbol}</span>
+                  <input
+                    className="field-light"
+                    onChange={(event) => setMarketSymbol(event.target.value)}
+                    value={marketSymbol}
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] uppercase text-ink/45">{t.bar}</span>
+                  <input
+                    className="field-light"
+                    onChange={(event) => setMarketBar(event.target.value)}
+                    value={marketBar}
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] uppercase text-ink/45">{t.limit}</span>
+                  <input
+                    className="field-light"
+                    onChange={(event) => setMarketLimit(event.target.value)}
+                    value={marketLimit}
+                  />
+                </label>
+              </div>
+              <label className="mt-3 grid gap-1.5">
+                <span className="text-[11px] uppercase text-ink/45">{t.compare}</span>
+                <input
+                  className="field-light"
+                  onChange={(event) => setMarketCompare(event.target.value)}
+                  value={marketCompare}
+                />
+              </label>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button className="button-primary" onClick={() => handleMarketTool("price")} type="button">
+                  <LineChart size={16} />
+                  {t.price}
+                </button>
+                <button className="button-secondary" onClick={() => handleMarketTool("candles")} type="button">
+                  <Activity size={16} />
+                  {t.candles}
+                </button>
+                <button className="button-secondary" onClick={() => handleMarketTool("compare")} type="button">
+                  <Layers3 size={16} />
+                  {t.compare}
+                </button>
+              </div>
+            </div>
+
+            <div className="panel">
+              <div className="flex items-center justify-between gap-4">
+                <h2 className="section-title">{t.query}</h2>
+                <TerminalSquare size={18} className="text-brass" />
+              </div>
+              <pre className="report-block">{marketResult || "{}"}</pre>
+            </div>
+          </section>
+
+          <section className="mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1">
+            <div className="panel">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="section-title">{t.liveApproval}</h2>
+                  <p className="mt-1 text-sm text-ink/50">
+                    {activeOverview.live_orders.pending_approval_count} {t.pending}
+                  </p>
+                </div>
+                <ShieldCheck size={18} className="text-danger" />
+              </div>
+              <div className="mt-4 grid grid-cols-[1fr_0.7fr_0.8fr] gap-3 max-md:grid-cols-1">
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] uppercase text-ink/45">{t.symbol}</span>
+                  <input
+                    className="field-light"
+                    onChange={(event) => setIntentSymbol(event.target.value)}
+                    value={intentSymbol}
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] uppercase text-ink/45">{t.side}</span>
+                  <select
+                    className="field-light"
+                    onChange={(event) => setIntentSide(event.target.value as "buy" | "sell")}
+                    value={intentSide}
+                  >
+                    <option value="buy">buy</option>
+                    <option value="sell">sell</option>
+                  </select>
+                </label>
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] uppercase text-ink/45">{t.size}</span>
+                  <input
+                    className="field-light"
+                    onChange={(event) => setIntentSize(event.target.value)}
+                    value={intentSize}
+                  />
+                </label>
+              </div>
+              <label className="mt-3 grid gap-1.5">
+                <span className="text-[11px] uppercase text-ink/45">{t.reason}</span>
+                <input
+                  className="field-light"
+                  onChange={(event) => setIntentReason(event.target.value)}
+                  value={intentReason}
+                />
+              </label>
+              <button
+                className="button-primary mt-3"
+                disabled={liveBusy}
+                onClick={handleCreateIntent}
+                type="button"
+              >
+                {liveBusy ? <RefreshCw className="animate-spin" size={16} /> : <Lock size={16} />}
+                {t.createIntent}
+              </button>
+            </div>
+
+            <div className="panel">
+              <div className="flex items-center justify-between gap-4">
+                <h2 className="section-title">{t.orderIntent}</h2>
+                <span className="font-mono text-xs text-ink/45">
+                  {activeOverview.live_orders.total_count}
+                </span>
+              </div>
+              <div className="mt-4 space-y-2">
+                {activeOverview.live_orders.recent.length === 0 ? (
+                  <div className="empty-row">{t.noIntents}</div>
+                ) : (
+                  activeOverview.live_orders.recent.map((intent) => (
+                    <div className="status-row items-start" key={intent.id}>
+                      <div className="min-w-0">
+                        <div className="font-mono text-xs text-ink/55">{intent.id}</div>
+                        <div className="mt-1 text-sm font-semibold">
+                          {intent.inst_id} {intent.side} {intent.size}
+                        </div>
+                        <div className="mt-1 text-xs text-ink/45">
+                          {intent.environment} / {intent.status}
+                        </div>
+                      </div>
+                      {intent.status === "pending_approval" ? (
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            className="icon-button"
+                            disabled={liveBusy}
+                            onClick={() => handleIntentDecision(intent.id, "approve")}
+                            type="button"
+                          >
+                            <ShieldCheck size={14} />
+                            {t.approve}
+                          </button>
+                          <button
+                            className="icon-button"
+                            disabled={liveBusy}
+                            onClick={() => handleIntentDecision(intent.id, "reject")}
+                            type="button"
+                          >
+                            <XCircle size={14} />
+                            {t.reject}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="rounded border border-ink/15 px-2 py-1 text-xs">
+                          {intent.status}
+                        </span>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </section>
@@ -1103,6 +1485,62 @@ function formatAge(seconds: number | null): string {
     return `${Math.floor(seconds / 60)}m`;
   }
   return `${Math.floor(seconds / 3600)}h`;
+}
+
+async function consumeAgentStream(
+  body: ReadableStream<Uint8Array>,
+  onProgress: (message: string) => void
+): Promise<AgentRun | null> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalRun: AgentRun | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() ?? "";
+    for (const chunk of chunks) {
+      const dataLine = chunk
+        .split("\n")
+        .find((line) => line.startsWith("data:"));
+      if (!dataLine) {
+        continue;
+      }
+      const payload = JSON.parse(dataLine.slice(5).trim()) as Record<string, unknown>;
+      const eventName = String(payload.event ?? "message");
+      if (eventName === "final" && isAgentRun(payload.run)) {
+        finalRun = payload.run;
+      } else if (eventName === "run_completed" && isAgentRun(payload.run)) {
+        finalRun = payload.run;
+      }
+      onProgress(formatAgentEvent(payload));
+    }
+  }
+
+  return finalRun;
+}
+
+function isAgentRun(value: unknown): value is AgentRun {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "id" in value &&
+      "status" in value &&
+      "report_markdown" in value
+  );
+}
+
+function formatAgentEvent(payload: Record<string, unknown>): string {
+  const eventName = String(payload.event ?? "message");
+  const toolName = payload.tool_name ? ` ${String(payload.tool_name)}` : "";
+  const status = payload.status ? ` ${String(payload.status)}` : "";
+  const runId = payload.run_id ? ` ${String(payload.run_id)}` : "";
+  return `${eventName}${toolName}${status}${runId}`.trim();
 }
 
 export default App;

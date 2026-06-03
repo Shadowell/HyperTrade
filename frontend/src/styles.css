@@ -90,6 +90,10 @@ body {
     @apply w-full rounded-md border border-paper/15 bg-paper/10 px-3 py-2 text-sm text-paper outline-none transition duration-300 placeholder:text-paper/35 focus:border-brass focus:bg-paper/[0.14];
   }
 
+  .field-light {
+    @apply w-full rounded-md border border-ink/15 bg-paper/70 px-3 py-2 text-sm text-ink outline-none transition duration-300 placeholder:text-ink/35 focus:border-brass focus:bg-white;
+  }
+
   .button-dark {
     @apply flex w-full items-center justify-center gap-2 rounded-md bg-paper px-3 py-2 text-sm font-semibold text-ink transition duration-300 hover:bg-white active:translate-y-px;
   }

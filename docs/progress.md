@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 21 live order intent approval gate deployed to `47.79.36.92` at SHA `9f02367`.
+- Last verified state: Sprint 22 frontend harness parity completed locally.
 
 ## Active Contract
 
-- `docs/contracts/sprint-21-live-order-intent-approval.md` (completed locally)
+- `docs/contracts/sprint-22-frontend-harness-parity.md` (completed locally)
 
 ## Latest Completed Work
 
@@ -44,6 +44,9 @@
 - Added Sprint 19 BitPro archived K-line backtest source locally: `BITPRO_SQLITE_PATH` can point to a BitPro SQLite DB, `/backtest --source bitpro --symbol ETH --bar 1H --limit 500` routes archived K-lines into Backtrader, and Compose mounts `${BITPRO_HOST_DATA_DIR:-/opt/bitpro/data}` read-only at `/bitpro-data`.
 - Added Sprint 20 paper lifecycle controls locally: API and CLI now support `/paper close [symbol]` and `/paper reset`, close positions with realized PnL/events/fills, and reset by creating a new auditable running session.
 - Added Sprint 21 live/testnet order approval gate locally: `live_order_intents` schema/service/API/CLI, Agent planner `live_order_intent` tool, and approve/reject status transitions without exchange execution.
+- Added Sprint 22 frontend harness parity locally: `/harness` now includes Agent streaming status, market ticker/candle/compare shortcuts, paper close/reset controls, and Live Approval intent create/approve/reject UI.
+- `npm exec --yes pnpm@10 -- -C frontend lint`, `test`, and `build` -> passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 67 tests.
 - `uv run pytest tests/test_paper_service.py tests/test_api.py tests/test_cli.py -q` -> 27 passed.
 - `uv run pytest tests/test_live_order_intents.py tests/test_api.py tests/test_cli.py -q` -> 23 passed.
 - `uv run ruff check backend tests`, `uv run mypy backend/src` -> clean.

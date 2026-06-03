@@ -140,6 +140,25 @@ const overview = {
       report_json: {},
       created_at: "2026-05-27T00:00:00+08:00"
     }
+  },
+  live_orders: {
+    total_count: 1,
+    pending_approval_count: 1,
+    recent: [
+      {
+        id: "loi_live",
+        environment: "testnet",
+        status: "pending_approval",
+        inst_id: "ETH-USDT-SWAP",
+        side: "buy",
+        order_type: "market",
+        size: "0.01",
+        price: null,
+        reason: "fixture",
+        decision_reason: "",
+        created_at: "2026-05-27T00:00:00+08:00"
+      }
+    ]
   }
 };
 
@@ -179,6 +198,10 @@ test("renders harness observability from live overview", async () => {
   expect(screen.getByText("momentum_breakout_v1")).toBeInTheDocument();
   expect(screen.getByText("bt_live")).toBeInTheDocument();
   expect(screen.getByText("0.014000%")).toBeInTheDocument();
+  expect(screen.getByText("Live Approval")).toBeInTheDocument();
+  expect(screen.getByText("loi_live")).toBeInTheDocument();
+  expect(screen.getByText("ETH-USDT-SWAP buy 0.01")).toBeInTheDocument();
+  expect(screen.getByText("行情工具")).toBeInTheDocument();
 });
 
 function jsonResponse(body: unknown, status = 200): Response {
