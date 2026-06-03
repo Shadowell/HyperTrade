@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 22 frontend harness parity completed locally.
+- Last verified state: Sprint 22 frontend harness parity deployed to `47.79.36.92` at SHA `a35e374`.
 
 ## Active Contract
 
@@ -47,6 +47,8 @@
 - Added Sprint 22 frontend harness parity locally: `/harness` now includes Agent streaming status, market ticker/candle/compare shortcuts, paper close/reset controls, and Live Approval intent create/approve/reject UI.
 - `npm exec --yes pnpm@10 -- -C frontend lint`, `test`, and `build` -> passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 67 tests.
+- Server deployed SHA `a35e374`; server-local `GET 127.0.0.1:3334/api/health` and Nginx `GET 127.0.0.1:3333/api/health` returned OK.
+- Server authenticated `/api/harness/overview` smoke returned `359` tickers, `0` pending live order intents, `1` recent live order intent, and paper session `running`.
 - `uv run pytest tests/test_paper_service.py tests/test_api.py tests/test_cli.py -q` -> 27 passed.
 - `uv run pytest tests/test_live_order_intents.py tests/test_api.py tests/test_cli.py -q` -> 23 passed.
 - `uv run ruff check backend tests`, `uv run mypy backend/src` -> clean.
