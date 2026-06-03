@@ -177,6 +177,20 @@ test("renders harness observability from live overview", async () => {
       if (url.endsWith("/api/harness/overview")) {
         return jsonResponse(overview);
       }
+      if (url.endsWith("/api/memory")) {
+        return jsonResponse({
+          items: [
+            {
+              id: "mem_live",
+              kind: "agent_note",
+              content: "**ETH** trend reviewed",
+              source_run_id: "run_live",
+              source_tool: "memory.write",
+              created_at: "2026-05-27T00:00:00+08:00"
+            }
+          ]
+        });
+      }
       return jsonResponse({}, 404);
     })
   );
@@ -189,7 +203,7 @@ test("renders harness observability from live overview", async () => {
   expect(screen.getAllByText("OKX SWAP").length).toBeGreaterThanOrEqual(1);
   expect(await screen.findByText("344")).toBeInTheDocument();
   expect(screen.getAllByText("DeepSeek / deepseek-v4-flash").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("run_live")).toBeInTheDocument();
+  expect(screen.getAllByText("run_live").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("BTC-USDT-SWAP")).toBeInTheDocument();
   expect(screen.getByText("Paper Runtime")).toBeInTheDocument();
   expect(screen.getAllByText("running").length).toBeGreaterThanOrEqual(1);
@@ -202,6 +216,10 @@ test("renders harness observability from live overview", async () => {
   expect(screen.getByText("loi_live")).toBeInTheDocument();
   expect(screen.getByText("ETH-USDT-SWAP buy 0.01")).toBeInTheDocument();
   expect(screen.getByText("行情工具")).toBeInTheDocument();
+  expect(screen.getByText("Memory 管理")).toBeInTheDocument();
+  expect((await screen.findAllByText("mem_live")).length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("报告阅读")).toBeInTheDocument();
+  expect(screen.getByText("完整回测")).toBeInTheDocument();
 });
 
 function jsonResponse(body: unknown, status = 200): Response {

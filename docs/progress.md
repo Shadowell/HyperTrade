@@ -4,11 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 22 frontend harness parity deployed to `47.79.36.92` at SHA `a35e374`.
+- Last verified state: Sprint 23 report, memory, and backtest UX completed locally.
 
 ## Active Contract
 
-- `docs/contracts/sprint-22-frontend-harness-parity.md` (completed locally)
+- `docs/contracts/sprint-23-frontend-report-memory-backtest.md` (completed locally)
 
 ## Latest Completed Work
 
@@ -45,6 +45,8 @@
 - Added Sprint 20 paper lifecycle controls locally: API and CLI now support `/paper close [symbol]` and `/paper reset`, close positions with realized PnL/events/fills, and reset by creating a new auditable running session.
 - Added Sprint 21 live/testnet order approval gate locally: `live_order_intents` schema/service/API/CLI, Agent planner `live_order_intent` tool, and approve/reject status transitions without exchange execution.
 - Added Sprint 22 frontend harness parity locally: `/harness` now includes Agent streaming status, market ticker/candle/compare shortcuts, paper close/reset controls, and Live Approval intent create/approve/reject UI.
+- Added Sprint 23 frontend UX locally: styled Markdown report reader with raw toggle, Memory Manager with inspect/disable, and full backtest parameter form for strategy/source/symbol/bar/limit/cash.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 67 tests.
 - `npm exec --yes pnpm@10 -- -C frontend lint`, `test`, and `build` -> passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 67 tests.
 - Server deployed SHA `a35e374`; server-local `GET 127.0.0.1:3334/api/health` and Nginx `GET 127.0.0.1:3333/api/health` returned OK.

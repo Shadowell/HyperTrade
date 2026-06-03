@@ -23,7 +23,15 @@ import {
   TerminalSquare,
   XCircle
 } from "lucide-react";
-import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  CSSProperties,
+  FormEvent,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState
+} from "react";
 
 type Language = "zh" | "en";
 
@@ -130,6 +138,15 @@ type LiveOrderIntent = {
   price: string | null;
   reason: string;
   decision_reason: string;
+  created_at: string;
+};
+
+type MemoryItem = {
+  id: string;
+  kind: string;
+  content: string;
+  source_run_id: string;
+  source_tool: string;
   created_at: string;
 };
 
@@ -259,7 +276,18 @@ const copy = {
     reason: "理由",
     pending: "待审批",
     noIntents: "暂无订单意图",
-    agentProgress: "Agent 状态"
+    agentProgress: "Agent 状态",
+    reportReader: "报告阅读",
+    rawMarkdown: "原始 Markdown",
+    memoryManager: "Memory 管理",
+    source: "来源",
+    disable: "禁用",
+    noMemoryItems: "暂无 Memory",
+    selectedMemory: "选中 Memory",
+    initialCash: "初始资金",
+    candleSource: "数据源",
+    strategyKey: "策略",
+    fullBacktest: "完整回测"
   },
   en: {
     product: "HyperTrade",
@@ -336,7 +364,18 @@ const copy = {
     reason: "Reason",
     pending: "Pending",
     noIntents: "No order intents",
-    agentProgress: "Agent Progress"
+    agentProgress: "Agent Progress",
+    reportReader: "Report Reader",
+    rawMarkdown: "Raw Markdown",
+    memoryManager: "Memory Manager",
+    source: "Source",
+    disable: "Disable",
+    noMemoryItems: "No memory items",
+    selectedMemory: "Selected Memory",
+    initialCash: "Initial Cash",
+    candleSource: "Source",
+    strategyKey: "Strategy",
+    fullBacktest: "Full Backtest"
   }
 } satisfies Record<Language, Record<string, string>>;
 
@@ -467,12 +506,23 @@ function App() {
   const [intentSize, setIntentSize] = useState("0.01");
   const [intentReason, setIntentReason] = useState("manual harness approval test");
   const [liveBusy, setLiveBusy] = useState(false);
+  const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
+  const [selectedMemoryId, setSelectedMemoryId] = useState("");
+  const [showRawMarkdown, setShowRawMarkdown] = useState(false);
+  const [backtestSymbol, setBacktestSymbol] = useState("BTC");
+  const [backtestBar, setBacktestBar] = useState("1H");
+  const [backtestLimit, setBacktestLimit] = useState("100");
+  const [backtestSource, setBacktestSource] = useState("sample");
+  const [backtestCash, setBacktestCash] = useState("100000");
+  const [backtestStrategy, setBacktestStrategy] = useState("momentum_breakout_v1");
   const t = copy[language];
   const activeOverview = overview ?? previewOverview;
   const defaultProvider =
     activeOverview.providers.find((provider) => provider.default) ?? activeOverview.providers[0];
   const traceEvents =
     run.id !== seedRun.id ? run.trace_events : activeOverview.trace.recent_events.slice(0, 6);
+  const selectedMemory =
+    memoryItems.find((item) => item.id === selectedMemoryId) ?? memoryItems[0] ?? null;
 
   const metrics = useMemo(
     () => [
@@ -509,12 +559,22 @@ function App() {
     [activeOverview, t]
   );
 
+  const refreshMemoryItems = useCallback(async () => {
+    const response = await fetch("/api/memory", { credentials: "include" });
+    if (response.ok) {
+      const payload = (await response.json()) as { items: MemoryItem[] };
+      setMemoryItems(payload.items);
+      setSelectedMemoryId((current) => current || payload.items[0]?.id || "");
+    }
+  }, []);
+
   const refreshOverview = useCallback(async () => {
     setRefreshing(true);
     try {
       const response = await fetch("/api/harness/overview", { credentials: "include" });
       if (response.ok) {
         setOverview((await response.json()) as HarnessOverview);
+        await refreshMemoryItems();
         setHarnessError("");
         setLoginState("ok");
         return;
@@ -525,7 +585,7 @@ function App() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [refreshMemoryItems]);
 
   useEffect(() => {
     let cancelled = false;
@@ -543,6 +603,7 @@ function App() {
         });
         if (overviewResponse.ok && !cancelled) {
           setOverview((await overviewResponse.json()) as HarnessOverview);
+          await refreshMemoryItems();
           setHarnessError("");
         }
       } finally {
@@ -556,7 +617,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshMemoryItems]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -657,7 +718,14 @@ function App() {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          research_id: activeOverview.strategy_lab.latest_research?.id ?? ""
+          research_id: activeOverview.strategy_lab.latest_research?.id ?? "",
+          strategy_key: backtestStrategy,
+          initial_cash: backtestCash,
+          symbol: backtestSymbol,
+          bar: backtestBar,
+          candle_limit: Number.parseInt(backtestLimit, 10) || 100,
+          candle_source: backtestSource,
+          use_live_candles: backtestSource === "okx"
         })
       });
       if (response.ok) {
@@ -738,6 +806,16 @@ function App() {
       }
     } finally {
       setLiveBusy(false);
+    }
+  }
+
+  async function handleDisableMemory(memoryId: string) {
+    const response = await fetch(`/api/memory/${memoryId}`, {
+      method: "DELETE",
+      credentials: "include"
+    });
+    if (response.ok) {
+      await refreshOverview();
     }
   }
 
@@ -976,7 +1054,99 @@ function App() {
                   ))
                 )}
               </div>
-              <pre className="report-block">{busy ? `${t.overviewLoading}...` : run.report_markdown}</pre>
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <h3 className="section-title">{t.reportReader}</h3>
+                <button
+                  className="icon-button"
+                  onClick={() => setShowRawMarkdown((value) => !value)}
+                  type="button"
+                >
+                  <TerminalSquare size={14} />
+                  {showRawMarkdown ? t.reportReader : t.rawMarkdown}
+                </button>
+              </div>
+              {showRawMarkdown ? (
+                <pre className="report-block">
+                  {busy ? `${t.overviewLoading}...` : run.report_markdown}
+                </pre>
+              ) : (
+                <div className="markdown-report">
+                  {busy ? t.overviewLoading : renderMarkdown(run.report_markdown)}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="mt-5 grid grid-cols-[0.9fr_1.1fr] gap-5 max-xl:grid-cols-1">
+            <div className="panel">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="section-title">{t.memoryManager}</h2>
+                  <p className="mt-1 text-sm text-ink/50">
+                    {activeOverview.memory.active_count} active / {activeOverview.memory.total_count} total
+                  </p>
+                </div>
+                <MemoryStick size={18} className="text-brass" />
+              </div>
+              <div className="mt-4 space-y-2">
+                {memoryItems.length === 0 ? (
+                  <div className="empty-row">{t.noMemoryItems}</div>
+                ) : (
+                  memoryItems.slice(0, 8).map((item) => (
+                    <button
+                      className={`memory-row ${
+                        selectedMemory?.id === item.id ? "memory-row-active" : ""
+                      }`}
+                      key={item.id}
+                      onClick={() => setSelectedMemoryId(item.id)}
+                      type="button"
+                    >
+                      <span className="font-mono text-xs text-ink/45">{item.id}</span>
+                      <span className="min-w-0 truncate text-left text-sm">{item.content}</span>
+                      <span className="rounded border border-ink/10 px-2 py-1 text-xs">
+                        {item.kind}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="panel">
+              <div className="flex items-center justify-between gap-4">
+                <h2 className="section-title">{t.selectedMemory}</h2>
+                {selectedMemory ? (
+                  <button
+                    className="icon-button"
+                    onClick={() => handleDisableMemory(selectedMemory.id)}
+                    type="button"
+                  >
+                    <XCircle size={14} />
+                    {t.disable}
+                  </button>
+                ) : null}
+              </div>
+              {selectedMemory ? (
+                <div className="mt-4 grid gap-3">
+                  <div className="grid grid-cols-3 gap-3 max-md:grid-cols-1">
+                    <div className="mini-block">
+                      <span>ID</span>
+                      <strong className="font-mono">{selectedMemory.id}</strong>
+                    </div>
+                    <div className="mini-block">
+                      <span>{t.source}</span>
+                      <strong className="font-mono">{selectedMemory.source_tool || "n/a"}</strong>
+                    </div>
+                    <div className="mini-block">
+                      <span>Run</span>
+                      <strong className="font-mono">{selectedMemory.source_run_id || "n/a"}</strong>
+                    </div>
+                  </div>
+                  <div className="markdown-report">{renderMarkdown(selectedMemory.content)}</div>
+                </div>
+              ) : (
+                <div className="empty-row mt-4">{t.noMemoryItems}</div>
+              )}
             </div>
           </section>
 
@@ -1279,6 +1449,62 @@ function App() {
                 onChange={(event) => setStrategyPrompt(event.target.value)}
                 value={strategyPrompt}
               />
+              <div className="mt-4 grid grid-cols-[1fr_0.75fr_0.75fr] gap-3 max-md:grid-cols-1">
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] uppercase text-ink/45">{t.strategyKey}</span>
+                  <input
+                    className="field-light"
+                    onChange={(event) => setBacktestStrategy(event.target.value)}
+                    value={backtestStrategy}
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] uppercase text-ink/45">{t.candleSource}</span>
+                  <select
+                    className="field-light"
+                    onChange={(event) => setBacktestSource(event.target.value)}
+                    value={backtestSource}
+                  >
+                    <option value="sample">sample</option>
+                    <option value="okx">okx</option>
+                    <option value="bitpro">bitpro</option>
+                  </select>
+                </label>
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] uppercase text-ink/45">{t.initialCash}</span>
+                  <input
+                    className="field-light"
+                    onChange={(event) => setBacktestCash(event.target.value)}
+                    value={backtestCash}
+                  />
+                </label>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-3 max-md:grid-cols-1">
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] uppercase text-ink/45">{t.symbol}</span>
+                  <input
+                    className="field-light"
+                    onChange={(event) => setBacktestSymbol(event.target.value)}
+                    value={backtestSymbol}
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] uppercase text-ink/45">{t.bar}</span>
+                  <input
+                    className="field-light"
+                    onChange={(event) => setBacktestBar(event.target.value)}
+                    value={backtestBar}
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] uppercase text-ink/45">{t.limit}</span>
+                  <input
+                    className="field-light"
+                    onChange={(event) => setBacktestLimit(event.target.value)}
+                    value={backtestLimit}
+                  />
+                </label>
+              </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   className="button-primary"
@@ -1300,7 +1526,7 @@ function App() {
                   type="button"
                 >
                   <LineChart size={16} />
-                  {t.runBacktest}
+                  {t.fullBacktest}
                 </button>
               </div>
             </div>
@@ -1485,6 +1711,61 @@ function formatAge(seconds: number | null): string {
     return `${Math.floor(seconds / 60)}m`;
   }
   return `${Math.floor(seconds / 3600)}h`;
+}
+
+function renderMarkdown(markdown: string): ReactNode {
+  const lines = markdown.split("\n");
+  const nodes: ReactNode[] = [];
+  let listItems: string[] = [];
+
+  function flushList() {
+    if (listItems.length === 0) {
+      return;
+    }
+    const items = listItems;
+    listItems = [];
+    nodes.push(
+      <ul key={`ul-${nodes.length}`}>
+        {items.map((item, index) => (
+          <li key={`${item}-${index}`}>{renderInlineMarkdown(item)}</li>
+        ))}
+      </ul>
+    );
+  }
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushList();
+      return;
+    }
+    if (trimmed.startsWith("- ")) {
+      listItems.push(trimmed.slice(2));
+      return;
+    }
+    flushList();
+    if (trimmed.startsWith("### ")) {
+      nodes.push(<h3 key={index}>{renderInlineMarkdown(trimmed.slice(4))}</h3>);
+    } else if (trimmed.startsWith("## ")) {
+      nodes.push(<h2 key={index}>{renderInlineMarkdown(trimmed.slice(3))}</h2>);
+    } else if (trimmed.startsWith("# ")) {
+      nodes.push(<h1 key={index}>{renderInlineMarkdown(trimmed.slice(2))}</h1>);
+    } else {
+      nodes.push(<p key={index}>{renderInlineMarkdown(trimmed)}</p>);
+    }
+  });
+  flushList();
+  return nodes.length > 0 ? nodes : <p>n/a</p>;
+}
+
+function renderInlineMarkdown(text: string): ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={index}>{part}</span>;
+  });
 }
 
 async function consumeAgentStream(
