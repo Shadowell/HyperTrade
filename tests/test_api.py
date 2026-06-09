@@ -31,6 +31,7 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
             ADMIN_PASSWORD="secret",
             KNOWLEDGE_DIR=knowledge_dir,
             DEEPSEEK_API_KEY="",
+            OKX_REST_URL="http://127.0.0.1:9",
         ),
         db=db,
     )

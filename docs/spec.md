@@ -2,15 +2,15 @@
 
 ## Product Summary
 
-HyperTrade is an independent agent-first crypto trading system for learning modern agent development and building a public portfolio project. V1 focuses on the complete agent ecosystem: provider configuration, tool calls, RAG, memory, trace, market ingestion, and a harness UI.
+HyperTrade is an independent production-oriented agent-first crypto trading system. V1 focuses on a stable agent capability platform: provider configuration, tool calls, RAG, memory, trace, market ingestion, risk gates, testnet execution, and operator-facing harnesses.
 
-HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开发流程并沉淀公开作品。V1 重点不是高频交易，而是完整 Agent 生态：Provider 配置、Tool Call、RAG、Memory、Trace、行情采集和可观测 Harness。
+HyperTrade 是一个独立的生产级 Agent 交易系统。V1 重点是稳定 Agent 能力平台：Provider 配置、Tool Call、RAG、Memory、Trace、行情采集、风控门禁、Testnet 执行和面向操作员的 Harness。
 
 ## Users
 
-- Individual developer learning agent engineering.
+- Operator running audited agent research and execution workflows.
 - Quant trader researching OKX perpetual swap market structure.
-- Portfolio reviewer evaluating practical AI-agent system design.
+- Engineer integrating stable external data and execution-state providers.
 
 ## Core User Journeys
 
@@ -62,7 +62,8 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Sprint 29 OKX Testnet signed order execution after approval and risk check.
 - Sprint 30 multi-step strategy experiment workflow.
 - Sprint 31 deterministic Agent eval suite and operations runbooks.
-- Sprint 32 learning-oriented source comments and tool usage guide.
+- Sprint 32 production-oriented project positioning and BitPro API tool-surface contract.
+- BitPro external API adapter contract for backtest data, base market data, paper/simulation state, and live trading state without copying BitPro business logic.
 
 ## V1 Out of Scope
 
@@ -70,6 +71,7 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Automatic investment advice or unattended real-money trading.
 - Milvus/Qdrant production vector clusters.
 - Historical K-line backfill, parameter optimization sweeps, and live/Testnet order generation from backtest results.
+- Direct BitPro database access or copied BitPro trading logic; HyperTrade consumes BitPro capabilities only through explicit API contracts.
 
 ## Acceptance
 
@@ -103,6 +105,7 @@ HyperTrade 是一个独立的 Agent 交易系统，用于学习现代 Agent 开�
 - Developer can create, approve, and execute OKX Testnet order intents after risk checks.
 - Developer can run `/experiment <prompt>` to create strategy research, backtest, critique, and next experiment report.
 - Developer can run `/evals` and inspect deterministic Agent eval status.
-- Developer can use `docs/knowledge/tool-usage-guide.md` to learn each Agent tool surface and follow related source-code comments.
+- Operator can use `docs/knowledge/tool-usage-guide.md` to validate each Agent tool surface and follow related operational source-code comments.
+- Operator can review the BitPro tool-surface requirements before wiring external data, backtest, paper/simulation, or live-state APIs into Agent tools.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.

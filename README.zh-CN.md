@@ -1,8 +1,8 @@
 # HyperTrade
 
-HyperTrade 是一个独立的 Agent 交易系统学习与作品项目。它不在 BitPro 项目下开发，也不复用 BitPro 的 AI 研发/自主交易逻辑；BitPro 只作为服务器部署方式和 OKX 环境变量形态参考。
+HyperTrade 是一个独立的生产级 Agent 交易研究与执行系统。它不在 BitPro 项目下开发，也不复用 BitPro 的 AI 研发/自主交易逻辑；BitPro 可以通过稳定 API 合同提供外部数据与交易状态能力，由 HyperTrade 封装成可审计工具。
 
-> 本项目仅用于研究、学习和工程展示，不构成任何投资建议。
+> 本项目输出仅用于研究辅助，不构成任何投资建议。
 
 ## 当前 V1 能力
 
@@ -38,9 +38,9 @@ HyperTrade 是一个独立的 Agent 交易系统学习与作品项目。它不�
 /evals
 ```
 
-## 学习指南
+## 运维指南
 
-如果想按 Agent 工具链学习代码，请从 `docs/knowledge/tool-usage-guide.md` 开始。它按 Agent graph、Tool Call、Provider、RAG、Memory、风控、Testnet 执行、CLI、前端、测试和部署 smoke 组织入口。
+如果要操作或验证 Agent 能力，请从 `docs/knowledge/tool-usage-guide.md` 开始。它按 Agent graph、Tool Call、Provider、RAG、Memory、风控、Testnet 执行、CLI、前端、测试和部署 smoke 组织入口。
 
 ## 本地启动
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository uses Codex as a delivery partner for HyperTrade, an independent agent-first trading research system. Codex should keep project state in files, work inside the active sprint contract, and never rely on chat history as the only source of truth.
+This repository uses Codex as a delivery partner for HyperTrade, an independent production-oriented agent-first trading research and execution system. Codex should keep project state in files, work inside the active sprint contract, and never rely on chat history as the only source of truth.
 
 ## Files To Read First
 
@@ -18,15 +18,15 @@ Before substantial work, read:
 
 1. Work only within the current sprint contract unless explicitly told to expand scope.
 2. HyperTrade is independent from BitPro; do not copy BitPro business logic.
-3. BitPro may only be used as a deployment and environment-shape reference.
+3. BitPro may provide external APIs and data surfaces through stable contracts; never copy BitPro business logic into HyperTrade.
 4. Never commit secrets, OKX credentials, provider keys, database files, or production `.env`.
 5. Update `docs/progress.md` after meaningful implementation steps.
 6. If requirements, architecture, or API contracts change, update `docs/spec.md` and the active contract in the same change.
 7. MANDATORY: after `./scripts/check.sh` passes for implementation work on `main`, you MUST commit and push to `origin/main` so GitHub Actions deploys to production (`47.79.36.92`). Never push secrets or unfinished work.
 
-## Learning-Oriented Comments
+## Production-Oriented Comments
 
-HyperTrade is also a learning project. When adding or changing core Agent code, prefer concise comments that explain why a tool, provider, RAG, memory, risk, or execution boundary exists. Do not comment every line; comment the orchestration points where a reader needs to understand the Agent engineering workflow.
+When adding or changing core Agent code, prefer concise comments that explain production boundaries: tool permissions, provider isolation, RAG/Memory auditability, risk gates, execution idempotency, and failure modes. Do not comment every line; comment orchestration points where future operators need to understand why the boundary exists.
 
 ## Standard Loop
 

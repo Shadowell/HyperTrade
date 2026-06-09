@@ -8,7 +8,7 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-32-learning-comments-tool-guide.md` (in progress locally)
+- `docs/contracts/sprint-32-production-agent-bitpro-tools.md` (in progress locally)
 
 ## Latest Completed Work
 
@@ -60,7 +60,7 @@
 - Server authenticated `/api/harness/overview` smoke returned default provider `deepseek` with key status `configured`, `359` tickers, `12` tools, `4` RAG chunks, `17` active memory items, `33` Agent runs, `110` trace events, `0` pending live intents, and eval suite `passed` with `5` cases.
 - Server CLI smoke passed through host `hypertrade --remote http://127.0.0.1:3334`: `/status`, `/model`, `/evals`, `/rag 风控`, and `/memory search 风控` all returned stable output.
 - Server Agent graph smoke passed with `hypertrade --remote http://127.0.0.1:3334 ask "看下ETH行情"`: run `run_387de54f5531475f8d02` completed with graph trace events for `intent_classify`, `plan_tools`, `approval_check`, `execute_tool`, `reflect`, and `final_report`, plus market ticker/candle tool calls.
-- Started Sprint 32 learning pass: added project rule for learning-oriented comments, created Sprint 32 contract, added explanatory comments across Agent graph/tool/provider/RAG/memory/risk/live/strategy/CLI/API modules, and added `docs/knowledge/tool-usage-guide.md`.
+- Reframed Sprint 32 toward production-grade Agent operation: project copy, source comments, and `docs/knowledge/tool-usage-guide.md` now emphasize stability, auditability, operator workflows, and BitPro API tool-surface requirements.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 67 tests.
 - Server deployed SHA `3a83b18`; frontend build produced `index-BLcqGC9-.js` and `index-Dty7kLGl.css`.
 - Server smoke passed: API and Nginx health OK; authenticated overview returned `359` tickers, `17` active memory items, `0` pending live order intents; authenticated `/api/memory` returned `17` items.
@@ -74,6 +74,8 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 67 tests.
 - Server deployed SHA `9f02367`; Alembic migrated `0003_strategy_backtest -> 0004_live_order_intents`; server-local `GET 127.0.0.1:3334/api/health` returned OK.
 - Server host CLI smoke passed: `/paper status` rendered the running paper session, `/live intent ETH buy 0.01 --reason deploy smoke` created pending testnet intent `loi_10c5e2b8e34f469cb5e7`, and `/live reject loi_10c5e2b8e34f469cb5e7 --reason deploy smoke cleanup` moved it to `rejected`.
+- Sprint 32 production repositioning completed locally: removed non-production project wording, replaced Sprint 32 contract with production Agent + BitPro tool-surface requirements, added `docs/architecture/17-bitpro-tool-adapter.md`, and fixed Agent market-summary tests to isolate OKX REST through injected settings.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, and pytest passed with 72 tests.
 
 - `uv run pytest -q` -> 33 passed (5 new planner tests).
 - `uv run ruff check` and `uv run mypy` -> clean.

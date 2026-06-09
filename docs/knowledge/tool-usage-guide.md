@@ -1,10 +1,10 @@
-# HyperTrade 工具使用指南
+# HyperTrade 工具运维指南
 
-这份文档用于学习 HyperTrade 的 Agent 工具链。它不是交易建议，也不包含任何密钥。
+这份文档用于操作和验证 HyperTrade 的 Agent 工具链。它不是交易建议，也不包含任何密钥。
 
 ## 1. Agent Graph
 
-用途：观察一次自由对话如何变成工具调用和最终报告。
+用途：验证一次自由对话如何变成工具调用、审计 trace 和最终报告。
 
 入口：
 
@@ -157,7 +157,7 @@ Memory 和 RAG 的区别：
 /compare ETH SOL --bar 4H --limit 100
 ```
 
-这些命令适合学习：
+这些命令适合验证：
 
 - symbol normalization：`ETH` -> `ETH-USDT-SWAP`
 - OKX REST 数据读取
@@ -197,7 +197,7 @@ Memory 和 RAG 的区别：
 
 ## 8. Paper Trading
 
-用途：学习自动模拟盘状态和生命周期控制。
+用途：验证自动模拟盘状态和生命周期控制。
 
 命令：
 
@@ -216,12 +216,12 @@ Memory 和 RAG 的区别：
 
 ## 9. Risk and OKX Testnet Execution
 
-用途：学习审批门、风控门和 Testnet signed order execution。
+用途：验证审批门、风控门和 Testnet signed order execution。
 
 创建意图：
 
 ```bash
-/live intent ETH buy 0.01 --reason learning smoke
+/live intent ETH buy 0.01 --reason ops smoke
 ```
 
 审批：
@@ -251,7 +251,7 @@ Memory 和 RAG 的区别：
 
 ## 10. Frontend Harness
 
-用途：用页面观察 Agent 工程生态。
+用途：用页面观察 Agent 运行状态、工具审计和风险边界。
 
 入口：
 

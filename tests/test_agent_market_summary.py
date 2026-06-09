@@ -33,7 +33,14 @@ def test_agent_chat_market_summary_creates_report_trace_and_memory(tmp_path):
     )
     RagService(db, knowledge_dir=knowledge_dir).scan_once()
 
-    kernel = AgentKernel(db, settings=Settings(DEEPSEEK_API_KEY="", KNOWLEDGE_DIR=tmp_path))
+    kernel = AgentKernel(
+        db,
+        settings=Settings(
+            DEEPSEEK_API_KEY="",
+            KNOWLEDGE_DIR=tmp_path,
+            OKX_REST_URL="http://127.0.0.1:9",
+        ),
+    )
     run = kernel.run_chat("请归纳一下当前 OKX 永续合约行情")
 
     assert run.status == "completed"

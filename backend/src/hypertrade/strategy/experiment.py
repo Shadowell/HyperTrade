@@ -144,7 +144,7 @@ def _render_experiment_report(
             "## Next Experiment",
             f"- {report_json['revision_suggestion']['next_experiment']}",
             "",
-            "风险提示：本报告仅用于研究和学习，不构成投资建议。",
+            "风险提示：本报告输出仅用于研究辅助，不构成投资建议。",
         ]
     )
 

@@ -1,6 +1,6 @@
 """FastAPI application wiring for the HyperTrade harness.
 
-The API is the bridge between the learning surfaces (frontend `/harness`, CLI
+The API is the bridge between the operator surfaces (frontend `/harness`, CLI
 remote mode, tests) and the backend services. Endpoints stay thin: they validate
 HTTP input, call the Agent/tool service, and return redacted runtime state.
 """

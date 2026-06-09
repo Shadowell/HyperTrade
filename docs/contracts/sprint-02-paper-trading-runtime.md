@@ -65,9 +65,9 @@ UI checks:
 ## Risks / Notes
 
 - This Sprint intentionally uses deterministic rules so the trading loop is auditable before adding Agent strategy research or optimization.
-- The signal engine is educational and must be labeled as simulated research, not investment advice.
+- The signal engine is deterministic and must be labeled as simulated research, not investment advice.
 - The worker may run on sparse ticker updates; the fill model should use latest available snapshots and record the snapshot time.
 
 ## Handoff
 
-- Sprint 03 should add strategy research/backtest workflow or a safer Testnet order-intent approval path, depending on which learning goal is higher priority after reviewing Sprint 02.
+- Sprint 03 should add strategy research/backtest workflow or a safer Testnet order-intent approval path, depending on which production capability is higher priority after reviewing Sprint 02.

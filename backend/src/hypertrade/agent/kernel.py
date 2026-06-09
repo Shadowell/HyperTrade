@@ -1,6 +1,6 @@
 """Observable Agent runtime used by API, CLI, and streaming endpoints.
 
-This module is the best starting point for learning the HyperTrade Agent flow.
+This module is the runtime boundary for the HyperTrade Agent flow.
 `AgentKernel` keeps one public interface (`run_chat`) while the internals look
 like a small graph: classify intent, plan tools, check approval, execute tools,
 reflect, and write the final report. Every graph node is persisted as trace so
@@ -138,7 +138,7 @@ class AgentKernel:
         result: PlannerResult = planner.run(prompt, executor)
 
         # Planner tool records are written as business traces after the graph
-        # node traces. Keeping both lets learners inspect graph state and actual
+        # node traces. Keeping both lets operators inspect graph state and actual
         # tool payloads separately.
         for record in result.tool_calls:
             self._trace(run_id, record.tool_name, record.input_json, record.output_json)
@@ -722,7 +722,7 @@ class AgentKernel:
 
     def _refresh_market_snapshot(self) -> tuple[str, str]:
         try:
-            settings = get_settings()
+            settings = self._settings if self._settings is not None else get_settings()
             tickers = asyncio.run(OkxRestClient(settings).fetch_swap_tickers())
             for ticker in tickers:
                 self.market.upsert_ticker_snapshot(

@@ -94,8 +94,8 @@ class MemoryService:
             filtered: list[MemoryItem] = []
             for item in items:
                 tags = [str(value).casefold() for value in item.tags]
-                # Search is intentionally transparent for learning: query, kind,
-                # and tag filters are applied in Python before future vector or
+                # Search stays transparent for auditability: query, kind, and
+                # tag filters are applied in Python before future vector or
                 # full-text ranking layers are added.
                 if normalized_kind and item.kind != normalized_kind:
                     continue

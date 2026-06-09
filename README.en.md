@@ -1,8 +1,8 @@
 # HyperTrade
 
-HyperTrade is an independent agent-first crypto trading research and execution system. It is not developed inside BitPro and does not copy BitPro's AI research or autonomous trading logic. BitPro is only a deployment and OKX environment reference.
+HyperTrade is an independent agent-first crypto trading research and execution system. It is not developed inside BitPro and does not copy BitPro's AI research or autonomous trading logic. BitPro can provide external data and execution-state APIs through stable contracts that HyperTrade exposes as auditable tools.
 
-> Research and learning project only. Nothing in this repository is investment advice.
+> Research output only. Nothing in this repository is investment advice.
 
 ## Current V1 Capabilities
 
@@ -38,10 +38,9 @@ HyperTrade is an independent agent-first crypto trading research and execution s
 /evals
 ```
 
-## Learning Guide
+## Operations Guide
 
-Start with `docs/knowledge/tool-usage-guide.md` if you want to learn the code by
-Agent capability. It maps Agent graph, tool calling, providers, RAG, Memory,
+Start with `docs/knowledge/tool-usage-guide.md` when operating or validating Agent capabilities. It maps Agent graph, tool calling, providers, RAG, Memory,
 risk, Testnet execution, CLI, frontend, tests, and deployment smoke to the
 relevant commands and source files.
 

@@ -4,7 +4,7 @@
 
 This document defines how to test whether HyperTrade Agent behavior is reasonable across tool calling, RAG, Memory, market research, strategy research, and backtesting. The tests focus on observable behavior, not exact LLM wording.
 
-> Research and learning project only. Nothing here is investment advice.
+> Research output only. Nothing here is investment advice.
 
 ## Automated Test Entry Points
 

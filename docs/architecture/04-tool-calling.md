@@ -10,6 +10,7 @@ Policy:
 - live order intent requires approval
 - every tool call must create a trace event
 - large outputs should be summarized before entering model context
+- external BitPro calls must go through explicit adapter tools with scopes, idempotency, and audit correlation
 
 Specific ticker lookup:
 
@@ -17,6 +18,7 @@ Specific ticker lookup:
 - `market_ticker` is for one listed OKX USDT perpetual swap symbol or instrument id.
 - `market_candles` is for recent OHLCV trend research on one OKX SWAP instrument.
 - `market_compare` is for comparing relative strength across 2-6 OKX SWAP instruments.
+- `bitpro.*` tools are reserved for external BitPro API capabilities such as backtest data, base market data, paper/simulation state, and live trading state.
 - Common user inputs are normalized to OKX instrument ids: `eth` -> `ETH-USDT-SWAP`,
   `SOL-USDT` -> `SOL-USDT-SWAP`, `doge_usdt` -> `DOGE-USDT-SWAP`.
 - The planner prompt instructs the LLM to choose `market_ticker` for any specific listed coin, not
@@ -36,6 +38,7 @@ ToolRegistry 是 Agent 可调用工具的唯一目录。Sprint 01 包含行情�
 - 实盘订单意图必须审批
 - 每次工具调用必须生成 trace event
 - 大结果进入模型上下文前要摘要
+- 外部 BitPro 调用必须通过显式 adapter tool，并带有权限 scope、幂等和审计关联
 
 单标的精确行情：
 
@@ -43,6 +46,7 @@ ToolRegistry 是 Agent 可调用工具的唯一目录。Sprint 01 包含行情�
 - `market_ticker` 用于一个已上线 OKX USDT 永续标的或 instrument id。
 - `market_candles` 用于一个 OKX SWAP 标的的近期 OHLCV 趋势研究。
 - `market_compare` 用于 2-6 个 OKX SWAP 标的之间的强弱比较。
+- `bitpro.*` 工具预留给外部 BitPro API 能力，例如回测数据、基础行情、模拟盘状态和实盘状态。
 - 常见输入会归一化为 OKX instrument id：`eth` -> `ETH-USDT-SWAP`，
   `SOL-USDT` -> `SOL-USDT-SWAP`，`doge_usdt` -> `DOGE-USDT-SWAP`。
 - planner prompt 明确要求：用户问任意具体币种时使用 `market_ticker`，不是只支持 BTC。
