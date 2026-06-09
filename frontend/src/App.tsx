@@ -242,20 +242,20 @@ type HarnessOverview = {
 const copy = {
   zh: {
     product: "HyperTrade",
-    harness: "Harness",
+    harness: "工作台",
     market: "行情摘要",
-    providers: "Provider",
-    tools: "Tool Call Trace",
-    memory: "Memory",
-    rag: "RAG",
-    risk: "非投资建议",
+    providers: "模型提供方",
+    tools: "工具调用链路",
+    memory: "记忆",
+    rag: "知识检索",
+    risk: "研究辅助",
     login: "登录",
     run: "发起归纳",
     prompt: "请做 OKX 全市场 SWAP 行情归纳",
     okx: "OKX SWAP",
-    live: "实时 Tickers",
-    report: "Agent Run",
-    fallback: "最近更新",
+    live: "行情覆盖",
+    report: "运行记录",
+    fallback: "数据延迟",
     approval: "实盘审批",
     severe: "严重异常",
     sendFeishu: "转发飞书",
@@ -267,14 +267,14 @@ const copy = {
     missing: "未配置",
     noRuns: "暂无运行记录",
     noMarket: "暂无行情快照",
-    operator: "Operator",
-    password: "Password",
-    providerMesh: "Provider Mesh",
-    dataPlane: "Data Plane",
-    agentPlane: "Agent Plane",
-    lastSync: "Last Sync",
+    operator: "管理员",
+    password: "密码",
+    providerMesh: "模型路由",
+    dataPlane: "数据平面",
+    agentPlane: "智能体平面",
+    lastSync: "最近同步",
     overviewLoading: "正在同步运行态",
-    paperRuntime: "Paper Runtime",
+    paperRuntime: "模拟盘运行",
     pause: "暂停",
     resume: "恢复",
     equity: "权益",
@@ -284,7 +284,7 @@ const copy = {
     fills: "成交",
     noPositions: "暂无模拟持仓",
     noFills: "暂无模拟成交",
-    strategyLab: "Strategy Lab",
+    strategyLab: "策略实验室",
     researchPrompt: "策略研究主题",
     runResearch: "生成研究",
     runBacktest: "运行回测",
@@ -305,7 +305,7 @@ const copy = {
     bar: "周期",
     limit: "数量",
     query: "查询",
-    liveApproval: "Live Approval",
+    liveApproval: "实盘审批",
     createIntent: "创建意图",
     approve: "批准",
     reject: "拒绝",
@@ -315,26 +315,57 @@ const copy = {
     reason: "理由",
     pending: "待审批",
     noIntents: "暂无订单意图",
-    agentProgress: "Agent 状态",
+    agentProgress: "智能体进度",
     reportReader: "报告阅读",
     rawMarkdown: "原始 Markdown",
-    memoryManager: "Memory 管理",
+    memoryManager: "记忆管理",
     source: "来源",
     disable: "禁用",
-    noMemoryItems: "暂无 Memory",
-    selectedMemory: "选中 Memory",
+    noMemoryItems: "暂无记忆",
+    selectedMemory: "选中记忆",
     initialCash: "初始资金",
     candleSource: "数据源",
     strategyKey: "策略",
     fullBacktest: "完整回测",
-    switchProvider: "切换 Provider",
+    switchProvider: "切换模型",
     currentStage: "当前阶段",
-    searchRag: "搜索 RAG",
-    searchMemory: "搜索 Memory",
+    searchRag: "搜索知识库",
+    searchMemory: "搜索记忆",
     execute: "执行",
     experiment: "实验工作流",
     latestExperiment: "最新实验",
-    evals: "Agent 评测"
+    evals: "智能体评测",
+    workbenchTitle: "智能体工作台",
+    workbenchSubtitle: "面向生产运行的智能体控制台，集中呈现模型、工具、行情、风控与外部数据接入状态。",
+    runtimeMonitor: "运行监控",
+    runtimeMonitorHint: "查看模型路由、工具调用、评测和数据新鲜度。",
+    runConsole: "运行控制",
+    runConsoleHint: "发起行情归纳，观察节点状态，并阅读结构化报告。",
+    marketKnowledge: "行情与知识",
+    executionResearch: "执行与实验",
+    bitproMcp: "BitPro MCP 接入",
+    bitproMcpHint: "HyperTrade 只通过稳定 MCP/API 合同读取 BitPro 数据，不复制 BitPro 业务逻辑。",
+    mcpCallOrder: "调用顺序",
+    mcpCapabilities: "1. bitpro_capabilities",
+    mcpHealth: "2. bitpro_health",
+    mcpSelectTool: "3. 选择只读工具",
+    mcpAudit: "4. 记录 trace 与审计字段",
+    marketData: "行情数据",
+    backtestData: "回测数据",
+    paperState: "模拟盘",
+    liveReadOnly: "实盘只读",
+    readOnlyDefault: "默认只读",
+    writeBlocked: "写工具需审批",
+    toolCatalog: "工具目录",
+    providerStatus: "模型状态",
+    systemStatus: "系统状态",
+    healthy: "健康",
+    stale: "待同步",
+    routeMemory: "记忆检索",
+    routeRag: "知识库",
+    dataContract: "数据合同",
+    latestResult: "最新结果",
+    auditBoundary: "审计边界"
   },
   en: {
     product: "HyperTrade",
@@ -430,7 +461,40 @@ const copy = {
     execute: "Execute",
     experiment: "Experiment Workflow",
     latestExperiment: "Latest Experiment",
-    evals: "Agent Evals"
+    evals: "Agent Evals",
+    workbenchTitle: "Agent Workbench",
+    workbenchSubtitle:
+      "Production operator console for models, tools, market data, risk, and external data access.",
+    runtimeMonitor: "Runtime Monitor",
+    runtimeMonitorHint: "Review provider routing, tool calls, evals, and data freshness.",
+    runConsole: "Run Console",
+    runConsoleHint: "Start a market summary, inspect nodes, and read structured reports.",
+    marketKnowledge: "Market and Knowledge",
+    executionResearch: "Execution and Research",
+    bitproMcp: "BitPro MCP Access",
+    bitproMcpHint:
+      "HyperTrade reads BitPro data only through stable MCP/API contracts and never copies BitPro business logic.",
+    mcpCallOrder: "Call Order",
+    mcpCapabilities: "1. bitpro_capabilities",
+    mcpHealth: "2. bitpro_health",
+    mcpSelectTool: "3. Select read tools",
+    mcpAudit: "4. Record trace and audit fields",
+    marketData: "Market Data",
+    backtestData: "Backtest Data",
+    paperState: "Paper",
+    liveReadOnly: "Live Read Only",
+    readOnlyDefault: "Read-only default",
+    writeBlocked: "Writes require approval",
+    toolCatalog: "Tool Catalog",
+    providerStatus: "Provider Status",
+    systemStatus: "System Status",
+    healthy: "Healthy",
+    stale: "Stale",
+    routeMemory: "Memory Search",
+    routeRag: "Knowledge Base",
+    dataContract: "Data Contract",
+    latestResult: "Latest Result",
+    auditBoundary: "Audit Boundary"
   }
 } satisfies Record<Language, Record<string, string>>;
 
@@ -545,6 +609,29 @@ const previewOverview: HarnessOverview = {
   }
 };
 
+const bitproMcpToolGroups = [
+  {
+    label: "行情数据",
+    tools: "market_symbols / market_klines / market_indicators",
+    note: "读取 symbol、K 线、指标与数据新鲜度"
+  },
+  {
+    label: "回测数据",
+    tools: "backtest_start_job / backtest_get_job / backtest_get_result",
+    note: "启动或读取 BitPro 拥有的回测任务与报告"
+  },
+  {
+    label: "模拟盘",
+    tools: "paper_dashboard / paper_events / paper_equity_curve",
+    note: "只读实例、权益曲线、成交和事件"
+  },
+  {
+    label: "实盘只读",
+    tools: "trading_balance / trading_positions / trading_open_orders",
+    note: "默认只做诊断读取，写工具必须独立审批"
+  }
+] as const;
+
 function App() {
   const [language, setLanguage] = useState<Language>("zh");
   const [activeSection, setActiveSection] = useState<NavSection>(() => activeSectionFromHash());
@@ -567,7 +654,7 @@ function App() {
   const [intentSymbol, setIntentSymbol] = useState("ETH");
   const [intentSide, setIntentSide] = useState<"buy" | "sell">("buy");
   const [intentSize, setIntentSize] = useState("0.01");
-  const [intentReason, setIntentReason] = useState("manual harness approval test");
+  const [intentReason, setIntentReason] = useState("手动审批测试");
   const [liveBusy, setLiveBusy] = useState(false);
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
   const [selectedMemoryId, setSelectedMemoryId] = useState("");
@@ -622,8 +709,8 @@ function App() {
           activeOverview.live_orders.pending_approval_count > 0
             ? String(activeOverview.live_orders.pending_approval_count)
             : activeOverview.tools.some((tool) => tool.requires_approval)
-              ? "Gate"
-              : "Open",
+              ? "需审批"
+              : "开放",
         icon: Lock,
         tone: "danger"
       }
@@ -984,7 +1071,7 @@ function App() {
             </div>
             <div>
               <div className="text-base font-semibold tracking-normal">{t.product}</div>
-              <div className="text-xs text-paper/55">Agent Trading Console</div>
+              <div className="text-xs text-paper/55">生产级交易智能体</div>
             </div>
           </div>
 
@@ -1021,7 +1108,7 @@ function App() {
               onClick={(event) => handleNavClick("memory", event)}
             >
               <MemoryStick size={16} />
-              {t.memory}
+              {t.routeMemory}
             </a>
             <a
               className={navItemClass("rag")}
@@ -1029,7 +1116,7 @@ function App() {
               onClick={(event) => handleNavClick("rag", event)}
             >
               <Brain size={16} />
-              {t.rag}
+              {t.routeRag}
             </a>
           </nav>
 
@@ -1067,7 +1154,7 @@ function App() {
             type="button"
           >
             <Languages size={16} />
-            {language === "zh" ? "EN" : "中文"}
+            {language === "zh" ? "英文界面" : "中文界面"}
           </button>
         </aside>
 
@@ -1083,10 +1170,11 @@ function App() {
                 <span>{overview ? t.lastSync : t.preview}</span>
               </div>
               <h1 className="mt-2 text-4xl font-semibold tracking-tight max-sm:text-3xl">
-                Harness
+                {t.workbenchTitle}
               </h1>
               <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-ink/55">
-                <span>{overview ? activeOverview.generated_at : t.preview}</span>
+                <span>{t.workbenchSubtitle}</span>
+                <span className="font-mono">{overview ? activeOverview.generated_at : t.preview}</span>
                 {refreshing ? (
                   <span className="inline-flex items-center gap-2 text-brass">
                     <span className="skeleton-pulse h-1.5 w-1.5 rounded-full bg-brass" />
@@ -1097,8 +1185,9 @@ function App() {
             </div>
             <div className="runtime-pill">
               <div>
-                <span>{t.dataPlane}</span>
-                <strong>{t.okx}</strong>
+                <span>{t.systemStatus}</span>
+                <strong>{loginState === "ok" ? t.healthy : t.preview}</strong>
+                <span className="mt-1 font-mono">{t.okx}</span>
               </div>
               <CheckCircle2 className="text-signal" size={18} />
             </div>
@@ -1122,8 +1211,8 @@ function App() {
             <div className="panel panel-command">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="section-title">{t.tools}</h2>
-                  <p className="mt-1 text-sm text-ink/50">{t.agentPlane}</p>
+                  <h2 className="section-title">{t.runtimeMonitor}</h2>
+                  <p className="mt-1 text-sm text-ink/50">{t.runtimeMonitorHint}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button className="icon-button" onClick={refreshOverview} type="button">
@@ -1133,7 +1222,13 @@ function App() {
                   <Cable size={18} className="text-brass" />
                 </div>
               </div>
-              <div className="mt-5 trace-list">
+              <div className="mt-5 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold">{t.tools}</h3>
+                <span className="rounded border border-ink/10 px-2 py-1 text-xs text-ink/45">
+                  {activeOverview.trace.total_count}
+                </span>
+              </div>
+              <div className="mt-2 trace-list">
                 {traceEvents.map((event, index) => (
                   <div
                     className="trace-row"
@@ -1145,7 +1240,7 @@ function App() {
                     </span>
                     <span className="font-medium">{event.tool_name}</span>
                     <span className="ml-auto rounded border border-signal/30 px-2 py-1 text-xs text-signal">
-                      {event.status}
+                      {statusLabel(event.status)}
                     </span>
                   </div>
                 ))}
@@ -1167,7 +1262,7 @@ function App() {
                     >
                       {activeOverview.providers.map((provider) => (
                         <option key={provider.name} value={provider.name}>
-                          {provider.name} / {provider.key_status}
+                          {provider.name} / {statusLabel(provider.key_status)}
                         </option>
                       ))}
                     </select>
@@ -1176,15 +1271,14 @@ function App() {
                 <div className="mini-block" id="rag">
                   <span>{t.rag}</span>
                   <strong>
-                    {activeOverview.rag.document_count} docs / {activeOverview.rag.chunk_count}{" "}
-                    chunks
+                    {activeOverview.rag.document_count} 文档 / {activeOverview.rag.chunk_count} 分片
                   </strong>
                 </div>
                 <div className="mini-block" id="memory">
                   <span>{t.memory}</span>
                   <strong>
-                    {activeOverview.memory.active_count} active /{" "}
-                    {activeOverview.memory.total_count} total
+                    {activeOverview.memory.active_count} 可用 /{" "}
+                    {activeOverview.memory.total_count} 总数
                   </strong>
                 </div>
               </div>
@@ -1198,6 +1292,47 @@ function App() {
                     </span>
                   </div>
                 ))}
+              </div>
+
+              <div className="mt-6 rounded-md border border-ink/10 bg-white/70 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="section-title">{t.bitproMcp}</h3>
+                    <p className="mt-1 text-sm leading-6 text-ink/55">{t.bitproMcpHint}</p>
+                  </div>
+                  <Cable size={18} className="text-brass" />
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2 max-sm:grid-cols-1">
+                  {[
+                    t.mcpCapabilities,
+                    t.mcpHealth,
+                    t.mcpSelectTool,
+                    t.mcpAudit
+                  ].map((step) => (
+                    <div className="mini-block" key={step}>
+                      <span>{t.mcpCallOrder}</span>
+                      <strong className="break-words font-mono text-[11px] leading-5">
+                        {step}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 max-md:grid-cols-1">
+                  {bitproMcpToolGroups.map((group) => (
+                    <div className="status-row items-start" key={group.label}>
+                      <div className="min-w-0">
+                        <div className="font-semibold">{group.label}</div>
+                        <div className="mt-1 truncate font-mono text-xs text-ink/45">
+                          {group.tools}
+                        </div>
+                        <div className="mt-1 text-xs text-ink/55">{group.note}</div>
+                      </div>
+                      <span className="shrink-0 rounded border border-brass/25 px-2 py-1 text-xs text-brass">
+                        {group.label === t.liveReadOnly ? t.writeBlocked : t.readOnlyDefault}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="mt-6 rounded-md border border-ink/10 bg-paper/60 p-3">
@@ -1241,8 +1376,8 @@ function App() {
             <div className="panel" id="market">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="section-title">{t.market}</h2>
-                  <p className="mt-1 text-sm text-ink/50">{t.prompt}</p>
+                  <h2 className="section-title">{t.runConsole}</h2>
+                  <p className="mt-1 text-sm text-ink/50">{t.runConsoleHint}</p>
                 </div>
                 <Sparkles size={18} className="text-brass" />
               </div>
@@ -1274,7 +1409,7 @@ function App() {
                   <Bot size={14} className="text-brass" />
                   <span className="text-xs">{t.currentStage}</span>
                   <span className="ml-auto font-mono text-xs text-ink/55">
-                    {run.run_state_json?.current_node ?? "preview"}
+                    {run.run_state_json?.current_node ?? t.preview}
                   </span>
                 </div>
                 {agentProgress.length === 0 ? (
@@ -1317,7 +1452,7 @@ function App() {
                 <div>
                   <h2 className="section-title">{t.memoryManager}</h2>
                   <p className="mt-1 text-sm text-ink/50">
-                    {activeOverview.memory.active_count} active / {activeOverview.memory.total_count} total
+                    {activeOverview.memory.active_count} 可用 / {activeOverview.memory.total_count} 总数
                   </p>
                 </div>
                 <MemoryStick size={18} className="text-brass" />
@@ -1389,7 +1524,7 @@ function App() {
                       <strong className="font-mono">{selectedMemory.source_tool || "n/a"}</strong>
                     </div>
                     <div className="mini-block">
-                      <span>Run</span>
+                      <span>运行</span>
                       <strong className="font-mono">{selectedMemory.source_run_id || "n/a"}</strong>
                     </div>
                   </div>
@@ -1420,7 +1555,7 @@ function App() {
                   </p>
                 </div>
                 <span className="rounded border border-signal/25 px-2 py-1 text-xs text-signal">
-                  {activeOverview.paper.session.status}
+                  {statusLabel(activeOverview.paper.session.status)}
                 </span>
               </div>
               <div className="mt-5 grid grid-cols-3 gap-3 max-sm:grid-cols-1">
@@ -1486,7 +1621,7 @@ function App() {
                       activeOverview.paper.positions.slice(0, 6).map((position) => (
                         <div className="paper-row" key={position.inst_id}>
                           <span className="font-mono text-xs">{position.inst_id}</span>
-                          <span>{position.side}</span>
+                          <span>{sideLabel(position.side)}</span>
                           <span className="font-mono">{position.unrealized_pnl}</span>
                         </div>
                       ))
@@ -1502,7 +1637,7 @@ function App() {
                       activeOverview.paper.recent_fills.slice(0, 6).map((fill, index) => (
                         <div className="paper-row" key={`${fill.inst_id}-${index}`}>
                           <span className="font-mono text-xs">{fill.inst_id}</span>
-                          <span>{fill.side}</span>
+                          <span>{sideLabel(fill.side)}</span>
                           <span className="font-mono">{fill.price}</span>
                         </div>
                       ))
@@ -1518,7 +1653,7 @@ function App() {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h2 className="section-title">{t.marketTools}</h2>
-                  <p className="mt-1 text-sm text-ink/50">OKX SWAP deterministic tools</p>
+                  <p className="mt-1 text-sm text-ink/50">OKX SWAP 确定性行情工具</p>
                 </div>
                 <Radio size={18} className="text-signal" />
               </div>
@@ -1608,8 +1743,8 @@ function App() {
                     onChange={(event) => setIntentSide(event.target.value as "buy" | "sell")}
                     value={intentSide}
                   >
-                    <option value="buy">buy</option>
-                    <option value="sell">sell</option>
+                    <option value="buy">买入</option>
+                    <option value="sell">卖出</option>
                   </select>
                 </label>
                 <label className="grid gap-1.5">
@@ -1656,14 +1791,14 @@ function App() {
                       <div className="min-w-0">
                         <div className="font-mono text-xs text-ink/55">{intent.id}</div>
                         <div className="mt-1 text-sm font-semibold">
-                          {intent.inst_id} {intent.side} {intent.size}
+                          {intent.inst_id} {sideLabel(intent.side)} {intent.size}
                         </div>
                         <div className="mt-1 text-xs text-ink/45">
-                          {intent.environment} / {intent.status}
+                          {intent.environment} / {statusLabel(intent.status)}
                         </div>
                         <div className="mt-1 text-xs text-ink/45">
-                          risk: {intent.risk_status ?? "pending"}
-                          {intent.exchange_order_id ? ` / order ${intent.exchange_order_id}` : ""}
+                          风控：{statusLabel(intent.risk_status ?? "pending")}
+                          {intent.exchange_order_id ? ` / 订单 ${intent.exchange_order_id}` : ""}
                         </div>
                       </div>
                       {intent.status === "pending_approval" ? (
@@ -1699,7 +1834,7 @@ function App() {
                         </button>
                       ) : (
                         <span className="rounded border border-ink/15 px-2 py-1 text-xs">
-                          {intent.status}
+                          {statusLabel(intent.status)}
                         </span>
                       )}
                     </div>
@@ -1739,9 +1874,9 @@ function App() {
                     onChange={(event) => setBacktestSource(event.target.value)}
                     value={backtestSource}
                   >
-                    <option value="sample">sample</option>
-                    <option value="okx">okx</option>
-                    <option value="bitpro">bitpro</option>
+                    <option value="sample">样本</option>
+                    <option value="okx">OKX</option>
+                    <option value="bitpro">BitPro</option>
                   </select>
                 </label>
                 <label className="grid gap-1.5">
@@ -1842,7 +1977,7 @@ function App() {
                           {activeOverview.strategy_lab.latest_backtest.id}
                         </span>
                         <span className="rounded border border-signal/25 px-2 py-1 text-xs text-signal">
-                          {activeOverview.strategy_lab.latest_backtest.status}
+                          {statusLabel(activeOverview.strategy_lab.latest_backtest.status)}
                         </span>
                       </div>
                       <div className="grid grid-cols-3 gap-3 max-sm:grid-cols-1">
@@ -1885,7 +2020,7 @@ function App() {
                       <span className="font-mono text-xs text-ink/45">
                         {activeOverview.strategy_lab.latest_experiment.id}
                       </span>
-                      <strong>{activeOverview.strategy_lab.latest_experiment.status}</strong>
+                      <strong>{statusLabel(activeOverview.strategy_lab.latest_experiment.status)}</strong>
                       <p>{activeOverview.strategy_lab.latest_experiment.prompt}</p>
                       <span className="font-mono text-xs text-brass">
                         {activeOverview.strategy_lab.latest_experiment.backtest_id}
@@ -1939,7 +2074,7 @@ function App() {
                       <span className="font-mono text-xs text-ink/55">{recentRun.id}</span>
                       <span className="min-w-0 truncate text-sm">{recentRun.prompt}</span>
                       <span className="rounded border border-signal/25 px-2 py-1 text-xs text-signal">
-                        {recentRun.status}
+                        {statusLabel(recentRun.status)}
                       </span>
                     </div>
                   ))
@@ -1958,26 +2093,26 @@ function App() {
               <Brain size={16} className="text-brass" />
               <span>{t.evals}</span>
               <strong>
-                {activeOverview.evals.status} / {activeOverview.evals.case_count}
+                {statusLabel(activeOverview.evals.status)} / {activeOverview.evals.case_count}
               </strong>
             </div>
             <div className="wide-strip">
               <Radio size={16} className="text-signal" />
-              <span>Deploy</span>
+              <span>部署端口</span>
               <strong>3333 / 3334</strong>
             </div>
           </section>
           <section className="mt-5 panel">
             <div className="flex items-center justify-between gap-4">
               <h2 className="section-title">{t.evals}</h2>
-              <span className="font-mono text-xs text-ink/45">{activeOverview.evals.mode}</span>
+              <span className="font-mono text-xs text-ink/45">{statusLabel(activeOverview.evals.mode)}</span>
             </div>
             <div className="mt-4 grid grid-cols-5 gap-2 max-xl:grid-cols-2 max-sm:grid-cols-1">
               {activeOverview.evals.cases.map((item) => (
                 <div className="mini-block" key={item.name}>
                   <span>{item.name}</span>
                   <strong className={item.status === "passed" ? "text-signal" : "text-danger"}>
-                    {item.status}
+                    {statusLabel(item.status)}
                   </strong>
                 </div>
               ))}
@@ -1998,6 +2133,41 @@ function providerLabel(provider: ProviderStatus | undefined, t: Record<string, s
   return `${provider.display_name} / ${model}`;
 }
 
+function statusLabel(status: string | undefined): string {
+  const normalized = (status ?? "").toLowerCase();
+  const labels: Record<string, string> = {
+    allowed: "通过",
+    approved: "已批准",
+    completed: "已完成",
+    configured: "已配置",
+    deterministic: "确定性",
+    disabled: "已禁用",
+    error: "异常",
+    failed: "失败",
+    missing: "未配置",
+    passed: "通过",
+    pending: "待处理",
+    pending_approval: "待审批",
+    preview: "预览",
+    ready: "就绪",
+    rejected: "已拒绝",
+    running: "运行中",
+    success: "成功"
+  };
+  return labels[normalized] ?? status ?? "未知";
+}
+
+function sideLabel(side: string | undefined): string {
+  const normalized = (side ?? "").toLowerCase();
+  const labels: Record<string, string> = {
+    buy: "买入",
+    long: "多头",
+    sell: "卖出",
+    short: "空头"
+  };
+  return labels[normalized] ?? side ?? "未知";
+}
+
 function activeSectionFromHash(): NavSection {
   if (typeof window === "undefined") {
     return "harness";
@@ -2013,7 +2183,7 @@ function StatusDot({ enabled }: { enabled: boolean }) {
   return (
     <span
       className={`status-dot ${enabled ? "status-dot-on" : "status-dot-off"}`}
-      aria-label={enabled ? "configured" : "missing"}
+      aria-label={enabled ? "已配置" : "未配置"}
     />
   );
 }
@@ -2031,15 +2201,15 @@ function formatMetricNumber(value: number): string {
 
 function formatAge(seconds: number | null): string {
   if (seconds === null) {
-    return "n/a";
+    return "无数据";
   }
   if (seconds < 60) {
-    return `${seconds}s`;
+    return `${seconds}秒`;
   }
   if (seconds < 3600) {
-    return `${Math.floor(seconds / 60)}m`;
+    return `${Math.floor(seconds / 60)}分`;
   }
-  return `${Math.floor(seconds / 3600)}h`;
+  return `${Math.floor(seconds / 3600)}时`;
 }
 
 function renderMarkdown(markdown: string): ReactNode {

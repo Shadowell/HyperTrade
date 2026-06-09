@@ -18,6 +18,8 @@ The adapter should start read-first:
 
 Write tools must be added later and separately from read tools. Any paper, testnet, or live write path needs explicit scopes, idempotency keys, approval gates, risk prechecks, redacted audit events, and structured refusal reasons.
 
+Operational data-access steps are documented in `docs/runbooks/bitpro-mcp-data-access.md`. Every flow starts with `bitpro_capabilities` and `bitpro_health`, then selects the smallest read tool for market, backtest, paper/simulation, or live read-only diagnostics.
+
 ## 中文
 
 BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必须清晰：Agent 规划在 HyperTrade，工具执行审计在 HyperTrade，BitPro 只通过稳定 API 提供数据和状态。
@@ -35,3 +37,5 @@ BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必�
 - `bitpro.audit`：request/run/tool 关联、追加式事件和脱敏交易所元数据。
 
 写工具应在只读工具稳定后单独加入。任何模拟盘、Testnet 或实盘写入路径都必须具备明确 scope、幂等键、审批门、风控预检、脱敏审计事件和结构化拒绝原因。
+
+具体数据调用步骤见 `docs/runbooks/bitpro-mcp-data-access.md`。每条链路先调用 `bitpro_capabilities` 和 `bitpro_health`，再根据行情、回测、模拟盘或实盘只读诊断选择最小只读工具。
