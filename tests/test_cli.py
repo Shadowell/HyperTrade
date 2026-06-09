@@ -5,7 +5,15 @@ from io import StringIO
 from typing import Any
 
 import httpx
-from hypertrade.cli import AgentApiClient, CliConfig, LocalAgentClient, main, render_run, run_chat
+from hypertrade.cli import (
+    AgentApiClient,
+    CliConfig,
+    LocalAgentClient,
+    main,
+    render_run,
+    render_welcome_banner,
+    run_chat,
+)
 
 
 class FakeAgentClient:
@@ -487,7 +495,7 @@ def test_render_run_prefers_structured_market_summary_over_raw_markdown(capsys) 
     assert "ETH-USDT-SWAP" in output
     assert "Knowledge hits:" in output
     assert "Raw Markdown Should Not Render" not in output
-    assert "Research output only. Not investment advice." in output
+    assert "Research output only. Not investment advice." not in output
 
 
 def test_render_run_prefers_structured_tool_outputs_over_planner_markdown(capsys) -> None:
@@ -536,7 +544,18 @@ def test_render_run_prefers_structured_tool_outputs_over_planner_markdown(capsys
     assert "Trend:" in output
     assert "ETH-USDT-SWAP" in output
     assert "Planner Markdown Should Not Render" not in output
-    assert "Research output only. Not investment advice." in output
+    assert "Research output only. Not investment advice." not in output
+
+
+def test_welcome_banner_does_not_repeat_fixed_risk_warning() -> None:
+    output = StringIO()
+
+    render_welcome_banner(client=FakeAgentClient(), output=output)
+
+    rendered = output.getvalue()
+    assert "HyperTrade" in rendered
+    assert "风险提示：本工具输出仅用于研究辅助，不构成投资建议。" not in rendered
+    assert "Research only. Not investment advice." not in rendered
 
 
 def test_render_run_can_use_rich_structured_output(monkeypatch) -> None:

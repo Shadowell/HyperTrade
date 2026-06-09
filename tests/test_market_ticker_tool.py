@@ -53,7 +53,7 @@ def test_market_ticker_payload_returns_exact_requested_symbol_from_db(
 
 def test_planner_report_includes_specific_ticker_values() -> None:
     report = AgentKernel._render_planner_report(
-        "已完成查询。\n\nResearch output only. Not investment advice.",
+        "已完成查询。",
         [
             ToolCallRecord(
                 tool_name="market_ticker",
@@ -74,4 +74,4 @@ def test_planner_report_includes_specific_ticker_values() -> None:
     assert "## 单标的行情" in report
     assert "ETH-USDT-SWAP" in report
     assert "最新价 3500.000000000000" in report
-    assert "Research output only. Not investment advice." in report
+    assert "Research output only. Not investment advice." not in report

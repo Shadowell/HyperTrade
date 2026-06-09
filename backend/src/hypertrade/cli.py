@@ -749,15 +749,6 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
         f"{color['border']}╚══════════════════════════════════════════════════════════════╝{color['reset']}",
         file=output,
     )
-    print(
-        f"{color['muted']}Research only. Not investment advice.{color['reset']}",
-        file=output,
-    )
-    print(
-        f"{color['muted']}风险提示：本工具输出仅用于研究辅助，不构成投资建议。{color['reset']}",
-        file=output,
-    )
-    print("", file=output)
     print(f"{color['section']}Quick Start{color['reset']}", file=output)
     print(f"{color['cmd']}- /status{color['reset']}        Runtime and session status", file=output)
     print(f"{color['cmd']}- /tools{color['reset']}         Registered tool catalog", file=output)
@@ -1301,7 +1292,6 @@ def render_market_ticker(payload: dict[str, Any], *, output: TextIO) -> None:
     print(f"- 24h volume: {payload.get('volume_ccy_24h', 'n/a')}", file=output)
     print(f"- Source: {payload.get('data_source', 'unknown')}", file=output)
     print(f"- As of UTC: {payload.get('as_of_utc', 'n/a')}", file=output)
-    print("Research output only. Not investment advice.", file=output)
 
 
 def render_market_candles(payload: dict[str, Any], *, output: TextIO) -> None:
@@ -1321,7 +1311,6 @@ def render_market_candles(payload: dict[str, Any], *, output: TextIO) -> None:
     print(f"- MA60: {payload.get('ma60', 'n/a')}", file=output)
     print(f"- Bias: {payload.get('trend_bias', 'unknown')}", file=output)
     print(f"- Source: {payload.get('data_source', 'unknown')}", file=output)
-    print("Research output only. Not investment advice.", file=output)
 
 
 def render_market_compare(payload: dict[str, Any], *, output: TextIO) -> None:
@@ -1349,7 +1338,6 @@ def render_market_compare(payload: dict[str, Any], *, output: TextIO) -> None:
                 file=output,
             )
     print(f"- Source: {payload.get('data_source', 'unknown')}", file=output)
-    print("Research output only. Not investment advice.", file=output)
 
 
 def render_paper_status(payload: dict[str, Any], *, output: TextIO) -> None:
@@ -1689,10 +1677,6 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     elif has_structured_tools and isinstance(trace_events, list):
         _render_rich_tool_report(trace_events, report=report, console=console)
 
-    disclaimer = "Research output only. Not investment advice."
-    if isinstance(report, dict):
-        disclaimer = str(report.get("disclaimer", disclaimer))
-    console.print(Panel(disclaimer, border_style="yellow"))
     return True
 
 
@@ -1866,10 +1850,6 @@ def _render_structured_market_summary(report: dict[str, Any], *, output: TextIO)
                 file=output,
             )
 
-    disclaimer = str(report.get("disclaimer", "Research output only. Not investment advice."))
-    print("", file=output)
-    print(disclaimer, file=output)
-
 
 def _has_structured_market_tool_output(trace_events: list[Any]) -> bool:
     supported_tools = {"market_ticker", "market_candles", "market_compare"}
@@ -1901,10 +1881,6 @@ def _render_structured_tool_report(
             _render_tool_candles_block(payload, output=output)
         elif tool_name == "market_compare":
             _render_tool_compare_block(payload, output=output)
-    disclaimer = str(report.get("disclaimer", "Research output only. Not investment advice."))
-    print("", file=output)
-    print(disclaimer, file=output)
-
 
 def _render_tool_ticker_block(payload: dict[str, Any], *, output: TextIO) -> None:
     print("", file=output)

@@ -69,8 +69,7 @@ def test_agent_acceptance_specific_symbol_report_uses_exact_ticker_tool(
             ),
             ChatResponse(
                 content=(
-                    "DOGE 已查询，重点观察价格、涨跌幅和成交额。\n\n"
-                    "Research output only. Not investment advice."
+                    "DOGE 已查询，重点观察价格、涨跌幅和成交额。"
                 ),
                 tool_calls=[],
             ),
@@ -95,6 +94,8 @@ def test_agent_acceptance_specific_symbol_report_uses_exact_ticker_tool(
     assert "最新价 0.200000000000" in run.report_markdown
     _assert_research_quality(run.report_markdown)
     assert replay.messages[0][0]["role"] == "system"
+    assert "Always end with" not in replay.messages[0][0]["content"]
+    assert "Not investment advice" not in replay.messages[0][0]["content"]
 
 
 def test_agent_acceptance_trend_and_relative_strength_reports_are_structured(
@@ -122,8 +123,7 @@ def test_agent_acceptance_trend_and_relative_strength_reports_are_structured(
             ),
             ChatResponse(
                 content=(
-                    "ETH 短线偏强，和 SOL 对比时需要继续观察成交量确认。\n\n"
-                    "Research output only. Not investment advice."
+                    "ETH 短线偏强，和 SOL 对比时需要继续观察成交量确认。"
                 ),
                 tool_calls=[],
             ),
@@ -191,8 +191,7 @@ def test_agent_acceptance_rag_memory_run_is_auditable(monkeypatch, tmp_path) -> 
             ),
             ChatResponse(
                 content=(
-                    "已结合知识库和历史记忆输出风险上下文。\n\n"
-                    "Research output only. Not investment advice."
+                    "已结合知识库和历史记忆输出风险上下文。"
                 ),
                 tool_calls=[],
             ),
@@ -257,8 +256,7 @@ def test_agent_acceptance_strategy_research_and_backtest_chain(
             ),
             ChatResponse(
                 content=(
-                    "策略研究和样例回测已完成，结果只用于流程验收。\n\n"
-                    "Research output only. Not investment advice."
+                    "策略研究和样例回测已完成，结果只用于流程验收。"
                 ),
                 tool_calls=[],
             ),
@@ -309,7 +307,8 @@ def _business_events(run: Any) -> list[Any]:
 
 def _assert_research_quality(markdown: str) -> None:
     assert markdown.strip()
-    assert "Research output only. Not investment advice." in markdown
+    assert "Research output only. Not investment advice." not in markdown
+    assert "风险提示：本工具输出仅用于研究辅助，不构成投资建议。" not in markdown
     lowered = markdown.lower()
     for phrase in FORBIDDEN_ADVICE_PHRASES:
         assert phrase.lower() not in lowered

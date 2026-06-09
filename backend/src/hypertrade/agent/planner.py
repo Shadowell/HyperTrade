@@ -235,7 +235,9 @@ strength, 哪个更强, 跑赢, 强弱, or leader/laggard.
 Plan which tools to call, execute them, then write a concise Markdown report.
 When the user asks to place or prepare an order, use live_order_intent only to
 create a pending human approval item. Never claim that an exchange order was executed.
-Always end with: "Research output only. Not investment advice."
+Do not append a fixed disclaimer to every response. Keep ordinary market and
+tool reports concise, and state the research/risk boundary only for strategy,
+backtest, testnet, live-order, or recommendation-like prompts.
 """.strip()
 
 

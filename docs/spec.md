@@ -96,6 +96,7 @@ HyperTrade 是一个独立的生产级 Agent 交易系统。V1 重点是稳定 A
 - Developer can run deterministic CLI market commands such as `/price`, `/candles`, and `/compare` without waiting for LLM planning.
 - Developer can see readable Agent progress statuses while free-form prompts are running.
 - Developer can read structured CLI report sections for market runs, with Markdown kept as fallback.
+- Routine market/RAG/Memory CLI outputs do not repeat a fixed investment-advice disclaimer; strategy, backtest, Testnet, live-order, or recommendation-like prompts still surface the research/risk boundary.
 - Developer can enable Rich terminal rendering for structured CLI reports while keeping plain output for scripts.
 - Developer can inspect and control the simulated paper runtime from CLI slash commands.
 - Developer can run backtests from archived BitPro K-line data without copying BitPro business logic.

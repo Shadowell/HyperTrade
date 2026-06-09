@@ -25,6 +25,7 @@ hypertrade --remote http://127.0.0.1:3334 ask "看下ETH行情"
 - `executing tool ...`
 - `generating final report`
 - trace 里的 `graph.intent_classify`、`graph.plan_tools`、`graph.approval_check`、`graph.execute_tool`、`graph.reflect`、`graph.final_report`
+- 普通行情、RAG、Memory 输出不应反复追加固定免责声明；策略、回测、Testnet、实盘订单或类似建议的语境仍应说明研究/风险边界。
 
 相关代码：
 

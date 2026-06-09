@@ -81,6 +81,7 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
 - Project docs no longer describe HyperTrade as a non-production showcase project.
 - `docs/spec.md`, `docs/progress.md`, and architecture docs describe production-grade Agent operation.
 - BitPro tool-surface requirements are documented before implementation starts.
+- Routine market/RAG/Memory CLI output no longer repeats a fixed investment-advice disclaimer, while strategy, backtest, Testnet, live-order, and recommendation-like prompts still keep a clear research/risk boundary.
 - No secrets, BitPro credentials, database files, or production `.env` are added.
 - `./scripts/check.sh` passes.
 

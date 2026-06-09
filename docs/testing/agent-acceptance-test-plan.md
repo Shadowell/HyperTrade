@@ -24,10 +24,10 @@ Run the full project check:
 
 | Case | Prompt shape | Expected tools | Output checks |
 | --- | --- | --- | --- |
-| Specific symbol行情 | `看下DOGE行情` | `market_ticker` | Report contains `## 单标的行情`, exact `DOGE-USDT-SWAP`, latest price, and disclaimer. |
-| Trend + compare | `看下ETH走势，并和SOL比较哪个更强` | `market_candles`, `market_compare` | Report contains `## K线趋势特征`, `## 多标的强弱比较`, ranking, leader, and disclaimer. |
+| Specific symbol行情 | `看下DOGE行情` | `market_ticker` | Report contains `## 单标的行情`, exact `DOGE-USDT-SWAP`, and latest price without repeating a fixed disclaimer. |
+| Trend + compare | `看下ETH走势，并和SOL比较哪个更强` | `market_candles`, `market_compare` | Report contains `## K线趋势特征`, `## 多标的强弱比较`, ranking, and leader without repeating a fixed disclaimer. |
 | RAG + Memory | `结合知识库和记忆，说下资金费率风险` | `rag_search`, `memory_search`, `memory_write` | Trace links RAG hit source path, writes audited memory id, and records tool inputs in `report_json`. |
-| Strategy + backtest | `研究ETH趋势突破并回测` | `strategy_draft`, `backtest_run` | Trace contains `srch_*` research id, `bt_*` backtest id, completed status, metrics, and disclaimer. |
+| Strategy + backtest | `研究ETH趋势突破并回测` | `strategy_draft`, `backtest_run` | Trace contains `srch_*` research id, `bt_*` backtest id, completed status, metrics, and a research/risk boundary when the report discusses strategy or backtest conclusions. |
 
 ## Sprint 24-31 Additions
 
@@ -39,7 +39,7 @@ Run the full project check:
 | Memory v2 | `/memory search 风控` | Results show tags/usage and retain source run/tool. |
 | Risk refusal | Create Mainnet or oversized intent in tests | Intent becomes `risk_blocked` with structured violation. |
 | Testnet execution | `/live execute loi_*` | Approved Testnet intent records redacted request and exchange response or auditable failure. |
-| Strategy experiment | `/experiment 研究ETH趋势突破` | Creates `exp_*`, linked `srch_*`, linked `bt_*`, critique, next experiment, and disclaimer. |
+| Strategy experiment | `/experiment 研究ETH趋势突破` | Creates `exp_*`, linked `srch_*`, linked `bt_*`, critique, next experiment, and a research/risk boundary. |
 | Eval suite | `/evals` | Deterministic eval status shows tool selection, RAG citation, memory, risk refusal, and Testnet safety cases. |
 
 ## Output Quality Rules
@@ -47,7 +47,8 @@ Run the full project check:
 Every Agent report should:
 
 - Be non-empty Markdown.
-- Include `Research output only. Not investment advice.`
+- Avoid repeating a fixed disclaimer in routine market, RAG, and Memory outputs.
+- State the research/risk boundary only for strategy, backtest, Testnet, live-order, or recommendation-like prompts.
 - Include structured sections when deterministic market tools return payloads.
 - Preserve exact instrument ids when the user asks for a specific symbol.
 - Keep tool calls visible through trace events.
