@@ -42,6 +42,46 @@ class ReplayDeepSeekClient:
         return self._responses.pop(0)
 
 
+class ReplayBitProAdapter:
+    def market_klines(self, *, symbol: str, timeframe: str, limit: int) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "health": {"status": "healthy"},
+            "market": {
+                "exchange": "okx",
+                "symbol": "ETH/USDT:USDT",
+                "timeframe": "1h",
+                "limit": limit,
+            },
+            "candles": [
+                {
+                    "timestamp": 1_780_272_000_000 + index * 3_600_000,
+                    "open": 100 + index,
+                    "high": 101 + index,
+                    "low": 99 + index,
+                    "close": 100 + index,
+                    "volume": 1000 + index,
+                }
+                for index in range(limit)
+            ],
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {
+                    "tool": "market_klines",
+                    "status": "success",
+                    "parameters": {
+                        "exchange": "okx",
+                        "symbol": "ETH/USDT:USDT",
+                        "timeframe": "1h",
+                        "limit": limit,
+                    },
+                },
+            ],
+        }
+
+
 def test_agent_acceptance_specific_symbol_report_uses_exact_ticker_tool(
     monkeypatch,
     tmp_path,
@@ -276,6 +316,56 @@ def test_agent_acceptance_strategy_research_and_backtest_chain(
     assert events[1].output_json["id"].startswith("bt_")
     assert events[1].output_json["status"] == "completed"
     assert events[1].output_json["metrics"]["trade_count"] >= 0
+    _assert_research_quality(run.report_markdown)
+
+
+def test_agent_acceptance_bitpro_mcp_market_klines_are_audited(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = _memory_db()
+    _patch_replay_llm(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_bitpro_klines",
+                        name="bitpro_market_klines",
+                        arguments={"symbol": "ETH", "timeframe": "1H", "limit": 12},
+                    )
+                ],
+            ),
+            ChatResponse(content="BitPro K线已读取。", tool_calls=[]),
+        ],
+    )
+
+    run = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
+        knowledge_dir=str(tmp_path),
+        bitpro_adapter=ReplayBitProAdapter(),
+    ).run_chat("用 BitPro MCP 读取 ETH 1H K线")
+
+    names = _tool_names(run)
+    assert "bitpro.capabilities" in names
+    assert "bitpro.health" in names
+    assert "bitpro.market_klines" in names
+    assert "bitpro_market_klines" in names
+    bitpro_event = next(
+        event for event in _business_events(run) if event.tool_name == "bitpro_market_klines"
+    )
+    assert bitpro_event.output_json["market"]["symbol"] == "ETH/USDT:USDT"
+    assert bitpro_event.output_json["market"]["timeframe"] == "1h"
+    assert [call["tool"] for call in bitpro_event.output_json["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "market_klines",
+    ]
+    assert "## BitPro MCP K线直连" in run.report_markdown
+    assert "ETH/USDT:USDT" in run.report_markdown
+    assert "market_klines" in run.report_markdown
     _assert_research_quality(run.report_markdown)
 
 

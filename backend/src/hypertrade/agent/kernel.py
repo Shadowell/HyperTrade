@@ -20,6 +20,7 @@ from sqlalchemy import select
 
 from hypertrade.agent.planner import AgentPlanner, PlannerResult, ToolExecutor
 from hypertrade.backtest.service import BacktestService
+from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import AgentRun, Database, TraceEvent
 from hypertrade.live.service import LiveOrderIntentService
@@ -54,10 +55,12 @@ class AgentKernel:
         knowledge_dir: str = "docs/knowledge",
         settings: Settings | None = None,
         provider_name: str | None = None,
+        bitpro_adapter: Any | None = None,
     ) -> None:
         self.db = db
         self._settings = settings
         self.provider_name = provider_name
+        self.bitpro_adapter = bitpro_adapter
         self.market = MarketRepository(db)
         self.memory = MemoryService(db)
         self.rag = RagService(db, knowledge_dir=knowledge_dir)
@@ -277,6 +280,30 @@ class AgentKernel:
                     research_id=research_id,
                     strategy_key=strategy_key,
                 )
+            elif tool_name == "bitpro_capabilities":
+                result = self._bitpro_adapter().capabilities()
+            elif tool_name == "bitpro_health":
+                result = self._bitpro_adapter().health()
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_market_klines":
+                result = self._bitpro_adapter().market_klines(
+                    symbol=str(args.get("symbol", "BTC")),
+                    timeframe=str(args.get("timeframe", args.get("bar", "1h"))),
+                    limit=int(args.get("limit", 200)),
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_paper_dashboard":
+                strategy_id = args.get("strategy_id")
+                result = self._bitpro_adapter().paper_dashboard(
+                    strategy_id=int(strategy_id) if strategy_id is not None else None,
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_live_positions":
+                result = self._bitpro_adapter().live_positions(
+                    exchange=str(args.get("exchange", "okx")),
+                    symbol=str(args["symbol"]) if args.get("symbol") else None,
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "live_order_intent":
                 result = LiveOrderIntentService(self.db, settings=self._settings).create(
                     symbol=str(args.get("symbol", "")),
@@ -303,6 +330,33 @@ class AgentKernel:
             return result
 
         return executor
+
+    def _bitpro_adapter(self) -> Any:
+        if self.bitpro_adapter is None:
+            settings = self._settings if self._settings is not None else get_settings()
+            self.bitpro_adapter = BitProToolAdapter(BitProMcpClient(settings=settings))
+        return self.bitpro_adapter
+
+    def _trace_bitpro_tool_calls(self, run_id: str, payload: dict[str, Any]) -> None:
+        calls = payload.get("tool_calls", [])
+        if not isinstance(calls, list):
+            return
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            tool_name = _bitpro_trace_tool_name(str(call.get("tool", "")))
+            if not tool_name:
+                continue
+            self._trace(
+                run_id,
+                tool_name,
+                _dict_or_empty(call.get("parameters")),
+                {
+                    "status": str(call.get("status", "")),
+                    "result_summary": _dict_or_empty(call.get("result_summary")),
+                    "error": str(call.get("error", "")),
+                },
+            )
 
     # ------------------------------------------------------------------
     # Hardcoded fallback path (no API key configured)
@@ -771,6 +825,7 @@ class AgentKernel:
         ticker_lines: list[str] = []
         candle_lines: list[str] = []
         compare_lines: list[str] = []
+        bitpro_lines: list[str] = []
         citation_lines: list[str] = []
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "market_ticker":
@@ -842,6 +897,33 @@ class AgentKernel:
                         )
                     )
                 compare_lines.append("")
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "bitpro_market_klines":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or payload.get("status") != "ok":
+                continue
+            market = payload.get("market", {})
+            market = market if isinstance(market, dict) else {}
+            nested_calls = payload.get("tool_calls", [])
+            nested_tools: list[str] = []
+            if isinstance(nested_calls, list):
+                nested_tools = [
+                    str(call.get("tool", ""))
+                    for call in nested_calls
+                    if isinstance(call, dict) and call.get("tool")
+                ]
+            bitpro_lines.extend(
+                [
+                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
+                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
+                    f"- 交易所: {market.get('exchange', 'n/a')}",
+                    f"- 标的: {market.get('symbol', 'unknown')}",
+                    f"- 周期: {market.get('timeframe', 'n/a')}",
+                    f"- K线数量: {len(payload.get('candles', []))}",
+                    "",
+                ]
+            )
         sections: list[str] = []
         if ticker_lines:
             sections.extend(["## 单标的行情", "", *ticker_lines])
@@ -849,6 +931,8 @@ class AgentKernel:
             sections.extend(["## K线趋势特征", "", *candle_lines])
         if compare_lines:
             sections.extend(["## 多标的强弱比较", "", *compare_lines])
+        if bitpro_lines:
+            sections.extend(["## BitPro MCP K线直连", "", *bitpro_lines])
         citations = _citations_from_tool_calls(tool_calls)
         if citations:
             for index, citation in enumerate(citations, start=1):
@@ -919,6 +1003,20 @@ def _citations_from_tool_calls(tool_calls: list[Any]) -> list[dict[str, Any]]:
                 }
             )
     return citations[:5]
+
+
+def _bitpro_trace_tool_name(tool_name: str) -> str:
+    return {
+        "bitpro_capabilities": "bitpro.capabilities",
+        "bitpro_health": "bitpro.health",
+        "market_klines": "bitpro.market_klines",
+        "paper_dashboard": "bitpro.paper_dashboard",
+        "trading_positions": "bitpro.live_positions",
+    }.get(tool_name, "")
+
+
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _normalize_swap_inst_id(symbol: str) -> str:

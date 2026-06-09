@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-from hypertrade.agent.planner import AgentPlanner, PlannerResult
+from hypertrade.agent.planner import TOOL_SCHEMAS, AgentPlanner, PlannerResult
 from hypertrade.providers.deepseek import ChatResponse, ToolCallRequest
 
 
@@ -242,6 +242,18 @@ class TestAgentPlannerExecutorPassthrough:
         planner.run("rag query test", tracking_executor)
 
         assert received == [("rag_search", {"query": "funding rate risk", "limit": 5})]
+
+
+def test_planner_exposes_bitpro_read_tool_schemas() -> None:
+    names = {schema["function"]["name"] for schema in TOOL_SCHEMAS}
+
+    assert {
+        "bitpro_capabilities",
+        "bitpro_health",
+        "bitpro_market_klines",
+        "bitpro_paper_dashboard",
+        "bitpro_live_positions",
+    } <= names
 
 
 class TestAgentPlannerDeepSeekReasoningContent:

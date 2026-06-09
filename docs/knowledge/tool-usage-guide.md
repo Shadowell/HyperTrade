@@ -180,6 +180,7 @@ Memory 和 RAG 的区别：
 ```bash
 /research 研究ETH趋势突破
 /backtest --live --symbol ETH --bar 1H --limit 100
+/backtest --source bitpro_mcp --symbol ETH --bar 1H --limit 200
 /experiment 研究ETH趋势突破并给出回测改进建议
 ```
 
@@ -196,7 +197,39 @@ Memory 和 RAG 的区别：
 - `backend/src/hypertrade/backtest/service.py`
 - `backend/src/hypertrade/strategy/experiment.py`
 
-## 8. Paper Trading
+## 8. BitPro MCP Read Adapter
+
+用途：通过 BitPro MCP/API 合同读取外部数据，不直接访问 BitPro 数据库，也不复制 BitPro 业务逻辑。
+
+Agent 示例：
+
+```bash
+hypertrade ask "用 BitPro MCP 读取 ETH 1H K线"
+```
+
+API：
+
+```bash
+curl -sS http://127.0.0.1:3334/api/bitpro/health
+curl -sS "http://127.0.0.1:3334/api/bitpro/market/klines/ETH?timeframe=1h&limit=200"
+curl -sS http://127.0.0.1:3334/api/bitpro/paper/dashboard
+curl -sS "http://127.0.0.1:3334/api/bitpro/live/positions?symbol=ETH"
+```
+
+你应该观察：
+
+- 每条数据链路先出现 `bitpro_capabilities` 和 `bitpro_health`。
+- Agent trace 里有 `bitpro.capabilities`、`bitpro.health`、`bitpro.market_klines`。
+- `/harness` 的 BitPro MCP 面板显示 `mcp_read_only`、API base、token 是否配置和实盘写关闭状态。
+- `BITPRO_MCP_API_TOKEN` 只在服务器环境配置，不能放进前端或仓库。
+
+相关代码：
+
+- `backend/src/hypertrade/bitpro/mcp.py`
+- `backend/src/hypertrade/agent/kernel.py`
+- `docs/runbooks/bitpro-mcp-data-access.md`
+
+## 9. Paper Trading
 
 用途：验证自动模拟盘状态和生命周期控制。
 
@@ -215,7 +248,7 @@ Memory 和 RAG 的区别：
 - `backend/src/hypertrade/paper/service.py`
 - `backend/src/hypertrade/paper/engine.py`
 
-## 9. Risk and OKX Testnet Execution
+## 10. Risk and OKX Testnet Execution
 
 用途：验证审批门、风控门和 Testnet signed order execution。
 
@@ -250,7 +283,7 @@ Memory 和 RAG 的区别：
 - `backend/src/hypertrade/live/service.py`
 - `backend/src/hypertrade/live/okx.py`
 
-## 10. Frontend Harness
+## 11. Frontend Harness
 
 用途：用页面观察 Agent 运行状态、工具审计和风险边界。
 
@@ -278,7 +311,7 @@ http://47.79.36.92:3333/harness
 - `frontend/src/App.tsx`
 - `backend/src/hypertrade/main.py`
 
-## 11. Tests and Eval
+## 12. Tests and Eval
 
 统一检查：
 
@@ -306,7 +339,7 @@ hypertrade
 - `docs/testing/agent-acceptance-test-plan.md`
 - `docs/testing/agent-eval-suite.md`
 
-## 12. Deployment Smoke
+## 13. Deployment Smoke
 
 服务器本地检查：
 

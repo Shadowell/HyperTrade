@@ -13,6 +13,7 @@ HyperTrade is an independent agent-first crypto trading research and execution s
 - Memory v2 with dedupe, tags, importance, confidence, and usage audit.
 - Trading boundary: Mainnet execution is blocked; OKX Testnet signed execution is allowed only after approval and risk checks.
 - Strategy workflow with research, backtest, critique, and next experiment suggestion.
+- BitPro MCP read adapter for health checks, direct K-line reads, paper dashboard, and live-position diagnostics.
 - Observability through `/harness`, CLI slash commands, and deterministic eval suite.
 
 ## Stack

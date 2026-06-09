@@ -190,6 +190,83 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "bitpro_capabilities",
+            "description": "Read BitPro MCP contract, tool groups, permissions, and data policy.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_health",
+            "description": "Check BitPro API health before calling BitPro data tools.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_market_klines",
+            "description": (
+                "Read real K-line data from BitPro through the MCP tool contract. "
+                "Use this when the user explicitly asks for BitPro, MCP, "
+                "or BitPro data direct access."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or BitPro/OKX instrument id.",
+                    },
+                    "timeframe": {
+                        "type": "string",
+                        "description": "BitPro timeframe such as 1h, 4h, or 1d.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of candles to fetch, default 200.",
+                    },
+                },
+                "required": ["symbol"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_dashboard",
+            "description": "Read BitPro paper/simulation dashboard state. Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {
+                        "type": "integer",
+                        "description": "Optional BitPro strategy id filter.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_live_positions",
+            "description": "Read BitPro live account positions for diagnostics only. Never writes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "exchange": {"type": "string", "description": "Exchange name, default okx."},
+                    "symbol": {"type": "string", "description": "Optional symbol filter."},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "live_order_intent",
             "description": (
                 "Create a testnet/live order intent that must be approved by a human. "
@@ -232,6 +309,9 @@ Use market_candles when the user asks about trend,走势, K线, breakthrough, pu
 support/resistance, or multi-period market research for a specific symbol.
 Use market_compare when the user asks to compare two or more symbols, relative
 strength, 哪个更强, 跑赢, 强弱, or leader/laggard.
+Use bitpro_capabilities and bitpro_health before BitPro-specific read tools.
+Use bitpro_market_klines when the user explicitly asks for BitPro MCP, BitPro data,
+or BitPro direct K-line access. Keep BitPro live-position reads diagnostic-only.
 Plan which tools to call, execute them, then write a concise Markdown report.
 When the user asks to place or prepare an order, use live_order_intent only to
 create a pending human approval item. Never claim that an exchange order was executed.

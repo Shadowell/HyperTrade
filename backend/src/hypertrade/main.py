@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from queue import Queue
 from threading import Thread
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Protocol
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket
@@ -24,6 +24,7 @@ from sqlalchemy import desc, func, select
 
 from hypertrade.agent.kernel import AgentKernel, CompletedAgentRun
 from hypertrade.backtest.service import BacktestService
+from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import (
     AgentRun,
@@ -49,6 +50,29 @@ from hypertrade.strategy.service import StrategyResearchService
 from hypertrade.tools.registry import ToolDefinition, ToolRegistry
 
 SESSION_COOKIE = "hypertrade_session"
+
+
+class BitProApiAdapter(Protocol):
+    def health(self) -> dict[str, Any]:
+        """Return BitPro capability and health preflight state."""
+        ...
+
+    def market_klines(self, *, symbol: str, timeframe: str, limit: int) -> dict[str, Any]:
+        """Read BitPro K-lines through the MCP tool contract."""
+        ...
+
+    def paper_dashboard(self) -> dict[str, Any]:
+        """Read BitPro paper/simulation dashboard state."""
+        ...
+
+    def live_positions(
+        self,
+        *,
+        exchange: str = "okx",
+        symbol: str | None = None,
+    ) -> dict[str, Any]:
+        """Read BitPro live positions for diagnostics only."""
+        ...
 
 
 class LoginPayload(BaseModel):
@@ -104,7 +128,11 @@ class LiveOrderDecisionPayload(BaseModel):
     reason: str = ""
 
 
-def create_app(settings: Settings | None = None, db: Database | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    db: Database | None = None,
+    bitpro_adapter: BitProApiAdapter | None = None,
+) -> FastAPI:
     app_settings = settings or get_settings()
     database = db or Database(app_settings.database_url)
 
@@ -118,6 +146,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     app.state.settings = app_settings
     app.state.db = database
     app.state.active_chat_provider = app_settings.active_chat_provider
+    app.state.bitpro_adapter = bitpro_adapter
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -146,6 +175,14 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         return str(username)
 
     AdminUser = Annotated[str, Depends(require_admin)]
+
+    def get_bitpro_adapter() -> BitProApiAdapter:
+        if app.state.bitpro_adapter is None:
+            app.state.bitpro_adapter = BitProToolAdapter(
+                BitProMcpClient(settings=app_settings)
+            )
+        adapter: BitProApiAdapter = app.state.bitpro_adapter
+        return adapter
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -283,6 +320,21 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
                         limit=5
                     ),
                 },
+                "bitpro": {
+                    "adapter": "mcp_read_only",
+                    "configured": bool(app_settings.bitpro_mcp_api_base),
+                    "api_base": app_settings.bitpro_mcp_api_base,
+                    "auth_header": app_settings.bitpro_mcp_auth_header,
+                    "token_configured": bool(app_settings.bitpro_mcp_api_token),
+                    "live_write_enabled": False,
+                    "tools": [
+                        "bitpro_capabilities",
+                        "bitpro_health",
+                        "market_klines",
+                        "paper_dashboard",
+                        "trading_positions",
+                    ],
+                },
                 "evals": AgentEvalSuite().status(),
             }
 
@@ -388,6 +440,35 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
             bar=payload.bar,
             limit=payload.limit,
         )
+
+    @app.get("/api/bitpro/health")
+    def bitpro_health(_: AdminUser) -> dict[str, Any]:
+        return get_bitpro_adapter().health()
+
+    @app.get("/api/bitpro/market/klines/{symbol}")
+    def bitpro_market_klines(
+        symbol: str,
+        _: AdminUser,
+        timeframe: str = "1h",
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        return get_bitpro_adapter().market_klines(
+            symbol=symbol,
+            timeframe=timeframe,
+            limit=limit,
+        )
+
+    @app.get("/api/bitpro/paper/dashboard")
+    def bitpro_paper_dashboard(_: AdminUser) -> dict[str, Any]:
+        return get_bitpro_adapter().paper_dashboard()
+
+    @app.get("/api/bitpro/live/positions")
+    def bitpro_live_positions(
+        _: AdminUser,
+        exchange: str = "okx",
+        symbol: str | None = None,
+    ) -> dict[str, Any]:
+        return get_bitpro_adapter().live_positions(exchange=exchange, symbol=symbol)
 
     @app.get("/api/paper/status")
     def paper_status(_: AdminUser) -> dict[str, Any]:

@@ -52,6 +52,31 @@ class ToolRegistry:
                 ToolDefinition("memory.search", "Read active long-term memory.", "memory"),
                 ToolDefinition("strategy.draft", "Draft runtime strategy artifacts.", "strategy"),
                 ToolDefinition("backtest.run", "Run Backtrader strategy backtests.", "backtest"),
+                ToolDefinition(
+                    "bitpro.capabilities",
+                    "Read BitPro MCP contract, tool groups, and data policy.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.health",
+                    "Check BitPro API health before data access.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.market_klines",
+                    "Read real BitPro K-line data through the MCP tool contract.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.paper_dashboard",
+                    "Read BitPro paper/simulation dashboard state.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.live_positions",
+                    "Read BitPro live account positions for diagnostics only.",
+                    "bitpro",
+                ),
                 ToolDefinition("paper.session", "Control paper trading sessions.", "paper"),
                 ToolDefinition(
                     "live.order_intent",

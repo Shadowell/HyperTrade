@@ -1,11 +1,12 @@
 import asyncio
 from decimal import Decimal
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy import desc, select
 
 from hypertrade.backtest.bitpro import BitProKlineArchive
 from hypertrade.backtest.engine import BacktestEngine
+from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import BacktestRun, Database
 from hypertrade.market.client import OkxRestClient
@@ -14,11 +15,26 @@ from hypertrade.strategy.sdk import Candle, sample_candles
 from hypertrade.strategy.service import StrategyResearchService
 
 
+class BitProCandleAdapter(Protocol):
+    last_tool_calls: list[dict[str, Any]]
+
+    def fetch_candles(self, *, symbol: str, timeframe: str, limit: int) -> list[Candle]:
+        """Fetch BitPro candles through an audited adapter."""
+        ...
+
+
 class BacktestService:
-    def __init__(self, db: Database, *, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        db: Database,
+        *,
+        settings: Settings | None = None,
+        bitpro_adapter: BitProCandleAdapter | None = None,
+    ) -> None:
         self.db = db
         self.settings = settings
         self.engine = BacktestEngine()
+        self.bitpro_adapter: BitProCandleAdapter | None = bitpro_adapter
 
     def run(
         self,
@@ -55,6 +71,14 @@ class BacktestService:
                 limit=candle_limit,
             )
             data_source = "bitpro_sqlite_candles"
+        elif selected_source == "bitpro_mcp":
+            inst_id = _normalize_swap_inst_id(symbol)
+            candles = self._fetch_bitpro_mcp_candles(
+                symbol=symbol,
+                bar=normalized_bar,
+                limit=candle_limit,
+            )
+            data_source = "bitpro_mcp_market_klines"
         result = self.engine.run(
             strategy_key=strategy_key,
             candles=candles or sample_candles(),
@@ -69,11 +93,17 @@ class BacktestService:
                 "candle_count": len(candles or sample_candles()),
             }
         )
+        if selected_source == "bitpro_mcp":
+            report_json["bar"] = normalized_bar
+            report_json["bitpro_tool_calls"] = [
+                str(call.get("tool", ""))
+                for call in self._bitpro_adapter().last_tool_calls
+            ]
         report_markdown = _append_data_source(
             result.report_markdown,
             data_source=data_source,
             inst_id=inst_id,
-            bar=normalized_bar if selected_source in {"okx", "bitpro"} else "",
+            bar=normalized_bar if selected_source in {"okx", "bitpro", "bitpro_mcp"} else "",
             candle_count=len(candles or sample_candles()),
         )
         with self.db.session() as session:
@@ -112,6 +142,22 @@ class BacktestService:
         if not candles:
             raise ValueError(f"No BitPro candles found for {symbol} {bar}")
         return candles
+
+    def _fetch_bitpro_mcp_candles(self, *, symbol: str, bar: str, limit: int) -> list[Candle]:
+        candles = self._bitpro_adapter().fetch_candles(
+            symbol=symbol,
+            timeframe=bar,
+            limit=limit,
+        )
+        if not candles:
+            raise ValueError(f"No BitPro MCP candles found for {symbol} {bar}")
+        return candles
+
+    def _bitpro_adapter(self) -> BitProCandleAdapter:
+        if self.bitpro_adapter is None:
+            settings = self.settings or get_settings()
+            self.bitpro_adapter = BitProToolAdapter(BitProMcpClient(settings=settings))
+        return self.bitpro_adapter
 
     def latest(self) -> dict[str, Any] | None:
         with self.db.session() as session:

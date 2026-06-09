@@ -82,10 +82,22 @@ The Agent must not generate or infer those confirmation fields for the user.
 
 ## HyperTrade Adapter Shape
 
-When HyperTrade implements a native BitPro MCP adapter, keep the boundary explicit:
+HyperTrade now includes an initial read-only BitPro MCP adapter in `backend/src/hypertrade/bitpro/mcp.py`. Keep the boundary explicit:
 
-1. Store `BITPRO_MCP_URL` and `BITPRO_MCP_API_TOKEN` server-side only.
-2. Implement a small MCP client wrapper that always calls `bitpro_capabilities` and `bitpro_health` before task-specific tools.
-3. Register HyperTrade tools such as `bitpro.market_klines`, `bitpro.backtest_result`, `bitpro.paper_dashboard`, and `bitpro.live_positions` as audited adapter tools.
-4. Persist each call in HyperTrade trace events with request id, tool name, parameters, result status, and redaction policy.
-5. Keep live write tools disabled until a separate contract adds explicit approval and risk gates.
+1. Store `BITPRO_MCP_API_BASE`, `BITPRO_MCP_API_TOKEN`, and `BITPRO_MCP_AUTH_HEADER` server-side only.
+2. Use the adapter wrapper that always calls `bitpro_capabilities` and `bitpro_health` before task-specific tools.
+3. Registered HyperTrade read tools include `bitpro.capabilities`, `bitpro.health`, `bitpro.market_klines`, `bitpro.paper_dashboard`, and `bitpro.live_positions`.
+4. Agent calls persist nested BitPro trace events such as `bitpro.capabilities`, `bitpro.health`, and `bitpro.market_klines`.
+5. Backtests can use `candle_source=bitpro_mcp` or CLI `/backtest --source bitpro_mcp --symbol ETH --bar 1H --limit 200`.
+6. Keep live write tools disabled until a separate contract adds explicit approval and risk gates.
+
+## HyperTrade API Entrypoints
+
+All endpoints require the normal HyperTrade admin session:
+
+- `GET /api/bitpro/health`
+- `GET /api/bitpro/market/klines/{symbol}?timeframe=1h&limit=200`
+- `GET /api/bitpro/paper/dashboard`
+- `GET /api/bitpro/live/positions?exchange=okx&symbol=ETH`
+
+The `/harness` overview exposes adapter status under `bitpro` without exposing the token value.

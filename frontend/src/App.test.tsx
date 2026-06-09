@@ -172,6 +172,21 @@ const overview = {
       }
     ]
   },
+  bitpro: {
+    adapter: "mcp_read_only",
+    configured: true,
+    api_base: "http://127.0.0.1:8889/api/v2",
+    auth_header: "X-BitPro-MCP-Token",
+    token_configured: true,
+    live_write_enabled: false,
+    tools: [
+      "bitpro_capabilities",
+      "bitpro_health",
+      "market_klines",
+      "paper_dashboard",
+      "trading_positions"
+    ]
+  },
   evals: {
     status: "passed",
     case_count: 5,
@@ -225,6 +240,10 @@ test("renders harness observability from live overview", async () => {
   expect(screen.getAllByText("行情摘要").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("工具调用链路")).toBeInTheDocument();
   expect(screen.getByText("BitPro MCP 接入")).toBeInTheDocument();
+  expect(screen.getByText("mcp_read_only")).toBeInTheDocument();
+  expect(await screen.findByText("Token 已配置")).toBeInTheDocument();
+  expect(screen.getByText("实盘写关闭")).toBeInTheDocument();
+  expect(screen.getByText("http://127.0.0.1:8889/api/v2")).toBeInTheDocument();
   expect(screen.getByText("1. bitpro_capabilities")).toBeInTheDocument();
   expect(screen.getByText("2. bitpro_health")).toBeInTheDocument();
   expect(screen.getByText("行情数据")).toBeInTheDocument();

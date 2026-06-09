@@ -280,6 +280,43 @@ def test_api_exposes_deterministic_market_shortcuts(monkeypatch, tmp_path):
     assert compare["symbols"] == ["ETH", "SOL"]
 
 
+def test_api_exposes_bitpro_mcp_read_adapter(tmp_path):
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    app = create_app(
+        settings=Settings(
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            KNOWLEDGE_DIR=tmp_path,
+            DEEPSEEK_API_KEY="",
+        ),
+        db=db,
+        bitpro_adapter=ApiFakeBitProAdapter(),
+    )
+    client = TestClient(app)
+    assert client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "secret"},
+    ).status_code == 200
+
+    overview = client.get("/api/harness/overview").json()
+    assert overview["bitpro"]["adapter"] == "mcp_read_only"
+    assert overview["bitpro"]["configured"] is True
+    assert overview["bitpro"]["live_write_enabled"] is False
+
+    health = client.get("/api/bitpro/health").json()
+    klines = client.get("/api/bitpro/market/klines/ETH?timeframe=1H&limit=12").json()
+    paper = client.get("/api/bitpro/paper/dashboard").json()
+    positions = client.get("/api/bitpro/live/positions?symbol=ETH").json()
+
+    assert health["tool_calls"][0]["tool"] == "bitpro_capabilities"
+    assert klines["market"]["symbol"] == "ETH/USDT:USDT"
+    assert klines["market"]["timeframe"] == "1h"
+    assert len(klines["candles"]) == 12
+    assert paper["dashboard"]["session_count"] == 1
+    assert positions["positions"][0]["symbol"] == "ETH/USDT:USDT"
+
+
 def test_login_cookie_secure_flag_is_configurable():
     db = Database("sqlite:///:memory:")
     db.create_all()
@@ -293,3 +330,59 @@ def test_login_cookie_secure_flag_is_configurable():
 
     assert response.status_code == 200
     assert "secure" in response.headers["set-cookie"].lower()
+
+
+class ApiFakeBitProAdapter:
+    def health(self):
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "health": {"status": "healthy"},
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+            ],
+        }
+
+    def market_klines(self, *, symbol: str, timeframe: str, limit: int):
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "health": {"status": "healthy"},
+            "market": {
+                "exchange": "okx",
+                "symbol": "ETH/USDT:USDT",
+                "timeframe": timeframe.lower(),
+                "limit": limit,
+            },
+            "candles": [
+                {
+                    "timestamp": 1_780_272_000_000 + index * 3_600_000,
+                    "open": 100 + index,
+                    "high": 101 + index,
+                    "low": 99 + index,
+                    "close": 100 + index,
+                    "volume": 1000 + index,
+                }
+                for index in range(limit)
+            ],
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {"tool": "market_klines", "status": "success", "parameters": {}},
+            ],
+        }
+
+    def paper_dashboard(self):
+        return {
+            "status": "ok",
+            "dashboard": {"session_count": 1},
+            "tool_calls": [],
+        }
+
+    def live_positions(self, *, exchange: str = "okx", symbol: str | None = None):
+        return {
+            "status": "ok",
+            "positions": [{"exchange": exchange, "symbol": "ETH/USDT:USDT"}],
+            "tool_calls": [],
+        }

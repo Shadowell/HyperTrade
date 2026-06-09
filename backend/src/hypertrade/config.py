@@ -68,6 +68,19 @@ class Settings(BaseSettings):
     raw_market_retention_days: int = Field(default=7, alias="RAW_MARKET_RETENTION_DAYS")
     llm_daily_soft_budget_usd: float = Field(default=5.0, alias="LLM_DAILY_SOFT_BUDGET_USD")
     bitpro_sqlite_path: Path = Field(default=Path(""), alias="BITPRO_SQLITE_PATH")
+    bitpro_mcp_api_base: str = Field(
+        default="http://127.0.0.1:8889/api/v2",
+        alias="BITPRO_MCP_API_BASE",
+    )
+    bitpro_mcp_api_token: str = Field(default="", alias="BITPRO_MCP_API_TOKEN")
+    bitpro_mcp_auth_header: str = Field(
+        default="X-BitPro-MCP-Token",
+        alias="BITPRO_MCP_AUTH_HEADER",
+    )
+    bitpro_mcp_timeout_seconds: float = Field(
+        default=15.0,
+        alias="BITPRO_MCP_TIMEOUT_SECONDS",
+    )
     active_chat_provider: str = Field(default="deepseek", alias="ACTIVE_CHAT_PROVIDER")
     openai_base_url: str = Field(default="https://api.openai.com/v1", alias="OPENAI_BASE_URL")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")

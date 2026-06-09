@@ -236,6 +236,15 @@ type HarnessOverview = {
     pending_approval_count: number;
     recent: LiveOrderIntent[];
   };
+  bitpro?: {
+    adapter: string;
+    configured: boolean;
+    api_base: string;
+    auth_header: string;
+    token_configured: boolean;
+    live_write_enabled: boolean;
+    tools: string[];
+  };
   evals: EvalStatus;
 };
 
@@ -356,6 +365,12 @@ const copy = {
     liveReadOnly: "实盘只读",
     readOnlyDefault: "默认只读",
     writeBlocked: "写工具需审批",
+    mcpAdapter: "适配器",
+    mcpApiBase: "API Base",
+    mcpTokenReady: "Token 已配置",
+    mcpTokenMissing: "Token 未配置",
+    mcpLiveWriteOff: "实盘写关闭",
+    mcpLiveWriteOn: "实盘写开启",
     toolCatalog: "工具目录",
     providerStatus: "模型状态",
     systemStatus: "系统状态",
@@ -485,6 +500,12 @@ const copy = {
     liveReadOnly: "Live Read Only",
     readOnlyDefault: "Read-only default",
     writeBlocked: "Writes require approval",
+    mcpAdapter: "Adapter",
+    mcpApiBase: "API Base",
+    mcpTokenReady: "Token configured",
+    mcpTokenMissing: "Token missing",
+    mcpLiveWriteOff: "Live writes off",
+    mcpLiveWriteOn: "Live writes on",
     toolCatalog: "Tool Catalog",
     providerStatus: "Provider Status",
     systemStatus: "System Status",
@@ -601,6 +622,21 @@ const previewOverview: HarnessOverview = {
     pending_approval_count: 0,
     recent: []
   },
+  bitpro: {
+    adapter: "mcp_read_only",
+    configured: false,
+    api_base: "http://127.0.0.1:8889/api/v2",
+    auth_header: "X-BitPro-MCP-Token",
+    token_configured: false,
+    live_write_enabled: false,
+    tools: [
+      "bitpro_capabilities",
+      "bitpro_health",
+      "market_klines",
+      "paper_dashboard",
+      "trading_positions"
+    ]
+  },
   evals: {
     status: "preview",
     case_count: 0,
@@ -671,6 +707,7 @@ function App() {
   const [backtestStrategy, setBacktestStrategy] = useState("momentum_breakout_v1");
   const t = copy[language];
   const activeOverview = overview ?? previewOverview;
+  const bitproStatus = activeOverview.bitpro ?? previewOverview.bitpro;
   const defaultProvider =
     activeOverview.providers.find((provider) => provider.default) ?? activeOverview.providers[0];
   const traceEvents =
@@ -1301,6 +1338,42 @@ function App() {
                     <p className="mt-1 text-sm leading-6 text-ink/55">{t.bitproMcpHint}</p>
                   </div>
                   <Cable size={18} className="text-brass" />
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2 max-md:grid-cols-1">
+                  <div className="status-row">
+                    <span>{t.mcpAdapter}</span>
+                    <strong className="font-mono text-xs">
+                      {bitproStatus?.adapter ?? "mcp_read_only"}
+                    </strong>
+                  </div>
+                  <div className="status-row">
+                    <span>{bitproStatus?.auth_header ?? "X-BitPro-MCP-Token"}</span>
+                    <strong
+                      className={
+                        bitproStatus?.token_configured ? "text-signal" : "text-danger"
+                      }
+                    >
+                      {bitproStatus?.token_configured ? t.mcpTokenReady : t.mcpTokenMissing}
+                    </strong>
+                  </div>
+                  <div className="status-row">
+                    <span>{t.mcpApiBase}</span>
+                    <strong className="truncate font-mono text-xs">
+                      {bitproStatus?.api_base ?? "http://127.0.0.1:8889/api/v2"}
+                    </strong>
+                  </div>
+                  <div className="status-row">
+                    <span>{t.auditBoundary}</span>
+                    <strong
+                      className={
+                        bitproStatus?.live_write_enabled ? "text-danger" : "text-signal"
+                      }
+                    >
+                      {bitproStatus?.live_write_enabled
+                        ? t.mcpLiveWriteOn
+                        : t.mcpLiveWriteOff}
+                    </strong>
+                  </div>
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-2 max-sm:grid-cols-1">
                   {[

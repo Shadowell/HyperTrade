@@ -63,6 +63,7 @@ HyperTrade 是一个独立的生产级 Agent 交易系统。V1 重点是稳定 A
 - Sprint 30 multi-step strategy experiment workflow.
 - Sprint 31 deterministic Agent eval suite and operations runbooks.
 - Sprint 32 production-oriented project positioning and BitPro API tool-surface contract.
+- Sprint 33 initial read-only BitPro MCP adapter: capability/health preflight, K-line data direct access, paper dashboard reads, live-position diagnostics, API endpoints, Agent tool schemas, and `bitpro_mcp` backtest candle source.
 - BitPro external API adapter contract for backtest data, base market data, paper/simulation state, and live trading state without copying BitPro business logic.
 
 ## V1 Out of Scope
@@ -108,5 +109,7 @@ HyperTrade 是一个独立的生产级 Agent 交易系统。V1 重点是稳定 A
 - Developer can run `/evals` and inspect deterministic Agent eval status.
 - Operator can use `docs/knowledge/tool-usage-guide.md` to validate each Agent tool surface and follow related operational source-code comments.
 - Operator can review the BitPro tool-surface requirements before wiring external data, backtest, paper/simulation, or live-state APIs into Agent tools.
+- Operator can call BitPro read tools through HyperTrade API/Agent paths while every flow starts with `bitpro_capabilities` and `bitpro_health`.
+- Developer can run backtests with `candle_source=bitpro_mcp` or `/backtest --source bitpro_mcp` to use BitPro `market_klines` data without direct database access.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.

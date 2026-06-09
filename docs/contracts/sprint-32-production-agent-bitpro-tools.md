@@ -16,6 +16,7 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
   - live trading state
   - risk, permission, health, and audit metadata
 - Keep HyperTrade independent from BitPro business logic. BitPro is an external provider reached through explicit API contracts.
+- Implement the first read-only HyperTrade adapter for BitPro MCP/API: capability discovery, health checks, K-line reads, paper dashboard reads, live-position diagnostics, Agent tool schemas, and a `bitpro_mcp` backtest data source.
 
 ## BitPro Capabilities Needed
 
@@ -81,6 +82,8 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
 - Project docs no longer describe HyperTrade as a non-production showcase project.
 - `docs/spec.md`, `docs/progress.md`, and architecture docs describe production-grade Agent operation.
 - BitPro tool-surface requirements are documented before implementation starts.
+- HyperTrade exposes read-only BitPro adapter tools and API endpoints, and each data flow starts with `bitpro_capabilities` and `bitpro_health`.
+- Backtests can use `candle_source=bitpro_mcp` to fetch real BitPro K-line data through `market_klines`.
 - Routine market/RAG/Memory CLI output no longer repeats a fixed investment-advice disclaimer, while strategy, backtest, Testnet, live-order, and recommendation-like prompts still keep a clear research/risk boundary.
 - No secrets, BitPro credentials, database files, or production `.env` are added.
 - `./scripts/check.sh` passes.
