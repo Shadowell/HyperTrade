@@ -12,6 +12,7 @@
 
 ## Latest Completed Work
 
+- Fixed the `/harness` sidebar section navigation so clicking `行情摘要`, `Memory`, or `RAG` updates the active sidebar item instead of leaving `Harness` permanently highlighted. Added a frontend regression test for the clicked section state and browser-verified the local page with Playwright.
 - Reduced repetitive investment-advice disclaimer output for routine Agent/CLI usage: the welcome banner, deterministic market shortcuts, structured market reports, and planner system prompt no longer force a fixed disclaimer on every ordinary market/RAG/Memory response. Strategy, backtest, Testnet, live-order, and recommendation-like prompts still retain the research/risk boundary. Updated acceptance tests, `docs/spec.md`, `docs/contracts/sprint-32-production-agent-bitpro-tools.md`, `docs/testing/agent-acceptance-test-plan.md`, and `docs/knowledge/tool-usage-guide.md`.
 - Applied `codex-project-template` development harness.
 - Added FastAPI backend, AgentKernel, ToolRegistry, RAG, Memory, OKX market parser, worker loops, Alembic migration.

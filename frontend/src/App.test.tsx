@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import App from "./App";
@@ -184,6 +184,7 @@ const overview = {
 };
 
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
 });
 
@@ -247,6 +248,37 @@ test("renders harness observability from live overview", async () => {
   expect((await screen.findAllByText("mem_live")).length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("报告阅读")).toBeInTheDocument();
   expect(screen.getByText("完整回测")).toBeInTheDocument();
+});
+
+test("sidebar navigation keeps the clicked section active", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/auth/me")) {
+        return jsonResponse({ username: "admin" });
+      }
+      if (url.endsWith("/api/harness/overview")) {
+        return jsonResponse(overview);
+      }
+      if (url.endsWith("/api/memory")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({}, 404);
+    })
+  );
+
+  render(<App />);
+
+  const harnessLink = screen.getByRole("link", { name: "Harness" });
+  const marketLink = screen.getByRole("link", { name: "行情摘要" });
+  expect(harnessLink).toHaveClass("nav-item-active");
+
+  fireEvent.click(marketLink);
+
+  expect(marketLink).toHaveClass("nav-item-active");
+  expect(harnessLink).not.toHaveClass("nav-item-active");
+  expect(await screen.findByText("344")).toBeInTheDocument();
 });
 
 function jsonResponse(body: unknown, status = 200): Response {

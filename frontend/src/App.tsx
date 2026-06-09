@@ -26,6 +26,7 @@ import {
 import {
   CSSProperties,
   FormEvent,
+  MouseEvent,
   ReactNode,
   useCallback,
   useEffect,
@@ -34,6 +35,7 @@ import {
 } from "react";
 
 type Language = "zh" | "en";
+type NavSection = "harness" | "market" | "memory" | "rag";
 
 type TraceEvent = {
   id?: string;
@@ -545,6 +547,7 @@ const previewOverview: HarnessOverview = {
 
 function App() {
   const [language, setLanguage] = useState<Language>("zh");
+  const [activeSection, setActiveSection] = useState<NavSection>(() => activeSectionFromHash());
   const [prompt, setPrompt] = useState(copy.zh.prompt);
   const [run, setRun] = useState<AgentRun>(seedRun);
   const [overview, setOverview] = useState<HarnessOverview | null>(null);
@@ -587,6 +590,11 @@ function App() {
     run.id !== seedRun.id ? run.trace_events : activeOverview.trace.recent_events.slice(0, 6);
   const selectedMemory =
     memoryItems.find((item) => item.id === selectedMemoryId) ?? memoryItems[0] ?? null;
+  const navItemClass = useCallback(
+    (section: NavSection) =>
+      section === activeSection ? "nav-item nav-item-active" : "nav-item",
+    [activeSection]
+  );
 
   const metrics = useMemo(
     () => [
@@ -683,6 +691,24 @@ function App() {
       cancelled = true;
     };
   }, [refreshMemoryItems]);
+
+  useEffect(() => {
+    function syncActiveSection() {
+      setActiveSection(activeSectionFromHash());
+    }
+
+    window.addEventListener("hashchange", syncActiveSection);
+    return () => window.removeEventListener("hashchange", syncActiveSection);
+  }, []);
+
+  function handleNavClick(section: NavSection, event: MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    setActiveSection(section);
+    const target = document.getElementById(section);
+    if (target) {
+      target.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    }
+  }
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -973,19 +999,35 @@ function App() {
           </div>
 
           <nav className="mt-8 space-y-2 text-sm">
-            <a className="nav-item nav-item-active" href="/harness">
+            <a
+              className={navItemClass("harness")}
+              href="#harness"
+              onClick={(event) => handleNavClick("harness", event)}
+            >
               <TerminalSquare size={16} />
               {t.harness}
             </a>
-            <a className="nav-item" href="#market">
+            <a
+              className={navItemClass("market")}
+              href="#market"
+              onClick={(event) => handleNavClick("market", event)}
+            >
               <LineChart size={16} />
               {t.market}
             </a>
-            <a className="nav-item" href="#memory">
+            <a
+              className={navItemClass("memory")}
+              href="#memory"
+              onClick={(event) => handleNavClick("memory", event)}
+            >
               <MemoryStick size={16} />
               {t.memory}
             </a>
-            <a className="nav-item" href="#rag">
+            <a
+              className={navItemClass("rag")}
+              href="#rag"
+              onClick={(event) => handleNavClick("rag", event)}
+            >
               <Brain size={16} />
               {t.rag}
             </a>
@@ -1030,7 +1072,10 @@ function App() {
         </aside>
 
         <main className="mx-auto w-full max-w-[1480px] px-8 py-7 max-lg:px-4">
-          <header className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-ink/15 pb-5 max-md:grid-cols-1">
+          <header
+            className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-ink/15 pb-5 max-md:grid-cols-1"
+            id="harness"
+          >
             <div>
               <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase text-brass">
                 <span>{t.risk}</span>
@@ -1951,6 +1996,17 @@ function providerLabel(provider: ProviderStatus | undefined, t: Record<string, s
   }
   const model = provider.model || provider.name;
   return `${provider.display_name} / ${model}`;
+}
+
+function activeSectionFromHash(): NavSection {
+  if (typeof window === "undefined") {
+    return "harness";
+  }
+  const section = window.location.hash.replace("#", "");
+  if (section === "market" || section === "memory" || section === "rag") {
+    return section;
+  }
+  return "harness";
 }
 
 function StatusDot({ enabled }: { enabled: boolean }) {
