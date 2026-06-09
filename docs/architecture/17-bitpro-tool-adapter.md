@@ -4,6 +4,12 @@
 
 BitPro can act as an external capability provider for HyperTrade Agent tools. HyperTrade must keep the boundary explicit: Agent planning happens in HyperTrade, tool execution is audited in HyperTrade, and BitPro is called through stable APIs for data and state.
 
+The target split is:
+
+- BitPro is the base trading-system platform. It owns market/reference data, strategy records, `BaseStrategy` runtime contracts, backtest execution, performance artifacts, paper/simulation instances, and future live execution.
+- HyperTrade is the Agent control plane. It improves the operator's Agent capability by planning research, selecting tools, writing candidate strategies, validating code, triggering BitPro-owned backtests, reading evidence, and promoting only passing strategies to paper simulation.
+- The integration boundary is MCP/API only. HyperTrade never reads BitPro databases directly for this lifecycle, never writes `backend/app/strategies/*.py`, never copies BitPro trading logic, and never restarts BitPro to make a strategy usable.
+
 The adapter starts from read-first discovery and then permits non-live strategy lifecycle tools:
 
 - `bitpro.capabilities`: supported API versions, tool names, permission scopes, disabled features, and environment.
@@ -18,6 +24,19 @@ The adapter starts from read-first discovery and then permits non-live strategy 
 
 Research/backtest/paper writes are allowed only through explicit Agent tool calls such as strategy generation, strategy creation, BitPro-owned backtest jobs, and paper/simulation lifecycle control. Live write tools must be added later and separately. Any testnet or live write path needs explicit scopes, idempotency keys, approval gates, risk prechecks, redacted audit events, and structured refusal reasons.
 
+The production strategy R&D loop is:
+
+1. Call `bitpro_capabilities`, then `bitpro_health`.
+2. Confirm real K-line coverage with `market_klines` before strategy generation. If coverage is missing, use data sync diagnostics or shrink the range; never synthesize OHLCV.
+3. Write or generate a single `BaseStrategy` subclass and validate it with `strategy_validate_code` before persistence.
+4. Save the strategy through `strategy_create(script_content=...)` as a DB-backed dynamic strategy with `strategy_source=db_script` and `script_content_source=db`.
+5. Start the BitPro-owned backtest with `backtest_start_job`, poll `backtest_get_job`, then inspect `backtest_list_results` and `backtest_get_result`.
+6. Iterate only from real backtest evidence. Candidate acceptance gates should be explicit, for example minimum trade count, positive return, and bounded drawdown.
+7. Only after passing the gate, configure and start paper simulation with `paper_configure` and `paper_start`.
+8. Skip all live mutation tools unless the human explicitly supplies the required live-risk confirmation fields.
+
+Server evidence on 2026-06-09 validated this loop through BitPro MCP against `http://127.0.0.1:8889/api/v2`: ETH/USDT:USDT 1h had 720 real candles from 2026-05-10T14:00:00Z to 2026-06-09T13:00:00Z; strategy `#293` passed `strategy_validate_code`; backtest job `a292d098-0657-411d-9fff-3c82b9b384d8` completed with result `#196`; metrics were 4.0441% return, 1.4438% max drawdown, 11 trades, 0.8029 Sharpe, and 63.64% win rate; paper simulation for strategy `#293` was started in dry-run mode. Live mutation tools were skipped.
+
 Operational data-access steps are documented in `docs/runbooks/bitpro-mcp-data-access.md`. The first HyperTrade implementation lives in `backend/src/hypertrade/bitpro/mcp.py`: every flow starts with `bitpro_capabilities` and `bitpro_health`, then selects the smallest tool for market data, strategy lifecycle, backtest, paper/simulation, or live read-only diagnostics. Live write tools are blocked in this adapter.
 
 For containerized deployments, BitPro MCP is reached through an explicit host-gateway address instead of `127.0.0.1`, because loopback inside `hypertrade-api` points to the container itself. If BitPro is unavailable, API endpoints return a structured `502` with the failed BitPro tool calls so operators can distinguish upstream outage from HyperTrade runtime failure.
@@ -25,6 +44,12 @@ For containerized deployments, BitPro MCP is reached through an explicit host-ga
 ## 中文
 
 BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必须清晰：Agent 规划在 HyperTrade，工具执行审计在 HyperTrade，BitPro 只通过稳定 API 提供数据和状态。
+
+目标分层：
+
+- BitPro 是基础交易系统平台，负责行情/基础数据、策略记录、`BaseStrategy` 运行合同、回测执行、绩效结果、模拟盘实例和未来实盘执行。
+- HyperTrade 是 Agent 控制平面，通过规划研发、选择工具、编写候选策略、校验代码、触发 BitPro 回测、读取证据，以及只把通过门禁的策略推进到模拟盘，来提升操作者的 Agent 能力。
+- 集成边界只允许 MCP/API。该生命周期中 HyperTrade 不直接读 BitPro 数据库，不写 `backend/app/strategies/*.py`，不复制 BitPro 交易逻辑，也不通过重启 BitPro 让策略生效。
 
 适配器从只读发现开始，并允许非实盘策略生命周期工具：
 
@@ -39,6 +64,19 @@ BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必�
 - `bitpro.audit`：request/run/tool 关联、追加式事件和脱敏交易所元数据。
 
 研究、回测、模拟盘写入只允许通过明确 Agent 工具调用执行，例如策略生成、策略创建、BitPro 回测 job 和 paper/simulation 生命周期控制。实盘写工具必须后续单独加入。任何 Testnet 或实盘写入路径都必须具备明确 scope、幂等键、审批门、风控预检、脱敏审计事件和结构化拒绝原因。
+
+生产级策略研发闭环：
+
+1. 先调用 `bitpro_capabilities`，再调用 `bitpro_health`。
+2. 生成策略前先用 `market_klines` 确认真实 K 线覆盖。覆盖不足时做同步诊断或缩短区间；禁止合成 OHLCV。
+3. 编写或生成单个 `BaseStrategy` 子类，持久化前必须通过 `strategy_validate_code`。
+4. 通过 `strategy_create(script_content=...)` 保存为 DB 动态策略，并写入 `strategy_source=db_script` / `script_content_source=db`。
+5. 用 `backtest_start_job` 启动 BitPro 负责的回测，轮询 `backtest_get_job`，再读取 `backtest_list_results` 和 `backtest_get_result`。
+6. 只基于真实回测证据迭代。候选策略门禁要显式，例如最低交易数、正收益和受控回撤。
+7. 只有通过门禁后，才用 `paper_configure` 和 `paper_start` 进入模拟盘。
+8. 除非人类明确提供实盘风险确认字段，否则跳过所有实盘写工具。
+
+2026-06-09 服务器验证已经跑通该闭环：通过 BitPro MCP 访问 `http://127.0.0.1:8889/api/v2`；ETH/USDT:USDT 1h 有 720 根真实 K 线，覆盖 2026-05-10T14:00:00Z 到 2026-06-09T13:00:00Z；策略 `#293` 通过 `strategy_validate_code`；回测任务 `a292d098-0657-411d-9fff-3c82b9b384d8` 完成并生成结果 `#196`；指标为收益 4.0441%、最大回撤 1.4438%、11 笔交易、Sharpe 0.8029、胜率 63.64%；策略 `#293` 已以 dry-run 模式启动模拟盘。实盘写工具已跳过。
 
 具体数据调用步骤见 `docs/runbooks/bitpro-mcp-data-access.md`。第一版 HyperTrade 实现在 `backend/src/hypertrade/bitpro/mcp.py`：每条链路先调用 `bitpro_capabilities` 和 `bitpro_health`，再根据行情数据、策略生命周期、回测、模拟盘或实盘只读诊断选择最小工具。实盘写工具在该 adapter 内默认阻断。
 

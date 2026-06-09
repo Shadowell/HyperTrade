@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: BitPro MCP data direct and host-gateway production connectivity deployed to `47.79.36.92` at SHA `4d443fa`.
+- Last verified state: BitPro MCP strategy R&D loop validated on `47.79.36.92` with strategy `#293`, backtest result `#196`, and paper dry-run started through MCP only.
 
 ## Active Contract
 
@@ -14,6 +14,10 @@
 
 - Implemented the BitPro MCP adapter in HyperTrade: server-side settings for `BITPRO_MCP_API_BASE`/token/header, `BitProMcpClient`, `BitProToolAdapter`, Agent tool schemas and executor wiring, nested trace events for `bitpro_capabilities` -> `bitpro_health` -> read/non-live lifecycle tool calls, admin API endpoints for health/K-lines/paper dashboard/live positions, `/harness` BitPro adapter status, and `candle_source=bitpro_mcp` backtest data access.
 - Added BitPro strategy lifecycle Agent tools: strategy search/generation/creation, BitPro-owned backtest job start/status reads, and paper/simulation configure/start/pause/resume/stop. Live mutation tools remain blocked by the BitPro adapter.
+- Validated the production BitPro MCP strategy R&D loop on the server using MCP tools only. `bitpro_capabilities` returned `bitpro-mcp-v1` with live trading disabled, `bitpro_health` returned healthy, and `market_klines` confirmed 720 real ETH/USDT:USDT 1h candles from `2026-05-10T14:00:00Z` to `2026-06-09T13:00:00Z`.
+- Created DB-backed BaseStrategy strategy `#293` named `[永续][1h][趋势突破] ETH/USDT · Agent EMA ATR 回撤 · paper-v1 20260609134540` through `strategy_validate_code` and `strategy_create(script_content=...)`; no BitPro Python strategy files were edited and no BitPro restart was required.
+- Started BitPro-owned backtest job `a292d098-0657-411d-9fff-3c82b9b384d8`; result `#196` completed for `2026-05-10` to `2026-06-09` with `4.0441%` total return, `1.4438%` max drawdown, `11` trades, `0.8029` Sharpe, `63.64%` win rate, and final capital `10404.4128`.
+- Because the explicit gate passed (trade count >= 1, return > 0, absolute max drawdown <= 15%), configured and started paper dry-run for strategy `#293`. Live mutation tools were not called.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 86 tests for the BitPro strategy lifecycle slice.
 - Redesigned the `/harness` operator UI toward a Chinese-first production console: sidebar, header, run monitor, tool trace, Memory/RAG, paper runtime, live approval, strategy lab, and status labels now use consistent Chinese technical copy while preserving protocol/tool names. Added a visible BitPro MCP access panel that documents the required `bitpro_capabilities` -> `bitpro_health` -> read-tool selection flow, and added `docs/runbooks/bitpro-mcp-data-access.md` for server-side MCP data access.
 - Fixed the `/harness` sidebar section navigation so clicking `行情摘要`, `Memory`, or `RAG` updates the active sidebar item instead of leaving `Harness` permanently highlighted. Added a frontend regression test for the clicked section state and browser-verified the local page with Playwright.

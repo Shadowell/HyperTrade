@@ -2,9 +2,13 @@
 
 ## Product Summary
 
-HyperTrade is an independent production-oriented agent-first crypto trading system. V1 focuses on a stable agent capability platform: provider configuration, tool calls, RAG, memory, trace, market ingestion, risk gates, testnet execution, and operator-facing harnesses.
+HyperTrade is an independent production-oriented agent-first crypto trading system. V1 focuses on a stable agent capability platform: provider configuration, tool calls, RAG, memory, trace, market ingestion, risk gates, testnet execution, BitPro strategy lifecycle orchestration, and operator-facing harnesses.
 
-HyperTrade 是一个独立的生产级 Agent 交易系统。V1 重点是稳定 Agent 能力平台：Provider 配置、Tool Call、RAG、Memory、Trace、行情采集、风控门禁、Testnet 执行和面向操作员的 Harness。
+HyperTrade 是一个独立的生产级 Agent 交易系统。V1 重点是稳定 Agent 能力平台：Provider 配置、Tool Call、RAG、Memory、Trace、行情采集、风控门禁、Testnet 执行、BitPro 策略生命周期编排和面向操作员的 Harness。
+
+BitPro is treated as the base trading-system platform: it owns market/reference data, strategy storage, backtest execution, metrics, paper/simulation runtime, and future live execution. HyperTrade is the Agent control and research layer: it discovers BitPro capabilities, reads/writes through MCP tools only, generates and validates `BaseStrategy` code, starts BitPro-owned backtests, inspects real evidence, and promotes only passing candidates into paper simulation. HyperTrade must not copy BitPro business logic or bypass BitPro risk boundaries.
+
+BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储、回测执行、指标、模拟盘运行和未来实盘执行。HyperTrade 作为 Agent 控制与研发层：通过 MCP 发现 BitPro 能力，只经由 MCP 工具读写，生成并校验 `BaseStrategy` 策略，启动 BitPro 负责的回测，基于真实证据迭代，并且只把通过门禁的候选策略推进到模拟盘。HyperTrade 不复制 BitPro 业务逻辑，也不绕过 BitPro 风险边界。
 
 ## Users
 
@@ -113,5 +117,6 @@ HyperTrade 是一个独立的生产级 Agent 交易系统。V1 重点是稳定 A
 - Operator can call BitPro read tools through HyperTrade API/Agent paths while every flow starts with `bitpro_capabilities` and `bitpro_health`.
 - Developer can run backtests with `candle_source=bitpro_mcp` or `/backtest --source bitpro_mcp` to use BitPro `market_klines` data without direct database access.
 - Agent can use BitPro strategy lifecycle tools to generate/create strategy drafts, start/query BitPro-owned backtest jobs, and configure/control paper validation while real-account write tools remain blocked.
+- Agent can complete the BitPro strategy R&D loop through MCP only: `bitpro_capabilities` -> `bitpro_health` -> real K-line coverage confirmation -> `strategy_validate_code` -> `strategy_create` with DB-backed `script_content` -> `backtest_start_job`/result inspection -> gated `paper_configure`/`paper_start`.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.
