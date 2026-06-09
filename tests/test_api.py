@@ -301,9 +301,11 @@ def test_api_exposes_bitpro_mcp_read_adapter(tmp_path):
     ).status_code == 200
 
     overview = client.get("/api/harness/overview").json()
-    assert overview["bitpro"]["adapter"] == "mcp_read_only"
+    assert overview["bitpro"]["adapter"] == "mcp_non_live_lifecycle"
     assert overview["bitpro"]["configured"] is True
     assert overview["bitpro"]["live_write_enabled"] is False
+    assert "strategy_create" in overview["bitpro"]["tools"]
+    assert "paper_start" in overview["bitpro"]["tools"]
 
     health = client.get("/api/bitpro/health").json()
     klines = client.get("/api/bitpro/market/klines/ETH?timeframe=1H&limit=12").json()

@@ -353,11 +353,11 @@ const copy = {
     marketKnowledge: "行情与知识",
     executionResearch: "执行与实验",
     bitproMcp: "BitPro MCP 接入",
-    bitproMcpHint: "HyperTrade 只通过稳定 MCP/API 合同读取 BitPro 数据，不复制 BitPro 业务逻辑。",
+    bitproMcpHint: "HyperTrade 只通过稳定 MCP/API 合同接入 BitPro 数据与非实盘策略生命周期，不复制 BitPro 业务逻辑。",
     mcpCallOrder: "调用顺序",
     mcpCapabilities: "1. bitpro_capabilities",
     mcpHealth: "2. bitpro_health",
-    mcpSelectTool: "3. 选择只读工具",
+    mcpSelectTool: "3. 选择读/非实盘工具",
     mcpAudit: "4. 记录 trace 与审计字段",
     marketData: "行情数据",
     backtestData: "回测数据",
@@ -488,11 +488,11 @@ const copy = {
     executionResearch: "Execution and Research",
     bitproMcp: "BitPro MCP Access",
     bitproMcpHint:
-      "HyperTrade reads BitPro data only through stable MCP/API contracts and never copies BitPro business logic.",
+      "HyperTrade uses stable MCP/API contracts for BitPro data and non-live strategy lifecycle workflows without copying BitPro business logic.",
     mcpCallOrder: "Call Order",
     mcpCapabilities: "1. bitpro_capabilities",
     mcpHealth: "2. bitpro_health",
-    mcpSelectTool: "3. Select read tools",
+    mcpSelectTool: "3. Select read/non-live tools",
     mcpAudit: "4. Record trace and audit fields",
     marketData: "Market Data",
     backtestData: "Backtest Data",
@@ -623,7 +623,7 @@ const previewOverview: HarnessOverview = {
     recent: []
   },
   bitpro: {
-    adapter: "mcp_read_only",
+    adapter: "mcp_non_live_lifecycle",
     configured: false,
     api_base: "http://127.0.0.1:8889/api/v2",
     auth_header: "X-BitPro-MCP-Token",
@@ -633,6 +633,12 @@ const previewOverview: HarnessOverview = {
       "bitpro_capabilities",
       "bitpro_health",
       "market_klines",
+      "strategy_generate",
+      "strategy_create",
+      "backtest_start_job",
+      "backtest_get_job",
+      "paper_configure",
+      "paper_start",
       "paper_dashboard",
       "trading_positions"
     ]
@@ -657,9 +663,14 @@ const bitproMcpToolGroups = [
     note: "启动或读取 BitPro 拥有的回测任务与报告"
   },
   {
+    label: "策略生命周期",
+    tools: "strategy_generate / strategy_create / strategy_search",
+    note: "生成和保存策略草案，供回测与模拟盘验证"
+  },
+  {
     label: "模拟盘",
-    tools: "paper_dashboard / paper_events / paper_equity_curve",
-    note: "只读实例、权益曲线、成交和事件"
+    tools: "paper_configure / paper_start / paper_dashboard / paper_events",
+    note: "配置、启动和读取模拟盘实例，仍不触发实盘写"
   },
   {
     label: "实盘只读",
@@ -1343,7 +1354,7 @@ function App() {
                   <div className="status-row">
                     <span>{t.mcpAdapter}</span>
                     <strong className="font-mono text-xs">
-                      {bitproStatus?.adapter ?? "mcp_read_only"}
+                      {bitproStatus?.adapter ?? "mcp_non_live_lifecycle"}
                     </strong>
                   </div>
                   <div className="status-row">

@@ -43,6 +43,20 @@ class ReplayDeepSeekClient:
 
 
 class ReplayBitProAdapter:
+    def capabilities(self) -> dict[str, Any]:
+        return {
+            "contract_version": "bitpro-mcp-v1",
+            "tool_groups": {
+                "research_backtest_paper_mutation": [
+                    "strategy_generate",
+                    "strategy_create",
+                    "backtest_start_job",
+                    "paper_configure",
+                    "paper_start",
+                ],
+            },
+        }
+
     def market_klines(self, *, symbol: str, timeframe: str, limit: int) -> dict[str, Any]:
         return {
             "status": "ok",
@@ -77,6 +91,149 @@ class ReplayBitProAdapter:
                         "timeframe": "1h",
                         "limit": limit,
                     },
+                },
+            ],
+        }
+
+    def strategy_generate(self, *, prompt: str, symbol: str, timeframe: str) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "strategy": {
+                "name": "ETH trend breakout",
+                "script_content": "class ETHTrendBreakout: pass",
+                "prompt": prompt,
+                "symbol": symbol,
+                "timeframe": timeframe,
+            },
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {
+                    "tool": "strategy_generate",
+                    "status": "success",
+                    "parameters": {"prompt": prompt, "symbol": symbol, "timeframe": timeframe},
+                },
+            ],
+        }
+
+    def strategy_create(
+        self,
+        *,
+        name: str,
+        script_content: str,
+        description: str | None = None,
+        config: dict[str, Any] | None = None,
+        exchange: str = "okx",
+        symbols: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "strategy": {
+                "id": 42,
+                "name": name,
+                "script_content": script_content,
+                "description": description,
+                "config": config or {},
+                "exchange": exchange,
+                "symbols": symbols or [],
+            },
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {
+                    "tool": "strategy_create",
+                    "status": "success",
+                    "parameters": {"name": name, "exchange": exchange, "symbols": symbols or []},
+                },
+            ],
+        }
+
+    def backtest_start_job(
+        self,
+        *,
+        strategy_id: int,
+        start_date: str,
+        end_date: str,
+        initial_capital: float,
+        exchange: str = "okx",
+        symbol: str | None = None,
+        timeframe: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "job": {
+                "job_id": "job_42",
+                "strategy_id": strategy_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "symbol": symbol,
+                "timeframe": timeframe,
+            },
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {
+                    "tool": "backtest_start_job",
+                    "status": "success",
+                    "parameters": {
+                        "strategy_id": strategy_id,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                    },
+                },
+            ],
+        }
+
+    def backtest_get_job(self, *, job_id: str) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "job": {"job_id": job_id, "status": "completed", "progress": 100},
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {"tool": "backtest_get_job", "status": "success", "parameters": {"job_id": job_id}},
+            ],
+        }
+
+    def paper_configure(
+        self,
+        *,
+        strategy_id: int,
+        initial_equity: float,
+        exchange: str = "okx",
+        loop_interval_sec: int = 60,
+    ) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "paper": {"instance_id": 7, "strategy_id": strategy_id, "status": "configured"},
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {
+                    "tool": "paper_configure",
+                    "status": "success",
+                    "parameters": {"strategy_id": strategy_id, "initial_equity": initial_equity},
+                },
+            ],
+        }
+
+    def paper_start(self, *, strategy_id: int) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "paper": {"instance_id": strategy_id, "status": "running"},
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {
+                    "tool": "paper_start",
+                    "status": "success",
+                    "parameters": {"strategy_id": strategy_id},
                 },
             ],
         }
@@ -366,6 +523,126 @@ def test_agent_acceptance_bitpro_mcp_market_klines_are_audited(
     assert "## BitPro MCP K线直连" in run.report_markdown
     assert "ETH/USDT:USDT" in run.report_markdown
     assert "market_klines" in run.report_markdown
+    _assert_research_quality(run.report_markdown)
+
+
+def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = _memory_db()
+    _patch_replay_llm(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_generate",
+                        name="bitpro_strategy_generate",
+                        arguments={
+                            "prompt": "ETH 趋势突破策略",
+                            "symbol": "ETH",
+                            "timeframe": "1H",
+                        },
+                    )
+                ],
+            ),
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_create",
+                        name="bitpro_strategy_create",
+                        arguments={
+                            "name": "ETH trend breakout",
+                            "script_content": "class ETHTrendBreakout: pass",
+                            "description": "Agent generated research draft",
+                            "symbols": ["ETH"],
+                        },
+                    )
+                ],
+            ),
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_backtest_start",
+                        name="bitpro_backtest_start_job",
+                        arguments={
+                            "strategy_id": 42,
+                            "start_date": "2026-06-01",
+                            "end_date": "2026-06-08",
+                            "initial_capital": 10000,
+                            "symbol": "ETH",
+                            "timeframe": "1H",
+                        },
+                    )
+                ],
+            ),
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_backtest_get",
+                        name="bitpro_backtest_get_job",
+                        arguments={"job_id": "job_42"},
+                    )
+                ],
+            ),
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_paper_configure",
+                        name="bitpro_paper_configure",
+                        arguments={"strategy_id": 42, "initial_equity": 10000},
+                    )
+                ],
+            ),
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_paper_start",
+                        name="bitpro_paper_start",
+                        arguments={"strategy_id": 7},
+                    )
+                ],
+            ),
+            ChatResponse(content="BitPro 策略研发、回测和模拟盘验证链路已完成。", tool_calls=[]),
+        ],
+    )
+
+    run = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
+        knowledge_dir=str(tmp_path),
+        bitpro_adapter=ReplayBitProAdapter(),
+    ).run_chat("用 BitPro skills 开发 ETH 策略，回测并启动模拟盘验证")
+
+    names = _tool_names(run)
+    assert [name for name in names if name.startswith("bitpro_")] == [
+        "bitpro_strategy_generate",
+        "bitpro_strategy_create",
+        "bitpro_backtest_start_job",
+        "bitpro_backtest_get_job",
+        "bitpro_paper_configure",
+        "bitpro_paper_start",
+    ]
+    assert "bitpro.strategy_generate" in names
+    assert "bitpro.strategy_create" in names
+    assert "bitpro.backtest_start_job" in names
+    assert "bitpro.backtest_get_job" in names
+    assert "bitpro.paper_configure" in names
+    assert "bitpro.paper_start" in names
+    create_event = next(
+        event for event in _business_events(run) if event.tool_name == "bitpro_strategy_create"
+    )
+    assert create_event.output_json["strategy"]["id"] == 42
+    assert "## BitPro 策略生命周期" in run.report_markdown
+    assert "strategy_generate" in run.report_markdown
+    assert "paper_start" in run.report_markdown
     _assert_research_quality(run.report_markdown)
 
 

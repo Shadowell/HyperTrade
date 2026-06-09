@@ -83,14 +83,16 @@ The Agent must not generate or infer those confirmation fields for the user.
 
 ## HyperTrade Adapter Shape
 
-HyperTrade now includes an initial read-only BitPro MCP adapter in `backend/src/hypertrade/bitpro/mcp.py`. Keep the boundary explicit:
+HyperTrade now includes a BitPro MCP adapter in `backend/src/hypertrade/bitpro/mcp.py`. Keep the boundary explicit:
 
 1. Store `BITPRO_MCP_API_BASE`, `BITPRO_MCP_API_TOKEN`, and `BITPRO_MCP_AUTH_HEADER` server-side only.
 2. Use the adapter wrapper that always calls `bitpro_capabilities` and `bitpro_health` before task-specific tools.
 3. Registered HyperTrade read tools include `bitpro.capabilities`, `bitpro.health`, `bitpro.market_klines`, `bitpro.paper_dashboard`, and `bitpro.live_positions`.
-4. Agent calls persist nested BitPro trace events such as `bitpro.capabilities`, `bitpro.health`, and `bitpro.market_klines`.
-5. Backtests can use `candle_source=bitpro_mcp` or CLI `/backtest --source bitpro_mcp --symbol ETH --bar 1H --limit 200`.
-6. Keep live write tools disabled until a separate contract adds explicit approval and risk gates.
+4. Registered HyperTrade strategy lifecycle tools include `bitpro.strategy_search`, `bitpro.strategy_generate`, `bitpro.strategy_create`, `bitpro.backtest_start_job`, `bitpro.backtest_get_job`, `bitpro.paper_configure`, `bitpro.paper_start`, `bitpro.paper_pause`, `bitpro.paper_resume`, and `bitpro.paper_stop`.
+5. Agent calls persist nested BitPro trace events such as `bitpro.capabilities`, `bitpro.health`, `bitpro.market_klines`, `bitpro.strategy_create`, `bitpro.backtest_start_job`, and `bitpro.paper_start`.
+6. Strategy lifecycle writes are limited to BitPro research/backtest/paper tools. They require an explicit user request and must remain auditable in the Agent trace.
+7. Backtests can use `candle_source=bitpro_mcp` or CLI `/backtest --source bitpro_mcp --symbol ETH --bar 1H --limit 200`.
+8. Keep live write tools disabled until a separate contract adds explicit approval and risk gates.
 
 ## HyperTrade API Entrypoints
 

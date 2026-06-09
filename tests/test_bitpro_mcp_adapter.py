@@ -88,6 +88,142 @@ def test_bitpro_mcp_client_rejects_live_write_tools_before_http() -> None:
         client.call_tool("trading_futures_order", {"symbol": "ETH/USDT:USDT"})
 
 
+def test_bitpro_mcp_client_allows_research_backtest_and_paper_writes() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "json": json_loads(request.content),
+            }
+        )
+        return httpx.Response(200, json={"success": True, "data": {"ok": True}})
+
+    client = BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert client.call_tool(
+        "strategy_create",
+        {
+            "name": "ETH breakout",
+            "script_content": "class Strategy: pass",
+            "description": "research draft",
+            "symbols": ["ETH/USDT:USDT"],
+        },
+    ) == {"ok": True}
+    assert client.call_tool(
+        "backtest_start_job",
+        {
+            "strategy_id": 42,
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-08",
+            "initial_capital": 10000,
+        },
+    ) == {"ok": True}
+    assert client.call_tool("paper_start", {"strategy_id": 7}) == {"ok": True}
+
+    assert seen == [
+        {
+            "method": "POST",
+            "path": "/api/v2/strategies",
+            "json": {
+                "name": "ETH breakout",
+                "script_content": "class Strategy: pass",
+                "description": "research draft",
+                "config": {},
+                "exchange": "okx",
+                "symbols": ["ETH/USDT:USDT"],
+            },
+        },
+        {
+            "method": "POST",
+            "path": "/api/v2/backtest/run_job",
+            "json": {
+                "strategy_id": 42,
+                "exchange": "okx",
+                "timeframe_mode": "strategy",
+                "start_date": "2026-06-01",
+                "end_date": "2026-06-08",
+                "initial_capital": 10000,
+            },
+        },
+        {
+            "method": "POST",
+            "path": "/api/v2/live/start",
+            "json": {"instance_id": 7},
+        },
+    ]
+
+
+def test_bitpro_adapter_can_orchestrate_strategy_backtest_and_paper_steps() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json_loads(request.content)
+        seen.append({"method": request.method, "path": request.url.path, "json": body})
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/agent/generate_strategy":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {"name": "ETH breakout", "script_content": "class S: pass"},
+                },
+            )
+        if request.url.path == "/api/v2/strategies":
+            return httpx.Response(200, json={"success": True, "data": {"id": 42}})
+        if request.url.path == "/api/v2/backtest/run_job":
+            return httpx.Response(200, json={"success": True, "data": {"job_id": "job_1"}})
+        if request.url.path == "/api/v2/live/configure":
+            return httpx.Response(200, json={"success": True, "data": {"instance_id": 7}})
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+
+    generated = adapter.strategy_generate(prompt="ETH trend breakout", symbol="ETH", timeframe="1H")
+    created = adapter.strategy_create(
+        name="ETH breakout",
+        script_content="class S: pass",
+        description="research draft",
+        symbols=["ETH"],
+    )
+    backtest = adapter.backtest_start_job(
+        strategy_id=42,
+        start_date="2026-06-01",
+        end_date="2026-06-08",
+        symbol="ETH",
+        timeframe="1H",
+    )
+    paper = adapter.paper_configure(strategy_id=42, initial_equity=10000)
+
+    assert generated["strategy"]["script_content"] == "class S: pass"
+    assert created["strategy"]["id"] == 42
+    assert backtest["job"]["job_id"] == "job_1"
+    assert paper["paper"]["instance_id"] == 7
+    assert [call["tool"] for call in paper["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "paper_configure",
+    ]
+    assert seen[-1]["json"] == {
+        "strategy_type": "42",
+        "initial_equity": 10000.0,
+        "exchange": "okx",
+        "dry_run": True,
+        "loop_interval": 60,
+    }
+
+
 def test_bitpro_mcp_client_wraps_network_errors() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)
@@ -176,3 +312,12 @@ def _strategy_candles(count: int) -> list[Candle]:
         )
         for index in range(count)
     ]
+
+
+def json_loads(content: bytes) -> dict[str, Any]:
+    if not content:
+        return {}
+    import json
+
+    value = json.loads(content.decode("utf-8"))
+    return value if isinstance(value, dict) else {"value": value}

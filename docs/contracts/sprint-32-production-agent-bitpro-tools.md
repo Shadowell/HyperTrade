@@ -16,7 +16,7 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
   - live trading state
   - risk, permission, health, and audit metadata
 - Keep HyperTrade independent from BitPro business logic. BitPro is an external provider reached through explicit API contracts.
-- Implement the first read-only HyperTrade adapter for BitPro MCP/API: capability discovery, health checks, K-line reads, paper dashboard reads, live-position diagnostics, Agent tool schemas, and a `bitpro_mcp` backtest data source.
+- Implement the first HyperTrade adapter for BitPro MCP/API: capability discovery, health checks, K-line reads, strategy lifecycle writes for research/backtest/paper workflows, paper dashboard reads, live-position diagnostics, Agent tool schemas, and a `bitpro_mcp` backtest data source.
 
 ## BitPro Capabilities Needed
 
@@ -82,8 +82,10 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
 - Project docs no longer describe HyperTrade as a non-production showcase project.
 - `docs/spec.md`, `docs/progress.md`, and architecture docs describe production-grade Agent operation.
 - BitPro tool-surface requirements are documented before implementation starts.
-- HyperTrade exposes read-only BitPro adapter tools and API endpoints, and each data flow starts with `bitpro_capabilities` and `bitpro_health`.
+- HyperTrade exposes BitPro read and non-live lifecycle adapter tools, and each data flow starts with `bitpro_capabilities` and `bitpro_health`.
 - Backtests can use `candle_source=bitpro_mcp` to fetch real BitPro K-line data through `market_klines`.
+- Agent strategy flows can use BitPro research/backtest/paper mutation tools for explicit strategy generation, strategy creation, BitPro-owned backtest jobs, and paper/simulation lifecycle control.
+- Live mutation tools such as `live_promote`, exchange order placement, cancel, transfer, and real-account write actions remain blocked by HyperTrade's BitPro adapter.
 - Containerized deployments can reach host BitPro MCP through an explicit host-gateway mapping, and BitPro connection failures return structured 502 responses rather than raw API stack failures.
 - Routine market/RAG/Memory CLI output no longer repeats a fixed investment-advice disclaimer, while strategy, backtest, Testnet, live-order, and recommendation-like prompts still keep a clear research/risk boundary.
 - No secrets, BitPro credentials, database files, or production `.env` are added.

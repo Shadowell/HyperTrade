@@ -173,7 +173,7 @@ const overview = {
     ]
   },
   bitpro: {
-    adapter: "mcp_read_only",
+    adapter: "mcp_non_live_lifecycle",
     configured: true,
     api_base: "http://127.0.0.1:8889/api/v2",
     auth_header: "X-BitPro-MCP-Token",
@@ -183,6 +183,11 @@ const overview = {
       "bitpro_capabilities",
       "bitpro_health",
       "market_klines",
+      "strategy_generate",
+      "strategy_create",
+      "backtest_start_job",
+      "paper_configure",
+      "paper_start",
       "paper_dashboard",
       "trading_positions"
     ]
@@ -240,7 +245,7 @@ test("renders harness observability from live overview", async () => {
   expect(screen.getAllByText("行情摘要").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("工具调用链路")).toBeInTheDocument();
   expect(screen.getByText("BitPro MCP 接入")).toBeInTheDocument();
-  expect(screen.getByText("mcp_read_only")).toBeInTheDocument();
+  expect(screen.getByText("mcp_non_live_lifecycle")).toBeInTheDocument();
   expect(await screen.findByText("Token 已配置")).toBeInTheDocument();
   expect(screen.getByText("实盘写关闭")).toBeInTheDocument();
   expect(screen.getByText("http://127.0.0.1:8889/api/v2")).toBeInTheDocument();
@@ -248,6 +253,7 @@ test("renders harness observability from live overview", async () => {
   expect(screen.getByText("2. bitpro_health")).toBeInTheDocument();
   expect(screen.getByText("行情数据")).toBeInTheDocument();
   expect(screen.getByText("回测数据")).toBeInTheDocument();
+  expect(screen.getByText("策略生命周期")).toBeInTheDocument();
   expect(screen.getByText("模拟盘")).toBeInTheDocument();
   expect(screen.getByText("实盘只读")).toBeInTheDocument();
   expect(screen.getAllByText("OKX SWAP").length).toBeGreaterThanOrEqual(1);

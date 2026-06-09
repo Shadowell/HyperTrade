@@ -68,6 +68,56 @@ class ToolRegistry:
                     "bitpro",
                 ),
                 ToolDefinition(
+                    "bitpro.strategy_search",
+                    "Search BitPro strategy library.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.strategy_generate",
+                    "Generate a BitPro strategy draft for research workflows.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.strategy_create",
+                    "Create a BitPro strategy definition for research and validation.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.backtest_start_job",
+                    "Start a BitPro-owned backtest job.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.backtest_get_job",
+                    "Read BitPro backtest job status.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.paper_configure",
+                    "Configure a BitPro paper/simulation instance.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.paper_start",
+                    "Start a BitPro paper/simulation instance.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.paper_pause",
+                    "Pause a BitPro paper/simulation instance.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.paper_resume",
+                    "Resume a BitPro paper/simulation instance.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.paper_stop",
+                    "Stop a BitPro paper/simulation instance.",
+                    "bitpro",
+                ),
+                ToolDefinition(
                     "bitpro.paper_dashboard",
                     "Read BitPro paper/simulation dashboard state.",
                     "bitpro",

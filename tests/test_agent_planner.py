@@ -256,6 +256,23 @@ def test_planner_exposes_bitpro_read_tool_schemas() -> None:
     } <= names
 
 
+def test_planner_exposes_bitpro_strategy_lifecycle_tool_schemas() -> None:
+    names = {schema["function"]["name"] for schema in TOOL_SCHEMAS}
+
+    assert {
+        "bitpro_strategy_search",
+        "bitpro_strategy_generate",
+        "bitpro_strategy_create",
+        "bitpro_backtest_start_job",
+        "bitpro_backtest_get_job",
+        "bitpro_paper_configure",
+        "bitpro_paper_start",
+        "bitpro_paper_pause",
+        "bitpro_paper_resume",
+        "bitpro_paper_stop",
+    } <= names
+
+
 class TestAgentPlannerDeepSeekReasoningContent:
     def test_preserves_reasoning_content_for_next_tool_turn(self) -> None:
         call = ToolCallRequest(id="call_market", name="market_summary", arguments={})

@@ -63,7 +63,8 @@ HyperTrade 是一个独立的生产级 Agent 交易系统。V1 重点是稳定 A
 - Sprint 30 multi-step strategy experiment workflow.
 - Sprint 31 deterministic Agent eval suite and operations runbooks.
 - Sprint 32 production-oriented project positioning and BitPro API tool-surface contract.
-- Sprint 33 initial read-only BitPro MCP adapter: capability/health preflight, K-line data direct access, paper dashboard reads, live-position diagnostics, API endpoints, Agent tool schemas, and `bitpro_mcp` backtest candle source.
+- Sprint 33 initial BitPro MCP adapter: capability/health preflight, K-line data direct access, paper dashboard reads, live-position diagnostics, API endpoints, Agent tool schemas, and `bitpro_mcp` backtest candle source.
+- Sprint 34 BitPro strategy lifecycle Agent tools: strategy search/generation/creation, BitPro-owned backtest job start/status reads, and paper/simulation configure/start/pause/resume/stop with live-write tools still blocked.
 - BitPro external API adapter contract for backtest data, base market data, paper/simulation state, and live trading state without copying BitPro business logic.
 
 ## V1 Out of Scope
@@ -71,7 +72,7 @@ HyperTrade 是一个独立的生产级 Agent 交易系统。V1 重点是稳定 A
 - Mainnet live order execution. Mainnet intent creation may be audited, but execution is blocked.
 - Automatic investment advice or unattended real-money trading.
 - Milvus/Qdrant production vector clusters.
-- Historical K-line backfill, parameter optimization sweeps, and live/Testnet order generation from backtest results.
+- Parameter optimization sweeps and live/Testnet order generation from backtest results.
 - Direct BitPro database access or copied BitPro trading logic; HyperTrade consumes BitPro capabilities only through explicit API contracts.
 
 ## Acceptance
@@ -111,5 +112,6 @@ HyperTrade 是一个独立的生产级 Agent 交易系统。V1 重点是稳定 A
 - Operator can review the BitPro tool-surface requirements before wiring external data, backtest, paper/simulation, or live-state APIs into Agent tools.
 - Operator can call BitPro read tools through HyperTrade API/Agent paths while every flow starts with `bitpro_capabilities` and `bitpro_health`.
 - Developer can run backtests with `candle_source=bitpro_mcp` or `/backtest --source bitpro_mcp` to use BitPro `market_klines` data without direct database access.
+- Agent can use BitPro strategy lifecycle tools to generate/create strategy drafts, start/query BitPro-owned backtest jobs, and configure/control paper validation while real-account write tools remain blocked.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.

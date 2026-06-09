@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprints 24-31 Agent capability roadmap deployed to `47.79.36.92` at SHA `8c8b178`.
+- Last verified state: BitPro MCP data direct and host-gateway production connectivity deployed to `47.79.36.92` at SHA `4d443fa`.
 
 ## Active Contract
 
@@ -12,7 +12,9 @@
 
 ## Latest Completed Work
 
-- Implemented the initial read-only BitPro MCP adapter in HyperTrade: server-side settings for `BITPRO_MCP_API_BASE`/token/header, `BitProMcpClient`, `BitProToolAdapter`, Agent tool schemas and executor wiring, nested trace events for `bitpro_capabilities` -> `bitpro_health` -> read tool calls, admin API endpoints for health/K-lines/paper dashboard/live positions, `/harness` BitPro adapter status, and `candle_source=bitpro_mcp` backtest data access.
+- Implemented the BitPro MCP adapter in HyperTrade: server-side settings for `BITPRO_MCP_API_BASE`/token/header, `BitProMcpClient`, `BitProToolAdapter`, Agent tool schemas and executor wiring, nested trace events for `bitpro_capabilities` -> `bitpro_health` -> read/non-live lifecycle tool calls, admin API endpoints for health/K-lines/paper dashboard/live positions, `/harness` BitPro adapter status, and `candle_source=bitpro_mcp` backtest data access.
+- Added BitPro strategy lifecycle Agent tools: strategy search/generation/creation, BitPro-owned backtest job start/status reads, and paper/simulation configure/start/pause/resume/stop. Live mutation tools remain blocked by the BitPro adapter.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 86 tests for the BitPro strategy lifecycle slice.
 - Redesigned the `/harness` operator UI toward a Chinese-first production console: sidebar, header, run monitor, tool trace, Memory/RAG, paper runtime, live approval, strategy lab, and status labels now use consistent Chinese technical copy while preserving protocol/tool names. Added a visible BitPro MCP access panel that documents the required `bitpro_capabilities` -> `bitpro_health` -> read-tool selection flow, and added `docs/runbooks/bitpro-mcp-data-access.md` for server-side MCP data access.
 - Fixed the `/harness` sidebar section navigation so clicking `行情摘要`, `Memory`, or `RAG` updates the active sidebar item instead of leaving `Harness` permanently highlighted. Added a frontend regression test for the clicked section state and browser-verified the local page with Playwright.
 - Reduced repetitive investment-advice disclaimer output for routine Agent/CLI usage: the welcome banner, deterministic market shortcuts, structured market reports, and planner system prompt no longer force a fixed disclaimer on every ordinary market/RAG/Memory response. Strategy, backtest, Testnet, live-order, and recommendation-like prompts still retain the research/risk boundary. Updated acceptance tests, `docs/spec.md`, `docs/contracts/sprint-32-production-agent-bitpro-tools.md`, `docs/testing/agent-acceptance-test-plan.md`, and `docs/knowledge/tool-usage-guide.md`.

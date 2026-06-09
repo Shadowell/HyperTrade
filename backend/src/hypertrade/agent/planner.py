@@ -267,6 +267,182 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "bitpro_strategy_search",
+            "description": (
+                "Search BitPro strategy library before creating or selecting a strategy."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "search": {"type": "string", "description": "Strategy name or keyword."},
+                    "page": {"type": "integer", "description": "Result page, default 1."},
+                    "per_page": {"type": "integer", "description": "Page size, default 18."},
+                    "status": {"type": "string", "description": "Status filter, default all."},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_strategy_generate",
+            "description": (
+                "Use BitPro strategy-generation skills to draft strategy code for research, "
+                "backtesting, or paper validation. Not for live trading."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Strategy idea or requirement."},
+                    "symbol": {"type": "string", "description": "Trading symbol, default BTC."},
+                    "timeframe": {
+                        "type": "string",
+                        "description": "Strategy timeframe, default 1h.",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_strategy_create",
+            "description": "Create a BitPro strategy definition from generated or reviewed code.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Strategy name."},
+                    "script_content": {"type": "string", "description": "Strategy Python code."},
+                    "description": {"type": "string", "description": "Optional strategy notes."},
+                    "config": {"type": "object", "description": "Optional strategy config."},
+                    "exchange": {"type": "string", "description": "Exchange, default okx."},
+                    "symbols": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Symbols the strategy supports.",
+                    },
+                },
+                "required": ["name", "script_content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_backtest_start_job",
+            "description": "Start a BitPro-owned backtest job for a strategy.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer", "description": "BitPro strategy id."},
+                    "start_date": {"type": "string", "description": "Start date YYYY-MM-DD."},
+                    "end_date": {"type": "string", "description": "End date YYYY-MM-DD."},
+                    "initial_capital": {
+                        "type": "number",
+                        "description": "Initial capital, default 10000.",
+                    },
+                    "exchange": {"type": "string", "description": "Exchange, default okx."},
+                    "symbol": {"type": "string", "description": "Optional symbol override."},
+                    "timeframe": {"type": "string", "description": "Optional timeframe override."},
+                },
+                "required": ["strategy_id", "start_date", "end_date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_backtest_get_job",
+            "description": "Read status/progress for a BitPro backtest job.",
+            "parameters": {
+                "type": "object",
+                "properties": {"job_id": {"type": "string", "description": "Backtest job id."}},
+                "required": ["job_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_configure",
+            "description": "Configure a BitPro paper/simulation instance for a strategy.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer", "description": "BitPro strategy id."},
+                    "initial_equity": {
+                        "type": "number",
+                        "description": "Paper equity, default 10000.",
+                    },
+                    "exchange": {"type": "string", "description": "Exchange, default okx."},
+                    "loop_interval_sec": {
+                        "type": "integer",
+                        "description": "Loop interval seconds, default 60.",
+                    },
+                },
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_start",
+            "description": "Start a specific BitPro paper/simulation instance. Not live trading.",
+            "parameters": {
+                "type": "object",
+                "properties": {"strategy_id": {"type": "integer", "description": "Instance id."}},
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_pause",
+            "description": "Pause a specific BitPro paper/simulation instance. Not live trading.",
+            "parameters": {
+                "type": "object",
+                "properties": {"strategy_id": {"type": "integer", "description": "Instance id."}},
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_resume",
+            "description": "Resume a specific BitPro paper/simulation instance. Not live trading.",
+            "parameters": {
+                "type": "object",
+                "properties": {"strategy_id": {"type": "integer", "description": "Instance id."}},
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_stop",
+            "description": "Stop a specific BitPro paper/simulation instance. Not live trading.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer", "description": "Instance id."},
+                    "clear_metrics": {
+                        "type": "boolean",
+                        "description": "Whether BitPro should clear metrics.",
+                    },
+                },
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "live_order_intent",
             "description": (
                 "Create a testnet/live order intent that must be approved by a human. "
@@ -312,6 +488,9 @@ strength, 哪个更强, 跑赢, 强弱, or leader/laggard.
 Use bitpro_capabilities and bitpro_health before BitPro-specific read tools.
 Use bitpro_market_klines when the user explicitly asks for BitPro MCP, BitPro data,
 or BitPro direct K-line access. Keep BitPro live-position reads diagnostic-only.
+When the user asks BitPro to develop, store, backtest, or paper-validate a strategy,
+use BitPro strategy/backtest/paper tools. These are research/simulation writes,
+not live trading writes.
 Plan which tools to call, execute them, then write a concise Markdown report.
 When the user asks to place or prepare an order, use live_order_intent only to
 create a pending human approval item. Never claim that an exchange order was executed.

@@ -13,7 +13,7 @@ HyperTrade 是一个独立的生产级 Agent 交易研究与执行系统。它�
 - Memory：去重、tags、importance、confidence、usage audit。
 - 交易边界：Mainnet 执行阻断；OKX Testnet 可在审批和风控后 signed order。
 - 策略工作流：研究、回测、critique、下一实验建议。
-- BitPro MCP：只读 adapter、健康检查、K 线直连、模拟盘看板和实盘持仓诊断入口。
+- BitPro MCP：健康检查、K 线直连、策略生成/创建、BitPro 回测 job、模拟盘生命周期和实盘持仓只读诊断入口。
 - 可观测：`/harness`、CLI slash commands、deterministic eval suite。
 
 ## 技术栈

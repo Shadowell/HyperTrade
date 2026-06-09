@@ -304,6 +304,79 @@ class AgentKernel:
                     symbol=str(args["symbol"]) if args.get("symbol") else None,
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_strategy_search":
+                result = self._bitpro_adapter().strategy_search(
+                    search=str(args.get("search", "")),
+                    page=int(args.get("page", 1)),
+                    per_page=int(args.get("per_page", 18)),
+                    status=str(args.get("status", "all")),
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_strategy_generate":
+                result = self._bitpro_adapter().strategy_generate(
+                    prompt=str(args.get("prompt", "")),
+                    symbol=str(args.get("symbol", "BTC")),
+                    timeframe=str(args.get("timeframe", "1h")),
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_strategy_create":
+                raw_symbols = args.get("symbols", [])
+                symbols = raw_symbols if isinstance(raw_symbols, list) else [raw_symbols]
+                raw_config = args.get("config", {})
+                result = self._bitpro_adapter().strategy_create(
+                    name=str(args.get("name", "")),
+                    script_content=str(args.get("script_content", "")),
+                    description=str(args["description"]) if args.get("description") else None,
+                    config=raw_config if isinstance(raw_config, dict) else {},
+                    exchange=str(args.get("exchange", "okx")),
+                    symbols=[str(symbol) for symbol in symbols],
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_backtest_start_job":
+                result = self._bitpro_adapter().backtest_start_job(
+                    strategy_id=int(args.get("strategy_id", 0)),
+                    start_date=str(args.get("start_date", "")),
+                    end_date=str(args.get("end_date", "")),
+                    initial_capital=float(args.get("initial_capital", 10000.0)),
+                    exchange=str(args.get("exchange", "okx")),
+                    symbol=str(args["symbol"]) if args.get("symbol") else None,
+                    timeframe=str(args["timeframe"]) if args.get("timeframe") else None,
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_backtest_get_job":
+                result = self._bitpro_adapter().backtest_get_job(
+                    job_id=str(args.get("job_id", ""))
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_paper_configure":
+                result = self._bitpro_adapter().paper_configure(
+                    strategy_id=int(args.get("strategy_id", 0)),
+                    initial_equity=float(args.get("initial_equity", 10000.0)),
+                    exchange=str(args.get("exchange", "okx")),
+                    loop_interval_sec=int(args.get("loop_interval_sec", 60)),
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_paper_start":
+                result = self._bitpro_adapter().paper_start(
+                    strategy_id=int(args.get("strategy_id", 0))
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_paper_pause":
+                result = self._bitpro_adapter().paper_pause(
+                    strategy_id=int(args.get("strategy_id", 0))
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_paper_resume":
+                result = self._bitpro_adapter().paper_resume(
+                    strategy_id=int(args.get("strategy_id", 0))
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_paper_stop":
+                result = self._bitpro_adapter().paper_stop(
+                    strategy_id=int(args.get("strategy_id", 0)),
+                    clear_metrics=bool(args.get("clear_metrics", False)),
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "live_order_intent":
                 result = LiveOrderIntentService(self.db, settings=self._settings).create(
                     symbol=str(args.get("symbol", "")),
@@ -826,6 +899,7 @@ class AgentKernel:
         candle_lines: list[str] = []
         compare_lines: list[str] = []
         bitpro_lines: list[str] = []
+        bitpro_lifecycle_lines: list[str] = []
         citation_lines: list[str] = []
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "market_ticker":
@@ -924,6 +998,49 @@ class AgentKernel:
                     "",
                 ]
             )
+        lifecycle_tool_names = {
+            "bitpro_strategy_search",
+            "bitpro_strategy_generate",
+            "bitpro_strategy_create",
+            "bitpro_backtest_start_job",
+            "bitpro_backtest_get_job",
+            "bitpro_paper_configure",
+            "bitpro_paper_start",
+            "bitpro_paper_pause",
+            "bitpro_paper_resume",
+            "bitpro_paper_stop",
+        }
+        for record in tool_calls:
+            tool_name = str(getattr(record, "tool_name", ""))
+            if tool_name not in lifecycle_tool_names:
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict):
+                continue
+            nested_tools = _nested_bitpro_tools(payload)
+            line = f"- {tool_name}: {payload.get('status', 'unknown')}"
+            strategy = payload.get("strategy")
+            if isinstance(strategy, dict):
+                line += (
+                    f", strategy={strategy.get('id', strategy.get('name', 'n/a'))}"
+                )
+            job = payload.get("job")
+            if isinstance(job, dict):
+                line += f", job={job.get('job_id', job.get('id', 'n/a'))}"
+                if job.get("status"):
+                    line += f", job_status={job.get('status')}"
+            paper = payload.get("paper")
+            if isinstance(paper, dict):
+                line += (
+                    f", paper={paper.get('instance_id', paper.get('id', 'n/a'))}"
+                )
+                if paper.get("status"):
+                    line += f", paper_status={paper.get('status')}"
+            if nested_tools:
+                line += f", tools={', '.join(nested_tools)}"
+            bitpro_lifecycle_lines.append(line)
+        if bitpro_lifecycle_lines:
+            bitpro_lifecycle_lines.append("")
         sections: list[str] = []
         if ticker_lines:
             sections.extend(["## 单标的行情", "", *ticker_lines])
@@ -933,6 +1050,8 @@ class AgentKernel:
             sections.extend(["## 多标的强弱比较", "", *compare_lines])
         if bitpro_lines:
             sections.extend(["## BitPro MCP K线直连", "", *bitpro_lines])
+        if bitpro_lifecycle_lines:
+            sections.extend(["## BitPro 策略生命周期", "", *bitpro_lifecycle_lines])
         citations = _citations_from_tool_calls(tool_calls)
         if citations:
             for index, citation in enumerate(citations, start=1):
@@ -1010,9 +1129,30 @@ def _bitpro_trace_tool_name(tool_name: str) -> str:
         "bitpro_capabilities": "bitpro.capabilities",
         "bitpro_health": "bitpro.health",
         "market_klines": "bitpro.market_klines",
+        "strategy_search": "bitpro.strategy_search",
+        "strategy_generate": "bitpro.strategy_generate",
+        "strategy_create": "bitpro.strategy_create",
+        "backtest_start_job": "bitpro.backtest_start_job",
+        "backtest_get_job": "bitpro.backtest_get_job",
+        "paper_configure": "bitpro.paper_configure",
+        "paper_start": "bitpro.paper_start",
+        "paper_pause": "bitpro.paper_pause",
+        "paper_resume": "bitpro.paper_resume",
+        "paper_stop": "bitpro.paper_stop",
         "paper_dashboard": "bitpro.paper_dashboard",
         "trading_positions": "bitpro.live_positions",
     }.get(tool_name, "")
+
+
+def _nested_bitpro_tools(payload: dict[str, Any]) -> list[str]:
+    calls = payload.get("tool_calls", [])
+    if not isinstance(calls, list):
+        return []
+    return [
+        str(call.get("tool", ""))
+        for call in calls
+        if isinstance(call, dict) and call.get("tool")
+    ]
 
 
 def _dict_or_empty(value: Any) -> dict[str, Any]:

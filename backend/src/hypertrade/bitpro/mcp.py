@@ -1,8 +1,9 @@
-"""Read-only BitPro MCP tool-contract adapter.
+"""BitPro MCP tool-contract adapter.
 
 HyperTrade treats BitPro as an external capability provider. This module keeps
 the boundary explicit: discover capabilities, check health, then call the
-smallest read tool needed for data access. Live write tools are blocked here.
+smallest tool needed for data access or research/paper lifecycle work. Live
+write tools are blocked here.
 """
 
 from __future__ import annotations
@@ -43,6 +44,27 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "trading_open_orders": {"method": "GET", "path": "/trading/orders/open"},
 }
 
+RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
+    "sync_start_history": {"method": "POST", "path": "/sync/start"},
+    "sync_one": {"method": "POST", "path": "/sync/sync-one"},
+    "strategy_create": {"method": "POST", "path": "/strategies"},
+    "strategy_generate": {"method": "POST", "path": "/agent/generate_strategy"},
+    "agent_create_task": {"method": "POST", "path": "/agent/tasks"},
+    "agent_accept_iteration": {
+        "method": "POST",
+        "path": "/agent/tasks/{task_id}/iterations/{iteration}/accept",
+    },
+    "optimizer_run_now": {"method": "POST", "path": "/agent/strategy-optimizer/run-now"},
+    "backtest_start_job": {"method": "POST", "path": "/backtest/run_job"},
+    "backtest_cancel_job": {"method": "POST", "path": "/backtest/job/{job_id}/cancel"},
+    "backtest_resume_job": {"method": "POST", "path": "/backtest/job/{job_id}/resume"},
+    "paper_configure": {"method": "POST", "path": "/live/configure"},
+    "paper_start": {"method": "POST", "path": "/live/start"},
+    "paper_pause": {"method": "POST", "path": "/live/pause"},
+    "paper_resume": {"method": "POST", "path": "/live/resume"},
+    "paper_stop": {"method": "POST", "path": "/live/stop"},
+}
+
 RESEARCH_MUTATION_TOOLS = {
     "sync_start_history",
     "sync_one",
@@ -61,6 +83,8 @@ RESEARCH_MUTATION_TOOLS = {
     "paper_resume",
     "paper_stop",
 }
+
+LOCAL_ONLY_TOOLS = {"strategy_validate_code"}
 
 LIVE_MUTATION_TOOLS = {
     "live_promote",
@@ -118,18 +142,30 @@ class BitProMcpClient:
             return bitpro_capabilities()
         if tool_name in LIVE_MUTATION_TOOLS:
             raise PermissionError(f"BitPro live write tool is blocked: {tool_name}")
-        if tool_name in RESEARCH_MUTATION_TOOLS:
-            raise PermissionError(
-                f"BitPro mutation tool is not enabled in this adapter: {tool_name}"
+        if tool_name in LOCAL_ONLY_TOOLS:
+            raise BitProMcpError(
+                f"BitPro tool requires MCP local execution and is not available through "
+                f"the API path adapter: {tool_name}"
             )
-        if tool_name not in READ_TOOL_ENDPOINTS:
+        endpoints = {**READ_TOOL_ENDPOINTS, **RESEARCH_MUTATION_TOOL_ENDPOINTS}
+        if tool_name not in endpoints:
             raise KeyError(f"Unknown BitPro MCP tool: {tool_name}")
-        spec = READ_TOOL_ENDPOINTS[tool_name]
+        spec = endpoints[tool_name]
         method = spec["method"].upper()
         path = _format_path(spec["path"], params)
         if method == "GET":
-            return self._request(method, path, params=params, tool_name=tool_name)
-        return self._request(method, path, json=params, tool_name=tool_name)
+            return self._request(
+                method,
+                path,
+                params=_compact(params),
+                tool_name=tool_name,
+            )
+        return self._request(
+            method,
+            path,
+            json=_post_payload(tool_name, params),
+            tool_name=tool_name,
+        )
 
     def _request(
         self,
@@ -174,7 +210,7 @@ class BitProMcpClient:
 
 
 class BitProToolAdapter:
-    """Read-oriented adapter used by Agent tools, API endpoints, and backtests."""
+    """Agent-facing adapter for BitPro read and non-live lifecycle tools."""
 
     def __init__(self, client: BitProMcpClient | None = None) -> None:
         self.client = client or BitProMcpClient()
@@ -238,6 +274,180 @@ class BitProToolAdapter:
         if not candles:
             raise ValueError(f"No BitPro MCP candles found for {symbol} {timeframe}")
         return sorted(candles, key=lambda candle: candle.timestamp)
+
+    def strategy_search(
+        self,
+        *,
+        search: str = "",
+        page: int = 1,
+        per_page: int = 18,
+        status: str = "all",
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        strategies = self._call(
+            "strategy_search",
+            {"search": search, "page": page, "per_page": per_page, "status": status},
+        )
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "strategies": strategies,
+            "tool_calls": self.last_tool_calls,
+        }
+
+    def strategy_generate(self, *, prompt: str, symbol: str, timeframe: str) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        normalized_symbol = _normalize_bitpro_spot_symbol(symbol)
+        normalized_timeframe = _normalize_bitpro_timeframe(timeframe)
+        strategy = self._call(
+            "strategy_generate",
+            {
+                "prompt": prompt,
+                "symbol": normalized_symbol,
+                "timeframe": normalized_timeframe,
+            },
+        )
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "strategy": strategy,
+            "tool_calls": self.last_tool_calls,
+        }
+
+    def strategy_create(
+        self,
+        *,
+        name: str,
+        script_content: str,
+        description: str | None = None,
+        config: dict[str, Any] | None = None,
+        exchange: str = "okx",
+        symbols: list[str] | None = None,
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        strategy = self._call(
+            "strategy_create",
+            {
+                "name": name,
+                "script_content": script_content,
+                "description": description,
+                "config": config or {},
+                "exchange": exchange,
+                "symbols": [_normalize_bitpro_spot_symbol(symbol) for symbol in symbols or []],
+            },
+        )
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "strategy": strategy,
+            "tool_calls": self.last_tool_calls,
+        }
+
+    def backtest_start_job(
+        self,
+        *,
+        strategy_id: int,
+        start_date: str,
+        end_date: str,
+        initial_capital: float = 10000.0,
+        exchange: str = "okx",
+        symbol: str | None = None,
+        timeframe: str | None = None,
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        job = self._call(
+            "backtest_start_job",
+            {
+                "strategy_id": int(strategy_id),
+                "start_date": start_date,
+                "end_date": end_date,
+                "initial_capital": float(initial_capital),
+                "exchange": exchange,
+                "symbol": _normalize_bitpro_spot_symbol(symbol) if symbol else None,
+                "timeframe": _normalize_bitpro_timeframe(timeframe) if timeframe else None,
+            },
+        )
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "job": job,
+            "tool_calls": self.last_tool_calls,
+        }
+
+    def backtest_get_job(self, *, job_id: str) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        job = self._call("backtest_get_job", {"job_id": job_id})
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "job": job,
+            "tool_calls": self.last_tool_calls,
+        }
+
+    def paper_configure(
+        self,
+        *,
+        strategy_id: int,
+        initial_equity: float = 10000.0,
+        exchange: str = "okx",
+        loop_interval_sec: int = 60,
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        paper = self._call(
+            "paper_configure",
+            {
+                "strategy_id": int(strategy_id),
+                "initial_equity": float(initial_equity),
+                "exchange": exchange,
+                "loop_interval_sec": int(loop_interval_sec),
+            },
+        )
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "paper": paper,
+            "tool_calls": self.last_tool_calls,
+        }
+
+    def paper_start(self, *, strategy_id: int) -> dict[str, Any]:
+        return self._paper_lifecycle("paper_start", strategy_id=strategy_id)
+
+    def paper_pause(self, *, strategy_id: int) -> dict[str, Any]:
+        return self._paper_lifecycle("paper_pause", strategy_id=strategy_id)
+
+    def paper_resume(self, *, strategy_id: int) -> dict[str, Any]:
+        return self._paper_lifecycle("paper_resume", strategy_id=strategy_id)
+
+    def paper_stop(self, *, strategy_id: int, clear_metrics: bool = False) -> dict[str, Any]:
+        return self._paper_lifecycle(
+            "paper_stop",
+            strategy_id=strategy_id,
+            clear_metrics=clear_metrics,
+        )
+
+    def _paper_lifecycle(self, tool_name: str, **parameters: Any) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        paper = self._call(tool_name, dict(parameters))
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "paper": paper,
+            "tool_calls": self.last_tool_calls,
+        }
 
     def paper_dashboard(self, *, strategy_id: int | None = None) -> dict[str, Any]:
         self.last_tool_calls = []
@@ -320,6 +530,8 @@ def bitpro_capabilities() -> dict[str, Any]:
         "tool_endpoints": {
             "bitpro_capabilities": {"method": "LOCAL", "path": "bitpro://capabilities"},
             **{name: dict(spec) for name, spec in READ_TOOL_ENDPOINTS.items()},
+            **{name: dict(spec) for name, spec in RESEARCH_MUTATION_TOOL_ENDPOINTS.items()},
+            "strategy_validate_code": {"method": "LOCAL", "path": "BaseStrategy sandbox"},
         },
         "data_policy": "real_market_data_only_no_mock_or_synthetic_ohlcv",
         "live_trading_enabled": False,
@@ -333,6 +545,85 @@ def _format_path(path: str, params: dict[str, Any]) -> str:
         if placeholder in formatted:
             formatted = formatted.replace(placeholder, str(params.pop(key)))
     return formatted
+
+
+def _post_payload(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
+    if tool_name == "strategy_create":
+        return _compact(
+            {
+                "name": params["name"],
+                "description": params.get("description"),
+                "script_content": params["script_content"],
+                "config": params.get("config") or {},
+                "exchange": params.get("exchange", "okx"),
+                "symbols": list(params.get("symbols") or []),
+            }
+        )
+    if tool_name == "strategy_generate":
+        return {
+            "prompt": str(params["prompt"]),
+            "symbol": str(params.get("symbol", "BTC/USDT")),
+            "timeframe": str(params.get("timeframe", "1h")),
+        }
+    if tool_name == "backtest_start_job":
+        return _compact(
+            {
+                "strategy_id": int(params["strategy_id"]),
+                "exchange": params.get("exchange", "okx"),
+                "symbol": params.get("symbol"),
+                "timeframe": params.get("timeframe"),
+                "timeframe_mode": params.get("timeframe_mode", "strategy"),
+                "timeframes": list(params["timeframes"]) if params.get("timeframes") else None,
+                "start_date": params["start_date"],
+                "end_date": params["end_date"],
+                "initial_capital": params.get("initial_capital", 10000.0),
+                "maker_fee_bps": params.get("maker_fee_bps"),
+                "taker_fee_bps": params.get("taker_fee_bps"),
+                "slippage_bps": params.get("slippage_bps"),
+            }
+        )
+    if tool_name == "paper_configure":
+        return {
+            "strategy_type": str(params["strategy_id"]),
+            "exchange": str(params.get("exchange", "okx")),
+            "initial_equity": float(params.get("initial_equity", 10000.0)),
+            "dry_run": True,
+            "loop_interval": int(params.get("loop_interval_sec", 60)),
+        }
+    if tool_name in {"paper_start", "paper_pause", "paper_resume"}:
+        return {"instance_id": int(params["strategy_id"])}
+    if tool_name == "paper_stop":
+        return {
+            "instance_id": int(params["strategy_id"]),
+            "clear_metrics": bool(params.get("clear_metrics", False)),
+        }
+    if tool_name == "sync_start_history":
+        return _compact(
+            {
+                "exchange": params.get("exchange", "okx"),
+                "symbols": list(params["symbols"]),
+                "timeframes": list(params["timeframes"]),
+                "history_days": int(params.get("history_days", 365)),
+                "start_date": params.get("start_date"),
+                "end_date": params.get("end_date"),
+            }
+        )
+    if tool_name == "sync_one":
+        return _compact(
+            {
+                "exchange": params.get("exchange", "okx"),
+                "symbol": params["symbol"],
+                "timeframe": params["timeframe"],
+                "history_days": int(params.get("history_days", 365)),
+                "start_date": params.get("start_date"),
+                "end_date": params.get("end_date"),
+            }
+        )
+    return _compact(params)
+
+
+def _compact(values: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in values.items() if value is not None}
 
 
 def _response_payload(response: httpx.Response) -> Any:
@@ -397,6 +688,18 @@ def _normalize_bitpro_symbol(symbol: str) -> str:
         value = value.removesuffix("-SWAP")
     base = value.removesuffix("-USDT") if value.endswith("-USDT") else value.split("-", 1)[0]
     return f"{base}/USDT:USDT"
+
+
+def _normalize_bitpro_spot_symbol(symbol: str) -> str:
+    value = symbol.strip().upper().replace("_", "-")
+    if not value:
+        value = "BTC"
+    if "/" in value:
+        return value.split(":", 1)[0]
+    if value.endswith("-SWAP"):
+        value = value.removesuffix("-SWAP")
+    base = value.removesuffix("-USDT") if value.endswith("-USDT") else value.split("-", 1)[0]
+    return f"{base}/USDT"
 
 
 def _normalize_bitpro_timeframe(timeframe: str) -> str:

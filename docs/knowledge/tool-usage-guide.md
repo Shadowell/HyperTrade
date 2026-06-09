@@ -197,14 +197,15 @@ Memory 和 RAG 的区别：
 - `backend/src/hypertrade/backtest/service.py`
 - `backend/src/hypertrade/strategy/experiment.py`
 
-## 8. BitPro MCP Read Adapter
+## 8. BitPro MCP Lifecycle Adapter
 
-用途：通过 BitPro MCP/API 合同读取外部数据，不直接访问 BitPro 数据库，也不复制 BitPro 业务逻辑。
+用途：通过 BitPro MCP/API 合同读取外部数据，并编排策略生成、策略创建、BitPro 回测 job 和模拟盘生命周期；不直接访问 BitPro 数据库，也不复制 BitPro 业务逻辑。
 
 Agent 示例：
 
 ```bash
 hypertrade ask "用 BitPro MCP 读取 ETH 1H K线"
+hypertrade ask "用 BitPro skills 开发 ETH 趋势突破策略，回测并启动模拟盘验证"
 ```
 
 API：
@@ -220,8 +221,10 @@ curl -sS "http://127.0.0.1:3334/api/bitpro/live/positions?symbol=ETH"
 
 - 每条数据链路先出现 `bitpro_capabilities` 和 `bitpro_health`。
 - Agent trace 里有 `bitpro.capabilities`、`bitpro.health`、`bitpro.market_klines`。
-- `/harness` 的 BitPro MCP 面板显示 `mcp_read_only`、API base、token 是否配置和实盘写关闭状态。
+- 策略生命周期 trace 里有 `bitpro.strategy_generate`、`bitpro.strategy_create`、`bitpro.backtest_start_job`、`bitpro.backtest_get_job`、`bitpro.paper_configure` 或 `bitpro.paper_start`。
+- `/harness` 的 BitPro MCP 面板显示 `mcp_non_live_lifecycle`、API base、token 是否配置和实盘写关闭状态。
 - `BITPRO_MCP_API_TOKEN` 只在服务器环境配置，不能放进前端或仓库。
+- `live_promote`、真实下单、撤单、划转等实盘写工具仍然不应被调用。
 
 相关代码：
 
