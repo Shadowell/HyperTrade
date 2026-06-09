@@ -9,6 +9,7 @@ This runbook describes how HyperTrade or an external Agent should call BitPro MC
 - Transport: `streamable-http` for remote Agents, `stdio` for same-host local Agents.
 - Remote path: `/api/v2/mcp/`.
 - Default API base reported by BitPro capabilities: `http://127.0.0.1:8889/api/v2`.
+- Docker Compose deployments should set `BITPRO_MCP_API_BASE=http://host.docker.internal:8889/api/v2`; `docker-compose.yml` maps `host.docker.internal` to the Linux host gateway for `api` and `worker`.
 - Token header: `X-BitPro-MCP-Token`, unless `BITPRO_MCP_AUTH_HEADER` overrides it.
 - Token environment variable: `BITPRO_MCP_API_TOKEN`.
 
@@ -101,3 +102,23 @@ All endpoints require the normal HyperTrade admin session:
 - `GET /api/bitpro/live/positions?exchange=okx&symbol=ETH`
 
 The `/harness` overview exposes adapter status under `bitpro` without exposing the token value.
+
+## Production Connectivity Check
+
+If `/api/bitpro/health` returns unavailable, verify the connection from inside the API container:
+
+```bash
+docker compose exec -T api python - <<'PY'
+import os
+import urllib.request
+
+base = os.environ["BITPRO_MCP_API_BASE"].rstrip("/")
+header = os.environ.get("BITPRO_MCP_AUTH_HEADER", "X-BitPro-MCP-Token")
+token = os.environ["BITPRO_MCP_API_TOKEN"]
+request = urllib.request.Request(f"{base}/system/health", headers={header: token})
+with urllib.request.urlopen(request, timeout=5) as response:
+    print(response.status)
+PY
+```
+
+Inside a container, `127.0.0.1` points to the HyperTrade container itself. Use `host.docker.internal` or the Docker network gateway when BitPro runs on the host.

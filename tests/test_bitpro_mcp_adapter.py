@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 from hypertrade.backtest.service import BacktestService
-from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
+from hypertrade.bitpro.mcp import BitProMcpClient, BitProMcpError, BitProToolAdapter
 from hypertrade.config import Settings
 from hypertrade.db import Database
 from hypertrade.strategy.sdk import Candle
@@ -86,6 +86,22 @@ def test_bitpro_mcp_client_rejects_live_write_tools_before_http() -> None:
 
     with pytest.raises(PermissionError, match="live write"):
         client.call_tool("trading_futures_order", {"symbol": "ETH/USDT:USDT"})
+
+
+def test_bitpro_mcp_client_wraps_network_errors() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(BitProMcpError) as exc_info:
+        client.call_tool("bitpro_health", {})
+
+    assert exc_info.value.status_code is None
+    assert "bitpro_health request failed" in str(exc_info.value)
 
 
 def test_backtest_service_can_use_bitpro_mcp_market_klines() -> None:

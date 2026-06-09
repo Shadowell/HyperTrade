@@ -140,13 +140,20 @@ class BitProMcpClient:
         json: dict[str, Any] | None = None,
         tool_name: str,
     ) -> Any:
-        response = self.http_client.request(
-            method,
-            f"{self.base_url}{path}",
-            params=params,
-            json=json,
-            headers=self._auth_headers(),
-        )
+        try:
+            response = self.http_client.request(
+                method,
+                f"{self.base_url}{path}",
+                params=params,
+                json=json,
+                headers=self._auth_headers(),
+            )
+        except httpx.HTTPError as exc:
+            raise BitProMcpError(
+                f"{tool_name} request failed: {exc}",
+                status_code=None,
+                payload={"error": {"message": str(exc), "type": type(exc).__name__}},
+            ) from exc
         payload = _response_payload(response)
         if response.status_code >= 400 or (
             isinstance(payload, dict) and payload.get("success") is False

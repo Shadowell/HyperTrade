@@ -20,6 +20,8 @@ Write tools must be added later and separately from read tools. Any paper, testn
 
 Operational data-access steps are documented in `docs/runbooks/bitpro-mcp-data-access.md`. The first HyperTrade implementation lives in `backend/src/hypertrade/bitpro/mcp.py`: every flow starts with `bitpro_capabilities` and `bitpro_health`, then selects the smallest read tool for market, backtest, paper/simulation, or live read-only diagnostics. Live write tools are blocked in this adapter.
 
+For containerized deployments, BitPro MCP is reached through an explicit host-gateway address instead of `127.0.0.1`, because loopback inside `hypertrade-api` points to the container itself. If BitPro is unavailable, API endpoints return a structured `502` with the failed BitPro tool calls so operators can distinguish upstream outage from HyperTrade runtime failure.
+
 ## 中文
 
 BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必须清晰：Agent 规划在 HyperTrade，工具执行审计在 HyperTrade，BitPro 只通过稳定 API 提供数据和状态。
@@ -39,3 +41,5 @@ BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必�
 写工具应在只读工具稳定后单独加入。任何模拟盘、Testnet 或实盘写入路径都必须具备明确 scope、幂等键、审批门、风控预检、脱敏审计事件和结构化拒绝原因。
 
 具体数据调用步骤见 `docs/runbooks/bitpro-mcp-data-access.md`。第一版 HyperTrade 实现在 `backend/src/hypertrade/bitpro/mcp.py`：每条链路先调用 `bitpro_capabilities` 和 `bitpro_health`，再根据行情、回测、模拟盘或实盘只读诊断选择最小只读工具。实盘写工具在该 adapter 内默认阻断。
+
+容器化部署时，BitPro MCP 通过显式 host-gateway 地址访问，不能使用 `127.0.0.1`，因为容器内 loopback 指向 `hypertrade-api` 自身。如果 BitPro 不可达，API 返回结构化 `502`，并携带失败的 BitPro tool call，方便区分上游不可用和 HyperTrade 运行时故障。

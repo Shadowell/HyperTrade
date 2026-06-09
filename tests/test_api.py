@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from fastapi.testclient import TestClient
 from hypertrade.agent.kernel import AgentKernel
+from hypertrade.bitpro.mcp import BitProMcpError
 from hypertrade.config import Settings
 from hypertrade.db import Database
 from hypertrade.main import create_app
@@ -317,6 +318,37 @@ def test_api_exposes_bitpro_mcp_read_adapter(tmp_path):
     assert positions["positions"][0]["symbol"] == "ETH/USDT:USDT"
 
 
+def test_api_returns_structured_bitpro_gateway_errors(tmp_path):
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    app = create_app(
+        settings=Settings(
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            KNOWLEDGE_DIR=tmp_path,
+            DEEPSEEK_API_KEY="",
+        ),
+        db=db,
+        bitpro_adapter=FailingBitProAdapter(),
+    )
+    client = TestClient(app)
+    assert client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "secret"},
+    ).status_code == 200
+
+    response = client.get("/api/bitpro/health")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == {
+        "status": "unavailable",
+        "service": "bitpro_mcp",
+        "message": "BitPro MCP unavailable",
+        "status_code": None,
+        "tool_calls": [{"tool": "bitpro_health", "status": "failed"}],
+    }
+
+
 def test_login_cookie_secure_flag_is_configurable():
     db = Database("sqlite:///:memory:")
     db.create_all()
@@ -386,3 +418,19 @@ class ApiFakeBitProAdapter:
             "positions": [{"exchange": exchange, "symbol": "ETH/USDT:USDT"}],
             "tool_calls": [],
         }
+
+
+class FailingBitProAdapter:
+    last_tool_calls = [{"tool": "bitpro_health", "status": "failed"}]
+
+    def health(self):
+        raise BitProMcpError("BitPro MCP unavailable")
+
+    def market_klines(self, *, symbol: str, timeframe: str, limit: int):
+        raise BitProMcpError("BitPro MCP unavailable")
+
+    def paper_dashboard(self):
+        raise BitProMcpError("BitPro MCP unavailable")
+
+    def live_positions(self, *, exchange: str = "okx", symbol: str | None = None):
+        raise BitProMcpError("BitPro MCP unavailable")

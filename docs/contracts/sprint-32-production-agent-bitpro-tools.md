@@ -84,6 +84,7 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
 - BitPro tool-surface requirements are documented before implementation starts.
 - HyperTrade exposes read-only BitPro adapter tools and API endpoints, and each data flow starts with `bitpro_capabilities` and `bitpro_health`.
 - Backtests can use `candle_source=bitpro_mcp` to fetch real BitPro K-line data through `market_klines`.
+- Containerized deployments can reach host BitPro MCP through an explicit host-gateway mapping, and BitPro connection failures return structured 502 responses rather than raw API stack failures.
 - Routine market/RAG/Memory CLI output no longer repeats a fixed investment-advice disclaimer, while strategy, backtest, Testnet, live-order, and recommendation-like prompts still keep a clear research/risk boundary.
 - No secrets, BitPro credentials, database files, or production `.env` are added.
 - `./scripts/check.sh` passes.

@@ -6,7 +6,7 @@ HTTP input, call the Agent/tool service, and return redacted runtime state.
 """
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -24,7 +24,7 @@ from sqlalchemy import desc, func, select
 
 from hypertrade.agent.kernel import AgentKernel, CompletedAgentRun
 from hypertrade.backtest.service import BacktestService
-from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
+from hypertrade.bitpro.mcp import BitProMcpClient, BitProMcpError, BitProToolAdapter
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import (
     AgentRun,
@@ -73,6 +73,28 @@ class BitProApiAdapter(Protocol):
     ) -> dict[str, Any]:
         """Read BitPro live positions for diagnostics only."""
         ...
+
+
+def _bitpro_read_or_502(
+    adapter: BitProApiAdapter,
+    operation: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    try:
+        return operation()
+    except BitProMcpError as exc:
+        tool_calls = getattr(adapter, "last_tool_calls", [])
+        if not isinstance(tool_calls, list):
+            tool_calls = []
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "status": "unavailable",
+                "service": "bitpro_mcp",
+                "message": str(exc),
+                "status_code": exc.status_code,
+                "tool_calls": tool_calls,
+            },
+        ) from exc
 
 
 class LoginPayload(BaseModel):
@@ -443,7 +465,8 @@ def create_app(
 
     @app.get("/api/bitpro/health")
     def bitpro_health(_: AdminUser) -> dict[str, Any]:
-        return get_bitpro_adapter().health()
+        adapter = get_bitpro_adapter()
+        return _bitpro_read_or_502(adapter, adapter.health)
 
     @app.get("/api/bitpro/market/klines/{symbol}")
     def bitpro_market_klines(
@@ -452,15 +475,20 @@ def create_app(
         timeframe: str = "1h",
         limit: int = 200,
     ) -> dict[str, Any]:
-        return get_bitpro_adapter().market_klines(
-            symbol=symbol,
-            timeframe=timeframe,
-            limit=limit,
+        adapter = get_bitpro_adapter()
+        return _bitpro_read_or_502(
+            adapter,
+            lambda: adapter.market_klines(
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=limit,
+            ),
         )
 
     @app.get("/api/bitpro/paper/dashboard")
     def bitpro_paper_dashboard(_: AdminUser) -> dict[str, Any]:
-        return get_bitpro_adapter().paper_dashboard()
+        adapter = get_bitpro_adapter()
+        return _bitpro_read_or_502(adapter, adapter.paper_dashboard)
 
     @app.get("/api/bitpro/live/positions")
     def bitpro_live_positions(
@@ -468,7 +496,11 @@ def create_app(
         exchange: str = "okx",
         symbol: str | None = None,
     ) -> dict[str, Any]:
-        return get_bitpro_adapter().live_positions(exchange=exchange, symbol=symbol)
+        adapter = get_bitpro_adapter()
+        return _bitpro_read_or_502(
+            adapter,
+            lambda: adapter.live_positions(exchange=exchange, symbol=symbol),
+        )
 
     @app.get("/api/paper/status")
     def paper_status(_: AdminUser) -> dict[str, Any]:

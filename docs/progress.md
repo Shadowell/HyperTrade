@@ -168,6 +168,10 @@
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 25 tests.
 - `uv run pytest tests/test_cli.py -q` -> 11 passed.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 28 tests.
+- Implemented the read-only BitPro MCP adapter and Agent/API/backtest data-direct wiring: `bitpro_capabilities -> bitpro_health -> market_klines` preflight order, HyperTrade tools `bitpro.*`, `candle_source=bitpro_mcp`, and `/api/bitpro/*` admin endpoints.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 79 tests before deploy.
+- Deployed SHA `1dab3c1` to production; server `/api/health` passed and `/api/harness/overview` reported BitPro adapter `mcp_read_only`, token configured, and live writes disabled.
+- Production BitPro MCP smoke initially returned API 500 because the HyperTrade container used `127.0.0.1:8889`, which pointed to the container itself. Added structured BitPro 502 handling and Docker Compose host-gateway mapping so containerized deployments can use `host.docker.internal:8889`.
 
 ## Known Gaps
 
