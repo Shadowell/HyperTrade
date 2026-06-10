@@ -236,13 +236,21 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "bitpro_paper_dashboard",
-            "description": "Read BitPro paper/simulation dashboard state. Read-only.",
+            "description": (
+                "Read BitPro paper/simulation dashboard state. Read-only. "
+                "When no strategy_id is provided, HyperTrade also returns the BitPro "
+                "running strategy inventory so all/哪些/几个 paper strategy questions "
+                "are not answered from the current dashboard instance alone."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "strategy_id": {
                         "type": "integer",
-                        "description": "Optional BitPro strategy id filter.",
+                        "description": (
+                            "Optional explicit BitPro strategy id filter. Omit this for all/"
+                            "全部/哪些/几个 running paper strategy questions."
+                        ),
                     },
                 },
                 "required": [],
@@ -518,6 +526,11 @@ strength, 哪个更强, 跑赢, 强弱, or leader/laggard.
 Use bitpro_capabilities and bitpro_health before BitPro-specific read tools.
 Use bitpro_market_klines when the user explicitly asks for BitPro MCP, BitPro data,
 or BitPro direct K-line access. Keep BitPro live-position reads diagnostic-only.
+Use bitpro_paper_dashboard without strategy_id when the user asks about all/全部/
+哪些/几个 running paper or 模拟盘 strategies. Treat paper_scope.dashboard_scope=
+current_instance as only the current BitPro dashboard view; use
+running_strategies to list running strategies and never claim there is only one
+paper strategy from the dashboard view alone.
 When the user asks BitPro to develop, store, backtest, or paper-validate a strategy,
 use BitPro strategy/backtest/paper tools. These are research/simulation writes,
 not live trading writes.

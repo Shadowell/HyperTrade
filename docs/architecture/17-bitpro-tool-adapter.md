@@ -40,6 +40,8 @@ Server evidence on 2026-06-09 validated this loop through BitPro MCP against `ht
 
 Operational data-access steps are documented in `docs/runbooks/bitpro-mcp-data-access.md`. The first HyperTrade implementation lives in `backend/src/hypertrade/bitpro/mcp.py`: every flow starts with `bitpro_capabilities` and `bitpro_health`, then selects the smallest tool for market data, strategy lifecycle, backtest, paper/simulation, or live read-only diagnostics. Live write tools are blocked in this adapter.
 
+The BitPro `/live/dashboard` response is treated as a current paper engine/dashboard view, not proof that only one strategy is running. When HyperTrade calls `bitpro_paper_dashboard` without a `strategy_id`, the adapter also reads `strategy_search(status=running)` with safe pagination and returns `paper_scope` plus `running_strategies`. Reports must distinguish the current dashboard strategy from the complete running strategy inventory exposed by BitPro.
+
 For containerized deployments, BitPro MCP is reached through an explicit host-gateway address instead of `127.0.0.1`, because loopback inside `hypertrade-api` points to the container itself. If BitPro is unavailable, API endpoints return a structured `502` with the failed BitPro tool calls so operators can distinguish upstream outage from HyperTrade runtime failure.
 
 ## 中文
@@ -81,5 +83,7 @@ BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必�
 2026-06-09 服务器验证已经跑通该闭环：通过 BitPro MCP 访问 `http://127.0.0.1:8889/api/v2`；ETH/USDT:USDT 1h 有 720 根真实 K 线，覆盖 2026-05-10T14:00:00Z 到 2026-06-09T13:00:00Z；策略 `#293` 通过 `strategy_validate_code`；回测任务 `a292d098-0657-411d-9fff-3c82b9b384d8` 完成并生成结果 `#196`；指标为收益 4.0441%、最大回撤 1.4438%、11 笔交易、Sharpe 0.8029、胜率 63.64%；策略 `#293` 已以 dry-run 模式启动模拟盘。实盘写工具已跳过。
 
 具体数据调用步骤见 `docs/runbooks/bitpro-mcp-data-access.md`。第一版 HyperTrade 实现在 `backend/src/hypertrade/bitpro/mcp.py`：每条链路先调用 `bitpro_capabilities` 和 `bitpro_health`，再根据行情数据、策略生命周期、回测、模拟盘或实盘只读诊断选择最小工具。实盘写工具在该 adapter 内默认阻断。
+
+BitPro `/live/dashboard` 返回被视为当前模拟盘引擎/dashboard 视图，不能据此判断“只有一个策略在运行”。当 `bitpro_paper_dashboard` 未传 `strategy_id` 时，HyperTrade 会用安全分页额外读取 `strategy_search(status=running)`，并返回 `paper_scope` 与 `running_strategies`。报告必须区分当前 dashboard 策略和 BitPro 暴露的完整 running 策略清单。
 
 容器化部署时，BitPro MCP 通过显式 host-gateway 地址访问，不能使用 `127.0.0.1`，因为容器内 loopback 指向 `hypertrade-api` 自身。如果 BitPro 不可达，API 返回结构化 `502`，并携带失败的 BitPro tool call，方便区分上游不可用和 HyperTrade 运行时故障。

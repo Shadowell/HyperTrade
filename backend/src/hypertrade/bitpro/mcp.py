@@ -287,10 +287,12 @@ class BitProToolAdapter:
     ) -> dict[str, Any]:
         self.last_tool_calls = []
         capabilities, health = self._preflight()
-        strategies = self._call(
-            "strategy_search",
-            {"search": search, "page": page, "per_page": per_page, "status": status},
-        )
+        params: dict[str, Any] = {"page": page, "per_page": per_page}
+        if search:
+            params["search"] = search
+        if status and status != "all":
+            params["status"] = status
+        strategies = self._call("strategy_search", params)
         return {
             "status": "ok",
             "contract_version": str(capabilities.get("contract_version", "")),
@@ -493,13 +495,52 @@ class BitProToolAdapter:
         capabilities, health = self._preflight()
         params = {"strategy_id": strategy_id} if strategy_id is not None else {}
         dashboard = self._call("paper_dashboard", params)
+        running_strategies: dict[str, Any] = {}
+        if strategy_id is None:
+            # BitPro's live dashboard is a current-instance view in production.
+            # Add the running strategy inventory so Agent reports do not mistake
+            # one visible dashboard for the full simulation universe.
+            running_raw, running_items = self._fetch_strategy_inventory(status="running")
+            running_strategies = {
+                "items": running_items,
+                "total": _strategy_total(running_raw, default=len(running_items)),
+                "source_tool": "strategy_search",
+                "status_filter": "running",
+            }
         return {
             "status": "ok",
             "contract_version": str(capabilities.get("contract_version", "")),
             "health": health,
             "dashboard": dashboard,
+            "paper_scope": _paper_dashboard_scope(
+                dashboard,
+                strategy_id_filter=strategy_id,
+                running_strategies=running_strategies,
+            ),
+            "running_strategies": running_strategies,
             "tool_calls": self.last_tool_calls,
         }
+
+    def _fetch_strategy_inventory(
+        self,
+        *,
+        status: str,
+        per_page: int = 18,
+        max_pages: int = 5,
+    ) -> tuple[Any, list[dict[str, Any]]]:
+        first_raw = self._call(
+            "strategy_search",
+            {"page": 1, "per_page": per_page, "status": status},
+        )
+        items = _extract_strategy_items(first_raw)
+        pages = _strategy_pages(first_raw, default=1)
+        for page in range(2, min(pages, max_pages) + 1):
+            page_raw = self._call(
+                "strategy_search",
+                {"page": page, "per_page": per_page, "status": status},
+            )
+            items.extend(_extract_strategy_items(page_raw))
+        return first_raw, items
 
     def live_positions(self, *, exchange: str = "okx", symbol: str | None = None) -> dict[str, Any]:
         self.last_tool_calls = []
@@ -706,6 +747,85 @@ def _extract_kline_rows(raw: Any) -> list[dict[str, Any]]:
             if isinstance(value, list):
                 return [_ensure_dict(row) for row in value]
     return []
+
+
+def _extract_strategy_items(raw: Any) -> list[dict[str, Any]]:
+    if isinstance(raw, list):
+        return [_strategy_item(row) for row in raw if isinstance(row, dict)]
+    if isinstance(raw, dict):
+        for key in ("items", "strategies", "results", "data"):
+            value = raw.get(key)
+            if isinstance(value, list):
+                return [_strategy_item(row) for row in value if isinstance(row, dict)]
+    return []
+
+
+def _strategy_item(row: dict[str, Any]) -> dict[str, Any]:
+    return _compact(
+        {
+            "id": row.get("id") or row.get("strategy_id"),
+            "name": row.get("name") or row.get("strategy_name"),
+            "status": row.get("status"),
+            "exchange": row.get("exchange"),
+            "symbols": row.get("symbols"),
+            "timeframe": row.get("timeframe"),
+            "strategy_source": row.get("strategy_source"),
+        }
+    )
+
+
+def _strategy_total(raw: Any, *, default: int) -> int:
+    if isinstance(raw, dict):
+        total = raw.get("total")
+        if isinstance(total, int):
+            return total
+        if isinstance(total, str) and total.isdigit():
+            return int(total)
+    return default
+
+
+def _strategy_pages(raw: Any, *, default: int) -> int:
+    if isinstance(raw, dict):
+        pages = raw.get("pages")
+        if isinstance(pages, int):
+            return max(1, pages)
+        if isinstance(pages, str) and pages.isdigit():
+            return max(1, int(pages))
+    return default
+
+
+def _paper_dashboard_scope(
+    dashboard: Any,
+    *,
+    strategy_id_filter: int | None,
+    running_strategies: dict[str, Any],
+) -> dict[str, Any]:
+    dashboard_dict = _ensure_dict(dashboard)
+    system = dashboard_dict.get("system")
+    system_dict = system if isinstance(system, dict) else {}
+    strategy_id = system_dict.get("strategy_id")
+    strategy_name = system_dict.get("strategy")
+    running_count = 0
+    running_items = running_strategies.get("items") if running_strategies else None
+    if isinstance(running_items, list):
+        running_count = len(running_items)
+    running_total = running_strategies.get("total") if running_strategies else running_count
+    dashboard_scope = "filtered_strategy" if strategy_id_filter is not None else "current_instance"
+    coverage_note = (
+        "paper_dashboard exposes the current BitPro paper dashboard only; "
+        "running_strategies comes from strategy_search(status=running)."
+    )
+    return _compact(
+        {
+            "dashboard_scope": dashboard_scope,
+            "strategy_id_filter": strategy_id_filter,
+            "current_strategy_id": strategy_id,
+            "current_strategy_name": strategy_name,
+            "running_strategy_count": running_count,
+            "running_strategy_total": running_total,
+            "coverage_note": coverage_note,
+        }
+    )
 
 
 def _row_to_candle(row: dict[str, Any]) -> Candle:

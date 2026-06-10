@@ -85,6 +85,7 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
 - HyperTrade exposes BitPro read and non-live lifecycle adapter tools, and each data flow starts with `bitpro_capabilities` and `bitpro_health`.
 - Backtests can use `candle_source=bitpro_mcp` to fetch real BitPro K-line data through `market_klines`.
 - Agent strategy flows can use BitPro research/backtest/paper mutation tools for explicit strategy generation, strategy creation/update, BitPro-owned backtest jobs, and paper/simulation lifecycle control.
+- BitPro paper dashboard reads do not imply there is only one running strategy: unfiltered `bitpro_paper_dashboard` augments the current dashboard view with `strategy_search(status=running)` inventory and the Agent report labels the data scope.
 - Server MCP verification demonstrates the intended production loop: capability and health preflight, real K-line coverage confirmation, `BaseStrategy` validation, DB-backed `strategy_create`, BitPro-owned backtest result inspection, and gated paper dry-run start.
 - Live mutation tools such as `live_promote`, exchange order placement, cancel, transfer, and real-account write actions remain blocked by HyperTrade's BitPro adapter.
 - Containerized deployments can reach host BitPro MCP through an explicit host-gateway mapping, and BitPro connection failures return structured 502 responses rather than raw API stack failures.

@@ -87,6 +87,79 @@ def test_planner_report_includes_market_candles_values() -> None:
     assert "趋势偏向 up" in report
 
 
+def test_planner_report_distinguishes_bitpro_paper_dashboard_scope() -> None:
+    report = AgentKernel._render_planner_report(
+        "模拟盘状态读取完成。",
+        [
+            ToolCallRecord(
+                tool_name="bitpro_paper_dashboard",
+                input_json={},
+                output_json={
+                    "status": "ok",
+                    "contract_version": "bitpro-mcp-v1",
+                    "dashboard": {
+                        "system": {
+                            "state": "running",
+                            "mode": "paper",
+                            "uptime": "26D",
+                            "strategy_id": 105,
+                            "strategy": "[合约][1H][CTA] SOL · EMA5/20趋势跟踪对照版 · 100U",
+                        },
+                        "equity": {"current": 106.08},
+                        "performance": {
+                            "total_pnl_pct": 6.08,
+                            "sharpe_ratio": 1.6,
+                            "max_drawdown": 3.63,
+                        },
+                    },
+                    "paper_scope": {
+                        "dashboard_scope": "current_instance",
+                        "current_strategy_id": 105,
+                        "running_strategy_count": 2,
+                        "coverage_note": (
+                            "paper_dashboard exposes the current BitPro paper dashboard only"
+                        ),
+                    },
+                    "running_strategies": {
+                        "total": 2,
+                        "items": [
+                            {
+                                "id": 105,
+                                "name": "[合约][1H][CTA] SOL · EMA5/20趋势跟踪对照版 · 100U",
+                                "status": "running",
+                                "symbols": ["SOL/USDT:USDT"],
+                            },
+                            {
+                                "id": 293,
+                                "name": "[合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U",
+                                "status": "running",
+                                "symbols": ["ETH/USDT:USDT"],
+                            },
+                        ],
+                    },
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                        {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                        {"tool": "paper_dashboard", "parameters": {}, "status": "success"},
+                        {
+                            "tool": "strategy_search",
+                            "parameters": {"status": "running"},
+                            "status": "success",
+                        },
+                    ],
+                },
+            )
+        ],
+    )
+
+    assert "## BitPro 模拟盘状态" in report
+    assert "Dashboard 范围: current_instance" in report
+    assert "当前 dashboard: strategy_id=105" in report
+    assert "strategy_search(status=running) 返回 2 个" in report
+    assert "293: [合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U [running]" in report
+    assert "paper_dashboard exposes the current BitPro paper dashboard only" in report
+
+
 def test_market_candles_payload_uses_fetcher_and_returns_features(monkeypatch, tmp_path) -> None:
     db = Database("sqlite:///:memory:")
     db.create_all()

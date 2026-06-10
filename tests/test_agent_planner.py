@@ -256,6 +256,21 @@ def test_planner_exposes_bitpro_read_tool_schemas() -> None:
     } <= names
 
 
+def test_bitpro_paper_dashboard_schema_discourages_accidental_single_strategy_filter() -> None:
+    schema = next(
+        item for item in TOOL_SCHEMAS if item["function"]["name"] == "bitpro_paper_dashboard"
+    )
+
+    description = schema["function"]["description"]
+    strategy_id_description = schema["function"]["parameters"]["properties"]["strategy_id"][
+        "description"
+    ]
+
+    assert "running strategy inventory" in description
+    assert "Omit this" in strategy_id_description
+    assert "全部" in strategy_id_description
+
+
 def test_planner_exposes_bitpro_strategy_lifecycle_tool_schemas() -> None:
     names = {schema["function"]["name"] for schema in TOOL_SCHEMAS}
 

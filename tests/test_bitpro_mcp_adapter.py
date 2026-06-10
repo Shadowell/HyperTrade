@@ -268,6 +268,147 @@ def test_bitpro_adapter_can_orchestrate_strategy_backtest_and_paper_steps() -> N
     }
 
 
+def test_bitpro_paper_dashboard_adds_running_strategy_inventory() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "query": dict(request.url.params),
+            }
+        )
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/live/dashboard":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "system": {
+                            "state": "running",
+                            "mode": "paper",
+                            "strategy_id": 105,
+                            "strategy": "[合约][1H][CTA] SOL · EMA5/20趋势跟踪对照版 · 100U",
+                        },
+                        "equity": {"current": 106.08},
+                        "performance": {"total_pnl_pct": 6.08, "sharpe_ratio": 1.6},
+                    },
+                },
+            )
+        if request.url.path == "/api/v2/strategies":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "items": [
+                            {
+                                "id": 105,
+                                "name": "[合约][1H][CTA] SOL · EMA5/20趋势跟踪对照版 · 100U",
+                                "status": "running",
+                                "exchange": "okx",
+                                "symbols": ["SOL/USDT:USDT"],
+                            },
+                            {
+                                "id": 293,
+                                "name": "[合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U",
+                                "status": "running",
+                                "exchange": "okx",
+                                "symbols": ["ETH/USDT:USDT"],
+                            },
+                        ],
+                        "total": 2,
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+
+    result = adapter.paper_dashboard()
+
+    assert result["paper_scope"]["dashboard_scope"] == "current_instance"
+    assert result["paper_scope"]["current_strategy_id"] == 105
+    assert result["paper_scope"]["running_strategy_count"] == 2
+    assert result["running_strategies"]["items"][1]["id"] == 293
+    assert [call["tool"] for call in result["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "paper_dashboard",
+        "strategy_search",
+    ]
+    assert seen == [
+        {"method": "GET", "path": "/api/v2/system/health", "query": {}},
+        {"method": "GET", "path": "/api/v2/live/dashboard", "query": {}},
+        {
+            "method": "GET",
+            "path": "/api/v2/strategies",
+            "query": {"page": "1", "per_page": "18", "status": "running"},
+        },
+    ]
+
+
+def test_bitpro_paper_dashboard_explicit_strategy_keeps_filtered_scope() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "query": dict(request.url.params),
+            }
+        )
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/live/dashboard":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "system": {
+                            "state": "running",
+                            "mode": "paper",
+                            "strategy_id": 105,
+                            "strategy": "SOL paper",
+                        }
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+
+    result = adapter.paper_dashboard(strategy_id=105)
+
+    assert result["paper_scope"]["dashboard_scope"] == "filtered_strategy"
+    assert result["paper_scope"]["strategy_id_filter"] == 105
+    assert result["running_strategies"] == {}
+    assert [call["tool"] for call in result["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "paper_dashboard",
+    ]
+    assert seen == [
+        {"method": "GET", "path": "/api/v2/system/health", "query": {}},
+        {"method": "GET", "path": "/api/v2/live/dashboard", "query": {"strategy_id": "105"}},
+    ]
+
+
 def test_bitpro_mcp_client_wraps_network_errors() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)

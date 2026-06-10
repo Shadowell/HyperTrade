@@ -120,5 +120,6 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Developer can run backtests with `candle_source=bitpro_mcp` or `/backtest --source bitpro_mcp` to use BitPro `market_klines` data without direct database access.
 - Agent can use BitPro strategy lifecycle tools to generate/create/update strategy drafts, start/query BitPro-owned backtest jobs, and configure/control paper validation while real-account write tools remain blocked.
 - Agent can complete the BitPro strategy R&D loop through MCP only: `bitpro_capabilities` -> `bitpro_health` -> real K-line coverage confirmation -> `strategy_validate_code` -> `strategy_create` with DB-backed `script_content` -> optional `strategy_update` for canonical metadata/renaming -> `backtest_start_job`/result inspection -> gated `paper_configure`/`paper_start`.
+- Agent can answer BitPro paper/simulation inventory questions without mistaking the current `paper_dashboard` view for the full universe: unfiltered dashboard reads include `strategy_search(status=running)` inventory and reports distinguish current dashboard instance from all running strategies.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.

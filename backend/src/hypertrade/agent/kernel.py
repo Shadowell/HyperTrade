@@ -925,6 +925,7 @@ class AgentKernel:
         candle_lines: list[str] = []
         compare_lines: list[str] = []
         bitpro_lines: list[str] = []
+        bitpro_paper_lines: list[str] = []
         bitpro_lifecycle_lines: list[str] = []
         citation_lines: list[str] = []
         for record in tool_calls:
@@ -1024,6 +1025,84 @@ class AgentKernel:
                     "",
                 ]
             )
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "bitpro_paper_dashboard":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or payload.get("status") != "ok":
+                continue
+            nested_tools = _nested_bitpro_tools(payload)
+            dashboard = payload.get("dashboard")
+            dashboard = dashboard if isinstance(dashboard, dict) else {}
+            system = dashboard.get("system")
+            system = system if isinstance(system, dict) else {}
+            equity = dashboard.get("equity")
+            equity = equity if isinstance(equity, dict) else {}
+            performance = dashboard.get("performance")
+            performance = performance if isinstance(performance, dict) else {}
+            scope = payload.get("paper_scope")
+            scope = scope if isinstance(scope, dict) else {}
+            running = payload.get("running_strategies")
+            running = running if isinstance(running, dict) else {}
+            running_items = running.get("items")
+            running_items = running_items if isinstance(running_items, list) else []
+            running_total = running.get("total", len(running_items))
+            bitpro_paper_lines.extend(
+                [
+                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
+                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
+                    f"- Dashboard 范围: {scope.get('dashboard_scope', 'unknown')}",
+                    (
+                        "- 当前 dashboard: strategy_id={strategy_id}, {name}, "
+                        "state={state}, mode={mode}, uptime={uptime}"
+                    ).format(
+                        strategy_id=system.get("strategy_id", "n/a"),
+                        name=system.get("strategy", "n/a"),
+                        state=system.get("state", "n/a"),
+                        mode=system.get("mode", "n/a"),
+                        uptime=system.get("uptime", "n/a"),
+                    ),
+                    (
+                        "- 当前 dashboard 绩效: equity={equity}, total_pnl_pct={pnl}%, "
+                        "sharpe={sharpe}, max_drawdown={drawdown}%"
+                    ).format(
+                        equity=equity.get("current", "n/a"),
+                        pnl=performance.get("total_pnl_pct", "n/a"),
+                        sharpe=performance.get("sharpe_ratio", "n/a"),
+                        drawdown=performance.get("max_drawdown", "n/a"),
+                    ),
+                ]
+            )
+            if running_items:
+                bitpro_paper_lines.append(
+                    f"- 运行策略清单: strategy_search(status=running) 返回 {running_total} 个"
+                )
+                for row in running_items[:20]:
+                    if not isinstance(row, dict):
+                        continue
+                    symbols = row.get("symbols", [])
+                    if isinstance(symbols, list):
+                        symbol_text = "/".join(str(symbol) for symbol in symbols[:3])
+                        if len(symbols) > 3:
+                            symbol_text += f" 等{len(symbols)}个"
+                    else:
+                        symbol_text = str(symbols or "n/a")
+                    bitpro_paper_lines.append(
+                        "- {id}: {name} [{status}] {symbols}".format(
+                            id=row.get("id", "n/a"),
+                            name=row.get("name", "n/a"),
+                            status=row.get("status", "n/a"),
+                            symbols=symbol_text,
+                        )
+                    )
+                if isinstance(running_total, int) and running_total > len(running_items[:20]):
+                    bitpro_paper_lines.append(
+                        f"- 还有 {running_total - len(running_items[:20])} 个 running 策略未展开。"
+                    )
+            note = scope.get("coverage_note")
+            if note:
+                bitpro_paper_lines.append(f"- 覆盖说明: {note}")
+            bitpro_paper_lines.append("")
         lifecycle_tool_names = {
             "bitpro_strategy_search",
             "bitpro_strategy_generate",
@@ -1077,6 +1156,8 @@ class AgentKernel:
             sections.extend(["## 多标的强弱比较", "", *compare_lines])
         if bitpro_lines:
             sections.extend(["## BitPro MCP K线直连", "", *bitpro_lines])
+        if bitpro_paper_lines:
+            sections.extend(["## BitPro 模拟盘状态", "", *bitpro_paper_lines])
         if bitpro_lifecycle_lines:
             sections.extend(["## BitPro 策略生命周期", "", *bitpro_lifecycle_lines])
         citations = _citations_from_tool_calls(tool_calls)
