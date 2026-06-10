@@ -12,11 +12,17 @@ from hypertrade.cli import (
     LocalAgentClient,
     main,
     render_run,
+    render_run_stream,
     render_slash_help,
     render_tools,
     render_welcome_banner,
     run_chat,
 )
+
+
+class TtyStringIO(StringIO):
+    def isatty(self) -> bool:
+        return True
 
 
 class FakeAgentClient:
@@ -611,6 +617,20 @@ def test_ask_streams_agent_run_progress(capsys) -> None:
     assert "Agent status: tool market.summary completed" in output
     assert "Agent status: generating final report" in output
     assert "# CLI Report" in output
+    assert "+ Thought:" not in output
+
+
+def test_run_stream_shows_thinking_animation_for_tty() -> None:
+    client = FakeAgentClient()
+    output = TtyStringIO()
+
+    render_run_stream(client, "你会哪些技能？", output=output)
+
+    rendered = output.getvalue()
+    assert "+ Thought:" in rendered
+    assert "Thinking" in rendered
+    assert "Agent status: run created" in rendered
+    assert "# CLI Report" in rendered
 
 
 def test_chat_reuses_client_until_exit(capsys) -> None:

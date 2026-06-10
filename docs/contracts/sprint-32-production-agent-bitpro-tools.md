@@ -90,6 +90,7 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
 - Containerized deployments can reach host BitPro MCP through an explicit host-gateway mapping, and BitPro connection failures return structured 502 responses rather than raw API stack failures.
 - Routine market/RAG/Memory CLI output no longer repeats a fixed investment-advice disclaimer, while strategy, backtest, Testnet, live-order, and recommendation-like prompts still keep a clear research/risk boundary.
 - CLI `/help` and `/tools` describe each command/tool purpose so operators do not need to infer behavior from tool names alone.
+- Interactive CLI Agent prompts show a live `Thought` / `Thinking` animation while waiting for planner, tool, or final-report progress; script output remains stable text.
 - No secrets, BitPro credentials, database files, or production `.env` are added.
 - `./scripts/check.sh` passes.
 

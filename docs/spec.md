@@ -95,6 +95,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - User can create a strategy research record and run a deterministic Backtrader backtest.
 - Developer can run `hypertrade` as a standalone CLI Agent and see run id, tool calls, and report output.
 - Developer can see run/tool progress while `hypertrade ask` or interactive chat is still running.
+- Developer can see a live `Thought` / `Thinking` animation in interactive terminals while an Agent prompt is waiting for planning or tool results.
 - Developer can use CLI slash commands such as `/tools`, `/runs`, `/memory`, `/strategy`, and `/backtests` in interactive chat.
 - Developer can read a purpose description beside every `/help` slash command and every `/tools` Agent tool row.
 - Developer can run `/research <prompt>` and `/backtest` from interactive CLI chat to create research and backtest records.

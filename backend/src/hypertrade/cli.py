@@ -12,6 +12,8 @@ import argparse
 import json
 import os
 import sys
+import threading
+import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, TextIO
@@ -129,6 +131,9 @@ class AgentClient(Protocol):
 
 class AgentClientFactory(Protocol):
     def __call__(self, config: CliConfig, local: bool) -> AgentClient: ...
+
+
+THINKING_FRAMES: tuple[str, ...] = ("|", "/", "-", "\\")
 
 
 SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
@@ -1949,45 +1954,144 @@ def render_run_stream(
     output: TextIO | None = None,
 ) -> None:
     output = output or sys.stdout
+    animator = _ThinkingAnimator(output)
     try:
         events = client.run_agent_events(prompt)
     except AttributeError:
-        render_run(client.run_agent(prompt), output=output)
+        animator.start("Thinking")
+        try:
+            run = client.run_agent(prompt)
+        finally:
+            animator.stop()
+        render_run(run, output=output)
         return
     final_run: dict[str, Any] | None = None
-    for event in events:
-        if not isinstance(event, dict):
-            continue
-        event_name = str(event.get("event", "message"))
-        if event_name == "run_started":
-            print(f"Agent status: run created ({event.get('run_id', 'pending')})", file=output)
-            print("Agent status: planning next tool call", file=output)
-        elif event_name == "tool_started":
-            print(
-                f"Agent status: executing tool {event.get('tool_name', 'unknown')}",
-                file=output,
-            )
-        elif event_name == "tool_completed":
-            print(
-                f"Agent status: tool {event.get('tool_name', 'unknown')} "
-                f"{event.get('status', 'completed')}",
-                file=output,
-            )
-            print("Agent status: planning next step", file=output)
-        elif event_name == "run_completed":
-            print("Agent status: generating final report", file=output)
-            print(f"Agent status: run completed ({event.get('run_id', 'unknown')})", file=output)
-            if isinstance(event.get("run"), dict):
+    animator.start("Thinking")
+    try:
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            event_name = str(event.get("event", "message"))
+            if event_name == "run_started":
+                animator.print_line(
+                    f"Agent status: run created ({event.get('run_id', 'pending')})"
+                )
+                animator.print_line("Agent status: planning next tool call")
+                animator.update("Planning next tool call")
+            elif event_name == "tool_started":
+                tool_name = event.get("tool_name", "unknown")
+                animator.print_line(f"Agent status: executing tool {tool_name}")
+                animator.update(f"Executing tool {tool_name}")
+            elif event_name == "tool_completed":
+                tool_name = event.get("tool_name", "unknown")
+                status = event.get("status", "completed")
+                animator.print_line(f"Agent status: tool {tool_name} {status}")
+                animator.print_line("Agent status: planning next step")
+                animator.update("Planning next step")
+            elif event_name == "run_completed":
+                animator.print_line("Agent status: generating final report")
+                animator.print_line(
+                    f"Agent status: run completed ({event.get('run_id', 'unknown')})"
+                )
+                animator.update("Generating final report")
+                if isinstance(event.get("run"), dict):
+                    final_run = dict(event["run"])
+            elif event_name == "final" and isinstance(event.get("run"), dict):
+                animator.update("Rendering final report")
                 final_run = dict(event["run"])
-        elif event_name == "final" and isinstance(event.get("run"), dict):
-            final_run = dict(event["run"])
-        elif event_name == "error":
-            print(f"Run failed: {event.get('error', 'unknown error')}", file=output)
+            elif event_name == "error":
+                animator.print_line(f"Run failed: {event.get('error', 'unknown error')}")
+    finally:
+        animator.stop()
     if final_run is not None:
         print("", file=output)
         render_run(final_run, output=output)
     else:
         print("Run stream ended without final report.", file=output)
+
+
+class _ThinkingAnimator:
+    def __init__(self, output: TextIO, *, interval_seconds: float = 0.12) -> None:
+        self.output = output
+        self.interval_seconds = interval_seconds
+        self.enabled = _should_render_thinking_animation(output)
+        self.started_at = 0.0
+        self.frame_index = 0
+        self.message = "Thinking"
+        self.rendered = False
+        self.stop_event = threading.Event()
+        self.lock = threading.Lock()
+        self.thread: threading.Thread | None = None
+
+    def start(self, message: str) -> None:
+        self.message = message
+        self.started_at = time.monotonic()
+        if not self.enabled:
+            return
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        with self.lock:
+            self._render_locked()
+        self.thread.start()
+
+    def update(self, message: str) -> None:
+        self.message = message
+        if not self.enabled:
+            return
+        with self.lock:
+            self._render_locked()
+
+    def print_line(self, text: str) -> None:
+        if not self.enabled:
+            print(text, file=self.output)
+            return
+        with self.lock:
+            self._clear_locked()
+            print(text, file=self.output)
+            self._render_locked()
+
+    def stop(self) -> None:
+        if not self.enabled:
+            return
+        self.stop_event.set()
+        if self.thread is not None:
+            self.thread.join(timeout=self.interval_seconds * 2)
+        with self.lock:
+            self._clear_locked()
+            self.output.flush()
+
+    def _run(self) -> None:
+        while not self.stop_event.wait(self.interval_seconds):
+            with self.lock:
+                self.frame_index += 1
+                self._render_locked()
+
+    def _render_locked(self) -> None:
+        elapsed_ms = int((time.monotonic() - self.started_at) * 1000)
+        frame = THINKING_FRAMES[self.frame_index % len(THINKING_FRAMES)]
+        first = f"+ Thought: {elapsed_ms}ms"
+        second = f": {frame} {self.message}"
+        if self.rendered:
+            self.output.write("\x1b[2A")
+        self.output.write(f"\r\x1b[2K{first}\n")
+        self.output.write(f"\r\x1b[2K{second}\n")
+        self.output.flush()
+        self.rendered = True
+
+    def _clear_locked(self) -> None:
+        if not self.rendered:
+            return
+        self.output.write("\x1b[2A\r\x1b[2K\x1b[1B\r\x1b[2K\x1b[1A\r")
+        self.output.flush()
+        self.rendered = False
+
+
+def _should_render_thinking_animation(output: TextIO) -> bool:
+    override = os.getenv("HYPERTRADE_THINKING_ANIMATION", "").strip().lower()
+    if override in {"0", "false", "off", "no"}:
+        return False
+    if override in {"1", "true", "on", "yes"}:
+        return True
+    return bool(getattr(output, "isatty", lambda: False)())
 
 
 def entrypoint() -> None:

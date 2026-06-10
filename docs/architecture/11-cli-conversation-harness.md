@@ -37,6 +37,9 @@ Run streaming uses a small stable event shape:
 
 The CLI renders these as progress lines before printing the final stored run report. This is
 progress streaming, not token-by-token model streaming.
+When stdout is an interactive terminal, the CLI also shows a small `Thought` / `Thinking`
+status block while waiting for planner or tool events. The block is cleared before durable
+status lines and the final report are printed, and non-TTY output stays plain for scripts.
 
 This keeps Provider configuration, Tool Call policy, RAG, Memory, approval gates, and trace persistence in one runtime boundary. The terminal becomes another harness surface alongside `/harness`.
 
@@ -79,5 +82,8 @@ registry 描述：
 
 CLI 会先把这些事件渲染成进度行，再打印最终落库的 run 报告。这是进度流式，不是模型 token
 级流式。
+当 stdout 是交互式终端时，CLI 会在等待 planner 或 tool 事件期间显示一个 `Thought` /
+`Thinking` 状态块；打印正式状态行和最终报告前会清理该动态块。非 TTY 输出仍保持纯文本，
+方便脚本和测试消费。
 
 这样 Provider 配置、Tool Call 策略、RAG、Memory、审批门和 trace 持久化仍保持在同一个运行边界内。终端只是 `/harness` 之外的另一个 Harness 入口。

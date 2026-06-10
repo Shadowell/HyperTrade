@@ -55,6 +55,8 @@ uv run hypertrade --local
 In interactive chat, slash commands inspect harness state without starting a new Agent run.
 `/help` explains every command, and `/tools` shows each Agent tool with its category,
 approval gate, and purpose:
+Free-form Agent prompts show a live `Thought` / `Thinking` status block in interactive
+terminals while the planner or tools are still running.
 
 ```text
 /help
