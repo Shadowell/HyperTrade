@@ -13,7 +13,9 @@ Configuration is environment-based:
 - `HYPERTRADE_USERNAME` and `HYPERTRADE_PASSWORD` provide admin credentials.
 - `HYPERTRADE_TIMEOUT_SECONDS` controls HTTP timeout.
 
-Interactive chat also supports slash commands for harness inspection without starting a new Agent run:
+Interactive chat also supports slash commands for harness inspection without starting a new Agent run.
+`/help` renders every command with a short purpose statement, and `/tools` renders each
+registered Agent tool with category, approval marker, and registry description:
 
 - `/help`, `/status`, `/model`, `/providers`
 - `/tools`, `/runs`, `/memory`
@@ -53,7 +55,9 @@ CLI 是开发者 Harness，支持两种运行模式：
 - `HYPERTRADE_USERNAME` 与 `HYPERTRADE_PASSWORD` 提供管理员凭据。
 - `HYPERTRADE_TIMEOUT_SECONDS` 控制 HTTP 超时。
 
-交互式 chat 还支持斜杠命令，用于查看 Harness 状态而无需发起新的 Agent run：
+交互式 chat 还支持斜杠命令，用于查看 Harness 状态而无需发起新的 Agent run。`/help`
+会为每条命令显示用途说明，`/tools` 会为每个 Agent 工具显示 category、approval 标记和
+registry 描述：
 
 - `/help`、`/status`、`/model`、`/providers`
 - `/tools`、`/runs`、`/memory`

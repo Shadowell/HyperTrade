@@ -6,11 +6,14 @@ from typing import Any
 
 import httpx
 from hypertrade.cli import (
+    SLASH_COMMAND_HELP,
     AgentApiClient,
     CliConfig,
     LocalAgentClient,
     main,
     render_run,
+    render_slash_help,
+    render_tools,
     render_welcome_banner,
     run_chat,
 )
@@ -666,12 +669,15 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
     assert client.prompts == []
     output = capsys.readouterr().out
     assert "/tools" in output
+    assert "List registered Agent tools with category, approval gate, and purpose." in output
     assert "Status:" in output
     assert "Model:" in output
     assert "Model switched: deepseek" in output
     assert "Providers:" in output
     assert "market.summary" in output
+    assert "Summarize market." in output
     assert "live.order_intent" in output
+    assert "Create order intent." in output
     assert "run_recent" in output
     assert "mem_recent" in output
     assert "mem_search" in output
@@ -706,6 +712,54 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
     assert "loi_new execution_failed testnet ETH-USDT-SWAP buy 0.01 market" in output
     assert "risk: allowed" in output
     assert "loi_old rejected testnet ETH-USDT-SWAP buy 0.01 market" in output
+
+
+def test_slash_help_describes_every_command() -> None:
+    output = StringIO()
+
+    render_slash_help(output=output)
+
+    rendered = output.getvalue()
+    lines = [line for line in rendered.splitlines() if line.startswith("- ")]
+    assert lines
+    assert len(lines) == len(SLASH_COMMAND_HELP)
+    for command, description in SLASH_COMMAND_HELP:
+        assert command in rendered
+        assert description in rendered
+    assert any(
+        "/memory search <query>" in line and "Search audited memory" in line
+        for line in lines
+    )
+    assert any(
+        "/backtest --source bitpro_mcp" in line and "BitPro MCP K-lines" in line
+        for line in lines
+    )
+
+
+def test_render_tools_includes_tool_descriptions() -> None:
+    output = StringIO()
+
+    render_tools(
+        [
+            {
+                "name": "market.summary",
+                "category": "market",
+                "requires_approval": False,
+                "description": "Summarize market.",
+            },
+            {
+                "name": "live.order_intent",
+                "category": "live",
+                "requires_approval": True,
+                "description": "Create order intent.",
+            },
+        ],
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "- market.summary [market]: Summarize market." in rendered
+    assert "- live.order_intent [live] approval: Create order intent." in rendered
 
 
 def test_bare_command_starts_chat_loop(capsys) -> None:

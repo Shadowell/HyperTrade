@@ -131,6 +131,46 @@ class AgentClientFactory(Protocol):
     def __call__(self, config: CliConfig, local: bool) -> AgentClient: ...
 
 
+SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
+    ("/help", "Show this command list."),
+    ("/status", "Show runtime, session, market, memory, and tool counts."),
+    ("/model", "Show the active provider and model."),
+    ("/model <provider>", "Switch the active chat provider for this CLI session."),
+    ("/providers", "List configured providers and key status."),
+    ("/tools", "List registered Agent tools with category, approval gate, and purpose."),
+    ("/runs", "List recent Agent runs."),
+    ("/memory", "List active audited memory."),
+    ("/memory search <query>", "Search audited memory by text."),
+    ("/memory disable <mem_id>", "Disable one memory item without deleting audit history."),
+    ("/rag <query>", "Search project and trading knowledge chunks."),
+    ("/evals", "Show deterministic Agent eval status."),
+    ("/strategy", "List recent strategy research records."),
+    ("/backtests", "List recent backtest runs."),
+    ("/price ETH", "Fetch one exact OKX SWAP ticker without LLM planning."),
+    ("/candles ETH --bar 1H --limit 100", "Fetch candles and derived trend features."),
+    ("/compare ETH SOL --bar 4H --limit 100", "Compare relative strength for symbols."),
+    ("/paper status", "Show the current paper trading session."),
+    ("/paper pause|resume", "Pause or resume the local paper runtime."),
+    ("/paper close [symbol]", "Close paper positions, optionally filtered by symbol."),
+    ("/paper reset", "Start a fresh audited paper session."),
+    ("/live intents", "List pending live/testnet order intents."),
+    (
+        "/live intent ETH buy 0.01 [--type limit --price 3500 --reason text]",
+        "Create an approval-gated order intent.",
+    ),
+    ("/live approve loi_* [--reason text]", "Approve a pending order intent."),
+    ("/live reject loi_* [--reason text]", "Reject a pending order intent."),
+    ("/live execute loi_*", "Execute an approved Testnet intent through the configured adapter."),
+    ("/research <prompt>", "Create strategy research from a prompt."),
+    ("/experiment <prompt>", "Run research, backtest, critique, and revision workflow."),
+    ("/backtest", "Run a backtest from the latest research record."),
+    ("/backtest list", "List recent backtests."),
+    ("/backtest latest|srch_*|<key>", "Run a specific backtest target."),
+    ("/backtest --live --symbol ETH --bar 1H --limit 100", "Backtest with recent live candles."),
+    ("/backtest --source bitpro_mcp --symbol ETH --bar 1H", "Backtest with BitPro MCP K-lines."),
+)
+
+
 @dataclass(frozen=True)
 class CliConfig:
     api_url: str
@@ -842,34 +882,9 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
 
 def render_slash_help(*, output: TextIO) -> None:
     print("Slash commands:", file=output)
-    print("- /help        Show this command list.", file=output)
-    print("- /status      Show runtime/session status.", file=output)
-    print("- /model       Show active provider/model.", file=output)
-    print("- /providers   List configured providers.", file=output)
-    print("- /tools       List registered Agent tools.", file=output)
-    print("- /runs        List recent Agent runs.", file=output)
-    print("- /memory      List active audited memory.", file=output)
-    print("- /memory search <query>", file=output)
-    print("- /memory disable <mem_id>", file=output)
-    print("- /rag <query> Search knowledge chunks.", file=output)
-    print("- /evals       Show deterministic Agent eval status.", file=output)
-    print("- /strategy    List recent strategy research.", file=output)
-    print("- /backtests   List recent backtest runs.", file=output)
-    print("- /price ETH   Fetch exact ticker without LLM planning.", file=output)
-    print("- /candles ETH --bar 1H --limit 100", file=output)
-    print("- /compare ETH SOL --bar 4H --limit 100", file=output)
-    print("- /paper status|pause|resume|close [symbol]|reset", file=output)
-    print("- /live intents", file=output)
-    print("- /live intent ETH buy 0.01 [--type limit --price 3500 --reason text]", file=output)
-    print("- /live approve loi_* [--reason text]", file=output)
-    print("- /live reject loi_* [--reason text]", file=output)
-    print("- /live execute loi_*", file=output)
-    print("- /research    Create strategy research from a prompt.", file=output)
-    print("- /experiment  Run research + backtest + critique workflow.", file=output)
-    print("- /backtest    Run backtest on latest research.", file=output)
-    print("- /backtest list                 List recent backtests.", file=output)
-    print("- /backtest latest|srch_*|<key>  Run a specific backtest.", file=output)
-    print("- /backtest --live --symbol ETH --bar 1H --limit 100", file=output)
+    command_width = max(len(command) for command, _ in SLASH_COMMAND_HELP)
+    for command, description in SLASH_COMMAND_HELP:
+        print(f"- {command:<{command_width}}  {description}", file=output)
 
 
 def handle_research_command(command: str, *, client: AgentClient, output: TextIO) -> None:
@@ -1495,9 +1510,11 @@ def render_tools(items: list[dict[str, Any]], *, output: TextIO) -> None:
         print("- none", file=output)
         return
     for item in items:
+        description = str(item.get("description") or "No description configured.")
         gate = " approval" if item.get("requires_approval") else ""
         print(
-            f"- {item.get('name', 'unknown')} [{item.get('category', 'unknown')}]{gate}",
+            f"- {item.get('name', 'unknown')} "
+            f"[{item.get('category', 'unknown')}]{gate}: {description}",
             file=output,
         )
 

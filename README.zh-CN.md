@@ -28,8 +28,11 @@ HyperTrade 是一个独立的生产级 Agent 交易研究与执行系统。它�
 
 ## CLI 常用命令
 
+交互式 CLI 中，`/help` 会展示每条斜杠命令的用途，`/tools` 会展示每个 Agent 工具的分类、审批标记和功能说明。
+
 ```text
 /status
+/tools
 /model deepseek
 /rag 风控
 /memory search 风控
