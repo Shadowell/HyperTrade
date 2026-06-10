@@ -30,10 +30,11 @@ The production strategy R&D loop is:
 2. Confirm real K-line coverage with `market_klines` before strategy generation. If coverage is missing, use data sync diagnostics or shrink the range; never synthesize OHLCV.
 3. Write or generate a single `BaseStrategy` subclass and validate it with `strategy_validate_code` before persistence.
 4. Save the strategy through `strategy_create(script_content=...)` as a DB-backed dynamic strategy with `strategy_source=db_script` and `script_content_source=db`.
-5. Start the BitPro-owned backtest with `backtest_start_job`, poll `backtest_get_job`, then inspect `backtest_list_results` and `backtest_get_result`.
-6. Iterate only from real backtest evidence. Candidate acceptance gates should be explicit, for example minimum trade count, positive return, and bounded drawdown.
-7. Only after passing the gate, configure and start paper simulation with `paper_configure` and `paper_start`.
-8. Skip all live mutation tools unless the human explicitly supplies the required live-risk confirmation fields.
+5. Use `strategy_update` for follow-up metadata fixes such as canonical BitPro naming, descriptions, config patches, or DB-backed code replacement after validation.
+6. Start the BitPro-owned backtest with `backtest_start_job`, poll `backtest_get_job`, then inspect `backtest_list_results` and `backtest_get_result`.
+7. Iterate only from real backtest evidence. Candidate acceptance gates should be explicit, for example minimum trade count, positive return, and bounded drawdown.
+8. Only after passing the gate, configure and start paper simulation with `paper_configure` and `paper_start`.
+9. Skip all live mutation tools unless the human explicitly supplies the required live-risk confirmation fields.
 
 Server evidence on 2026-06-09 validated this loop through BitPro MCP against `http://127.0.0.1:8889/api/v2`: ETH/USDT:USDT 1h had 720 real candles from 2026-05-10T14:00:00Z to 2026-06-09T13:00:00Z; strategy `#293` passed `strategy_validate_code`; backtest job `a292d098-0657-411d-9fff-3c82b9b384d8` completed with result `#196`; metrics were 4.0441% return, 1.4438% max drawdown, 11 trades, 0.8029 Sharpe, and 63.64% win rate; paper simulation for strategy `#293` was started in dry-run mode. Live mutation tools were skipped.
 
@@ -71,10 +72,11 @@ BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必�
 2. 生成策略前先用 `market_klines` 确认真实 K 线覆盖。覆盖不足时做同步诊断或缩短区间；禁止合成 OHLCV。
 3. 编写或生成单个 `BaseStrategy` 子类，持久化前必须通过 `strategy_validate_code`。
 4. 通过 `strategy_create(script_content=...)` 保存为 DB 动态策略，并写入 `strategy_source=db_script` / `script_content_source=db`。
-5. 用 `backtest_start_job` 启动 BitPro 负责的回测，轮询 `backtest_get_job`，再读取 `backtest_list_results` 和 `backtest_get_result`。
-6. 只基于真实回测证据迭代。候选策略门禁要显式，例如最低交易数、正收益和受控回撤。
-7. 只有通过门禁后，才用 `paper_configure` 和 `paper_start` 进入模拟盘。
-8. 除非人类明确提供实盘风险确认字段，否则跳过所有实盘写工具。
+5. 用 `strategy_update` 做后续元数据修正，例如 BitPro canonical 命名、描述、配置补丁，或在重新校验后替换 DB 代码。
+6. 用 `backtest_start_job` 启动 BitPro 负责的回测，轮询 `backtest_get_job`，再读取 `backtest_list_results` 和 `backtest_get_result`。
+7. 只基于真实回测证据迭代。候选策略门禁要显式，例如最低交易数、正收益和受控回撤。
+8. 只有通过门禁后，才用 `paper_configure` 和 `paper_start` 进入模拟盘。
+9. 除非人类明确提供实盘风险确认字段，否则跳过所有实盘写工具。
 
 2026-06-09 服务器验证已经跑通该闭环：通过 BitPro MCP 访问 `http://127.0.0.1:8889/api/v2`；ETH/USDT:USDT 1h 有 720 根真实 K 线，覆盖 2026-05-10T14:00:00Z 到 2026-06-09T13:00:00Z；策略 `#293` 通过 `strategy_validate_code`；回测任务 `a292d098-0657-411d-9fff-3c82b9b384d8` 完成并生成结果 `#196`；指标为收益 4.0441%、最大回撤 1.4438%、11 笔交易、Sharpe 0.8029、胜率 63.64%；策略 `#293` 已以 dry-run 模式启动模拟盘。实盘写工具已跳过。
 

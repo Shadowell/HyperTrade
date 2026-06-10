@@ -50,6 +50,7 @@ class ReplayBitProAdapter:
                 "research_backtest_paper_mutation": [
                     "strategy_generate",
                     "strategy_create",
+                    "strategy_update",
                     "backtest_start_job",
                     "paper_configure",
                     "paper_start",
@@ -146,6 +147,40 @@ class ReplayBitProAdapter:
                     "tool": "strategy_create",
                     "status": "success",
                     "parameters": {"name": name, "exchange": exchange, "symbols": symbols or []},
+                },
+            ],
+        }
+
+    def strategy_update(
+        self,
+        *,
+        strategy_id: int,
+        name: str | None = None,
+        script_content: str | None = None,
+        description: str | None = None,
+        config: dict[str, Any] | None = None,
+        exchange: str | None = None,
+        symbols: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "strategy": {
+                "id": strategy_id,
+                "name": name,
+                "script_content": script_content,
+                "description": description,
+                "config": config or {},
+                "exchange": exchange,
+                "symbols": symbols or [],
+            },
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {
+                    "tool": "strategy_update",
+                    "status": "success",
+                    "parameters": {"strategy_id": strategy_id, "name": name},
                 },
             ],
         }
@@ -584,6 +619,21 @@ def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
                 content="",
                 tool_calls=[
                     ToolCallRequest(
+                        id="call_update",
+                        name="bitpro_strategy_update",
+                        arguments={
+                            "strategy_id": 42,
+                            "name": "[合约][1H][CTA] ETH · EMA ATR趋势回撤 · 10000U",
+                            "description": "Canonical BitPro strategy name",
+                            "symbols": ["ETH/USDT:USDT"],
+                        },
+                    )
+                ],
+            ),
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
                         id="call_backtest_get",
                         name="bitpro_backtest_get_job",
                         arguments={"job_id": "job_42"},
@@ -626,6 +676,7 @@ def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
         "bitpro_strategy_generate",
         "bitpro_strategy_create",
         "bitpro_backtest_start_job",
+        "bitpro_strategy_update",
         "bitpro_backtest_get_job",
         "bitpro_paper_configure",
         "bitpro_paper_start",
@@ -633,6 +684,7 @@ def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
     assert "bitpro.strategy_generate" in names
     assert "bitpro.strategy_create" in names
     assert "bitpro.backtest_start_job" in names
+    assert "bitpro.strategy_update" in names
     assert "bitpro.backtest_get_job" in names
     assert "bitpro.paper_configure" in names
     assert "bitpro.paper_start" in names

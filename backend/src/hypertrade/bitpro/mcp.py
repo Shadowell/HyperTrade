@@ -48,6 +48,7 @@ RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "sync_start_history": {"method": "POST", "path": "/sync/start"},
     "sync_one": {"method": "POST", "path": "/sync/sync-one"},
     "strategy_create": {"method": "POST", "path": "/strategies"},
+    "strategy_update": {"method": "PUT", "path": "/strategies/{strategy_id}"},
     "strategy_generate": {"method": "POST", "path": "/agent/generate_strategy"},
     "agent_create_task": {"method": "POST", "path": "/agent/tasks"},
     "agent_accept_iteration": {
@@ -69,6 +70,7 @@ RESEARCH_MUTATION_TOOLS = {
     "sync_start_history",
     "sync_one",
     "strategy_create",
+    "strategy_update",
     "strategy_generate",
     "strategy_validate_code",
     "agent_create_task",
@@ -349,6 +351,43 @@ class BitProToolAdapter:
             "tool_calls": self.last_tool_calls,
         }
 
+    def strategy_update(
+        self,
+        *,
+        strategy_id: int,
+        name: str | None = None,
+        script_content: str | None = None,
+        description: str | None = None,
+        config: dict[str, Any] | None = None,
+        exchange: str | None = None,
+        symbols: list[str] | None = None,
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        params: dict[str, Any] = {"strategy_id": int(strategy_id)}
+        if name is not None:
+            params["name"] = name
+        if script_content is not None:
+            params["script_content"] = script_content
+        if description is not None:
+            params["description"] = description
+        if config is not None:
+            params["config"] = config
+        if exchange is not None:
+            params["exchange"] = exchange
+        if symbols is not None:
+            # Updates preserve caller-provided symbol semantics. Contract rows
+            # commonly use BASE/USDT:USDT, while spot rows use BASE/USDT.
+            params["symbols"] = [str(symbol) for symbol in symbols]
+        strategy = self._call("strategy_update", params)
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "strategy": strategy,
+            "tool_calls": self.last_tool_calls,
+        }
+
     def backtest_start_job(
         self,
         *,
@@ -557,6 +596,17 @@ def _post_payload(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
                 "config": params.get("config") or {},
                 "exchange": params.get("exchange", "okx"),
                 "symbols": list(params.get("symbols") or []),
+            }
+        )
+    if tool_name == "strategy_update":
+        return _compact(
+            {
+                "name": params.get("name"),
+                "description": params.get("description"),
+                "script_content": params.get("script_content"),
+                "config": params.get("config"),
+                "exchange": params.get("exchange"),
+                "symbols": list(params["symbols"]) if params.get("symbols") is not None else None,
             }
         )
     if tool_name == "strategy_generate":

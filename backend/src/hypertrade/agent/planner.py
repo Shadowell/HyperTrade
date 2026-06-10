@@ -331,6 +331,36 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "bitpro_strategy_update",
+            "description": (
+                "Update BitPro strategy metadata or DB-backed strategy content, such as "
+                "renaming a strategy to the canonical BitPro naming format. Not live trading."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer", "description": "BitPro strategy id."},
+                    "name": {"type": "string", "description": "Canonical strategy name."},
+                    "script_content": {
+                        "type": "string",
+                        "description": "Optional replacement strategy Python code.",
+                    },
+                    "description": {"type": "string", "description": "Optional strategy notes."},
+                    "config": {"type": "object", "description": "Optional strategy config."},
+                    "exchange": {"type": "string", "description": "Optional exchange."},
+                    "symbols": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional symbols the strategy supports.",
+                    },
+                },
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "bitpro_backtest_start_job",
             "description": "Start a BitPro-owned backtest job for a strategy.",
             "parameters": {

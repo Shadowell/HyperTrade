@@ -83,6 +83,11 @@ class ToolRegistry:
                     "bitpro",
                 ),
                 ToolDefinition(
+                    "bitpro.strategy_update",
+                    "Update BitPro strategy metadata or DB-backed content for research workflows.",
+                    "bitpro",
+                ),
+                ToolDefinition(
                     "bitpro.backtest_start_job",
                     "Start a BitPro-owned backtest job.",
                     "bitpro",

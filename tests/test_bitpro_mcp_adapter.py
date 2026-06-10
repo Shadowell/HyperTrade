@@ -116,6 +116,16 @@ def test_bitpro_mcp_client_allows_research_backtest_and_paper_writes() -> None:
         },
     ) == {"ok": True}
     assert client.call_tool(
+        "strategy_update",
+        {
+            "strategy_id": 42,
+            "name": "[合约][1H][CTA] ETH · EMA ATR趋势回撤 · 10000U",
+            "description": "rename to canonical BitPro display name",
+            "config": {"strategy_source": "db_script"},
+            "symbols": ["ETH/USDT:USDT"],
+        },
+    ) == {"ok": True}
+    assert client.call_tool(
         "backtest_start_job",
         {
             "strategy_id": 42,
@@ -136,6 +146,16 @@ def test_bitpro_mcp_client_allows_research_backtest_and_paper_writes() -> None:
                 "description": "research draft",
                 "config": {},
                 "exchange": "okx",
+                "symbols": ["ETH/USDT:USDT"],
+            },
+        },
+        {
+            "method": "PUT",
+            "path": "/api/v2/strategies/42",
+            "json": {
+                "name": "[合约][1H][CTA] ETH · EMA ATR趋势回撤 · 10000U",
+                "description": "rename to canonical BitPro display name",
+                "config": {"strategy_source": "db_script"},
                 "symbols": ["ETH/USDT:USDT"],
             },
         },
@@ -177,6 +197,17 @@ def test_bitpro_adapter_can_orchestrate_strategy_backtest_and_paper_steps() -> N
             )
         if request.url.path == "/api/v2/strategies":
             return httpx.Response(200, json={"success": True, "data": {"id": 42}})
+        if request.url.path == "/api/v2/strategies/42":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "id": 42,
+                        "name": "[合约][1H][CTA] ETH · EMA ATR趋势回撤 · 10000U",
+                    },
+                },
+            )
         if request.url.path == "/api/v2/backtest/run_job":
             return httpx.Response(200, json={"success": True, "data": {"job_id": "job_1"}})
         if request.url.path == "/api/v2/live/configure":
@@ -197,6 +228,13 @@ def test_bitpro_adapter_can_orchestrate_strategy_backtest_and_paper_steps() -> N
         description="research draft",
         symbols=["ETH"],
     )
+    updated = adapter.strategy_update(
+        strategy_id=42,
+        name="[合约][1H][CTA] ETH · EMA ATR趋势回撤 · 10000U",
+        description="rename to canonical BitPro display name",
+        config={"strategy_source": "db_script"},
+        symbols=["ETH/USDT:USDT"],
+    )
     backtest = adapter.backtest_start_job(
         strategy_id=42,
         start_date="2026-06-01",
@@ -208,6 +246,12 @@ def test_bitpro_adapter_can_orchestrate_strategy_backtest_and_paper_steps() -> N
 
     assert generated["strategy"]["script_content"] == "class S: pass"
     assert created["strategy"]["id"] == 42
+    assert updated["strategy"]["name"] == "[合约][1H][CTA] ETH · EMA ATR趋势回撤 · 10000U"
+    assert [call["tool"] for call in updated["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "strategy_update",
+    ]
     assert backtest["job"]["job_id"] == "job_1"
     assert paper["paper"]["instance_id"] == 7
     assert [call["tool"] for call in paper["tool_calls"]] == [

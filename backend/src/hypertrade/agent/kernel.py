@@ -332,6 +332,32 @@ class AgentKernel:
                     symbols=[str(symbol) for symbol in symbols],
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_strategy_update":
+                raw_symbols = args.get("symbols")
+                update_symbols = raw_symbols if isinstance(raw_symbols, list) else (
+                    [raw_symbols] if raw_symbols is not None else None
+                )
+                raw_config = args.get("config")
+                result = self._bitpro_adapter().strategy_update(
+                    strategy_id=int(args.get("strategy_id", 0)),
+                    name=str(args["name"]) if args.get("name") is not None else None,
+                    script_content=(
+                        str(args["script_content"])
+                        if args.get("script_content") is not None
+                        else None
+                    ),
+                    description=(
+                        str(args["description"]) if args.get("description") is not None else None
+                    ),
+                    config=raw_config if isinstance(raw_config, dict) else None,
+                    exchange=str(args["exchange"]) if args.get("exchange") is not None else None,
+                    symbols=(
+                        [str(symbol) for symbol in update_symbols]
+                        if update_symbols is not None
+                        else None
+                    ),
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_backtest_start_job":
                 result = self._bitpro_adapter().backtest_start_job(
                     strategy_id=int(args.get("strategy_id", 0)),
@@ -1002,6 +1028,7 @@ class AgentKernel:
             "bitpro_strategy_search",
             "bitpro_strategy_generate",
             "bitpro_strategy_create",
+            "bitpro_strategy_update",
             "bitpro_backtest_start_job",
             "bitpro_backtest_get_job",
             "bitpro_paper_configure",
@@ -1132,6 +1159,7 @@ def _bitpro_trace_tool_name(tool_name: str) -> str:
         "strategy_search": "bitpro.strategy_search",
         "strategy_generate": "bitpro.strategy_generate",
         "strategy_create": "bitpro.strategy_create",
+        "strategy_update": "bitpro.strategy_update",
         "backtest_start_job": "bitpro.backtest_start_job",
         "backtest_get_job": "bitpro.backtest_get_job",
         "paper_configure": "bitpro.paper_configure",

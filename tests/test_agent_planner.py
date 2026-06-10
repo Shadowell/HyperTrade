@@ -263,6 +263,7 @@ def test_planner_exposes_bitpro_strategy_lifecycle_tool_schemas() -> None:
         "bitpro_strategy_search",
         "bitpro_strategy_generate",
         "bitpro_strategy_create",
+        "bitpro_strategy_update",
         "bitpro_backtest_start_job",
         "bitpro_backtest_get_job",
         "bitpro_paper_configure",

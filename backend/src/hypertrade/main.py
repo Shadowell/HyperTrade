@@ -356,6 +356,7 @@ def create_app(
                         "strategy_search",
                         "strategy_generate",
                         "strategy_create",
+                        "strategy_update",
                         "backtest_start_job",
                         "backtest_get_job",
                         "paper_configure",
