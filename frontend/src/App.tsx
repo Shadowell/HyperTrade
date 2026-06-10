@@ -1,27 +1,18 @@
 import {
   Activity,
-  AlertTriangle,
   Bot,
   Brain,
   Cable,
   CheckCircle2,
   Clock3,
-  CirclePause,
-  CirclePlay,
-  CopyCheck,
   Languages,
   Layers3,
   LineChart,
-  Lock,
   MemoryStick,
   Radio,
   RefreshCw,
-  Send,
-  ShieldCheck,
   Sparkles,
-  TestTube2,
-  TerminalSquare,
-  XCircle
+  TerminalSquare
 } from "lucide-react";
 import {
   CSSProperties,
@@ -34,7 +25,7 @@ import {
 } from "react";
 
 type Language = "zh" | "en";
-type NavSection = "harness" | "market" | "memory" | "rag";
+type NavSection = "harness" | "runs" | "memory" | "rag";
 
 type TraceEvent = {
   id?: string;
@@ -650,34 +641,6 @@ const previewOverview: HarnessOverview = {
   }
 };
 
-const bitproMcpToolGroups = [
-  {
-    label: "行情数据",
-    tools: "market_symbols / market_klines / market_indicators",
-    note: "读取 symbol、K 线、指标与数据新鲜度"
-  },
-  {
-    label: "回测数据",
-    tools: "backtest_start_job / backtest_get_job / backtest_get_result",
-    note: "启动或读取 BitPro 拥有的回测任务与报告"
-  },
-  {
-    label: "策略生命周期",
-    tools: "strategy_generate / strategy_create / strategy_search",
-    note: "生成和保存策略草案，供回测与模拟盘验证"
-  },
-  {
-    label: "模拟盘",
-    tools: "paper_configure / paper_start / paper_dashboard / paper_events",
-    note: "配置、启动和读取模拟盘实例，仍不触发实盘写"
-  },
-  {
-    label: "实盘只读",
-    tools: "trading_balance / trading_positions / trading_open_orders",
-    note: "默认只做诊断读取，写工具必须独立审批"
-  }
-] as const;
-
 function App() {
   const [language, setLanguage] = useState<Language>("zh");
   const [activeSection, setActiveSection] = useState<NavSection>(() => activeSectionFromHash());
@@ -685,38 +648,17 @@ function App() {
   const [run, setRun] = useState<AgentRun>(seedRun);
   const [overview, setOverview] = useState<HarnessOverview | null>(null);
   const [harnessError, setHarnessError] = useState("");
-  const [feishuState, setFeishuState] = useState("");
   const [busy, setBusy] = useState(false);
-  const [strategyPrompt, setStrategyPrompt] = useState("研究一个趋势突破策略");
-  const [strategyBusy, setStrategyBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [agentProgress, setAgentProgress] = useState<string[]>([]);
-  const [marketSymbol, setMarketSymbol] = useState("ETH");
-  const [marketCompare, setMarketCompare] = useState("ETH SOL");
-  const [marketBar, setMarketBar] = useState("1H");
-  const [marketLimit, setMarketLimit] = useState("100");
-  const [marketResult, setMarketResult] = useState("");
-  const [intentSymbol, setIntentSymbol] = useState("ETH");
-  const [intentSide, setIntentSide] = useState<"buy" | "sell">("buy");
-  const [intentSize, setIntentSize] = useState("0.01");
-  const [intentReason, setIntentReason] = useState("手动审批测试");
-  const [liveBusy, setLiveBusy] = useState(false);
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
   const [selectedMemoryId, setSelectedMemoryId] = useState("");
   const [memoryQuery, setMemoryQuery] = useState("");
   const [ragQuery, setRagQuery] = useState("risk");
   const [ragHits, setRagHits] = useState<RagHit[]>([]);
-  const [providerBusy, setProviderBusy] = useState(false);
   const [showRawMarkdown, setShowRawMarkdown] = useState(false);
-  const [backtestSymbol, setBacktestSymbol] = useState("BTC");
-  const [backtestBar, setBacktestBar] = useState("1H");
-  const [backtestLimit, setBacktestLimit] = useState("100");
-  const [backtestSource, setBacktestSource] = useState("sample");
-  const [backtestCash, setBacktestCash] = useState("100000");
-  const [backtestStrategy, setBacktestStrategy] = useState("momentum_breakout_v1");
   const t = copy[language];
   const activeOverview = overview ?? previewOverview;
-  const bitproStatus = activeOverview.bitpro ?? previewOverview.bitpro;
   const defaultProvider =
     activeOverview.providers.find((provider) => provider.default) ?? activeOverview.providers[0];
   const traceEvents =
@@ -750,15 +692,10 @@ function App() {
         tone: "night"
       },
       {
-        label: t.approval,
-        value:
-          activeOverview.live_orders.pending_approval_count > 0
-            ? String(activeOverview.live_orders.pending_approval_count)
-            : activeOverview.tools.some((tool) => tool.requires_approval)
-              ? "需审批"
-              : "开放",
-        icon: Lock,
-        tone: "danger"
+        label: t.memory,
+        value: formatMetricNumber(activeOverview.memory.active_count),
+        icon: MemoryStick,
+        tone: "signal"
       }
     ],
     [activeOverview, t]
@@ -844,109 +781,6 @@ function App() {
     }
   }
 
-  async function handleSendFeishu() {
-    if (run.id === seedRun.id) {
-      return;
-    }
-    const response = await fetch(`/api/reports/${run.id}/send-feishu`, {
-      method: "POST",
-      credentials: "include"
-    });
-    if (response.ok) {
-      const payload = (await response.json()) as { status: string };
-      setFeishuState(payload.status);
-    }
-  }
-
-  async function handlePaperControl(action: "pause" | "resume" | "close" | "reset") {
-    const response = await fetch("/api/paper/control", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action })
-    });
-    if (response.ok) {
-      await refreshOverview();
-    }
-  }
-
-  async function handleStrategyResearch() {
-    setStrategyBusy(true);
-    try {
-      const response = await fetch("/api/strategy/research", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: strategyPrompt })
-      });
-      if (response.ok) {
-        await refreshOverview();
-      }
-    } finally {
-      setStrategyBusy(false);
-    }
-  }
-
-  async function handleBacktest() {
-    setStrategyBusy(true);
-    try {
-      const response = await fetch("/api/backtests", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          research_id: activeOverview.strategy_lab.latest_research?.id ?? "",
-          strategy_key: backtestStrategy,
-          initial_cash: backtestCash,
-          symbol: backtestSymbol,
-          bar: backtestBar,
-          candle_limit: Number.parseInt(backtestLimit, 10) || 100,
-          candle_source: backtestSource,
-          use_live_candles: backtestSource === "okx"
-        })
-      });
-      if (response.ok) {
-        await refreshOverview();
-      }
-    } finally {
-      setStrategyBusy(false);
-    }
-  }
-
-  async function handleStrategyExperiment() {
-    setStrategyBusy(true);
-    try {
-      const response = await fetch("/api/strategy/experiments", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: strategyPrompt })
-      });
-      if (response.ok) {
-        await refreshOverview();
-      }
-    } finally {
-      setStrategyBusy(false);
-    }
-  }
-
-  async function handleProviderSwitch(provider: string) {
-    setProviderBusy(true);
-    try {
-      const response = await fetch("/api/harness/provider-selection", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider })
-      });
-      if (response.ok) {
-        await refreshOverview();
-      }
-    } finally {
-      setProviderBusy(false);
-    }
-  }
-
   async function handleRagSearch() {
     const response = await fetch(`/api/rag/search?query=${encodeURIComponent(ragQuery)}`, {
       credentials: "include"
@@ -959,104 +793,6 @@ function App() {
 
   async function handleMemorySearch() {
     await refreshMemoryItems(memoryQuery);
-  }
-
-  async function handleMarketTool(kind: "price" | "candles" | "compare") {
-    setMarketResult(`${t.overviewLoading}...`);
-    const limit = Number.parseInt(marketLimit, 10) || 100;
-    let response: Response;
-    if (kind === "price") {
-      response = await fetch(`/api/market/ticker/${encodeURIComponent(marketSymbol)}`, {
-        credentials: "include"
-      });
-    } else if (kind === "candles") {
-      response = await fetch(
-        `/api/market/candles/${encodeURIComponent(marketSymbol)}?bar=${encodeURIComponent(
-          marketBar
-        )}&limit=${limit}`,
-        { credentials: "include" }
-      );
-    } else {
-      response = await fetch("/api/market/compare", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          symbols: marketCompare.split(/\s+/).filter(Boolean),
-          bar: marketBar,
-          limit
-        })
-      });
-    }
-    if (response.ok) {
-      setMarketResult(JSON.stringify(await response.json(), null, 2));
-    } else {
-      setMarketResult(`API ${response.status}`);
-    }
-  }
-
-  async function handleCreateIntent() {
-    setLiveBusy(true);
-    try {
-      const response = await fetch("/api/live/order-intents", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          symbol: intentSymbol,
-          side: intentSide,
-          size: intentSize,
-          reason: intentReason
-        })
-      });
-      if (response.ok) {
-        await refreshOverview();
-      }
-    } finally {
-      setLiveBusy(false);
-    }
-  }
-
-  async function handleIntentDecision(intentId: string, decision: "approve" | "reject") {
-    setLiveBusy(true);
-    try {
-      const response = await fetch(`/api/live/order-intents/${intentId}/${decision}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: `harness ${decision}` })
-      });
-      if (response.ok) {
-        await refreshOverview();
-      }
-    } finally {
-      setLiveBusy(false);
-    }
-  }
-
-  async function handleIntentExecute(intentId: string) {
-    setLiveBusy(true);
-    try {
-      const response = await fetch(`/api/live/order-intents/${intentId}/execute`, {
-        method: "POST",
-        credentials: "include"
-      });
-      if (response.ok) {
-        await refreshOverview();
-      }
-    } finally {
-      setLiveBusy(false);
-    }
-  }
-
-  async function handleDisableMemory(memoryId: string) {
-    const response = await fetch(`/api/memory/${memoryId}`, {
-      method: "DELETE",
-      credentials: "include"
-    });
-    if (response.ok) {
-      await refreshOverview();
-    }
   }
 
   return (
@@ -1094,12 +830,12 @@ function App() {
               {t.harness}
             </a>
             <a
-              className={navItemClass("market")}
-              href="#market"
-              onClick={(event) => handleNavClick("market", event)}
+              className={navItemClass("runs")}
+              href="#runs"
+              onClick={(event) => handleNavClick("runs", event)}
             >
-              <LineChart size={16} />
-              {t.market}
+              <Layers3 size={16} />
+              {t.recentRuns}
             </a>
             <a
               className={navItemClass("memory")}
@@ -1178,209 +914,8 @@ function App() {
             ))}
           </section>
 
-          <section className="mt-5 grid grid-cols-[1.1fr_0.9fr] gap-5 max-xl:grid-cols-1">
-            <div className="panel panel-command">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="section-title">{t.runtimeMonitor}</h2>
-                  <p className="mt-1 text-sm text-ink/50">{t.runtimeMonitorHint}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button className="icon-button" onClick={refreshOverview} type="button">
-                    <RefreshCw className={refreshing ? "animate-spin" : ""} size={16} />
-                    <span>{t.refresh}</span>
-                  </button>
-                  <Cable size={18} className="text-brass" />
-                </div>
-              </div>
-              <div className="mt-5 flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold">{t.tools}</h3>
-                <span className="rounded border border-ink/10 px-2 py-1 text-xs text-ink/45">
-                  {activeOverview.trace.total_count}
-                </span>
-              </div>
-              <div className="mt-2 trace-list">
-                {traceEvents.map((event, index) => (
-                  <div
-                    className="trace-row"
-                    key={`${event.tool_name}-${event.id ?? index}`}
-                    style={cascadeStyle(index)}
-                  >
-                    <span className="font-mono text-xs text-ink/45">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span className="font-medium">{event.tool_name}</span>
-                    <span className="ml-auto rounded border border-signal/30 px-2 py-1 text-xs text-signal">
-                      {statusLabel(event.status)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6 grid grid-cols-[1.2fr_0.9fr_0.9fr] gap-3 max-md:grid-cols-1">
-                <div className="mini-block">
-                  <span>{t.providers}</span>
-                  <strong>{providerLabel(defaultProvider, t)}</strong>
-                  <label className="mt-3 grid gap-1.5">
-                    <span className="text-[11px] uppercase text-ink/45">
-                      {t.switchProvider}
-                    </span>
-                    <select
-                      className="field-light"
-                      disabled={providerBusy}
-                      onChange={(event) => void handleProviderSwitch(event.target.value)}
-                      value={defaultProvider?.name ?? "deepseek"}
-                    >
-                      {activeOverview.providers.map((provider) => (
-                        <option key={provider.name} value={provider.name}>
-                          {provider.name} / {statusLabel(provider.key_status)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <div className="mini-block" id="rag">
-                  <span>{t.rag}</span>
-                  <strong>
-                    {activeOverview.rag.document_count} 文档 / {activeOverview.rag.chunk_count} 分片
-                  </strong>
-                </div>
-                <div className="mini-block" id="memory">
-                  <span>{t.memory}</span>
-                  <strong>
-                    {activeOverview.memory.active_count} 可用 /{" "}
-                    {activeOverview.memory.total_count} 总数
-                  </strong>
-                </div>
-              </div>
-
-              <div className="mt-6 grid grid-cols-2 gap-3 max-md:grid-cols-1">
-                {activeOverview.providers.slice(0, 4).map((provider) => (
-                  <div className="status-row" key={provider.name}>
-                    <span>{provider.display_name}</span>
-                    <span className={provider.enabled ? "text-signal" : "text-danger"}>
-                      {provider.enabled ? t.configured : t.missing}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6 rounded-md border border-ink/10 bg-white/70 p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h3 className="section-title">{t.bitproMcp}</h3>
-                    <p className="mt-1 text-sm leading-6 text-ink/55">{t.bitproMcpHint}</p>
-                  </div>
-                  <Cable size={18} className="text-brass" />
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-2 max-md:grid-cols-1">
-                  <div className="status-row">
-                    <span>{t.mcpAdapter}</span>
-                    <strong className="font-mono text-xs">
-                      {bitproStatus?.adapter ?? "mcp_non_live_lifecycle"}
-                    </strong>
-                  </div>
-                  <div className="status-row">
-                    <span>{bitproStatus?.auth_header ?? "X-BitPro-MCP-Token"}</span>
-                    <strong
-                      className={
-                        bitproStatus?.token_configured ? "text-signal" : "text-danger"
-                      }
-                    >
-                      {bitproStatus?.token_configured ? t.mcpTokenReady : t.mcpTokenMissing}
-                    </strong>
-                  </div>
-                  <div className="status-row">
-                    <span>{t.mcpApiBase}</span>
-                    <strong className="truncate font-mono text-xs">
-                      {bitproStatus?.api_base ?? "http://127.0.0.1:8889/api/v2"}
-                    </strong>
-                  </div>
-                  <div className="status-row">
-                    <span>{t.auditBoundary}</span>
-                    <strong
-                      className={
-                        bitproStatus?.live_write_enabled ? "text-danger" : "text-signal"
-                      }
-                    >
-                      {bitproStatus?.live_write_enabled
-                        ? t.mcpLiveWriteOn
-                        : t.mcpLiveWriteOff}
-                    </strong>
-                  </div>
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-2 max-sm:grid-cols-1">
-                  {[
-                    t.mcpCapabilities,
-                    t.mcpHealth,
-                    t.mcpSelectTool,
-                    t.mcpAudit
-                  ].map((step) => (
-                    <div className="mini-block" key={step}>
-                      <span>{t.mcpCallOrder}</span>
-                      <strong className="break-words font-mono text-[11px] leading-5">
-                        {step}
-                      </strong>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 max-md:grid-cols-1">
-                  {bitproMcpToolGroups.map((group) => (
-                    <div className="status-row items-start" key={group.label}>
-                      <div className="min-w-0">
-                        <div className="font-semibold">{group.label}</div>
-                        <div className="mt-1 truncate font-mono text-xs text-ink/45">
-                          {group.tools}
-                        </div>
-                        <div className="mt-1 text-xs text-ink/55">{group.note}</div>
-                      </div>
-                      <span className="shrink-0 rounded border border-brass/25 px-2 py-1 text-xs text-brass">
-                        {group.label === t.liveReadOnly ? t.writeBlocked : t.readOnlyDefault}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-6 rounded-md border border-ink/10 bg-paper/60 p-3">
-                <div className="grid grid-cols-[1fr_auto] gap-2">
-                  <input
-                    className="field-light"
-                    onChange={(event) => setRagQuery(event.target.value)}
-                    placeholder={t.searchRag}
-                    value={ragQuery}
-                  />
-                  <button className="icon-button" onClick={handleRagSearch} type="button">
-                    <Brain size={14} />
-                    {t.query}
-                  </button>
-                </div>
-                <div className="mt-3 space-y-2">
-                  {ragHits.length === 0 ? (
-                    <div className="empty-row">{t.rag}</div>
-                  ) : (
-                    ragHits.slice(0, 4).map((hit) => (
-                      <div className="status-row items-start" key={`${hit.source_path}-${hit.chunk_index}`}>
-                        <div className="min-w-0">
-                          <div className="font-semibold">{hit.title}</div>
-                          <div className="truncate font-mono text-xs text-ink/45">
-                            {hit.source_path}#{hit.chunk_index}
-                          </div>
-                          <p className="mt-1 max-h-9 overflow-hidden text-xs text-ink/55">
-                            {hit.content_preview}
-                          </p>
-                        </div>
-                        <span className="font-mono text-xs text-brass">
-                          {hit.score.toFixed(2)}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="panel" id="market">
+          <section className="mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1">
+            <div className="panel">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h2 className="section-title">{t.runConsole}</h2>
@@ -1397,15 +932,6 @@ function App() {
                 <button className="button-primary" disabled={busy} onClick={handleRun} type="button">
                   {busy ? <RefreshCw className="animate-spin" size={16} /> : <Bot size={16} />}
                   {t.run}
-                </button>
-                <button
-                  className="button-secondary"
-                  disabled={run.id === seedRun.id}
-                  onClick={handleSendFeishu}
-                  type="button"
-                >
-                  <Send size={16} />
-                  {feishuState || t.sendFeishu}
                 </button>
               </div>
               <div className="mt-4 trace-list">
@@ -1451,11 +977,69 @@ function App() {
                 </div>
               )}
             </div>
+
+            <div className="panel panel-command">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="section-title">{t.runtimeMonitor}</h2>
+                  <p className="mt-1 text-sm text-ink/50">{t.runtimeMonitorHint}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button className="icon-button" onClick={refreshOverview} type="button">
+                    <RefreshCw className={refreshing ? "animate-spin" : ""} size={16} />
+                    <span>{t.refresh}</span>
+                  </button>
+                  <Cable size={18} className="text-brass" />
+                </div>
+              </div>
+              <div className="mt-5 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold">{t.tools}</h3>
+                <span className="rounded border border-ink/10 px-2 py-1 text-xs text-ink/45">
+                  {activeOverview.trace.total_count}
+                </span>
+              </div>
+              <div className="mt-2 trace-list">
+                {traceEvents.map((event, index) => (
+                  <div
+                    className="trace-row"
+                    key={`${event.tool_name}-${event.id ?? index}`}
+                    style={cascadeStyle(index)}
+                  >
+                    <span className="font-mono text-xs text-ink/45">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="font-medium">{event.tool_name}</span>
+                    <span className="ml-auto rounded border border-signal/30 px-2 py-1 text-xs text-signal">
+                      {statusLabel(event.status)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 grid grid-cols-3 gap-3 max-md:grid-cols-1">
+                <div className="mini-block">
+                  <span>{t.providers}</span>
+                  <strong>{providerLabel(defaultProvider, t)}</strong>
+                </div>
+                <div className="mini-block">
+                  <span>{t.rag}</span>
+                  <strong>
+                    {activeOverview.rag.document_count} 文档 / {activeOverview.rag.chunk_count} 分片
+                  </strong>
+                </div>
+                <div className="mini-block">
+                  <span>{t.memory}</span>
+                  <strong>
+                    {activeOverview.memory.active_count} 可用 /{" "}
+                    {activeOverview.memory.total_count} 总数
+                  </strong>
+                </div>
+              </div>
+            </div>
           </section>
 
           <section className="mt-5 grid grid-cols-[0.9fr_1.1fr] gap-5 max-xl:grid-cols-1">
-            <div className="panel">
-              <div className="flex items-center justify-between gap-4">
+            <div className="panel" id="memory">
+              <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="section-title">{t.memoryManager}</h2>
                   <p className="mt-1 text-sm text-ink/50">
@@ -1503,347 +1087,81 @@ function App() {
                   ))
                 )}
               </div>
-            </div>
-
-            <div className="panel">
-              <div className="flex items-center justify-between gap-4">
-                <h2 className="section-title">{t.selectedMemory}</h2>
+              <div className="mt-5">
+                <h3 className="section-title">{t.selectedMemory}</h3>
                 {selectedMemory ? (
-                  <button
-                    className="icon-button"
-                    onClick={() => handleDisableMemory(selectedMemory.id)}
-                    type="button"
-                  >
-                    <XCircle size={14} />
-                    {t.disable}
-                  </button>
-                ) : null}
-              </div>
-              {selectedMemory ? (
-                <div className="mt-4 grid gap-3">
-                  <div className="grid grid-cols-3 gap-3 max-md:grid-cols-1">
-                    <div className="mini-block">
-                      <span>ID</span>
-                      <strong className="font-mono">{selectedMemory.id}</strong>
+                  <div className="mt-4 grid gap-3">
+                    <div className="grid grid-cols-3 gap-3 max-md:grid-cols-1">
+                      <div className="mini-block">
+                        <span>ID</span>
+                        <strong className="font-mono">{selectedMemory.id}</strong>
+                      </div>
+                      <div className="mini-block">
+                        <span>{t.source}</span>
+                        <strong className="font-mono">{selectedMemory.source_tool || "n/a"}</strong>
+                      </div>
+                      <div className="mini-block">
+                        <span>运行</span>
+                        <strong className="font-mono">{selectedMemory.source_run_id || "n/a"}</strong>
+                      </div>
                     </div>
-                    <div className="mini-block">
-                      <span>{t.source}</span>
-                      <strong className="font-mono">{selectedMemory.source_tool || "n/a"}</strong>
-                    </div>
-                    <div className="mini-block">
-                      <span>运行</span>
-                      <strong className="font-mono">{selectedMemory.source_run_id || "n/a"}</strong>
-                    </div>
+                    <div className="markdown-report">{renderMarkdown(selectedMemory.content)}</div>
+                    {selectedMemory.tags?.length ? (
+                      <div className="flex flex-wrap gap-2">
+                        {selectedMemory.tags.map((tag) => (
+                          <span className="rounded border border-ink/10 px-2 py-1 text-xs" key={tag}>
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="markdown-report">{renderMarkdown(selectedMemory.content)}</div>
-                  {selectedMemory.tags?.length ? (
-                    <div className="flex flex-wrap gap-2">
-                      {selectedMemory.tags.map((tag) => (
-                        <span className="rounded border border-ink/10 px-2 py-1 text-xs" key={tag}>
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="empty-row mt-4">{t.noMemoryItems}</div>
-              )}
-            </div>
-          </section>
-
-          <section className="mt-5 grid grid-cols-[0.9fr_1.1fr] gap-5 max-xl:grid-cols-1">
-            <div className="panel">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="section-title">{t.paperRuntime}</h2>
-                  <p className="mt-1 font-mono text-xs text-ink/45">
-                    {activeOverview.paper.session.id}
-                  </p>
-                </div>
-                <span className="rounded border border-signal/25 px-2 py-1 text-xs text-signal">
-                  {statusLabel(activeOverview.paper.session.status)}
-                </span>
-              </div>
-              <div className="mt-5 grid grid-cols-3 gap-3 max-sm:grid-cols-1">
-                <div className="mini-block">
-                  <span>{t.equity}</span>
-                  <strong className="font-mono">{activeOverview.paper.session.equity}</strong>
-                </div>
-                <div className="mini-block">
-                  <span>{t.cash}</span>
-                  <strong className="font-mono">{activeOverview.paper.session.cash}</strong>
-                </div>
-                <div className="mini-block">
-                  <span>{t.realizedPnl}</span>
-                  <strong className="font-mono">
-                    {activeOverview.paper.session.realized_pnl}
-                  </strong>
-                </div>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  className="button-secondary"
-                  onClick={() => handlePaperControl("pause")}
-                  type="button"
-                >
-                  <CirclePause size={16} />
-                  {t.pause}
-                </button>
-                <button
-                  className="button-primary"
-                  onClick={() => handlePaperControl("resume")}
-                  type="button"
-                >
-                  <CirclePlay size={16} />
-                  {t.resume}
-                </button>
-                <button
-                  className="button-secondary"
-                  onClick={() => handlePaperControl("close")}
-                  type="button"
-                >
-                  <CopyCheck size={16} />
-                  {t.closeAll}
-                </button>
-                <button
-                  className="button-secondary"
-                  onClick={() => handlePaperControl("reset")}
-                  type="button"
-                >
-                  <RefreshCw size={16} />
-                  {t.reset}
-                </button>
+                ) : (
+                  <div className="empty-row mt-4">{t.noMemoryItems}</div>
+                )}
               </div>
             </div>
 
-            <div className="panel">
-              <div className="grid grid-cols-2 gap-5 max-md:grid-cols-1">
-                <div>
-                  <h3 className="section-title">{t.positions}</h3>
-                  <div className="mt-3 rounded-md border border-ink/10 bg-paper/60 px-3">
-                    {activeOverview.paper.positions.length === 0 ? (
-                      <div className="empty-row my-3">{t.noPositions}</div>
-                    ) : (
-                      activeOverview.paper.positions.slice(0, 6).map((position) => (
-                        <div className="paper-row" key={position.inst_id}>
-                          <span className="font-mono text-xs">{position.inst_id}</span>
-                          <span>{sideLabel(position.side)}</span>
-                          <span className="font-mono">{position.unrealized_pnl}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <h3 className="section-title">{t.fills}</h3>
-                  <div className="mt-3 rounded-md border border-ink/10 bg-paper/60 px-3">
-                    {activeOverview.paper.recent_fills.length === 0 ? (
-                      <div className="empty-row my-3">{t.noFills}</div>
-                    ) : (
-                      activeOverview.paper.recent_fills.slice(0, 6).map((fill, index) => (
-                        <div className="paper-row" key={`${fill.inst_id}-${index}`}>
-                          <span className="font-mono text-xs">{fill.inst_id}</span>
-                          <span>{sideLabel(fill.side)}</span>
-                          <span className="font-mono">{fill.price}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1">
-            <div className="panel">
+            <div className="panel" id="rag">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="section-title">{t.marketTools}</h2>
-                  <p className="mt-1 text-sm text-ink/50">OKX SWAP 确定性行情工具</p>
-                </div>
-                <Radio size={18} className="text-signal" />
-              </div>
-              <div className="mt-4 grid grid-cols-[1fr_0.7fr_0.55fr] gap-3 max-md:grid-cols-1">
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] uppercase text-ink/45">{t.symbol}</span>
-                  <input
-                    className="field-light"
-                    onChange={(event) => setMarketSymbol(event.target.value)}
-                    value={marketSymbol}
-                  />
-                </label>
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] uppercase text-ink/45">{t.bar}</span>
-                  <input
-                    className="field-light"
-                    onChange={(event) => setMarketBar(event.target.value)}
-                    value={marketBar}
-                  />
-                </label>
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] uppercase text-ink/45">{t.limit}</span>
-                  <input
-                    className="field-light"
-                    onChange={(event) => setMarketLimit(event.target.value)}
-                    value={marketLimit}
-                  />
-                </label>
-              </div>
-              <label className="mt-3 grid gap-1.5">
-                <span className="text-[11px] uppercase text-ink/45">{t.compare}</span>
-                <input
-                  className="field-light"
-                  onChange={(event) => setMarketCompare(event.target.value)}
-                  value={marketCompare}
-                />
-              </label>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button className="button-primary" onClick={() => handleMarketTool("price")} type="button">
-                  <LineChart size={16} />
-                  {t.price}
-                </button>
-                <button className="button-secondary" onClick={() => handleMarketTool("candles")} type="button">
-                  <Activity size={16} />
-                  {t.candles}
-                </button>
-                <button className="button-secondary" onClick={() => handleMarketTool("compare")} type="button">
-                  <Layers3 size={16} />
-                  {t.compare}
-                </button>
-              </div>
-            </div>
-
-            <div className="panel">
-              <div className="flex items-center justify-between gap-4">
-                <h2 className="section-title">{t.query}</h2>
-                <TerminalSquare size={18} className="text-brass" />
-              </div>
-              <pre className="report-block">{marketResult || "{}"}</pre>
-            </div>
-          </section>
-
-          <section className="mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1">
-            <div className="panel">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="section-title">{t.liveApproval}</h2>
+                  <h2 className="section-title">{t.rag}</h2>
                   <p className="mt-1 text-sm text-ink/50">
-                    {activeOverview.live_orders.pending_approval_count} {t.pending}
+                    {activeOverview.rag.document_count} 文档 / {activeOverview.rag.chunk_count} 分片
                   </p>
                 </div>
-                <ShieldCheck size={18} className="text-danger" />
+                <Brain size={18} className="text-brass" />
               </div>
-              <div className="mt-4 grid grid-cols-[1fr_0.7fr_0.8fr] gap-3 max-md:grid-cols-1">
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] uppercase text-ink/45">{t.symbol}</span>
-                  <input
-                    className="field-light"
-                    onChange={(event) => setIntentSymbol(event.target.value)}
-                    value={intentSymbol}
-                  />
-                </label>
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] uppercase text-ink/45">{t.side}</span>
-                  <select
-                    className="field-light"
-                    onChange={(event) => setIntentSide(event.target.value as "buy" | "sell")}
-                    value={intentSide}
-                  >
-                    <option value="buy">买入</option>
-                    <option value="sell">卖出</option>
-                  </select>
-                </label>
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] uppercase text-ink/45">{t.size}</span>
-                  <input
-                    className="field-light"
-                    onChange={(event) => setIntentSize(event.target.value)}
-                    value={intentSize}
-                  />
-                </label>
-              </div>
-              <label className="mt-3 grid gap-1.5">
-                <span className="text-[11px] uppercase text-ink/45">{t.reason}</span>
+              <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
                 <input
                   className="field-light"
-                  onChange={(event) => setIntentReason(event.target.value)}
-                  value={intentReason}
+                  onChange={(event) => setRagQuery(event.target.value)}
+                  placeholder={t.searchRag}
+                  value={ragQuery}
                 />
-              </label>
-              <button
-                className="button-primary mt-3"
-                disabled={liveBusy}
-                onClick={handleCreateIntent}
-                type="button"
-              >
-                {liveBusy ? <RefreshCw className="animate-spin" size={16} /> : <Lock size={16} />}
-                {t.createIntent}
-              </button>
-            </div>
-
-            <div className="panel">
-              <div className="flex items-center justify-between gap-4">
-                <h2 className="section-title">{t.orderIntent}</h2>
-                <span className="font-mono text-xs text-ink/45">
-                  {activeOverview.live_orders.total_count}
-                </span>
+                <button className="icon-button" onClick={handleRagSearch} type="button">
+                  <Brain size={14} />
+                  {t.query}
+                </button>
               </div>
               <div className="mt-4 space-y-2">
-                {activeOverview.live_orders.recent.length === 0 ? (
-                  <div className="empty-row">{t.noIntents}</div>
+                {ragHits.length === 0 ? (
+                  <div className="empty-row">{t.rag}</div>
                 ) : (
-                  activeOverview.live_orders.recent.map((intent) => (
-                    <div className="status-row items-start" key={intent.id}>
+                  ragHits.slice(0, 8).map((hit) => (
+                    <div className="status-row items-start" key={`${hit.source_path}-${hit.chunk_index}`}>
                       <div className="min-w-0">
-                        <div className="font-mono text-xs text-ink/55">{intent.id}</div>
-                        <div className="mt-1 text-sm font-semibold">
-                          {intent.inst_id} {sideLabel(intent.side)} {intent.size}
+                        <div className="font-semibold">{hit.title}</div>
+                        <div className="truncate font-mono text-xs text-ink/45">
+                          {hit.source_path}#{hit.chunk_index}
                         </div>
-                        <div className="mt-1 text-xs text-ink/45">
-                          {intent.environment} / {statusLabel(intent.status)}
-                        </div>
-                        <div className="mt-1 text-xs text-ink/45">
-                          风控：{statusLabel(intent.risk_status ?? "pending")}
-                          {intent.exchange_order_id ? ` / 订单 ${intent.exchange_order_id}` : ""}
-                        </div>
+                        <p className="mt-1 max-h-12 overflow-hidden text-xs text-ink/55">
+                          {hit.content_preview}
+                        </p>
                       </div>
-                      {intent.status === "pending_approval" ? (
-                        <div className="flex shrink-0 gap-2">
-                          <button
-                            className="icon-button"
-                            disabled={liveBusy}
-                            onClick={() => handleIntentDecision(intent.id, "approve")}
-                            type="button"
-                          >
-                            <ShieldCheck size={14} />
-                            {t.approve}
-                          </button>
-                          <button
-                            className="icon-button"
-                            disabled={liveBusy}
-                            onClick={() => handleIntentDecision(intent.id, "reject")}
-                            type="button"
-                          >
-                            <XCircle size={14} />
-                            {t.reject}
-                          </button>
-                        </div>
-                      ) : intent.status === "approved" ? (
-                        <button
-                          className="icon-button"
-                          disabled={liveBusy}
-                          onClick={() => handleIntentExecute(intent.id)}
-                          type="button"
-                        >
-                          <Send size={14} />
-                          {t.execute}
-                        </button>
-                      ) : (
-                        <span className="rounded border border-ink/15 px-2 py-1 text-xs">
-                          {statusLabel(intent.status)}
-                        </span>
-                      )}
+                      <span className="font-mono text-xs text-brass">
+                        {hit.score.toFixed(2)}
+                      </span>
                     </div>
                   ))
                 )}
@@ -1851,197 +1169,7 @@ function App() {
             </div>
           </section>
 
-          <section className="mt-5 grid grid-cols-[0.9fr_1.1fr] gap-5 max-xl:grid-cols-1">
-            <div className="panel">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="section-title">{t.strategyLab}</h2>
-                  <p className="mt-1 text-sm text-ink/50">{t.researchPrompt}</p>
-                </div>
-                <TestTube2 size={18} className="text-brass" />
-              </div>
-              <textarea
-                className="prompt-box"
-                onChange={(event) => setStrategyPrompt(event.target.value)}
-                value={strategyPrompt}
-              />
-              <div className="mt-4 grid grid-cols-[1fr_0.75fr_0.75fr] gap-3 max-md:grid-cols-1">
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] uppercase text-ink/45">{t.strategyKey}</span>
-                  <input
-                    className="field-light"
-                    onChange={(event) => setBacktestStrategy(event.target.value)}
-                    value={backtestStrategy}
-                  />
-                </label>
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] uppercase text-ink/45">{t.candleSource}</span>
-                  <select
-                    className="field-light"
-                    onChange={(event) => setBacktestSource(event.target.value)}
-                    value={backtestSource}
-                  >
-                    <option value="sample">样本</option>
-                    <option value="okx">OKX</option>
-                    <option value="bitpro">BitPro</option>
-                  </select>
-                </label>
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] uppercase text-ink/45">{t.initialCash}</span>
-                  <input
-                    className="field-light"
-                    onChange={(event) => setBacktestCash(event.target.value)}
-                    value={backtestCash}
-                  />
-                </label>
-              </div>
-              <div className="mt-3 grid grid-cols-3 gap-3 max-md:grid-cols-1">
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] uppercase text-ink/45">{t.symbol}</span>
-                  <input
-                    className="field-light"
-                    onChange={(event) => setBacktestSymbol(event.target.value)}
-                    value={backtestSymbol}
-                  />
-                </label>
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] uppercase text-ink/45">{t.bar}</span>
-                  <input
-                    className="field-light"
-                    onChange={(event) => setBacktestBar(event.target.value)}
-                    value={backtestBar}
-                  />
-                </label>
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] uppercase text-ink/45">{t.limit}</span>
-                  <input
-                    className="field-light"
-                    onChange={(event) => setBacktestLimit(event.target.value)}
-                    value={backtestLimit}
-                  />
-                </label>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className="button-primary"
-                  disabled={strategyBusy}
-                  onClick={handleStrategyResearch}
-                  type="button"
-                >
-                  {strategyBusy ? (
-                    <RefreshCw className="animate-spin" size={16} />
-                  ) : (
-                    <Sparkles size={16} />
-                  )}
-                  {t.runResearch}
-                </button>
-                <button
-                  className="button-secondary"
-                  disabled={strategyBusy}
-                  onClick={handleBacktest}
-                  type="button"
-                >
-                  <LineChart size={16} />
-                  {t.fullBacktest}
-                </button>
-                <button
-                  className="button-secondary"
-                  disabled={strategyBusy}
-                  onClick={handleStrategyExperiment}
-                  type="button"
-                >
-                  <TestTube2 size={16} />
-                  {t.experiment}
-                </button>
-              </div>
-            </div>
-
-            <div className="panel">
-              <div className="grid grid-cols-3 gap-5 max-xl:grid-cols-2 max-md:grid-cols-1">
-                <div>
-                  <h3 className="section-title">{t.latestResearch}</h3>
-                  {activeOverview.strategy_lab.latest_research ? (
-                    <div className="mt-3 strategy-card">
-                      <span className="font-mono text-xs text-ink/45">
-                        {activeOverview.strategy_lab.latest_research.id}
-                      </span>
-                      <strong>{activeOverview.strategy_lab.latest_research.title}</strong>
-                      <p>{activeOverview.strategy_lab.latest_research.prompt}</p>
-                      <span className="font-mono text-xs text-brass">
-                        {activeOverview.strategy_lab.latest_research.strategy_key}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="empty-row mt-3">{t.noResearch}</div>
-                  )}
-                </div>
-                <div>
-                  <h3 className="section-title">{t.latestBacktest}</h3>
-                  {activeOverview.strategy_lab.latest_backtest ? (
-                    <div className="mt-3 grid gap-3">
-                      <div className="status-row">
-                        <span className="font-mono text-xs">
-                          {activeOverview.strategy_lab.latest_backtest.id}
-                        </span>
-                        <span className="rounded border border-signal/25 px-2 py-1 text-xs text-signal">
-                          {statusLabel(activeOverview.strategy_lab.latest_backtest.status)}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-3 max-sm:grid-cols-1">
-                        <div className="mini-block">
-                          <span>{t.returnPct}</span>
-                          <strong className="font-mono">
-                            {
-                              activeOverview.strategy_lab.latest_backtest.metrics
-                                .total_return_pct
-                            }
-                            %
-                          </strong>
-                        </div>
-                        <div className="mini-block">
-                          <span>{t.maxDrawdown}</span>
-                          <strong className="font-mono">
-                            {
-                              activeOverview.strategy_lab.latest_backtest.metrics
-                                .max_drawdown_pct
-                            }
-                            %
-                          </strong>
-                        </div>
-                        <div className="mini-block">
-                          <span>{t.trades}</span>
-                          <strong className="font-mono">
-                            {activeOverview.strategy_lab.latest_backtest.metrics.trade_count}
-                          </strong>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="empty-row mt-3">{t.noBacktest}</div>
-                  )}
-                </div>
-                <div>
-                  <h3 className="section-title">{t.latestExperiment}</h3>
-                  {activeOverview.strategy_lab.latest_experiment ? (
-                    <div className="mt-3 strategy-card">
-                      <span className="font-mono text-xs text-ink/45">
-                        {activeOverview.strategy_lab.latest_experiment.id}
-                      </span>
-                      <strong>{statusLabel(activeOverview.strategy_lab.latest_experiment.status)}</strong>
-                      <p>{activeOverview.strategy_lab.latest_experiment.prompt}</p>
-                      <span className="font-mono text-xs text-brass">
-                        {activeOverview.strategy_lab.latest_experiment.backtest_id}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="empty-row mt-3">{t.latestExperiment}</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1">
+          <section className="mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1" id="runs">
             <div className="panel">
               <div className="flex items-center justify-between gap-4">
                 <h2 className="section-title">{t.topMovers}</h2>
@@ -2089,42 +1217,6 @@ function App() {
               </div>
             </div>
           </section>
-
-          <section className="mt-5 grid grid-cols-[1.5fr_1fr_0.8fr] gap-5 max-xl:grid-cols-1">
-            <div className="wide-strip">
-              <AlertTriangle size={16} className="text-danger" />
-              <span>{t.severe}</span>
-              <strong>Feishu Webhook</strong>
-            </div>
-            <div className="wide-strip">
-              <Brain size={16} className="text-brass" />
-              <span>{t.evals}</span>
-              <strong>
-                {statusLabel(activeOverview.evals.status)} / {activeOverview.evals.case_count}
-              </strong>
-            </div>
-            <div className="wide-strip">
-              <Radio size={16} className="text-signal" />
-              <span>部署端口</span>
-              <strong>3333 / 3334</strong>
-            </div>
-          </section>
-          <section className="mt-5 panel">
-            <div className="flex items-center justify-between gap-4">
-              <h2 className="section-title">{t.evals}</h2>
-              <span className="font-mono text-xs text-ink/45">{statusLabel(activeOverview.evals.mode)}</span>
-            </div>
-            <div className="mt-4 grid grid-cols-5 gap-2 max-xl:grid-cols-2 max-sm:grid-cols-1">
-              {activeOverview.evals.cases.map((item) => (
-                <div className="mini-block" key={item.name}>
-                  <span>{item.name}</span>
-                  <strong className={item.status === "passed" ? "text-signal" : "text-danger"}>
-                    {statusLabel(item.status)}
-                  </strong>
-                </div>
-              ))}
-            </div>
-          </section>
           {harnessError ? <div className="mt-3 text-sm text-danger">API {harnessError}</div> : null}
         </main>
       </div>
@@ -2164,23 +1256,12 @@ function statusLabel(status: string | undefined): string {
   return labels[normalized] ?? status ?? "未知";
 }
 
-function sideLabel(side: string | undefined): string {
-  const normalized = (side ?? "").toLowerCase();
-  const labels: Record<string, string> = {
-    buy: "买入",
-    long: "多头",
-    sell: "卖出",
-    short: "空头"
-  };
-  return labels[normalized] ?? side ?? "未知";
-}
-
 function activeSectionFromHash(): NavSection {
   if (typeof window === "undefined") {
     return "harness";
   }
   const section = window.location.hash.replace("#", "");
-  if (section === "market" || section === "memory" || section === "rag") {
+  if (section === "runs" || section === "memory" || section === "rag") {
     return section;
   }
   return "harness";

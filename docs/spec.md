@@ -18,12 +18,12 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 
 ## Core User Journeys
 
-1. Operator opens `/harness` and reviews provider/tool/runtime state, recent runs, trace, RAG, and Memory without a login wall.
+1. Operator opens `/harness` and reviews the core workbench: Agent run creation, report reading, recent runs, trace, RAG, Memory, and OKX market snapshot without a login wall.
 2. Worker continuously ingests OKX SWAP ticker snapshots.
 3. User asks for a market summary in free-form chat.
 4. Agent calls market, RAG, and memory tools, then stores trace and report.
-5. User reviews the report and can manually forward it to Feishu.
-6. User creates an auditable strategy research record and runs a Backtrader backtest from `/harness`.
+5. User reviews the report from `/harness`; privileged sharing or mutation actions stay outside the primary workbench and require admin-authenticated API/CLI paths.
+6. User creates auditable strategy research records and Backtrader backtests through API/CLI workflows.
 7. Developer runs `hypertrade` for a standalone terminal Agent, or `hypertrade --remote <url>` to connect to a deployed API.
 
 ## V1 In Scope
@@ -84,7 +84,8 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 
 - `./scripts/check.sh` passes.
 - `GET /api/health` returns OK.
-- `/harness` loads live run history, trace events, RAG, Memory, and market state without rendering a login form.
+- `/harness` loads a simplified core workbench without rendering a login form: Agent run creation, report reading, recent runs, trace events, RAG search, Memory search/detail, OKX top movers, and core telemetry.
+- Advanced provider switching, paper lifecycle controls, live approval/execution, strategy lab/backtest forms, eval panels, Feishu send, and Memory disable are not first-class `/harness` UI controls.
 - Privileged mutations such as provider selection, paper lifecycle control, live order approval/execution, Memory disable, and Feishu send still require admin session auth.
 - `/api/harness/tools` shows live order approval gating.
 - User can create an Agent market-summary run and inspect trace events.
