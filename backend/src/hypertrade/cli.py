@@ -1703,14 +1703,7 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     console.print(Panel(header, title="HyperTrade Run", border_style="cyan"))
 
     if isinstance(trace_events, list) and trace_events:
-        tools = Table(title="Tool Trace", show_header=True, header_style="bold")
-        tools.add_column("Tool")
-        tools.add_column("Status")
-        for event in trace_events:
-            if not isinstance(event, dict):
-                continue
-            tools.add_row(str(event.get("tool_name", "unknown")), str(event.get("status", "n/a")))
-        console.print(tools)
+        _render_rich_trace_summary(trace_events, console=console)
 
     if has_structured_market_summary and isinstance(report, dict):
         _render_rich_market_summary(report, console=console)
@@ -1722,6 +1715,109 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
         )
 
     return True
+
+
+def _render_rich_trace_summary(trace_events: list[Any], *, console: Any) -> None:
+    from rich.table import Table
+    from rich.text import Text
+
+    full_trace = _show_full_trace()
+    visible_events, folded_events = _partition_trace_events(trace_events, full_trace=full_trace)
+    if not visible_events and folded_events:
+        console.print(
+            Text(
+                "Trace folded: "
+                f"{len(folded_events)} internal events hidden "
+                "(graph/preflight/nested BitPro). "
+                "Set HYPERTRADE_TRACE=full to show all.",
+                style="dim",
+            )
+        )
+        return
+
+    title = "Tool Trace" if full_trace else "Tool Trace Summary"
+    tools = Table(title=title, show_header=True, header_style="bold")
+    tools.add_column("Tool")
+    tools.add_column("Status")
+    if not full_trace:
+        tools.add_column("Calls", justify="right")
+        for row in _aggregate_trace_events(visible_events):
+            tools.add_row(row["tool"], row["status"], str(row["count"]))
+    else:
+        for event in visible_events:
+            tools.add_row(str(event.get("tool_name", "unknown")), str(event.get("status", "n/a")))
+    console.print(tools)
+    if folded_events:
+        console.print(
+            Text(
+                "Trace folded: "
+                f"{len(folded_events)} internal events hidden "
+                "(graph/preflight/nested BitPro). "
+                "Set HYPERTRADE_TRACE=full to show all.",
+                style="dim",
+            )
+        )
+
+
+def _show_full_trace() -> bool:
+    value = os.getenv("HYPERTRADE_TRACE", "summary").strip().lower()
+    return value in {"all", "debug", "full", "verbose"}
+
+
+def _partition_trace_events(
+    trace_events: list[Any],
+    *,
+    full_trace: bool,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    events = [event for event in trace_events if isinstance(event, dict)]
+    if full_trace:
+        return events, []
+    high_level_bitpro = {
+        str(event.get("tool_name", ""))
+        for event in events
+        if str(event.get("tool_name", "")).startswith("bitpro_")
+    }
+    visible: list[dict[str, Any]] = []
+    folded: list[dict[str, Any]] = []
+    for event in events:
+        if _is_folded_trace_event(event, high_level_bitpro=high_level_bitpro):
+            folded.append(event)
+        else:
+            visible.append(event)
+    return visible, folded
+
+
+def _is_folded_trace_event(
+    event: dict[str, Any],
+    *,
+    high_level_bitpro: set[str],
+) -> bool:
+    tool_name = str(event.get("tool_name", ""))
+    if tool_name.startswith("graph."):
+        return True
+    if tool_name in {
+        "bitpro.capabilities",
+        "bitpro.health",
+        "bitpro_capabilities",
+        "bitpro_health",
+    }:
+        return True
+    return tool_name.startswith("bitpro.") and bool(high_level_bitpro)
+
+
+def _aggregate_trace_events(trace_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    index: dict[tuple[str, str], dict[str, Any]] = {}
+    for event in trace_events:
+        tool_name = str(event.get("tool_name", "unknown"))
+        status = str(event.get("status", "n/a"))
+        key = (tool_name, status)
+        if key not in index:
+            row = {"tool": tool_name, "status": status, "count": 0}
+            index[key] = row
+            rows.append(row)
+        index[key]["count"] += 1
+    return rows
 
 
 def _render_markdown_report(markdown: str, *, output: TextIO, title: str) -> None:

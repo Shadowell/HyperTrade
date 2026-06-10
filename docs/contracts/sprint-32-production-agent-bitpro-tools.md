@@ -93,6 +93,7 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
 - CLI `/help` and `/tools` describe each command/tool purpose so operators do not need to infer behavior from tool names alone.
 - Interactive CLI Agent prompts show a live `Thought` / `Thinking` animation while waiting for planner, tool, or final-report progress; script output remains stable text.
 - Interactive/Rich CLI report rendering formats unknown Markdown reports into readable terminal headings, lists, and tables, while `HYPERTRADE_RENDERER=plain` preserves raw Markdown for scripts.
+- Interactive/Rich CLI run output folds low-signal trace rows into a compact tool summary by default, while `HYPERTRADE_TRACE=full` preserves full trace visibility for audits and debugging.
 - No secrets, BitPro credentials, database files, or production `.env` are added.
 - `./scripts/check.sh` passes.
 

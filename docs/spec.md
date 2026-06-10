@@ -104,6 +104,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Developer can run deterministic CLI market commands such as `/price`, `/candles`, and `/compare` without waiting for LLM planning.
 - Developer can see readable Agent progress statuses while free-form prompts are running.
 - Developer can read structured CLI report sections for market runs, and unknown Markdown reports render as terminal headings, lists, and tables in interactive/Rich mode.
+- Developer can read Rich CLI run output without low-signal trace noise: graph/preflight/nested rows are folded into a compact summary by default, while `HYPERTRADE_TRACE=full` shows the full trace for audits.
 - Routine market/RAG/Memory CLI outputs do not repeat a fixed investment-advice disclaimer; strategy, backtest, Testnet, live-order, or recommendation-like prompts still surface the research/risk boundary.
 - Developer can enable Rich terminal rendering for structured CLI reports while keeping plain output for scripts.
 - Developer can inspect and control the simulated paper runtime from CLI slash commands.

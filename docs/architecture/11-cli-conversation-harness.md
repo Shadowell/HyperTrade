@@ -46,6 +46,10 @@ Report rendering prefers structured JSON/trace payloads when available. If a run
 Markdown, Rich-capable interactive output renders headings, lists, emphasis, and tables instead
 of printing raw Markdown source. `HYPERTRADE_RENDERER=plain` keeps the raw Markdown fallback for
 automation.
+Rich run output folds low-signal trace rows by default: graph runtime nodes, BitPro
+capability/health preflight rows, and nested BitPro subcalls are summarized instead of printed as
+a long table. Business-level tool calls remain visible with an aggregated call count. Operators can
+set `HYPERTRADE_TRACE=full` to print the complete trace table during audits or debugging.
 
 This keeps Provider configuration, Tool Call policy, RAG, Memory, approval gates, and trace persistence in one runtime boundary. The terminal becomes another harness surface alongside `/harness`.
 
@@ -96,5 +100,8 @@ CLI 会先把这些事件渲染成进度行，再打印最终落库的 run 报�
 报告渲染优先使用结构化 JSON/trace payload。只有 Markdown 的 run 在 Rich/交互式输出下会
 渲染成标题、列表、强调和表格，而不是直接打印 Markdown 源码。`HYPERTRADE_RENDERER=plain`
 保留原始 Markdown fallback，供自动化脚本使用。
+Rich run 输出默认折叠低信号 trace 行：graph 运行时节点、BitPro capability/health 预检行、
+以及嵌套 BitPro 子调用会被汇总，不再作为长表全部打印。业务级工具调用仍会显示，并聚合调用
+次数。需要审计或排障时，可设置 `HYPERTRADE_TRACE=full` 打印完整 trace 表。
 
 这样 Provider 配置、Tool Call 策略、RAG、Memory、审批门和 trace 持久化仍保持在同一个运行边界内。终端只是 `/harness` 之外的另一个 Harness 入口。

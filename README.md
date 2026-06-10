@@ -59,6 +59,8 @@ Free-form Agent prompts show a live `Thought` / `Thinking` status block in inter
 terminals while the planner or tools are still running.
 Interactive terminals also render Markdown reports into readable headings, lists, and tables;
 set `HYPERTRADE_RENDERER=plain` when raw Markdown is needed for scripts.
+Rich terminal output folds internal graph/preflight trace rows into a compact tool summary by
+default; set `HYPERTRADE_TRACE=full` when a full audit trace is needed.
 
 ```text
 /help

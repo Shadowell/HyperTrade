@@ -607,6 +607,70 @@ def test_render_run_can_use_rich_structured_output(monkeypatch) -> None:
     assert "Rich Markdown Should Not Render" not in rendered
 
 
+def test_rich_run_collapses_internal_trace_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    monkeypatch.delenv("HYPERTRADE_TRACE", raising=False)
+    output = StringIO()
+
+    render_run(
+        {
+            "id": "run_folded",
+            "status": "completed",
+            "report_markdown": "# Report\n\nok",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {"tool_name": "graph.intent_classify", "status": "completed"},
+                {"tool_name": "graph.plan_tools", "status": "completed"},
+                {"tool_name": "bitpro.capabilities", "status": "completed"},
+                {"tool_name": "bitpro.health", "status": "completed"},
+                {"tool_name": "bitpro.strategy_search", "status": "completed"},
+                {"tool_name": "bitpro_strategy_search", "status": "completed"},
+                {"tool_name": "bitpro_strategy_search", "status": "completed"},
+                {"tool_name": "memory_search", "status": "completed"},
+                {"tool_name": "graph.final_report", "status": "completed"},
+            ],
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "Tool Trace Summary" in rendered
+    assert "bitpro_strategy_search" in rendered
+    assert "memory_search" in rendered
+    assert "Trace folded: 6 internal events hidden" in rendered
+    assert "graph.intent_classify" not in rendered
+    assert "bitpro.capabilities" not in rendered
+    assert "bitpro.strategy_search" not in rendered
+
+
+def test_rich_run_can_show_full_trace(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    monkeypatch.setenv("HYPERTRADE_TRACE", "full")
+    output = StringIO()
+
+    render_run(
+        {
+            "id": "run_full_trace",
+            "status": "completed",
+            "report_markdown": "# Report\n\nok",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {"tool_name": "graph.intent_classify", "status": "completed"},
+                {"tool_name": "bitpro.capabilities", "status": "completed"},
+                {"tool_name": "bitpro_strategy_search", "status": "completed"},
+            ],
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "Tool Trace" in rendered
+    assert "Tool Trace Summary" not in rendered
+    assert "graph.intent_classify" in rendered
+    assert "bitpro.capabilities" in rendered
+    assert "Trace folded" not in rendered
+
+
 def test_render_run_uses_rich_markdown_for_unknown_report(monkeypatch) -> None:
     monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
     output = StringIO()
