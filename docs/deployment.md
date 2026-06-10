@@ -19,7 +19,11 @@ sudo bash deploy/setup-server.sh
 sudo vim /opt/hypertrade/.env
 ```
 
-For the current port-only HTTP deployment on `3333`, keep `COOKIE_SECURE=false`. Set it to `true` only after Nginx serves the site through HTTPS; otherwise admin login succeeds but subsequent browser requests will not send the session cookie.
+For the current port-only HTTP deployment on `3333`, keep `COOKIE_SECURE=false`.
+Set it to `true` only after Nginx serves the site through HTTPS; otherwise
+admin-authenticated privileged API requests will not send the session cookie.
+The `/harness` workbench itself is readable without login, but privileged
+mutations still use the admin session.
 
 Register a GitHub Actions self-hosted runner on the server with label:
 
@@ -63,10 +67,10 @@ HYPERTRADE_PASSWORD='***' \
 uv run hypertrade --remote http://47.79.36.92:3333
 ```
 
-Other operators can either use the web harness at
-`http://47.79.36.92:3333/harness` or use the same remote CLI pattern with their
-own credentials. Do not share production `.env` files or server-only provider
-keys.
+Other operators can open the web harness at `http://47.79.36.92:3333/harness`
+to review live runs, trace, RAG, Memory, and market state without a login wall.
+For privileged actions, use the same remote CLI pattern with their own
+credentials. Do not share production `.env` files or server-only provider keys.
 
 ## PostgreSQL
 

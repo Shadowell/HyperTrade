@@ -209,35 +209,33 @@ afterEach(() => {
 });
 
 test("renders harness observability from live overview", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/auth/me")) {
-        return jsonResponse({ username: "admin" });
-      }
-      if (url.endsWith("/api/harness/overview")) {
-        return jsonResponse(overview);
-      }
-      if (url.endsWith("/api/memory")) {
-        return jsonResponse({
-          items: [
-            {
-              id: "mem_live",
-              kind: "agent_note",
-              content: "**ETH** trend reviewed",
-              source_run_id: "run_live",
-              source_tool: "memory.write",
-              tags: ["agent_note"],
-              usage_count: 1,
-              created_at: "2026-05-27T00:00:00+08:00"
-            }
-          ]
-        });
-      }
-      return jsonResponse({}, 404);
-    })
-  );
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/auth/me")) {
+      return jsonResponse({ username: "admin" });
+    }
+    if (url.endsWith("/api/harness/overview")) {
+      return jsonResponse(overview);
+    }
+    if (url.endsWith("/api/memory")) {
+      return jsonResponse({
+        items: [
+          {
+            id: "mem_live",
+            kind: "agent_note",
+            content: "**ETH** trend reviewed",
+            source_run_id: "run_live",
+            source_tool: "memory.write",
+            tags: ["agent_note"],
+            usage_count: 1,
+            created_at: "2026-05-27T00:00:00+08:00"
+          }
+        ]
+      });
+    }
+    return jsonResponse({}, 404);
+  });
+  vi.stubGlobal("fetch", fetchMock);
 
   render(<App />);
 
@@ -284,6 +282,9 @@ test("renders harness observability from live overview", async () => {
   expect(screen.queryByText("Paper Runtime")).not.toBeInTheDocument();
   expect(screen.queryByText("Strategy Lab")).not.toBeInTheDocument();
   expect(screen.queryByText("Live Approval")).not.toBeInTheDocument();
+  expect(fetchMock).not.toHaveBeenCalledWith("/api/auth/me", expect.anything());
+  expect(screen.queryByLabelText("密码")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
 });
 
 test("sidebar navigation keeps the clicked section active", async () => {

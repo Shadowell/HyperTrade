@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 import {
   CSSProperties,
-  FormEvent,
   MouseEvent,
   ReactNode,
   useCallback,
@@ -685,7 +684,6 @@ function App() {
   const [prompt, setPrompt] = useState(copy.zh.prompt);
   const [run, setRun] = useState<AgentRun>(seedRun);
   const [overview, setOverview] = useState<HarnessOverview | null>(null);
-  const [loginState, setLoginState] = useState<"idle" | "ok" | "error">("idle");
   const [harnessError, setHarnessError] = useState("");
   const [feishuState, setFeishuState] = useState("");
   const [busy, setBusy] = useState(false);
@@ -784,48 +782,20 @@ function App() {
         setOverview((await response.json()) as HarnessOverview);
         await refreshMemoryItems();
         setHarnessError("");
-        setLoginState("ok");
         return;
       }
-      if (response.status !== 401) {
-        setHarnessError(`${response.status}`);
-      }
+      setHarnessError(`${response.status}`);
     } finally {
       setRefreshing(false);
     }
   }, [refreshMemoryItems]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function hydrateSession() {
-      const response = await fetch("/api/auth/me", { credentials: "include" });
-      if (!response.ok || cancelled) {
-        return;
-      }
-      setLoginState("ok");
-      setRefreshing(true);
-      try {
-        const overviewResponse = await fetch("/api/harness/overview", {
-          credentials: "include"
-        });
-        if (overviewResponse.ok && !cancelled) {
-          setOverview((await overviewResponse.json()) as HarnessOverview);
-          await refreshMemoryItems();
-          setHarnessError("");
-        }
-      } finally {
-        if (!cancelled) {
-          setRefreshing(false);
-        }
-      }
-    }
-
-    void hydrateSession();
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshMemoryItems]);
+    const timer = window.setTimeout(() => {
+      void refreshOverview();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [refreshOverview]);
 
   useEffect(() => {
     function syncActiveSection() {
@@ -843,25 +813,6 @@ function App() {
     if (target) {
       target.scrollIntoView?.({ behavior: "smooth", block: "start" });
     }
-  }
-
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const username = String(form.get("username") ?? "");
-    const password = String(form.get("password") ?? "");
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password })
-    });
-    if (response.ok) {
-      setLoginState("ok");
-      await refreshOverview();
-      return;
-    }
-    setLoginState("error");
   }
 
   async function handleRun() {
@@ -1168,36 +1119,8 @@ function App() {
             </a>
           </nav>
 
-          <form className="mt-8 space-y-3" onSubmit={handleLogin}>
-            <div className="text-xs uppercase text-paper/45">{t.login}</div>
-            <label className="field-group-dark">
-              <span>{t.operator}</span>
-              <input
-                autoComplete="username"
-                className="field-dark"
-                name="username"
-                placeholder="admin"
-              />
-            </label>
-            <label className="field-group-dark">
-              <span>{t.password}</span>
-              <input
-                autoComplete="current-password"
-                className="field-dark"
-                name="password"
-                placeholder="password"
-                type="password"
-              />
-            </label>
-            <button className="button-dark" type="submit">
-              <Lock size={15} />
-              {loginState === "ok" ? "OK" : t.login}
-            </button>
-            {loginState === "error" ? <div className="text-xs text-red-300">401</div> : null}
-          </form>
-
           <button
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-md border border-paper/15 px-3 py-2 text-sm text-paper/80"
+            className="mt-8 flex w-full items-center justify-center gap-2 rounded-md border border-paper/15 px-3 py-2 text-sm text-paper/80"
             onClick={() => setLanguage(language === "zh" ? "en" : "zh")}
             type="button"
           >
@@ -1234,7 +1157,7 @@ function App() {
             <div className="runtime-pill">
               <div>
                 <span>{t.systemStatus}</span>
-                <strong>{loginState === "ok" ? t.healthy : t.preview}</strong>
+                <strong>{overview ? t.healthy : t.preview}</strong>
                 <span className="mt-1 font-mono">{t.okx}</span>
               </div>
               <CheckCircle2 className="text-signal" size={18} />

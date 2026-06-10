@@ -235,7 +235,7 @@ def create_app(
         return {"username": username}
 
     @app.get("/api/harness/providers")
-    def providers(_: AdminUser) -> dict[str, list[dict[str, object]]]:
+    def providers() -> dict[str, list[dict[str, object]]]:
         return {
             "providers": ProviderRuntime(app_settings).list_providers(
                 selected=str(app.state.active_chat_provider)
@@ -262,15 +262,15 @@ def create_app(
         }
 
     @app.get("/api/harness/tools")
-    def tools(_: AdminUser) -> dict[str, list[dict[str, object]]]:
+    def tools() -> dict[str, list[dict[str, object]]]:
         return {"tools": [_tool_to_dict(tool) for tool in ToolRegistry.default().list_tools()]}
 
     @app.get("/api/evals/status")
-    def eval_status(_: AdminUser) -> dict[str, Any]:
+    def eval_status() -> dict[str, Any]:
         return AgentEvalSuite().status()
 
     @app.get("/api/harness/overview")
-    def harness_overview(_: AdminUser) -> dict[str, Any]:
+    def harness_overview() -> dict[str, Any]:
         providers_payload = ProviderRuntime(app_settings).list_providers(
             selected=str(app.state.active_chat_provider)
         )
@@ -372,7 +372,7 @@ def create_app(
             }
 
     @app.post("/api/agent/runs")
-    def create_run(payload: AgentRunPayload, _: AdminUser) -> dict[str, Any]:
+    def create_run(payload: AgentRunPayload) -> dict[str, Any]:
         kernel = AgentKernel(
             database,
             knowledge_dir=str(app_settings.knowledge_dir),
@@ -383,7 +383,7 @@ def create_app(
         return _run_to_dict(run)
 
     @app.post("/api/agent/runs/stream")
-    def stream_run(payload: AgentRunPayload, _: AdminUser) -> StreamingResponse:
+    def stream_run(payload: AgentRunPayload) -> StreamingResponse:
         return StreamingResponse(
             _agent_run_sse(
                 database,
@@ -395,7 +395,7 @@ def create_app(
         )
 
     @app.get("/api/agent/runs")
-    def list_runs(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+    def list_runs() -> dict[str, list[dict[str, Any]]]:
         with database.session() as session:
             runs = session.scalars(
                 select(AgentRun).order_by(desc(AgentRun.created_at)).limit(25)
@@ -413,7 +413,7 @@ def create_app(
             }
 
     @app.get("/api/agent/runs/{run_id}")
-    def get_run(run_id: str, _: AdminUser) -> dict[str, Any]:
+    def get_run(run_id: str) -> dict[str, Any]:
         try:
             kernel = AgentKernel(
                 database,
@@ -427,7 +427,7 @@ def create_app(
         return _run_to_dict(run)
 
     @app.get("/api/market/tickers/latest")
-    def latest_tickers(_: AdminUser, limit: int = 50) -> dict[str, list[dict[str, str]]]:
+    def latest_tickers(limit: int = 50) -> dict[str, list[dict[str, str]]]:
         rows = MarketRepository(database).latest_tickers(limit=limit)
         return {
             "tickers": [
@@ -442,7 +442,7 @@ def create_app(
         }
 
     @app.get("/api/market/ticker/{symbol}")
-    def market_ticker(symbol: str, _: AdminUser) -> dict[str, Any]:
+    def market_ticker(symbol: str) -> dict[str, Any]:
         return AgentKernel(
             database,
             knowledge_dir=str(app_settings.knowledge_dir),
@@ -452,7 +452,6 @@ def create_app(
     @app.get("/api/market/candles/{symbol}")
     def market_candles(
         symbol: str,
-        _: AdminUser,
         bar: str = "1H",
         limit: int = 100,
     ) -> dict[str, Any]:
@@ -463,7 +462,7 @@ def create_app(
         )._market_candles_payload(symbol=symbol, bar=bar, limit=limit)
 
     @app.post("/api/market/compare")
-    def market_compare(payload: MarketComparePayload, _: AdminUser) -> dict[str, Any]:
+    def market_compare(payload: MarketComparePayload) -> dict[str, Any]:
         return AgentKernel(
             database,
             knowledge_dir=str(app_settings.knowledge_dir),
@@ -514,7 +513,7 @@ def create_app(
         )
 
     @app.get("/api/paper/status")
-    def paper_status(_: AdminUser) -> dict[str, Any]:
+    def paper_status() -> dict[str, Any]:
         return PaperTradingService(database, settings=app_settings).status()
 
     @app.post("/api/paper/control")
@@ -531,27 +530,25 @@ def create_app(
     @app.post("/api/strategy/research")
     def create_strategy_research(
         payload: StrategyResearchPayload,
-        _: AdminUser,
     ) -> dict[str, Any]:
         return StrategyResearchService(database).create(payload.prompt)
 
     @app.get("/api/strategy/research")
-    def list_strategy_research(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+    def list_strategy_research() -> dict[str, list[dict[str, Any]]]:
         return {"items": StrategyResearchService(database).list_recent()}
 
     @app.post("/api/strategy/experiments")
     def create_strategy_experiment(
         payload: StrategyResearchPayload,
-        _: AdminUser,
     ) -> dict[str, Any]:
         return StrategyExperimentService(database).create(payload.prompt)
 
     @app.get("/api/strategy/experiments")
-    def list_strategy_experiments(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+    def list_strategy_experiments() -> dict[str, list[dict[str, Any]]]:
         return {"items": StrategyExperimentService(database).list_recent()}
 
     @app.post("/api/backtests")
-    def create_backtest(payload: BacktestPayload, _: AdminUser) -> dict[str, Any]:
+    def create_backtest(payload: BacktestPayload) -> dict[str, Any]:
         try:
             return BacktestService(database).run(
                 research_id=payload.research_id,
@@ -568,7 +565,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="Research not found") from exc
 
     @app.get("/api/backtests")
-    def list_backtests(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+    def list_backtests() -> dict[str, list[dict[str, Any]]]:
         return {"items": BacktestService(database).list_recent()}
 
     @app.post("/api/live/order-intents")
@@ -590,7 +587,7 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/live/order-intents")
-    def list_live_order_intents(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+    def list_live_order_intents() -> dict[str, list[dict[str, Any]]]:
         return {"items": LiveOrderIntentService(database, settings=app_settings).list_recent()}
 
     @app.post("/api/live/order-intents/{intent_id}/approve")
@@ -636,7 +633,6 @@ def create_app(
 
     @app.get("/api/rag/search")
     def search_rag(
-        _: AdminUser,
         query: str,
         limit: int = 5,
     ) -> dict[str, list[dict[str, Any]]]:
@@ -647,7 +643,6 @@ def create_app(
 
     @app.get("/api/memory")
     def list_memory(
-        _: AdminUser,
         query: str = "",
         kind: str = "",
         tag: str = "",

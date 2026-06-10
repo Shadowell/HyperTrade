@@ -18,7 +18,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 
 ## Core User Journeys
 
-1. Admin logs in and reviews `/harness` provider/tool/runtime state.
+1. Operator opens `/harness` and reviews provider/tool/runtime state, recent runs, trace, RAG, and Memory without a login wall.
 2. Worker continuously ingests OKX SWAP ticker snapshots.
 3. User asks for a market summary in free-form chat.
 4. Agent calls market, RAG, and memory tools, then stores trace and report.
@@ -28,7 +28,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 
 ## V1 In Scope
 
-- FastAPI backend with admin session auth.
+- FastAPI backend with public workbench observability/read endpoints and admin session auth for privileged mutations.
 - LangGraph-style AgentKernel with explicit traceable tool calls.
 - DeepSeek default provider configuration.
 - Qwen embedding configuration path and pgvector schema.
@@ -84,7 +84,8 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 
 - `./scripts/check.sh` passes.
 - `GET /api/health` returns OK.
-- Admin can log in.
+- `/harness` loads live run history, trace events, RAG, Memory, and market state without rendering a login form.
+- Privileged mutations such as provider selection, paper lifecycle control, live order approval/execution, Memory disable, and Feishu send still require admin session auth.
 - `/api/harness/tools` shows live order approval gating.
 - User can create an Agent market-summary run and inspect trace events.
 - User can ask for a specific listed OKX SWAP symbol, such as ETH/SOL/DOGE/PEPE, and the Agent can

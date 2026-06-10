@@ -136,6 +136,62 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     assert paused_overview["live_orders"]["total_count"] == 1
 
 
+def test_public_workbench_can_read_observability_without_login(tmp_path):
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    MarketRepository(db).upsert_ticker_snapshot(
+        inst_id="BTC-USDT-SWAP",
+        inst_type="SWAP",
+        last=Decimal("70000"),
+        volume_ccy_24h=Decimal("20000"),
+        change_utc0_pct=Decimal("4.2"),
+    )
+    knowledge_dir = tmp_path / "knowledge"
+    knowledge_dir.mkdir()
+    (knowledge_dir / "risk.md").write_text(
+        "Risk control comes before signal strength.",
+        encoding="utf-8",
+    )
+    app = create_app(
+        settings=Settings(
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            KNOWLEDGE_DIR=knowledge_dir,
+            DEEPSEEK_API_KEY="",
+            OKX_REST_URL="http://127.0.0.1:9",
+        ),
+        db=db,
+    )
+    client = TestClient(app)
+
+    run_response = client.post("/api/agent/runs", json={"prompt": "请做行情归纳"})
+
+    assert run_response.status_code == 200
+    run_id = run_response.json()["id"]
+    overview = client.get("/api/harness/overview")
+    assert overview.status_code == 200
+    overview_body = overview.json()
+    assert overview_body["agent_runs"]["total_count"] == 1
+    assert overview_body["trace"]["total_count"] >= 1
+    assert overview_body["agent_runs"]["recent"][0]["id"] == run_id
+
+    runs = client.get("/api/agent/runs")
+    assert runs.status_code == 200
+    assert runs.json()["runs"][0]["id"] == run_id
+
+    run_detail = client.get(f"/api/agent/runs/{run_id}")
+    assert run_detail.status_code == 200
+    assert run_detail.json()["trace_events"]
+
+    assert client.get("/api/memory").status_code == 200
+    assert client.get("/api/rag/search?query=risk").status_code == 200
+    assert client.post(
+        "/api/harness/provider-selection",
+        json={"provider": "deepseek"},
+    ).status_code == 401
+    assert client.post("/api/paper/control", json={"action": "pause"}).status_code == 401
+
+
 def test_api_streams_agent_run_events(tmp_path):
     db = Database("sqlite:///:memory:")
     db.create_all()
