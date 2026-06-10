@@ -9,13 +9,16 @@ LLM to plan first.
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
+import shlex
 import sys
 import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol, TextIO
 from urllib.parse import quote
 
@@ -134,6 +137,7 @@ class AgentClientFactory(Protocol):
 
 
 THINKING_FRAMES: tuple[str, ...] = ("|", "/", "-", "\\")
+DEFAULT_REMOTE_API_URL = "http://47.79.36.92:3333"
 
 
 SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
@@ -185,18 +189,70 @@ class CliConfig:
 
     @classmethod
     def from_env(cls, *, api_url: str | None = None) -> CliConfig:
+        saved = read_client_env()
         return cls(
             api_url=api_url
             or os.getenv("HYPERTRADE_API_URL")
+            or saved.get("HYPERTRADE_API_URL")
             or "http://127.0.0.1:3334",
             username=os.getenv("HYPERTRADE_USERNAME")
+            or saved.get("HYPERTRADE_USERNAME")
             or os.getenv("ADMIN_USERNAME")
             or "admin",
             password=os.getenv("HYPERTRADE_PASSWORD")
+            or saved.get("HYPERTRADE_PASSWORD")
             or os.getenv("ADMIN_PASSWORD")
             or "hypertrade-admin",
             timeout_seconds=float(os.getenv("HYPERTRADE_TIMEOUT_SECONDS", "20")),
         )
+
+
+def client_env_path() -> Path:
+    configured = os.getenv("HYPERTRADE_CLIENT_ENV")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".hypertrade" / "client.env"
+
+
+def read_client_env() -> dict[str, str]:
+    path = client_env_path()
+    if not path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            parts = shlex.split(line, comments=True, posix=True)
+        except ValueError:
+            continue
+        if not parts or "=" not in parts[0]:
+            continue
+        key, value = parts[0].split("=", 1)
+        if key in {"HYPERTRADE_API_URL", "HYPERTRADE_USERNAME", "HYPERTRADE_PASSWORD"}:
+            values[key] = value
+    return values
+
+
+def write_client_env(config: CliConfig) -> Path:
+    path = client_env_path()
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.parent.chmod(0o700)
+    content = "\n".join(
+        [
+            f"HYPERTRADE_API_URL={_quote_shell_value(config.api_url)}",
+            f"HYPERTRADE_USERNAME={_quote_shell_value(config.username)}",
+            f"HYPERTRADE_PASSWORD={_quote_shell_value(config.password)}",
+        ]
+    )
+    path.write_text(f"{content}\n")
+    path.chmod(0o600)
+    return path
+
+
+def _quote_shell_value(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
 class AgentApiClient:
@@ -726,6 +782,9 @@ def main(
     output = output or sys.stdout
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.command in {"login", "/login"}:
+        configure_remote_login(input_fn=input_fn, output=output)
+        return 0
     config = CliConfig.from_env(api_url=args.remote)
     local = _use_local_runtime(args)
     factory = client_factory or _default_client_factory
@@ -741,6 +800,34 @@ def main(
 
     run_chat(client=agent_client, input_fn=input_fn, output=output)
     return 0
+
+
+def configure_remote_login(
+    *,
+    input_fn: Callable[[str], str] = input,
+    output: TextIO,
+) -> CliConfig:
+    api_url = input_fn(f"HyperTrade API URL [{DEFAULT_REMOTE_API_URL}]: ").strip()
+    username = input_fn("HyperTrade username [admin]: ").strip()
+    password = _read_password(input_fn)
+    config = CliConfig(
+        api_url=api_url or DEFAULT_REMOTE_API_URL,
+        username=username or "admin",
+        password=password,
+    )
+    if not config.password:
+        raise SystemExit("HyperTrade password cannot be empty.")
+    path = write_client_env(config)
+    print(f"HyperTrade login saved: {path}", file=output)
+    print("Next time you can run: ht", file=output)
+    print('Or one-shot: ht ask "看下 ETH 行情"', file=output)
+    return config
+
+
+def _read_password(input_fn: Callable[[str], str]) -> str:
+    if input_fn is input and sys.stdin.isatty():
+        return getpass.getpass("HyperTrade password: ").strip()
+    return input_fn("HyperTrade password: ").strip()
 
 
 def run_chat(
@@ -2282,6 +2369,8 @@ def _build_parser() -> argparse.ArgumentParser:
     ask = subparsers.add_parser("ask", help="Run one Agent prompt through the HyperTrade API.")
     ask.add_argument("prompt", nargs="+")
     subparsers.add_parser("chat", help="Start an interactive Agent conversation loop.")
+    subparsers.add_parser("login", help="Save remote HyperTrade API login for this machine.")
+    subparsers.add_parser("/login", help="Save remote HyperTrade API login for this machine.")
     return parser
 
 
@@ -2290,7 +2379,7 @@ def _use_local_runtime(args: argparse.Namespace) -> bool:
         return True
     if args.remote:
         return False
-    return "HYPERTRADE_API_URL" not in os.environ
+    return "HYPERTRADE_API_URL" not in os.environ and "HYPERTRADE_API_URL" not in read_client_env()
 
 
 def _default_client_factory(config: CliConfig, local: bool) -> AgentClient:

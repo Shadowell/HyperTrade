@@ -96,6 +96,7 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
 - Interactive/Rich CLI report rendering formats unknown Markdown reports into readable terminal headings, lists, and tables, while `HYPERTRADE_RENDERER=plain` preserves raw Markdown for scripts.
 - Interactive/Rich CLI run output folds low-signal trace rows into a compact tool summary by default, while `HYPERTRADE_TRACE=full` preserves full trace visibility for audits and debugging.
 - The server host `hypertrade` wrapper runs a one-off remote client container instead of exec'ing into the long-running API service container, so deploy-time API replacement does not kill the operator's terminal session.
+- Local operators can run `hypertrade /login` or `ht /login` to save remote API URL, username, and password to `~/.hypertrade/client.env` with `0600` permissions; later `ht` commands default to the saved remote API unless `--local` is passed.
 - `/harness` exposes a simplified live workbench without a login form: Agent run creation, report reading, run history, trace events, RAG search, Memory search/detail, OKX market state, and core telemetry load from public read/research endpoints.
 - Advanced controls such as provider switching, paper lifecycle actions, live approval/execution, strategy research/backtest forms, eval panels, Feishu send, and Memory disable are not first-class `/harness` UI controls; privileged mutation endpoints remain admin-authenticated where they are still exposed.
 - No secrets, BitPro credentials, database files, or production `.env` are added.

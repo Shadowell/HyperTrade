@@ -41,10 +41,13 @@ uv run hypertrade ask "请做行情归纳"
 Use the terminal harness against a running API:
 
 ```bash
-HYPERTRADE_USERNAME=admin \
-HYPERTRADE_PASSWORD='***' \
-uv run hypertrade --remote http://47.79.36.92:3333 ask "请做行情归纳"
+uv run ht /login
+uv run ht ask "请做行情归纳"
 ```
+
+`/login` saves the remote API URL, username, and password to
+`~/.hypertrade/client.env` with local-only file permissions. After that,
+`uv run ht` defaults to the saved remote API unless `--local` is passed.
 
 Force local mode even when `HYPERTRADE_API_URL` is set:
 

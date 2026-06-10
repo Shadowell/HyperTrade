@@ -988,6 +988,54 @@ def test_remote_flag_uses_api_client(monkeypatch) -> None:
     ]
 
 
+def test_login_command_writes_remote_client_config(tmp_path, monkeypatch, capsys) -> None:
+    config_path = tmp_path / "client.env"
+    monkeypatch.setenv("HYPERTRADE_CLIENT_ENV", str(config_path))
+    inputs = iter(["http://remote.test:3333", "operator", "secret"])
+
+    exit_code = main(["/login"], input_fn=_next_input(inputs))
+
+    assert exit_code == 0
+    assert config_path.exists()
+    assert config_path.stat().st_mode & 0o777 == 0o600
+    assert config_path.read_text() == (
+        "HYPERTRADE_API_URL='http://remote.test:3333'\n"
+        "HYPERTRADE_USERNAME='operator'\n"
+        "HYPERTRADE_PASSWORD='secret'\n"
+    )
+    output = capsys.readouterr().out
+    assert "HyperTrade login saved" in output
+    assert str(config_path) in output
+
+
+def test_saved_login_config_makes_remote_mode_default(tmp_path, monkeypatch) -> None:
+    config_path = tmp_path / "client.env"
+    config_path.write_text(
+        "HYPERTRADE_API_URL='http://remote.test:3333'\n"
+        "HYPERTRADE_USERNAME='operator'\n"
+        "HYPERTRADE_PASSWORD='secret'\n"
+    )
+    monkeypatch.setenv("HYPERTRADE_CLIENT_ENV", str(config_path))
+    captured: list[tuple[CliConfig, bool]] = []
+
+    exit_code = main(
+        ["ask", "hello"],
+        client_factory=lambda config, local: _capture_client(config, local, captured),
+    )
+
+    assert exit_code == 0
+    assert captured == [
+        (
+            CliConfig(
+                api_url="http://remote.test:3333",
+                username="operator",
+                password="secret",
+            ),
+            False,
+        )
+    ]
+
+
 def test_local_agent_client_runs_kernel(tmp_path) -> None:
     from hypertrade.config import Settings
     from hypertrade.db import Database

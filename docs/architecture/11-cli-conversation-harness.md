@@ -9,9 +9,13 @@ The CLI is a developer harness with two runtime modes:
 
 Configuration is environment-based:
 
+- `hypertrade /login` or `ht /login` saves a remote API URL, username, and
+  password to `~/.hypertrade/client.env` with local-only permissions.
 - `HYPERTRADE_API_URL` selects the API endpoint and makes remote mode the default unless `--local` is passed.
 - `HYPERTRADE_USERNAME` and `HYPERTRADE_PASSWORD` provide admin credentials.
 - `HYPERTRADE_TIMEOUT_SECONDS` controls HTTP timeout.
+Saved client config is read before the runtime is selected, and explicit
+environment variables override the saved values for automation.
 
 The production host wrapper installed at `/usr/local/bin/hypertrade` runs a
 short-lived client container with `HYPERTRADE_API_URL=http://api:3334` by
@@ -71,9 +75,12 @@ CLI 是开发者 Harness，支持两种运行模式：
 
 配置通过环境变量完成：
 
+- `hypertrade /login` 或 `ht /login` 会把远程 API URL、用户名和密码保存到
+  `~/.hypertrade/client.env`，并设置为本机私有权限。
 - `HYPERTRADE_API_URL` 选择 API 地址，并让远程模式成为默认；传 `--local` 可以强制本地模式。
 - `HYPERTRADE_USERNAME` 与 `HYPERTRADE_PASSWORD` 提供管理员凭据。
 - `HYPERTRADE_TIMEOUT_SECONDS` 控制 HTTP 超时。
+CLI 在选择本地/远程运行模式前会读取保存的本机配置；显式环境变量仍会覆盖保存值，方便自动化。
 
 生产宿主机上的 `/usr/local/bin/hypertrade` wrapper 会启动一个短生命周期的 CLI client
 容器，并默认设置 `HYPERTRADE_API_URL=http://api:3334`。它不再 attach 到长期运行的

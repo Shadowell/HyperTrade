@@ -62,10 +62,16 @@ This runs only the terminal client locally; Agent runs, database reads, Memory,
 RAG, paper state, and BitPro adapter calls all happen on the server:
 
 ```bash
-HYPERTRADE_USERNAME=admin \
-HYPERTRADE_PASSWORD='***' \
-uv run hypertrade --remote http://47.79.36.92:3333
+uv run ht /login
+uv run ht
 ```
+
+`/login` prompts for the API URL, username, and password, then stores them in
+`~/.hypertrade/client.env` with `0600` permissions. After that, local CLI
+commands default to the saved remote API; use `--local` to force standalone
+local runtime. Environment variables such as `HYPERTRADE_API_URL`,
+`HYPERTRADE_USERNAME`, and `HYPERTRADE_PASSWORD` still work for automation and
+override the saved client config.
 
 Other operators can open the web harness at `http://47.79.36.92:3333/harness`
 to review live runs, trace, RAG, Memory, and market state without a login wall.
