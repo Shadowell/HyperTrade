@@ -85,6 +85,7 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
 - HyperTrade exposes BitPro read and non-live lifecycle adapter tools, and each data flow starts with `bitpro_capabilities` and `bitpro_health`.
 - Backtests can use `candle_source=bitpro_mcp` to fetch real BitPro K-line data through `market_klines`.
 - Agent strategy flows can use BitPro research/backtest/paper mutation tools for explicit strategy generation, strategy creation/update, BitPro-owned backtest jobs, and paper/simulation lifecycle control.
+- Agent backtest-result queries can read BitPro-owned result records through `bitpro_backtest_list_results`, filter by actual `total_return_pct`, and report threshold/ranking answers without substituting annualized return, strategy descriptions, or inferred values.
 - BitPro paper dashboard reads do not imply there is only one running strategy: unfiltered `bitpro_paper_dashboard` augments the current dashboard view with `strategy_search(status=running)` inventory and the Agent report labels the data scope.
 - Server MCP verification demonstrates the intended production loop: capability and health preflight, real K-line coverage confirmation, `BaseStrategy` validation, DB-backed `strategy_create`, BitPro-owned backtest result inspection, and gated paper dry-run start.
 - Live mutation tools such as `live_promote`, exchange order placement, cancel, transfer, and real-account write actions remain blocked by HyperTrade's BitPro adapter.
@@ -94,6 +95,7 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
 - Interactive CLI Agent prompts show a live `Thought` / `Thinking` animation while waiting for planner, tool, or final-report progress; script output remains stable text.
 - Interactive/Rich CLI report rendering formats unknown Markdown reports into readable terminal headings, lists, and tables, while `HYPERTRADE_RENDERER=plain` preserves raw Markdown for scripts.
 - Interactive/Rich CLI run output folds low-signal trace rows into a compact tool summary by default, while `HYPERTRADE_TRACE=full` preserves full trace visibility for audits and debugging.
+- The server host `hypertrade` wrapper runs a one-off remote client container instead of exec'ing into the long-running API service container, so deploy-time API replacement does not kill the operator's terminal session.
 - No secrets, BitPro credentials, database files, or production `.env` are added.
 - `./scripts/check.sh` passes.
 

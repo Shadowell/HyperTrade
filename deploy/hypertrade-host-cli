@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="${HYPERTRADE_ROOT_DIR:-/opt/hypertrade}"
+cd "$ROOT_DIR"
+
+api_url="${HYPERTRADE_API_URL:-http://api:3334}"
+
+env_args=("-e" "HYPERTRADE_API_URL=${api_url}")
+for name in \
+  HYPERTRADE_USERNAME \
+  HYPERTRADE_PASSWORD \
+  HYPERTRADE_TIMEOUT_SECONDS \
+  HYPERTRADE_RENDERER \
+  HYPERTRADE_TRACE \
+  HYPERTRADE_THINKING_ANIMATION \
+  NO_COLOR
+do
+  if [ "${!name+x}" = "x" ]; then
+    env_args+=("-e" "$name=${!name}")
+  fi
+done
+
+# Run the CLI in a short-lived client container instead of exec'ing into the
+# long-running API service. Deploys can replace hypertrade-api without killing
+# this terminal session.
+exec docker compose run --rm --no-deps "${env_args[@]}" api hypertrade "$@"

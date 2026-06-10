@@ -941,6 +941,30 @@ def test_bare_command_starts_chat_loop(capsys) -> None:
     assert "run_cli" in output
 
 
+def test_chat_continues_after_remote_stream_disconnect(capsys) -> None:
+    class DisconnectingClient(FakeAgentClient):
+        def run_agent_events(self, prompt: str):
+            self.prompts.append(prompt)
+            raise httpx.ConnectError("connection refused")
+            yield {}
+
+    client = DisconnectingClient()
+    inputs = iter(["看下ETH行情", ":q"])
+    prompts: list[str] = []
+
+    def input_fn(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(inputs)
+
+    exit_code = main([], client=client, input_fn=input_fn)
+
+    assert exit_code == 0
+    assert client.prompts == ["看下ETH行情"]
+    assert prompts == ["hypertrade> ", "hypertrade> "]
+    output = capsys.readouterr().out
+    assert "Remote API connection failed" in output
+
+
 def test_remote_flag_uses_api_client(monkeypatch) -> None:
     monkeypatch.setenv("HYPERTRADE_USERNAME", "operator")
     monkeypatch.setenv("HYPERTRADE_PASSWORD", "secret")

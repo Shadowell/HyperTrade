@@ -98,6 +98,11 @@ class ToolRegistry:
                     "bitpro",
                 ),
                 ToolDefinition(
+                    "bitpro.backtest_list_results",
+                    "List BitPro backtest result records using actual total return metrics.",
+                    "bitpro",
+                ),
+                ToolDefinition(
                     "bitpro.paper_configure",
                     "Configure a BitPro paper/simulation instance.",
                     "bitpro",

@@ -234,6 +234,78 @@ class ReplayBitProAdapter:
             ],
         }
 
+    def backtest_list_results(
+        self,
+        *,
+        min_total_return_pct: float | None = None,
+        status: str = "completed",
+        sort_by: str = "return",
+        sort_order: str = "desc",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "health": {"status": "healthy"},
+            "filter": {
+                "metric": "total_return_pct",
+                "min_total_return_pct": min_total_return_pct,
+                "status": status,
+                "sort_by": sort_by,
+                "sort_order": sort_order,
+                "limit": limit,
+            },
+            "result_count": 2,
+            "raw_result_count": 21,
+            "results": [
+                {
+                    "id": 161,
+                    "strategy_id": 178,
+                    "strategy_name": (
+                        "[合约][1D][CTA] ETH · Donchian89/EMA89趋势跟踪稳健版 · 100U"
+                    ),
+                    "total_return_pct": "305.53878586955756",
+                    "annual_return_pct": "80.6615",
+                    "max_drawdown_pct": "30.4763",
+                    "sharpe_ratio": "1.1422",
+                    "win_rate_pct": "87.5",
+                    "trade_count": 8,
+                    "start_date": "2024-01-01",
+                    "end_date": "2026-05-15",
+                },
+                {
+                    "id": 193,
+                    "strategy_id": 162,
+                    "strategy_name": (
+                        "[合约][1H][CTA] ETH · Heikin Ashi趋势跟踪低频版 · 100U"
+                    ),
+                    "total_return_pct": "141.83713784801657",
+                    "annual_return_pct": "142.4246",
+                    "max_drawdown_pct": "14.5667",
+                    "sharpe_ratio": "0.3969",
+                    "win_rate_pct": "50.63",
+                    "trade_count": 239,
+                    "start_date": "2025-06-08",
+                    "end_date": "2026-06-07",
+                },
+            ],
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {
+                    "tool": "backtest_list_results",
+                    "status": "success",
+                    "parameters": {
+                        "offset": 0,
+                        "limit": min(limit, 20),
+                        "status": status,
+                        "sort_by": sort_by,
+                        "sort_order": sort_order,
+                    },
+                },
+            ],
+        }
+
     def paper_configure(
         self,
         *,
@@ -558,6 +630,63 @@ def test_agent_acceptance_bitpro_mcp_market_klines_are_audited(
     assert "## BitPro MCP K线直连" in run.report_markdown
     assert "ETH/USDT:USDT" in run.report_markdown
     assert "market_klines" in run.report_markdown
+    _assert_research_quality(run.report_markdown)
+
+
+def test_agent_acceptance_bitpro_backtest_return_query_uses_result_list_tool(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = _memory_db()
+    _patch_replay_llm(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_backtest_results",
+                        name="bitpro_backtest_list_results",
+                        arguments={
+                            "min_total_return_pct": 100,
+                            "status": "completed",
+                            "sort_by": "return",
+                            "sort_order": "desc",
+                            "limit": 40,
+                        },
+                    )
+                ],
+            ),
+            ChatResponse(content="已按 BitPro 回测总收益读取结果。", tool_calls=[]),
+        ],
+    )
+
+    run = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
+        knowledge_dir=str(tmp_path),
+        bitpro_adapter=ReplayBitProAdapter(),
+    ).run_chat("让 agent 查看回测收益大于100%的策略有哪些")
+
+    names = _tool_names(run)
+    assert "bitpro.capabilities" in names
+    assert "bitpro.health" in names
+    assert "bitpro.backtest_list_results" in names
+    assert "bitpro_backtest_list_results" in names
+    bitpro_event = next(
+        event
+        for event in _business_events(run)
+        if event.tool_name == "bitpro_backtest_list_results"
+    )
+    assert bitpro_event.input_json["min_total_return_pct"] == 100
+    assert bitpro_event.output_json["filter"]["metric"] == "total_return_pct"
+    assert [row["id"] for row in bitpro_event.output_json["results"]] == [161, 193]
+    assert "## BitPro 回测结果" in run.report_markdown
+    assert "口径: total_return_pct" in run.report_markdown
+    assert "命中数量: 2" in run.report_markdown
+    assert "result #161, strategy #178" in run.report_markdown
+    assert "收益 305.53878586955756%" in run.report_markdown
+    assert "result #193, strategy #162" in run.report_markdown
     _assert_research_quality(run.report_markdown)
 
 

@@ -435,6 +435,127 @@ class BitProToolAdapter:
             "tool_calls": self.last_tool_calls,
         }
 
+    def backtest_list_results(
+        self,
+        *,
+        min_total_return_pct: float | None = None,
+        status: str = "completed",
+        sort_by: str = "return",
+        sort_order: str = "desc",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        safe_limit = max(1, min(int(limit), 200))
+        rows = self._fetch_backtest_result_rows(
+            status=status,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=safe_limit,
+        )
+        results = [_backtest_result_item(row) for row in rows]
+        if min_total_return_pct is not None:
+            threshold = Decimal(str(min_total_return_pct))
+            results = [
+                row
+                for row in results
+                if (total_return := _decimal_or_none(row.get("total_return_pct"))) is not None
+                and total_return > threshold
+            ]
+        results.sort(
+            key=lambda row: _decimal_or_none(row.get("total_return_pct")) or Decimal("-999999"),
+            reverse=str(sort_order).lower() != "asc",
+        )
+        self._attach_strategy_names(results)
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "filter": {
+                "metric": "total_return_pct",
+                "min_total_return_pct": min_total_return_pct,
+                "status": status,
+                "sort_by": sort_by,
+                "sort_order": sort_order,
+                "limit": safe_limit,
+            },
+            "result_count": len(results),
+            "raw_result_count": len(rows),
+            "results": results,
+            "tool_calls": self.last_tool_calls,
+        }
+
+    def _fetch_backtest_result_rows(
+        self,
+        *,
+        status: str,
+        sort_by: str,
+        sort_order: str,
+        limit: int,
+        page_size: int = 20,
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        offset = 0
+        while len(rows) < limit:
+            raw = self._call(
+                "backtest_list_results",
+                _compact(
+                    {
+                        "offset": offset,
+                        "limit": min(page_size, limit - len(rows)),
+                        "status": status if status and status != "all" else None,
+                        "sort_by": sort_by,
+                        "sort_order": sort_order,
+                    }
+                ),
+            )
+            page_rows = _extract_backtest_rows(raw)
+            new_rows: list[dict[str, Any]] = []
+            for row in page_rows:
+                row_id = str(row.get("id") or row.get("backtest_id") or "")
+                if row_id and row_id in seen_ids:
+                    continue
+                if row_id:
+                    seen_ids.add(row_id)
+                new_rows.append(row)
+            rows.extend(new_rows)
+            if len(page_rows) < page_size or not new_rows:
+                break
+            offset += page_size
+        return rows[:limit]
+
+    def _attach_strategy_names(self, results: list[dict[str, Any]]) -> None:
+        strategy_ids: list[int] = []
+        for row in results:
+            if row.get("strategy_id") is None or row.get("strategy_name"):
+                continue
+            try:
+                strategy_ids.append(int(row["strategy_id"]))
+            except (TypeError, ValueError):
+                continue
+        strategy_ids = sorted(set(strategy_ids))
+        strategy_names: dict[int, str] = {}
+        for strategy_id in strategy_ids:
+            try:
+                strategy = self._call("strategy_get", {"strategy_id": strategy_id})
+            except Exception:
+                continue
+            if isinstance(strategy, dict):
+                name = strategy.get("name") or strategy.get("strategy_name")
+                if name:
+                    strategy_names[strategy_id] = str(name)
+        for row in results:
+            try:
+                strategy_id_value = row.get("strategy_id")
+                if strategy_id_value is None:
+                    continue
+                strategy_id = int(strategy_id_value)
+            except (TypeError, ValueError):
+                continue
+            if strategy_id in strategy_names:
+                row["strategy_name"] = strategy_names[strategy_id]
+
     def paper_configure(
         self,
         *,
@@ -792,6 +913,89 @@ def _strategy_pages(raw: Any, *, default: int) -> int:
         if isinstance(pages, str) and pages.isdigit():
             return max(1, int(pages))
     return default
+
+
+def _extract_backtest_rows(raw: Any) -> list[dict[str, Any]]:
+    if isinstance(raw, list):
+        return [_ensure_dict(row) for row in raw]
+    if isinstance(raw, dict):
+        for key in ("items", "results", "rows", "data"):
+            value = raw.get(key)
+            if isinstance(value, list):
+                return [_ensure_dict(row) for row in value]
+    return []
+
+
+def _backtest_result_item(row: dict[str, Any]) -> dict[str, Any]:
+    return _compact(
+        {
+            "id": _first_present(row.get("id"), row.get("backtest_id")),
+            "strategy_id": row.get("strategy_id"),
+            "strategy_name": _first_present(
+                row.get("strategy_name"),
+                row.get("name"),
+                row.get("title"),
+            ),
+            "status": row.get("status"),
+            "start_date": row.get("start_date"),
+            "end_date": row.get("end_date"),
+            "created_at": row.get("created_at"),
+            "timeframe": _first_present(row.get("timeframe"), row.get("period")),
+            "symbol": row.get("symbol"),
+            "symbols": row.get("symbols"),
+            "total_return_pct": _decimal_text(
+                _first_present(
+                    row.get("total_return_pct"),
+                    row.get("return_pct"),
+                    row.get("profit_pct"),
+                    row.get("total_return"),
+                )
+            ),
+            "annual_return_pct": _decimal_text(
+                _first_present(
+                    row.get("annual_return_pct"),
+                    row.get("annual_return"),
+                    row.get("annualized_return"),
+                )
+            ),
+            "max_drawdown_pct": _decimal_text(
+                _first_present(row.get("max_drawdown_pct"), row.get("max_drawdown"))
+            ),
+            "sharpe_ratio": _decimal_text(
+                _first_present(row.get("sharpe_ratio"), row.get("sharpe"))
+            ),
+            "win_rate_pct": _decimal_text(
+                _first_present(row.get("win_rate_pct"), row.get("win_rate"))
+            ),
+            "trade_count": _first_present(row.get("trade_count"), row.get("total_trades")),
+        }
+    )
+
+
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _decimal_or_none(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value).replace("%", ""))
+    except Exception:
+        return None
+
+
+def _decimal_text(value: Any) -> str | None:
+    decimal = _decimal_or_none(value)
+    if decimal is None:
+        return None
+    text = format(decimal.normalize(), "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
 
 
 def _paper_dashboard_scope(

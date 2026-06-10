@@ -36,6 +36,38 @@ hypertrade-production
 5. `deploy/deploy.sh` builds Docker images, starts PostgreSQL, runs Alembic, starts API/worker, reloads Nginx.
 6. SHA is recorded only after health check passes.
 
+## CLI Access
+
+The server installs `/usr/local/bin/hypertrade` and `/usr/local/bin/ht`.
+The host wrapper runs a short-lived CLI client container and connects to the
+running API over the Compose network at `http://api:3334` by default. It no
+longer execs into the long-running `hypertrade-api` service container, so a
+deployment can replace the API container without killing the operator's terminal
+process. An in-flight request can still fail while the API is restarting; the
+CLI prints a retryable remote API message and the interactive loop remains open.
+
+From the server host:
+
+```bash
+hypertrade
+hypertrade ask "看下ETH行情"
+```
+
+From a developer machine, use the CLI as a remote client for the deployed API.
+This runs only the terminal client locally; Agent runs, database reads, Memory,
+RAG, paper state, and BitPro adapter calls all happen on the server:
+
+```bash
+HYPERTRADE_USERNAME=admin \
+HYPERTRADE_PASSWORD='***' \
+uv run hypertrade --remote http://47.79.36.92:3333
+```
+
+Other operators can either use the web harness at
+`http://47.79.36.92:3333/harness` or use the same remote CLI pattern with their
+own credentials. Do not share production `.env` files or server-only provider
+keys.
+
 ## PostgreSQL
 
 PostgreSQL runs through Docker Compose with `pgvector/pgvector:pg16`. Port `5432` is not exposed publicly. API and worker connect over the Compose network.

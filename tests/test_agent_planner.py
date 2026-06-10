@@ -281,12 +281,27 @@ def test_planner_exposes_bitpro_strategy_lifecycle_tool_schemas() -> None:
         "bitpro_strategy_update",
         "bitpro_backtest_start_job",
         "bitpro_backtest_get_job",
+        "bitpro_backtest_list_results",
         "bitpro_paper_configure",
         "bitpro_paper_start",
         "bitpro_paper_pause",
         "bitpro_paper_resume",
         "bitpro_paper_stop",
     } <= names
+
+
+def test_bitpro_backtest_list_results_schema_requires_total_return_metric() -> None:
+    schema = next(
+        item for item in TOOL_SCHEMAS if item["function"]["name"] == "bitpro_backtest_list_results"
+    )
+
+    description = schema["function"]["description"]
+    properties = schema["function"]["parameters"]["properties"]
+
+    assert "actual total" in description
+    assert "annualized" in description
+    assert "回测收益大于100%" in description
+    assert properties["min_total_return_pct"]["type"] == "number"
 
 
 class TestAgentPlannerDeepSeekReasoningContent:

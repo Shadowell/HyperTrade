@@ -206,6 +206,7 @@ Agent 示例：
 ```bash
 hypertrade ask "用 BitPro MCP 读取 ETH 1H K线"
 hypertrade ask "用 BitPro skills 开发 ETH 趋势突破策略，回测并启动模拟盘验证"
+hypertrade ask "查看 BitPro 回测收益大于100%的策略有哪些"
 ```
 
 API：
@@ -222,6 +223,7 @@ curl -sS "http://127.0.0.1:3334/api/bitpro/live/positions?symbol=ETH"
 - 每条数据链路先出现 `bitpro_capabilities` 和 `bitpro_health`。
 - Agent trace 里有 `bitpro.capabilities`、`bitpro.health`、`bitpro.market_klines`。
 - 策略生命周期 trace 里有 `bitpro.strategy_generate`、`bitpro.strategy_create`、`bitpro.strategy_update`、`bitpro.backtest_start_job`、`bitpro.backtest_get_job`、`bitpro.paper_configure` 或 `bitpro.paper_start`。
+- 回测收益排行或阈值问题 trace 里应有 `bitpro.backtest_list_results`，报告口径应写 `total_return_pct`，不能把 `annual_return_pct` 当成回测总收益。
 - `/harness` 的 BitPro MCP 面板显示 `mcp_non_live_lifecycle`、API base、token 是否配置和实盘写关闭状态。
 - `BITPRO_MCP_API_TOKEN` 只在服务器环境配置，不能放进前端或仓库。
 - `live_promote`、真实下单、撤单、划转等实盘写工具仍然不应被调用。

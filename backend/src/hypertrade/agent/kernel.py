@@ -374,6 +374,18 @@ class AgentKernel:
                     job_id=str(args.get("job_id", ""))
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_backtest_list_results":
+                min_return = args.get("min_total_return_pct")
+                result = self._bitpro_adapter().backtest_list_results(
+                    min_total_return_pct=(
+                        float(min_return) if min_return is not None else None
+                    ),
+                    status=str(args.get("status", "completed")),
+                    sort_by=str(args.get("sort_by", "return")),
+                    sort_order=str(args.get("sort_order", "desc")),
+                    limit=int(args.get("limit", 100)),
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_paper_configure":
                 result = self._bitpro_adapter().paper_configure(
                     strategy_id=int(args.get("strategy_id", 0)),
@@ -925,6 +937,7 @@ class AgentKernel:
         candle_lines: list[str] = []
         compare_lines: list[str] = []
         bitpro_lines: list[str] = []
+        bitpro_backtest_lines: list[str] = []
         bitpro_paper_lines: list[str] = []
         bitpro_lifecycle_lines: list[str] = []
         citation_lines: list[str] = []
@@ -1025,6 +1038,60 @@ class AgentKernel:
                     "",
                 ]
             )
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "bitpro_backtest_list_results":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or payload.get("status") != "ok":
+                continue
+            nested_tools = _nested_bitpro_tools(payload)
+            result_filter = payload.get("filter")
+            result_filter = result_filter if isinstance(result_filter, dict) else {}
+            min_return = result_filter.get("min_total_return_pct")
+            bitpro_backtest_lines.extend(
+                [
+                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
+                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
+                    (
+                        "- 口径: total_return_pct，实际回测总收益；"
+                        "不使用 annual_return_pct/年化收益替代"
+                    ),
+                    (
+                        f"- 过滤: total_return_pct > {min_return}%"
+                        if min_return is not None
+                        else "- 过滤: 未设置收益阈值"
+                    ),
+                    f"- 命中数量: {payload.get('result_count', 0)}",
+                ]
+            )
+            results = payload.get("results")
+            results = results if isinstance(results, list) else []
+            if not results:
+                bitpro_backtest_lines.append("- 没有匹配的 BitPro 回测结果。")
+            for row in results[:20]:
+                if not isinstance(row, dict):
+                    continue
+                bitpro_backtest_lines.append(
+                    (
+                        "- result #{id}, strategy #{strategy_id}: {name}; "
+                        "收益 {total_return_pct}%, 年化 {annual_return_pct}%, "
+                        "回撤 {max_drawdown_pct}%, 夏普 {sharpe_ratio}, "
+                        "胜率 {win_rate_pct}%, 交易 {trade_count}, 区间 {start_date} 至 {end_date}"
+                    ).format(
+                        id=row.get("id", "n/a"),
+                        strategy_id=row.get("strategy_id", "n/a"),
+                        name=row.get("strategy_name", "n/a"),
+                        total_return_pct=row.get("total_return_pct", "n/a"),
+                        annual_return_pct=row.get("annual_return_pct", "n/a"),
+                        max_drawdown_pct=row.get("max_drawdown_pct", "n/a"),
+                        sharpe_ratio=row.get("sharpe_ratio", "n/a"),
+                        win_rate_pct=row.get("win_rate_pct", "n/a"),
+                        trade_count=row.get("trade_count", "n/a"),
+                        start_date=row.get("start_date", "n/a"),
+                        end_date=row.get("end_date", "n/a"),
+                    )
+                )
+            bitpro_backtest_lines.append("")
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "bitpro_paper_dashboard":
                 continue
@@ -1156,6 +1223,8 @@ class AgentKernel:
             sections.extend(["## 多标的强弱比较", "", *compare_lines])
         if bitpro_lines:
             sections.extend(["## BitPro MCP K线直连", "", *bitpro_lines])
+        if bitpro_backtest_lines:
+            sections.extend(["## BitPro 回测结果", "", *bitpro_backtest_lines])
         if bitpro_paper_lines:
             sections.extend(["## BitPro 模拟盘状态", "", *bitpro_paper_lines])
         if bitpro_lifecycle_lines:
@@ -1238,11 +1307,14 @@ def _bitpro_trace_tool_name(tool_name: str) -> str:
         "bitpro_health": "bitpro.health",
         "market_klines": "bitpro.market_klines",
         "strategy_search": "bitpro.strategy_search",
+        "strategy_get": "bitpro.strategy_get",
         "strategy_generate": "bitpro.strategy_generate",
         "strategy_create": "bitpro.strategy_create",
         "strategy_update": "bitpro.strategy_update",
         "backtest_start_job": "bitpro.backtest_start_job",
         "backtest_get_job": "bitpro.backtest_get_job",
+        "backtest_list_results": "bitpro.backtest_list_results",
+        "backtest_get_result": "bitpro.backtest_get_result",
         "paper_configure": "bitpro.paper_configure",
         "paper_start": "bitpro.paper_start",
         "paper_pause": "bitpro.paper_pause",

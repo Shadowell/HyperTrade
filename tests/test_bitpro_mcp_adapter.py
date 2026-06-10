@@ -409,6 +409,156 @@ def test_bitpro_paper_dashboard_explicit_strategy_keeps_filtered_scope() -> None
     ]
 
 
+def test_bitpro_backtest_list_results_filters_total_return_with_offset_pagination() -> None:
+    seen: list[dict[str, Any]] = []
+    first_page = [
+        {
+            "id": 161,
+            "strategy_id": 178,
+            "status": "completed",
+            "start_date": "2024-01-01",
+            "end_date": "2026-05-15",
+            "created_at": "2026-05-15 19:57:11",
+            "timeframe": "1d",
+            "total_return": 305.53878586955756,
+            "annual_return": 80.6615,
+            "max_drawdown": 30.4763,
+            "sharpe_ratio": 1.1422,
+            "win_rate": 87.5,
+            "trade_count": 8,
+        },
+        *[
+            {
+                "id": 1000 + index,
+                "strategy_id": 300 + index,
+                "status": "completed",
+                "total_return": 10 - index,
+                "trade_count": index,
+            }
+            for index in range(19)
+        ],
+    ]
+    second_page = [
+        {
+            "id": 193,
+            "strategy_id": 162,
+            "status": "completed",
+            "start_date": "2025-06-08",
+            "end_date": "2026-06-07",
+            "created_at": "2026-06-08 11:13:48",
+            "timeframe": "1h",
+            "total_return": 141.83713784801657,
+            "annual_return": 142.4246,
+            "max_drawdown": 14.5667,
+            "sharpe_ratio": 0.3969,
+            "win_rate": 50.63,
+            "trade_count": 239,
+        }
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "query": dict(request.url.params),
+            }
+        )
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/backtest/results":
+            offset = int(request.url.params.get("offset", "0"))
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "items": first_page if offset == 0 else second_page,
+                        "total": 21,
+                    },
+                },
+            )
+        if request.url.path == "/api/v2/strategies/162":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "id": 162,
+                        "name": "[合约][1H][CTA] ETH · Heikin Ashi趋势跟踪低频版 · 100U",
+                    },
+                },
+            )
+        if request.url.path == "/api/v2/strategies/178":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "id": 178,
+                        "name": "[合约][1D][CTA] ETH · Donchian89/EMA89趋势跟踪稳健版 · 100U",
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+
+    result = adapter.backtest_list_results(min_total_return_pct=100, limit=40)
+
+    assert result["status"] == "ok"
+    assert result["filter"]["metric"] == "total_return_pct"
+    assert result["result_count"] == 2
+    assert result["raw_result_count"] == 21
+    assert [row["id"] for row in result["results"]] == [161, 193]
+    assert result["results"][0]["strategy_name"] == (
+        "[合约][1D][CTA] ETH · Donchian89/EMA89趋势跟踪稳健版 · 100U"
+    )
+    assert result["results"][0]["total_return_pct"] == "305.53878586955756"
+    assert result["results"][1]["strategy_name"] == (
+        "[合约][1H][CTA] ETH · Heikin Ashi趋势跟踪低频版 · 100U"
+    )
+    assert result["results"][1]["total_return_pct"] == "141.83713784801657"
+    assert [call["tool"] for call in result["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "backtest_list_results",
+        "backtest_list_results",
+        "strategy_get",
+        "strategy_get",
+    ]
+    assert seen[:3] == [
+        {"method": "GET", "path": "/api/v2/system/health", "query": {}},
+        {
+            "method": "GET",
+            "path": "/api/v2/backtest/results",
+            "query": {
+                "offset": "0",
+                "limit": "20",
+                "status": "completed",
+                "sort_by": "return",
+                "sort_order": "desc",
+            },
+        },
+        {
+            "method": "GET",
+            "path": "/api/v2/backtest/results",
+            "query": {
+                "offset": "20",
+                "limit": "20",
+                "status": "completed",
+                "sort_by": "return",
+                "sort_order": "desc",
+            },
+        },
+    ]
+
+
 def test_bitpro_mcp_client_wraps_network_errors() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)

@@ -160,6 +160,85 @@ def test_planner_report_distinguishes_bitpro_paper_dashboard_scope() -> None:
     assert "paper_dashboard exposes the current BitPro paper dashboard only" in report
 
 
+def test_planner_report_renders_bitpro_backtest_total_return_results() -> None:
+    report = AgentKernel._render_planner_report(
+        "已读取 BitPro 回测结果。",
+        [
+            ToolCallRecord(
+                tool_name="bitpro_backtest_list_results",
+                input_json={"min_total_return_pct": 100},
+                output_json={
+                    "status": "ok",
+                    "contract_version": "bitpro-mcp-v1",
+                    "filter": {
+                        "metric": "total_return_pct",
+                        "min_total_return_pct": 100,
+                        "status": "completed",
+                        "sort_by": "return",
+                        "sort_order": "desc",
+                        "limit": 40,
+                    },
+                    "result_count": 2,
+                    "raw_result_count": 21,
+                    "results": [
+                        {
+                            "id": 161,
+                            "strategy_id": 178,
+                            "strategy_name": (
+                                "[合约][1D][CTA] ETH · "
+                                "Donchian89/EMA89趋势跟踪稳健版 · 100U"
+                            ),
+                            "total_return_pct": "305.53878586955756",
+                            "annual_return_pct": "80.6615",
+                            "max_drawdown_pct": "30.4763",
+                            "sharpe_ratio": "1.1422",
+                            "win_rate_pct": "87.5",
+                            "trade_count": 8,
+                            "start_date": "2024-01-01",
+                            "end_date": "2026-05-15",
+                        },
+                        {
+                            "id": 193,
+                            "strategy_id": 162,
+                            "strategy_name": (
+                                "[合约][1H][CTA] ETH · "
+                                "Heikin Ashi趋势跟踪低频版 · 100U"
+                            ),
+                            "total_return_pct": "141.83713784801657",
+                            "annual_return_pct": "142.4246",
+                            "max_drawdown_pct": "14.5667",
+                            "sharpe_ratio": "0.3969",
+                            "win_rate_pct": "50.63",
+                            "trade_count": 239,
+                            "start_date": "2025-06-08",
+                            "end_date": "2026-06-07",
+                        },
+                    ],
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                        {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                        {
+                            "tool": "backtest_list_results",
+                            "parameters": {"offset": 0, "limit": 20},
+                            "status": "success",
+                        },
+                    ],
+                },
+            )
+        ],
+    )
+
+    assert "## BitPro 回测结果" in report
+    assert "口径: total_return_pct" in report
+    assert "过滤: total_return_pct > 100%" in report
+    assert "命中数量: 2" in report
+    assert "result #161, strategy #178" in report
+    assert "Donchian89/EMA89趋势跟踪稳健版" in report
+    assert "收益 305.53878586955756%" in report
+    assert "result #193, strategy #162" in report
+    assert "Heikin Ashi趋势跟踪低频版" in report
+
+
 def test_market_candles_payload_uses_fetcher_and_returns_features(monkeypatch, tmp_path) -> None:
     db = Database("sqlite:///:memory:")
     db.create_all()

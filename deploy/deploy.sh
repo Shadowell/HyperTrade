@@ -25,27 +25,7 @@ echo "[deploy] starting app services"
 docker compose up -d api worker
 
 echo "[deploy] installing host cli wrapper"
-cat > /usr/local/bin/hypertrade <<'WRAPPER'
-#!/usr/bin/env bash
-
-set -euo pipefail
-
-cd /opt/hypertrade
-
-env_args=()
-for name in HYPERTRADE_RENDERER HYPERTRADE_TRACE HYPERTRADE_THINKING_ANIMATION NO_COLOR; do
-  if [ "${!name+x}" = "x" ]; then
-    env_args+=("-e" "$name=${!name}")
-  fi
-done
-
-if [ -t 0 ] && [ -t 1 ]; then
-  exec docker compose exec "${env_args[@]}" api hypertrade "$@"
-fi
-
-exec docker compose exec -T "${env_args[@]}" api hypertrade "$@"
-WRAPPER
-chmod 755 /usr/local/bin/hypertrade
+install -m 755 "$ROOT_DIR/deploy/hypertrade-host-cli" /usr/local/bin/hypertrade
 ln -sfn /usr/local/bin/hypertrade /usr/local/bin/ht
 
 echo "[deploy] installing nginx config"

@@ -2101,11 +2101,16 @@ def render_run_stream(
         animator.start("Thinking")
         try:
             run = client.run_agent(prompt)
+        except httpx.HTTPError as exc:
+            animator.stop()
+            _print_remote_api_error(exc, output=output)
+            return
         finally:
             animator.stop()
         render_run(run, output=output)
         return
     final_run: dict[str, Any] | None = None
+    stream_failed = False
     animator.start("Thinking")
     try:
         for event in events:
@@ -2141,13 +2146,32 @@ def render_run_stream(
                 final_run = dict(event["run"])
             elif event_name == "error":
                 animator.print_line(f"Run failed: {event.get('error', 'unknown error')}")
+    except httpx.HTTPError as exc:
+        stream_failed = True
+        animator.print_line(_format_remote_api_error(exc))
     finally:
         animator.stop()
+    if stream_failed:
+        return
     if final_run is not None:
         print("", file=output)
         render_run(final_run, output=output)
     else:
         print("Run stream ended without final report.", file=output)
+
+
+def _format_remote_api_error(exc: httpx.HTTPError) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        return (
+            f"Remote API request failed ({status_code}). "
+            "The service may be deploying, or the credentials may be invalid."
+        )
+    return "Remote API connection failed. The service may be deploying; wait a moment and retry."
+
+
+def _print_remote_api_error(exc: httpx.HTTPError, *, output: TextIO) -> None:
+    print(_format_remote_api_error(exc), file=output)
 
 
 class _ThinkingAnimator:

@@ -404,6 +404,44 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "bitpro_backtest_list_results",
+            "description": (
+                "Read BitPro-owned backtest result records and filter by actual total "
+                "backtest return. Use this for questions like 回测收益大于100%, "
+                "best backtests, result ranking, or page parity. Do not use annualized "
+                "return as total return."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "min_total_return_pct": {
+                        "type": "number",
+                        "description": "Optional minimum actual total return percent.",
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Backtest status filter, default completed.",
+                    },
+                    "sort_by": {
+                        "type": "string",
+                        "description": "Sort key for BitPro, default return.",
+                    },
+                    "sort_order": {
+                        "type": "string",
+                        "description": "Sort order asc or desc, default desc.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum records to inspect, default 100.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "bitpro_paper_configure",
             "description": "Configure a BitPro paper/simulation instance for a strategy.",
             "parameters": {
@@ -531,6 +569,10 @@ Use bitpro_paper_dashboard without strategy_id when the user asks about all/全�
 current_instance as only the current BitPro dashboard view; use
 running_strategies to list running strategies and never claim there is only one
 paper strategy from the dashboard view alone.
+Use bitpro_backtest_list_results when the user asks about BitPro backtest
+performance, rankings, winners, or thresholds such as 回测收益大于100%. Report the
+actual total_return_pct metric from BitPro backtest results; do not substitute
+annual_return_pct, strategy descriptions, memory, or unstated assumptions.
 When the user asks BitPro to develop, store, backtest, or paper-validate a strategy,
 use BitPro strategy/backtest/paper tools. These are research/simulation writes,
 not live trading writes.

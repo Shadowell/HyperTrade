@@ -13,6 +13,13 @@ Configuration is environment-based:
 - `HYPERTRADE_USERNAME` and `HYPERTRADE_PASSWORD` provide admin credentials.
 - `HYPERTRADE_TIMEOUT_SECONDS` controls HTTP timeout.
 
+The production host wrapper installed at `/usr/local/bin/hypertrade` runs a
+short-lived client container with `HYPERTRADE_API_URL=http://api:3334` by
+default. This avoids attaching the operator's terminal to the long-running
+`hypertrade-api` service container. During a deployment, the API container can
+still restart and interrupt the current API request, but the terminal CLI
+process is not killed by `docker compose up -d api worker`.
+
 Interactive chat also supports slash commands for harness inspection without starting a new Agent run.
 `/help` renders every command with a short purpose statement, and `/tools` renders each
 registered Agent tool with category, approval marker, and registry description:
@@ -67,6 +74,12 @@ CLI 是开发者 Harness，支持两种运行模式：
 - `HYPERTRADE_API_URL` 选择 API 地址，并让远程模式成为默认；传 `--local` 可以强制本地模式。
 - `HYPERTRADE_USERNAME` 与 `HYPERTRADE_PASSWORD` 提供管理员凭据。
 - `HYPERTRADE_TIMEOUT_SECONDS` 控制 HTTP 超时。
+
+生产宿主机上的 `/usr/local/bin/hypertrade` wrapper 会启动一个短生命周期的 CLI client
+容器，并默认设置 `HYPERTRADE_API_URL=http://api:3334`。它不再 attach 到长期运行的
+`hypertrade-api` 服务容器，所以部署执行 `docker compose up -d api worker` 替换 API
+容器时，不会直接杀掉操作员终端里的 CLI 进程。部署期间当前 API 请求仍可能中断，但交互式
+CLI 会显示可重试的远程 API 连接提示。
 
 交互式 chat 还支持斜杠命令，用于查看 Harness 状态而无需发起新的 Agent run。`/help`
 会为每条命令显示用途说明，`/tools` 会为每个 Agent 工具显示 category、approval 标记和

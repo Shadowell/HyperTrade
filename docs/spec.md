@@ -69,6 +69,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Sprint 32 production-oriented project positioning and BitPro API tool-surface contract.
 - Sprint 33 initial BitPro MCP adapter: capability/health preflight, K-line data direct access, paper dashboard reads, live-position diagnostics, API endpoints, Agent tool schemas, and `bitpro_mcp` backtest candle source.
 - Sprint 34 BitPro strategy lifecycle Agent tools: strategy search/generation/creation/update, BitPro-owned backtest job start/status reads, and paper/simulation configure/start/pause/resume/stop with live-write tools still blocked.
+- BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
 - BitPro external API adapter contract for backtest data, base market data, paper/simulation state, and live trading state without copying BitPro business logic.
 
 ## V1 Out of Scope
@@ -94,6 +95,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
   rankings.
 - User can create a strategy research record and run a deterministic Backtrader backtest.
 - Developer can run `hypertrade` as a standalone CLI Agent and see run id, tool calls, and report output.
+- Developer can use the production host `hypertrade` wrapper as a remote client without attaching to the long-running API service container, so deploy-time API replacement does not terminate the terminal session.
 - Developer can see run/tool progress while `hypertrade ask` or interactive chat is still running.
 - Developer can see a live `Thought` / `Thinking` animation in interactive terminals while an Agent prompt is waiting for planning or tool results.
 - Developer can use CLI slash commands such as `/tools`, `/runs`, `/memory`, `/strategy`, and `/backtests` in interactive chat.
@@ -121,6 +123,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Developer can run backtests with `candle_source=bitpro_mcp` or `/backtest --source bitpro_mcp` to use BitPro `market_klines` data without direct database access.
 - Agent can use BitPro strategy lifecycle tools to generate/create/update strategy drafts, start/query BitPro-owned backtest jobs, and configure/control paper validation while real-account write tools remain blocked.
 - Agent can complete the BitPro strategy R&D loop through MCP only: `bitpro_capabilities` -> `bitpro_health` -> real K-line coverage confirmation -> `strategy_validate_code` -> `strategy_create` with DB-backed `script_content` -> optional `strategy_update` for canonical metadata/renaming -> `backtest_start_job`/result inspection -> gated `paper_configure`/`paper_start`.
+- Agent can answer BitPro backtest ranking or threshold questions, such as `回测收益大于100%`, by calling `bitpro_backtest_list_results` and reporting `total_return_pct` from actual BitPro result rows instead of annualized return, strategy descriptions, memory, or inferred data.
 - Agent can answer BitPro paper/simulation inventory questions without mistaking the current `paper_dashboard` view for the full universe: unfiltered dashboard reads include `strategy_search(status=running)` inventory and reports distinguish current dashboard instance from all running strategies.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.
