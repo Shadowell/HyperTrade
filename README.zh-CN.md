@@ -28,7 +28,7 @@ HyperTrade 是一个独立的生产级 Agent 交易研究与执行系统。它�
 
 ## CLI 常用命令
 
-交互式 CLI 中，`/help` 会展示每条斜杠命令的用途，`/tools` 会展示每个 Agent 工具的分类、审批标记和功能说明。普通 Agent 提问在规划或工具执行期间会显示 `Thought` / `Thinking` 动态状态块。
+交互式 CLI 中，`/help` 会展示每条斜杠命令的用途，`/tools` 会展示每个 Agent 工具的分类、审批标记和功能说明。普通 Agent 提问在规划或工具执行期间会显示 `Thought` / `Thinking` 动态状态块；报告里的 Markdown 会渲染成更易读的标题、列表和表格。脚本需要原始 Markdown 时可设置 `HYPERTRADE_RENDERER=plain`。
 
 ```text
 /status

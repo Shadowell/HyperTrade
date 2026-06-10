@@ -103,7 +103,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Developer can run Agent acceptance tests and review a documented test plan for expected tool calls, trace output, and report quality.
 - Developer can run deterministic CLI market commands such as `/price`, `/candles`, and `/compare` without waiting for LLM planning.
 - Developer can see readable Agent progress statuses while free-form prompts are running.
-- Developer can read structured CLI report sections for market runs, with Markdown kept as fallback.
+- Developer can read structured CLI report sections for market runs, and unknown Markdown reports render as terminal headings, lists, and tables in interactive/Rich mode.
 - Routine market/RAG/Memory CLI outputs do not repeat a fixed investment-advice disclaimer; strategy, backtest, Testnet, live-order, or recommendation-like prompts still surface the research/risk boundary.
 - Developer can enable Rich terminal rendering for structured CLI reports while keeping plain output for scripts.
 - Developer can inspect and control the simulated paper runtime from CLI slash commands.

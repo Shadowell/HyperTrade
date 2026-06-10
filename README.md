@@ -57,6 +57,8 @@ In interactive chat, slash commands inspect harness state without starting a new
 approval gate, and purpose:
 Free-form Agent prompts show a live `Thought` / `Thinking` status block in interactive
 terminals while the planner or tools are still running.
+Interactive terminals also render Markdown reports into readable headings, lists, and tables;
+set `HYPERTRADE_RENDERER=plain` when raw Markdown is needed for scripts.
 
 ```text
 /help

@@ -1272,7 +1272,11 @@ def render_strategy_research_result(research: dict[str, Any], *, output: TextIO)
     print(f"- Title: {research.get('title', '')}", file=output)
     print("- Next: /backtest latest", file=output)
     print("", file=output)
-    print(str(research.get("report_markdown", "")), file=output)
+    _render_markdown_report(
+        str(research.get("report_markdown", "")),
+        output=output,
+        title="Strategy Research",
+    )
 
 
 def render_strategy_experiment_result(experiment: dict[str, Any], *, output: TextIO) -> None:
@@ -1282,7 +1286,11 @@ def render_strategy_experiment_result(experiment: dict[str, Any], *, output: Tex
     print(f"- Backtest: {experiment.get('backtest_id', 'n/a')}", file=output)
     print(f"- Status: {experiment.get('status', 'unknown')}", file=output)
     print("", file=output)
-    print(str(experiment.get("report_markdown", "")), file=output)
+    _render_markdown_report(
+        str(experiment.get("report_markdown", "")),
+        output=output,
+        title="Strategy Experiment",
+    )
 
 
 def render_backtest_result(result: dict[str, Any], *, output: TextIO) -> None:
@@ -1296,7 +1304,11 @@ def render_backtest_result(result: dict[str, Any], *, output: TextIO) -> None:
     print(f"- Return: {metrics.get('total_return_pct', 'n/a')}%", file=output)
     print(f"- Trades: {metrics.get('trade_count', 'n/a')}", file=output)
     print("", file=output)
-    print(str(result.get("report_markdown", "")), file=output)
+    _render_markdown_report(
+        str(result.get("report_markdown", "")),
+        output=output,
+        title="Backtest Report",
+    )
 
 
 def render_market_ticker(payload: dict[str, Any], *, output: TextIO) -> None:
@@ -1641,7 +1653,11 @@ def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
     print("", file=output)
     if _render_structured_report(run, output=output):
         return
-    print(str(run.get("report_markdown", "")), file=output)
+    _render_markdown_report(
+        str(run.get("report_markdown", "")),
+        output=output,
+        title="Agent Report",
+    )
 
 
 def _should_render_rich(output: TextIO) -> bool:
@@ -1656,6 +1672,7 @@ def _should_render_rich(output: TextIO) -> bool:
 def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     try:
         from rich.console import Console
+        from rich.markdown import Markdown
         from rich.panel import Panel
         from rich.table import Table
         from rich.text import Text
@@ -1672,7 +1689,8 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     has_structured_tools = isinstance(trace_events, list) and _has_structured_market_tool_output(
         trace_events
     )
-    if not has_structured_market_summary and not has_structured_tools:
+    raw_markdown = str(run.get("report_markdown", "")).strip()
+    if not has_structured_market_summary and not has_structured_tools and not raw_markdown:
         return False
 
     header = Table.grid(expand=True)
@@ -1698,7 +1716,33 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
         _render_rich_market_summary(report, console=console)
     elif has_structured_tools and isinstance(trace_events, list):
         _render_rich_tool_report(trace_events, report=report, console=console)
+    else:
+        console.print(
+            Panel(Markdown(raw_markdown), title="Agent Report", border_style="green")
+        )
 
+    return True
+
+
+def _render_markdown_report(markdown: str, *, output: TextIO, title: str) -> None:
+    if _should_render_rich(output) and _render_rich_markdown(markdown, output=output, title=title):
+        return
+    print(markdown, file=output)
+
+
+def _render_rich_markdown(markdown: str, *, output: TextIO, title: str) -> bool:
+    markdown = markdown.strip()
+    if not markdown:
+        return False
+    try:
+        from rich.console import Console
+        from rich.markdown import Markdown
+        from rich.panel import Panel
+    except ImportError:
+        return False
+
+    console = Console(file=output, force_terminal=True, color_system=None, width=120)
+    console.print(Panel(Markdown(markdown), title=title, border_style="green"))
     return True
 
 

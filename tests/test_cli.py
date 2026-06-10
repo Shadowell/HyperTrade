@@ -11,9 +11,11 @@ from hypertrade.cli import (
     CliConfig,
     LocalAgentClient,
     main,
+    render_backtest_result,
     render_run,
     render_run_stream,
     render_slash_help,
+    render_strategy_research_result,
     render_tools,
     render_welcome_banner,
     run_chat,
@@ -605,6 +607,84 @@ def test_render_run_can_use_rich_structured_output(monkeypatch) -> None:
     assert "Rich Markdown Should Not Render" not in rendered
 
 
+def test_render_run_uses_rich_markdown_for_unknown_report(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    output = StringIO()
+
+    render_run(
+        {
+            "id": "run_markdown",
+            "status": "completed",
+            "report_markdown": (
+                "# HyperTrade 技能清单\n\n"
+                "| 技能 | 说明 |\n"
+                "|---|---|\n"
+                "| market_summary | 获取 OKX 行情概览 |\n"
+            ),
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [{"tool_name": "graph.final_report", "status": "completed"}],
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "Agent Report" in rendered
+    assert "HyperTrade 技能清单" in rendered
+    assert "market_summary" in rendered
+    assert "# HyperTrade" not in rendered
+    assert "|---|---|" not in rendered
+
+
+def test_render_run_keeps_plain_markdown_when_renderer_plain(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "plain")
+    output = StringIO()
+
+    render_run(
+        {
+            "id": "run_plain",
+            "status": "completed",
+            "report_markdown": "# Plain Report\n\n| A | B |\n|---|---|\n| 1 | 2 |",
+            "trace_events": [],
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "# Plain Report" in rendered
+    assert "|---|---|" in rendered
+
+
+def test_workflow_results_use_rich_markdown_when_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    output = StringIO()
+
+    render_strategy_research_result(
+        {
+            "id": "srch_cli",
+            "strategy_key": "momentum_breakout_v1",
+            "title": "突破研究",
+            "report_markdown": "# Research\n\n| Item | Value |\n|---|---|\n| bias | up |",
+        },
+        output=output,
+    )
+    render_backtest_result(
+        {
+            "id": "bt_cli",
+            "research_id": "srch_cli",
+            "strategy_key": "momentum_breakout_v1",
+            "metrics": {"total_return_pct": "1.2", "trade_count": 3},
+            "report_markdown": "# Backtest\n\n- pass",
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "Strategy Research" in rendered
+    assert "Backtest Report" in rendered
+    assert "# Research" not in rendered
+    assert "|---|---|" not in rendered
+
+
 def test_ask_streams_agent_run_progress(capsys) -> None:
     client = FakeAgentClient()
 
@@ -630,7 +710,8 @@ def test_run_stream_shows_thinking_animation_for_tty() -> None:
     assert "+ Thought:" in rendered
     assert "Thinking" in rendered
     assert "Agent status: run created" in rendered
-    assert "# CLI Report" in rendered
+    assert "CLI Report" in rendered
+    assert "# CLI Report" not in rendered
 
 
 def test_chat_reuses_client_until_exit(capsys) -> None:

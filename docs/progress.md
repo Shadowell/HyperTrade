@@ -13,6 +13,7 @@
 ## Latest Completed Work
 
 - Implemented the BitPro MCP adapter in HyperTrade: server-side settings for `BITPRO_MCP_API_BASE`/token/header, `BitProMcpClient`, `BitProToolAdapter`, Agent tool schemas and executor wiring, nested trace events for `bitpro_capabilities` -> `bitpro_health` -> read/non-live lifecycle tool calls, admin API endpoints for health/K-lines/paper dashboard/live positions, `/harness` BitPro adapter status, and `candle_source=bitpro_mcp` backtest data access.
+- Added Rich Markdown fallback rendering for CLI reports: when structured JSON/trace sections are unavailable, interactive/Rich output now formats Markdown headings, lists, and tables instead of showing raw `###` and pipe-table source; `HYPERTRADE_RENDERER=plain` keeps script-friendly raw Markdown.
 - Added interactive CLI Agent thinking feedback: free-form prompts now show a live `Thought` / `Thinking` animation in TTY sessions while waiting for planner/tool/final-report events, while non-TTY script output keeps stable `Agent status:` lines.
 - Added CLI command/tool descriptions: `/help` now renders every slash command with a purpose statement, and `/tools` prints each registered Agent tool with category, approval marker, and registry description.
 - Added BitPro strategy lifecycle Agent tools: strategy search/generation/creation, BitPro-owned backtest job start/status reads, and paper/simulation configure/start/pause/resume/stop. Live mutation tools remain blocked by the BitPro adapter.
