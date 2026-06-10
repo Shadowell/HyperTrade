@@ -33,7 +33,7 @@ set -euo pipefail
 cd /opt/hypertrade
 
 env_args=()
-for name in HYPERTRADE_RENDERER NO_COLOR; do
+for name in HYPERTRADE_RENDERER HYPERTRADE_THINKING_ANIMATION NO_COLOR; do
   if [ "${!name+x}" = "x" ]; then
     env_args+=("-e" "$name=${!name}")
   fi
