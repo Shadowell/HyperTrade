@@ -23,6 +23,7 @@ Before substantial work, read:
 5. Update `docs/progress.md` after meaningful implementation steps.
 6. If requirements, architecture, or API contracts change, update `docs/spec.md` and the active contract in the same change.
 7. MANDATORY: after `./scripts/check.sh` passes for implementation work on `main`, you MUST commit and push to `origin/main` so GitHub Actions deploys to production (`47.79.36.92`). Never push secrets or unfinished work.
+8. MANDATORY: every completed code/documentation change must be merged/pushed and deployed. If work is already on `main`, commit and push directly to `origin/main`; if work is on another branch, merge it before deployment. After pushing, watch the deployment and verify production health before reporting completion.
 
 ## Production-Oriented Comments
 

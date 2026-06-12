@@ -64,6 +64,12 @@ detail, normalizes metrics, and exposes bounded samples for equity curve, trades
 orders, fills, and drawdown series. Missing artifacts are reported as unavailable;
 HyperTrade never synthesizes artifact rows.
 
+When the Agent starts a BitPro-owned backtest, `bitpro_backtest_start_job` waits
+for the job to reach a terminal state in the Agent execution path, then normalizes
+the completed `job.result` and links it to the saved BitPro result row when the
+row is available. The CLI report should show the same key metrics as the BitPro
+results page rather than a polling lifecycle log.
+
 For containerized deployments, BitPro MCP is reached through an explicit host-gateway address instead of `127.0.0.1`, because loopback inside `hypertrade-api` points to the container itself. If BitPro is unavailable, API endpoints return a structured `502` with the failed BitPro tool calls so operators can distinguish upstream outage from HyperTrade runtime failure.
 
 ## 中文
@@ -113,5 +119,7 @@ BitPro `/live/dashboard` 返回被视为当前模拟盘引擎/dashboard 视图�
 BitPro 回测排行和阈值问题必须通过 `bitpro_backtest_list_results` 回答，不能读取策略描述或 planner 记忆来推断。适配器使用 BitPro `offset`/`limit` 分页，把真实结果指标标准化为 `total_return_pct`，可在本地按阈值过滤，并用 `strategy_get` 补齐策略名以贴近页面展示。年化收益只能作为独立字段展示，不能替代回测总收益。
 
 单个回测证据问题必须通过 `bitpro_backtest_get_result` 回答。适配器同样先执行 `bitpro_capabilities` -> `bitpro_health`，再读取 BitPro 负责的回测详情，标准化指标，并输出权益曲线、交易、订单、成交和回撤序列的有界样本。缺失 artifact 只能标记为不可用，HyperTrade 不合成样本行。
+
+当 Agent 启动 BitPro 负责的回测时，`bitpro_backtest_start_job` 会在 Agent 执行路径中等待 job 进入终态，然后标准化 completed `job.result`，并在可用时关联到 BitPro 已保存的 result 行。CLI 报告应展示与 BitPro 回测结果页面同口径的核心指标，而不是轮询生命周期日志。
 
 容器化部署时，BitPro MCP 通过显式 host-gateway 地址访问，不能使用 `127.0.0.1`，因为容器内 loopback 指向 `hypertrade-api` 自身。如果 BitPro 不可达，API 返回结构化 `502`，并携带失败的 BitPro tool call，方便区分上游不可用和 HyperTrade 运行时故障。
