@@ -42,6 +42,13 @@ Operational data-access steps are documented in `docs/runbooks/bitpro-mcp-data-a
 
 The BitPro `/live/dashboard` response is treated as a current paper engine/dashboard view, not proof that only one strategy is running. When HyperTrade calls `bitpro_paper_dashboard` without a `strategy_id`, the adapter also reads `strategy_search(status=running)` with safe pagination and returns `paper_scope` plus `running_strategies`. Reports must distinguish the current dashboard strategy from the complete running strategy inventory exposed by BitPro.
 
+Paper monitoring is deterministic and read-only. The adapter derives
+`monitor_summary` from the current dashboard metrics plus the running strategy
+inventory: equity, total PnL, Sharpe, drawdown, inventory coverage, alerts, data
+gaps, and suggested operator checks. If `strategy_search(status=running)` does
+not include per-strategy PnL or drawdown, HyperTrade reports that as a data gap
+instead of inferring those metrics.
+
 BitPro backtest ranking and threshold questions are answered through
 `bitpro_backtest_list_results`, not by reading strategy descriptions or planner
 memory. The adapter uses BitPro `offset`/`limit` pagination, normalizes the
@@ -100,6 +107,8 @@ BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必�
 具体数据调用步骤见 `docs/runbooks/bitpro-mcp-data-access.md`。第一版 HyperTrade 实现在 `backend/src/hypertrade/bitpro/mcp.py`：每条链路先调用 `bitpro_capabilities` 和 `bitpro_health`，再根据行情数据、策略生命周期、回测、模拟盘或实盘只读诊断选择最小工具。实盘写工具在该 adapter 内默认阻断。
 
 BitPro `/live/dashboard` 返回被视为当前模拟盘引擎/dashboard 视图，不能据此判断“只有一个策略在运行”。当 `bitpro_paper_dashboard` 未传 `strategy_id` 时，HyperTrade 会用安全分页额外读取 `strategy_search(status=running)`，并返回 `paper_scope` 与 `running_strategies`。报告必须区分当前 dashboard 策略和 BitPro 暴露的完整 running 策略清单。
+
+模拟盘监控是确定性且只读的。适配器从当前 dashboard 指标和 running 策略清单生成 `monitor_summary`：权益、总收益、Sharpe、回撤、清单覆盖、告警、数据缺口和建议检查动作。如果 `strategy_search(status=running)` 不包含逐策略收益或回撤，HyperTrade 必须把它报告为数据缺口，而不是推断这些指标。
 
 BitPro 回测排行和阈值问题必须通过 `bitpro_backtest_list_results` 回答，不能读取策略描述或 planner 记忆来推断。适配器使用 BitPro `offset`/`limit` 分页，把真实结果指标标准化为 `total_return_pct`，可在本地按阈值过滤，并用 `strategy_get` 补齐策略名以贴近页面展示。年化收益只能作为独立字段展示，不能替代回测总收益。
 

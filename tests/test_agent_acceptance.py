@@ -195,6 +195,7 @@ class ReplayBitProAdapter:
         exchange: str = "okx",
         symbol: str | None = None,
         timeframe: str | None = None,
+        wait_for_result: bool = False,
     ) -> dict[str, Any]:
         return {
             "status": "ok",
@@ -365,6 +366,114 @@ class ReplayBitProAdapter:
                     "tool": "backtest_get_result",
                     "status": "success",
                     "parameters": {"backtest_id": backtest_id},
+                },
+            ],
+        }
+
+    def paper_dashboard(self, *, strategy_id: int | None = None) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "health": {"status": "healthy"},
+            "dashboard": {
+                "system": {
+                    "state": "running",
+                    "mode": "paper",
+                    "uptime": "29D",
+                    "strategy_id": strategy_id or 105,
+                    "strategy": "[合约][1H][CTA] SOL · EMA5/20趋势跟踪对照版 · 100U",
+                },
+                "equity": {"current": 96.7},
+                "performance": {
+                    "total_pnl_pct": -3.3,
+                    "sharpe_ratio": 0.2,
+                    "max_drawdown": 12.4,
+                },
+            },
+            "paper_scope": {
+                "dashboard_scope": "filtered_strategy" if strategy_id else "current_instance",
+                "strategy_id_filter": strategy_id,
+                "current_strategy_id": strategy_id or 105,
+                "running_strategy_count": 2,
+                "running_strategy_total": 5,
+                "coverage_note": (
+                    "paper_dashboard exposes the current BitPro paper dashboard only; "
+                    "running_strategies comes from strategy_search(status=running)."
+                ),
+            },
+            "running_strategies": {
+                "total": 5,
+                "items": [
+                    {
+                        "id": 105,
+                        "name": "[合约][1H][CTA] SOL · EMA5/20趋势跟踪对照版 · 100U",
+                        "status": "running",
+                        "symbols": ["SOL/USDT:USDT"],
+                    },
+                    {
+                        "id": 293,
+                        "name": "[合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U",
+                        "status": "running",
+                        "symbols": ["ETH/USDT:USDT"],
+                    },
+                ],
+            },
+            "monitor_summary": {
+                "mode": "read_only",
+                "current_dashboard": {
+                    "strategy_id": strategy_id or 105,
+                    "strategy_name": "[合约][1H][CTA] SOL · EMA5/20趋势跟踪对照版 · 100U",
+                    "state": "running",
+                    "mode": "paper",
+                    "total_pnl_pct": "-3.3",
+                    "max_drawdown_pct": "12.4",
+                    "sharpe_ratio": "0.2",
+                    "equity": "96.7",
+                },
+                "running_inventory": {
+                    "listed_count": 2,
+                    "reported_total": 5,
+                    "is_truncated": True,
+                },
+                "alerts": [
+                    {
+                        "level": "warning",
+                        "code": "negative_pnl",
+                        "message": "当前 dashboard 策略总收益为负: -3.3%",
+                    },
+                    {
+                        "level": "warning",
+                        "code": "high_drawdown",
+                        "message": "当前 dashboard 策略最大回撤偏高: 12.4%",
+                    },
+                ],
+                "data_gaps": [
+                    "running strategy inventory does not include per-strategy PnL/drawdown metrics",
+                    "running strategy inventory is truncated; listed_count=2 reported_total=5",
+                ],
+                "recommended_actions": [
+                    {
+                        "action": "inspect_current_dashboard_strategy",
+                        "message": "优先检查当前 dashboard 策略 105 的成交、事件和权益曲线",
+                    },
+                    {
+                        "action": "fetch_full_running_strategy_inventory",
+                        "message": "增加分页或缩小过滤条件，补齐全部运行中策略清单。",
+                    },
+                    {
+                        "action": "continue_read_only_monitoring",
+                        "message": "继续只读监控；不要自动暂停、停止或实盘操作",
+                    },
+                ],
+            },
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {"tool": "paper_dashboard", "status": "success", "parameters": {}},
+                {
+                    "tool": "strategy_search",
+                    "status": "success",
+                    "parameters": {"status": "running"},
                 },
             ],
         }
@@ -797,6 +906,58 @@ def test_agent_acceptance_bitpro_backtest_detail_reads_artifacts(
     assert "result #196, strategy #293" in run.report_markdown
     assert "权益曲线: 可用，3 条，展示 2 条样本" in run.report_markdown
     assert "交易: 可用，11 条，展示 2 条样本" in run.report_markdown
+    _assert_research_quality(run.report_markdown)
+
+
+def test_agent_acceptance_bitpro_paper_monitor_reports_alerts(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = _memory_db()
+    _patch_replay_llm(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_paper_monitor",
+                        name="bitpro_paper_dashboard",
+                        arguments={},
+                    )
+                ],
+            ),
+            ChatResponse(content="已读取 BitPro 模拟盘监控。", tool_calls=[]),
+        ],
+    )
+
+    run = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
+        knowledge_dir=str(tmp_path),
+        bitpro_adapter=ReplayBitProAdapter(),
+    ).run_chat("监控 BitPro 所有运行中的模拟盘策略，给出异常和建议动作")
+
+    names = _tool_names(run)
+    assert "bitpro.paper_dashboard" in names
+    assert "bitpro.strategy_search" in names
+    assert "bitpro_paper_dashboard" in names
+    bitpro_event = next(
+        event for event in _business_events(run) if event.tool_name == "bitpro_paper_dashboard"
+    )
+    monitor = bitpro_event.output_json["monitor_summary"]
+    assert monitor["mode"] == "read_only"
+    assert monitor["running_inventory"]["reported_total"] == 5
+    assert "## BitPro 模拟盘状态" in run.report_markdown
+    assert "监控结论: read_only" in run.report_markdown
+    assert "告警 warning/negative_pnl" in run.report_markdown
+    assert "告警 warning/high_drawdown" in run.report_markdown
+    assert (
+        "数据缺口: running strategy inventory does not include "
+        "per-strategy PnL/drawdown metrics"
+    ) in run.report_markdown
+    assert "建议 inspect_current_dashboard_strategy" in run.report_markdown
+    assert "建议 continue_read_only_monitoring" in run.report_markdown
     _assert_research_quality(run.report_markdown)
 
 

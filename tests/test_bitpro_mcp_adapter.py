@@ -199,6 +199,210 @@ def test_bitpro_mcp_client_allows_research_backtest_and_paper_writes() -> None:
     ]
 
 
+def test_bitpro_backtest_get_job_normalizes_completed_result() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "query": dict(request.url.params),
+            }
+        )
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/backtest/job/job_292":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "job_id": "job_292",
+                        "strategy_id": 292,
+                        "status": "completed",
+                        "percent": 100.0,
+                        "updated_at": "2026-06-12 09:36:15",
+                        "result": {
+                            "strategy_id": 292,
+                            "strategy_name": (
+                                "[合约][4H][CTA] Top20 · 波动压缩突破高收益实验 · 100U"
+                            ),
+                            "status": "completed",
+                            "timeframe": "4h",
+                            "start_date": "2026-01-01",
+                            "end_date": "2026-06-12",
+                            "initial_capital": 100.0,
+                            "final_capital": 109.70147181824514,
+                            "total_return": 9.701471818245139,
+                            "annual_return": 23.1976,
+                            "max_drawdown": 5.6088,
+                            "sharpe_ratio": 0.494,
+                            "win_rate": 56.52,
+                            "total_trades": 23,
+                            "equity_curve": [
+                                {"timestamp": 1767196800000, "equity": 100.0, "drawdown": 0.0},
+                                {
+                                    "timestamp": 1767211200000,
+                                    "equity": 109.70147181824514,
+                                    "drawdown": 0.0,
+                                },
+                            ],
+                            "trades": [{"symbol": "ETH/USDT:USDT", "side": "open_long"}],
+                        },
+                    },
+                },
+            )
+        if request.url.path == "/api/v2/backtest/results":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": [
+                        {
+                            "id": 197,
+                            "strategy_id": 292,
+                            "strategy_name": (
+                                "[合约][4H][CTA] Top20 · 波动压缩突破高收益实验 · 100U"
+                            ),
+                            "start_date": "2026-01-01",
+                            "end_date": "2026-06-12",
+                            "initial_capital": 100.0,
+                            "final_capital": 109.70147181824514,
+                            "total_return": 9.701471818245139,
+                            "annual_return": 23.1976,
+                            "max_drawdown": 5.6088,
+                            "sharpe_ratio": 0.494,
+                            "win_rate": 56.52,
+                            "total_trades": 23,
+                            "timeframe": "4h",
+                            "status": "completed",
+                            "created_at": "2026-06-12 09:36:15",
+                        }
+                    ],
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    client = BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = BitProToolAdapter(client).backtest_get_job(job_id="job_292")
+
+    assert result["status"] == "ok"
+    assert result["job"]["job_id"] == "job_292"
+    assert result["job"]["status"] == "completed"
+    assert "result" not in result["job"]
+    assert result["backtest_result"]["id"] == 197
+    assert result["backtest_result"]["strategy_id"] == 292
+    assert result["backtest_result"]["metrics"]["total_return_pct"] == "9.701471818245139"
+    assert result["backtest_result"]["metrics"]["annual_return_pct"] == "23.1976"
+    assert result["backtest_result"]["metrics"]["max_drawdown_pct"] == "5.6088"
+    assert result["backtest_result"]["metrics"]["trade_count"] == 23
+    assert result["artifact_summary"]["equity_curve"]["count"] == 2
+    assert [call["tool"] for call in result["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "backtest_get_job",
+        "backtest_list_results",
+    ]
+    assert seen[-1]["query"] == {
+        "offset": "0",
+        "limit": "20",
+        "status": "completed",
+        "sort_by": "return",
+        "sort_order": "desc",
+    }
+
+
+def test_bitpro_backtest_start_job_can_wait_for_completed_result() -> None:
+    job_reads = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal job_reads
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/backtest/run_job":
+            return httpx.Response(
+                200,
+                json={"success": True, "data": {"job_id": "job_292", "status": "pending"}},
+            )
+        if request.url.path == "/api/v2/backtest/job/job_292":
+            job_reads += 1
+            if job_reads == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "success": True,
+                        "data": {"job_id": "job_292", "strategy_id": 292, "status": "running"},
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "job_id": "job_292",
+                        "strategy_id": 292,
+                        "status": "completed",
+                        "percent": 100.0,
+                        "result": {
+                            "strategy_id": 292,
+                            "strategy_name": (
+                                "[合约][4H][CTA] Top20 · 波动压缩突破高收益实验 · 100U"
+                            ),
+                            "status": "completed",
+                            "timeframe": "4h",
+                            "start_date": "2026-01-01",
+                            "end_date": "2026-06-12",
+                            "final_capital": 109.70147181824514,
+                            "total_return": 9.701471818245139,
+                            "annual_return": 23.1976,
+                            "max_drawdown": 5.6088,
+                            "sharpe_ratio": 0.494,
+                            "win_rate": 56.52,
+                            "total_trades": 23,
+                        },
+                    },
+                },
+            )
+        if request.url.path == "/api/v2/backtest/results":
+            return httpx.Response(200, json={"success": True, "data": []})
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+
+    result = adapter.backtest_start_job(
+        strategy_id=292,
+        start_date="2026-01-01",
+        end_date="2026-06-12",
+        initial_capital=100,
+        wait_for_result=True,
+        poll_interval_sec=0,
+        timeout_sec=1,
+    )
+
+    assert job_reads == 2
+    assert result["job"]["status"] == "completed"
+    assert result["backtest_result"]["strategy_id"] == 292
+    assert result["backtest_result"]["metrics"]["total_return_pct"] == "9.701471818245139"
+    assert [call["tool"] for call in result["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "backtest_start_job",
+        "backtest_get_job",
+        "backtest_get_job",
+        "backtest_list_results",
+    ]
+
+
 def test_bitpro_adapter_can_orchestrate_strategy_backtest_and_paper_steps() -> None:
     seen: list[dict[str, Any]] = []
 
@@ -373,6 +577,92 @@ def test_bitpro_paper_dashboard_adds_running_strategy_inventory() -> None:
             "path": "/api/v2/strategies",
             "query": {"page": "1", "per_page": "18", "status": "running"},
         },
+    ]
+
+
+def test_bitpro_paper_dashboard_builds_monitor_summary() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/live/dashboard":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "system": {
+                            "state": "running",
+                            "mode": "paper",
+                            "strategy_id": 105,
+                            "strategy": "[合约][1H][CTA] SOL · EMA5/20趋势跟踪对照版 · 100U",
+                            "uptime": "29D",
+                        },
+                        "equity": {"current": 96.7},
+                        "performance": {
+                            "total_pnl_pct": -3.3,
+                            "sharpe_ratio": 0.2,
+                            "max_drawdown": 12.4,
+                        },
+                    },
+                },
+            )
+        if request.url.path == "/api/v2/strategies":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "items": [
+                            {
+                                "id": 105,
+                                "name": "[合约][1H][CTA] SOL · EMA5/20趋势跟踪对照版 · 100U",
+                                "status": "running",
+                                "symbols": ["SOL/USDT:USDT"],
+                            },
+                            {
+                                "id": 293,
+                                "name": "[合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U",
+                                "status": "running",
+                                "symbols": ["ETH/USDT:USDT"],
+                            },
+                        ],
+                        "total": 5,
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+
+    result = adapter.paper_dashboard()
+    monitor = result["monitor_summary"]
+
+    assert monitor["mode"] == "read_only"
+    assert monitor["current_dashboard"]["strategy_id"] == 105
+    assert monitor["current_dashboard"]["total_pnl_pct"] == "-3.3"
+    assert monitor["current_dashboard"]["max_drawdown_pct"] == "12.4"
+    assert monitor["running_inventory"]["listed_count"] == 2
+    assert monitor["running_inventory"]["reported_total"] == 5
+    assert monitor["running_inventory"]["is_truncated"] is True
+    assert {alert["code"] for alert in monitor["alerts"]} == {
+        "negative_pnl",
+        "high_drawdown",
+        "truncated_inventory",
+        "missing_strategy_metrics",
+    }
+    assert monitor["data_gaps"] == [
+        "running strategy inventory does not include per-strategy PnL/drawdown metrics",
+        "running strategy inventory is truncated; listed_count=2 reported_total=5",
+    ]
+    assert [action["action"] for action in monitor["recommended_actions"]] == [
+        "inspect_current_dashboard_strategy",
+        "fetch_full_running_strategy_inventory",
+        "continue_read_only_monitoring",
     ]
 
 

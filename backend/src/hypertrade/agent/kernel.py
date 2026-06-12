@@ -367,6 +367,7 @@ class AgentKernel:
                     exchange=str(args.get("exchange", "okx")),
                     symbol=str(args["symbol"]) if args.get("symbol") else None,
                     timeframe=str(args["timeframe"]) if args.get("timeframe") else None,
+                    wait_for_result=True,
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_backtest_get_job":
@@ -1100,6 +1101,92 @@ class AgentKernel:
                 )
             bitpro_backtest_lines.append("")
         for record in tool_calls:
+            if getattr(record, "tool_name", "") != "bitpro_backtest_get_job":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or payload.get("status") != "ok":
+                continue
+            result = payload.get("backtest_result")
+            if not isinstance(result, dict):
+                continue
+            nested_tools = _nested_bitpro_tools(payload)
+            job = payload.get("job")
+            job = job if isinstance(job, dict) else {}
+            metrics = result.get("metrics")
+            metrics = metrics if isinstance(metrics, dict) else {}
+            progress = job.get("percent", job.get("progress", "n/a"))
+            bitpro_backtest_lines.extend(
+                [
+                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
+                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
+                    (
+                        "- 口径: total_return_pct，实际回测总收益；"
+                        "与 BitPro 回测结果页面同源"
+                    ),
+                    (
+                        "- 回测任务: job={job_id}, status={status}, progress={progress}%"
+                    ).format(
+                        job_id=job.get("job_id", job.get("id", "n/a")),
+                        status=job.get("status", "n/a"),
+                        progress=progress,
+                    ),
+                    (
+                        "- result #{id}, strategy #{strategy_id}: {name}; "
+                        "状态 {status}, 周期 {timeframe}, 区间 {start_date} 至 {end_date}"
+                    ).format(
+                        id=result.get("id", "n/a"),
+                        strategy_id=result.get("strategy_id", "n/a"),
+                        name=result.get("strategy_name", "n/a"),
+                        status=result.get("status", "n/a"),
+                        timeframe=result.get("timeframe", "n/a"),
+                        start_date=result.get("start_date", "n/a"),
+                        end_date=result.get("end_date", "n/a"),
+                    ),
+                    (
+                        "- 指标: 初始资金 {initial_capital}, 最终资金 {final_capital}, "
+                        "收益 {total_return_pct}%, 年化 {annual_return_pct}%, "
+                        "回撤 {max_drawdown_pct}%, 夏普 {sharpe_ratio}, "
+                        "胜率 {win_rate_pct}%, 盈亏比 {profit_factor}, 交易 {trade_count}"
+                    ).format(
+                        initial_capital=metrics.get("initial_capital", "n/a"),
+                        final_capital=metrics.get("final_capital", "n/a"),
+                        total_return_pct=metrics.get("total_return_pct", "n/a"),
+                        annual_return_pct=metrics.get("annual_return_pct", "n/a"),
+                        max_drawdown_pct=metrics.get("max_drawdown_pct", "n/a"),
+                        sharpe_ratio=metrics.get("sharpe_ratio", "n/a"),
+                        win_rate_pct=metrics.get("win_rate_pct", "n/a"),
+                        profit_factor=metrics.get("profit_factor", "n/a"),
+                        trade_count=metrics.get("trade_count", "n/a"),
+                    ),
+                ]
+            )
+            summary = payload.get("artifact_summary")
+            summary = summary if isinstance(summary, dict) else {}
+            artifact_labels = {
+                "equity_curve": "权益曲线",
+                "trades": "交易",
+                "orders": "订单",
+                "fills": "成交",
+                "drawdown_series": "回撤序列",
+            }
+            for key, label in artifact_labels.items():
+                info = summary.get(key)
+                info = info if isinstance(info, dict) else {}
+                if not info:
+                    continue
+                state = "可用" if info.get("available") else "不可用"
+                bitpro_backtest_lines.append(
+                    (
+                        "- {label}: {state}，{count} 条，展示 {sample_count} 条样本"
+                    ).format(
+                        label=label,
+                        state=state,
+                        count=info.get("count", 0),
+                        sample_count=info.get("sample_count", 0),
+                    )
+                )
+            bitpro_backtest_lines.append("")
+        for record in tool_calls:
             if getattr(record, "tool_name", "") != "bitpro_backtest_get_result":
                 continue
             payload = getattr(record, "output_json", {})
@@ -1186,6 +1273,8 @@ class AgentKernel:
             running_items = running.get("items")
             running_items = running_items if isinstance(running_items, list) else []
             running_total = running.get("total", len(running_items))
+            monitor = payload.get("monitor_summary")
+            monitor = monitor if isinstance(monitor, dict) else {}
             bitpro_paper_lines.extend(
                 [
                     f"- 合同版本: {payload.get('contract_version', 'unknown')}",
@@ -1246,6 +1335,48 @@ class AgentKernel:
             note = scope.get("coverage_note")
             if note:
                 bitpro_paper_lines.append(f"- 覆盖说明: {note}")
+            if monitor:
+                inventory = monitor.get("running_inventory")
+                inventory = inventory if isinstance(inventory, dict) else {}
+                is_truncated = bool(inventory.get("is_truncated"))
+                bitpro_paper_lines.append(f"- 监控结论: {monitor.get('mode', 'unknown')}")
+                bitpro_paper_lines.append(
+                    (
+                        "- 运行策略覆盖: 已列出 {listed} 个，BitPro 返回总数 {total} 个，"
+                        "{state}"
+                    ).format(
+                        listed=inventory.get("listed_count", 0),
+                        total=inventory.get("reported_total", 0),
+                        state="清单未完全展开" if is_truncated else "清单已完整展开",
+                    )
+                )
+                alerts = monitor.get("alerts")
+                alerts = alerts if isinstance(alerts, list) else []
+                for alert in alerts:
+                    if not isinstance(alert, dict):
+                        continue
+                    bitpro_paper_lines.append(
+                        "- 告警 {level}/{code}: {message}".format(
+                            level=alert.get("level", "info"),
+                            code=alert.get("code", "unknown"),
+                            message=alert.get("message", "n/a"),
+                        )
+                    )
+                data_gaps = monitor.get("data_gaps")
+                data_gaps = data_gaps if isinstance(data_gaps, list) else []
+                for gap in data_gaps:
+                    bitpro_paper_lines.append(f"- 数据缺口: {gap}")
+                actions = monitor.get("recommended_actions")
+                actions = actions if isinstance(actions, list) else []
+                for action in actions:
+                    if not isinstance(action, dict):
+                        continue
+                    bitpro_paper_lines.append(
+                        "- 建议 {action}: {message}".format(
+                            action=action.get("action", "observe"),
+                            message=action.get("message", "n/a"),
+                        )
+                    )
             bitpro_paper_lines.append("")
         lifecycle_tool_names = {
             "bitpro_strategy_search",
@@ -1262,6 +1393,8 @@ class AgentKernel:
         }
         for record in tool_calls:
             tool_name = str(getattr(record, "tool_name", ""))
+            if bitpro_backtest_lines:
+                continue
             if tool_name not in lifecycle_tool_names:
                 continue
             payload = getattr(record, "output_json", {})

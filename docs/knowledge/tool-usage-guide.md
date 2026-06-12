@@ -208,6 +208,7 @@ hypertrade ask "用 BitPro MCP 读取 ETH 1H K线"
 hypertrade ask "用 BitPro skills 开发 ETH 趋势突破策略，回测并启动模拟盘验证"
 hypertrade ask "查看 BitPro 回测收益大于100%的策略有哪些"
 hypertrade ask "查看 BitPro 回测 result 196 的权益曲线和交易证据"
+hypertrade ask "监控 BitPro 所有运行中的模拟盘策略，给出异常和建议动作"
 ```
 
 API：
@@ -226,6 +227,7 @@ curl -sS "http://127.0.0.1:3334/api/bitpro/live/positions?symbol=ETH"
 - 策略生命周期 trace 里有 `bitpro.strategy_generate`、`bitpro.strategy_create`、`bitpro.strategy_update`、`bitpro.backtest_start_job`、`bitpro.backtest_get_job`、`bitpro.paper_configure` 或 `bitpro.paper_start`。
 - 回测收益排行或阈值问题 trace 里应有 `bitpro.backtest_list_results`，报告口径应写 `total_return_pct`，不能把 `annual_return_pct` 当成回测总收益。
 - 单个回测详情问题 trace 里应有 `bitpro.backtest_get_result`，报告应列出 result id、策略 id/name、真实指标，以及 equity curve、trades、orders、fills、drawdown series 的可用状态和样本数；缺失 artifact 必须写不可用，不能补假样本。
+- 模拟盘监控问题 trace 里应有 `bitpro.paper_dashboard` 和 `bitpro.strategy_search`，报告应包含 `监控结论`、告警、数据缺口和只读建议动作；如果 running 清单没有逐策略收益/回撤，必须写成缺失项，不能推断。
 - `/harness` 的 BitPro MCP 面板显示 `mcp_non_live_lifecycle`、API base、token 是否配置和实盘写关闭状态。
 - `BITPRO_MCP_API_TOKEN` 只在服务器环境配置，不能放进前端或仓库。
 - `live_promote`、真实下单、撤单、划转等实盘写工具仍然不应被调用。

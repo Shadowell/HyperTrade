@@ -137,6 +137,54 @@ def test_planner_report_distinguishes_bitpro_paper_dashboard_scope() -> None:
                             },
                         ],
                     },
+                    "monitor_summary": {
+                        "mode": "read_only",
+                        "current_dashboard": {
+                            "strategy_id": 105,
+                            "strategy_name": (
+                                "[合约][1H][CTA] SOL · EMA5/20趋势跟踪对照版 · 100U"
+                            ),
+                            "state": "running",
+                            "mode": "paper",
+                            "total_pnl_pct": "-3.3",
+                            "max_drawdown_pct": "12.4",
+                            "sharpe_ratio": "0.2",
+                            "equity": "96.7",
+                        },
+                        "running_inventory": {
+                            "listed_count": 2,
+                            "reported_total": 5,
+                            "is_truncated": True,
+                        },
+                        "alerts": [
+                            {
+                                "level": "warning",
+                                "code": "negative_pnl",
+                                "message": "当前 dashboard 策略总收益为负: -3.3%",
+                            },
+                            {
+                                "level": "warning",
+                                "code": "high_drawdown",
+                                "message": "当前 dashboard 策略最大回撤偏高: 12.4%",
+                            },
+                        ],
+                        "data_gaps": [
+                            (
+                                "running strategy inventory does not include "
+                                "per-strategy PnL/drawdown metrics"
+                            ),
+                        ],
+                        "recommended_actions": [
+                            {
+                                "action": "inspect_current_dashboard_strategy",
+                                "message": "优先检查当前 dashboard 策略 105 的成交、事件和权益曲线",
+                            },
+                            {
+                                "action": "continue_read_only_monitoring",
+                                "message": "继续只读监控；不要自动暂停、停止或实盘操作",
+                            },
+                        ],
+                    },
                     "tool_calls": [
                         {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
                         {"tool": "bitpro_health", "parameters": {}, "status": "success"},
@@ -158,6 +206,15 @@ def test_planner_report_distinguishes_bitpro_paper_dashboard_scope() -> None:
     assert "不能据此判断 BitPro 全局实盘功能关闭" in report
     assert "strategy_search(status=running) 返回 2 个" in report
     assert "293: [合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U [running]" in report
+    assert "监控结论: read_only" in report
+    assert "运行策略覆盖: 已列出 2 个，BitPro 返回总数 5 个，清单未完全展开" in report
+    assert "告警 warning/negative_pnl: 当前 dashboard 策略总收益为负: -3.3%" in report
+    assert (
+        "数据缺口: running strategy inventory does not include per-strategy "
+        "PnL/drawdown metrics"
+    ) in report
+    assert "建议 inspect_current_dashboard_strategy: 优先检查当前 dashboard 策略 105" in report
+    assert "建议 continue_read_only_monitoring: 继续只读监控" in report
     assert "paper_dashboard exposes the current BitPro paper dashboard only" in report
 
 
@@ -238,6 +295,85 @@ def test_planner_report_renders_bitpro_backtest_total_return_results() -> None:
     assert "收益 305.53878586955756%" in report
     assert "result #193, strategy #162" in report
     assert "Heikin Ashi趋势跟踪低频版" in report
+
+
+def test_planner_report_renders_completed_bitpro_backtest_job_result() -> None:
+    report = AgentKernel._render_planner_report(
+        "Planning loop reached max iterations.",
+        [
+            ToolCallRecord(
+                tool_name="bitpro_backtest_start_job",
+                input_json={"strategy_id": 292},
+                output_json={
+                    "status": "ok",
+                    "job": {"job_id": "job_292", "strategy_id": 292, "status": "started"},
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                        {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                        {"tool": "backtest_start_job", "parameters": {}, "status": "success"},
+                    ],
+                },
+            ),
+            ToolCallRecord(
+                tool_name="bitpro_backtest_get_job",
+                input_json={"job_id": "job_292"},
+                output_json={
+                    "status": "ok",
+                    "contract_version": "bitpro-mcp-v1",
+                    "job": {
+                        "job_id": "job_292",
+                        "strategy_id": 292,
+                        "status": "completed",
+                        "percent": 100.0,
+                        "updated_at": "2026-06-12 09:36:15",
+                    },
+                    "backtest_result": {
+                        "id": 197,
+                        "strategy_id": 292,
+                        "strategy_name": (
+                            "[合约][4H][CTA] Top20 · 波动压缩突破高收益实验 · 100U"
+                        ),
+                        "status": "completed",
+                        "start_date": "2026-01-01",
+                        "end_date": "2026-06-12",
+                        "timeframe": "4h",
+                        "metrics": {
+                            "total_return_pct": "9.701471818245139",
+                            "annual_return_pct": "23.1976",
+                            "max_drawdown_pct": "5.6088",
+                            "sharpe_ratio": "0.494",
+                            "win_rate_pct": "56.52",
+                            "trade_count": 23,
+                            "final_capital": "109.70147181824514",
+                        },
+                    },
+                    "artifact_summary": {
+                        "equity_curve": {"available": True, "count": 19461, "sample_count": 20},
+                        "trades": {"available": True, "count": 23, "sample_count": 20},
+                    },
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                        {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                        {"tool": "backtest_get_job", "parameters": {}, "status": "success"},
+                        {"tool": "backtest_list_results", "parameters": {}, "status": "success"},
+                    ],
+                },
+            ),
+        ],
+    )
+
+    assert "## BitPro 回测结果" in report
+    assert "回测任务: job=job_292, status=completed, progress=100.0%" in report
+    assert "result #197, strategy #292" in report
+    assert "波动压缩突破高收益实验" in report
+    assert "收益 9.701471818245139%" in report
+    assert "年化 23.1976%" in report
+    assert "回撤 5.6088%" in report
+    assert "胜率 56.52%" in report
+    assert "交易 23" in report
+    assert "权益曲线: 可用，19461 条" in report
+    assert "Planning loop reached max iterations" not in report
+    assert "## BitPro 策略生命周期" not in report
 
 
 def test_planner_report_renders_bitpro_backtest_artifact_detail() -> None:

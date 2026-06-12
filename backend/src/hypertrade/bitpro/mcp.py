@@ -8,6 +8,7 @@ write tools are blocked here.
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -400,10 +401,13 @@ class BitProToolAdapter:
         exchange: str = "okx",
         symbol: str | None = None,
         timeframe: str | None = None,
+        wait_for_result: bool = False,
+        poll_interval_sec: float = 2.0,
+        timeout_sec: float = 90.0,
     ) -> dict[str, Any]:
         self.last_tool_calls = []
         capabilities, health = self._preflight()
-        job = self._call(
+        raw_job = _ensure_dict(self._call(
             "backtest_start_job",
             {
                 "strategy_id": int(strategy_id),
@@ -414,26 +418,103 @@ class BitProToolAdapter:
                 "symbol": _normalize_bitpro_spot_symbol(symbol) if symbol else None,
                 "timeframe": _normalize_bitpro_timeframe(timeframe) if timeframe else None,
             },
-        )
-        return {
+        ))
+        payload: dict[str, Any] = {
             "status": "ok",
             "contract_version": str(capabilities.get("contract_version", "")),
             "health": health,
-            "job": job,
+            "job": _backtest_job_item(raw_job),
             "tool_calls": self.last_tool_calls,
         }
+        self._attach_backtest_result_from_job(payload, raw_job)
+        if wait_for_result and "backtest_result" not in payload:
+            job_id = _first_present(raw_job.get("job_id"), raw_job.get("id"))
+            if job_id:
+                polled_job = self._poll_backtest_job(
+                    job_id=str(job_id),
+                    poll_interval_sec=poll_interval_sec,
+                    timeout_sec=timeout_sec,
+                )
+                if polled_job is not None:
+                    payload["job"] = _backtest_job_item(polled_job)
+                    self._attach_backtest_result_from_job(payload, polled_job)
+                    payload["tool_calls"] = self.last_tool_calls
+        return payload
 
     def backtest_get_job(self, *, job_id: str) -> dict[str, Any]:
         self.last_tool_calls = []
         capabilities, health = self._preflight()
-        job = self._call("backtest_get_job", {"job_id": job_id})
-        return {
+        raw_job = _ensure_dict(self._call("backtest_get_job", {"job_id": job_id}))
+        job = _backtest_job_item(raw_job)
+        payload: dict[str, Any] = {
             "status": "ok",
             "contract_version": str(capabilities.get("contract_version", "")),
             "health": health,
             "job": job,
             "tool_calls": self.last_tool_calls,
         }
+        self._attach_backtest_result_from_job(payload, raw_job)
+        return payload
+
+    def _poll_backtest_job(
+        self,
+        *,
+        job_id: str,
+        poll_interval_sec: float,
+        timeout_sec: float,
+    ) -> dict[str, Any] | None:
+        deadline = time.monotonic() + max(0.0, float(timeout_sec))
+        last_job: dict[str, Any] | None = None
+        while True:
+            raw_job = _ensure_dict(self._call("backtest_get_job", {"job_id": job_id}))
+            last_job = raw_job
+            if _backtest_job_is_terminal(raw_job):
+                return raw_job
+            if time.monotonic() >= deadline:
+                return last_job
+            sleep_for = max(0.0, float(poll_interval_sec))
+            if sleep_for:
+                time.sleep(min(sleep_for, max(0.0, deadline - time.monotonic())))
+
+    def _attach_backtest_result_from_job(
+        self,
+        payload: dict[str, Any],
+        raw_job: dict[str, Any],
+    ) -> None:
+        result_raw = _backtest_result_from_job(raw_job)
+        if not result_raw:
+            return
+        result = _backtest_detail_item(result_raw, sample_limit=20)
+        matched_row = self._find_completed_backtest_result(raw_job=raw_job, result=result)
+        if matched_row is not None:
+            _merge_backtest_result_row(result, matched_row)
+        self._attach_strategy_names([result])
+        payload["backtest_result"] = result
+        payload["artifact_summary"] = _artifact_summary(result.get("artifacts", {}))
+        payload["tool_calls"] = self.last_tool_calls
+
+    def _find_completed_backtest_result(
+        self,
+        *,
+        raw_job: dict[str, Any],
+        result: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        status = str(raw_job.get("status") or result.get("status") or "").lower()
+        if status not in {"completed", "success", "succeeded", "done"}:
+            return None
+        try:
+            rows = self._fetch_backtest_result_rows(
+                status="completed",
+                sort_by="return",
+                sort_order="desc",
+                limit=200,
+            )
+        except Exception:
+            return None
+        for row in rows:
+            if _backtest_row_matches_result(row, result):
+                return row
+        return None
 
     def backtest_get_result(
         self,
@@ -662,6 +743,11 @@ class BitProToolAdapter:
                 running_strategies=running_strategies,
             ),
             "running_strategies": running_strategies,
+            "monitor_summary": _paper_monitor_summary(
+                dashboard,
+                running_strategies=running_strategies,
+                strategy_id_filter=strategy_id,
+            ),
             "tool_calls": self.last_tool_calls,
         }
 
@@ -972,6 +1058,10 @@ def _backtest_result_item(row: dict[str, Any]) -> dict[str, Any]:
             "timeframe": _first_present(row.get("timeframe"), row.get("period")),
             "symbol": row.get("symbol"),
             "symbols": row.get("symbols"),
+            "initial_capital": _decimal_text(row.get("initial_capital")),
+            "final_capital": _decimal_text(
+                _first_present(row.get("final_capital"), row.get("final_equity"))
+            ),
             "total_return_pct": _decimal_text(
                 _first_present(
                     row.get("total_return_pct"),
@@ -996,8 +1086,109 @@ def _backtest_result_item(row: dict[str, Any]) -> dict[str, Any]:
             "win_rate_pct": _decimal_text(
                 _first_present(row.get("win_rate_pct"), row.get("win_rate"))
             ),
+            "profit_factor": _decimal_text(row.get("profit_factor")),
             "trade_count": _first_present(row.get("trade_count"), row.get("total_trades")),
         }
+    )
+
+
+def _backtest_job_item(raw: dict[str, Any]) -> dict[str, Any]:
+    return _compact(
+        {
+            "job_id": _first_present(raw.get("job_id"), raw.get("id")),
+            "strategy_id": raw.get("strategy_id"),
+            "status": raw.get("status"),
+            "current_bar": raw.get("current_bar"),
+            "total_bars": raw.get("total_bars"),
+            "percent": _decimal_text(raw.get("percent")),
+            "progress": _first_present(raw.get("progress"), raw.get("percent")),
+            "message": raw.get("message"),
+            "error_message": raw.get("error_message") or raw.get("error"),
+            "updated_at": raw.get("updated_at"),
+            "resumable": raw.get("resumable"),
+        }
+    )
+
+
+def _backtest_result_from_job(raw: dict[str, Any]) -> dict[str, Any] | None:
+    result = raw.get("result") or raw.get("backtest_result")
+    if isinstance(result, dict):
+        return result
+    return None
+
+
+def _backtest_job_is_terminal(raw: dict[str, Any]) -> bool:
+    if _backtest_result_from_job(raw):
+        return True
+    status = str(raw.get("status") or "").lower()
+    return status in {
+        "completed",
+        "success",
+        "succeeded",
+        "done",
+        "failed",
+        "error",
+        "cancelled",
+        "canceled",
+    }
+
+
+def _merge_backtest_result_row(result: dict[str, Any], row: dict[str, Any]) -> None:
+    row_item = _backtest_result_item(row)
+    for key in (
+        "id",
+        "strategy_id",
+        "strategy_name",
+        "status",
+        "start_date",
+        "end_date",
+        "created_at",
+        "timeframe",
+        "symbol",
+        "symbols",
+    ):
+        if row_item.get(key) is not None:
+            result[key] = row_item[key]
+    metrics = result.get("metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+        result["metrics"] = metrics
+    metric_keys = {
+        "initial_capital",
+        "final_capital",
+        "total_return_pct",
+        "annual_return_pct",
+        "max_drawdown_pct",
+        "sharpe_ratio",
+        "win_rate_pct",
+        "profit_factor",
+        "trade_count",
+    }
+    for key in metric_keys:
+        if row_item.get(key) is not None:
+            metrics[key] = row_item[key]
+
+
+def _backtest_row_matches_result(row: dict[str, Any], result: dict[str, Any]) -> bool:
+    row_item = _backtest_result_item(row)
+    if not _same_optional(row_item.get("strategy_id"), result.get("strategy_id")):
+        return False
+    if not _same_optional(row_item.get("start_date"), result.get("start_date")):
+        return False
+    if not _same_optional(row_item.get("end_date"), result.get("end_date")):
+        return False
+    if not _same_optional_lower(row_item.get("timeframe"), result.get("timeframe")):
+        return False
+    result_metrics = result.get("metrics")
+    result_metrics = result_metrics if isinstance(result_metrics, dict) else {}
+    if not _same_decimal_optional(
+        row_item.get("total_return_pct"),
+        result_metrics.get("total_return_pct"),
+    ):
+        return False
+    return _same_decimal_optional(
+        row_item.get("final_capital"),
+        result_metrics.get("final_capital"),
     )
 
 
@@ -1061,9 +1252,13 @@ def _backtest_detail_metrics(raw: dict[str, Any]) -> dict[str, Any]:
                 "trades_count",
                 "number_of_trades",
             ),
+            "initial_capital": _decimal_text(
+                _detail_value(raw, "initial_capital", "starting_equity", "start_cash")
+            ),
             "final_capital": _decimal_text(
                 _detail_value(raw, "final_capital", "final_equity", "ending_equity")
             ),
+            "profit_factor": _decimal_text(_detail_value(raw, "profit_factor")),
         }
     )
 
@@ -1186,6 +1381,26 @@ def _first_present(*values: Any) -> Any:
     return None
 
 
+def _same_optional(left: Any, right: Any) -> bool:
+    if left is None or right is None:
+        return True
+    return str(left) == str(right)
+
+
+def _same_optional_lower(left: Any, right: Any) -> bool:
+    if left is None or right is None:
+        return True
+    return str(left).lower() == str(right).lower()
+
+
+def _same_decimal_optional(left: Any, right: Any) -> bool:
+    left_decimal = _decimal_or_none(left)
+    right_decimal = _decimal_or_none(right)
+    if left_decimal is None or right_decimal is None:
+        return True
+    return abs(left_decimal - right_decimal) <= Decimal("0.00000001")
+
+
 def _decimal_or_none(value: Any) -> Decimal | None:
     if value is None:
         return None
@@ -1237,6 +1452,159 @@ def _paper_dashboard_scope(
             "coverage_note": coverage_note,
         }
     )
+
+
+def _paper_monitor_summary(
+    dashboard: Any,
+    *,
+    running_strategies: dict[str, Any],
+    strategy_id_filter: int | None,
+) -> dict[str, Any]:
+    dashboard_dict = _ensure_dict(dashboard)
+    system = dashboard_dict.get("system")
+    system_dict = system if isinstance(system, dict) else {}
+    equity = dashboard_dict.get("equity")
+    equity_dict = equity if isinstance(equity, dict) else {}
+    performance = dashboard_dict.get("performance")
+    performance_dict = performance if isinstance(performance, dict) else {}
+    running_items_raw = running_strategies.get("items") if running_strategies else []
+    running_items = running_items_raw if isinstance(running_items_raw, list) else []
+    listed_count = len(running_items)
+    reported_total = running_strategies.get("total") if running_strategies else listed_count
+    if not isinstance(reported_total, int):
+        try:
+            reported_total = int(str(reported_total))
+        except (TypeError, ValueError):
+            reported_total = listed_count
+    is_truncated = reported_total > listed_count
+    total_pnl = _decimal_or_none(
+        _first_present(
+            performance_dict.get("total_pnl_pct"),
+            performance_dict.get("total_return_pct"),
+            performance_dict.get("pnl_pct"),
+        )
+    )
+    max_drawdown = _decimal_or_none(
+        _first_present(
+            performance_dict.get("max_drawdown"),
+            performance_dict.get("max_drawdown_pct"),
+        )
+    )
+    alerts: list[dict[str, str]] = []
+    if total_pnl is not None and total_pnl < 0:
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "negative_pnl",
+                "message": f"当前 dashboard 策略总收益为负: {_decimal_text(total_pnl)}%",
+            }
+        )
+    if max_drawdown is not None and max_drawdown >= Decimal("10"):
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "high_drawdown",
+                "message": f"当前 dashboard 策略最大回撤偏高: {_decimal_text(max_drawdown)}%",
+            }
+        )
+    if strategy_id_filter is None and reported_total == 0:
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "no_running_strategies",
+                "message": "BitPro strategy_search(status=running) 未返回运行中策略。",
+            }
+        )
+    if is_truncated:
+        alerts.append(
+            {
+                "level": "info",
+                "code": "truncated_inventory",
+                "message": (
+                    f"运行策略清单未完全展开: listed_count={listed_count}, "
+                    f"reported_total={reported_total}"
+                ),
+            }
+        )
+    has_strategy_metrics = all(
+        isinstance(item, dict)
+        and (
+            item.get("total_pnl_pct") is not None
+            or item.get("max_drawdown") is not None
+            or item.get("max_drawdown_pct") is not None
+        )
+        for item in running_items
+    )
+    missing_strategy_metrics = bool(
+        strategy_id_filter is None and running_items and not has_strategy_metrics
+    )
+    if missing_strategy_metrics:
+        alerts.append(
+            {
+                "level": "info",
+                "code": "missing_strategy_metrics",
+                "message": "运行策略清单缺少逐策略收益/回撤指标。",
+            }
+        )
+    data_gaps: list[str] = []
+    if missing_strategy_metrics:
+        data_gaps.append(
+            "running strategy inventory does not include per-strategy PnL/drawdown metrics"
+        )
+    if is_truncated:
+        data_gaps.append(
+            f"running strategy inventory is truncated; listed_count={listed_count} "
+            f"reported_total={reported_total}"
+        )
+    recommended_actions: list[dict[str, str]] = []
+    if any(alert["code"] in {"negative_pnl", "high_drawdown"} for alert in alerts):
+        recommended_actions.append(
+            {
+                "action": "inspect_current_dashboard_strategy",
+                "message": (
+                    "优先检查当前 dashboard 策略 "
+                    f"{system_dict.get('strategy_id', 'n/a')} 的成交、事件和权益曲线"
+                ),
+            }
+        )
+    if is_truncated:
+        recommended_actions.append(
+            {
+                "action": "fetch_full_running_strategy_inventory",
+                "message": "增加分页或缩小过滤条件，补齐全部运行中策略清单。",
+            }
+        )
+    recommended_actions.append(
+        {
+            "action": "continue_read_only_monitoring",
+            "message": "继续只读监控；不要自动暂停、停止或实盘操作",
+        }
+    )
+    return {
+        "mode": "read_only",
+        "current_dashboard": _compact(
+            {
+                "strategy_id": system_dict.get("strategy_id"),
+                "strategy_name": system_dict.get("strategy"),
+                "state": system_dict.get("state"),
+                "mode": system_dict.get("mode"),
+                "uptime": system_dict.get("uptime"),
+                "equity": _decimal_text(equity_dict.get("current")),
+                "total_pnl_pct": _decimal_text(total_pnl),
+                "max_drawdown_pct": _decimal_text(max_drawdown),
+                "sharpe_ratio": _decimal_text(performance_dict.get("sharpe_ratio")),
+            }
+        ),
+        "running_inventory": {
+            "listed_count": listed_count,
+            "reported_total": reported_total,
+            "is_truncated": is_truncated,
+            "source_tool": running_strategies.get("source_tool") if running_strategies else None,
+        },
+        "alerts": alerts,
+        "data_gaps": data_gaps,
+        "recommended_actions": recommended_actions,
+    }
 
 
 def _row_to_candle(row: dict[str, Any]) -> Candle:

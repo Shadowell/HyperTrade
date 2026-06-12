@@ -8,10 +8,12 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-36-bitpro-backtest-artifacts.md` (in progress locally)
+- `docs/contracts/sprint-37-paper-monitor-agent.md` (in progress locally)
 
 ## Latest Completed Work
 
+- Fixed BitPro backtest job result reporting: Agent-triggered `bitpro_backtest_start_job` now waits for the BitPro-owned job to reach a terminal state, normalizes the completed `job.result`, links it back to the saved BitPro result row when available, and renders a concise `BitPro 回测结果` section with page-parity metrics instead of a lifecycle polling log.
+- Added a deterministic BitPro paper monitor summary: unfiltered `bitpro_paper_dashboard` now returns `monitor_summary` with current dashboard equity/PnL/Sharpe/drawdown, running strategy inventory coverage, data gaps, alerts, and read-only recommended actions. Agent reports render a `监控结论` block and explicitly avoid inferring per-strategy PnL/drawdown when BitPro's running-strategy inventory does not include those metrics.
 - Added a read-only BitPro backtest detail evidence path: Agent tool `bitpro_backtest_get_result` now preflights `bitpro_capabilities`/`bitpro_health`, reads `backtest_get_result`, normalizes metrics plus bounded equity curve/trades/orders/fills/drawdown artifact samples, records nested `bitpro.backtest_get_result` trace evidence, and renders a dedicated `BitPro 回测详情` report section without synthesizing missing artifacts or appending model-generated evidence prose.
 - Clarified BitPro live-state reporting in HyperTrade: `live_trading_enabled` is now explicitly labeled as the HyperTrade MCP live write/order gate, `/harness` exposes the same scope/note, and the planner/report renderer are instructed not to infer BitPro paper/live runtime mode from that flag. Runtime mode should come from BitPro dashboard/live read tools instead; paper/dry-run dashboard evidence must not be summarized as BitPro globally having live trading disabled.
 - Upgraded the local strategy experiment workflow into a small evidence loop: `/experiment <prompt>` now runs baseline, fast, and conservative `momentum_breakout_v1` variants through normal Backtrader `BacktestRun` persistence, stores `variants`, `winner`, and `evidence_gates` in `strategy_experiments.report_json`, records the winning backtest id on the experiment row, and renders a candidate comparison table plus winning rationale in the report.
