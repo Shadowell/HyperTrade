@@ -326,7 +326,7 @@ class AgentApiClient:
         self.config = config
         self.client = http_client or httpx.Client(
             base_url=config.api_url.rstrip("/"),
-            timeout=config.timeout_seconds,
+            timeout=_request_timeout(config.timeout_seconds),
         )
 
     def login(self) -> None:
@@ -349,6 +349,7 @@ class AgentApiClient:
             "POST",
             self._url("/api/agent/runs/stream"),
             json={"prompt": prompt},
+            timeout=_stream_timeout(config=self.config),
         ) as response:
             response.raise_for_status()
             event_name = "message"
@@ -564,6 +565,17 @@ class AgentApiClient:
         if not isinstance(payload, dict):
             raise TypeError(f"{path} response must be a JSON object")
         return dict(payload)
+
+
+def _request_timeout(timeout_seconds: float) -> httpx.Timeout:
+    return httpx.Timeout(timeout=timeout_seconds)
+
+
+def _stream_timeout(*, config: CliConfig) -> httpx.Timeout:
+    # Long-running tools such as BitPro backtests may be silent while the server
+    # waits for the upstream job. Keep connect/write/pool bounded, but do not
+    # abort an active SSE stream merely because no event arrived for a while.
+    return httpx.Timeout(timeout=config.timeout_seconds, read=None)
 
 
 class LocalAgentClient:
@@ -971,23 +983,70 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
 
 
 def _banner_colors(output: TextIO) -> dict[str, str]:
+    colors = _semantic_colors(output)
+    return {
+        "reset": colors["reset"],
+        "border": colors["border"],
+        "title": colors["title"],
+        "subtitle": colors["subtitle"],
+        "section": colors["section"],
+        "cmd": colors["command"],
+        "label": colors["label"],
+        "value": colors["value"],
+        "muted": colors["muted"],
+    }
+
+
+def _semantic_colors(output: TextIO) -> dict[str, str]:
     supports_color = not os.getenv("NO_COLOR") and bool(getattr(output, "isatty", lambda: False)())
+    keys = (
+        "reset",
+        "border",
+        "title",
+        "subtitle",
+        "section",
+        "command",
+        "tool",
+        "category",
+        "approval",
+        "label",
+        "value",
+        "muted",
+        "info",
+        "success",
+        "warning",
+        "error",
+    )
     if not supports_color:
-        return dict.fromkeys(
-            ("reset", "border", "title", "subtitle", "section", "cmd", "label", "value", "muted"),
-            "",
-        )
+        return dict.fromkeys(keys, "")
     return {
         "reset": "\033[0m",
         "border": "\033[38;5;81m",
         "title": "\033[1;38;5;45m",
         "subtitle": "\033[38;5;117m",
         "section": "\033[1;38;5;183m",
-        "cmd": "\033[38;5;121m",
+        "command": "\033[38;5;121m",
+        "tool": "\033[38;5;111m",
+        "category": "\033[38;5;110m",
+        "approval": "\033[1;38;5;214m",
         "label": "\033[38;5;110m",
         "value": "\033[1;38;5;159m",
         "muted": "\033[38;5;246m",
+        "info": "\033[38;5;117m",
+        "success": "\033[38;5;120m",
+        "warning": "\033[38;5;214m",
+        "error": "\033[38;5;203m",
     }
+
+
+def _paint(text: object, style: str, *, output: TextIO) -> str:
+    value = str(text)
+    colors = _semantic_colors(output)
+    prefix = colors.get(style, "")
+    reset = colors.get("reset", "")
+    if not prefix:
+        return value
+    return f"{prefix}{value}{reset}"
 
 
 def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -> None:
@@ -1038,10 +1097,15 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
 
 
 def render_slash_help(*, output: TextIO) -> None:
-    print("Slash commands:", file=output)
+    print(_paint("Slash commands:", "section", output=output), file=output)
     command_width = max(len(command) for command, _ in SLASH_COMMAND_HELP)
     for command, description in SLASH_COMMAND_HELP:
-        print(f"- {command:<{command_width}}  {description}", file=output)
+        padded_command = f"{command:<{command_width}}"
+        print(
+            f"- {_paint(padded_command, 'command', output=output)}  "
+            f"{_paint(description, 'muted', output=output)}",
+            file=output,
+        )
 
 
 def handle_research_command(command: str, *, client: AgentClient, output: TextIO) -> None:
@@ -1674,16 +1738,22 @@ def render_providers(status: dict[str, Any], *, output: TextIO) -> None:
 
 
 def render_tools(items: list[dict[str, Any]], *, output: TextIO) -> None:
-    print("Tools:", file=output)
+    print(_paint("Tools:", "section", output=output), file=output)
     if not items:
         print("- none", file=output)
         return
     for item in items:
         description = str(item.get("description") or "No description configured.")
-        gate = " approval" if item.get("requires_approval") else ""
+        gate = (
+            f" {_paint('approval', 'approval', output=output)}"
+            if item.get("requires_approval")
+            else ""
+        )
+        name = _paint(item.get("name", "unknown"), "tool", output=output)
+        category = _paint(f"[{item.get('category', 'unknown')}]", "category", output=output)
         print(
-            f"- {item.get('name', 'unknown')} "
-            f"[{item.get('category', 'unknown')}]{gate}: {description}",
+            f"- {name} {category}{gate}: "
+            f"{_paint(description, 'muted', output=output)}",
             file=output,
         )
 
@@ -2655,24 +2725,59 @@ def render_run_stream(
             event_name = str(event.get("event", "message"))
             if event_name == "run_started":
                 animator.print_line(
-                    f"Agent status: run created ({event.get('run_id', 'pending')})"
+                    _status_line(
+                        f"Agent status: run created ({event.get('run_id', 'pending')})",
+                        "info",
+                        output=output,
+                    )
                 )
-                animator.print_line("Agent status: planning next tool call")
+                animator.print_line(
+                    _status_line(
+                        "Agent status: planning next tool call",
+                        "muted",
+                        output=output,
+                    )
+                )
                 animator.update("Planning next tool call")
             elif event_name == "tool_started":
                 tool_name = event.get("tool_name", "unknown")
-                animator.print_line(f"Agent status: executing tool {tool_name}")
+                animator.print_line(
+                    _status_line(
+                        f"Agent status: executing tool {tool_name}",
+                        "tool",
+                        output=output,
+                    )
+                )
                 animator.update(f"Executing tool {tool_name}")
             elif event_name == "tool_completed":
                 tool_name = event.get("tool_name", "unknown")
                 status = event.get("status", "completed")
-                animator.print_line(f"Agent status: tool {tool_name} {status}")
-                animator.print_line("Agent status: planning next step")
+                style = "success" if status == "completed" else "warning"
+                animator.print_line(
+                    _status_line(
+                        f"Agent status: tool {tool_name} {status}",
+                        style,
+                        output=output,
+                    )
+                )
+                animator.print_line(
+                    _status_line("Agent status: planning next step", "muted", output=output)
+                )
                 animator.update("Planning next step")
             elif event_name == "run_completed":
-                animator.print_line("Agent status: generating final report")
                 animator.print_line(
-                    f"Agent status: run completed ({event.get('run_id', 'unknown')})"
+                    _status_line(
+                        "Agent status: generating final report",
+                        "info",
+                        output=output,
+                    )
+                )
+                animator.print_line(
+                    _status_line(
+                        f"Agent status: run completed ({event.get('run_id', 'unknown')})",
+                        "success",
+                        output=output,
+                    )
                 )
                 animator.update("Generating final report")
                 if isinstance(event.get("run"), dict):
@@ -2681,10 +2786,16 @@ def render_run_stream(
                 animator.update("Rendering final report")
                 final_run = dict(event["run"])
             elif event_name == "error":
-                animator.print_line(f"Run failed: {event.get('error', 'unknown error')}")
+                animator.print_line(
+                    _status_line(
+                        f"Run failed: {event.get('error', 'unknown error')}",
+                        "error",
+                        output=output,
+                    )
+                )
     except httpx.HTTPError as exc:
         stream_failed = True
-        animator.print_line(_format_remote_api_error(exc))
+        animator.print_line(_status_line(_format_remote_api_error(exc), "error", output=output))
     finally:
         animator.stop()
     if stream_failed:
@@ -2693,21 +2804,41 @@ def render_run_stream(
         print("", file=output)
         render_run(final_run, output=output)
     else:
-        print("Run stream ended without final report.", file=output)
+        print(
+            _paint("Run stream ended without final report.", "warning", output=output),
+            file=output,
+        )
+
+
+def _status_line(text: str, style: str, *, output: TextIO) -> str:
+    return _paint(text, style, output=output)
 
 
 def _format_remote_api_error(exc: httpx.HTTPError) -> str:
     if isinstance(exc, httpx.HTTPStatusError):
         status_code = exc.response.status_code
+        if status_code == 401:
+            return (
+                "Remote API request failed (401). "
+                "Run ht /login again and confirm the username/password."
+            )
         return (
             f"Remote API request failed ({status_code}). "
             "The service may be deploying, or the credentials may be invalid."
         )
-    return "Remote API connection failed. The service may be deploying; wait a moment and retry."
+    if isinstance(exc, httpx.ReadTimeout):
+        return (
+            "Remote API connection timed out while waiting for the run. "
+            "The run may still be continuing remotely; retry in a moment or check /runs."
+        )
+    return (
+        "Remote API connection failed. The run may still be continuing remotely; "
+        "the network or service may have restarted. Retry in a moment or check /runs."
+    )
 
 
 def _print_remote_api_error(exc: httpx.HTTPError, *, output: TextIO) -> None:
-    print(_format_remote_api_error(exc), file=output)
+    print(_paint(_format_remote_api_error(exc), "error", output=output), file=output)
 
 
 class _ThinkingAnimator:

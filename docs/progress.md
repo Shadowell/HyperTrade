@@ -8,10 +8,12 @@
 
 ## Active Contract
 
-- No active implementation contract. Last completed: `docs/contracts/sprint-38-cli-history.md`.
+- No active implementation contract. Last completed: `docs/contracts/sprint-39-cli-semantic-colors.md`.
 
 ## Latest Completed Work
 
+- Added semantic CLI colors for interactive TTY output: slash-command help now colors commands/descriptions, `/tools` colors tool names/categories/approval markers/descriptions, Agent streaming status colors progress/tool/success/error lines, remote API errors use error color, and non-TTY or `NO_COLOR=1` output remains plain for scripts.
+- Fixed remote CLI streaming for long BitPro backtests: `hypertrade`/`ht` now keeps SSE reads open while preserving connect/write/pool timeouts, so a quiet upstream BitPro backtest does not bounce the local chat session with a misleading deploy/restart connection error. Remote connection error text now states that the run may still be continuing and points operators to retry or inspect `/runs`.
 - Added readline-backed interactive CLI command history: real TTY `hypertrade` chat sessions now load/write `~/.hypertrade/history`, add non-empty prompts and slash commands to history, skip consecutive duplicates, and keep non-TTY/script behavior unchanged so up-arrow recalls prior requests instead of printing escape sequences.
 - Fixed mixed-tool CLI rendering for BitPro paper monitoring: structured Agent output now keeps the `bitpro_paper_dashboard` monitor block when market ticker tools appear in the same run, instead of rendering only ticker sections and hiding the BitPro report evidence.
 - Fixed BitPro backtest job result reporting: Agent-triggered `bitpro_backtest_start_job` now waits for the BitPro-owned job to reach a terminal state, normalizes the completed `job.result`, links it back to the saved BitPro result row when available, and renders a concise `BitPro 回测结果` section with page-parity metrics instead of a lifecycle polling log.

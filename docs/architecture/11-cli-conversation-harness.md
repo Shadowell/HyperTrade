@@ -13,7 +13,10 @@ Configuration is environment-based:
   password to `~/.hypertrade/client.env` with local-only permissions.
 - `HYPERTRADE_API_URL` selects the API endpoint and makes remote mode the default unless `--local` is passed.
 - `HYPERTRADE_USERNAME` and `HYPERTRADE_PASSWORD` provide admin credentials.
-- `HYPERTRADE_TIMEOUT_SECONDS` controls HTTP timeout.
+- `HYPERTRADE_TIMEOUT_SECONDS` controls normal HTTP connect/write/read timeouts.
+  Agent SSE streaming keeps connect/write/pool bounded by this value but leaves
+  stream reads open, because long-running tools such as BitPro backtests can be
+  silent while the server waits for upstream completion.
 Saved client config is read before the runtime is selected, and explicit
 environment variables override the saved values for automation.
 
@@ -53,10 +56,16 @@ Run streaming uses a small stable event shape:
 
 The CLI renders these as progress lines before printing the final stored run report. This is
 progress streaming, not token-by-token model streaming.
+Remote streaming does not enforce a per-event read timeout. If a BitPro backtest or another
+long-running tool is quiet for more than the normal HTTP timeout, the CLI keeps waiting for the
+same server run instead of returning to the prompt with a false deploy/restart error.
 When stdout is an interactive terminal, the CLI also shows a small `Thought` / `Thinking`
 status block while waiting for planner or tool events. The block is cleared before durable
 status lines and the final report are printed, and non-TTY output stays plain for scripts.
 `HYPERTRADE_THINKING_ANIMATION=1` forces the block for smoke tests, while `0` disables it.
+Interactive TTY output also uses semantic ANSI colors for command names, tool names,
+categories, approval markers, progress, success, warning, and error states. `NO_COLOR=1`
+or non-TTY output keeps the same plain text used by scripts and logs.
 
 Report rendering prefers structured JSON/trace payloads when available. If a run only has
 Markdown, Rich-capable interactive output renders headings, lists, emphasis, and tables instead
@@ -84,7 +93,9 @@ CLI 是开发者 Harness，支持两种运行模式：
   `~/.hypertrade/client.env`，并设置为本机私有权限。
 - `HYPERTRADE_API_URL` 选择 API 地址，并让远程模式成为默认；传 `--local` 可以强制本地模式。
 - `HYPERTRADE_USERNAME` 与 `HYPERTRADE_PASSWORD` 提供管理员凭据。
-- `HYPERTRADE_TIMEOUT_SECONDS` 控制 HTTP 超时。
+- `HYPERTRADE_TIMEOUT_SECONDS` 控制普通 HTTP 请求的 connect/write/read 超时。Agent
+  SSE streaming 会继续用这个值限制 connect/write/pool，但读取流本身保持打开，因为 BitPro
+  回测等长任务在服务端等待上游完成期间可能暂时没有新事件。
 CLI 在选择本地/远程运行模式前会读取保存的本机配置；显式环境变量仍会覆盖保存值，方便自动化。
 
 生产宿主机上的 `/usr/local/bin/hypertrade` wrapper 会启动一个短生命周期的 CLI client
@@ -119,10 +130,14 @@ registry 描述：
 
 CLI 会先把这些事件渲染成进度行，再打印最终落库的 run 报告。这是进度流式，不是模型 token
 级流式。
+远程 streaming 不再设置“每隔多少秒必须收到一个事件”的 read timeout。BitPro 回测或其他长工具
+即使安静超过普通 HTTP 超时时间，CLI 也会继续等待同一个服务端 run，而不是误回到提示符并显示
+部署/重启类错误。
 当 stdout 是交互式终端时，CLI 会在等待 planner 或 tool 事件期间显示一个 `Thought` /
 `Thinking` 状态块；打印正式状态行和最终报告前会清理该动态块。非 TTY 输出仍保持纯文本，
 方便脚本和测试消费。`HYPERTRADE_THINKING_ANIMATION=1` 可用于 smoke 强制打开，`0`
 可关闭。
+交互式 TTY 输出也会按语义使用 ANSI 颜色：命令名、工具名、分类、approval 标记、进度、成功、警告和错误状态分别着色。设置 `NO_COLOR=1` 或在非 TTY 输出时仍保持脚本/日志友好的纯文本。
 
 报告渲染优先使用结构化 JSON/trace payload。只有 Markdown 的 run 在 Rich/交互式输出下会
 渲染成标题、列表、强调和表格，而不是直接打印 Markdown 源码。`HYPERTRADE_RENDERER=plain`

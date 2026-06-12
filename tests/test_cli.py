@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from io import StringIO
 from typing import Any
@@ -1159,6 +1160,27 @@ def test_slash_help_describes_every_command() -> None:
     )
 
 
+def test_slash_help_uses_semantic_colors_for_tty(monkeypatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    output = TtyStringIO()
+
+    render_slash_help(output=output)
+
+    rendered = output.getvalue()
+    assert "/help" in rendered
+    assert "Show this command list." in rendered
+    assert len(set(re.findall(r"\x1b\[[0-9;]+m", rendered))) >= 3
+
+
+def test_slash_help_keeps_plain_text_for_non_tty() -> None:
+    output = StringIO()
+
+    render_slash_help(output=output)
+
+    rendered = output.getvalue()
+    assert "\x1b[" not in rendered
+
+
 def test_render_tools_includes_tool_descriptions() -> None:
     output = StringIO()
 
@@ -1183,6 +1205,50 @@ def test_render_tools_includes_tool_descriptions() -> None:
     rendered = output.getvalue()
     assert "- market.summary [market]: Summarize market." in rendered
     assert "- live.order_intent [live] approval: Create order intent." in rendered
+
+
+def test_render_tools_uses_distinct_tty_colors(monkeypatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    output = TtyStringIO()
+
+    render_tools(
+        [
+            {
+                "name": "market.summary",
+                "category": "market",
+                "requires_approval": False,
+                "description": "Summarize market.",
+            },
+            {
+                "name": "live.order_intent",
+                "category": "live",
+                "requires_approval": True,
+                "description": "Create order intent.",
+            },
+        ],
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "market.summary" in rendered
+    assert "live.order_intent" in rendered
+    assert "approval" in rendered
+    assert len(set(re.findall(r"\x1b\[[0-9;]+m", rendered))) >= 4
+
+
+def test_run_stream_uses_status_colors_for_tty(monkeypatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("HYPERTRADE_THINKING_ANIMATION", "0")
+    client = FakeAgentClient()
+    output = TtyStringIO()
+
+    render_run_stream(client, "看下ETH行情", output=output)
+
+    rendered = output.getvalue()
+    assert "Agent status: run created" in rendered
+    assert "Agent status: executing tool market.summary" in rendered
+    assert "Agent status: tool market.summary completed" in rendered
+    assert len(set(re.findall(r"\x1b\[[0-9;]+m", rendered))) >= 3
 
 
 def test_bare_command_starts_chat_loop(capsys) -> None:
@@ -1358,6 +1424,54 @@ def test_api_client_logs_in_and_posts_agent_run() -> None:
         ("POST", "/api/auth/login", {"username": "admin", "password": "secret"}),
         ("POST", "/api/agent/runs", {"prompt": "hello"}),
     ]
+
+
+def test_api_client_stream_keeps_read_open_for_long_tools() -> None:
+    captured: dict[str, Any] = {}
+
+    class StreamResponse:
+        def __enter__(self) -> StreamResponse:
+            return self
+
+        def __exit__(self, *args: Any) -> bool:
+            return False
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_lines(self) -> Iterator[str]:
+            yield "event: run_completed"
+            yield 'data: {"run": {"id": "run_api", "status": "completed"}}'
+            yield ""
+
+    class CapturingStreamClient:
+        def stream(self, method: str, url: str, **kwargs: Any) -> StreamResponse:
+            captured["method"] = method
+            captured["url"] = url
+            captured["timeout"] = kwargs.get("timeout")
+            return StreamResponse()
+
+    client = AgentApiClient(
+        CliConfig(
+            api_url="http://example.test/",
+            username="admin",
+            password="secret",
+            timeout_seconds=3.0,
+        ),
+        http_client=CapturingStreamClient(),  # type: ignore[arg-type]
+    )
+
+    events = list(client.run_agent_events("hello"))
+
+    timeout = captured["timeout"]
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://example.test/api/agent/runs/stream"
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.connect == 3.0
+    assert timeout.write == 3.0
+    assert timeout.pool == 3.0
+    assert timeout.read is None
+    assert events == [{"event": "run_completed", "run": {"id": "run_api", "status": "completed"}}]
 
 
 def test_chat_runs_research_and_backtest_shortcuts(capsys) -> None:

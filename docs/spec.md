@@ -73,6 +73,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Sprint 36 BitPro backtest detail artifacts: `bitpro_backtest_get_result` reads one BitPro-owned result, normalizes metrics and bounded equity/trade/order/fill/drawdown samples, and reports missing artifacts as unavailable.
 - Sprint 37 BitPro paper monitor summary: `bitpro_paper_dashboard` produces current dashboard metrics, running strategy coverage, alerts, data gaps, and read-only recommended actions.
 - Sprint 38 CLI command history: real TTY `hypertrade` chat sessions use readline-backed history so arrow keys recall previous prompts instead of printing escape sequences.
+- Sprint 39 CLI semantic colors: real TTY output colors commands, tools, categories, approvals, status, success, warning, and error text while scripts and `NO_COLOR=1` remain plain.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
 - BitPro external API adapter contract for backtest data, base market data, paper/simulation state, and live trading state without copying BitPro business logic.
 
@@ -104,8 +105,11 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Developer can use the production host `hypertrade` wrapper as a remote client without attaching to the long-running API service container, so deploy-time API replacement does not terminate the terminal session.
 - Developer can run `hypertrade /login` or `ht /login` once on a local machine to save remote API URL, username, and password to `~/.hypertrade/client.env` with local-only permissions; later `ht` commands default to the saved remote API unless `--local` is passed.
 - Developer can see run/tool progress while `hypertrade ask` or interactive chat is still running.
+- Developer can keep a remote CLI Agent run open through silent long-running tools such as BitPro
+  backtests; SSE stream reads do not time out merely because no progress event arrived for a while.
 - Developer can see a live `Thought` / `Thinking` animation in interactive terminals while an Agent prompt is waiting for planning or tool results.
 - Developer can press the up arrow in an interactive `hypertrade` chat session to recall prior prompts from the current or saved local history.
+- Developer can distinguish command help, tool rows, Agent progress, success, warning, and error output by color in interactive terminals.
 - Developer can use CLI slash commands such as `/tools`, `/runs`, `/memory`, `/strategy`, and `/backtests` in interactive chat.
 - Developer can read a purpose description beside every `/help` slash command and every `/tools` Agent tool row.
 - Developer can run `/research <prompt>` and `/backtest` from interactive CLI chat to create research and backtest records.
