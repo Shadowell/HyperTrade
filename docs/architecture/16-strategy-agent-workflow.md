@@ -16,6 +16,7 @@ experiment.
 5. `critique`: summarize risk, sample-size limitations, and winning-variant caveats.
 6. `revision_suggestion`: propose the next adjacent parameter experiment.
 7. `report`: persist Markdown and structured JSON.
+8. `knowledge_memory`: persist one compact, audited `strategy_knowledge` memory item for future retrieval.
 
 ## Persistence
 
@@ -31,13 +32,25 @@ experiment.
 - Markdown report
 - structured JSON workflow output
 
+The existing Memory service stores the reusable strategy knowledge card rather
+than adding a separate strategy-library table. Each completed experiment writes
+one `strategy_knowledge` item with experiment/research/backtest ids, winning
+variant, parameters, return, drawdown, trade count, gates, data selection, and
+next-experiment guidance. Tags include `strategy`, `strategy_experiment`,
+`evidence`, the strategy key, and the winning variant so Agent runs can retrieve
+prior evidence through normal Memory search.
+
 ## Surfaces
 
 - API: `POST /api/strategy/experiments`
 - API: `GET /api/strategy/experiments`
+- API: `GET /api/memory?kind=strategy_knowledge`
 - CLI: `/experiment <prompt>`
+- CLI: `/memory search <strategy or variant>`
 - Frontend: latest experiment card in `/harness`
 
 All reports include a research-only disclaimer. The workflow remains local
 research only: it does not mutate BitPro strategy code, start paper simulation,
-or generate live/Testnet orders from a winning local backtest.
+or generate live/Testnet orders from a winning local backtest. Strategy
+knowledge memory keeps the same boundary and is evidence indexing, not
+promotion approval.

@@ -25,6 +25,13 @@ Memory v2 adds policy and retrieval metadata:
 
 Writes deduplicate exact active memory content by kind, merge tags, and increment usage. Search supports query, kind, and tag filters through API `/api/memory`, CLI `/memory search <query>`, and the frontend Memory Manager.
 
+Strategy experiments also write source-bound `strategy_knowledge` memory items.
+These are compact evidence cards, not generated strategy claims: each item
+points back to the experiment/backtest ids and includes winner, parameters,
+metrics, evidence gates, data selection, and next-experiment guidance. They use
+the same audited Memory lifecycle and can be found with
+`kind=strategy_knowledge`, strategy-key tags, or winning-variant tags.
+
 ## 中文
 
 Memory 自动写入，但必须可审计。每条 memory 记录 kind、content、source run id、source tool、时间戳和 disabled 状态。
@@ -49,3 +56,5 @@ Memory v2 增加策略和检索元数据：
 - `usage_count`
 
 写入时会按 kind + content 对 active memory 做精确去重，合并 tags 并增加使用次数。检索支持 query、kind、tag，可通过 API `/api/memory`、CLI `/memory search <query>` 和前端 Memory Manager 使用。
+
+策略实验也会写入带来源的 `strategy_knowledge` 记忆。这类条目是紧凑的证据卡，不是生成式策略结论：每条都回指 experiment/backtest id，并包含胜出版本、参数、指标、证据门槛、数据选择和下一轮实验建议。它们沿用同一套可审计 Memory 生命周期，可通过 `kind=strategy_knowledge`、策略 key 标签或胜出版本标签检索。

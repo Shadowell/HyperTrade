@@ -85,6 +85,35 @@ def test_strategy_experiment_workflow_api(tmp_path) -> None:
     assert experiments[0]["id"] == experiment["id"]
     assert overview["strategy_lab"]["latest_experiment"]["id"] == experiment["id"]
 
+    knowledge_items = client.get(
+        "/api/memory",
+        params={"kind": "strategy_knowledge", "tag": "strategy"},
+    ).json()["items"]
+    assert len(knowledge_items) == 1
+    knowledge = knowledge_items[0]
+    assert knowledge["source_run_id"] == experiment["id"]
+    assert knowledge["source_tool"] == "strategy.experiment"
+    assert "策略经验" in knowledge["content"]
+    assert f"experiment={experiment['id']}" in knowledge["content"]
+    assert f"backtest={winner['backtest_id']}" in knowledge["content"]
+    assert f"winner={winner['variant_id']}" in knowledge["content"]
+    assert "total_return_pct=" in knowledge["content"]
+    assert "max_drawdown_pct=" in knowledge["content"]
+    assert "next_experiment=" in knowledge["content"]
+    assert {
+        "strategy",
+        "strategy_knowledge",
+        "strategy_experiment",
+        "evidence",
+        "momentum_breakout_v1",
+        f"winner:{winner['variant_id']}",
+    } <= set(knowledge["tags"])
+    hits = client.get(
+        "/api/memory",
+        params={"kind": "strategy_knowledge", "query": winner["variant_id"]},
+    ).json()["items"]
+    assert hits[0]["id"] == knowledge["id"]
+
 
 def test_backtest_api_accepts_live_okx_candle_options(monkeypatch, tmp_path) -> None:
     db = Database("sqlite:///:memory:")

@@ -15,6 +15,7 @@ from sqlalchemy import desc, select
 
 from hypertrade.backtest.service import BacktestService
 from hypertrade.db import Database, StrategyExperiment
+from hypertrade.memory.service import MemoryService
 from hypertrade.strategy.service import StrategyResearchService
 
 MIN_TRADE_COUNT = 1
@@ -99,7 +100,9 @@ class StrategyExperimentService:
             )
             session.add(experiment)
             session.flush()
-            return _experiment_to_dict(experiment)
+            result = _experiment_to_dict(experiment)
+        _write_strategy_knowledge_memory(self.db, result)
+        return result
 
     def latest(self) -> dict[str, Any] | None:
         with self.db.session() as session:
@@ -313,3 +316,124 @@ def _experiment_to_dict(experiment: StrategyExperiment) -> dict[str, Any]:
         "report_json": experiment.report_json,
         "created_at": experiment.created_at.isoformat(),
     }
+
+
+def _write_strategy_knowledge_memory(db: Database, experiment: dict[str, Any]) -> None:
+    report_json = _as_dict(experiment.get("report_json"))
+    winner = _as_dict(report_json.get("winner"))
+    if not winner:
+        return
+    hypothesis = _as_dict(report_json.get("hypothesis"))
+    data_selection = _as_dict(report_json.get("data_selection"))
+    strategy_key = str(hypothesis.get("strategy_key", "") or winner.get("strategy_key", ""))
+    winner_id = str(winner.get("variant_id", ""))
+    MemoryService(db).write(
+        content=_render_strategy_knowledge_memory(
+            experiment=experiment,
+            report_json=report_json,
+            winner=winner,
+            strategy_key=strategy_key,
+        ),
+        kind="strategy_knowledge",
+        source_run_id=str(experiment.get("id", "")),
+        source_tool="strategy.experiment",
+        tags=_strategy_knowledge_tags(strategy_key=strategy_key, winner_id=winner_id),
+        importance=Decimal("0.82") if bool(winner.get("passed")) else Decimal("0.68"),
+        confidence=_strategy_knowledge_confidence(
+            winner=winner,
+            data_selection=data_selection,
+        ),
+    )
+
+
+def _render_strategy_knowledge_memory(
+    *,
+    experiment: dict[str, Any],
+    report_json: dict[str, Any],
+    winner: dict[str, Any],
+    strategy_key: str,
+) -> str:
+    metrics = _as_dict(winner.get("metrics"))
+    data_selection = _as_dict(report_json.get("data_selection"))
+    gates = _as_dict(report_json.get("evidence_gates"))
+    revision = _as_dict(report_json.get("revision_suggestion"))
+    return "\n".join(
+        [
+            "策略经验: local strategy experiment evidence",
+            (
+                f"experiment={experiment.get('id', '')}; "
+                f"research={experiment.get('research_id', '')}; "
+                f"backtest={winner.get('backtest_id', '')}; "
+                f"strategy={strategy_key}; "
+                f"winner={winner.get('variant_id', '')}; "
+                f"passed={str(bool(winner.get('passed'))).lower()}"
+            ),
+            f"params={_stable_mapping(_as_dict(winner.get('strategy_params')))}",
+            (
+                "metrics="
+                f"total_return_pct={metrics.get('total_return_pct', 'n/a')}; "
+                f"max_drawdown_pct={metrics.get('max_drawdown_pct', 'n/a')}; "
+                f"trade_count={metrics.get('trade_count', 'n/a')}; "
+                f"score={winner.get('score', 'n/a')}"
+            ),
+            (
+                "data="
+                f"source={data_selection.get('source', 'n/a')}; "
+                f"inst_id={data_selection.get('inst_id', '')}; "
+                f"bar={data_selection.get('bar', '')}; "
+                f"candle_count={data_selection.get('candle_count', 'n/a')}"
+            ),
+            f"evidence_gates={_stable_mapping(gates)}",
+            f"next_experiment={revision.get('next_experiment', '')}",
+            "boundary=research_only; no_bitpro_write; no_live_or_testnet_order",
+        ]
+    )
+
+
+def _strategy_knowledge_tags(*, strategy_key: str, winner_id: str) -> list[str]:
+    tags = [
+        "strategy",
+        "strategy_experiment",
+        "evidence",
+        "backtest",
+    ]
+    if strategy_key:
+        tags.append(strategy_key)
+        tags.append(f"strategy:{strategy_key}")
+    if winner_id:
+        tags.append(f"winner:{winner_id}")
+    return tags
+
+
+def _strategy_knowledge_confidence(
+    *,
+    winner: dict[str, Any],
+    data_selection: dict[str, Any],
+) -> Decimal:
+    metrics = _as_dict(winner.get("metrics"))
+    confidence = Decimal("0.62")
+    if str(data_selection.get("source", "")) not in {"", "sample_candles"}:
+        confidence += Decimal("0.08")
+    trade_count = _safe_int(metrics.get("trade_count", 0))
+    if trade_count >= 10:
+        confidence += Decimal("0.08")
+    elif trade_count >= 3:
+        confidence += Decimal("0.04")
+    return min(confidence, Decimal("0.90"))
+
+
+def _stable_mapping(mapping: dict[str, Any]) -> str:
+    if not mapping:
+        return "none"
+    return ", ".join(f"{key}={mapping[key]}" for key in sorted(mapping))
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0

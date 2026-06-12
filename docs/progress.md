@@ -8,10 +8,13 @@
 
 ## Active Contract
 
-- No active implementation contract. Last completed: `docs/contracts/sprint-39-cli-semantic-colors.md`.
+- No active implementation contract. Last completed: `docs/contracts/sprint-40-strategy-knowledge-memory.md`.
 
 ## Latest Completed Work
 
+- Kept default BitPro backtest Agent reports page-focused: completed backtest result/detail sections no longer include MCP contract/tool-order debug fields, lifecycle polling summaries, or RAG citation lists unless operators explicitly inspect trace/debug evidence.
+- Added Sprint 40 strategy knowledge memory sedimentation: completed local strategy experiments now write one audited `strategy_knowledge` Memory item with experiment/research/backtest ids, winning variant, parameters, return, drawdown, trade count, evidence gates, data selection, and next-experiment guidance. The item is tagged for strategy, experiment, evidence, strategy key, and winning variant searches so future Agent runs can retrieve prior evidence through existing Memory API/CLI/UI surfaces.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 131 tests.
 - Updated CLI structured BitPro rendering so `bitpro_backtest_get_result` appears as a dedicated backtest detail block in both Rich and plain output, and mixed ranking/detail runs no longer hide the page-parity result details behind the ranking table.
 - Suppressed BitPro lifecycle polling logs when a report already contains BitPro backtest result/detail evidence, so strategy backtest prompts stay focused on page-parity metrics and artifact availability instead of appending tool lifecycle rows.
 - Added semantic CLI colors for interactive TTY output: slash-command help now colors commands/descriptions, `/tools` colors tool names/categories/approval markers/descriptions, Agent streaming status colors progress/tool/success/error lines, remote API errors use error color, and non-TTY or `NO_COLOR=1` output remains plain for scripts.

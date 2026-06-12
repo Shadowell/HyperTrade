@@ -74,6 +74,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Sprint 37 BitPro paper monitor summary: `bitpro_paper_dashboard` produces current dashboard metrics, running strategy coverage, alerts, data gaps, and read-only recommended actions.
 - Sprint 38 CLI command history: real TTY `hypertrade` chat sessions use readline-backed history so arrow keys recall previous prompts instead of printing escape sequences.
 - Sprint 39 CLI semantic colors: real TTY output colors commands, tools, categories, approvals, status, success, warning, and error text while scripts and `NO_COLOR=1` remain plain.
+- Sprint 40 strategy knowledge memory: completed local strategy experiments now persist a source-bound `strategy_knowledge` memory item with winner, parameters, metrics, gates, data selection, and next-experiment guidance.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
 - BitPro external API adapter contract for backtest data, base market data, paper/simulation state, and live trading state without copying BitPro business logic.
 
@@ -128,6 +129,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Developer can search RAG citations and Memory from CLI/API/frontend.
 - Developer can create, approve, and execute OKX Testnet order intents after risk checks.
 - Developer can run `/experiment <prompt>` to create strategy research, compare multiple backtest variants, inspect the winning evidence, and read the next experiment recommendation.
+- Completed local strategy experiments are automatically searchable through Memory as `strategy_knowledge`, with source experiment/backtest ids and evidence metrics rather than unsourced strategy claims.
 - Developer can run `/evals` and inspect deterministic Agent eval status.
 - Operator can use `docs/knowledge/tool-usage-guide.md` to validate each Agent tool surface and follow related operational source-code comments.
 - Operator can review the BitPro tool-surface requirements before wiring external data, backtest, paper/simulation, or live-state APIs into Agent tools.
@@ -138,6 +140,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Agent can answer BitPro backtest ranking or threshold questions, such as `回测收益大于100%`, by calling `bitpro_backtest_list_results` and reporting `total_return_pct` from actual BitPro result rows instead of annualized return, strategy descriptions, memory, or inferred data.
 - Agent can inspect a specific BitPro backtest result id through `bitpro_backtest_get_result`, reporting real metrics and bounded artifact availability for equity curve, trades, orders, fills, and drawdown series without inventing missing rows.
 - Agent can run a named BitPro strategy backtest and return the completed BitPro result metrics from the saved result row or completed job result instead of a raw polling/lifecycle log.
+- Default BitPro backtest reports are page-focused: they hide MCP contract/tool-order details, lifecycle polling logs, and RAG citation lists unless the operator explicitly asks for trace/debug evidence.
 - Agent can answer BitPro paper/simulation inventory questions without mistaking the current `paper_dashboard` view for the full universe: unfiltered dashboard reads include `strategy_search(status=running)` inventory and reports distinguish current dashboard instance from all running strategies.
 - Agent can summarize BitPro paper monitoring state with source-bound alerts and read-only recommended actions, while calling out missing per-strategy PnL/drawdown metrics as data gaps rather than inferred facts.
 - PostgreSQL migration creates business tables and pgvector extension.
