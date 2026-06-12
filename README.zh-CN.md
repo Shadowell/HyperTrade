@@ -1,6 +1,6 @@
 # HyperTrade
 
-HyperTrade 是一个独立的生产级 Agent 交易研究与执行系统。它不在 BitPro 项目下开发，也不复用 BitPro 的 AI 研发/自主交易逻辑；BitPro 可以通过稳定 API 合同提供外部数据与交易状态能力，由 HyperTrade 封装成可审计工具。
+HyperTrade 是一个面向行情研究与执行的加密交易 Agent。它不在 BitPro 项目下开发，也不复用 BitPro 的 AI 研发/自主交易逻辑；BitPro 可以通过稳定 API 合同提供外部数据与交易状态能力，由 HyperTrade 封装成可审计工具。
 
 > 本项目输出仅用于研究辅助，不构成任何投资建议。
 

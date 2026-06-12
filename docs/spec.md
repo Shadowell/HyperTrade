@@ -2,9 +2,9 @@
 
 ## Product Summary
 
-HyperTrade is an independent production-oriented agent-first crypto trading system. V1 focuses on a stable agent capability platform: provider configuration, tool calls, RAG, memory, trace, market ingestion, risk gates, testnet execution, BitPro strategy lifecycle orchestration, and operator-facing harnesses.
+HyperTrade is a crypto trading agent for market research and execution. V1 focuses on stable agent capabilities: provider configuration, tool calls, RAG, memory, trace, market ingestion, risk gates, testnet execution, BitPro strategy lifecycle orchestration, and operator-facing harnesses.
 
-HyperTrade 是一个独立的生产级 Agent 交易系统。V1 重点是稳定 Agent 能力平台：Provider 配置、Tool Call、RAG、Memory、Trace、行情采集、风控门禁、Testnet 执行、BitPro 策略生命周期编排和面向操作员的 Harness。
+HyperTrade 是一个面向行情研究与执行的加密交易 Agent。V1 重点是稳定 Agent 能力：Provider 配置、Tool Call、RAG、Memory、Trace、行情采集、风控门禁、Testnet 执行、BitPro 策略生命周期编排和面向操作员的 Harness。
 
 BitPro is treated as the base trading-system platform: it owns market/reference data, strategy storage, backtest execution, metrics, paper/simulation runtime, and future live execution. HyperTrade is the Agent control and research layer: it discovers BitPro capabilities, reads/writes through MCP tools only, generates and validates `BaseStrategy` code, starts BitPro-owned backtests, inspects real evidence, and promotes only passing candidates into paper simulation. HyperTrade must not copy BitPro business logic or bypass BitPro risk boundaries.
 

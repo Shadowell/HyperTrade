@@ -872,7 +872,7 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
     )
     print(
         f"{color['border']}║{color['reset']}"
-        f"{color['subtitle']}         Agent-First Crypto Research and Execution CLI       "
+        f"{color['subtitle']}   A crypto trading agent for market research and execution   "
         f"{color['reset']}"
         f"{color['border']}║{color['reset']}",
         file=output,

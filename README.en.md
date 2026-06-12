@@ -1,6 +1,6 @@
 # HyperTrade
 
-HyperTrade is an independent agent-first crypto trading research and execution system. It is not developed inside BitPro and does not copy BitPro's AI research or autonomous trading logic. BitPro can provide external data and execution-state APIs through stable contracts that HyperTrade exposes as auditable tools.
+HyperTrade is a crypto trading agent for market research and execution. It is independent from BitPro and does not copy BitPro's AI research or autonomous trading logic. BitPro can provide external data and execution-state APIs through stable contracts that HyperTrade exposes as auditable tools.
 
 > Research output only. Nothing in this repository is investment advice.
 

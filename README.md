@@ -2,7 +2,7 @@
 
 [中文](README.zh-CN.md) | [English](README.en.md)
 
-HyperTrade is a production-oriented agent-first crypto trading research and execution harness. Current V1 covers observable Agent graph runs, provider routing, tool calling, RAG citations, audited Memory, OKX market research, paper trading, strategy experiments, risk-gated live intents, OKX Testnet signed execution, and a BitPro MCP adapter for external data access plus non-live strategy lifecycle workflows.
+HyperTrade is a crypto trading agent for market research and execution. Current V1 covers observable Agent graph runs, provider routing, tool calling, RAG citations, audited Memory, OKX market research, paper trading, strategy experiments, risk-gated live intents, OKX Testnet signed execution, and a BitPro MCP adapter for external data access plus non-live strategy lifecycle workflows.
 
 > Research output only. Nothing in this repository is investment advice.
 
