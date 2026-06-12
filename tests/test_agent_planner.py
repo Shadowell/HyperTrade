@@ -310,6 +310,7 @@ def test_planner_prompt_does_not_treat_bitpro_live_gate_as_runtime_status() -> N
 
     assert "Do not infer BitPro live runtime status" in prompt
     assert "live_trading_enabled" in prompt
+    assert "live write/order gate" in prompt
     assert "bitpro_paper_dashboard" in prompt
 
 

@@ -103,8 +103,9 @@ def test_bitpro_capabilities_label_live_flag_as_mcp_gate() -> None:
     capabilities = client.call_tool("bitpro_capabilities", {})
 
     assert capabilities["live_trading_enabled"] is False
-    assert capabilities["live_trading_enabled_scope"] == "hypertrade_mcp_live_mutation_gate"
+    assert capabilities["live_trading_enabled_scope"] == "hypertrade_mcp_live_write_gate"
     assert "not the BitPro runtime mode" in capabilities["live_trading_enabled_note"]
+    assert "write/order tools" in capabilities["live_trading_enabled_note"]
 
 
 def test_bitpro_mcp_client_allows_research_backtest_and_paper_writes() -> None:

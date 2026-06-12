@@ -736,10 +736,10 @@ def bitpro_capabilities() -> dict[str, Any]:
         },
         "data_policy": "real_market_data_only_no_mock_or_synthetic_ohlcv",
         "live_trading_enabled": False,
-        "live_trading_enabled_scope": "hypertrade_mcp_live_mutation_gate",
+        "live_trading_enabled_scope": "hypertrade_mcp_live_write_gate",
         "live_trading_enabled_note": (
             "This flag describes whether HyperTrade exposes BitPro MCP live "
-            "mutation tools. It is not the BitPro runtime mode or proof that "
+            "write/order tools. It is not the BitPro runtime mode or proof that "
             "BitPro has no live trading configured."
         ),
     }

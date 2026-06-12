@@ -563,7 +563,7 @@ Use market_compare when the user asks to compare two or more symbols, relative
 strength, 哪个更强, 跑赢, 强弱, or leader/laggard.
 Use bitpro_capabilities and bitpro_health before BitPro-specific read tools.
 Do not infer BitPro live runtime status from bitpro_capabilities.live_trading_enabled;
-that flag is the HyperTrade MCP live mutation gate. Use bitpro_paper_dashboard
+that flag is the HyperTrade MCP live write/order gate. Use bitpro_paper_dashboard
 or BitPro live read tools to describe the connected BitPro runtime mode.
 Use bitpro_market_klines when the user explicitly asks for BitPro MCP, BitPro data,
 or BitPro direct K-line access. Keep BitPro live-position reads diagnostic-only.
