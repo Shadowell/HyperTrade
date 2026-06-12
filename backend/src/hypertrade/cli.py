@@ -2018,6 +2018,8 @@ def _render_rich_tool_report(
             _render_rich_compare(payload, console=console)
         elif tool_name == "bitpro_backtest_list_results":
             _render_rich_bitpro_backtest_results(payload, console=console)
+        elif tool_name == "bitpro_paper_dashboard":
+            _render_rich_bitpro_paper_dashboard(payload, console=console)
 
 
 def _render_rich_ticker(payload: dict[str, Any], *, console: Any) -> None:
@@ -2080,6 +2082,90 @@ def _render_rich_compare(payload: dict[str, Any], *, console: Any) -> None:
                 str(row.get("trend_bias", "unknown")),
             )
     console.print(table)
+
+
+def _render_rich_bitpro_paper_dashboard(payload: dict[str, Any], *, console: Any) -> None:
+    from rich.panel import Panel
+    from rich.table import Table
+
+    dashboard = payload.get("dashboard")
+    dashboard = dashboard if isinstance(dashboard, dict) else {}
+    system = dashboard.get("system")
+    system = system if isinstance(system, dict) else {}
+    equity = dashboard.get("equity")
+    equity = equity if isinstance(equity, dict) else {}
+    performance = dashboard.get("performance")
+    performance = performance if isinstance(performance, dict) else {}
+    scope = payload.get("paper_scope")
+    scope = scope if isinstance(scope, dict) else {}
+    running = payload.get("running_strategies")
+    running = running if isinstance(running, dict) else {}
+    monitor = payload.get("monitor_summary")
+    monitor = monitor if isinstance(monitor, dict) else {}
+    inventory = monitor.get("running_inventory")
+    inventory = inventory if isinstance(inventory, dict) else {}
+    alerts = monitor.get("alerts")
+    alerts = alerts if isinstance(alerts, list) else []
+    data_gaps = monitor.get("data_gaps")
+    data_gaps = data_gaps if isinstance(data_gaps, list) else []
+    actions = monitor.get("recommended_actions")
+    actions = actions if isinstance(actions, list) else []
+
+    listed = inventory.get("listed_count", 0)
+    total = inventory.get("reported_total", running.get("total", listed))
+    coverage = "truncated" if inventory.get("is_truncated") else "complete"
+    summary = "\n".join(
+        [
+            f"合同: {payload.get('contract_version', 'unknown')}",
+            f"范围: {scope.get('dashboard_scope', 'unknown')}",
+            (
+                "当前: strategy_id={strategy_id}, {name}, state={state}, "
+                "mode={mode}, uptime={uptime}"
+            ).format(
+                strategy_id=system.get("strategy_id", "n/a"),
+                name=system.get("strategy", "n/a"),
+                state=system.get("state", "n/a"),
+                mode=system.get("mode", "n/a"),
+                uptime=system.get("uptime", "n/a"),
+            ),
+            (
+                "绩效: equity={equity}, pnl={pnl}, sharpe={sharpe}, drawdown={drawdown}"
+            ).format(
+                equity=_format_number(equity.get("current")),
+                pnl=_format_percent(performance.get("total_pnl_pct")),
+                sharpe=_format_number(performance.get("sharpe_ratio"), digits=4),
+                drawdown=_format_percent(performance.get("max_drawdown")),
+            ),
+            (
+                f"监控: {monitor.get('mode', 'unknown')} | "
+                f"running listed={listed}, total={total}, {coverage}"
+            ),
+        ]
+    )
+    console.print(Panel(summary, title="BitPro 模拟盘监控", border_style="green"))
+
+    if alerts or data_gaps or actions:
+        table = Table(title="Monitor Findings", show_header=True, header_style="bold", expand=True)
+        table.add_column("Type", ratio=2)
+        table.add_column("Code", ratio=3)
+        table.add_column("Message", ratio=7, overflow="fold")
+        for alert in alerts:
+            if isinstance(alert, dict):
+                table.add_row(
+                    str(alert.get("level", "info")),
+                    str(alert.get("code", "unknown")),
+                    str(alert.get("message", "n/a")),
+                )
+        for gap in data_gaps:
+            table.add_row("gap", "-", str(gap))
+        for action in actions:
+            if isinstance(action, dict):
+                table.add_row(
+                    "action",
+                    str(action.get("action", "observe")),
+                    str(action.get("message", "n/a")),
+                )
+        console.print(table)
 
 
 def _render_rich_bitpro_backtest_results(payload: dict[str, Any], *, console: Any) -> None:
@@ -2218,6 +2304,7 @@ def _has_structured_market_tool_output(trace_events: list[Any]) -> bool:
         "market_candles",
         "market_compare",
         "bitpro_backtest_list_results",
+        "bitpro_paper_dashboard",
     }
     for event in trace_events:
         if not isinstance(event, dict):
@@ -2249,6 +2336,8 @@ def _render_structured_tool_report(
             _render_tool_compare_block(payload, output=output)
         elif tool_name == "bitpro_backtest_list_results":
             _render_tool_bitpro_backtest_block(payload, output=output)
+        elif tool_name == "bitpro_paper_dashboard":
+            _render_tool_bitpro_paper_block(payload, output=output)
 
 def _render_tool_ticker_block(payload: dict[str, Any], *, output: TextIO) -> None:
     print("", file=output)
@@ -2289,8 +2378,94 @@ def _render_tool_compare_block(payload: dict[str, Any], *, output: TextIO) -> No
                     return_pct=row.get("return_pct", "n/a"),
                     bias=row.get("trend_bias", "unknown"),
                 ),
-                file=output,
-            )
+            file=output,
+        )
+
+
+def _render_tool_bitpro_paper_block(payload: dict[str, Any], *, output: TextIO) -> None:
+    dashboard = payload.get("dashboard")
+    dashboard = dashboard if isinstance(dashboard, dict) else {}
+    system = dashboard.get("system")
+    system = system if isinstance(system, dict) else {}
+    equity = dashboard.get("equity")
+    equity = equity if isinstance(equity, dict) else {}
+    performance = dashboard.get("performance")
+    performance = performance if isinstance(performance, dict) else {}
+    scope = payload.get("paper_scope")
+    scope = scope if isinstance(scope, dict) else {}
+    running = payload.get("running_strategies")
+    running = running if isinstance(running, dict) else {}
+    monitor = payload.get("monitor_summary")
+    monitor = monitor if isinstance(monitor, dict) else {}
+    inventory = monitor.get("running_inventory")
+    inventory = inventory if isinstance(inventory, dict) else {}
+    alerts = monitor.get("alerts")
+    alerts = alerts if isinstance(alerts, list) else []
+    data_gaps = monitor.get("data_gaps")
+    data_gaps = data_gaps if isinstance(data_gaps, list) else []
+    actions = monitor.get("recommended_actions")
+    actions = actions if isinstance(actions, list) else []
+
+    print("", file=output)
+    print("BitPro Paper Monitor:", file=output)
+    print(f"- Contract: {payload.get('contract_version', 'unknown')}", file=output)
+    print(f"- Dashboard scope: {scope.get('dashboard_scope', 'unknown')}", file=output)
+    print(
+        "- Current dashboard: strategy_id={strategy_id}, {name}, "
+        "state={state}, mode={mode}, uptime={uptime}".format(
+            strategy_id=system.get("strategy_id", "n/a"),
+            name=system.get("strategy", "n/a"),
+            state=system.get("state", "n/a"),
+            mode=system.get("mode", "n/a"),
+            uptime=system.get("uptime", "n/a"),
+        ),
+        file=output,
+    )
+    print(
+        "- Performance: equity={equity}, pnl={pnl}, sharpe={sharpe}, drawdown={drawdown}".format(
+            equity=_format_number(equity.get("current")),
+            pnl=_format_percent(performance.get("total_pnl_pct")),
+            sharpe=_format_number(performance.get("sharpe_ratio"), digits=4),
+            drawdown=_format_percent(performance.get("max_drawdown")),
+        ),
+        file=output,
+    )
+    if monitor:
+        listed = inventory.get("listed_count", 0)
+        total = inventory.get("reported_total", running.get("total", listed))
+        state = "truncated" if inventory.get("is_truncated") else "complete"
+        print(f"- Monitor: {monitor.get('mode', 'unknown')}", file=output)
+        print(
+            f"- Running coverage: listed={listed}, reported_total={total}, state={state}",
+            file=output,
+        )
+        if alerts:
+            print("- Alerts:", file=output)
+            for alert in alerts:
+                if isinstance(alert, dict):
+                    print(
+                        "  - {level}/{code}: {message}".format(
+                            level=alert.get("level", "info"),
+                            code=alert.get("code", "unknown"),
+                            message=alert.get("message", "n/a"),
+                        ),
+                        file=output,
+                    )
+        if data_gaps:
+            print("- Data gaps:", file=output)
+            for gap in data_gaps:
+                print(f"  - {gap}", file=output)
+        if actions:
+            print("- Suggested read-only actions:", file=output)
+            for action in actions:
+                if isinstance(action, dict):
+                    print(
+                        "  - {action}: {message}".format(
+                            action=action.get("action", "observe"),
+                            message=action.get("message", "n/a"),
+                        ),
+                        file=output,
+                    )
 
 
 def _render_tool_bitpro_backtest_block(payload: dict[str, Any], *, output: TextIO) -> None:

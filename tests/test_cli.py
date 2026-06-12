@@ -558,6 +558,82 @@ def test_render_run_prefers_structured_tool_outputs_over_planner_markdown(capsys
     assert "Research output only. Not investment advice." not in output
 
 
+def test_render_run_structured_output_keeps_bitpro_paper_monitor(capsys) -> None:
+    render_run(
+        {
+            "id": "run_paper_monitor",
+            "status": "completed",
+            "report_markdown": "## BitPro 模拟盘状态\n\n- 监控结论: read_only",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {
+                    "tool_name": "market_ticker",
+                    "status": "completed",
+                    "output_json": {
+                        "found": True,
+                        "inst_id": "ETH-USDT-SWAP",
+                        "last": "3500.000000000000",
+                        "change_utc0_pct": "1.230000",
+                        "volume_ccy_24h": "987654.000000000000",
+                        "data_source": "okx_rest",
+                    },
+                },
+                {
+                    "tool_name": "bitpro_paper_dashboard",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "contract_version": "bitpro-mcp-v1",
+                        "dashboard": {
+                            "system": {
+                                "strategy_id": 105,
+                                "strategy": "SOL EMA monitor",
+                                "state": "running",
+                                "mode": "paper",
+                                "uptime": "29D",
+                            },
+                            "equity": {"current": "104.36"},
+                            "performance": {
+                                "total_pnl_pct": "4.36",
+                                "sharpe_ratio": "1.3222",
+                                "max_drawdown": "4.29",
+                            },
+                        },
+                        "paper_scope": {"dashboard_scope": "current_instance"},
+                        "running_strategies": {"total": 11},
+                        "monitor_summary": {
+                            "mode": "read_only",
+                            "running_inventory": {
+                                "listed_count": 11,
+                                "reported_total": 11,
+                                "is_truncated": False,
+                            },
+                            "alerts": [],
+                            "data_gaps": [
+                                "running strategy inventory lacks per-strategy PnL/drawdown metrics"
+                            ],
+                            "recommended_actions": [
+                                {
+                                    "action": "continue_read_only_monitoring",
+                                    "message": "No write action was suggested.",
+                                }
+                            ],
+                        },
+                    },
+                },
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "Ticker:" in output
+    assert "BitPro Paper Monitor:" in output
+    assert "Monitor: read_only" in output
+    assert "Running coverage: listed=11, reported_total=11, state=complete" in output
+    assert "Data gaps:" in output
+    assert "Suggested read-only actions:" in output
+
+
 def test_welcome_banner_does_not_repeat_fixed_risk_warning() -> None:
     output = StringIO()
 
