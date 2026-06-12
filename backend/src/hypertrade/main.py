@@ -349,6 +349,12 @@ def create_app(
                     "auth_header": app_settings.bitpro_mcp_auth_header,
                     "token_configured": bool(app_settings.bitpro_mcp_api_token),
                     "live_write_enabled": False,
+                    "live_write_scope": "hypertrade_mcp_live_mutation_gate",
+                    "live_write_note": (
+                        "HyperTrade currently blocks BitPro MCP live mutation tools; "
+                        "this is not BitPro runtime mode. Use BitPro live dashboard "
+                        "or live read tools to inspect paper/live strategy state."
+                    ),
                     "tools": [
                         "bitpro_capabilities",
                         "bitpro_health",

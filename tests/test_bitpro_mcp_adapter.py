@@ -88,6 +88,25 @@ def test_bitpro_mcp_client_rejects_live_write_tools_before_http() -> None:
         client.call_tool("trading_futures_order", {"symbol": "ETH/USDT:USDT"})
 
 
+def test_bitpro_capabilities_label_live_flag_as_mcp_gate() -> None:
+    client = BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: (_ for _ in ()).throw(
+                    AssertionError(f"capabilities should stay local: {request.url}")
+                )
+            )
+        ),
+    )
+
+    capabilities = client.call_tool("bitpro_capabilities", {})
+
+    assert capabilities["live_trading_enabled"] is False
+    assert capabilities["live_trading_enabled_scope"] == "hypertrade_mcp_live_mutation_gate"
+    assert "not the BitPro runtime mode" in capabilities["live_trading_enabled_note"]
+
+
 def test_bitpro_mcp_client_allows_research_backtest_and_paper_writes() -> None:
     seen: list[dict[str, Any]] = []
 

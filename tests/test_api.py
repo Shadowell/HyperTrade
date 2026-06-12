@@ -360,6 +360,8 @@ def test_api_exposes_bitpro_mcp_read_adapter(tmp_path):
     assert overview["bitpro"]["adapter"] == "mcp_non_live_lifecycle"
     assert overview["bitpro"]["configured"] is True
     assert overview["bitpro"]["live_write_enabled"] is False
+    assert overview["bitpro"]["live_write_scope"] == "hypertrade_mcp_live_mutation_gate"
+    assert "not BitPro runtime mode" in overview["bitpro"]["live_write_note"]
     assert "strategy_create" in overview["bitpro"]["tools"]
     assert "strategy_update" in overview["bitpro"]["tools"]
     assert "paper_start" in overview["bitpro"]["tools"]

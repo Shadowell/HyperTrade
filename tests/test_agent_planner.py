@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
+from hypertrade.agent import planner as planner_module
 from hypertrade.agent.planner import TOOL_SCHEMAS, AgentPlanner, PlannerResult
 from hypertrade.providers.deepseek import ChatResponse, ToolCallRequest
 
@@ -302,6 +303,14 @@ def test_bitpro_backtest_list_results_schema_requires_total_return_metric() -> N
     assert "annualized" in description
     assert "回测收益大于100%" in description
     assert properties["min_total_return_pct"]["type"] == "number"
+
+
+def test_planner_prompt_does_not_treat_bitpro_live_gate_as_runtime_status() -> None:
+    prompt = planner_module._SYSTEM_PROMPT
+
+    assert "Do not infer BitPro live runtime status" in prompt
+    assert "live_trading_enabled" in prompt
+    assert "bitpro_paper_dashboard" in prompt
 
 
 class TestAgentPlannerDeepSeekReasoningContent:
