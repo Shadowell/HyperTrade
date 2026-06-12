@@ -1052,14 +1052,11 @@ class AgentKernel:
             payload = getattr(record, "output_json", {})
             if not isinstance(payload, dict) or payload.get("status") != "ok":
                 continue
-            nested_tools = _nested_bitpro_tools(payload)
             result_filter = payload.get("filter")
             result_filter = result_filter if isinstance(result_filter, dict) else {}
             min_return = result_filter.get("min_total_return_pct")
             bitpro_backtest_lines.extend(
                 [
-                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
-                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
                     (
                         "- 口径: total_return_pct，实际回测总收益；"
                         "不使用 annual_return_pct/年化收益替代"
@@ -1109,7 +1106,6 @@ class AgentKernel:
             result = payload.get("backtest_result")
             if not isinstance(result, dict):
                 continue
-            nested_tools = _nested_bitpro_tools(payload)
             job = payload.get("job")
             job = job if isinstance(job, dict) else {}
             metrics = result.get("metrics")
@@ -1117,8 +1113,6 @@ class AgentKernel:
             progress = job.get("percent", job.get("progress", "n/a"))
             bitpro_backtest_lines.extend(
                 [
-                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
-                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
                     (
                         "- 口径: total_return_pct，实际回测总收益；"
                         "与 BitPro 回测结果页面同源"
@@ -1192,15 +1186,12 @@ class AgentKernel:
             payload = getattr(record, "output_json", {})
             if not isinstance(payload, dict) or payload.get("status") != "ok":
                 continue
-            nested_tools = _nested_bitpro_tools(payload)
             result = payload.get("result")
             result = result if isinstance(result, dict) else {}
             metrics = result.get("metrics")
             metrics = metrics if isinstance(metrics, dict) else {}
             bitpro_backtest_detail_lines.extend(
                 [
-                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
-                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
                     (
                         "- result #{id}, strategy #{strategy_id}: {name}; "
                         "状态 {status}, 标的 {symbol}, 周期 {timeframe}, "
@@ -1441,7 +1432,10 @@ class AgentKernel:
             sections.extend(["## BitPro 模拟盘状态", "", *bitpro_paper_lines])
         if bitpro_lifecycle_lines:
             sections.extend(["## BitPro 策略生命周期", "", *bitpro_lifecycle_lines])
-        citations = _citations_from_tool_calls(tool_calls)
+        has_bitpro_evidence_report = bool(
+            bitpro_backtest_lines or bitpro_backtest_detail_lines or bitpro_paper_lines
+        )
+        citations = [] if has_bitpro_evidence_report else _citations_from_tool_calls(tool_calls)
         if citations:
             for index, citation in enumerate(citations, start=1):
                 citation_lines.append(

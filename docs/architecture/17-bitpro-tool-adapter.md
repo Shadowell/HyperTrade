@@ -120,6 +120,6 @@ BitPro 回测排行和阈值问题必须通过 `bitpro_backtest_list_results` �
 
 单个回测证据问题必须通过 `bitpro_backtest_get_result` 回答。适配器同样先执行 `bitpro_capabilities` -> `bitpro_health`，再读取 BitPro 负责的回测详情，标准化指标，并输出权益曲线、交易、订单、成交和回撤序列的有界样本。缺失 artifact 只能标记为不可用，HyperTrade 不合成样本行。
 
-当 Agent 启动 BitPro 负责的回测时，`bitpro_backtest_start_job` 会在 Agent 执行路径中等待 job 进入终态，然后标准化 completed `job.result`，并在可用时关联到 BitPro 已保存的 result 行。CLI 报告应展示与 BitPro 回测结果页面同口径的核心指标，而不是轮询生命周期日志。
+当 Agent 启动 BitPro 负责的回测时，`bitpro_backtest_start_job` 会在 Agent 执行路径中等待 job 进入终态，然后标准化 completed `job.result`，并在可用时关联到 BitPro 已保存的 result 行。CLI 报告应展示与 BitPro 回测结果页面同口径的核心指标，而不是轮询生命周期日志。默认面向交易阅读的回测报告不展示 MCP 合同版本、内部工具顺序或 RAG 引用来源；这些审计信息保留在 trace 和显式调试输出里。
 
 容器化部署时，BitPro MCP 通过显式 host-gateway 地址访问，不能使用 `127.0.0.1`，因为容器内 loopback 指向 `hypertrade-api` 自身。如果 BitPro 不可达，API 返回结构化 `502`，并携带失败的 BitPro tool call，方便区分上游不可用和 HyperTrade 运行时故障。

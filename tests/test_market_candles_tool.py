@@ -443,11 +443,105 @@ def test_planner_report_renders_bitpro_backtest_artifact_detail() -> None:
     assert "收益 4.044128%" in report
     assert "权益曲线: 可用，3 条，展示 2 条样本" in report
     assert "订单: 不可用，0 条，展示 0 条样本" in report
-    assert "backtest_get_result" in report
+    assert "backtest_get_result" not in report
     assert "## BitPro 策略生命周期" not in report
     assert "bitpro_backtest_start_job" not in report
     assert "模型自由发挥" not in report
     assert "不应该出现在 BitPro 证据报告里" not in report
+
+
+def test_planner_report_keeps_bitpro_backtest_output_page_focused() -> None:
+    report = AgentKernel._render_planner_report(
+        "### 模型自由发挥\n- 不应该盖过 BitPro 结果",
+        [
+            ToolCallRecord(
+                tool_name="rag_search",
+                input_json={"query": "BitPro 回测"},
+                output_json={
+                    "hits": [
+                        {
+                            "title": "HyperTrade 工具运维指南",
+                            "source_path": "docs/knowledge/tool-usage-guide.md",
+                            "chunk_index": 2,
+                            "score": 1.23,
+                            "content": "BitPro tool usage.",
+                        }
+                    ]
+                },
+            ),
+            ToolCallRecord(
+                tool_name="bitpro_backtest_start_job",
+                input_json={"strategy_id": 292},
+                output_json={
+                    "status": "ok",
+                    "job": {
+                        "job_id": "job_292",
+                        "status": "completed",
+                        "percent": 100,
+                    },
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                        {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                        {"tool": "backtest_start_job", "parameters": {}, "status": "success"},
+                    ],
+                },
+            ),
+            ToolCallRecord(
+                tool_name="bitpro_backtest_get_result",
+                input_json={"backtest_id": "200", "sample_limit": 20},
+                output_json={
+                    "status": "ok",
+                    "contract_version": "bitpro-mcp-v1",
+                    "result": {
+                        "id": 200,
+                        "strategy_id": 292,
+                        "strategy_name": "[合约][4H][CTA] Top20 · 波动压缩突破高收益实验 · 100U",
+                        "status": "completed",
+                        "start_date": "2026-02-01",
+                        "end_date": "2026-06-01",
+                        "symbol": None,
+                        "timeframe": "4h",
+                        "metrics": {
+                            "total_return_pct": "3.8734033137765063",
+                            "max_drawdown_pct": "5.6088",
+                            "sharpe_ratio": "0.3181",
+                            "win_rate_pct": "50",
+                            "trade_count": 18,
+                        },
+                    },
+                    "artifact_summary": {
+                        "equity_curve": {"available": True, "count": 721, "sample_count": 20},
+                        "trades": {"available": True, "count": 36, "sample_count": 20},
+                        "orders": {"available": False, "count": 0, "sample_count": 0},
+                        "fills": {"available": False, "count": 0, "sample_count": 0},
+                        "drawdown_series": {"available": False, "count": 0, "sample_count": 0},
+                    },
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                        {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                        {
+                            "tool": "backtest_get_result",
+                            "parameters": {"backtest_id": "200"},
+                            "status": "success",
+                        },
+                    ],
+                },
+            ),
+        ],
+    )
+
+    assert "## BitPro 回测详情" in report
+    assert "result #200, strategy #292" in report
+    assert "收益 3.8734033137765063%" in report
+    assert "权益曲线: 可用，721 条，展示 20 条样本" in report
+    assert "## BitPro 策略生命周期" not in report
+    assert "bitpro_backtest_start_job" not in report
+    assert "## 引用来源" not in report
+    assert "HyperTrade 工具运维指南" not in report
+    assert "合同版本" not in report
+    assert "工具顺序" not in report
+    assert "backtest_get_result" not in report
+    assert "模型自由发挥" not in report
 
 
 def test_market_candles_payload_uses_fetcher_and_returns_features(monkeypatch, tmp_path) -> None:
