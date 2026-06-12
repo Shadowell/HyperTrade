@@ -699,6 +699,96 @@ def test_render_run_uses_rich_markdown_for_unknown_report(monkeypatch) -> None:
     assert "|---|---|" not in rendered
 
 
+def test_render_run_uses_rich_bitpro_backtest_result_table(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    output = StringIO()
+
+    render_run(
+        {
+            "id": "run_bitpro_results",
+            "status": "completed",
+            "report_markdown": (
+                "## BitPro 回测结果\n\n"
+                "- result #161, strategy #178: [合约][1D][CTA] ETH · "
+                "Donchian89/EMA89趋势跟踪稳健版 · 100U; "
+                "收益 305.53878586955756%, 年化 80.6615%, 回撤 30.4763%"
+            ),
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {"tool_name": "graph.final_report", "status": "completed"},
+                {
+                    "tool_name": "bitpro_backtest_list_results",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "contract_version": "bitpro-mcp-v1",
+                        "filter": {
+                            "metric": "total_return_pct",
+                            "min_total_return_pct": 100,
+                            "status": "completed",
+                            "sort_by": "return",
+                            "sort_order": "desc",
+                            "limit": 40,
+                        },
+                        "result_count": 2,
+                        "raw_result_count": 21,
+                        "results": [
+                            {
+                                "id": 161,
+                                "strategy_id": 178,
+                                "strategy_name": (
+                                    "[合约][1D][CTA] ETH · "
+                                    "Donchian89/EMA89趋势跟踪稳健版 · 100U"
+                                ),
+                                "total_return_pct": "305.53878586955756",
+                                "annual_return_pct": "80.6615",
+                                "max_drawdown_pct": "30.4763",
+                                "sharpe_ratio": "1.1422",
+                                "win_rate_pct": "87.5",
+                                "trade_count": 8,
+                                "start_date": "2024-01-01",
+                                "end_date": "2026-05-15",
+                            },
+                            {
+                                "id": 193,
+                                "strategy_id": 162,
+                                "strategy_name": (
+                                    "[合约][1H][CTA] ETH · "
+                                    "Heikin Ashi趋势跟踪低频版 · 100U"
+                                ),
+                                "total_return_pct": "141.83713784801657",
+                                "annual_return_pct": "142.4246",
+                                "max_drawdown_pct": "14.5667",
+                                "sharpe_ratio": "0.3969",
+                                "win_rate_pct": "50.63",
+                                "trade_count": 239,
+                                "start_date": "2025-06-08",
+                                "end_date": "2026-06-07",
+                            },
+                        ],
+                        "tool_calls": [
+                            {"tool": "bitpro_capabilities", "status": "success"},
+                            {"tool": "bitpro_health", "status": "success"},
+                            {"tool": "backtest_list_results", "status": "success"},
+                        ],
+                    },
+                },
+            ],
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "BitPro 回测排行" in rendered
+    assert "总收益口径" in rendered
+    assert "命中 2 / 原始 21" in rendered
+    assert "305.54%" in rendered
+    assert "30.48%" in rendered
+    assert "Heikin Ashi趋势跟踪低频版" in rendered
+    assert "305.53878586955756%" not in rendered
+    assert "result #161, strategy #178" not in rendered
+
+
 def test_render_run_keeps_plain_markdown_when_renderer_plain(monkeypatch) -> None:
     monkeypatch.setenv("HYPERTRADE_RENDERER", "plain")
     output = StringIO()

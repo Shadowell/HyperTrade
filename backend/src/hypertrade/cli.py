@@ -1982,6 +1982,8 @@ def _render_rich_tool_report(
             _render_rich_candles(payload, console=console)
         elif tool_name == "market_compare":
             _render_rich_compare(payload, console=console)
+        elif tool_name == "bitpro_backtest_list_results":
+            _render_rich_bitpro_backtest_results(payload, console=console)
 
 
 def _render_rich_ticker(payload: dict[str, Any], *, console: Any) -> None:
@@ -2046,6 +2048,82 @@ def _render_rich_compare(payload: dict[str, Any], *, console: Any) -> None:
     console.print(table)
 
 
+def _render_rich_bitpro_backtest_results(payload: dict[str, Any], *, console: Any) -> None:
+    from rich.panel import Panel
+    from rich.table import Table
+
+    result_filter = payload.get("filter")
+    result_filter = result_filter if isinstance(result_filter, dict) else {}
+    metric = str(result_filter.get("metric", "total_return_pct"))
+    min_return = result_filter.get("min_total_return_pct")
+    filter_text = (
+        f"{metric} > {_format_percent(min_return)}"
+        if min_return is not None
+        else "未设置收益阈值"
+    )
+    results = payload.get("results")
+    results = results if isinstance(results, list) else []
+    top_result = next((row for row in results if isinstance(row, dict)), None)
+    top_line = "最高: n/a"
+    if top_result is not None:
+        top_line = (
+            "最高: result #{id} / strategy #{strategy_id} | "
+            "总收益 {total_return} | 回撤 {drawdown} | 交易 {trades}"
+        ).format(
+            id=top_result.get("id", "n/a"),
+            strategy_id=top_result.get("strategy_id", "n/a"),
+            total_return=_format_percent(top_result.get("total_return_pct")),
+            drawdown=_format_percent(top_result.get("max_drawdown_pct")),
+            trades=top_result.get("trade_count", "n/a"),
+        )
+    summary = "\n".join(
+        [
+            f"总收益口径: {metric}",
+            f"筛选: {filter_text}",
+            (
+                f"命中 {payload.get('result_count', 0)} / "
+                f"原始 {payload.get('raw_result_count', 'n/a')}"
+            ),
+            top_line,
+            f"合同: {payload.get('contract_version', 'unknown')}",
+        ]
+    )
+    console.print(Panel(summary, title="BitPro 回测排行", border_style="green"))
+
+    if not results:
+        console.print(Panel("没有匹配的 BitPro 回测结果。", border_style="yellow"))
+        return
+
+    table = Table(title="Top Results", show_header=True, header_style="bold", expand=True)
+    table.add_column("#", justify="right", no_wrap=True, ratio=1)
+    table.add_column("策略", ratio=6, overflow="fold")
+    table.add_column("收益", ratio=2, overflow="fold")
+    table.add_column("风险/质量", ratio=3, overflow="fold")
+    table.add_column("区间", ratio=3, overflow="fold")
+    for index, row in enumerate(results[:20], start=1):
+        if not isinstance(row, dict):
+            continue
+        table.add_row(
+            str(index),
+            (
+                f"result #{row.get('id', 'n/a')} / strategy #{row.get('strategy_id', 'n/a')}\n"
+                f"{_format_strategy_name(row.get('strategy_name', 'n/a'))}"
+            ),
+            (
+                f"总 {_format_percent(row.get('total_return_pct'))}\n"
+                f"年 {_format_percent(row.get('annual_return_pct'))}"
+            ),
+            (
+                f"回撤 {_format_percent(row.get('max_drawdown_pct'))}\n"
+                f"夏普 {_format_number(row.get('sharpe_ratio'))}\n"
+                f"胜率 {_format_percent(row.get('win_rate_pct'))}\n"
+                f"交易 {row.get('trade_count', 'n/a')}"
+            ),
+            _format_period(row.get("start_date"), row.get("end_date")),
+        )
+    console.print(table)
+
+
 def _render_structured_report(run: dict[str, Any], *, output: TextIO) -> bool:
     report = run.get("report_json", {})
     if not isinstance(report, dict) or not report:
@@ -2101,7 +2179,12 @@ def _render_structured_market_summary(report: dict[str, Any], *, output: TextIO)
 
 
 def _has_structured_market_tool_output(trace_events: list[Any]) -> bool:
-    supported_tools = {"market_ticker", "market_candles", "market_compare"}
+    supported_tools = {
+        "market_ticker",
+        "market_candles",
+        "market_compare",
+        "bitpro_backtest_list_results",
+    }
     for event in trace_events:
         if not isinstance(event, dict):
             continue
@@ -2130,6 +2213,8 @@ def _render_structured_tool_report(
             _render_tool_candles_block(payload, output=output)
         elif tool_name == "market_compare":
             _render_tool_compare_block(payload, output=output)
+        elif tool_name == "bitpro_backtest_list_results":
+            _render_tool_bitpro_backtest_block(payload, output=output)
 
 def _render_tool_ticker_block(payload: dict[str, Any], *, output: TextIO) -> None:
     print("", file=output)
@@ -2172,6 +2257,96 @@ def _render_tool_compare_block(payload: dict[str, Any], *, output: TextIO) -> No
                 ),
                 file=output,
             )
+
+
+def _render_tool_bitpro_backtest_block(payload: dict[str, Any], *, output: TextIO) -> None:
+    result_filter = payload.get("filter")
+    result_filter = result_filter if isinstance(result_filter, dict) else {}
+    metric = str(result_filter.get("metric", "total_return_pct"))
+    min_return = result_filter.get("min_total_return_pct")
+    filter_text = (
+        f"{metric} > {_format_percent(min_return)}"
+        if min_return is not None
+        else "no return threshold"
+    )
+    print("", file=output)
+    print("BitPro backtest ranking:", file=output)
+    print(f"- Metric: {metric} (actual total backtest return)", file=output)
+    print(f"- Filter: {filter_text}", file=output)
+    print(
+        "- Matches: {result_count} / raw {raw_count}".format(
+            result_count=payload.get("result_count", 0),
+            raw_count=payload.get("raw_result_count", "n/a"),
+        ),
+        file=output,
+    )
+    results = payload.get("results")
+    results = results if isinstance(results, list) else []
+    if not results:
+        print("- No matching BitPro backtest results.", file=output)
+        return
+    print("Top results:", file=output)
+    for index, row in enumerate(results[:20], start=1):
+        if not isinstance(row, dict):
+            continue
+        print(
+            (
+                "- {rank}. result #{id} / strategy #{strategy_id}: {name} | "
+                "return {total_return}, annual {annual_return}, "
+                "drawdown {drawdown}, sharpe {sharpe}, win {win_rate}, "
+                "trades {trades}, period {period}"
+            ).format(
+                rank=index,
+                id=row.get("id", "n/a"),
+                strategy_id=row.get("strategy_id", "n/a"),
+                name=row.get("strategy_name", "n/a"),
+                total_return=_format_percent(row.get("total_return_pct")),
+                annual_return=_format_percent(row.get("annual_return_pct")),
+                drawdown=_format_percent(row.get("max_drawdown_pct")),
+                sharpe=_format_number(row.get("sharpe_ratio")),
+                win_rate=_format_percent(row.get("win_rate_pct")),
+                trades=row.get("trade_count", "n/a"),
+                period=_format_period(row.get("start_date"), row.get("end_date")),
+            ),
+            file=output,
+        )
+
+
+def _format_number(value: object, *, digits: int = 2) -> str:
+    text = str(value).strip()
+    if not text or text.lower() in {"none", "nan", "n/a"}:
+        return "n/a"
+    if text.endswith("%"):
+        text = text[:-1]
+    try:
+        number = float(text)
+    except ValueError:
+        return str(value)
+    formatted = f"{number:.{digits}f}".rstrip("0").rstrip(".")
+    return formatted or "0"
+
+
+def _format_percent(value: object, *, digits: int = 2) -> str:
+    text = _format_number(value, digits=digits)
+    if text == "n/a":
+        return text
+    return f"{text}%"
+
+
+def _format_strategy_name(value: object) -> str:
+    text = str(value or "n/a").strip()
+    parts = [part.strip() for part in text.split("·") if part.strip()]
+    if len(parts) >= 2:
+        return f"{parts[0]}\n{' · '.join(parts[1:])}"
+    return text
+
+
+def _format_period(start: object, end: object) -> str:
+    start_text = str(start or "n/a")
+    end_text = str(end or "n/a")
+    if start_text == "n/a" and end_text == "n/a":
+        return "n/a"
+    return f"{start_text}\n{end_text}"
 
 
 def render_run_stream(
