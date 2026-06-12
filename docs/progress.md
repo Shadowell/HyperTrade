@@ -8,7 +8,7 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-37-paper-monitor-agent.md` (in progress locally)
+- No active implementation contract. Last completed: `docs/contracts/sprint-37-paper-monitor-agent.md`.
 
 ## Latest Completed Work
 
