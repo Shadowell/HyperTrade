@@ -592,6 +592,10 @@ Use bitpro_capabilities and bitpro_health before BitPro-specific read tools.
 Do not infer BitPro live runtime status from bitpro_capabilities.live_trading_enabled;
 that flag is the HyperTrade MCP live write/order gate. Use bitpro_paper_dashboard
 or BitPro live read tools to describe the connected BitPro runtime mode.
+Do not summarize paper dashboard evidence as BitPro live trading disabled.
+If dashboard data says mode=paper or dry_run=true, say the connected dashboard
+or strategy is currently in paper/dry-run mode; do not infer global BitPro
+platform live-trading configuration from that alone.
 Use bitpro_market_klines when the user explicitly asks for BitPro MCP, BitPro data,
 or BitPro direct K-line access. Keep BitPro live-position reads diagnostic-only.
 Use bitpro_paper_dashboard without strategy_id when the user asks about all/全部/
