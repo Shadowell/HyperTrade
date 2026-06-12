@@ -10,6 +10,7 @@ from hypertrade.cli import (
     AgentApiClient,
     CliConfig,
     LocalAgentClient,
+    configure_interactive_history,
     main,
     render_backtest_result,
     render_run,
@@ -25,6 +26,34 @@ from hypertrade.cli import (
 class TtyStringIO(StringIO):
     def isatty(self) -> bool:
         return True
+
+
+class FakeReadline:
+    def __init__(self) -> None:
+        self.history_length: int | None = None
+        self.read_path = ""
+        self.write_path = ""
+        self.added: list[str] = []
+
+    def read_history_file(self, path: str) -> None:
+        self.read_path = path
+
+    def write_history_file(self, path: str) -> None:
+        self.write_path = path
+
+    def set_history_length(self, length: int) -> None:
+        self.history_length = length
+
+    def add_history(self, item: str) -> None:
+        self.added.append(item)
+
+    def get_current_history_length(self) -> int:
+        return len(self.added)
+
+    def get_history_item(self, index: int) -> str | None:
+        if index < 1 or index > len(self.added):
+            return None
+        return self.added[index - 1]
 
 
 class FakeAgentClient:
@@ -453,6 +482,45 @@ class FakeAgentClient:
             "risk_status": "allowed",
             "exchange_order_id": "",
         }
+
+
+def test_configure_interactive_history_reads_and_writes_history(tmp_path) -> None:
+    fake_readline = FakeReadline()
+    registered: list[tuple[Any, tuple[Any, ...]]] = []
+
+    history = configure_interactive_history(
+        enabled=True,
+        history_path=tmp_path / "history",
+        readline_module=fake_readline,
+        register_exit=lambda fn, *args: registered.append((fn, args)),
+    )
+
+    assert history.enabled is True
+    assert fake_readline.history_length == 1000
+    assert fake_readline.read_path == str(tmp_path / "history")
+    assert registered == [(fake_readline.write_history_file, (str(tmp_path / "history"),))]
+
+    history.add("看下ETH行情")
+    history.add("")
+    history.add("看下ETH行情")
+    history.add("/tools")
+
+    assert fake_readline.added == ["看下ETH行情", "/tools"]
+
+
+def test_interactive_history_does_not_duplicate_readline_auto_added_item(tmp_path) -> None:
+    fake_readline = FakeReadline()
+    history = configure_interactive_history(
+        enabled=True,
+        history_path=tmp_path / "history",
+        readline_module=fake_readline,
+    )
+
+    fake_readline.added.append("看下ETH行情")
+    history.add("看下ETH行情")
+    history.add("/tools")
+
+    assert fake_readline.added == ["看下ETH行情", "/tools"]
 
 
 def test_ask_prints_agent_run_trace_and_report(capsys) -> None:

@@ -37,6 +37,11 @@ Local mode reads these from `ToolRegistry`, `AgentRun`, `MemoryService`, `Strate
 
 Workflow shortcuts call `StrategyResearchService.create()` and `BacktestService.run()` locally, or `POST /api/strategy/research` and `POST /api/backtests` remotely.
 
+Real TTY chat sessions load readline-backed command history from
+`~/.hypertrade/history`. Valid prompts and slash commands are added to history
+so arrow keys recall prior requests; non-TTY/script runs keep plain input
+behavior and do not mutate terminal history.
+
 Run streaming uses a small stable event shape:
 
 - `run_started`
@@ -100,6 +105,8 @@ registry 描述：
 本地模式从 `ToolRegistry`、`AgentRun`、`MemoryService`、`StrategyResearchService` 和 `BacktestService` 读取；远程模式调用对应的 FastAPI 列表接口，并通过 `/api/harness/overview` 汇总状态与模型信息。
 
 工作流快捷命令在本地直接调用 `StrategyResearchService.create()` 与 `BacktestService.run()`，远程则调用 `POST /api/strategy/research` 与 `POST /api/backtests`。
+
+真实 TTY 交互会从 `~/.hypertrade/history` 加载 readline 命令历史。有效 prompt 和斜杠命令会写入历史，因此方向键可以召回上一次请求；非 TTY/脚本运行仍保持普通输入行为，不修改终端历史。
 
 运行流式输出使用一组稳定事件：
 

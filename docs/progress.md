@@ -8,10 +8,11 @@
 
 ## Active Contract
 
-- No active implementation contract. Last completed: `docs/contracts/sprint-37-paper-monitor-agent.md`.
+- No active implementation contract. Last completed: `docs/contracts/sprint-38-cli-history.md`.
 
 ## Latest Completed Work
 
+- Added readline-backed interactive CLI command history: real TTY `hypertrade` chat sessions now load/write `~/.hypertrade/history`, add non-empty prompts and slash commands to history, skip consecutive duplicates, and keep non-TTY/script behavior unchanged so up-arrow recalls prior requests instead of printing escape sequences.
 - Fixed mixed-tool CLI rendering for BitPro paper monitoring: structured Agent output now keeps the `bitpro_paper_dashboard` monitor block when market ticker tools appear in the same run, instead of rendering only ticker sections and hiding the BitPro report evidence.
 - Fixed BitPro backtest job result reporting: Agent-triggered `bitpro_backtest_start_job` now waits for the BitPro-owned job to reach a terminal state, normalizes the completed `job.result`, links it back to the saved BitPro result row when available, and renders a concise `BitPro 回测结果` section with page-parity metrics instead of a lifecycle polling log.
 - Added a deterministic BitPro paper monitor summary: unfiltered `bitpro_paper_dashboard` now returns `monitor_summary` with current dashboard equity/PnL/Sharpe/drawdown, running strategy inventory coverage, data gaps, alerts, and read-only recommended actions. Agent reports render a `监控结论` block and explicitly avoid inferring per-strategy PnL/drawdown when BitPro's running-strategy inventory does not include those metrics.

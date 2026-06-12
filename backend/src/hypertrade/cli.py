@@ -9,6 +9,7 @@ LLM to plan first.
 from __future__ import annotations
 
 import argparse
+import atexit
 import getpass
 import json
 import os
@@ -17,6 +18,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, TextIO
@@ -205,6 +207,65 @@ class CliConfig:
             or "hypertrade-admin",
             timeout_seconds=float(os.getenv("HYPERTRADE_TIMEOUT_SECONDS", "20")),
         )
+
+
+@dataclass
+class InteractiveHistory:
+    enabled: bool
+    readline_module: Any | None = None
+    last_item: str = ""
+
+    def add(self, item: str) -> None:
+        value = item.strip()
+        if not self.enabled or not value or value == self.last_item:
+            return
+        module = self.readline_module
+        if module is None or not hasattr(module, "add_history"):
+            return
+        if hasattr(module, "get_current_history_length") and hasattr(
+            module,
+            "get_history_item",
+        ):
+            length = int(module.get_current_history_length())
+            if length > 0 and module.get_history_item(length) == value:
+                self.last_item = value
+                return
+        module.add_history(value)
+        self.last_item = value
+
+
+def configure_interactive_history(
+    *,
+    enabled: bool,
+    history_path: Path | None = None,
+    readline_module: Any | None = None,
+    register_exit: Callable[..., Any] = atexit.register,
+) -> InteractiveHistory:
+    if not enabled:
+        return InteractiveHistory(enabled=False)
+    try:
+        if readline_module is None:
+            import readline
+
+            module: Any = readline
+        else:
+            module = readline_module
+    except ImportError:
+        return InteractiveHistory(enabled=False)
+
+    path = history_path or (Path.home() / ".hypertrade" / "history")
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with suppress(OSError):
+        path.parent.chmod(0o700)
+    history_file = str(path)
+    if hasattr(module, "set_history_length"):
+        module.set_history_length(1000)
+    if hasattr(module, "read_history_file"):
+        with suppress(FileNotFoundError):
+            module.read_history_file(history_file)
+    if hasattr(module, "write_history_file"):
+        register_exit(module.write_history_file, history_file)
+    return InteractiveHistory(enabled=True, readline_module=module)
 
 
 def client_env_path() -> Path:
@@ -839,6 +900,9 @@ def run_chat(
     output = output or sys.stdout
     client.login()
     render_welcome_banner(client=client, output=output)
+    history = configure_interactive_history(
+        enabled=input_fn is input and sys.stdin.isatty()
+    )
     while True:
         try:
             prompt = input_fn("hypertrade> ").strip()
@@ -849,6 +913,7 @@ def run_chat(
             return
         if not prompt:
             continue
+        history.add(prompt)
         if prompt.startswith("/"):
             # Slash commands are deterministic shortcuts. They inspect or run a
             # specific tool surface without starting a free-form Agent run.
