@@ -579,6 +579,110 @@ def test_bitpro_backtest_list_results_filters_total_return_with_offset_paginatio
     ]
 
 
+def test_bitpro_backtest_get_result_normalizes_artifacts() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "query": dict(request.url.params),
+            }
+        )
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/backtest/result/196":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "id": 196,
+                        "strategy_id": 293,
+                        "status": "completed",
+                        "start_date": "2026-05-10",
+                        "end_date": "2026-06-09",
+                        "symbol": "ETH/USDT:USDT",
+                        "timeframe": "1h",
+                        "metrics": {
+                            "total_return": 4.044128,
+                            "max_drawdown": 1.4438,
+                            "sharpe_ratio": 0.8029,
+                            "win_rate": 63.64,
+                            "trade_count": 11,
+                        },
+                        "equity_curve": [
+                            {"timestamp": "2026-05-10T14:00:00Z", "equity": 10000},
+                            {"timestamp": "2026-05-11T14:00:00Z", "equity": 10120},
+                            {"timestamp": "2026-05-12T14:00:00Z", "equity": 10404.41},
+                        ],
+                        "trades": [
+                            {"id": 1, "symbol": "ETH/USDT:USDT", "side": "long", "pnl": 120.5},
+                            {"id": 2, "symbol": "ETH/USDT:USDT", "side": "short", "pnl": 84.2},
+                            {"id": 3, "symbol": "ETH/USDT:USDT", "side": "long", "pnl": -12.0},
+                        ],
+                        "orders": [{"id": "ord_1", "status": "filled"}],
+                        "fills": [{"id": "fill_1", "price": 2500.0, "qty": 0.1}],
+                        "drawdown_series": [
+                            {"timestamp": "2026-05-11T14:00:00Z", "drawdown_pct": 0.2},
+                            {"timestamp": "2026-05-12T14:00:00Z", "drawdown_pct": 1.4438},
+                        ],
+                    },
+                },
+            )
+        if request.url.path == "/api/v2/strategies/293":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "id": 293,
+                        "name": "[合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U",
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+
+    result = adapter.backtest_get_result(backtest_id=196, sample_limit=2)
+
+    assert result["status"] == "ok"
+    assert result["result"]["id"] == 196
+    assert result["result"]["strategy_name"] == (
+        "[合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U"
+    )
+    assert result["result"]["metrics"]["total_return_pct"] == "4.044128"
+    assert result["artifact_summary"] == {
+        "equity_curve": {"available": True, "count": 3, "sample_count": 2},
+        "trades": {"available": True, "count": 3, "sample_count": 2},
+        "orders": {"available": True, "count": 1, "sample_count": 1},
+        "fills": {"available": True, "count": 1, "sample_count": 1},
+        "drawdown_series": {"available": True, "count": 2, "sample_count": 2},
+    }
+    assert result["artifacts"]["equity_curve"]["sample"] == [
+        {"timestamp": "2026-05-10T14:00:00Z", "equity": 10000},
+        {"timestamp": "2026-05-11T14:00:00Z", "equity": 10120},
+    ]
+    assert [call["tool"] for call in result["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "backtest_get_result",
+        "strategy_get",
+    ]
+    assert seen == [
+        {"method": "GET", "path": "/api/v2/system/health", "query": {}},
+        {"method": "GET", "path": "/api/v2/backtest/result/196", "query": {}},
+        {"method": "GET", "path": "/api/v2/strategies/293", "query": {}},
+    ]
+
+
 def test_bitpro_mcp_client_wraps_network_errors() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)

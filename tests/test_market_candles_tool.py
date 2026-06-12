@@ -239,6 +239,63 @@ def test_planner_report_renders_bitpro_backtest_total_return_results() -> None:
     assert "Heikin Ashi趋势跟踪低频版" in report
 
 
+def test_planner_report_renders_bitpro_backtest_artifact_detail() -> None:
+    report = AgentKernel._render_planner_report(
+        "已读取 BitPro 回测详情。",
+        [
+            ToolCallRecord(
+                tool_name="bitpro_backtest_get_result",
+                input_json={"backtest_id": "196", "sample_limit": 2},
+                output_json={
+                    "status": "ok",
+                    "contract_version": "bitpro-mcp-v1",
+                    "result": {
+                        "id": 196,
+                        "strategy_id": 293,
+                        "strategy_name": "[合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U",
+                        "status": "completed",
+                        "start_date": "2026-05-10",
+                        "end_date": "2026-06-09",
+                        "symbol": "ETH/USDT:USDT",
+                        "timeframe": "1h",
+                        "metrics": {
+                            "total_return_pct": "4.044128",
+                            "max_drawdown_pct": "1.4438",
+                            "sharpe_ratio": "0.8029",
+                            "win_rate_pct": "63.64",
+                            "trade_count": 11,
+                        },
+                    },
+                    "artifact_summary": {
+                        "equity_curve": {"available": True, "count": 3, "sample_count": 2},
+                        "trades": {"available": True, "count": 11, "sample_count": 2},
+                        "orders": {"available": False, "count": 0, "sample_count": 0},
+                        "fills": {"available": True, "count": 11, "sample_count": 2},
+                        "drawdown_series": {"available": True, "count": 3, "sample_count": 2},
+                    },
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                        {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                        {
+                            "tool": "backtest_get_result",
+                            "parameters": {"backtest_id": "196"},
+                            "status": "success",
+                        },
+                    ],
+                },
+            )
+        ],
+    )
+
+    assert "## BitPro 回测详情" in report
+    assert "result #196, strategy #293" in report
+    assert "Agent EMA ATR 回撤" in report
+    assert "收益 4.044128%" in report
+    assert "权益曲线: 可用，3 条，展示 2 条样本" in report
+    assert "订单: 不可用，0 条，展示 0 条样本" in report
+    assert "backtest_get_result" in report
+
+
 def test_market_candles_payload_uses_fetcher_and_returns_features(monkeypatch, tmp_path) -> None:
     db = Database("sqlite:///:memory:")
     db.create_all()

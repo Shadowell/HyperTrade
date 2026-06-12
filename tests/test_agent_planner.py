@@ -283,6 +283,7 @@ def test_planner_exposes_bitpro_strategy_lifecycle_tool_schemas() -> None:
         "bitpro_backtest_start_job",
         "bitpro_backtest_get_job",
         "bitpro_backtest_list_results",
+        "bitpro_backtest_get_result",
         "bitpro_paper_configure",
         "bitpro_paper_start",
         "bitpro_paper_pause",
@@ -305,6 +306,21 @@ def test_bitpro_backtest_list_results_schema_requires_total_return_metric() -> N
     assert properties["min_total_return_pct"]["type"] == "number"
 
 
+def test_bitpro_backtest_get_result_schema_exposes_artifacts() -> None:
+    schema = next(
+        item for item in TOOL_SCHEMAS if item["function"]["name"] == "bitpro_backtest_get_result"
+    )
+
+    description = schema["function"]["description"]
+    properties = schema["function"]["parameters"]["properties"]
+
+    assert "equity curve" in description
+    assert "trades" in description
+    assert "drawdown" in description
+    assert properties["backtest_id"]["type"] == "string"
+    assert properties["sample_limit"]["type"] == "integer"
+
+
 def test_planner_prompt_does_not_treat_bitpro_live_gate_as_runtime_status() -> None:
     prompt = planner_module._SYSTEM_PROMPT
 
@@ -312,6 +328,7 @@ def test_planner_prompt_does_not_treat_bitpro_live_gate_as_runtime_status() -> N
     assert "live_trading_enabled" in prompt
     assert "live write/order gate" in prompt
     assert "bitpro_paper_dashboard" in prompt
+    assert "Do not summarize paper dashboard evidence as BitPro live trading disabled" in prompt
 
 
 class TestAgentPlannerDeepSeekReasoningContent:

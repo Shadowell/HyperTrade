@@ -306,6 +306,69 @@ class ReplayBitProAdapter:
             ],
         }
 
+    def backtest_get_result(
+        self,
+        *,
+        backtest_id: str | int,
+        sample_limit: int = 20,
+    ) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "health": {"status": "healthy"},
+            "result": {
+                "id": int(backtest_id),
+                "strategy_id": 293,
+                "strategy_name": "[合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U",
+                "status": "completed",
+                "start_date": "2026-05-10",
+                "end_date": "2026-06-09",
+                "symbol": "ETH/USDT:USDT",
+                "timeframe": "1h",
+                "metrics": {
+                    "total_return_pct": "4.044128",
+                    "max_drawdown_pct": "1.4438",
+                    "sharpe_ratio": "0.8029",
+                    "win_rate_pct": "63.64",
+                    "trade_count": 11,
+                },
+            },
+            "artifact_summary": {
+                "equity_curve": {
+                    "available": True,
+                    "count": 3,
+                    "sample_count": min(sample_limit, 3),
+                },
+                "trades": {"available": True, "count": 11, "sample_count": min(sample_limit, 11)},
+                "orders": {"available": False, "count": 0, "sample_count": 0},
+                "fills": {"available": True, "count": 11, "sample_count": min(sample_limit, 11)},
+                "drawdown_series": {
+                    "available": True,
+                    "count": 3,
+                    "sample_count": min(sample_limit, 3),
+                },
+            },
+            "artifacts": {
+                "equity_curve": {
+                    "available": True,
+                    "count": 3,
+                    "sample": [
+                        {"timestamp": "2026-05-10T14:00:00Z", "equity": 10000},
+                        {"timestamp": "2026-05-11T14:00:00Z", "equity": 10120},
+                    ][:sample_limit],
+                }
+            },
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {
+                    "tool": "backtest_get_result",
+                    "status": "success",
+                    "parameters": {"backtest_id": backtest_id},
+                },
+            ],
+        }
+
     def paper_configure(
         self,
         *,
@@ -687,6 +750,53 @@ def test_agent_acceptance_bitpro_backtest_return_query_uses_result_list_tool(
     assert "result #161, strategy #178" in run.report_markdown
     assert "收益 305.53878586955756%" in run.report_markdown
     assert "result #193, strategy #162" in run.report_markdown
+    _assert_research_quality(run.report_markdown)
+
+
+def test_agent_acceptance_bitpro_backtest_detail_reads_artifacts(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = _memory_db()
+    _patch_replay_llm(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_backtest_detail",
+                        name="bitpro_backtest_get_result",
+                        arguments={"backtest_id": "196", "sample_limit": 2},
+                    )
+                ],
+            ),
+            ChatResponse(content="已读取 BitPro 回测详情证据。", tool_calls=[]),
+        ],
+    )
+
+    run = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
+        knowledge_dir=str(tmp_path),
+        bitpro_adapter=ReplayBitProAdapter(),
+    ).run_chat("查看 BitPro 回测 result 196 的权益曲线和交易证据")
+
+    names = _tool_names(run)
+    assert "bitpro.backtest_get_result" in names
+    assert "bitpro_backtest_get_result" in names
+    bitpro_event = next(
+        event
+        for event in _business_events(run)
+        if event.tool_name == "bitpro_backtest_get_result"
+    )
+    assert bitpro_event.input_json["backtest_id"] == "196"
+    assert bitpro_event.output_json["result"]["id"] == 196
+    assert bitpro_event.output_json["artifact_summary"]["equity_curve"]["count"] == 3
+    assert "## BitPro 回测详情" in run.report_markdown
+    assert "result #196, strategy #293" in run.report_markdown
+    assert "权益曲线: 可用，3 条，展示 2 条样本" in run.report_markdown
+    assert "交易: 可用，11 条，展示 2 条样本" in run.report_markdown
     _assert_research_quality(run.report_markdown)
 
 

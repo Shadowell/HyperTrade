@@ -442,6 +442,33 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "bitpro_backtest_get_result",
+            "description": (
+                "Read one BitPro-owned backtest result detail, including metrics, "
+                "equity curve, trades, orders, fills, and drawdown artifact samples. "
+                "Use this when the user asks for a specific result id or evidence details."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "backtest_id": {
+                        "type": "string",
+                        "description": (
+                            "BitPro backtest result id, usually from backtest list results."
+                        ),
+                    },
+                    "sample_limit": {
+                        "type": "integer",
+                        "description": "Maximum rows to sample per artifact, default 20.",
+                    },
+                },
+                "required": ["backtest_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "bitpro_paper_configure",
             "description": "Configure a BitPro paper/simulation instance for a strategy.",
             "parameters": {
@@ -576,6 +603,10 @@ Use bitpro_backtest_list_results when the user asks about BitPro backtest
 performance, rankings, winners, or thresholds such as 回测收益大于100%. Report the
 actual total_return_pct metric from BitPro backtest results; do not substitute
 annual_return_pct, strategy descriptions, memory, or unstated assumptions.
+Use bitpro_backtest_get_result when the user asks for one specific BitPro
+backtest result id, detail evidence, equity curve, trades, orders, fills, or
+drawdown artifacts. Report missing artifacts as unavailable; never synthesize
+artifact rows.
 When the user asks BitPro to develop, store, backtest, or paper-validate a strategy,
 use BitPro strategy/backtest/paper tools. These are research/simulation writes,
 not live trading writes.

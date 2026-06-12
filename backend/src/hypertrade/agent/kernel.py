@@ -386,6 +386,12 @@ class AgentKernel:
                     limit=int(args.get("limit", 100)),
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_backtest_get_result":
+                result = self._bitpro_adapter().backtest_get_result(
+                    backtest_id=str(args.get("backtest_id", "")),
+                    sample_limit=int(args.get("sample_limit", 20)),
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_paper_configure":
                 result = self._bitpro_adapter().paper_configure(
                     strategy_id=int(args.get("strategy_id", 0)),
@@ -938,6 +944,7 @@ class AgentKernel:
         compare_lines: list[str] = []
         bitpro_lines: list[str] = []
         bitpro_backtest_lines: list[str] = []
+        bitpro_backtest_detail_lines: list[str] = []
         bitpro_paper_lines: list[str] = []
         bitpro_lifecycle_lines: list[str] = []
         citation_lines: list[str] = []
@@ -1093,6 +1100,71 @@ class AgentKernel:
                 )
             bitpro_backtest_lines.append("")
         for record in tool_calls:
+            if getattr(record, "tool_name", "") != "bitpro_backtest_get_result":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or payload.get("status") != "ok":
+                continue
+            nested_tools = _nested_bitpro_tools(payload)
+            result = payload.get("result")
+            result = result if isinstance(result, dict) else {}
+            metrics = result.get("metrics")
+            metrics = metrics if isinstance(metrics, dict) else {}
+            bitpro_backtest_detail_lines.extend(
+                [
+                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
+                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
+                    (
+                        "- result #{id}, strategy #{strategy_id}: {name}; "
+                        "状态 {status}, 标的 {symbol}, 周期 {timeframe}, "
+                        "区间 {start_date} 至 {end_date}"
+                    ).format(
+                        id=result.get("id", payload.get("backtest_id", "n/a")),
+                        strategy_id=result.get("strategy_id", "n/a"),
+                        name=result.get("strategy_name", "n/a"),
+                        status=result.get("status", "n/a"),
+                        symbol=result.get("symbol", "n/a"),
+                        timeframe=result.get("timeframe", "n/a"),
+                        start_date=result.get("start_date", "n/a"),
+                        end_date=result.get("end_date", "n/a"),
+                    ),
+                    (
+                        "- 指标: 收益 {total_return_pct}%, 回撤 {max_drawdown_pct}%, "
+                        "夏普 {sharpe_ratio}, 胜率 {win_rate_pct}%, 交易 {trade_count}"
+                    ).format(
+                        total_return_pct=metrics.get("total_return_pct", "n/a"),
+                        max_drawdown_pct=metrics.get("max_drawdown_pct", "n/a"),
+                        sharpe_ratio=metrics.get("sharpe_ratio", "n/a"),
+                        win_rate_pct=metrics.get("win_rate_pct", "n/a"),
+                        trade_count=metrics.get("trade_count", "n/a"),
+                    ),
+                ]
+            )
+            summary = payload.get("artifact_summary")
+            summary = summary if isinstance(summary, dict) else {}
+            artifact_labels = {
+                "equity_curve": "权益曲线",
+                "trades": "交易",
+                "orders": "订单",
+                "fills": "成交",
+                "drawdown_series": "回撤序列",
+            }
+            for key, label in artifact_labels.items():
+                info = summary.get(key)
+                info = info if isinstance(info, dict) else {}
+                state = "可用" if info.get("available") else "不可用"
+                bitpro_backtest_detail_lines.append(
+                    (
+                        "- {label}: {state}，{count} 条，展示 {sample_count} 条样本"
+                    ).format(
+                        label=label,
+                        state=state,
+                        count=info.get("count", 0),
+                        sample_count=info.get("sample_count", 0),
+                    )
+                )
+            bitpro_backtest_detail_lines.append("")
+        for record in tool_calls:
             if getattr(record, "tool_name", "") != "bitpro_paper_dashboard":
                 continue
             payload = getattr(record, "output_json", {})
@@ -1225,6 +1297,8 @@ class AgentKernel:
             sections.extend(["## BitPro MCP K线直连", "", *bitpro_lines])
         if bitpro_backtest_lines:
             sections.extend(["## BitPro 回测结果", "", *bitpro_backtest_lines])
+        if bitpro_backtest_detail_lines:
+            sections.extend(["## BitPro 回测详情", "", *bitpro_backtest_detail_lines])
         if bitpro_paper_lines:
             sections.extend(["## BitPro 模拟盘状态", "", *bitpro_paper_lines])
         if bitpro_lifecycle_lines:

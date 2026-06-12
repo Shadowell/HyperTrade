@@ -103,6 +103,11 @@ class ToolRegistry:
                     "bitpro",
                 ),
                 ToolDefinition(
+                    "bitpro.backtest_get_result",
+                    "Read one BitPro backtest result with bounded artifact samples.",
+                    "bitpro",
+                ),
+                ToolDefinition(
                     "bitpro.paper_configure",
                     "Configure a BitPro paper/simulation instance.",
                     "bitpro",

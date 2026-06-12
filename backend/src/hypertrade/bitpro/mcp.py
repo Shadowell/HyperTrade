@@ -435,6 +435,29 @@ class BitProToolAdapter:
             "tool_calls": self.last_tool_calls,
         }
 
+    def backtest_get_result(
+        self,
+        *,
+        backtest_id: str | int,
+        sample_limit: int = 20,
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        safe_limit = max(0, min(int(sample_limit), 100))
+        raw = self._call("backtest_get_result", {"backtest_id": backtest_id})
+        result = _backtest_detail_item(raw, sample_limit=safe_limit)
+        self._attach_strategy_names([result])
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "backtest_id": result.get("id") or backtest_id,
+            "result": result,
+            "artifacts": result["artifacts"],
+            "artifact_summary": _artifact_summary(result["artifacts"]),
+            "tool_calls": self.last_tool_calls,
+        }
+
     def backtest_list_results(
         self,
         *,
@@ -976,6 +999,184 @@ def _backtest_result_item(row: dict[str, Any]) -> dict[str, Any]:
             "trade_count": _first_present(row.get("trade_count"), row.get("total_trades")),
         }
     )
+
+
+def _backtest_detail_item(raw: Any, *, sample_limit: int) -> dict[str, Any]:
+    raw_dict = _ensure_dict(raw)
+    metrics = _backtest_detail_metrics(raw_dict)
+    result = _compact(
+        {
+            "id": _detail_value(raw_dict, "id", "backtest_id", "result_id"),
+            "strategy_id": _detail_value(raw_dict, "strategy_id", "strategyId"),
+            "strategy_name": _detail_value(
+                raw_dict,
+                "strategy_name",
+                "strategyName",
+                "name",
+                "title",
+            ),
+            "status": _detail_value(raw_dict, "status", "state"),
+            "start_date": _detail_value(raw_dict, "start_date", "startDate", "start"),
+            "end_date": _detail_value(raw_dict, "end_date", "endDate", "end"),
+            "created_at": _detail_value(raw_dict, "created_at", "createdAt"),
+            "timeframe": _detail_value(raw_dict, "timeframe", "period", "bar"),
+            "symbol": _detail_value(raw_dict, "symbol", "inst_id", "instrument"),
+            "symbols": _detail_value(raw_dict, "symbols"),
+            "metrics": metrics,
+            "artifacts": _backtest_artifacts(raw_dict, sample_limit=sample_limit),
+        }
+    )
+    return result
+
+
+def _backtest_detail_metrics(raw: dict[str, Any]) -> dict[str, Any]:
+    return _compact(
+        {
+            "total_return_pct": _decimal_text(
+                _detail_value(
+                    raw,
+                    "total_return_pct",
+                    "return_pct",
+                    "profit_pct",
+                    "total_return",
+                )
+            ),
+            "annual_return_pct": _decimal_text(
+                _detail_value(
+                    raw,
+                    "annual_return_pct",
+                    "annual_return",
+                    "annualized_return",
+                )
+            ),
+            "max_drawdown_pct": _decimal_text(
+                _detail_value(raw, "max_drawdown_pct", "max_drawdown")
+            ),
+            "sharpe_ratio": _decimal_text(_detail_value(raw, "sharpe_ratio", "sharpe")),
+            "win_rate_pct": _decimal_text(_detail_value(raw, "win_rate_pct", "win_rate")),
+            "trade_count": _detail_value(
+                raw,
+                "trade_count",
+                "total_trades",
+                "trades_count",
+                "number_of_trades",
+            ),
+            "final_capital": _decimal_text(
+                _detail_value(raw, "final_capital", "final_equity", "ending_equity")
+            ),
+        }
+    )
+
+
+def _detail_value(raw: dict[str, Any], *keys: str) -> Any:
+    for source in _detail_sources(raw):
+        for key in keys:
+            if key in source and source[key] is not None:
+                return source[key]
+    return None
+
+
+def _detail_sources(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    sources = [raw]
+    queue = [raw]
+    for _ in range(2):
+        next_queue: list[dict[str, Any]] = []
+        for source in queue:
+            for key in (
+                "result",
+                "backtest",
+                "summary",
+                "metrics",
+                "performance",
+                "stats",
+                "metadata",
+                "data",
+            ):
+                value = source.get(key)
+                if isinstance(value, dict) and value not in sources:
+                    sources.append(value)
+                    next_queue.append(value)
+        queue = next_queue
+    return sources
+
+
+def _backtest_artifacts(raw: dict[str, Any], *, sample_limit: int) -> dict[str, Any]:
+    aliases = {
+        "equity_curve": ("equity_curve", "equityCurve", "equity", "balance_curve"),
+        "trades": ("trades", "trade_history", "tradeHistory"),
+        "orders": ("orders", "order_history", "orderHistory"),
+        "fills": ("fills", "executions", "fill_history", "fillHistory"),
+        "drawdown_series": (
+            "drawdown_series",
+            "drawdownSeries",
+            "drawdowns",
+            "drawdown_curve",
+            "drawdownCurve",
+        ),
+    }
+    return {
+        name: _artifact_payload(_extract_artifact_rows(raw, keys), sample_limit=sample_limit)
+        for name, keys in aliases.items()
+    }
+
+
+def _extract_artifact_rows(raw: dict[str, Any], keys: tuple[str, ...]) -> list[dict[str, Any]]:
+    for source in _artifact_sources(raw):
+        for key in keys:
+            if key not in source:
+                continue
+            rows = _coerce_artifact_rows(source[key])
+            if rows:
+                return rows
+    return []
+
+
+def _artifact_sources(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    sources = [raw]
+    queue = [raw]
+    for _ in range(2):
+        next_queue: list[dict[str, Any]] = []
+        for source in queue:
+            for key in ("artifacts", "result", "report", "details", "backtest", "data"):
+                value = source.get(key)
+                if isinstance(value, dict) and value not in sources:
+                    sources.append(value)
+                    next_queue.append(value)
+        queue = next_queue
+    return sources
+
+
+def _coerce_artifact_rows(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [_ensure_dict(row) for row in value]
+    if isinstance(value, dict):
+        for key in ("items", "rows", "data", "points", "values"):
+            rows = value.get(key)
+            if isinstance(rows, list):
+                return [_ensure_dict(row) for row in rows]
+    return []
+
+
+def _artifact_payload(rows: list[dict[str, Any]], *, sample_limit: int) -> dict[str, Any]:
+    sample = rows[:sample_limit]
+    return {
+        "available": bool(rows),
+        "count": len(rows),
+        "sample_count": len(sample),
+        "sample": sample,
+    }
+
+
+def _artifact_summary(artifacts: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    summary: dict[str, dict[str, Any]] = {}
+    for name, payload in artifacts.items():
+        payload = payload if isinstance(payload, dict) else {}
+        summary[name] = {
+            "available": bool(payload.get("available")),
+            "count": int(payload.get("count") or 0),
+            "sample_count": int(payload.get("sample_count") or 0),
+        }
+    return summary
 
 
 def _first_present(*values: Any) -> Any:
