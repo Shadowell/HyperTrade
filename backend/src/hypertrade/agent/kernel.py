@@ -1202,6 +1202,11 @@ class AgentKernel:
                         uptime=system.get("uptime", "n/a"),
                     ),
                     (
+                        "- 实盘判断边界: 当前 dashboard 的 mode=paper/dry-run 只说明"
+                        "当前连接的 dashboard 或策略处于模拟/干跑状态，不能据此判断"
+                        " BitPro 全局实盘功能关闭。"
+                    ),
+                    (
                         "- 当前 dashboard 绩效: equity={equity}, total_pnl_pct={pnl}%, "
                         "sharpe={sharpe}, max_drawdown={drawdown}%"
                     ).format(

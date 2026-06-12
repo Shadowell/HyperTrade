@@ -155,6 +155,7 @@ def test_planner_report_distinguishes_bitpro_paper_dashboard_scope() -> None:
     assert "## BitPro 模拟盘状态" in report
     assert "Dashboard 范围: current_instance" in report
     assert "当前 dashboard: strategy_id=105" in report
+    assert "不能据此判断 BitPro 全局实盘功能关闭" in report
     assert "strategy_search(status=running) 返回 2 个" in report
     assert "293: [合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U [running]" in report
     assert "paper_dashboard exposes the current BitPro paper dashboard only" in report
