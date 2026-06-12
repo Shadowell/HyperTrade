@@ -12,6 +12,7 @@
 
 ## Latest Completed Work
 
+- Updated CLI structured BitPro rendering so `bitpro_backtest_get_result` appears as a dedicated backtest detail block in both Rich and plain output, and mixed ranking/detail runs no longer hide the page-parity result details behind the ranking table.
 - Suppressed BitPro lifecycle polling logs when a report already contains BitPro backtest result/detail evidence, so strategy backtest prompts stay focused on page-parity metrics and artifact availability instead of appending tool lifecycle rows.
 - Added semantic CLI colors for interactive TTY output: slash-command help now colors commands/descriptions, `/tools` colors tool names/categories/approval markers/descriptions, Agent streaming status colors progress/tool/success/error lines, remote API errors use error color, and non-TTY or `NO_COLOR=1` output remains plain for scripts.
 - Fixed remote CLI streaming for long BitPro backtests: `hypertrade`/`ht` now keeps SSE reads open while preserving connect/write/pool timeouts, so a quiet upstream BitPro backtest does not bounce the local chat session with a misleading deploy/restart connection error. Remote connection error text now states that the run may still be continuing and points operators to retry or inspect `/runs`.

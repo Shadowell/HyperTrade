@@ -2153,6 +2153,8 @@ def _render_rich_tool_report(
             _render_rich_compare(payload, console=console)
         elif tool_name == "bitpro_backtest_list_results":
             _render_rich_bitpro_backtest_results(payload, console=console)
+        elif tool_name == "bitpro_backtest_get_result":
+            _render_rich_bitpro_backtest_detail(payload, console=console)
         elif tool_name == "bitpro_paper_dashboard":
             _render_rich_bitpro_paper_dashboard(payload, console=console)
 
@@ -2379,6 +2381,67 @@ def _render_rich_bitpro_backtest_results(payload: dict[str, Any], *, console: An
     console.print(table)
 
 
+_BITPRO_ARTIFACT_LABELS = {
+    "equity_curve": "权益曲线",
+    "trades": "交易",
+    "orders": "订单",
+    "fills": "成交",
+    "drawdown_series": "回撤序列",
+}
+
+
+def _render_rich_bitpro_backtest_detail(payload: dict[str, Any], *, console: Any) -> None:
+    from rich.panel import Panel
+    from rich.table import Table
+
+    result = payload.get("result")
+    result = result if isinstance(result, dict) else {}
+    metrics = result.get("metrics")
+    metrics = metrics if isinstance(metrics, dict) else {}
+    summary = "\n".join(
+        [
+            (
+                f"result #{result.get('id', payload.get('backtest_id', 'n/a'))} / "
+                f"strategy #{result.get('strategy_id', 'n/a')}"
+            ),
+            _format_strategy_name(result.get("strategy_name", "n/a")),
+            (
+                f"状态 {result.get('status', 'n/a')} | 周期 {result.get('timeframe', 'n/a')} | "
+                f"区间 {_format_period(result.get('start_date'), result.get('end_date'))}"
+            ),
+            (
+                f"收益 {_format_percent(metrics.get('total_return_pct'))} | "
+                f"回撤 {_format_percent(metrics.get('max_drawdown_pct'))} | "
+                f"夏普 {_format_number(metrics.get('sharpe_ratio'))} | "
+                f"胜率 {_format_percent(metrics.get('win_rate_pct'))} | "
+                f"交易 {metrics.get('trade_count', 'n/a')}"
+            ),
+        ]
+    )
+    console.print(Panel(summary, title="BitPro 回测详情", border_style="green"))
+
+    artifact_summary = payload.get("artifact_summary")
+    artifact_summary = artifact_summary if isinstance(artifact_summary, dict) else {}
+    if not artifact_summary:
+        return
+    table = Table(title="Artifacts", show_header=True, header_style="bold")
+    table.add_column("Artifact")
+    table.add_column("State")
+    table.add_column("Rows", justify="right")
+    table.add_column("Sample", justify="right")
+    for key, label in _BITPRO_ARTIFACT_LABELS.items():
+        info = artifact_summary.get(key)
+        if not isinstance(info, dict):
+            continue
+        table.add_row(
+            label,
+            "available" if info.get("available") else "unavailable",
+            str(info.get("count", 0)),
+            str(info.get("sample_count", 0)),
+        )
+    console.print(table)
+
+
 def _render_structured_report(run: dict[str, Any], *, output: TextIO) -> bool:
     report = run.get("report_json", {})
     if not isinstance(report, dict) or not report:
@@ -2439,6 +2502,7 @@ def _has_structured_market_tool_output(trace_events: list[Any]) -> bool:
         "market_candles",
         "market_compare",
         "bitpro_backtest_list_results",
+        "bitpro_backtest_get_result",
         "bitpro_paper_dashboard",
     }
     for event in trace_events:
@@ -2471,6 +2535,8 @@ def _render_structured_tool_report(
             _render_tool_compare_block(payload, output=output)
         elif tool_name == "bitpro_backtest_list_results":
             _render_tool_bitpro_backtest_block(payload, output=output)
+        elif tool_name == "bitpro_backtest_get_result":
+            _render_tool_bitpro_backtest_detail_block(payload, output=output)
         elif tool_name == "bitpro_paper_dashboard":
             _render_tool_bitpro_paper_block(payload, output=output)
 
@@ -2654,6 +2720,64 @@ def _render_tool_bitpro_backtest_block(payload: dict[str, Any], *, output: TextI
             ),
             file=output,
         )
+
+
+def _render_tool_bitpro_backtest_detail_block(
+    payload: dict[str, Any],
+    *,
+    output: TextIO,
+) -> None:
+    result = payload.get("result")
+    result = result if isinstance(result, dict) else {}
+    metrics = result.get("metrics")
+    metrics = metrics if isinstance(metrics, dict) else {}
+    print("", file=output)
+    print("BitPro backtest detail:", file=output)
+    print(
+        "- Result: #{id} / strategy #{strategy_id}: {name}".format(
+            id=result.get("id", payload.get("backtest_id", "n/a")),
+            strategy_id=result.get("strategy_id", "n/a"),
+            name=_format_strategy_name(result.get("strategy_name", "n/a")),
+        ),
+        file=output,
+    )
+    print(
+        "- Status: {status}, timeframe={timeframe}, period={period}".format(
+            status=result.get("status", "n/a"),
+            timeframe=result.get("timeframe", "n/a"),
+            period=_format_period(result.get("start_date"), result.get("end_date")),
+        ),
+        file=output,
+    )
+    print(
+        "- Metrics: return={total_return}, drawdown={drawdown}, sharpe={sharpe}, "
+        "win={win_rate}, trades={trades}".format(
+            total_return=_format_percent(metrics.get("total_return_pct")),
+            drawdown=_format_percent(metrics.get("max_drawdown_pct")),
+            sharpe=_format_number(metrics.get("sharpe_ratio")),
+            win_rate=_format_percent(metrics.get("win_rate_pct")),
+            trades=metrics.get("trade_count", "n/a"),
+        ),
+        file=output,
+    )
+    artifact_summary = payload.get("artifact_summary")
+    artifact_summary = artifact_summary if isinstance(artifact_summary, dict) else {}
+    if artifact_summary:
+        print("- Artifacts:", file=output)
+        for key, label in _BITPRO_ARTIFACT_LABELS.items():
+            info = artifact_summary.get(key)
+            if not isinstance(info, dict):
+                continue
+            state = "available" if info.get("available") else "unavailable"
+            print(
+                "  - {label}: {state}, rows={count}, sample={sample_count}".format(
+                    label=label,
+                    state=state,
+                    count=info.get("count", 0),
+                    sample_count=info.get("sample_count", 0),
+                ),
+                file=output,
+            )
 
 
 def _format_number(value: object, *, digits: int = 2) -> str:

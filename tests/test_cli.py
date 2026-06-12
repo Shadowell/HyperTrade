@@ -958,6 +958,137 @@ def test_render_run_uses_rich_bitpro_backtest_result_table(monkeypatch) -> None:
     assert "result #161, strategy #178" not in rendered
 
 
+def test_render_run_structured_output_includes_bitpro_backtest_detail(capsys) -> None:
+    render_run(
+        {
+            "id": "run_bitpro_detail",
+            "status": "completed",
+            "report_markdown": "## BitPro 回测详情\n\n- result #199",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {
+                    "tool_name": "bitpro_backtest_list_results",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "filter": {"metric": "total_return_pct", "min_total_return_pct": 0},
+                        "result_count": 1,
+                        "raw_result_count": 1,
+                        "results": [
+                            {
+                                "id": 199,
+                                "strategy_id": 292,
+                                "strategy_name": "[合约][4H][CTA] Top20 · 波动压缩突破",
+                                "total_return_pct": "9.701471818245139",
+                                "annual_return_pct": "25.0842",
+                                "max_drawdown_pct": "5.6088",
+                                "sharpe_ratio": "0.5117",
+                                "win_rate_pct": "56.52",
+                                "trade_count": 23,
+                                "start_date": "2026-01-01",
+                                "end_date": "2026-06-01",
+                            }
+                        ],
+                    },
+                },
+                {
+                    "tool_name": "bitpro_backtest_get_result",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "backtest_id": "199",
+                        "result": {
+                            "id": 199,
+                            "strategy_id": 292,
+                            "strategy_name": "[合约][4H][CTA] Top20 · 波动压缩突破",
+                            "status": "completed",
+                            "timeframe": "4h",
+                            "start_date": "2026-01-01",
+                            "end_date": "2026-06-01",
+                            "metrics": {
+                                "total_return_pct": "9.701471818245139",
+                                "max_drawdown_pct": "5.6088",
+                                "sharpe_ratio": "0.5117",
+                                "win_rate_pct": "56.52",
+                                "trade_count": 23,
+                            },
+                        },
+                        "artifact_summary": {
+                            "equity_curve": {
+                                "available": True,
+                                "count": 907,
+                                "sample_count": 30,
+                            },
+                            "trades": {"available": True, "count": 46, "sample_count": 30},
+                        },
+                    },
+                },
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "BitPro backtest ranking:" in output
+    assert "BitPro backtest detail:" in output
+    assert "Result: #199 / strategy #292" in output
+    assert "return=9.7%" in output
+    assert "权益曲线: available, rows=907, sample=30" in output
+
+
+def test_render_run_uses_rich_bitpro_backtest_detail_panel(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    output = StringIO()
+
+    render_run(
+        {
+            "id": "run_bitpro_detail_rich",
+            "status": "completed",
+            "report_markdown": "## BitPro 回测详情\n\n- result #199",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {
+                    "tool_name": "bitpro_backtest_get_result",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "backtest_id": "199",
+                        "result": {
+                            "id": 199,
+                            "strategy_id": 292,
+                            "strategy_name": "[合约][4H][CTA] Top20 · 波动压缩突破",
+                            "status": "completed",
+                            "timeframe": "4h",
+                            "start_date": "2026-01-01",
+                            "end_date": "2026-06-01",
+                            "metrics": {
+                                "total_return_pct": "9.701471818245139",
+                                "max_drawdown_pct": "5.6088",
+                                "sharpe_ratio": "0.5117",
+                                "win_rate_pct": "56.52",
+                                "trade_count": 23,
+                            },
+                        },
+                        "artifact_summary": {
+                            "equity_curve": {
+                                "available": True,
+                                "count": 907,
+                                "sample_count": 30,
+                            }
+                        },
+                    },
+                }
+            ],
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "BitPro 回测详情" in rendered
+    assert "result #199 / strategy #292" in rendered
+    assert "9.7%" in rendered
+    assert "权益曲线" in rendered
+
+
 def test_render_run_keeps_plain_markdown_when_renderer_plain(monkeypatch) -> None:
     monkeypatch.setenv("HYPERTRADE_RENDERER", "plain")
     output = StringIO()
