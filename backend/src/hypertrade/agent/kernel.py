@@ -1393,7 +1393,7 @@ class AgentKernel:
         }
         for record in tool_calls:
             tool_name = str(getattr(record, "tool_name", ""))
-            if bitpro_backtest_lines:
+            if bitpro_backtest_lines or bitpro_backtest_detail_lines:
                 continue
             if tool_name not in lifecycle_tool_names:
                 continue

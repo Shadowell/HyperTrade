@@ -381,6 +381,19 @@ def test_planner_report_renders_bitpro_backtest_artifact_detail() -> None:
         "### 模型自由发挥\n- 不应该出现在 BitPro 证据报告里",
         [
             ToolCallRecord(
+                tool_name="bitpro_backtest_start_job",
+                input_json={"strategy_id": 293},
+                output_json={
+                    "status": "ok",
+                    "job": {"job_id": "job_196", "status": "completed"},
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                        {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                        {"tool": "backtest_start_job", "parameters": {}, "status": "success"},
+                    ],
+                },
+            ),
+            ToolCallRecord(
                 tool_name="bitpro_backtest_get_result",
                 input_json={"backtest_id": "196", "sample_limit": 2},
                 output_json={
@@ -431,6 +444,8 @@ def test_planner_report_renders_bitpro_backtest_artifact_detail() -> None:
     assert "权益曲线: 可用，3 条，展示 2 条样本" in report
     assert "订单: 不可用，0 条，展示 0 条样本" in report
     assert "backtest_get_result" in report
+    assert "## BitPro 策略生命周期" not in report
+    assert "bitpro_backtest_start_job" not in report
     assert "模型自由发挥" not in report
     assert "不应该出现在 BitPro 证据报告里" not in report
 
