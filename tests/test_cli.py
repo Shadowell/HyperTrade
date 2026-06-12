@@ -699,6 +699,30 @@ def test_render_run_uses_rich_markdown_for_unknown_report(monkeypatch) -> None:
     assert "|---|---|" not in rendered
 
 
+def test_render_run_strips_emoji_icons_from_rich_markdown_report(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    output = StringIO()
+
+    render_run(
+        {
+            "id": "run_markdown_icons",
+            "status": "completed",
+            "report_markdown": "# 📊 总览\n\n- ✅ 数据源: BitPro\n- ⚠️ 风险: 回撤偏高",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [{"tool_name": "graph.final_report", "status": "completed"}],
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "总览" in rendered
+    assert "数据源" in rendered
+    assert "风险" in rendered
+    assert "📊" not in rendered
+    assert "✅" not in rendered
+    assert "⚠" not in rendered
+
+
 def test_render_run_uses_rich_bitpro_backtest_result_table(monkeypatch) -> None:
     monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
     output = StringIO()

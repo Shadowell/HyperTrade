@@ -1776,7 +1776,7 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     has_structured_tools = isinstance(trace_events, list) and _has_structured_market_tool_output(
         trace_events
     )
-    raw_markdown = str(run.get("report_markdown", "")).strip()
+    raw_markdown = _strip_report_icons(str(run.get("report_markdown", ""))).strip()
     if not has_structured_market_summary and not has_structured_tools and not raw_markdown:
         return False
 
@@ -1908,13 +1908,14 @@ def _aggregate_trace_events(trace_events: list[dict[str, Any]]) -> list[dict[str
 
 
 def _render_markdown_report(markdown: str, *, output: TextIO, title: str) -> None:
+    markdown = _strip_report_icons(markdown)
     if _should_render_rich(output) and _render_rich_markdown(markdown, output=output, title=title):
         return
     print(markdown, file=output)
 
 
 def _render_rich_markdown(markdown: str, *, output: TextIO, title: str) -> bool:
-    markdown = markdown.strip()
+    markdown = _strip_report_icons(markdown).strip()
     if not markdown:
         return False
     try:
@@ -1927,6 +1928,39 @@ def _render_rich_markdown(markdown: str, *, output: TextIO, title: str) -> bool:
     console = Console(file=output, force_terminal=True, color_system=None, width=120)
     console.print(Panel(Markdown(markdown), title=title, border_style="green"))
     return True
+
+
+def _strip_report_icons(markdown: str) -> str:
+    lines = [
+        "".join(ch for ch in line if not _is_report_icon_char(ch))
+        for line in markdown.splitlines()
+    ]
+    return "\n".join(_normalize_markdown_line_spacing(line) for line in lines)
+
+
+def _is_report_icon_char(ch: str) -> bool:
+    codepoint = ord(ch)
+    return (
+        0x1F000 <= codepoint <= 0x1FAFF
+        or 0x2600 <= codepoint <= 0x27BF
+        or 0xFE00 <= codepoint <= 0xFE0F
+    )
+
+
+def _normalize_markdown_line_spacing(line: str) -> str:
+    if not line:
+        return line
+    if line.startswith("#"):
+        marker_length = 0
+        while marker_length < len(line) and line[marker_length] == "#":
+            marker_length += 1
+        marker = line[:marker_length]
+        body = line[marker_length:].strip()
+        return f"{marker} {body}" if body else marker
+    if line.startswith("-"):
+        body = line[1:].strip()
+        return f"- {body}" if body else "-"
+    return line
 
 
 def _render_rich_market_summary(report: dict[str, Any], *, console: Any) -> None:

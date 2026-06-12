@@ -12,6 +12,7 @@
 
 ## Latest Completed Work
 
+- Removed model-generated emoji/icons from CLI Markdown report rendering: Rich and plain Agent reports now strip poor terminal emoji glyphs such as chart/check/warning icons before display, while keeping the report headings, list structure, and text readable.
 - Improved CLI readability for BitPro backtest result reports: `bitpro_backtest_list_results` trace payloads now render as a Rich summary panel plus compact ranking table with rounded total return, drawdown, Sharpe, win rate, trade count, and period fields instead of falling back to long raw Markdown bullets. Plain structured output also uses concise ranking rows while preserving the `total_return_pct` source-of-truth metric.
 - Updated the high-visibility product positioning copy to emphasize HyperTrade as "A crypto trading agent for market research and execution" instead of a platform/system/harness; README, product spec, Chinese README, and CLI welcome banner now use the trading-agent framing.
 - Added first-class local remote-login configuration to the CLI: `hypertrade /login` / `ht /login` now prompts for API URL, username, and password, writes `~/.hypertrade/client.env` with `0600` permissions, and makes later `ht` / `ht ask ...` commands default to the saved remote API unless `--local` is passed. Explicit `HYPERTRADE_*` environment variables still override saved config for automation.
