@@ -48,6 +48,7 @@ class BacktestService:
         bar: str = "1H",
         candle_limit: int = 100,
         candle_source: str = "sample",
+        strategy_params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if research_id:
             research = StrategyResearchService(self.db).get(research_id)
@@ -83,6 +84,7 @@ class BacktestService:
             strategy_key=strategy_key,
             candles=candles or sample_candles(),
             initial_cash=initial_cash,
+            strategy_params=strategy_params,
         )
         report_json = dict(result.report_json)
         report_json.update(

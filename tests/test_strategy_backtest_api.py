@@ -59,7 +59,29 @@ def test_strategy_experiment_workflow_api(tmp_path) -> None:
     assert experiment["research_id"].startswith("srch_")
     assert experiment["backtest_id"].startswith("bt_")
     assert "critique" in experiment["report_json"]
+    variants = experiment["report_json"]["variants"]
+    winner = experiment["report_json"]["winner"]
+    gates = experiment["report_json"]["evidence_gates"]
+    assert len(variants) >= 3
+    assert all(item["backtest_id"].startswith("bt_") for item in variants)
+    assert all(item["metrics"]["trade_count"] >= 0 for item in variants)
+    assert {item["variant_id"] for item in variants} >= {
+        "baseline",
+        "fast",
+        "conservative",
+    }
+    assert winner["variant_id"] in {item["variant_id"] for item in variants}
+    assert winner["backtest_id"] == experiment["backtest_id"]
+    assert gates == {
+        "min_trade_count": 1,
+        "max_drawdown_pct": "20",
+        "require_non_negative_return": True,
+    }
+    assert "## 候选版本对比" in experiment["report_markdown"]
+    assert "## 胜出版本" in experiment["report_markdown"]
     assert "不构成投资建议" in experiment["report_markdown"]
+    backtests = client.get("/api/backtests").json()["items"]
+    assert len(backtests) >= 3
     assert experiments[0]["id"] == experiment["id"]
     assert overview["strategy_lab"]["latest_experiment"]["id"] == experiment["id"]
 

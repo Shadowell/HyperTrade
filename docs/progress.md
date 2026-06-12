@@ -8,10 +8,11 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-32-production-agent-bitpro-tools.md` (in progress locally)
+- `docs/contracts/sprint-35-strategy-evidence-loop.md` (in progress locally)
 
 ## Latest Completed Work
 
+- Upgraded the local strategy experiment workflow into a small evidence loop: `/experiment <prompt>` now runs baseline, fast, and conservative `momentum_breakout_v1` variants through normal Backtrader `BacktestRun` persistence, stores `variants`, `winner`, and `evidence_gates` in `strategy_experiments.report_json`, records the winning backtest id on the experiment row, and renders a candidate comparison table plus winning rationale in the report.
 - Removed model-generated emoji/icons from CLI Markdown report rendering: Rich and plain Agent reports now strip poor terminal emoji glyphs such as chart/check/warning icons before display, while keeping the report headings, list structure, and text readable.
 - Improved CLI readability for BitPro backtest result reports: `bitpro_backtest_list_results` trace payloads now render as a Rich summary panel plus compact ranking table with rounded total return, drawdown, Sharpe, win rate, trade count, and period fields instead of falling back to long raw Markdown bullets. Plain structured output also uses concise ranking rows while preserving the `total_return_pct` source-of-truth metric.
 - Updated the high-visibility product positioning copy to emphasize HyperTrade as "A crypto trading agent for market research and execution" instead of a platform/system/harness; README, product spec, Chinese README, and CLI welcome banner now use the trading-agent framing.

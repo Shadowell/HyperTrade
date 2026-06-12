@@ -69,6 +69,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Sprint 32 production-oriented project positioning and BitPro API tool-surface contract.
 - Sprint 33 initial BitPro MCP adapter: capability/health preflight, K-line data direct access, paper dashboard reads, live-position diagnostics, API endpoints, Agent tool schemas, and `bitpro_mcp` backtest candle source.
 - Sprint 34 BitPro strategy lifecycle Agent tools: strategy search/generation/creation/update, BitPro-owned backtest job start/status reads, and paper/simulation configure/start/pause/resume/stop with live-write tools still blocked.
+- Sprint 35 strategy evidence loop: `/experiment <prompt>` now compares baseline, fast, and conservative variants, persists each backtest as evidence, selects a winner through explicit gates, and proposes the next adjacent experiment.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
 - BitPro external API adapter contract for backtest data, base market data, paper/simulation state, and live trading state without copying BitPro business logic.
 
@@ -77,7 +78,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Mainnet live order execution. Mainnet intent creation may be audited, but execution is blocked.
 - Automatic investment advice or unattended real-money trading.
 - Milvus/Qdrant production vector clusters.
-- Parameter optimization sweeps and live/Testnet order generation from backtest results.
+- Large parameter optimization sweeps and live/Testnet order generation from backtest results.
 - Direct BitPro database access or copied BitPro trading logic; HyperTrade consumes BitPro capabilities only through explicit API contracts.
 
 ## Acceptance
@@ -118,7 +119,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Developer can switch chat providers from CLI/API/frontend without exposing provider keys.
 - Developer can search RAG citations and Memory from CLI/API/frontend.
 - Developer can create, approve, and execute OKX Testnet order intents after risk checks.
-- Developer can run `/experiment <prompt>` to create strategy research, backtest, critique, and next experiment report.
+- Developer can run `/experiment <prompt>` to create strategy research, compare multiple backtest variants, inspect the winning evidence, and read the next experiment recommendation.
 - Developer can run `/evals` and inspect deterministic Agent eval status.
 - Operator can use `docs/knowledge/tool-usage-guide.md` to validate each Agent tool surface and follow related operational source-code comments.
 - Operator can review the BitPro tool-surface requirements before wiring external data, backtest, paper/simulation, or live-state APIs into Agent tools.

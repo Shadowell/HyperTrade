@@ -28,15 +28,18 @@ class MomentumBreakoutStrategy(bt.Strategy):  # type: ignore[misc]
     params = (("sma_period", 5), ("breakout_pct", 0.0))
 
     def __init__(self) -> None:
+        runtime_params: Any = self.p
+        self.sma_period = max(2, int(getattr(runtime_params, "sma_period", 5)))
+        self.breakout_pct = float(getattr(runtime_params, "breakout_pct", 0.0))
         self.sma = bt.indicators.SimpleMovingAverage(
             self.data.close,
-            period=self.default_sma_period,
+            period=self.sma_period,
         )
         self.completed_orders = 0
 
     def next(self) -> None:
         if not self.position and self.data.close[0] >= self.sma[0] * (
-            1 + self.default_breakout_pct
+            1 + self.breakout_pct
         ):
             self.buy(size=1)
         elif self.position and self.data.close[0] < self.sma[0]:
@@ -54,11 +57,13 @@ class BacktestEngine:
         strategy_key: str,
         candles: list[Candle],
         initial_cash: Decimal,
+        strategy_params: dict[str, object] | None = None,
     ) -> BacktestResult:
         if strategy_key != "momentum_breakout_v1":
             raise KeyError(strategy_key)
         if len(candles) < 6:
             raise ValueError("At least 6 candles are required")
+        params = _strategy_params(strategy_params)
 
         with TemporaryDirectory() as tmpdir:
             csv_path = Path(tmpdir) / "candles.csv"
@@ -80,7 +85,7 @@ class BacktestEngine:
                 headers=True,
             )
             cerebro.adddata(data)
-            cerebro.addstrategy(MomentumBreakoutStrategy)
+            cerebro.addstrategy(MomentumBreakoutStrategy, **params)
             cerebro.addanalyzer(bt.analyzers.DrawDown, _name="drawdown")
             cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trades")
             strategies = cerebro.run()
@@ -94,6 +99,7 @@ class BacktestEngine:
         )
         report_json: dict[str, object] = {
             "strategy_key": strategy_key,
+            "strategy_params": {key: str(value) for key, value in params.items()},
             "start_cash": str(initial_cash),
             "end_value": str(end_value),
             "total_return_pct": str(total_return_pct),
@@ -142,3 +148,13 @@ def _candles_to_csv(candles: list[Candle]) -> str:
             )
         )
     return "\n".join(rows)
+
+
+def _strategy_params(params: dict[str, object] | None) -> dict[str, int | float]:
+    values = dict(params or {})
+    sma_period = int(str(values.get("sma_period", 5)))
+    breakout_pct = float(str(values.get("breakout_pct", 0.0)))
+    return {
+        "sma_period": max(2, min(sma_period, 100)),
+        "breakout_pct": max(0.0, min(breakout_pct, 0.5)),
+    }

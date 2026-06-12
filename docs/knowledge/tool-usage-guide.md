@@ -187,9 +187,9 @@ Memory 和 RAG 的区别：
 你应该观察：
 
 - research id：`srch_*`
-- backtest id：`bt_*`
+- backtest id：`bt_*`；`/experiment` 会生成多条候选 backtest evidence，并把胜出 backtest id 写入 `exp_*`
 - experiment id：`exp_*`
-- data source、bar、candle_count、trade summary、risk notes
+- data source、bar、candle_count、candidate variants、winner、trade summary、risk notes
 
 相关代码：
 
