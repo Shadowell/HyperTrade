@@ -1319,6 +1319,8 @@ class AgentKernel:
             sections.extend(["## 引用来源", "", *citation_lines])
         if not sections:
             return final_message
+        if bitpro_backtest_lines or bitpro_backtest_detail_lines or bitpro_paper_lines:
+            return "\n".join(sections)
         return "\n".join([*sections, final_message])
 
 

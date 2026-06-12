@@ -241,7 +241,7 @@ def test_planner_report_renders_bitpro_backtest_total_return_results() -> None:
 
 def test_planner_report_renders_bitpro_backtest_artifact_detail() -> None:
     report = AgentKernel._render_planner_report(
-        "已读取 BitPro 回测详情。",
+        "### 模型自由发挥\n- 不应该出现在 BitPro 证据报告里",
         [
             ToolCallRecord(
                 tool_name="bitpro_backtest_get_result",
@@ -294,6 +294,8 @@ def test_planner_report_renders_bitpro_backtest_artifact_detail() -> None:
     assert "权益曲线: 可用，3 条，展示 2 条样本" in report
     assert "订单: 不可用，0 条，展示 0 条样本" in report
     assert "backtest_get_result" in report
+    assert "模型自由发挥" not in report
+    assert "不应该出现在 BitPro 证据报告里" not in report
 
 
 def test_market_candles_payload_uses_fetcher_and_returns_features(monkeypatch, tmp_path) -> None:
