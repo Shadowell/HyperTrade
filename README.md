@@ -2,7 +2,7 @@
 
 [中文](README.zh-CN.md) | [English](README.en.md)
 
-HyperTrade is a crypto trading agent for market research and execution. Current V1 covers observable Agent graph runs, provider routing, tool calling, RAG citations, audited Memory, OKX market research, paper trading, strategy experiments, risk-gated live intents, OKX Testnet signed execution, and a BitPro MCP adapter for external data access plus non-live strategy lifecycle workflows.
+HyperTrade is a crypto trading agent for market research and execution. Current V1 covers observable Agent graph runs, provider routing, tool calling, RAG citations, audited Memory, OKX market research, paper trading, strategy experiments, strategy knowledge memory, risk-gated live intents, OKX Testnet signed execution, and a BitPro MCP adapter for external data access plus non-live strategy lifecycle workflows.
 
 > Research output only. Nothing in this repository is investment advice.
 
@@ -21,6 +21,8 @@ uv run uvicorn hypertrade.main:app --app-dir backend/src --host 0.0.0.0 --port 3
 ```bash
 ./scripts/check.sh
 ```
+
+This runs frontend install/lint/test/build, Python ruff, mypy, and pytest.
 
 ## CLI
 
@@ -83,8 +85,11 @@ default; set `HYPERTRADE_TRACE=full` when a full audit trace is needed.
 /evals
 ```
 
-## Operations Guide
+## Documentation Map
 
-For an operational map of Agent graph, tool calls, provider routing, RAG, Memory,
-risk, Testnet execution, CLI, frontend, tests, and deployment smoke, read
-`docs/knowledge/tool-usage-guide.md`.
+- `docs/README.md`: documentation index and current capability map.
+- `docs/spec.md`: product scope, acceptance criteria, and boundaries.
+- `docs/progress.md`: latest implementation/deployment state.
+- `docs/architecture/`: module-level architecture notes.
+- `docs/knowledge/tool-usage-guide.md`: operator guide for Agent tools and validation.
+- `docs/runbooks/`: deployment, BitPro MCP, smoke, backup, and incident procedures.

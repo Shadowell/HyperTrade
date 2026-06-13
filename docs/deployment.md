@@ -78,6 +78,11 @@ to review live runs, trace, RAG, Memory, and market state without a login wall.
 For privileged actions, use the same remote CLI pattern with their own
 credentials. Do not share production `.env` files or server-only provider keys.
 
+After deployment, run `docs/runbooks/deployment-smoke.md`. If BitPro MCP is
+configured on the server, include the optional BitPro ranking/detail/paper
+monitor checks so adapter regressions are caught before operators rely on
+reports.
+
 ## PostgreSQL
 
 PostgreSQL runs through Docker Compose with `pgvector/pgvector:pg16`. Port `5432` is not exposed publicly. API and worker connect over the Compose network.

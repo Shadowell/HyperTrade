@@ -40,7 +40,11 @@ Run the full project check:
 | Risk refusal | Create Mainnet or oversized intent in tests | Intent becomes `risk_blocked` with structured violation. |
 | Testnet execution | `/live execute loi_*` | Approved Testnet intent records redacted request and exchange response or auditable failure. |
 | Strategy experiment | `/experiment 研究ETH趋势突破` | Creates `exp_*`, linked `srch_*`, linked `bt_*`, critique, next experiment, and a research/risk boundary. |
+| Strategy knowledge memory | `POST /api/strategy/experiments` then `GET /api/memory?kind=strategy_knowledge` | Memory contains one source-bound strategy evidence card with experiment/backtest ids, winner, metrics, gates, and tags. |
 | Eval suite | `/evals` | Deterministic eval status shows tool selection, RAG citation, memory, risk refusal, and Testnet safety cases. |
+| BitPro result ranking | `查看 BitPro 回测收益大于100%的策略有哪些` | Calls `bitpro_backtest_list_results` and reports actual `total_return_pct`, not annualized return or memory. |
+| BitPro result detail | `查看 BitPro 回测 result 196 的权益曲线和交易证据` | Calls `bitpro_backtest_get_result`, reports real metrics and bounded artifact availability, and does not invent missing rows. |
+| BitPro paper monitor | `监控 BitPro 所有运行中的模拟盘策略` | Calls `bitpro_paper_dashboard` plus running strategy inventory, reports alerts/data gaps/read-only actions. |
 
 ## Output Quality Rules
 
@@ -75,6 +79,9 @@ printf "/research 研究BTC趋势突破\n/backtest --source bitpro --symbol BTC 
 printf "/research 研究ETH趋势突破\n/backtest --live --symbol ETH --bar 1H --limit 100\n:q\n" | hypertrade
 printf "/model deepseek\n/rag 风控\n/memory search 风控\n/evals\n:q\n" | hypertrade
 printf "/experiment 研究ETH趋势突破\n:q\n" | hypertrade
+printf "/memory search momentum_breakout_v1\n:q\n" | hypertrade
+hypertrade ask "查看 BitPro 回测收益大于100%的策略有哪些"
+hypertrade ask "查看 BitPro 回测 result 196 的权益曲线和交易证据"
 ```
 
 Expected server observations:
@@ -90,6 +97,8 @@ Expected server observations:
 - Compare prompt includes relative-strength ranking.
 - Backtest command prints data source `okx_rest_candles`, instrument, bar, candle count, return, and trade count.
 - Graph status, RAG citations, Memory search, provider status, and eval status are visible from CLI.
+- Strategy experiments create searchable `strategy_knowledge` memory cards.
+- BitPro backtest ranking/detail reports use page-parity result metrics and keep low-signal lifecycle/tool-order/RAG citation noise out of the default report body.
 
 ## Notes
 

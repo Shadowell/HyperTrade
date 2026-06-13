@@ -8,10 +8,13 @@
 
 ## Active Contract
 
-- No active implementation contract. Last completed: `docs/contracts/sprint-40-strategy-knowledge-memory.md`.
+- No active implementation contract. Last completed: `docs/contracts/sprint-41-docs-refresh.md`.
 
 ## Latest Completed Work
 
+- Added Sprint 41 documentation refresh: root READMEs, `docs/README.md`, knowledge guides, architecture notes, deployment docs, testing plan, and smoke runbook now describe the current production Agent surface, BitPro MCP boundaries, page-focused BitPro reports, strategy knowledge memory, and operator validation paths.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 131 tests.
+- Improved BitPro backtest detail CLI formatting: plain and Rich output now group core metrics and artifact samples with Chinese labels, and Rich metric values use semantic colors while respecting `NO_COLOR`.
 - Kept default BitPro backtest Agent reports page-focused: completed backtest result/detail sections no longer include MCP contract/tool-order debug fields, lifecycle polling summaries, or RAG citation lists unless operators explicitly inspect trace/debug evidence.
 - Added Sprint 40 strategy knowledge memory sedimentation: completed local strategy experiments now write one audited `strategy_knowledge` Memory item with experiment/research/backtest ids, winning variant, parameters, return, drawdown, trade count, evidence gates, data selection, and next-experiment guidance. The item is tagged for strategy, experiment, evidence, strategy key, and winning variant searches so future Agent runs can retrieve prior evidence through existing Memory API/CLI/UI surfaces.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 131 tests.

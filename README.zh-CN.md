@@ -1,6 +1,6 @@
 # HyperTrade
 
-HyperTrade 是一个面向行情研究与执行的加密交易 Agent。它不在 BitPro 项目下开发，也不复用 BitPro 的 AI 研发/自主交易逻辑；BitPro 可以通过稳定 API 合同提供外部数据与交易状态能力，由 HyperTrade 封装成可审计工具。
+HyperTrade 是一个面向行情研究与执行的加密交易 Agent。它不在 BitPro 项目下开发，也不复用 BitPro 的 AI 研发/自主交易逻辑；BitPro 可以通过稳定 MCP/API 合同提供外部数据、策略生命周期、回测、模拟盘和交易状态能力，由 HyperTrade 封装成可审计工具。
 
 > 本项目输出仅用于研究辅助，不构成任何投资建议。
 
@@ -10,10 +10,10 @@ HyperTrade 是一个面向行情研究与执行的加密交易 Agent。它不在
 - Provider Router：DeepSeek 默认，OpenAI/OpenRouter/Qwen chat 扩展位，CLI/API/前端可切换。
 - Tool Call：行情、RAG、Memory、策略、回测、paper、live intent、Testnet execute。
 - RAG：PostgreSQL/pgvector 兼容字段，citation-ready 命中。
-- Memory：去重、tags、importance、confidence、usage audit。
+- Memory：去重、tags、importance、confidence、usage audit；策略实验会沉淀 `strategy_knowledge` 记忆卡。
 - 交易边界：Mainnet 执行阻断；OKX Testnet 可在审批和风控后 signed order。
-- 策略工作流：研究、回测、critique、下一实验建议。
-- BitPro MCP：健康检查、K 线直连、策略生成/创建、BitPro 回测 job、模拟盘生命周期和实盘持仓只读诊断入口。
+- 策略工作流：研究、多版本回测证据、critique、下一实验建议、策略知识沉淀。
+- BitPro MCP：健康检查、K 线直连、策略生成/创建/更新、BitPro 回测 job/result/artifact、模拟盘生命周期/监控和实盘持仓只读诊断入口。
 - 可观测：`/harness`、CLI slash commands、deterministic eval suite。
 
 ## 技术栈
@@ -42,9 +42,9 @@ HyperTrade 是一个面向行情研究与执行的加密交易 Agent。它不在
 /evals
 ```
 
-## 运维指南
+## 文档地图
 
-如果要操作或验证 Agent 能力，请从 `docs/knowledge/tool-usage-guide.md` 开始。它按 Agent graph、Tool Call、Provider、RAG、Memory、风控、Testnet 执行、CLI、前端、测试和部署 smoke 组织入口。
+如果要了解项目状态，请从 `docs/README.md` 开始。实际操作和验证 Agent 能力时，读 `docs/knowledge/tool-usage-guide.md`；它按 Agent graph、Tool Call、Provider、RAG、Memory、策略知识、BitPro MCP、风控、Testnet 执行、CLI、前端、测试和部署 smoke 组织入口。
 
 ## 本地启动
 

@@ -140,6 +140,15 @@ Memory 和 RAG 的区别：
 - RAG 读取你维护的知识文档。
 - Memory 保存运行时产生的观察、偏好、策略教训、风险提醒。
 - Memory item 可以追溯 `source_run_id` 和 `source_tool`。
+- 策略实验完成后会写入 `strategy_knowledge` 记忆卡，记录 experiment/research/backtest id、胜出版本、参数、指标、证据门槛、数据选择和下一轮实验建议。
+- BitPro 回测排行/详情问题不能从 Memory 编造结论；必须调用 BitPro MCP 的 result 工具读取真实结果。
+
+策略知识检索：
+
+```bash
+/memory search momentum_breakout_v1
+curl -sS "http://127.0.0.1:3334/api/memory?kind=strategy_knowledge&tag=strategy"
+```
 
 相关代码：
 
@@ -173,7 +182,7 @@ Memory 和 RAG 的区别：
 
 ## 7. Strategy Research and Backtest
 
-用途：把策略想法变成研究记录、回测记录和改进建议。
+用途：把策略想法变成研究记录、多版本回测证据、改进建议和可检索策略经验。
 
 命令：
 
@@ -190,12 +199,15 @@ Memory 和 RAG 的区别：
 - backtest id：`bt_*`；`/experiment` 会生成多条候选 backtest evidence，并把胜出 backtest id 写入 `exp_*`
 - experiment id：`exp_*`
 - data source、bar、candle_count、candidate variants、winner、trade summary、risk notes
+- Memory 中出现 `kind=strategy_knowledge` 的证据卡，`source_run_id` 指向 `exp_*`，`source_tool` 为 `strategy.experiment`
+- 该证据卡可以通过 strategy key、`winner:<variant>` 或 `strategy` tag 检索
 
 相关代码：
 
 - `backend/src/hypertrade/strategy/service.py`
 - `backend/src/hypertrade/backtest/service.py`
 - `backend/src/hypertrade/strategy/experiment.py`
+- `docs/knowledge/strategy-research-playbook.md`
 
 ## 8. BitPro MCP Lifecycle Adapter
 
@@ -304,16 +316,17 @@ http://47.79.36.92:3333/harness
 
 核心区域：
 
-- Provider 状态和切换
-- Tool catalog
-- Agent run 和 graph trace
+- Agent run 创建和报告阅读
+- 最近 run 和 tool trace
 - RAG search
-- Memory manager
-- Market shortcuts
-- Paper runtime
-- Strategy Lab
-- Live Approval
-- Eval status
+- Memory search/detail
+- OKX 行情快照
+- 核心 telemetry
+
+边界：
+
+- `/harness` 是简化操作工作台，不再把 provider 切换、paper 生命周期、live approval/execution、strategy/backtest 表单、eval panel、Memory disable、Feishu send 作为首屏控制。
+- 这些高级/特权动作仍保留在 CLI/API 路径，并继续要求 admin session 或显式审批/风控。
 
 相关代码：
 

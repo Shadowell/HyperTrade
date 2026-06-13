@@ -9,8 +9,12 @@ Deployment uses a single server:
 - PostgreSQL/pgvector runs in Docker Compose
 - GitHub Actions self-hosted runner label is `hypertrade-production`
 - deployment records `/opt/hypertrade/deploy/last_deployed_sha`
+- server-local CLI wrapper `hypertrade`/`ht` runs a short-lived remote client
+  container against `http://api:3334`
 
-Secrets stay in `/opt/hypertrade/.env`. PostgreSQL port is not public.
+Secrets stay in `/opt/hypertrade/.env`. PostgreSQL port is not public. BitPro MCP
+tokens, provider keys, OKX credentials, and admin credentials must never be
+committed.
 
 ## 中文
 
@@ -21,6 +25,8 @@ Secrets stay in `/opt/hypertrade/.env`. PostgreSQL port is not public.
 - PostgreSQL/pgvector 通过 Docker Compose 运行
 - GitHub Actions self-hosted runner label 为 `hypertrade-production`
 - 部署成功后记录 `/opt/hypertrade/deploy/last_deployed_sha`
+- 服务器本地 CLI wrapper `hypertrade`/`ht` 会启动短生命周期 remote client
+  container，连接 Compose 网络内的 `http://api:3334`
 
-密钥只放 `/opt/hypertrade/.env`。PostgreSQL 端口不对公网暴露。
-
+密钥只放 `/opt/hypertrade/.env`。PostgreSQL 端口不对公网暴露。BitPro MCP
+token、provider key、OKX 凭证和 admin 凭证不能提交到仓库。

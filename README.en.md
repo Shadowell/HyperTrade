@@ -1,6 +1,6 @@
 # HyperTrade
 
-HyperTrade is a crypto trading agent for market research and execution. It is independent from BitPro and does not copy BitPro's AI research or autonomous trading logic. BitPro can provide external data and execution-state APIs through stable contracts that HyperTrade exposes as auditable tools.
+HyperTrade is a crypto trading agent for market research and execution. It is independent from BitPro and does not copy BitPro's AI research or autonomous trading logic. BitPro can provide external data, strategy lifecycle, backtest, paper/simulation, and execution-state APIs through stable MCP/API contracts that HyperTrade exposes as auditable tools.
 
 > Research output only. Nothing in this repository is investment advice.
 
@@ -12,8 +12,8 @@ HyperTrade is a crypto trading agent for market research and execution. It is in
 - RAG citations backed by PostgreSQL/pgvector-compatible chunk metadata.
 - Memory v2 with dedupe, tags, importance, confidence, and usage audit.
 - Trading boundary: Mainnet execution is blocked; OKX Testnet signed execution is allowed only after approval and risk checks.
-- Strategy workflow with research, backtest, critique, and next experiment suggestion.
-- BitPro MCP adapter for health checks, direct K-line reads, strategy generation/creation, BitPro backtest jobs, paper lifecycle, and live-position read-only diagnostics.
+- Strategy workflow with research, multi-variant backtest evidence, critique, next experiment suggestion, and searchable `strategy_knowledge` memory cards.
+- BitPro MCP adapter for health checks, direct K-line reads, strategy generation/create/update, BitPro backtest jobs/results/artifacts, paper lifecycle/monitoring, and live-position read-only diagnostics.
 - Observability through `/harness`, CLI slash commands, and deterministic eval suite.
 
 ## Stack
@@ -39,11 +39,12 @@ HyperTrade is a crypto trading agent for market research and execution. It is in
 /evals
 ```
 
-## Operations Guide
+## Documentation Map
 
-Start with `docs/knowledge/tool-usage-guide.md` when operating or validating Agent capabilities. It maps Agent graph, tool calling, providers, RAG, Memory,
-risk, Testnet execution, CLI, frontend, tests, and deployment smoke to the
-relevant commands and source files.
+Start with `docs/README.md` for the documentation index. For hands-on operation,
+use `docs/knowledge/tool-usage-guide.md`; it maps Agent graph, tool calling,
+providers, RAG, Memory, strategy knowledge, BitPro MCP, risk, Testnet execution,
+CLI, frontend, tests, and deployment smoke to commands and source files.
 
 ## Local Start
 

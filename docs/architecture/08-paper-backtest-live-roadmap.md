@@ -52,7 +52,7 @@ Sprint 03 增加一个小型策略实验室：
 - 启用 live candles 时，`backtest_runs.report_json` 会记录 `data_source`、`inst_id`、
   `bar` 和 `candle_count`。
 
-## Sprint 28-30 Update / Sprint 28-30 更新
+## Sprint 28-40 Update / Sprint 28-40 更新
 
 - RiskEngine now validates live/testnet order intents before creation approval and execution.
 - Mainnet execution is blocked; Testnet execution requires approval and a passing risk check.
@@ -60,6 +60,11 @@ Sprint 03 增加一个小型策略实验室：
   `/api/live/order-intents/{id}/execute` and CLI `/live execute <id>`.
 - Strategy experiments persist a multi-step workflow: hypothesis, data selection, backtest,
   critique, revision suggestion, and report.
+- Strategy experiments compare deterministic variants, select a winner through
+  evidence gates, and write one audited `strategy_knowledge` memory item for
+  later retrieval.
+- BitPro-owned strategy/backtest/paper workflows are separate: they go through
+  BitPro MCP tools and do not reuse local experiment memory as promotion approval.
 
 - RiskEngine 现在会在创建、审批、执行前校验 live/testnet order intent。
 - Mainnet 执行保持阻断；Testnet 执行必须先审批并通过风控。
@@ -67,3 +72,7 @@ Sprint 03 增加一个小型策略实验室：
   `/api/live/order-intents/{id}/execute` 和 CLI `/live execute <id>` 使用。
 - 策略实验会持久化多步骤 workflow：hypothesis、data selection、backtest、critique、
   revision suggestion、report。
+- 策略实验会比较确定性候选版本，用证据门槛选择胜出版本，并写入一条可审计
+  `strategy_knowledge` 记忆，供后续检索。
+- BitPro 负责的策略/回测/模拟盘流程是单独边界：必须通过 BitPro MCP 工具执行，
+  不能把本地实验记忆当成推广审批。
