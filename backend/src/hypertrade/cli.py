@@ -2463,18 +2463,18 @@ def _render_rich_bitpro_backtest_detail(payload: dict[str, Any], *, console: Any
     artifact_summary = artifact_summary if isinstance(artifact_summary, dict) else {}
     if not artifact_summary:
         return
-    table = Table(title="Artifacts", show_header=True, header_style="bold")
-    table.add_column("Artifact")
-    table.add_column("State")
-    table.add_column("Rows", justify="right")
-    table.add_column("Sample", justify="right")
+    table = Table(title="数据样本", show_header=True, header_style="bold")
+    table.add_column("数据")
+    table.add_column("状态")
+    table.add_column("条数", justify="right")
+    table.add_column("展示", justify="right")
     for key, label in _BITPRO_ARTIFACT_LABELS.items():
         info = artifact_summary.get(key)
         if not isinstance(info, dict):
             continue
         table.add_row(
             label,
-            "available" if info.get("available") else "unavailable",
+            "可用" if info.get("available") else "不可用",
             str(info.get("count", 0)),
             str(info.get("sample_count", 0)),
         )

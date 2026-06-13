@@ -1090,7 +1090,10 @@ def test_render_run_uses_rich_bitpro_backtest_detail_panel(monkeypatch) -> None:
     assert "result #199 / strategy #292" in rendered
     assert "核心指标" in rendered
     assert "9.7%" in rendered
+    assert "数据样本" in rendered
     assert "权益曲线" in rendered
+    assert "可用" in rendered
+    assert "available" not in rendered
     assert "\x1b[" in rendered
 
 
