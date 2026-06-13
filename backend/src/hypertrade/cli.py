@@ -21,7 +21,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, TextIO
+from typing import Any, Literal, Protocol, TextIO
 from urllib.parse import quote
 
 import httpx
@@ -1901,7 +1901,12 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     except ImportError:
         return False
 
-    console = Console(file=output, force_terminal=True, color_system=None, width=120)
+    console = Console(
+        file=output,
+        force_terminal=True,
+        color_system=_rich_color_system(),
+        width=120,
+    )
     trace_events = run.get("trace_events", [])
     report = run.get("report_json", {})
     has_structured_market_summary = isinstance(report, dict) and isinstance(
@@ -2060,9 +2065,18 @@ def _render_rich_markdown(markdown: str, *, output: TextIO, title: str) -> bool:
     except ImportError:
         return False
 
-    console = Console(file=output, force_terminal=True, color_system=None, width=120)
+    console = Console(
+        file=output,
+        force_terminal=True,
+        color_system=_rich_color_system(),
+        width=120,
+    )
     console.print(Panel(Markdown(markdown), title=title, border_style="green"))
     return True
+
+
+def _rich_color_system() -> Literal["standard"] | None:
+    return None if os.getenv("NO_COLOR") else "standard"
 
 
 def _strip_report_icons(markdown: str) -> str:
@@ -2393,6 +2407,7 @@ _BITPRO_ARTIFACT_LABELS = {
 def _render_rich_bitpro_backtest_detail(payload: dict[str, Any], *, console: Any) -> None:
     from rich.panel import Panel
     from rich.table import Table
+    from rich.text import Text
 
     result = payload.get("result")
     result = result if isinstance(result, dict) else {}
@@ -2409,16 +2424,40 @@ def _render_rich_bitpro_backtest_detail(payload: dict[str, Any], *, console: Any
                 f"状态 {result.get('status', 'n/a')} | 周期 {result.get('timeframe', 'n/a')} | "
                 f"区间 {_format_period(result.get('start_date'), result.get('end_date'))}"
             ),
-            (
-                f"收益 {_format_percent(metrics.get('total_return_pct'))} | "
-                f"回撤 {_format_percent(metrics.get('max_drawdown_pct'))} | "
-                f"夏普 {_format_number(metrics.get('sharpe_ratio'))} | "
-                f"胜率 {_format_percent(metrics.get('win_rate_pct'))} | "
-                f"交易 {metrics.get('trade_count', 'n/a')}"
-            ),
         ]
     )
     console.print(Panel(summary, title="BitPro 回测详情", border_style="green"))
+
+    metric_table = Table(title="核心指标", show_header=True, header_style="bold")
+    metric_table.add_column("指标", no_wrap=True)
+    metric_table.add_column("数值", justify="right")
+    metric_table.add_row(
+        "收益",
+        Text(
+            _format_percent(metrics.get("total_return_pct")),
+            style=_rich_numeric_style(metrics.get("total_return_pct"), positive="green"),
+        ),
+    )
+    metric_table.add_row(
+        "最大回撤",
+        Text(
+            _format_percent(metrics.get("max_drawdown_pct")),
+            style=_rich_drawdown_style(metrics.get("max_drawdown_pct")),
+        ),
+    )
+    metric_table.add_row(
+        "夏普",
+        Text(
+            _format_number(metrics.get("sharpe_ratio")),
+            style=_rich_numeric_style(metrics.get("sharpe_ratio"), positive="cyan"),
+        ),
+    )
+    metric_table.add_row(
+        "胜率",
+        Text(_format_percent(metrics.get("win_rate_pct")), style="cyan"),
+    )
+    metric_table.add_row("交易次数", Text(str(metrics.get("trade_count", "n/a")), style="white"))
+    console.print(metric_table)
 
     artifact_summary = payload.get("artifact_summary")
     artifact_summary = artifact_summary if isinstance(artifact_summary, dict) else {}
@@ -2440,6 +2479,28 @@ def _render_rich_bitpro_backtest_detail(payload: dict[str, Any], *, console: Any
             str(info.get("sample_count", 0)),
         )
     console.print(table)
+
+
+def _rich_numeric_style(value: object, *, positive: str) -> str:
+    number = _coerce_float(value)
+    if number is None:
+        return "dim"
+    if number > 0:
+        return positive
+    if number < 0:
+        return "red"
+    return "white"
+
+
+def _rich_drawdown_style(value: object) -> str:
+    number = _coerce_float(value)
+    if number is None:
+        return "dim"
+    if abs(number) <= 5:
+        return "green"
+    if abs(number) <= 15:
+        return "yellow"
+    return "red"
 
 
 def _render_structured_report(run: dict[str, Any], *, output: TextIO) -> bool:
@@ -2732,9 +2793,9 @@ def _render_tool_bitpro_backtest_detail_block(
     metrics = result.get("metrics")
     metrics = metrics if isinstance(metrics, dict) else {}
     print("", file=output)
-    print("BitPro backtest detail:", file=output)
+    print("BitPro 回测详情:", file=output)
     print(
-        "- Result: #{id} / strategy #{strategy_id}: {name}".format(
+        "- 结果: #{id} / strategy #{strategy_id}: {name}".format(
             id=result.get("id", payload.get("backtest_id", "n/a")),
             strategy_id=result.get("strategy_id", "n/a"),
             name=_format_strategy_name(result.get("strategy_name", "n/a")),
@@ -2742,35 +2803,30 @@ def _render_tool_bitpro_backtest_detail_block(
         file=output,
     )
     print(
-        "- Status: {status}, timeframe={timeframe}, period={period}".format(
+        "- 状态: {status} | 周期: {timeframe} | 区间: {period}".format(
             status=result.get("status", "n/a"),
             timeframe=result.get("timeframe", "n/a"),
             period=_format_period(result.get("start_date"), result.get("end_date")),
         ),
         file=output,
     )
-    print(
-        "- Metrics: return={total_return}, drawdown={drawdown}, sharpe={sharpe}, "
-        "win={win_rate}, trades={trades}".format(
-            total_return=_format_percent(metrics.get("total_return_pct")),
-            drawdown=_format_percent(metrics.get("max_drawdown_pct")),
-            sharpe=_format_number(metrics.get("sharpe_ratio")),
-            win_rate=_format_percent(metrics.get("win_rate_pct")),
-            trades=metrics.get("trade_count", "n/a"),
-        ),
-        file=output,
-    )
+    print("- 核心指标:", file=output)
+    print(f"  - 收益: {_format_percent(metrics.get('total_return_pct'))}", file=output)
+    print(f"  - 最大回撤: {_format_percent(metrics.get('max_drawdown_pct'))}", file=output)
+    print(f"  - 夏普: {_format_number(metrics.get('sharpe_ratio'))}", file=output)
+    print(f"  - 胜率: {_format_percent(metrics.get('win_rate_pct'))}", file=output)
+    print(f"  - 交易次数: {metrics.get('trade_count', 'n/a')}", file=output)
     artifact_summary = payload.get("artifact_summary")
     artifact_summary = artifact_summary if isinstance(artifact_summary, dict) else {}
     if artifact_summary:
-        print("- Artifacts:", file=output)
+        print("- 数据样本:", file=output)
         for key, label in _BITPRO_ARTIFACT_LABELS.items():
             info = artifact_summary.get(key)
             if not isinstance(info, dict):
                 continue
-            state = "available" if info.get("available") else "unavailable"
+            state = "可用" if info.get("available") else "不可用"
             print(
-                "  - {label}: {state}, rows={count}, sample={sample_count}".format(
+                "  - {label}: {state}，{count} 条，展示 {sample_count} 条样本".format(
                     label=label,
                     state=state,
                     count=info.get("count", 0),
@@ -2784,14 +2840,23 @@ def _format_number(value: object, *, digits: int = 2) -> str:
     text = str(value).strip()
     if not text or text.lower() in {"none", "nan", "n/a"}:
         return "n/a"
-    if text.endswith("%"):
-        text = text[:-1]
-    try:
-        number = float(text)
-    except ValueError:
+    number = _coerce_float(value)
+    if number is None:
         return str(value)
     formatted = f"{number:.{digits}f}".rstrip("0").rstrip(".")
     return formatted or "0"
+
+
+def _coerce_float(value: object) -> float | None:
+    text = str(value).strip()
+    if not text or text.lower() in {"none", "nan", "n/a"}:
+        return None
+    if text.endswith("%"):
+        text = text[:-1]
+    try:
+        return float(text)
+    except ValueError:
+        return None
 
 
 def _format_percent(value: object, *, digits: int = 2) -> str:

@@ -1136,22 +1136,19 @@ class AgentKernel:
                         start_date=result.get("start_date", "n/a"),
                         end_date=result.get("end_date", "n/a"),
                     ),
-                    (
-                        "- 指标: 初始资金 {initial_capital}, 最终资金 {final_capital}, "
-                        "收益 {total_return_pct}%, 年化 {annual_return_pct}%, "
-                        "回撤 {max_drawdown_pct}%, 夏普 {sharpe_ratio}, "
-                        "胜率 {win_rate_pct}%, 盈亏比 {profit_factor}, 交易 {trade_count}"
-                    ).format(
-                        initial_capital=metrics.get("initial_capital", "n/a"),
-                        final_capital=metrics.get("final_capital", "n/a"),
-                        total_return_pct=metrics.get("total_return_pct", "n/a"),
-                        annual_return_pct=metrics.get("annual_return_pct", "n/a"),
-                        max_drawdown_pct=metrics.get("max_drawdown_pct", "n/a"),
-                        sharpe_ratio=metrics.get("sharpe_ratio", "n/a"),
-                        win_rate_pct=metrics.get("win_rate_pct", "n/a"),
-                        profit_factor=metrics.get("profit_factor", "n/a"),
-                        trade_count=metrics.get("trade_count", "n/a"),
-                    ),
+                    "",
+                    "### 核心指标",
+                    f"- 初始资金: {metrics.get('initial_capital', 'n/a')}",
+                    f"- 最终资金: {metrics.get('final_capital', 'n/a')}",
+                    f"- 收益: {metrics.get('total_return_pct', 'n/a')}%",
+                    f"- 年化收益: {metrics.get('annual_return_pct', 'n/a')}%",
+                    f"- 最大回撤: {metrics.get('max_drawdown_pct', 'n/a')}%",
+                    f"- 夏普: {metrics.get('sharpe_ratio', 'n/a')}",
+                    f"- 胜率: {metrics.get('win_rate_pct', 'n/a')}%",
+                    f"- 盈亏比: {metrics.get('profit_factor', 'n/a')}",
+                    f"- 交易次数: {metrics.get('trade_count', 'n/a')}",
+                    "",
+                    "### 数据样本",
                 ]
             )
             summary = payload.get("artifact_summary")
@@ -1206,16 +1203,15 @@ class AgentKernel:
                         start_date=result.get("start_date", "n/a"),
                         end_date=result.get("end_date", "n/a"),
                     ),
-                    (
-                        "- 指标: 收益 {total_return_pct}%, 回撤 {max_drawdown_pct}%, "
-                        "夏普 {sharpe_ratio}, 胜率 {win_rate_pct}%, 交易 {trade_count}"
-                    ).format(
-                        total_return_pct=metrics.get("total_return_pct", "n/a"),
-                        max_drawdown_pct=metrics.get("max_drawdown_pct", "n/a"),
-                        sharpe_ratio=metrics.get("sharpe_ratio", "n/a"),
-                        win_rate_pct=metrics.get("win_rate_pct", "n/a"),
-                        trade_count=metrics.get("trade_count", "n/a"),
-                    ),
+                    "",
+                    "### 核心指标",
+                    f"- 收益: {metrics.get('total_return_pct', 'n/a')}%",
+                    f"- 最大回撤: {metrics.get('max_drawdown_pct', 'n/a')}%",
+                    f"- 夏普: {metrics.get('sharpe_ratio', 'n/a')}",
+                    f"- 胜率: {metrics.get('win_rate_pct', 'n/a')}%",
+                    f"- 交易次数: {metrics.get('trade_count', 'n/a')}",
+                    "",
+                    "### 数据样本",
                 ]
             )
             summary = payload.get("artifact_summary")

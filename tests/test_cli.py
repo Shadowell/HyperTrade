@@ -1029,13 +1029,16 @@ def test_render_run_structured_output_includes_bitpro_backtest_detail(capsys) ->
 
     output = capsys.readouterr().out
     assert "BitPro backtest ranking:" in output
-    assert "BitPro backtest detail:" in output
-    assert "Result: #199 / strategy #292" in output
-    assert "return=9.7%" in output
-    assert "权益曲线: available, rows=907, sample=30" in output
+    assert "BitPro 回测详情:" in output
+    assert "结果: #199 / strategy #292" in output
+    assert "核心指标:" in output
+    assert "收益: 9.7%" in output
+    assert "最大回撤: 5.61%" in output
+    assert "权益曲线: 可用，907 条，展示 30 条样本" in output
 
 
 def test_render_run_uses_rich_bitpro_backtest_detail_panel(monkeypatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
     output = StringIO()
 
@@ -1085,8 +1088,10 @@ def test_render_run_uses_rich_bitpro_backtest_detail_panel(monkeypatch) -> None:
     rendered = output.getvalue()
     assert "BitPro 回测详情" in rendered
     assert "result #199 / strategy #292" in rendered
+    assert "核心指标" in rendered
     assert "9.7%" in rendered
     assert "权益曲线" in rendered
+    assert "\x1b[" in rendered
 
 
 def test_render_run_keeps_plain_markdown_when_renderer_plain(monkeypatch) -> None:

@@ -366,11 +366,12 @@ def test_planner_report_renders_completed_bitpro_backtest_job_result() -> None:
     assert "回测任务: job=job_292, status=completed, progress=100.0%" in report
     assert "result #197, strategy #292" in report
     assert "波动压缩突破高收益实验" in report
-    assert "收益 9.701471818245139%" in report
-    assert "年化 23.1976%" in report
-    assert "回撤 5.6088%" in report
-    assert "胜率 56.52%" in report
-    assert "交易 23" in report
+    assert "### 核心指标" in report
+    assert "收益: 9.701471818245139%" in report
+    assert "年化收益: 23.1976%" in report
+    assert "最大回撤: 5.6088%" in report
+    assert "胜率: 56.52%" in report
+    assert "交易次数: 23" in report
     assert "权益曲线: 可用，19461 条" in report
     assert "Planning loop reached max iterations" not in report
     assert "## BitPro 策略生命周期" not in report
@@ -440,7 +441,9 @@ def test_planner_report_renders_bitpro_backtest_artifact_detail() -> None:
     assert "## BitPro 回测详情" in report
     assert "result #196, strategy #293" in report
     assert "Agent EMA ATR 回撤" in report
-    assert "收益 4.044128%" in report
+    assert "### 核心指标" in report
+    assert "收益: 4.044128%" in report
+    assert "最大回撤: 1.4438%" in report
     assert "权益曲线: 可用，3 条，展示 2 条样本" in report
     assert "订单: 不可用，0 条，展示 0 条样本" in report
     assert "backtest_get_result" not in report
@@ -532,7 +535,9 @@ def test_planner_report_keeps_bitpro_backtest_output_page_focused() -> None:
 
     assert "## BitPro 回测详情" in report
     assert "result #200, strategy #292" in report
-    assert "收益 3.8734033137765063%" in report
+    assert "### 核心指标" in report
+    assert "收益: 3.8734033137765063%" in report
+    assert "最大回撤: 5.6088%" in report
     assert "权益曲线: 可用，721 条，展示 20 条样本" in report
     assert "## BitPro 策略生命周期" not in report
     assert "bitpro_backtest_start_job" not in report
