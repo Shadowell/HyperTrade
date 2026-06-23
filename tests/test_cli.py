@@ -13,6 +13,7 @@ from hypertrade.cli import (
     LocalAgentClient,
     _compact_markdown_report,
     _slash_command_completion_matches,
+    _strip_report_icons,
     configure_interactive_history,
     handle_slash_command,
     main,
@@ -592,6 +593,24 @@ def test_compact_markdown_report_removes_excess_spacing_and_rules() -> None:
     )
 
     assert compact == "# 标题\n\n正文\n\n## 小节\n\n- 项目"
+
+
+def test_report_cleanup_hides_citations_and_keycap_icons() -> None:
+    cleaned = _strip_report_icons(
+        "## 引用来源\n\n"
+        "1. docs/a.md#0\n\n"
+        "## 📟 Ticker 是什么？\n\n"
+        "### 1️⃣ 交易代码\n\n"
+        "正文 😊"
+    )
+
+    assert "引用来源" not in cleaned
+    assert "docs/a.md" not in cleaned
+    assert "Ticker 是什么？" in cleaned
+    assert "### 1 交易代码" in cleaned
+    assert "📟" not in cleaned
+    assert "1️⃣" not in cleaned
+    assert "😊" not in cleaned
 
 
 def test_interactive_history_does_not_duplicate_readline_auto_added_item(tmp_path) -> None:

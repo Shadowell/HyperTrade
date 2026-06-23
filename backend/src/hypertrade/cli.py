@@ -2246,7 +2246,38 @@ def _strip_report_icons(markdown: str) -> str:
         for line in markdown.splitlines()
     ]
     normalized = "\n".join(_normalize_markdown_line_spacing(line) for line in lines)
-    return _compact_markdown_report(normalized)
+    return _compact_markdown_report(_remove_non_core_report_sections(normalized))
+
+
+def _remove_non_core_report_sections(markdown: str) -> str:
+    lines = markdown.splitlines()
+    kept: list[str] = []
+    skip_level: int | None = None
+    for line in lines:
+        heading_level, heading_text = _markdown_heading(line)
+        if heading_level is not None and skip_level is not None and heading_level <= skip_level:
+            skip_level = None
+        if skip_level is not None:
+            continue
+        if heading_level is not None and heading_text in {"引用来源", "References", "Sources"}:
+            skip_level = heading_level
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def _markdown_heading(line: str) -> tuple[int | None, str]:
+    stripped = line.strip()
+    if not stripped.startswith("#"):
+        return None, ""
+    marker_length = 0
+    while marker_length < len(stripped) and stripped[marker_length] == "#":
+        marker_length += 1
+    if marker_length == 0 or marker_length >= len(stripped):
+        return None, ""
+    if stripped[marker_length] != " ":
+        return None, ""
+    return marker_length, stripped[marker_length:].strip()
 
 
 def _compact_markdown_report(markdown: str) -> str:
@@ -2280,6 +2311,7 @@ def _is_report_icon_char(ch: str) -> bool:
     return (
         0x1F000 <= codepoint <= 0x1FAFF
         or 0x2600 <= codepoint <= 0x27BF
+        or codepoint == 0x20E3
         or 0xFE00 <= codepoint <= 0xFE0F
     )
 
