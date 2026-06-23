@@ -204,7 +204,7 @@ def test_planner_report_distinguishes_bitpro_paper_dashboard_scope() -> None:
     assert "结论: 模拟盘状态读取完成。" in report
     assert "Dashboard 范围: current_instance" in report
     assert "当前 dashboard: strategy_id=105" in report
-    assert "不能据此判断 BitPro 全局实盘功能关闭" in report
+    assert "不能据此判断 BitPro 全局实盘功能关闭" not in report
     assert "运行策略覆盖: listed=2, total=2, complete" in report
     assert "293: [合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U [running]" not in report
     assert "监控结论: read_only" in report
@@ -213,9 +213,9 @@ def test_planner_report_distinguishes_bitpro_paper_dashboard_scope() -> None:
         "数据缺口: running strategy inventory does not include per-strategy "
         "PnL/drawdown metrics"
     ) in report
-    assert "建议 inspect_current_dashboard_strategy: 优先检查当前 dashboard 策略 105" in report
-    assert "建议 continue_read_only_monitoring: 继续只读监控" in report
-    assert "paper_dashboard exposes the current BitPro paper dashboard only" in report
+    assert "建议 inspect_current_dashboard_strategy" not in report
+    assert "建议 continue_read_only_monitoring" not in report
+    assert "paper_dashboard exposes the current BitPro paper dashboard only" not in report
 
 
 def test_planner_report_renders_bitpro_paper_event_and_equity_evidence() -> None:
@@ -316,6 +316,47 @@ def test_planner_report_renders_bitpro_paper_event_and_equity_evidence() -> None
     assert "latest_equity=102.5" in report
     assert "max_drawdown=1.5%" in report
     assert "2026-06-23T07:00:00Z" not in report
+
+
+def test_planner_report_skips_table_like_bitpro_paper_final_message() -> None:
+    report = AgentKernel._render_planner_report(
+        (
+            "# BitPro 模拟盘权益曲线总结\n"
+            "**策略**: SOL EMA\n"
+            "| 指标 | 数值 |\n"
+            "| --- | --- |\n"
+            "| 当前权益 | 107.14 |"
+        ),
+        [
+            ToolCallRecord(
+                tool_name="bitpro_paper_equity_curve",
+                input_json={"strategy_id": 105, "sample_limit": 2},
+                output_json={
+                    "status": "ok",
+                    "strategy_id": 105,
+                    "equity_curve": [
+                        {
+                            "timestamp": "2026-06-23T08:00:00Z",
+                            "equity": "101.25",
+                            "drawdown_pct": "1.5",
+                        },
+                    ],
+                    "equity_summary": {
+                        "count": 400,
+                        "latest_at": "2026-06-23T09:00:00Z",
+                        "latest_equity": "107.14",
+                        "latest_drawdown_pct": "0.8",
+                        "max_drawdown_pct": "1.5",
+                    },
+                },
+            )
+        ],
+    )
+
+    assert "结论:" not in report
+    assert "| 指标 |" not in report
+    assert "权益曲线: strategy_id=105, points=400" in report
+    assert "2026-06-23T08:00:00Z" not in report
 
 
 def test_planner_report_renders_bitpro_paper_snapshot_drift() -> None:

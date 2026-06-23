@@ -1034,9 +1034,9 @@ def test_agent_acceptance_bitpro_paper_monitor_reports_alerts(
         "数据缺口: running strategy inventory does not include "
         "per-strategy PnL/drawdown metrics"
     ) in run.report_markdown
-    assert "建议 inspect_current_dashboard_strategy" in run.report_markdown
     assert "结论: 已读取 BitPro 模拟盘监控。" in run.report_markdown
     assert "运行策略覆盖: listed=" in run.report_markdown
+    assert "建议 inspect_current_dashboard_strategy" not in run.report_markdown
     assert "建议 continue_read_only_monitoring" not in run.report_markdown
     _assert_research_quality(run.report_markdown)
 

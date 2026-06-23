@@ -1387,11 +1387,6 @@ class AgentKernel:
                         uptime=system.get("uptime", "n/a"),
                     ),
                     (
-                        "- 实盘判断边界: 当前 dashboard 的 mode=paper/dry-run 只说明"
-                        "当前连接的 dashboard 或策略处于模拟/干跑状态，不能据此判断"
-                        " BitPro 全局实盘功能关闭。"
-                    ),
-                    (
                         "- 当前 dashboard 绩效: equity={equity}, total_pnl_pct={pnl}%, "
                         "sharpe={sharpe}, max_drawdown={drawdown}%"
                     ).format(
@@ -1410,9 +1405,6 @@ class AgentKernel:
                     f"- 运行策略覆盖: listed={len(running_items)}, "
                     f"total={running_total}, {state}"
                 )
-            note = scope.get("coverage_note")
-            if note:
-                bitpro_paper_lines.append(f"- 覆盖说明: {note}")
             if monitor:
                 inventory = monitor.get("running_inventory")
                 inventory = inventory if isinstance(inventory, dict) else {}
@@ -1433,17 +1425,6 @@ class AgentKernel:
                 data_gaps = data_gaps if isinstance(data_gaps, list) else []
                 for gap in data_gaps[:3]:
                     bitpro_paper_lines.append(f"- 数据缺口: {gap}")
-                actions = monitor.get("recommended_actions")
-                actions = actions if isinstance(actions, list) else []
-                for action in actions[:2]:
-                    if not isinstance(action, dict):
-                        continue
-                    bitpro_paper_lines.append(
-                        "- 建议 {action}: {message}".format(
-                            action=action.get("action", "observe"),
-                            message=action.get("message", "n/a"),
-                        )
-                    )
             bitpro_paper_lines.append("")
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "bitpro_paper_events":
@@ -1663,12 +1644,16 @@ def _compact_final_message(value: object, *, max_chars: int = 240) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
+    raw_lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(raw_lines) > 4 or any("|" in line for line in raw_lines):
+        return _compact_long_final_message(raw_lines, max_chars=max_chars)
     parts: list[str] = []
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
+    for line in raw_lines:
+        if "|" in line:
             continue
-        while line.startswith(("#", "-", "*")):
+        if line.startswith("#"):
+            continue
+        while line.startswith(("-", "*")):
             line = line[1:].strip()
         if line:
             parts.append(line)
@@ -1678,6 +1663,29 @@ def _compact_final_message(value: object, *, max_chars: int = 240) -> str:
     if len(summary) <= max_chars:
         return summary
     return summary[: max_chars - 1].rstrip() + "..."
+
+
+def _compact_long_final_message(lines: list[str], *, max_chars: int) -> str:
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or "|" in line:
+            continue
+        if set(line) <= {"-", ":", " "}:
+            continue
+        if line.startswith("#"):
+            continue
+        while line.startswith(("-", "*")):
+            line = line[1:].strip()
+        lower = line.lower()
+        noisy_prefixes = ("**策略", "**模式", "**交易标的", "**时间框架", "策略**", "模式**")
+        if lower.startswith(noisy_prefixes):
+            continue
+        if not any(marker in line for marker in ("结论", "核心", "建议", "风险", "异常")):
+            continue
+        if len(line) <= max_chars:
+            return line
+        return line[: max_chars - 1].rstrip() + "..."
+    return ""
 
 
 def _classify_intent(prompt: str) -> str:

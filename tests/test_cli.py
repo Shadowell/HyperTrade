@@ -1093,6 +1093,45 @@ def test_render_run_compacts_noisy_paper_markdown(capsys) -> None:
     assert "还有 390" not in output
 
 
+def test_render_run_compacts_table_like_paper_markdown(capsys) -> None:
+    render_run(
+        {
+            "id": "run_paper_table_markdown",
+            "status": "completed",
+            "report_markdown": (
+                "## BitPro 模拟盘状态\n\n"
+                "# BitPro 模拟盘权益曲线总结\n"
+                "| 指标 | 数值 |\n"
+                "| --- | --- |\n"
+                "| 当前权益 | 107.14 |"
+            ),
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {
+                    "tool_name": "bitpro_paper_equity_curve",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "strategy_id": None,
+                        "equity_curve": [],
+                        "equity_summary": {
+                            "count": 400,
+                            "latest_equity": "107.14019134255034",
+                            "latest_drawdown_pct": None,
+                            "max_drawdown_pct": None,
+                        },
+                    },
+                }
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "BitPro 模拟盘摘要:" in output
+    assert "权益曲线: strategy=all, points=400, latest=107.14" in output
+    assert "| 指标 |" not in output
+
+
 def test_rich_render_run_compacts_paper_tools_without_final_report(monkeypatch, capsys) -> None:
     monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
     render_run(

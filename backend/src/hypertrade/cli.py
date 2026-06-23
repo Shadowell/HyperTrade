@@ -2954,6 +2954,8 @@ def _is_noisy_paper_markdown(markdown: str) -> bool:
     )
     if any(marker in markdown for marker in noisy_markers):
         return True
+    if any("|" in line for line in markdown.splitlines()):
+        return True
     bullet_count = sum(1 for line in markdown.splitlines() if line.lstrip().startswith("- "))
     return bullet_count > 14
 
