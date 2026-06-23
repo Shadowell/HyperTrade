@@ -639,7 +639,8 @@ def test_ask_prints_agent_run_trace_and_report(capsys) -> None:
     output = capsys.readouterr().out
     assert "Run:" not in output
     assert "Tools:" not in output
-    assert "Agent status: executing tool market.summary" in output
+    assert "Agent: running" in output
+    assert "Agent status: executing tool market.summary" not in output
     assert "# CLI Report" in output
 
 
@@ -732,7 +733,8 @@ def test_render_run_prefers_structured_tool_outputs_over_planner_markdown(capsys
     assert "Research output only. Not investment advice." not in output
 
 
-def test_render_run_structured_output_keeps_bitpro_paper_monitor(capsys) -> None:
+def test_render_run_structured_output_keeps_bitpro_paper_monitor(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("HYPERTRADE_REPORT_SOURCE", "tools")
     render_run(
         {
             "id": "run_paper_monitor",
@@ -808,7 +810,8 @@ def test_render_run_structured_output_keeps_bitpro_paper_monitor(capsys) -> None
     assert "Suggested read-only actions:" in output
 
 
-def test_render_run_structured_output_renders_bitpro_paper_evidence(capsys) -> None:
+def test_render_run_structured_output_renders_bitpro_paper_evidence(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("HYPERTRADE_REPORT_SOURCE", "tools")
     render_run(
         {
             "id": "run_paper_evidence",
@@ -874,7 +877,50 @@ def test_render_run_structured_output_renders_bitpro_paper_evidence(capsys) -> N
     assert "Equity: points=3, sample=1, latest=102.5, max_drawdown=1.5%" in output
 
 
-def test_render_run_structured_output_renders_bitpro_paper_monitor_snapshot(capsys) -> None:
+def test_render_run_prefers_final_paper_summary_by_default(capsys) -> None:
+    render_run(
+        {
+            "id": "run_paper_summary",
+            "status": "completed",
+            "report_markdown": "## BitPro 模拟盘总结\n\n- 核心结论：权益稳定，暂无新增错误。",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {
+                    "tool_name": "bitpro_paper_equity_curve",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "strategy_id": 105,
+                        "equity_curve": [
+                            {
+                                "timestamp": "2026-06-23T08:00:00Z",
+                                "equity": "101.25",
+                                "drawdown_pct": "1.5",
+                            }
+                        ],
+                        "equity_summary": {
+                            "count": 400,
+                            "sample_count": 5,
+                            "latest_equity": "107.14",
+                        },
+                    },
+                }
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "核心结论：权益稳定，暂无新增错误。" in output
+    assert "BitPro Paper Equity Curve:" not in output
+    assert "Paper Equity Curve" not in output
+    assert "2026-06-23T08:00:00Z" not in output
+
+
+def test_render_run_structured_output_renders_bitpro_paper_monitor_snapshot(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setenv("HYPERTRADE_REPORT_SOURCE", "tools")
     render_run(
         {
             "id": "run_paper_snapshot",
@@ -1422,12 +1468,27 @@ def test_ask_streams_agent_run_progress(capsys) -> None:
 
     assert exit_code == 0
     output = capsys.readouterr().out
+    assert "Agent: running" in output
+    assert "Agent: completed" in output
+    assert "executing tool" not in output
+    assert "tool market.summary completed" not in output
+    assert "planning next" not in output
+    assert "# CLI Report" in output
+    assert "+ Thought:" not in output
+
+
+def test_run_stream_can_show_full_progress_when_requested(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("HYPERTRADE_PROGRESS", "full")
+    client = FakeAgentClient()
+
+    exit_code = main(["ask", "请做行情归纳"], client=client)
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
     assert "Agent status: run created" in output
     assert "Agent status: executing tool market.summary" in output
     assert "Agent status: tool market.summary completed" in output
     assert "Agent status: generating final report" in output
-    assert "# CLI Report" in output
-    assert "+ Thought:" not in output
 
 
 def test_run_stream_shows_thinking_animation_for_tty() -> None:
@@ -1439,7 +1500,8 @@ def test_run_stream_shows_thinking_animation_for_tty() -> None:
     rendered = output.getvalue()
     assert "+ Thought:" in rendered
     assert "Thinking" in rendered
-    assert "Agent status: run created" in rendered
+    assert "Agent: running" in rendered
+    assert "executing tool" not in rendered
     assert "CLI Report" in rendered
     assert "# CLI Report" not in rendered
 
@@ -1658,10 +1720,10 @@ def test_run_stream_uses_status_colors_for_tty(monkeypatch) -> None:
     render_run_stream(client, "看下ETH行情", output=output)
 
     rendered = output.getvalue()
-    assert "Agent status: run created" in rendered
-    assert "Agent status: executing tool market.summary" in rendered
-    assert "Agent status: tool market.summary completed" in rendered
-    assert len(set(re.findall(r"\x1b\[[0-9;]+m", rendered))) >= 3
+    assert "Agent: running" in rendered
+    assert "Agent: completed" in rendered
+    assert "executing tool" not in rendered
+    assert len(set(re.findall(r"\x1b\[[0-9;]+m", rendered))) >= 2
 
 
 def test_bare_command_starts_chat_loop(capsys) -> None:

@@ -2878,6 +2878,8 @@ def _rich_drawdown_style(value: object) -> str:
 
 
 def _render_structured_report(run: dict[str, Any], *, output: TextIO) -> bool:
+    if _prefer_final_report(run):
+        return False
     report = run.get("report_json", {})
     if not isinstance(report, dict) or not report:
         return False
@@ -2889,6 +2891,30 @@ def _render_structured_report(run: dict[str, Any], *, output: TextIO) -> bool:
         _render_structured_tool_report(trace_events, report=report, output=output)
         return True
     return False
+
+
+def _prefer_final_report(run: dict[str, Any]) -> bool:
+    source = os.getenv("HYPERTRADE_REPORT_SOURCE", "final").strip().lower()
+    if source in {"tool", "tools", "trace", "structured"}:
+        return False
+    markdown = str(run.get("report_markdown", "")).strip()
+    if not markdown:
+        return False
+    trace_events = run.get("trace_events", [])
+    if not isinstance(trace_events, list):
+        return False
+    return any(
+        isinstance(event, dict) and str(event.get("tool_name", "")) in _FINAL_REPORT_FIRST_TOOLS
+        for event in trace_events
+    )
+
+
+_FINAL_REPORT_FIRST_TOOLS = {
+    "bitpro_paper_dashboard",
+    "bitpro_paper_events",
+    "bitpro_paper_equity_curve",
+    "bitpro_paper_monitor_snapshot",
+}
 
 
 def _render_structured_market_summary(report: dict[str, Any], *, output: TextIO) -> None:
@@ -3422,61 +3448,82 @@ def render_run_stream(
                 continue
             event_name = str(event.get("event", "message"))
             if event_name == "run_started":
-                animator.print_line(
-                    _status_line(
-                        f"Agent status: run created ({event.get('run_id', 'pending')})",
-                        "info",
-                        output=output,
+                if _show_full_progress():
+                    animator.print_line(
+                        _status_line(
+                            f"Agent status: run created ({event.get('run_id', 'pending')})",
+                            "info",
+                            output=output,
+                        )
                     )
-                )
-                animator.print_line(
-                    _status_line(
-                        "Agent status: planning next tool call",
-                        "muted",
-                        output=output,
+                    animator.print_line(
+                        _status_line(
+                            "Agent status: planning next tool call",
+                            "muted",
+                            output=output,
+                        )
                     )
-                )
+                else:
+                    animator.print_line(
+                        _status_line(
+                            f"Agent: running ({event.get('run_id', 'pending')})",
+                            "info",
+                            output=output,
+                        )
+                    )
                 animator.update("Planning next tool call")
             elif event_name == "tool_started":
                 tool_name = event.get("tool_name", "unknown")
-                animator.print_line(
-                    _status_line(
-                        f"Agent status: executing tool {tool_name}",
-                        "tool",
-                        output=output,
+                if _show_full_progress():
+                    animator.print_line(
+                        _status_line(
+                            f"Agent status: executing tool {tool_name}",
+                            "tool",
+                            output=output,
+                        )
                     )
-                )
                 animator.update(f"Executing tool {tool_name}")
             elif event_name == "tool_completed":
                 tool_name = event.get("tool_name", "unknown")
                 status = event.get("status", "completed")
                 style = "success" if status == "completed" else "warning"
-                animator.print_line(
-                    _status_line(
-                        f"Agent status: tool {tool_name} {status}",
-                        style,
-                        output=output,
+                if _show_full_progress() or status != "completed":
+                    animator.print_line(
+                        _status_line(
+                            f"Agent status: tool {tool_name} {status}",
+                            style,
+                            output=output,
+                        )
                     )
-                )
-                animator.print_line(
-                    _status_line("Agent status: planning next step", "muted", output=output)
-                )
+                if _show_full_progress():
+                    animator.print_line(
+                        _status_line("Agent status: planning next step", "muted", output=output)
+                    )
                 animator.update("Planning next step")
             elif event_name == "run_completed":
-                animator.print_line(
-                    _status_line(
-                        "Agent status: generating final report",
-                        "info",
-                        output=output,
+                if _show_full_progress():
+                    animator.print_line(
+                        _status_line(
+                            "Agent status: generating final report",
+                            "info",
+                            output=output,
+                        )
                     )
-                )
-                animator.print_line(
-                    _status_line(
-                        f"Agent status: run completed ({event.get('run_id', 'unknown')})",
-                        "success",
-                        output=output,
+                    animator.print_line(
+                        _status_line(
+                            f"Agent status: run completed ({event.get('run_id', 'unknown')})",
+                            "success",
+                            output=output,
+                        )
                     )
-                )
+                else:
+                    animator.print_line(
+                        _status_line(
+                            f"Agent: completed ({event.get('run_id', 'unknown')})",
+                            "success",
+                            output=output,
+                        )
+                    )
                 animator.update("Generating final report")
                 if isinstance(event.get("run"), dict):
                     final_run = dict(event["run"])
@@ -3510,6 +3557,11 @@ def render_run_stream(
 
 def _status_line(text: str, style: str, *, output: TextIO) -> str:
     return _paint(text, style, output=output)
+
+
+def _show_full_progress() -> bool:
+    value = os.getenv("HYPERTRADE_PROGRESS", "compact").strip().lower()
+    return value in {"all", "debug", "full", "verbose"}
 
 
 def _format_remote_api_error(exc: httpx.HTTPError) -> str:
