@@ -9,6 +9,8 @@ runbooks, and sprint state. Chat history is not considered durable project state
 - `progress.md`: latest completed work, verification status, and deployment notes.
 - `architecture/18-hypertrade-capability-roadmap.md`: post-Sprint-44 capability
   roadmap and parallel sprint plan for Agent development.
+- `contracts/sprint-55-cli-slash-command-candidates.md`: focused CLI polish
+  contract for slash command candidate filtering.
 - `agent-prompts/parallel-sprint-prompts.md`: copy-ready prompts for Agents
   implementing Sprint 45-54 in parallel.
 - `knowledge/tool-usage-guide.md`: operator-facing guide for validating Agent tools.

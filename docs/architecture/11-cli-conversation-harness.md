@@ -34,6 +34,11 @@ Entering `/` alone renders the same command list. In real TTY sessions, readline
 completion is registered for slash commands and common subcommands, so `/`, `/m`, or
 `/paper ` can reveal available commands without requiring the operator to remember the
 full spelling.
+Short incomplete prefixes such as `/st` or `/me` render a filtered candidate list with
+the same descriptions used by `/help`; the readline completion display hook also uses
+that candidate renderer when Tab completion is shown. HyperTrade still uses the standard
+readline input boundary here, so live per-keystroke dropdown navigation is a future TUI
+enhancement rather than part of the current CLI loop.
 
 - `/help`, `/status`, `/model`, `/providers`
 - `/tools`, `/runs`, `/memory`
@@ -118,6 +123,9 @@ CLI 会显示可重试的远程 API 连接提示。
 registry 描述：
 只输入 `/` 会展示同一份命令列表。真实 TTY 会注册 readline Tab 补全，因此输入 `/`、`/m`
 或 `/paper ` 后按 Tab 可以展示/补全可用命令与常见子命令，不需要操作员记住完整拼写。
+输入 `/st`、`/me` 这类未完整前缀时，会展示带用途说明的过滤候选列表；readline 的 Tab
+候选展示也复用同一个候选渲染器。这里仍然基于标准 readline 输入边界，因此每个按键实时刷新的
+下拉式命令面板属于后续 TUI 增强，而不是当前 CLI loop 的职责。
 
 - `/help`、`/status`、`/model`、`/providers`
 - `/tools`、`/runs`、`/memory`

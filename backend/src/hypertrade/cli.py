@@ -202,6 +202,7 @@ SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
     "/klines": ("BTC", "ETH", "SOL", "DOGE", "PEPE", "--bar 1H", "--limit 100"),
     "/compare": ("BTC", "ETH", "SOL", "DOGE", "PEPE"),
 }
+SLASH_CANDIDATE_LIMIT = 12
 
 
 @dataclass(frozen=True)
@@ -295,6 +296,9 @@ def _configure_slash_command_completion(module: Any) -> None:
     if not hasattr(module, "set_completer"):
         return
     module.set_completer(_make_slash_command_completer(module))
+    if hasattr(module, "set_completion_display_matches_hook"):
+        with suppress(Exception):
+            module.set_completion_display_matches_hook(_make_slash_command_display_hook(module))
     if hasattr(module, "parse_and_bind"):
         with suppress(Exception):
             module.parse_and_bind("tab: complete")
@@ -316,6 +320,23 @@ def _make_slash_command_completer(module: Any) -> Callable[[str, int], str | Non
     return complete
 
 
+def _make_slash_command_display_hook(module: Any) -> Callable[[str, list[str], int], None]:
+    def display(substitution: str, matches: list[str], longest_match_length: int) -> None:
+        del matches, longest_match_length
+        line = substitution
+        if hasattr(module, "get_line_buffer"):
+            line = str(module.get_line_buffer()) or substitution
+        if not line.startswith("/"):
+            return
+        print("")
+        render_slash_command_candidates(line, output=sys.stdout)
+        if hasattr(module, "redisplay"):
+            with suppress(Exception):
+                module.redisplay()
+
+    return display
+
+
 def _slash_command_completion_matches(*, line: str, text: str, begidx: int) -> list[str]:
     if not line.startswith("/"):
         return []
@@ -331,6 +352,40 @@ def _slash_command_completion_matches(*, line: str, text: str, begidx: int) -> l
     candidates = SLASH_ARGUMENT_COMPLETIONS.get(command, ())
     query = text.lower()
     return [f"{candidate} " for candidate in candidates if candidate.lower().startswith(query)]
+
+
+def _slash_command_candidates(
+    prefix: str,
+    *,
+    limit: int | None = SLASH_CANDIDATE_LIMIT,
+) -> list[tuple[str, str]]:
+    normalized = " ".join(prefix.strip().lower().split())
+    if not normalized.startswith("/"):
+        return []
+    if normalized == "/":
+        matches = list(SLASH_COMMAND_HELP)
+    else:
+        matches = [
+            (command, description)
+            for command, description in SLASH_COMMAND_HELP
+            if _slash_candidate_matches_prefix(command, normalized)
+        ]
+    if limit is None:
+        return matches
+    return matches[:limit]
+
+
+def _slash_candidate_matches_prefix(command: str, normalized_prefix: str) -> bool:
+    normalized_command = " ".join(command.lower().split())
+    command_name = normalized_command.split(maxsplit=1)[0]
+    return normalized_command.startswith(normalized_prefix) or command_name.startswith(
+        normalized_prefix
+    )
+
+
+def _looks_like_slash_prefix(command: str) -> bool:
+    token = command.strip().split(maxsplit=1)[0] if command.strip() else ""
+    return token.startswith("/") and len(token) >= 2
 
 
 def client_env_path() -> Path:
@@ -1163,6 +1218,8 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
         handle_paper_command(command, client=client, output=output)
     elif name == "/live":
         handle_live_command(command, client=client, output=output)
+    elif _looks_like_slash_prefix(command):
+        render_slash_command_candidates(command, output=output)
     else:
         print(f"Unknown command: {name}", file=output)
         render_slash_help(output=output)
@@ -1178,6 +1235,53 @@ def render_slash_help(*, output: TextIO) -> None:
             f"{_paint(description, 'muted', output=output)}",
             file=output,
         )
+
+
+def render_slash_command_candidates(prefix: str, *, output: TextIO) -> None:
+    matches = _slash_command_candidates(prefix, limit=SLASH_CANDIDATE_LIMIT)
+    all_matches = _slash_command_candidates(prefix, limit=None)
+    display_prefix = prefix.strip() or "/"
+    if not all_matches:
+        print(
+            _paint(f"No slash command matches: {display_prefix}", "warning", output=output),
+            file=output,
+        )
+        print(
+            _paint("Type /help to see all commands.", "muted", output=output),
+            file=output,
+        )
+        return
+
+    print(
+        _paint(f"Slash command candidates for {display_prefix}:", "section", output=output),
+        file=output,
+    )
+    command_width = max(len(command) for command, _ in matches)
+    for command, description in matches:
+        padded_command = f"{command:<{command_width}}"
+        print(
+            f"- {_paint(padded_command, 'command', output=output)}  "
+            f"{_paint(description, 'muted', output=output)}",
+            file=output,
+        )
+    remaining = len(all_matches) - len(matches)
+    if remaining > 0:
+        print(
+            _paint(
+                f"... {remaining} more matches. Type more characters or use /help.",
+                "muted",
+                output=output,
+            ),
+            file=output,
+        )
+    print(
+        _paint(
+            "Tip: press Tab to complete, or type the full command to run it.",
+            "muted",
+            output=output,
+        ),
+        file=output,
+    )
 
 
 def handle_research_command(command: str, *, client: AgentClient, output: TextIO) -> None:

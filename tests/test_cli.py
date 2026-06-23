@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from contextlib import redirect_stdout
 from io import StringIO
 from typing import Any
 
@@ -12,6 +13,7 @@ from hypertrade.cli import (
     CliConfig,
     LocalAgentClient,
     _compact_markdown_report,
+    _slash_command_candidates,
     _slash_command_completion_matches,
     _strip_report_icons,
     configure_interactive_history,
@@ -40,7 +42,10 @@ class FakeReadline:
         self.write_path = ""
         self.added: list[str] = []
         self.completer: Any | None = None
+        self.display_hook: Any | None = None
         self.bindings: list[str] = []
+        self.line_buffer = ""
+        self.redisplay_count = 0
 
     def read_history_file(self, path: str) -> None:
         self.read_path = path
@@ -64,6 +69,15 @@ class FakeReadline:
 
     def set_completer(self, completer: Any) -> None:
         self.completer = completer
+
+    def set_completion_display_matches_hook(self, hook: Any) -> None:
+        self.display_hook = hook
+
+    def get_line_buffer(self) -> str:
+        return self.line_buffer
+
+    def redisplay(self) -> None:
+        self.redisplay_count += 1
 
     def parse_and_bind(self, binding: str) -> None:
         self.bindings.append(binding)
@@ -542,6 +556,7 @@ def test_configure_interactive_history_reads_and_writes_history(tmp_path) -> Non
     assert fake_readline.read_path == str(tmp_path / "history")
     assert registered == [(fake_readline.write_history_file, (str(tmp_path / "history"),))]
     assert fake_readline.completer is not None
+    assert fake_readline.display_hook is not None
     assert "tab: complete" in fake_readline.bindings
 
     history.add("看下ETH行情")
@@ -574,6 +589,53 @@ def test_slash_command_completion_matches_commands_and_subcommands() -> None:
     assert "pause " in paper_matches
     assert "execute " in live_matches
     assert _slash_command_completion_matches(line="看下 ETH", text="ETH", begidx=3) == []
+
+
+def test_slash_command_candidates_filter_partial_prefix_with_descriptions() -> None:
+    candidates = _slash_command_candidates("/st")
+
+    command_names = [command for command, _ in candidates]
+    assert "/status" in command_names
+    assert "/strategy" in command_names
+    assert "/strategy library [query]" in command_names
+    assert "/tools" not in command_names
+    assert any(
+        command == "/strategy" and "strategy research" in description
+        for command, description in candidates
+    )
+
+
+def test_slash_command_candidates_render_for_partial_command() -> None:
+    output = StringIO()
+
+    handle_slash_command("/st", client=FakeAgentClient(), output=output)
+
+    rendered = output.getvalue()
+    assert "Slash command candidates for /st:" in rendered
+    assert "/status" in rendered
+    assert "/strategy" in rendered
+    assert "Unknown command" not in rendered
+
+
+def test_slash_command_display_hook_renders_filtered_candidates(tmp_path) -> None:
+    fake_readline = FakeReadline()
+    fake_readline.line_buffer = "/me"
+    configure_interactive_history(
+        enabled=True,
+        history_path=tmp_path / "history",
+        readline_module=fake_readline,
+    )
+    assert fake_readline.display_hook is not None
+    output = StringIO()
+
+    with redirect_stdout(output):
+        fake_readline.display_hook("/me", ["/memory "], len("/memory "))
+
+    rendered = output.getvalue()
+    assert "Slash command candidates for /me:" in rendered
+    assert "/memory" in rendered
+    assert "Search audited memory" in rendered
+    assert fake_readline.redisplay_count == 1
 
 
 def test_slash_command_root_displays_help_without_unknown_message() -> None:

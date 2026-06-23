@@ -99,6 +99,7 @@ its own Agent capabilities:
 - Sprint 42 BitPro paper evidence layer: `bitpro_paper_events` and `bitpro_paper_equity_curve` read bounded event/error and equity/drawdown evidence for paper monitoring, with structured Agent/CLI reports.
 - Sprint 43 BitPro paper monitor snapshots: `bitpro_paper_monitor_snapshot` persists read-only paper dashboard/event/equity summaries, compares each capture with the previous snapshot for the same scope, and reports drift alerts/data gaps.
 - Sprint 44 strategy library memory: `strategy_knowledge` Memory cards are aggregated into strategy-level evidence summaries through `StrategyLibraryService`, `GET /api/strategy/library`, CLI `/strategy library`, Agent tool `strategy_library_search`, and ToolRegistry entry `strategy.library_search`.
+- Sprint 55 CLI slash command candidates: incomplete slash prefixes such as `/st` or `/me` render filtered candidates with purpose descriptions, and readline Tab completion can display the same described candidate list.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -139,6 +140,7 @@ its own Agent capabilities:
 - Developer can distinguish command help, tool rows, Agent progress, success, warning, and error output by color in interactive terminals.
 - Developer can use CLI slash commands such as `/tools`, `/runs`, `/memory`, `/strategy`, and `/backtests` in interactive chat.
 - Developer can enter `/` to display slash commands and press Tab after `/` or a partial slash command to complete commands/common subcommands in real TTY sessions.
+- Developer can enter a short incomplete slash prefix such as `/st` or `/me` and see filtered candidate commands with descriptions instead of a generic unknown-command page.
 - Developer can read a purpose description beside every `/help` slash command and every `/tools` Agent tool row.
 - Developer can run `/research <prompt>` and `/backtest` from interactive CLI chat to create research and backtest records.
 - Developer can run Backtrader backtests with recent OKX candles through API or CLI options.

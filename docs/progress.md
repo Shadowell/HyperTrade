@@ -8,10 +8,14 @@
 
 ## Active Contract
 
-- No active implementation contract. Last completed: `docs/contracts/sprint-44-strategy-library-memory.md`.
+- No active implementation contract. Last completed: `docs/contracts/sprint-55-cli-slash-command-candidates.md`.
 
 ## Latest Completed Work
 
+- Added Sprint 55 CLI slash-command candidate filtering: incomplete prefixes
+  such as `/st` or `/me` now render filtered command candidates with the same
+  descriptions as `/help`, and real TTY readline completion registers a display
+  hook for described Tab candidates.
 - Added the post-Sprint-44 capability roadmap for parallel Agent development:
   `docs/architecture/18-hypertrade-capability-roadmap.md` defines the target
   capability map and dependencies, and Sprint contracts 45-54 split Agent
