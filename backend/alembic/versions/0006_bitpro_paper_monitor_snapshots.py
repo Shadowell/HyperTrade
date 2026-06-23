@@ -8,7 +8,7 @@ Create Date: 2026-06-23 00:00:00.000000
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0006_bitpro_paper_monitor_snapshots"
+revision = "0006_bp_paper_monitor_snapshots"
 down_revision = "0005_agent_capability_expansion"
 branch_labels = None
 depends_on = None
