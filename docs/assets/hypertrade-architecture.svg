@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1180" viewBox="0 0 1800 1180" role="img" aria-labelledby="title desc">
+  <title id="title">HyperTrade 架构图</title>
+  <desc id="desc">HyperTrade 分层架构图：客户端接入、数据输入、Agent 网关、核心引擎、执行输出、基础设施、闭环策略研发流程与安全治理。</desc>
+  <defs>
+    <style>
+      .bg{fill:#f8fbff}.title{font:800 56px Inter,Arial,sans-serif;fill:#0f172a}.accent{fill:#1d73f8}.sub{font:600 22px Inter,Arial,sans-serif;fill:#475569}.panel-title{font:800 21px Inter,Arial,sans-serif;fill:#0f172a}.card-title{font:800 16px Inter,Arial,sans-serif;fill:#0f172a}.body{font:500 13px Inter,Arial,sans-serif;fill:#475569}.small{font:600 11px Inter,Arial,sans-serif;fill:#64748b}.num{font:800 18px Inter,Arial,sans-serif;fill:#fff}.blue{fill:#eff6ff;stroke:#2563eb}.green{fill:#f0fdf4;stroke:#16a34a}.purple{fill:#faf5ff;stroke:#7c3aed}.teal{fill:#f0fdfa;stroke:#0d9488}.red{fill:#fff1f2;stroke:#e11d48}.slate{fill:#f8fafc;stroke:#94a3b8}.card{fill:#fff;stroke-width:1.5}.panel{stroke-width:2}.arrow{stroke:#1d73f8;stroke-width:4;fill:none;marker-end:url(#arrow)}.dash{stroke:#94a3b8;stroke-width:2.5;fill:none;stroke-dasharray:7 7;marker-end:url(#arrowMuted)}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 10 5 0 10z" fill="#1d73f8"/></marker>
+    <marker id="arrowMuted" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#94a3b8"/></marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity=".10"/></filter>
+  </defs>
+
+  <rect class="bg" width="1800" height="1180"/>
+  <text x="655" y="76" class="title">Hyper<tspan class="accent">Trade</tspan></text>
+  <text x="560" y="112" class="sub">AI-Native Crypto Trading Agent for Research, Strategy and Risk-Gated Execution</text>
+
+  <!-- 1 client access -->
+  <g transform="translate(70 145)">
+    <circle cx="0" cy="0" r="17" fill="#1d73f8"/><text x="-5" y="7" class="num">1</text>
+    <text x="35" y="7" class="panel-title" fill="#1d73f8">Agent / Client Access Layer</text>
+    <text x="35" y="34" class="body">面向操作员、外部 Agent 和自动化脚本的统一入口。</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="360" y="126" width="150" height="62" rx="8" class="card blue"/>
+    <rect x="545" y="126" width="150" height="62" rx="8" class="card blue"/>
+    <rect x="730" y="126" width="150" height="62" rx="8" class="card blue"/>
+    <rect x="915" y="126" width="150" height="62" rx="8" class="card blue"/>
+    <rect x="1100" y="126" width="150" height="62" rx="8" class="card blue"/>
+    <rect x="1285" y="126" width="150" height="62" rx="8" class="card blue" stroke-dasharray="6 6"/>
+  </g>
+  <text x="401" y="162" class="card-title">CLI / ht</text>
+  <text x="579" y="162" class="card-title">/harness</text>
+  <text x="762" y="162" class="card-title">REST / SSE</text>
+  <text x="954" y="162" class="card-title">Codex</text>
+  <text x="1130" y="162" class="card-title">Custom Agent</text>
+  <text x="1325" y="154" class="card-title">Future MCP</text>
+  <text x="1349" y="173" class="small">clients</text>
+  <path d="M435 188v32M620 188v32M805 188v32M990 188v32M1175 188v32M1360 188v32" stroke="#2563eb" stroke-width="2"/>
+  <rect x="360" y="220" width="1075" height="38" rx="8" class="panel blue"/>
+  <text x="760" y="245" class="card-title" fill="#1d73f8">FastAPI Boundary: Agent Runs / Streaming Events / Admin-Gated Mutations</text>
+
+  <!-- 2 data -->
+  <g transform="translate(55 300)">
+    <rect width="305" height="510" rx="9" class="panel green"/>
+    <circle cx="42" cy="30" r="17" fill="#16a34a"/><text x="37" y="37" class="num">2</text>
+    <text x="82" y="37" class="panel-title" fill="#15803d">Data and Inputs</text>
+    <rect x="22" y="78" width="261" height="82" rx="8" class="card green"/><text x="52" y="112" class="card-title">OKX 行情数据</text><text x="52" y="136" class="body">SWAP tickers, candles, funding, OI</text>
+    <rect x="22" y="181" width="261" height="98" rx="8" class="card green"/><text x="52" y="215" class="card-title">BitPro MCP / API</text><text x="52" y="239" class="body">K线、策略、回测、模拟盘、实盘诊断</text><text x="52" y="260" class="small">稳定合同接入，不复制业务逻辑</text>
+    <rect x="22" y="300" width="261" height="82" rx="8" class="card green"/><text x="52" y="334" class="card-title">RAG / Knowledge</text><text x="52" y="358" class="body">docs/knowledge, runbooks, tool guide</text>
+    <rect x="22" y="403" width="261" height="82" rx="8" class="card green"/><text x="52" y="437" class="card-title">Audited Memory</text><text x="52" y="461" class="body">策略证据、运行结论、失败原因沉淀</text>
+  </g>
+
+  <!-- 3 gateway -->
+  <path class="arrow" d="M370 555h38"/>
+  <g transform="translate(410 300)">
+    <rect width="260" height="510" rx="9" class="panel purple"/>
+    <circle cx="42" cy="30" r="17" fill="#7c3aed"/><text x="37" y="37" class="num">3</text>
+    <text x="82" y="29" class="panel-title" fill="#6d28d9">Agent Gateway</text>
+    <text x="82" y="53" class="body">/api/agent, CLI, /harness</text>
+    <rect x="20" y="86" width="220" height="68" rx="8" class="card purple"/><text x="52" y="116" class="card-title">Provider Router</text><text x="52" y="138" class="body">DeepSeek / OpenAI-compatible</text>
+    <rect x="20" y="174" width="220" height="68" rx="8" class="card purple"/><text x="52" y="204" class="card-title">ToolRegistry</text><text x="52" y="226" class="body">schema, scope, timeout, source</text>
+    <rect x="20" y="262" width="220" height="82" rx="8" class="card purple"/><text x="52" y="292" class="card-title">Risk Governance</text><text x="52" y="314" class="body">approval, idempotency, live gate</text><text x="52" y="333" class="small">Python code enforces policy</text>
+    <rect x="20" y="364" width="220" height="68" rx="8" class="card purple"/><text x="52" y="394" class="card-title">Trace and Audit</text><text x="52" y="416" class="body">run nodes, tool calls, evidence</text>
+  </g>
+
+  <!-- 4 engine -->
+  <path class="arrow" d="M682 555h38"/>
+  <g transform="translate(722 300)">
+    <rect width="690" height="510" rx="9" class="panel blue"/>
+    <circle cx="42" cy="30" r="17" fill="#1d73f8"/><text x="37" y="37" class="num">4</text>
+    <text x="246" y="37" class="panel-title" fill="#1d73f8">HyperTrade Agent Engine</text>
+    <rect x="25" y="76" width="640" height="66" rx="8" class="card blue"/><text x="55" y="106" class="card-title">AgentKernel Graph Runtime</text><text x="55" y="128" class="body">intent → plan → approve → execute → reflect → report</text>
+    <rect x="25" y="160" width="640" height="66" rx="8" class="card green"/><text x="55" y="190" class="card-title">Planner and Tool Calling</text><text x="55" y="212" class="body">market, RAG, Memory, strategy library, BitPro MCP, live intents</text>
+    <rect x="25" y="244" width="640" height="66" rx="8" class="card teal"/><text x="55" y="274" class="card-title">Market Intelligence</text><text x="55" y="296" class="body">市场热度、涨跌广度、K线、相对强弱、资金费率、持仓变化</text>
+    <rect x="25" y="328" width="640" height="66" rx="8" class="card purple"/><text x="55" y="358" class="card-title">Strategy Research Loop</text><text x="55" y="380" class="body">BaseStrategy 生成、校验、版本比较、证据沉淀、下一轮实验</text>
+    <rect x="25" y="412" width="640" height="66" rx="8" class="card slate"/><text x="55" y="442" class="card-title">Report and Memory Feedback</text><text x="55" y="464" class="body">结构化报告、缺失数据说明、Memory 沉淀、Eval 反幻觉检查</text>
+  </g>
+
+  <!-- 5 outputs -->
+  <path class="arrow" d="M1423 555h38"/>
+  <g transform="translate(1463 300)">
+    <rect width="285" height="380" rx="9" class="panel teal"/>
+    <circle cx="42" cy="30" r="17" fill="#0d9488"/><text x="37" y="37" class="num">5</text>
+    <text x="82" y="37" class="panel-title" fill="#0f766e">Execution and Output</text>
+    <rect x="18" y="78" width="249" height="70" rx="8" class="card teal"/><text x="48" y="108" class="card-title">Operator Reports</text><text x="48" y="130" class="body">CLI / Web / API report blocks</text>
+    <rect x="18" y="168" width="249" height="82" rx="8" class="card teal"/><text x="48" y="198" class="card-title">BitPro Strategy Flow</text><text x="48" y="220" class="body">strategy_create/update, validate</text><text x="48" y="239" class="body">backtest_start/result, paper monitor</text>
+    <rect x="18" y="270" width="249" height="82" rx="8" class="card teal"/><text x="48" y="300" class="card-title">Risk-Gated Execution</text><text x="48" y="322" class="body">order intents, approval, OKX Testnet</text><text x="48" y="341" class="small">Mainnet execution blocked in V1</text>
+  </g>
+
+  <!-- 6/9 side panels -->
+  <g transform="translate(1463 708)">
+    <rect width="285" height="116" rx="9" class="panel blue"/>
+    <circle cx="42" cy="28" r="17" fill="#1d73f8"/><text x="37" y="35" class="num">6</text>
+    <text x="82" y="35" class="panel-title" fill="#1d73f8">Multi-Agent Workflow</text>
+    <text x="36" y="75" class="body">Research Agent → Strategy Agent → Monitor Agent</text>
+    <text x="36" y="96" class="small">共享同一套工具合同、证据模型与风控边界</text>
+  </g>
+  <g transform="translate(1463 852)">
+    <rect width="285" height="150" rx="9" class="panel red"/>
+    <circle cx="42" cy="28" r="17" fill="#e11d48"/><text x="37" y="35" class="num">9</text>
+    <text x="82" y="35" class="panel-title" fill="#be123c">Safety and Compliance</text>
+    <text x="36" y="75" class="body">- 全部 Agent/tool 调用可审计</text>
+    <text x="36" y="100" class="body">- scoped tokens, RBAC, idempotency</text>
+    <text x="36" y="125" class="body">- paper-first, live write explicit opt-in</text>
+  </g>
+  <path class="dash" d="M1460 930h-46"/>
+
+  <!-- 7 foundation -->
+  <g transform="translate(55 842)">
+    <rect width="1357" height="160" rx="9" class="panel blue"/>
+    <circle cx="42" cy="28" r="17" fill="#1d73f8"/><text x="37" y="35" class="num">7</text>
+    <text x="82" y="35" class="panel-title" fill="#1d73f8">Foundation / Infrastructure</text>
+    <rect x="30" y="62" width="160" height="54" rx="8" class="card blue"/><text x="58" y="85" class="card-title">LLM Providers</text><text x="58" y="104" class="small">model gateway</text>
+    <rect x="222" y="62" width="170" height="54" rx="8" class="card blue"/><text x="250" y="85" class="card-title">PostgreSQL</text><text x="250" y="104" class="small">runs, memory, pgvector</text>
+    <rect x="424" y="62" width="170" height="54" rx="8" class="card blue"/><text x="452" y="85" class="card-title">Workers</text><text x="452" y="104" class="small">market, paper, monitor</text>
+    <rect x="626" y="62" width="180" height="54" rx="8" class="card blue"/><text x="654" y="85" class="card-title">Connectors</text><text x="654" y="104" class="small">BitPro, OKX, future data</text>
+    <rect x="838" y="62" width="170" height="54" rx="8" class="card blue"/><text x="866" y="85" class="card-title">Secrets</text><text x="866" y="104" class="small">server-only tokens</text>
+    <rect x="1040" y="62" width="170" height="54" rx="8" class="card blue"/><text x="1068" y="85" class="card-title">CI / CD</text><text x="1068" y="104" class="small">GitHub Actions, Docker</text>
+    <rect x="1242" y="62" width="86" height="54" rx="8" class="card blue"/><text x="1265" y="85" class="card-title">Evals</text><text x="1260" y="104" class="small">guardrails</text>
+    <text x="95" y="145" class="body">Python-native</text><text x="310" y="145" class="body">Source-backed</text><text x="540" y="145" class="body">Self-hosted</text><text x="745" y="145" class="body">Risk-gated</text><text x="950" y="145" class="body">Extensible</text><text x="1160" y="145" class="body">Audit-first</text>
+  </g>
+
+  <!-- 8 workflow -->
+  <g transform="translate(55 1030)">
+    <rect width="1693" height="92" rx="9" class="panel blue"/>
+    <circle cx="42" cy="28" r="17" fill="#1d73f8"/><text x="37" y="35" class="num">8</text>
+    <text x="82" y="35" class="panel-title" fill="#1d73f8">Closed-Loop AI Trading Workflow</text>
+    <text x="130" y="72" class="card-title">Agent</text>
+    <path class="arrow" d="M190 66h92"/><text x="306" y="72" class="card-title">Market Research</text>
+    <path class="arrow" d="M455 66h92"/><text x="571" y="72" class="card-title">Strategy Code</text>
+    <path class="arrow" d="M703 66h92"/><text x="820" y="72" class="card-title">Validate</text>
+    <path class="arrow" d="M905 66h92"/><text x="1020" y="72" class="card-title">Backtest</text>
+    <path class="arrow" d="M1112 66h92"/><text x="1228" y="72" class="card-title">Paper / Monitor</text>
+    <path class="arrow" d="M1382 66h92"/><text x="1496" y="72" class="card-title">Feedback</text>
+  </g>
+  <text x="552" y="1160" class="sub">AI research → Strategy code → Validate → BitPro backtest → Paper monitoring → Memory feedback</text>
+</svg>

@@ -4,21 +4,27 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Agent 52 frontend operator console verified locally with
+- Last verified state: Sprint 57 architecture diagram verified locally with
   `./scripts/check.sh` (`pytest` 207 passed).
 
 ## Active Contract
 
 - No active implementation contract. Last completed:
-  `docs/contracts/sprint-52-frontend-operator-console.md`.
+  `docs/contracts/sprint-57-architecture-diagram.md`.
 
 ## Current In-Progress Work
 
-- None. Sprint 52 is complete in this branch; select a new contract before
+- None. Sprint 57 is complete in this branch; select a new contract before
   starting more implementation scope.
 
 ## Latest Completed Work
 
+- Added Sprint 57 architecture diagram: `docs/assets/hypertrade-architecture.svg`
+  provides a poster-style layered map for client access, data inputs, Agent
+  gateway, HyperTrade engine, execution/output, multi-Agent workflow,
+  infrastructure, closed-loop workflow, and safety/compliance. The companion
+  `docs/architecture/19-hypertrade-architecture-diagram.md` documents layer
+  responsibilities and the HyperTrade/BitPro boundary.
 - Completed Agent 52 / Sprint 52 frontend operator console polish:
   `/harness` keeps BitPro result ids labeled as `bitpro_result`, reads monitor
   alerts from the actual `/api/alerts` endpoint, and documents the Strategy

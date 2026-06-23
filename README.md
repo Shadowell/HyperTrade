@@ -107,6 +107,7 @@ tables instead.
 - `docs/README.md`: documentation index and current capability map.
 - `docs/spec.md`: product scope, acceptance criteria, and boundaries.
 - `docs/progress.md`: latest implementation/deployment state.
+- `docs/architecture/19-hypertrade-architecture-diagram.md`: layered HyperTrade architecture diagram.
 - `docs/architecture/`: module-level architecture notes.
 - `docs/knowledge/tool-usage-guide.md`: operator guide for Agent tools and validation.
 - `docs/runbooks/`: deployment, BitPro MCP, monitoring, smoke, backup, and incident procedures.

@@ -7,12 +7,14 @@ runbooks, and sprint state. Chat history is not considered durable project state
 
 - `spec.md`: product scope, V1 acceptance criteria, and explicit out-of-scope boundaries.
 - `progress.md`: latest completed work, verification status, and deployment notes.
+- `architecture/19-hypertrade-architecture-diagram.md`: poster-style
+  HyperTrade architecture map and layer responsibilities.
 - `architecture/18-hypertrade-capability-roadmap.md`: post-Sprint-44 capability
   roadmap and parallel sprint plan for Agent development.
 - `architecture/20-connector-framework.md`: trusted connector capability
   registry and BitPro compatibility path.
-- `contracts/sprint-55-cli-slash-command-candidates.md`: focused CLI polish
-  contract for slash command candidate filtering.
+- `contracts/sprint-57-architecture-diagram.md`: current architecture diagram
+  contract.
 - `contracts/sprint-56-market-heat-summary.md`: focused market-reporting
   contract for summary-first market heat answers.
 - `agent-prompts/parallel-sprint-prompts.md`: copy-ready prompts for Agents
@@ -29,6 +31,7 @@ runbooks, and sprint state. Chat history is not considered durable project state
 | Area | Current surface | Source of truth |
 | --- | --- | --- |
 | Agent graph and trace | API, CLI, `/harness` | `architecture/12-agent-graph-langgraph-runtime.md` |
+| System architecture map | SVG poster, layer responsibilities, logical flow | `architecture/19-hypertrade-architecture-diagram.md` |
 | Provider routing | CLI `/model`, API, settings | `architecture/13-provider-router.md` |
 | Tool calling | Agent planner, ToolRegistry, trace | `architecture/04-tool-calling.md` |
 | RAG | `/rag`, `/api/rag/search`, Memory/RAG panels | `architecture/05-rag-pgvector.md` |
