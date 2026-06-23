@@ -298,6 +298,20 @@ class AgentKernel:
                     strategy_id=int(strategy_id) if strategy_id is not None else None,
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_paper_events":
+                strategy_id = args.get("strategy_id")
+                result = self._bitpro_adapter().paper_events(
+                    strategy_id=int(strategy_id) if strategy_id is not None else None,
+                    limit=int(args.get("limit", 50)),
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_paper_equity_curve":
+                strategy_id = args.get("strategy_id")
+                result = self._bitpro_adapter().paper_equity_curve(
+                    strategy_id=int(strategy_id) if strategy_id is not None else None,
+                    sample_limit=int(args.get("sample_limit", 50)),
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_live_positions":
                 result = self._bitpro_adapter().live_positions(
                     exchange=str(args.get("exchange", "okx")),
@@ -1365,6 +1379,93 @@ class AgentKernel:
                         )
                     )
             bitpro_paper_lines.append("")
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "bitpro_paper_events":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or payload.get("status") != "ok":
+                continue
+            nested_tools = _nested_bitpro_tools(payload)
+            summary = payload.get("event_summary")
+            summary = summary if isinstance(summary, dict) else {}
+            events = payload.get("events")
+            events = events if isinstance(events, list) else []
+            bitpro_paper_lines.extend(
+                [
+                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
+                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
+                    (
+                        "- 事件证据: strategy_id={strategy_id}, events={count}, "
+                        "sample={sample}, errors={errors}, latest={latest}"
+                    ).format(
+                        strategy_id=payload.get("strategy_id", "all"),
+                        count=summary.get("count", len(events)),
+                        sample=summary.get("sample_count", len(events)),
+                        errors=summary.get("error_count", 0),
+                        latest=summary.get("latest_event_at", "n/a"),
+                    ),
+                ]
+            )
+            for event in events[:10]:
+                if not isinstance(event, dict):
+                    continue
+                bitpro_paper_lines.append(
+                    "- 事件 {id} {level}/{type}: {message} ({timestamp})".format(
+                        id=event.get("id", "n/a"),
+                        level=event.get("level", "info"),
+                        type=event.get("type", "event"),
+                        message=event.get("message", "n/a"),
+                        timestamp=event.get("timestamp", "n/a"),
+                    )
+                )
+            count = summary.get("count")
+            if isinstance(count, int) and count > len(events[:10]):
+                bitpro_paper_lines.append(f"- 还有 {count - len(events[:10])} 条事件未展开。")
+            bitpro_paper_lines.append("")
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "bitpro_paper_equity_curve":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or payload.get("status") != "ok":
+                continue
+            nested_tools = _nested_bitpro_tools(payload)
+            summary = payload.get("equity_summary")
+            summary = summary if isinstance(summary, dict) else {}
+            points = payload.get("equity_curve")
+            points = points if isinstance(points, list) else []
+            bitpro_paper_lines.extend(
+                [
+                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
+                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
+                    (
+                        "- 权益曲线证据: strategy_id={strategy_id}, points={count}, "
+                        "sample={sample}, latest_at={latest_at}, latest_equity={latest}, "
+                        "latest_drawdown={latest_dd}%, max_drawdown={max_dd}%"
+                    ).format(
+                        strategy_id=payload.get("strategy_id", "all"),
+                        count=summary.get("count", len(points)),
+                        sample=summary.get("sample_count", len(points)),
+                        latest_at=summary.get("latest_at", "n/a"),
+                        latest=summary.get("latest_equity", "n/a"),
+                        latest_dd=summary.get("latest_drawdown_pct", "n/a"),
+                        max_dd=summary.get("max_drawdown_pct", "n/a"),
+                    ),
+                ]
+            )
+            for point in points[:10]:
+                if not isinstance(point, dict):
+                    continue
+                bitpro_paper_lines.append(
+                    "- 权益点 {timestamp}: equity={equity}, drawdown={drawdown}%".format(
+                        timestamp=point.get("timestamp", "n/a"),
+                        equity=point.get("equity", "n/a"),
+                        drawdown=point.get("drawdown_pct", "n/a"),
+                    )
+                )
+            count = summary.get("count")
+            if isinstance(count, int) and count > len(points[:10]):
+                bitpro_paper_lines.append(f"- 还有 {count - len(points[:10])} 个权益点未展开。")
+            bitpro_paper_lines.append("")
         lifecycle_tool_names = {
             "bitpro_strategy_search",
             "bitpro_strategy_generate",
@@ -1525,6 +1626,8 @@ def _bitpro_trace_tool_name(tool_name: str) -> str:
         "paper_resume": "bitpro.paper_resume",
         "paper_stop": "bitpro.paper_stop",
         "paper_dashboard": "bitpro.paper_dashboard",
+        "paper_events": "bitpro.paper_events",
+        "paper_equity_curve": "bitpro.paper_equity_curve",
         "trading_positions": "bitpro.live_positions",
     }.get(tool_name, "")
 

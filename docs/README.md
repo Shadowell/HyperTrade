@@ -22,7 +22,7 @@ runbooks, and sprint state. Chat history is not considered durable project state
 | Memory | `/memory`, `/api/memory`, audited items | `architecture/06-memory.md` |
 | Strategy research | `/research`, `/backtest`, `/experiment` | `architecture/16-strategy-agent-workflow.md` |
 | Strategy knowledge memory | `kind=strategy_knowledge` memory search | `knowledge/strategy-research-playbook.md` |
-| BitPro MCP | Agent tools, API adapter, backtest/paper reports | `architecture/17-bitpro-tool-adapter.md` |
+| BitPro MCP | Agent tools, API adapter, backtest/paper evidence reports | `architecture/17-bitpro-tool-adapter.md` |
 | Risk/Testnet execution | `/live intent`, `/live approve`, `/live execute` | `architecture/14-risk-engine.md`, `architecture/15-okx-testnet-execution.md` |
 | CLI | `hypertrade`, `ht`, slash commands | `architecture/11-cli-conversation-harness.md` |
 | Frontend workbench | `/harness` core console | `architecture/09-frontend-harness.md` |

@@ -12,6 +12,8 @@ def test_tool_registry_exposes_sprint_one_tools_and_live_gate():
         "bitpro.health",
         "bitpro.market_klines",
         "bitpro.paper_dashboard",
+        "bitpro.paper_events",
+        "bitpro.paper_equity_curve",
         "bitpro.live_positions",
     } <= names
     assert all(tool.description.strip() for tool in registry.list_tools())

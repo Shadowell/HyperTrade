@@ -478,6 +478,76 @@ class ReplayBitProAdapter:
             ],
         }
 
+    def paper_events(self, *, strategy_id: int | None = None, limit: int = 50) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "strategy_id": strategy_id,
+            "limit": limit,
+            "events": [
+                {
+                    "id": 9001,
+                    "strategy_id": strategy_id or 105,
+                    "level": "error",
+                    "type": "order_rejected",
+                    "message": "insufficient paper balance",
+                    "timestamp": "2026-06-23T09:10:00Z",
+                }
+            ],
+            "event_summary": {
+                "count": 1,
+                "sample_count": 1,
+                "error_count": 1,
+                "latest_event_at": "2026-06-23T09:10:00Z",
+            },
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {
+                    "tool": "paper_events",
+                    "status": "success",
+                    "parameters": {"strategy_id": strategy_id, "limit": limit},
+                },
+            ],
+        }
+
+    def paper_equity_curve(
+        self,
+        *,
+        strategy_id: int | None = None,
+        sample_limit: int = 50,
+    ) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "contract_version": "bitpro-mcp-v1",
+            "strategy_id": strategy_id,
+            "sample_limit": sample_limit,
+            "equity_curve": [
+                {
+                    "timestamp": "2026-06-23T08:00:00Z",
+                    "equity": "101.25",
+                    "drawdown_pct": "1.5",
+                }
+            ],
+            "equity_summary": {
+                "count": 3,
+                "sample_count": 1,
+                "latest_at": "2026-06-23T09:00:00Z",
+                "latest_equity": "102.5",
+                "latest_drawdown_pct": "0.8",
+                "max_drawdown_pct": "1.5",
+            },
+            "tool_calls": [
+                {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                {
+                    "tool": "paper_equity_curve",
+                    "status": "success",
+                    "parameters": {"strategy_id": strategy_id},
+                },
+            ],
+        }
+
     def paper_configure(
         self,
         *,
@@ -958,6 +1028,53 @@ def test_agent_acceptance_bitpro_paper_monitor_reports_alerts(
     ) in run.report_markdown
     assert "建议 inspect_current_dashboard_strategy" in run.report_markdown
     assert "建议 continue_read_only_monitoring" in run.report_markdown
+    _assert_research_quality(run.report_markdown)
+
+
+def test_agent_acceptance_bitpro_paper_evidence_reads_events_and_equity(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = _memory_db()
+    _patch_replay_llm(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_paper_events",
+                        name="bitpro_paper_events",
+                        arguments={"strategy_id": 105, "limit": 5},
+                    ),
+                    ToolCallRequest(
+                        id="call_paper_equity",
+                        name="bitpro_paper_equity_curve",
+                        arguments={"strategy_id": 105, "sample_limit": 2},
+                    ),
+                ],
+            ),
+            ChatResponse(content="已读取 BitPro 模拟盘事件和权益曲线。", tool_calls=[]),
+        ],
+    )
+
+    run = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
+        knowledge_dir=str(tmp_path),
+        bitpro_adapter=ReplayBitProAdapter(),
+    ).run_chat("查看 BitPro 策略 105 的模拟盘事件、错误和权益曲线")
+
+    names = _tool_names(run)
+    assert "bitpro.paper_events" in names
+    assert "bitpro.paper_equity_curve" in names
+    assert "bitpro_paper_events" in names
+    assert "bitpro_paper_equity_curve" in names
+    assert "## BitPro 模拟盘状态" in run.report_markdown
+    assert "事件证据: strategy_id=105" in run.report_markdown
+    assert "9001 error/order_rejected: insufficient paper balance" in run.report_markdown
+    assert "权益曲线证据: strategy_id=105" in run.report_markdown
+    assert "latest_equity=102.5" in run.report_markdown
     _assert_research_quality(run.report_markdown)
 
 

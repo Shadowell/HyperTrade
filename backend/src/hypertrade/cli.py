@@ -2171,6 +2171,10 @@ def _render_rich_tool_report(
             _render_rich_bitpro_backtest_detail(payload, console=console)
         elif tool_name == "bitpro_paper_dashboard":
             _render_rich_bitpro_paper_dashboard(payload, console=console)
+        elif tool_name == "bitpro_paper_events":
+            _render_rich_bitpro_paper_events(payload, console=console)
+        elif tool_name == "bitpro_paper_equity_curve":
+            _render_rich_bitpro_paper_equity_curve(payload, console=console)
 
 
 def _render_rich_ticker(payload: dict[str, Any], *, console: Any) -> None:
@@ -2316,6 +2320,95 @@ def _render_rich_bitpro_paper_dashboard(payload: dict[str, Any], *, console: Any
                     str(action.get("action", "observe")),
                     str(action.get("message", "n/a")),
                 )
+        console.print(table)
+
+
+def _render_rich_bitpro_paper_events(payload: dict[str, Any], *, console: Any) -> None:
+    from rich.panel import Panel
+    from rich.table import Table
+
+    summary = payload.get("event_summary")
+    summary = summary if isinstance(summary, dict) else {}
+    events = payload.get("events")
+    events = events if isinstance(events, list) else []
+    summary_text = "\n".join(
+        [
+            f"策略: {payload.get('strategy_id', 'all')}",
+            (
+                "事件: count={count}, sample={sample}, errors={errors}, latest={latest}"
+            ).format(
+                count=summary.get("count", len(events)),
+                sample=summary.get("sample_count", len(events)),
+                errors=summary.get("error_count", 0),
+                latest=summary.get("latest_event_at", "n/a"),
+            ),
+            f"合同: {payload.get('contract_version', 'unknown')}",
+        ]
+    )
+    console.print(Panel(summary_text, title="BitPro 模拟盘事件", border_style="yellow"))
+    if events:
+        table = Table(title="Paper Events", show_header=True, header_style="bold", expand=True)
+        table.add_column("ID", ratio=1)
+        table.add_column("Level", ratio=1)
+        table.add_column("Type", ratio=2)
+        table.add_column("Message", ratio=5, overflow="fold")
+        table.add_column("Time", ratio=2)
+        for event in events[:10]:
+            if not isinstance(event, dict):
+                continue
+            table.add_row(
+                str(event.get("id", "n/a")),
+                str(event.get("level", "info")),
+                str(event.get("type", "event")),
+                str(event.get("message", "n/a")),
+                str(event.get("timestamp", "n/a")),
+            )
+        console.print(table)
+
+
+def _render_rich_bitpro_paper_equity_curve(payload: dict[str, Any], *, console: Any) -> None:
+    from rich.panel import Panel
+    from rich.table import Table
+
+    summary = payload.get("equity_summary")
+    summary = summary if isinstance(summary, dict) else {}
+    points = payload.get("equity_curve")
+    points = points if isinstance(points, list) else []
+    summary_text = "\n".join(
+        [
+            f"策略: {payload.get('strategy_id', 'all')}",
+            (
+                "权益: points={count}, sample={sample}, latest={latest}, "
+                "latest_drawdown={latest_dd}, max_drawdown={max_dd}"
+            ).format(
+                count=summary.get("count", len(points)),
+                sample=summary.get("sample_count", len(points)),
+                latest=summary.get("latest_equity", "n/a"),
+                latest_dd=_format_percent(summary.get("latest_drawdown_pct")),
+                max_dd=_format_percent(summary.get("max_drawdown_pct")),
+            ),
+            f"合同: {payload.get('contract_version', 'unknown')}",
+        ]
+    )
+    console.print(Panel(summary_text, title="BitPro 模拟盘权益曲线", border_style="cyan"))
+    if points:
+        table = Table(
+            title="Paper Equity Curve",
+            show_header=True,
+            header_style="bold",
+            expand=True,
+        )
+        table.add_column("Time", ratio=2)
+        table.add_column("Equity", justify="right", ratio=2)
+        table.add_column("Drawdown", justify="right", ratio=2)
+        for point in points[:10]:
+            if not isinstance(point, dict):
+                continue
+            table.add_row(
+                str(point.get("timestamp", "n/a")),
+                str(point.get("equity", "n/a")),
+                _format_percent(point.get("drawdown_pct")),
+            )
         console.print(table)
 
 
@@ -2565,6 +2658,8 @@ def _has_structured_market_tool_output(trace_events: list[Any]) -> bool:
         "bitpro_backtest_list_results",
         "bitpro_backtest_get_result",
         "bitpro_paper_dashboard",
+        "bitpro_paper_events",
+        "bitpro_paper_equity_curve",
     }
     for event in trace_events:
         if not isinstance(event, dict):
@@ -2600,6 +2695,10 @@ def _render_structured_tool_report(
             _render_tool_bitpro_backtest_detail_block(payload, output=output)
         elif tool_name == "bitpro_paper_dashboard":
             _render_tool_bitpro_paper_block(payload, output=output)
+        elif tool_name == "bitpro_paper_events":
+            _render_tool_bitpro_paper_events_block(payload, output=output)
+        elif tool_name == "bitpro_paper_equity_curve":
+            _render_tool_bitpro_paper_equity_block(payload, output=output)
 
 def _render_tool_ticker_block(payload: dict[str, Any], *, output: TextIO) -> None:
     print("", file=output)
@@ -2728,6 +2827,71 @@ def _render_tool_bitpro_paper_block(payload: dict[str, Any], *, output: TextIO) 
                         ),
                         file=output,
                     )
+
+
+def _render_tool_bitpro_paper_events_block(payload: dict[str, Any], *, output: TextIO) -> None:
+    summary = payload.get("event_summary")
+    summary = summary if isinstance(summary, dict) else {}
+    events = payload.get("events")
+    events = events if isinstance(events, list) else []
+
+    print("", file=output)
+    print("BitPro Paper Events:", file=output)
+    print(f"- Strategy: {payload.get('strategy_id', 'all')}", file=output)
+    print(
+        "- Events: count={count}, sample={sample}, errors={errors}, latest={latest}".format(
+            count=summary.get("count", len(events)),
+            sample=summary.get("sample_count", len(events)),
+            errors=summary.get("error_count", 0),
+            latest=summary.get("latest_event_at", "n/a"),
+        ),
+        file=output,
+    )
+    for event in events[:10]:
+        if not isinstance(event, dict):
+            continue
+        print(
+            "- {id} {level}/{type}: {message} ({timestamp})".format(
+                id=event.get("id", "n/a"),
+                level=event.get("level", "info"),
+                type=event.get("type", "event"),
+                message=event.get("message", "n/a"),
+                timestamp=event.get("timestamp", "n/a"),
+            ),
+            file=output,
+        )
+
+
+def _render_tool_bitpro_paper_equity_block(payload: dict[str, Any], *, output: TextIO) -> None:
+    summary = payload.get("equity_summary")
+    summary = summary if isinstance(summary, dict) else {}
+    points = payload.get("equity_curve")
+    points = points if isinstance(points, list) else []
+
+    print("", file=output)
+    print("BitPro Paper Equity Curve:", file=output)
+    print(f"- Strategy: {payload.get('strategy_id', 'all')}", file=output)
+    print(
+        "- Equity: points={count}, sample={sample}, latest={latest}, "
+        "max_drawdown={max_drawdown}%".format(
+            count=summary.get("count", len(points)),
+            sample=summary.get("sample_count", len(points)),
+            latest=summary.get("latest_equity", "n/a"),
+            max_drawdown=summary.get("max_drawdown_pct", "n/a"),
+        ),
+        file=output,
+    )
+    for point in points[:10]:
+        if not isinstance(point, dict):
+            continue
+        print(
+            "- {timestamp}: equity={equity}, drawdown={drawdown}%".format(
+                timestamp=point.get("timestamp", "n/a"),
+                equity=point.get("equity", "n/a"),
+                drawdown=point.get("drawdown_pct", "n/a"),
+            ),
+            file=output,
+        )
 
 
 def _render_tool_bitpro_backtest_block(payload: dict[str, Any], *, output: TextIO) -> None:

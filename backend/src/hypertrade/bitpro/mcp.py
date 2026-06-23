@@ -751,6 +751,58 @@ class BitProToolAdapter:
             "tool_calls": self.last_tool_calls,
         }
 
+    def paper_events(
+        self,
+        *,
+        strategy_id: int | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        safe_limit = _bounded_int(limit, default=50, minimum=1, maximum=200)
+        params: dict[str, Any] = {"limit": safe_limit}
+        if strategy_id is not None:
+            params["strategy_id"] = int(strategy_id)
+        raw = self._call("paper_events", params)
+        rows = [_paper_event_item(row) for row in _extract_paper_event_rows(raw)]
+        events = rows[:safe_limit]
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "strategy_id": strategy_id,
+            "limit": safe_limit,
+            "events": events,
+            "event_summary": _paper_event_summary(rows, events),
+            "tool_calls": self.last_tool_calls,
+        }
+
+    def paper_equity_curve(
+        self,
+        *,
+        strategy_id: int | None = None,
+        sample_limit: int = 50,
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        safe_limit = _bounded_int(sample_limit, default=50, minimum=0, maximum=500)
+        params: dict[str, Any] = {}
+        if strategy_id is not None:
+            params["strategy_id"] = int(strategy_id)
+        raw = self._call("paper_equity_curve", params)
+        rows = [_paper_equity_point(row) for row in _extract_paper_equity_rows(raw)]
+        points = rows[:safe_limit]
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "strategy_id": strategy_id,
+            "sample_limit": safe_limit,
+            "equity_curve": points,
+            "equity_summary": _paper_equity_summary(rows, points),
+            "tool_calls": self.last_tool_calls,
+        }
+
     def _fetch_strategy_inventory(
         self,
         *,
@@ -972,6 +1024,14 @@ def _error_message(payload: Any, status_code: int, *, tool_name: str) -> str:
 
 def _ensure_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {"value": value}
+
+
+def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
+    try:
+        integer = int(value)
+    except (TypeError, ValueError):
+        integer = default
+    return max(minimum, min(integer, maximum))
 
 
 def _extract_kline_rows(raw: Any) -> list[dict[str, Any]]:
@@ -1605,6 +1665,173 @@ def _paper_monitor_summary(
         "data_gaps": data_gaps,
         "recommended_actions": recommended_actions,
     }
+
+
+def _extract_paper_event_rows(raw: Any) -> list[dict[str, Any]]:
+    return _extract_nested_rows(raw, ("items", "events", "rows", "data", "logs"))
+
+
+def _extract_paper_equity_rows(raw: Any) -> list[dict[str, Any]]:
+    return _extract_nested_rows(
+        raw,
+        (
+            "curve",
+            "equity_curve",
+            "equityCurve",
+            "points",
+            "items",
+            "rows",
+            "data",
+            "values",
+        ),
+    )
+
+
+def _extract_nested_rows(raw: Any, keys: tuple[str, ...]) -> list[dict[str, Any]]:
+    if isinstance(raw, list):
+        return [_ensure_dict(row) for row in raw]
+    if not isinstance(raw, dict):
+        return []
+    sources: list[dict[str, Any]] = []
+    queue = [raw]
+    seen: set[int] = set()
+    for _ in range(3):
+        next_queue: list[dict[str, Any]] = []
+        for source in queue:
+            marker = id(source)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            sources.append(source)
+            for wrapper in ("data", "result", "payload", "paper", "live"):
+                value = source.get(wrapper)
+                if isinstance(value, dict):
+                    next_queue.append(value)
+        queue = next_queue
+
+    for source in sources:
+        for key in keys:
+            if key not in source:
+                continue
+            value = source[key]
+            rows = _coerce_artifact_rows(value)
+            if rows:
+                return rows
+            if isinstance(value, list):
+                return [_ensure_dict(row) for row in value]
+    return []
+
+
+def _paper_event_item(row: dict[str, Any]) -> dict[str, Any]:
+    timestamp = _first_present(
+        row.get("timestamp"),
+        row.get("created_at"),
+        row.get("event_time"),
+        row.get("time"),
+        row.get("ts"),
+    )
+    return _compact(
+        {
+            "id": _first_present(row.get("id"), row.get("event_id")),
+            "strategy_id": row.get("strategy_id"),
+            "level": _first_present(row.get("level"), row.get("severity"), row.get("status")),
+            "type": _first_present(
+                row.get("type"),
+                row.get("event_type"),
+                row.get("event"),
+                row.get("kind"),
+                row.get("name"),
+            ),
+            "message": _first_present(
+                row.get("message"),
+                row.get("msg"),
+                row.get("detail"),
+                row.get("error"),
+                row.get("reason"),
+            ),
+            "timestamp": timestamp,
+        }
+    )
+
+
+def _paper_event_summary(
+    rows: list[dict[str, Any]],
+    sample: list[dict[str, Any]],
+) -> dict[str, Any]:
+    error_count = 0
+    for row in rows:
+        level = str(row.get("level", "")).casefold()
+        event_type = str(row.get("type", "")).casefold()
+        message = str(row.get("message", "")).casefold()
+        if (
+            level in {"error", "critical", "fatal"}
+            or "error" in event_type
+            or "reject" in event_type
+            or "fail" in event_type
+            or "error" in message
+        ):
+            error_count += 1
+    latest_at = rows[0].get("timestamp") if rows else None
+    return _compact(
+        {
+            "count": len(rows),
+            "sample_count": len(sample),
+            "error_count": error_count,
+            "latest_event_at": latest_at,
+        }
+    )
+
+
+def _paper_equity_point(row: dict[str, Any]) -> dict[str, Any]:
+    timestamp = _first_present(
+        row.get("timestamp"),
+        row.get("created_at"),
+        row.get("time"),
+        row.get("ts"),
+    )
+    return _compact(
+        {
+            "timestamp": timestamp,
+            "equity": _decimal_text(
+                _first_present(row.get("equity"), row.get("current_equity"), row.get("value"))
+            ),
+            "balance": _decimal_text(row.get("balance")),
+            "pnl": _decimal_text(_first_present(row.get("pnl"), row.get("profit"))),
+            "pnl_pct": _decimal_text(
+                _first_present(row.get("pnl_pct"), row.get("return_pct"), row.get("profit_pct"))
+            ),
+            "drawdown_pct": _decimal_text(
+                _first_present(
+                    row.get("drawdown_pct"),
+                    row.get("drawdown"),
+                    row.get("max_drawdown"),
+                )
+            ),
+        }
+    )
+
+
+def _paper_equity_summary(
+    rows: list[dict[str, Any]],
+    sample: list[dict[str, Any]],
+) -> dict[str, Any]:
+    latest = rows[-1] if rows else {}
+    drawdowns = [
+        value
+        for row in rows
+        if (value := _decimal_or_none(row.get("drawdown_pct"))) is not None
+    ]
+    max_drawdown = max(drawdowns) if drawdowns else None
+    return _compact(
+        {
+            "count": len(rows),
+            "sample_count": len(sample),
+            "latest_at": latest.get("timestamp"),
+            "latest_equity": latest.get("equity"),
+            "latest_drawdown_pct": latest.get("drawdown_pct"),
+            "max_drawdown_pct": _decimal_text(max_drawdown),
+        }
+    )
 
 
 def _row_to_candle(row: dict[str, Any]) -> Candle:

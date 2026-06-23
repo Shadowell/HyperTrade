@@ -253,6 +253,8 @@ def test_planner_exposes_bitpro_read_tool_schemas() -> None:
         "bitpro_health",
         "bitpro_market_klines",
         "bitpro_paper_dashboard",
+        "bitpro_paper_events",
+        "bitpro_paper_equity_curve",
         "bitpro_live_positions",
     } <= names
 
@@ -270,6 +272,28 @@ def test_bitpro_paper_dashboard_schema_discourages_accidental_single_strategy_fi
     assert "running strategy inventory" in description
     assert "Omit this" in strategy_id_description
     assert "全部" in strategy_id_description
+
+
+def test_bitpro_paper_evidence_tool_schemas_are_read_only() -> None:
+    events_schema = next(
+        item for item in TOOL_SCHEMAS if item["function"]["name"] == "bitpro_paper_events"
+    )
+    equity_schema = next(
+        item for item in TOOL_SCHEMAS if item["function"]["name"] == "bitpro_paper_equity_curve"
+    )
+
+    assert "Read-only" in events_schema["function"]["description"]
+    assert "event stream" in events_schema["function"]["description"]
+    assert events_schema["function"]["parameters"]["properties"]["strategy_id"]["type"] == "integer"
+    assert events_schema["function"]["parameters"]["properties"]["limit"]["type"] == "integer"
+
+    assert "Read-only" in equity_schema["function"]["description"]
+    assert "equity curve" in equity_schema["function"]["description"]
+    assert equity_schema["function"]["parameters"]["properties"]["strategy_id"]["type"] == "integer"
+    assert (
+        equity_schema["function"]["parameters"]["properties"]["sample_limit"]["type"]
+        == "integer"
+    )
 
 
 def test_planner_exposes_bitpro_strategy_lifecycle_tool_schemas() -> None:
@@ -328,6 +352,8 @@ def test_planner_prompt_does_not_treat_bitpro_live_gate_as_runtime_status() -> N
     assert "live_trading_enabled" in prompt
     assert "live write/order gate" in prompt
     assert "bitpro_paper_dashboard" in prompt
+    assert "bitpro_paper_events" in prompt
+    assert "bitpro_paper_equity_curve" in prompt
     assert "Do not summarize paper dashboard evidence as BitPro live trading disabled" in prompt
 
 

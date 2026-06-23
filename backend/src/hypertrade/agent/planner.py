@@ -260,6 +260,58 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "bitpro_paper_events",
+            "description": (
+                "Read BitPro paper/simulation event stream. Read-only. Use this "
+                "for paper errors, logs, lifecycle events, order rejects, and "
+                "monitoring evidence."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {
+                        "type": "integer",
+                        "description": "Optional BitPro strategy id filter.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum events to request and show, default 50.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_equity_curve",
+            "description": (
+                "Read BitPro paper/simulation equity curve and drawdown samples. "
+                "Read-only. Use this for paper PnL curve, equity drift, drawdown, "
+                "and monitoring evidence."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {
+                        "type": "integer",
+                        "description": "Optional BitPro strategy id filter.",
+                    },
+                    "sample_limit": {
+                        "type": "integer",
+                        "description": (
+                            "Maximum curve rows to include in the Agent output, default 50."
+                        ),
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "bitpro_live_positions",
             "description": "Read BitPro live account positions for diagnostics only. Never writes.",
             "parameters": {
@@ -603,6 +655,11 @@ Use bitpro_paper_dashboard without strategy_id when the user asks about all/全�
 current_instance as only the current BitPro dashboard view; use
 running_strategies to list running strategies and never claim there is only one
 paper strategy from the dashboard view alone.
+Use bitpro_paper_events when the user asks about paper logs, events, errors,
+exceptions, order rejects, or why a paper strategy behaved abnormally.
+Use bitpro_paper_equity_curve when the user asks about paper equity, PnL curve,
+drawdown, drift, or time-series monitoring evidence. Report missing rows as
+unavailable; never synthesize paper event or curve rows.
 Use bitpro_backtest_list_results when the user asks about BitPro backtest
 performance, rankings, winners, or thresholds such as 回测收益大于100%. Report the
 actual total_return_pct metric from BitPro backtest results; do not substitute

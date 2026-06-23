@@ -8,10 +8,12 @@
 
 ## Active Contract
 
-- No active implementation contract. Last completed: `docs/contracts/sprint-41-docs-refresh.md`.
+- No active implementation contract. Last completed: `docs/contracts/sprint-42-bitpro-paper-evidence-layer.md`.
 
 ## Latest Completed Work
 
+- Added Sprint 42 BitPro paper evidence layer: Agent tools `bitpro_paper_events` and `bitpro_paper_equity_curve` now preflight through BitPro MCP, read bounded event/error and equity/drawdown evidence, record nested trace calls, and render source-bound Agent/CLI paper monitoring evidence without synthesizing missing rows.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 137 tests.
 - Added Sprint 41 documentation refresh: root READMEs, `docs/README.md`, knowledge guides, architecture notes, deployment docs, testing plan, and smoke runbook now describe the current production Agent surface, BitPro MCP boundaries, page-focused BitPro reports, strategy knowledge memory, and operator validation paths.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 131 tests.
 - Improved BitPro backtest detail CLI formatting: plain and Rich output now group core metrics and artifact samples with Chinese labels, and Rich metric values use semantic colors while respecting `NO_COLOR`.

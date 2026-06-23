@@ -49,6 +49,14 @@ gaps, and suggested operator checks. If `strategy_search(status=running)` does
 not include per-strategy PnL or drawdown, HyperTrade reports that as a data gap
 instead of inferring those metrics.
 
+Paper monitoring evidence is split into separate read tools. `bitpro_paper_events`
+reads `/live/events` with optional `strategy_id` and bounded `limit`, normalizes
+event/error rows, and reports counts plus the latest event timestamp. `bitpro_paper_equity_curve`
+reads `/live/equity_curve` with optional `strategy_id`, keeps a bounded sample of
+equity/drawdown points, and reports latest equity plus drawdown summaries. These
+tools complement the dashboard; they do not mutate paper state and they do not
+invent missing rows.
+
 BitPro backtest ranking and threshold questions are answered through
 `bitpro_backtest_list_results`, not by reading strategy descriptions or planner
 memory. The adapter uses BitPro `offset`/`limit` pagination, normalizes the
@@ -115,6 +123,8 @@ BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必�
 BitPro `/live/dashboard` 返回被视为当前模拟盘引擎/dashboard 视图，不能据此判断“只有一个策略在运行”。当 `bitpro_paper_dashboard` 未传 `strategy_id` 时，HyperTrade 会用安全分页额外读取 `strategy_search(status=running)`，并返回 `paper_scope` 与 `running_strategies`。报告必须区分当前 dashboard 策略和 BitPro 暴露的完整 running 策略清单。
 
 模拟盘监控是确定性且只读的。适配器从当前 dashboard 指标和 running 策略清单生成 `monitor_summary`：权益、总收益、Sharpe、回撤、清单覆盖、告警、数据缺口和建议检查动作。如果 `strategy_search(status=running)` 不包含逐策略收益或回撤，HyperTrade 必须把它报告为数据缺口，而不是推断这些指标。
+
+模拟盘监控证据拆成独立只读工具。`bitpro_paper_events` 读取 `/live/events`，支持可选 `strategy_id` 和有界 `limit`，标准化事件/错误行，并报告事件数量、错误数量和最新事件时间。`bitpro_paper_equity_curve` 读取 `/live/equity_curve`，支持可选 `strategy_id`，保留有界权益/回撤样本，并报告最新权益和回撤摘要。这些工具补充 dashboard 视图，不修改模拟盘状态，也不合成缺失样本。
 
 BitPro 回测排行和阈值问题必须通过 `bitpro_backtest_list_results` 回答，不能读取策略描述或 planner 记忆来推断。适配器使用 BitPro `offset`/`limit` 分页，把真实结果指标标准化为 `total_return_pct`，可在本地按阈值过滤，并用 `strategy_get` 补齐策略名以贴近页面展示。年化收益只能作为独立字段展示，不能替代回测总收益。
 

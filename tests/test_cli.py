@@ -703,6 +703,72 @@ def test_render_run_structured_output_keeps_bitpro_paper_monitor(capsys) -> None
     assert "Suggested read-only actions:" in output
 
 
+def test_render_run_structured_output_renders_bitpro_paper_evidence(capsys) -> None:
+    render_run(
+        {
+            "id": "run_paper_evidence",
+            "status": "completed",
+            "report_markdown": "## BitPro 模拟盘状态\n\n- raw fallback",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {
+                    "tool_name": "bitpro_paper_events",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "strategy_id": 105,
+                        "events": [
+                            {
+                                "id": 9001,
+                                "level": "error",
+                                "type": "order_rejected",
+                                "message": "insufficient paper balance",
+                                "timestamp": "2026-06-23T09:10:00Z",
+                            }
+                        ],
+                        "event_summary": {
+                            "count": 1,
+                            "sample_count": 1,
+                            "error_count": 1,
+                            "latest_event_at": "2026-06-23T09:10:00Z",
+                        },
+                    },
+                },
+                {
+                    "tool_name": "bitpro_paper_equity_curve",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "strategy_id": 105,
+                        "equity_curve": [
+                            {
+                                "timestamp": "2026-06-23T08:00:00Z",
+                                "equity": "101.25",
+                                "drawdown_pct": "1.5",
+                            }
+                        ],
+                        "equity_summary": {
+                            "count": 3,
+                            "sample_count": 1,
+                            "latest_at": "2026-06-23T09:00:00Z",
+                            "latest_equity": "102.5",
+                            "latest_drawdown_pct": "0.8",
+                            "max_drawdown_pct": "1.5",
+                        },
+                    },
+                },
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "BitPro Paper Events:" in output
+    assert "Events: count=1, sample=1, errors=1" in output
+    assert "9001 error/order_rejected: insufficient paper balance" in output
+    assert "BitPro Paper Equity Curve:" in output
+    assert "Equity: points=3, sample=1, latest=102.5, max_drawdown=1.5%" in output
+
+
 def test_welcome_banner_does_not_repeat_fixed_risk_warning() -> None:
     output = StringIO()
 

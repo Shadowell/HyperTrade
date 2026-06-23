@@ -138,6 +138,16 @@ class ToolRegistry:
                     "bitpro",
                 ),
                 ToolDefinition(
+                    "bitpro.paper_events",
+                    "Read BitPro paper/simulation events and errors.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.paper_equity_curve",
+                    "Read BitPro paper/simulation equity curve samples.",
+                    "bitpro",
+                ),
+                ToolDefinition(
                     "bitpro.live_positions",
                     "Read BitPro live account positions for diagnostics only.",
                     "bitpro",

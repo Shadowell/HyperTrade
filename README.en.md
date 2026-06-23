@@ -13,7 +13,7 @@ HyperTrade is a crypto trading agent for market research and execution. It is in
 - Memory v2 with dedupe, tags, importance, confidence, and usage audit.
 - Trading boundary: Mainnet execution is blocked; OKX Testnet signed execution is allowed only after approval and risk checks.
 - Strategy workflow with research, multi-variant backtest evidence, critique, next experiment suggestion, and searchable `strategy_knowledge` memory cards.
-- BitPro MCP adapter for health checks, direct K-line reads, strategy generation/create/update, BitPro backtest jobs/results/artifacts, paper lifecycle/monitoring, and live-position read-only diagnostics.
+- BitPro MCP adapter for health checks, direct K-line reads, strategy generation/create/update, BitPro backtest jobs/results/artifacts, paper lifecycle/monitoring evidence, and live-position read-only diagnostics.
 - Observability through `/harness`, CLI slash commands, and deterministic eval suite.
 
 ## Stack

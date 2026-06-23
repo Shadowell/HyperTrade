@@ -218,6 +218,103 @@ def test_planner_report_distinguishes_bitpro_paper_dashboard_scope() -> None:
     assert "paper_dashboard exposes the current BitPro paper dashboard only" in report
 
 
+def test_planner_report_renders_bitpro_paper_event_and_equity_evidence() -> None:
+    report = AgentKernel._render_planner_report(
+        "模拟盘事件和权益曲线读取完成。",
+        [
+            ToolCallRecord(
+                tool_name="bitpro_paper_events",
+                input_json={"strategy_id": 105, "limit": 5},
+                output_json={
+                    "status": "ok",
+                    "contract_version": "bitpro-mcp-v1",
+                    "strategy_id": 105,
+                    "limit": 5,
+                    "events": [
+                        {
+                            "id": 9001,
+                            "strategy_id": 105,
+                            "level": "error",
+                            "type": "order_rejected",
+                            "message": "insufficient paper balance",
+                            "timestamp": "2026-06-23T09:10:00Z",
+                        },
+                        {
+                            "id": 9000,
+                            "strategy_id": 105,
+                            "level": "info",
+                            "type": "heartbeat",
+                            "message": "loop ok",
+                            "timestamp": "2026-06-23T09:09:00Z",
+                        },
+                    ],
+                    "event_summary": {
+                        "count": 2,
+                        "sample_count": 2,
+                        "error_count": 1,
+                        "latest_event_at": "2026-06-23T09:10:00Z",
+                    },
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                        {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                        {
+                            "tool": "paper_events",
+                            "parameters": {"strategy_id": 105, "limit": 5},
+                            "status": "success",
+                        },
+                    ],
+                },
+            ),
+            ToolCallRecord(
+                tool_name="bitpro_paper_equity_curve",
+                input_json={"strategy_id": 105, "sample_limit": 2},
+                output_json={
+                    "status": "ok",
+                    "contract_version": "bitpro-mcp-v1",
+                    "strategy_id": 105,
+                    "sample_limit": 2,
+                    "equity_curve": [
+                        {
+                            "timestamp": "2026-06-23T07:00:00Z",
+                            "equity": "100",
+                            "drawdown_pct": "0",
+                        },
+                        {
+                            "timestamp": "2026-06-23T08:00:00Z",
+                            "equity": "101.25",
+                            "drawdown_pct": "1.5",
+                        },
+                    ],
+                    "equity_summary": {
+                        "count": 3,
+                        "sample_count": 2,
+                        "latest_at": "2026-06-23T09:00:00Z",
+                        "latest_equity": "102.5",
+                        "latest_drawdown_pct": "0.8",
+                        "max_drawdown_pct": "1.5",
+                    },
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                        {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                        {
+                            "tool": "paper_equity_curve",
+                            "parameters": {"strategy_id": 105},
+                            "status": "success",
+                        },
+                    ],
+                },
+            ),
+        ],
+    )
+
+    assert "## BitPro 模拟盘状态" in report
+    assert "事件证据: strategy_id=105, events=2, sample=2, errors=1" in report
+    assert "9001 error/order_rejected: insufficient paper balance" in report
+    assert "权益曲线证据: strategy_id=105, points=3, sample=2" in report
+    assert "latest_equity=102.5" in report
+    assert "max_drawdown=1.5%" in report
+
+
 def test_planner_report_renders_bitpro_backtest_total_return_results() -> None:
     report = AgentKernel._render_planner_report(
         "已读取 BitPro 回测结果。",

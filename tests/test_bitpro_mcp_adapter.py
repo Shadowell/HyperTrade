@@ -719,6 +719,170 @@ def test_bitpro_paper_dashboard_explicit_strategy_keeps_filtered_scope() -> None
     ]
 
 
+def test_bitpro_paper_events_reads_bounded_event_stream() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "query": dict(request.url.params),
+            }
+        )
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/live/events":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "items": [
+                            {
+                                "id": 9001,
+                                "strategy_id": 105,
+                                "level": "error",
+                                "type": "order_rejected",
+                                "message": "insufficient paper balance",
+                                "created_at": "2026-06-23T09:10:00Z",
+                            },
+                            {
+                                "id": 9000,
+                                "strategy_id": 105,
+                                "level": "info",
+                                "type": "heartbeat",
+                                "message": "loop ok",
+                                "created_at": "2026-06-23T09:09:00Z",
+                            },
+                        ],
+                        "total": 2,
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+
+    result = adapter.paper_events(strategy_id=105, limit=3)
+
+    assert result["status"] == "ok"
+    assert result["strategy_id"] == 105
+    assert result["limit"] == 3
+    assert result["events"][0] == {
+        "id": 9001,
+        "strategy_id": 105,
+        "level": "error",
+        "type": "order_rejected",
+        "message": "insufficient paper balance",
+        "timestamp": "2026-06-23T09:10:00Z",
+    }
+    assert result["event_summary"] == {
+        "count": 2,
+        "sample_count": 2,
+        "error_count": 1,
+        "latest_event_at": "2026-06-23T09:10:00Z",
+    }
+    assert [call["tool"] for call in result["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "paper_events",
+    ]
+    assert seen == [
+        {"method": "GET", "path": "/api/v2/system/health", "query": {}},
+        {
+            "method": "GET",
+            "path": "/api/v2/live/events",
+            "query": {"strategy_id": "105", "limit": "3"},
+        },
+    ]
+
+
+def test_bitpro_paper_equity_curve_reads_bounded_curve() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "query": dict(request.url.params),
+            }
+        )
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/live/equity_curve":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "curve": [
+                            {
+                                "timestamp": "2026-06-23T07:00:00Z",
+                                "equity": 100,
+                                "drawdown": 0,
+                            },
+                            {
+                                "timestamp": "2026-06-23T08:00:00Z",
+                                "equity": 101.25,
+                                "drawdown": 1.5,
+                            },
+                            {
+                                "timestamp": "2026-06-23T09:00:00Z",
+                                "equity": 102.5,
+                                "drawdown": 0.8,
+                            },
+                        ]
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+
+    result = adapter.paper_equity_curve(strategy_id=105, sample_limit=2)
+
+    assert result["status"] == "ok"
+    assert result["strategy_id"] == 105
+    assert result["sample_limit"] == 2
+    assert result["equity_curve"] == [
+        {"timestamp": "2026-06-23T07:00:00Z", "equity": "100", "drawdown_pct": "0"},
+        {"timestamp": "2026-06-23T08:00:00Z", "equity": "101.25", "drawdown_pct": "1.5"},
+    ]
+    assert result["equity_summary"] == {
+        "count": 3,
+        "sample_count": 2,
+        "latest_at": "2026-06-23T09:00:00Z",
+        "latest_equity": "102.5",
+        "latest_drawdown_pct": "0.8",
+        "max_drawdown_pct": "1.5",
+    }
+    assert [call["tool"] for call in result["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "paper_equity_curve",
+    ]
+    assert seen == [
+        {"method": "GET", "path": "/api/v2/system/health", "query": {}},
+        {
+            "method": "GET",
+            "path": "/api/v2/live/equity_curve",
+            "query": {"strategy_id": "105"},
+        },
+    ]
+
+
 def test_bitpro_backtest_list_results_filters_total_return_with_offset_pagination() -> None:
     seen: list[dict[str, Any]] = []
     first_page = [
