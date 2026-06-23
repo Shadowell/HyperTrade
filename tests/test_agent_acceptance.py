@@ -1035,7 +1035,9 @@ def test_agent_acceptance_bitpro_paper_monitor_reports_alerts(
         "per-strategy PnL/drawdown metrics"
     ) in run.report_markdown
     assert "建议 inspect_current_dashboard_strategy" in run.report_markdown
-    assert "建议 continue_read_only_monitoring" in run.report_markdown
+    assert "结论: 已读取 BitPro 模拟盘监控。" in run.report_markdown
+    assert "运行策略覆盖: listed=" in run.report_markdown
+    assert "建议 continue_read_only_monitoring" not in run.report_markdown
     _assert_research_quality(run.report_markdown)
 
 
@@ -1079,10 +1081,12 @@ def test_agent_acceptance_bitpro_paper_evidence_reads_events_and_equity(
     assert "bitpro_paper_events" in names
     assert "bitpro_paper_equity_curve" in names
     assert "## BitPro 模拟盘状态" in run.report_markdown
-    assert "事件证据: strategy_id=105" in run.report_markdown
+    assert "结论: 已读取 BitPro 模拟盘事件和权益曲线。" in run.report_markdown
+    assert "事件: strategy_id=105" in run.report_markdown
     assert "9001 error/order_rejected: insufficient paper balance" in run.report_markdown
-    assert "权益曲线证据: strategy_id=105" in run.report_markdown
+    assert "权益曲线: strategy_id=105" in run.report_markdown
     assert "latest_equity=102.5" in run.report_markdown
+    assert "2026-06-23T08:00:00Z" not in run.report_markdown
     _assert_research_quality(run.report_markdown)
 
 

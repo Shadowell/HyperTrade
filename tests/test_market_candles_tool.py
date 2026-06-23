@@ -201,13 +201,13 @@ def test_planner_report_distinguishes_bitpro_paper_dashboard_scope() -> None:
     )
 
     assert "## BitPro 模拟盘状态" in report
+    assert "结论: 模拟盘状态读取完成。" in report
     assert "Dashboard 范围: current_instance" in report
     assert "当前 dashboard: strategy_id=105" in report
     assert "不能据此判断 BitPro 全局实盘功能关闭" in report
-    assert "strategy_search(status=running) 返回 2 个" in report
-    assert "293: [合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U [running]" in report
+    assert "运行策略覆盖: listed=2, total=2, complete" in report
+    assert "293: [合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U [running]" not in report
     assert "监控结论: read_only" in report
-    assert "运行策略覆盖: 已列出 2 个，BitPro 返回总数 5 个，清单未完全展开" in report
     assert "告警 warning/negative_pnl: 当前 dashboard 策略总收益为负: -3.3%" in report
     assert (
         "数据缺口: running strategy inventory does not include per-strategy "
@@ -308,11 +308,14 @@ def test_planner_report_renders_bitpro_paper_event_and_equity_evidence() -> None
     )
 
     assert "## BitPro 模拟盘状态" in report
-    assert "事件证据: strategy_id=105, events=2, sample=2, errors=1" in report
-    assert "9001 error/order_rejected: insufficient paper balance" in report
-    assert "权益曲线证据: strategy_id=105, points=3, sample=2" in report
+    assert "结论: 模拟盘事件和权益曲线读取完成。" in report
+    assert "事件: strategy_id=105, count=2, errors=1" in report
+    assert "最近错误: 9001 error/order_rejected: insufficient paper balance" in report
+    assert "loop ok" not in report
+    assert "权益曲线: strategy_id=105, points=3" in report
     assert "latest_equity=102.5" in report
     assert "max_drawdown=1.5%" in report
+    assert "2026-06-23T07:00:00Z" not in report
 
 
 def test_planner_report_renders_bitpro_paper_snapshot_drift() -> None:

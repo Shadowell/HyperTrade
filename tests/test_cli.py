@@ -916,6 +916,225 @@ def test_render_run_prefers_final_paper_summary_by_default(capsys) -> None:
     assert "2026-06-23T08:00:00Z" not in output
 
 
+def test_rich_render_run_prefers_final_paper_summary_by_default(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    render_run(
+        {
+            "id": "run_rich_paper_summary",
+            "status": "completed",
+            "report_markdown": "## BitPro 模拟盘总结\n\n- 核心结论：权益稳定，暂无新增错误。",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {
+                    "tool_name": "bitpro_paper_equity_curve",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "strategy_id": 105,
+                        "equity_curve": [
+                            {
+                                "timestamp": "2026-06-23T08:00:00Z",
+                                "equity": "101.25",
+                                "drawdown_pct": "1.5",
+                            }
+                        ],
+                        "equity_summary": {
+                            "count": 400,
+                            "sample_count": 5,
+                            "latest_equity": "107.14",
+                        },
+                    },
+                }
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "核心结论：权益稳定，暂无新增错误。" in output
+    assert "BitPro 模拟盘权益曲线" not in output
+    assert "Paper Equity Curve" not in output
+    assert "2026-06-23T08:00:00Z" not in output
+
+
+def test_render_run_compacts_paper_tools_without_final_report(capsys) -> None:
+    render_run(
+        {
+            "id": "run_paper_compact",
+            "status": "completed",
+            "report_markdown": "",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {
+                    "tool_name": "bitpro_paper_dashboard",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "dashboard": {
+                            "system": {
+                                "strategy_id": 104,
+                                "state": "running",
+                                "mode": "paper",
+                            },
+                            "equity": {"current": "100.0"},
+                            "performance": {
+                                "total_pnl_pct": "0.0",
+                                "max_drawdown": "1.0",
+                            },
+                        },
+                    },
+                },
+                {
+                    "tool_name": "bitpro_paper_dashboard",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "dashboard": {
+                            "system": {
+                                "strategy_id": 105,
+                                "state": "running",
+                                "mode": "paper",
+                            },
+                            "equity": {"current": "107.11"},
+                            "performance": {
+                                "total_pnl_pct": "7.11",
+                                "max_drawdown": "6.3",
+                            },
+                        },
+                        "monitor_summary": {
+                            "running_inventory": {
+                                "listed_count": 9,
+                                "reported_total": 9,
+                                "is_truncated": False,
+                            },
+                            "data_gaps": [
+                                "running strategy inventory does not include per-strategy PnL"
+                            ],
+                        },
+                    },
+                },
+                {
+                    "tool_name": "bitpro_paper_equity_curve",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "strategy_id": None,
+                        "equity_curve": [
+                            {
+                                "timestamp": "2026-06-08T13:00:07.397000+00:00",
+                                "equity": "107.83386112695017",
+                                "drawdown_pct": None,
+                            }
+                        ],
+                        "equity_summary": {
+                            "count": 400,
+                            "sample_count": 50,
+                            "latest_equity": "107.14019134255034",
+                            "latest_drawdown_pct": None,
+                            "max_drawdown_pct": None,
+                        },
+                    },
+                },
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "BitPro 模拟盘摘要:" in output
+    assert "strategy_id=105" in output
+    assert "strategy_id=104" not in output
+    assert "权益曲线: strategy=all, points=400, latest=107.14" in output
+    assert "BitPro Paper Equity Curve:" not in output
+    assert "Paper Equity Curve" not in output
+    assert "2026-06-08T13:00:07.397000+00:00" not in output
+
+
+def test_render_run_compacts_noisy_paper_markdown(capsys) -> None:
+    render_run(
+        {
+            "id": "run_paper_noisy_markdown",
+            "status": "completed",
+            "report_markdown": (
+                "## BitPro 模拟盘状态\n\n"
+                "- 权益曲线证据: strategy_id=None, points=400\n"
+                "- 权益点 2026-06-08T13:00:07.397000+00:00: equity=107.83\n"
+                "- 还有 390 个权益点未展开。"
+            ),
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {
+                    "tool_name": "bitpro_paper_equity_curve",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "strategy_id": None,
+                        "equity_curve": [
+                            {
+                                "timestamp": "2026-06-08T13:00:07.397000+00:00",
+                                "equity": "107.83386112695017",
+                                "drawdown_pct": None,
+                            }
+                        ],
+                        "equity_summary": {
+                            "count": 400,
+                            "latest_equity": "107.14019134255034",
+                            "latest_drawdown_pct": None,
+                            "max_drawdown_pct": None,
+                        },
+                    },
+                }
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "BitPro 模拟盘摘要:" in output
+    assert "权益曲线: strategy=all, points=400, latest=107.14" in output
+    assert "权益点 2026-06-08" not in output
+    assert "还有 390" not in output
+
+
+def test_rich_render_run_compacts_paper_tools_without_final_report(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    render_run(
+        {
+            "id": "run_rich_paper_compact",
+            "status": "completed",
+            "report_markdown": "",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {
+                    "tool_name": "bitpro_paper_equity_curve",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "strategy_id": None,
+                        "equity_curve": [
+                            {
+                                "timestamp": "2026-06-08T13:00:07.397000+00:00",
+                                "equity": "107.83386112695017",
+                                "drawdown_pct": None,
+                            }
+                        ],
+                        "equity_summary": {
+                            "count": 400,
+                            "sample_count": 50,
+                            "latest_equity": "107.14019134255034",
+                            "latest_drawdown_pct": None,
+                            "max_drawdown_pct": None,
+                        },
+                    },
+                }
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "BitPro 模拟盘摘要" in output
+    assert "权益曲线: strategy=all, points=400, latest=107.14" in output
+    assert "Paper Equity Curve" not in output
+    assert "2026-06-08T13:00:07.397000+00:00" not in output
+
+
 def test_render_run_structured_output_renders_bitpro_paper_monitor_snapshot(
     monkeypatch,
     capsys,

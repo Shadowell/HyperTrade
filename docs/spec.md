@@ -126,6 +126,8 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Developer can see readable Agent progress statuses while free-form prompts are running.
 - Developer can read structured CLI report sections for market runs, and unknown Markdown reports render as terminal headings, lists, and tables in interactive/Rich mode.
 - Developer can read compact CLI run output focused on the report body: run metadata and tool trace tables are hidden by default, `HYPERTRADE_TRACE=summary` shows a compact trace, and `HYPERTRADE_TRACE=full` shows the full trace for audits.
+- Developer sees only compact run progress by default (`Agent: running/completed`); `HYPERTRADE_PROGRESS=full` restores per-tool progress lines for debugging.
+- Developer sees BitPro paper monitoring/equity/event reports as concise conclusions plus core metrics by default; raw paper tool tables require `HYPERTRADE_REPORT_SOURCE=tools`.
 - Routine market/RAG/Memory CLI outputs do not repeat a fixed investment-advice disclaimer; strategy, backtest, Testnet, live-order, or recommendation-like prompts still surface the research/risk boundary.
 - Developer can enable Rich terminal rendering for structured CLI reports while keeping plain output for scripts.
 - Developer can inspect and control the simulated paper runtime from CLI slash commands.

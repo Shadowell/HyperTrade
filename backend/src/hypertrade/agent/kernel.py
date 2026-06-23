@@ -1340,13 +1340,22 @@ class AgentKernel:
                     )
                 )
             bitpro_backtest_detail_lines.append("")
+        paper_tool_names = {
+            "bitpro_paper_dashboard",
+            "bitpro_paper_events",
+            "bitpro_paper_equity_curve",
+            "bitpro_paper_monitor_snapshot",
+        }
+        if any(str(getattr(record, "tool_name", "")) in paper_tool_names for record in tool_calls):
+            summary = _compact_final_message(final_message)
+            if summary:
+                bitpro_paper_lines.extend([f"- 结论: {summary}", ""])
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "bitpro_paper_dashboard":
                 continue
             payload = getattr(record, "output_json", {})
             if not isinstance(payload, dict) or payload.get("status") != "ok":
                 continue
-            nested_tools = _nested_bitpro_tools(payload)
             dashboard = payload.get("dashboard")
             dashboard = dashboard if isinstance(dashboard, dict) else {}
             system = dashboard.get("system")
@@ -1366,8 +1375,6 @@ class AgentKernel:
             monitor = monitor if isinstance(monitor, dict) else {}
             bitpro_paper_lines.extend(
                 [
-                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
-                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
                     f"- Dashboard 范围: {scope.get('dashboard_scope', 'unknown')}",
                     (
                         "- 当前 dashboard: strategy_id={strategy_id}, {name}, "
@@ -1395,53 +1402,24 @@ class AgentKernel:
                     ),
                 ]
             )
-            if running_items:
+            if running_items or running_total:
+                state = "complete"
+                if isinstance(running_total, int) and running_total > len(running_items):
+                    state = "truncated"
                 bitpro_paper_lines.append(
-                    f"- 运行策略清单: strategy_search(status=running) 返回 {running_total} 个"
+                    f"- 运行策略覆盖: listed={len(running_items)}, "
+                    f"total={running_total}, {state}"
                 )
-                for row in running_items[:20]:
-                    if not isinstance(row, dict):
-                        continue
-                    symbols = row.get("symbols", [])
-                    if isinstance(symbols, list):
-                        symbol_text = "/".join(str(symbol) for symbol in symbols[:3])
-                        if len(symbols) > 3:
-                            symbol_text += f" 等{len(symbols)}个"
-                    else:
-                        symbol_text = str(symbols or "n/a")
-                    bitpro_paper_lines.append(
-                        "- {id}: {name} [{status}] {symbols}".format(
-                            id=row.get("id", "n/a"),
-                            name=row.get("name", "n/a"),
-                            status=row.get("status", "n/a"),
-                            symbols=symbol_text,
-                        )
-                    )
-                if isinstance(running_total, int) and running_total > len(running_items[:20]):
-                    bitpro_paper_lines.append(
-                        f"- 还有 {running_total - len(running_items[:20])} 个 running 策略未展开。"
-                    )
             note = scope.get("coverage_note")
             if note:
                 bitpro_paper_lines.append(f"- 覆盖说明: {note}")
             if monitor:
                 inventory = monitor.get("running_inventory")
                 inventory = inventory if isinstance(inventory, dict) else {}
-                is_truncated = bool(inventory.get("is_truncated"))
                 bitpro_paper_lines.append(f"- 监控结论: {monitor.get('mode', 'unknown')}")
-                bitpro_paper_lines.append(
-                    (
-                        "- 运行策略覆盖: 已列出 {listed} 个，BitPro 返回总数 {total} 个，"
-                        "{state}"
-                    ).format(
-                        listed=inventory.get("listed_count", 0),
-                        total=inventory.get("reported_total", 0),
-                        state="清单未完全展开" if is_truncated else "清单已完整展开",
-                    )
-                )
                 alerts = monitor.get("alerts")
                 alerts = alerts if isinstance(alerts, list) else []
-                for alert in alerts:
+                for alert in alerts[:3]:
                     if not isinstance(alert, dict):
                         continue
                     bitpro_paper_lines.append(
@@ -1453,11 +1431,11 @@ class AgentKernel:
                     )
                 data_gaps = monitor.get("data_gaps")
                 data_gaps = data_gaps if isinstance(data_gaps, list) else []
-                for gap in data_gaps:
+                for gap in data_gaps[:3]:
                     bitpro_paper_lines.append(f"- 数据缺口: {gap}")
                 actions = monitor.get("recommended_actions")
                 actions = actions if isinstance(actions, list) else []
-                for action in actions:
+                for action in actions[:2]:
                     if not isinstance(action, dict):
                         continue
                     bitpro_paper_lines.append(
@@ -1473,32 +1451,30 @@ class AgentKernel:
             payload = getattr(record, "output_json", {})
             if not isinstance(payload, dict) or payload.get("status") != "ok":
                 continue
-            nested_tools = _nested_bitpro_tools(payload)
             summary = payload.get("event_summary")
             summary = summary if isinstance(summary, dict) else {}
             events = payload.get("events")
             events = events if isinstance(events, list) else []
             bitpro_paper_lines.extend(
                 [
-                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
-                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
                     (
-                        "- 事件证据: strategy_id={strategy_id}, events={count}, "
-                        "sample={sample}, errors={errors}, latest={latest}"
+                        "- 事件: strategy_id={strategy_id}, count={count}, "
+                        "errors={errors}, latest={latest}"
                     ).format(
                         strategy_id=payload.get("strategy_id", "all"),
                         count=summary.get("count", len(events)),
-                        sample=summary.get("sample_count", len(events)),
                         errors=summary.get("error_count", 0),
                         latest=summary.get("latest_event_at", "n/a"),
                     ),
                 ]
             )
-            for event in events[:10]:
+            for event in events:
                 if not isinstance(event, dict):
                     continue
+                if str(event.get("level", "")).lower() != "error":
+                    continue
                 bitpro_paper_lines.append(
-                    "- 事件 {id} {level}/{type}: {message} ({timestamp})".format(
+                    "- 最近错误: {id} {level}/{type}: {message} ({timestamp})".format(
                         id=event.get("id", "n/a"),
                         level=event.get("level", "info"),
                         type=event.get("type", "event"),
@@ -1506,9 +1482,7 @@ class AgentKernel:
                         timestamp=event.get("timestamp", "n/a"),
                     )
                 )
-            count = summary.get("count")
-            if isinstance(count, int) and count > len(events[:10]):
-                bitpro_paper_lines.append(f"- 还有 {count - len(events[:10])} 条事件未展开。")
+                break
             bitpro_paper_lines.append("")
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "bitpro_paper_equity_curve":
@@ -1516,23 +1490,19 @@ class AgentKernel:
             payload = getattr(record, "output_json", {})
             if not isinstance(payload, dict) or payload.get("status") != "ok":
                 continue
-            nested_tools = _nested_bitpro_tools(payload)
             summary = payload.get("equity_summary")
             summary = summary if isinstance(summary, dict) else {}
             points = payload.get("equity_curve")
             points = points if isinstance(points, list) else []
             bitpro_paper_lines.extend(
                 [
-                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
-                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
                     (
-                        "- 权益曲线证据: strategy_id={strategy_id}, points={count}, "
-                        "sample={sample}, latest_at={latest_at}, latest_equity={latest}, "
+                        "- 权益曲线: strategy_id={strategy_id}, points={count}, "
+                        "latest_at={latest_at}, latest_equity={latest}, "
                         "latest_drawdown={latest_dd}%, max_drawdown={max_dd}%"
                     ).format(
                         strategy_id=payload.get("strategy_id", "all"),
                         count=summary.get("count", len(points)),
-                        sample=summary.get("sample_count", len(points)),
                         latest_at=summary.get("latest_at", "n/a"),
                         latest=summary.get("latest_equity", "n/a"),
                         latest_dd=summary.get("latest_drawdown_pct", "n/a"),
@@ -1540,19 +1510,6 @@ class AgentKernel:
                     ),
                 ]
             )
-            for point in points[:10]:
-                if not isinstance(point, dict):
-                    continue
-                bitpro_paper_lines.append(
-                    "- 权益点 {timestamp}: equity={equity}, drawdown={drawdown}%".format(
-                        timestamp=point.get("timestamp", "n/a"),
-                        equity=point.get("equity", "n/a"),
-                        drawdown=point.get("drawdown_pct", "n/a"),
-                    )
-                )
-            count = summary.get("count")
-            if isinstance(count, int) and count > len(points[:10]):
-                bitpro_paper_lines.append(f"- 还有 {count - len(points[:10])} 个权益点未展开。")
             bitpro_paper_lines.append("")
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "bitpro_paper_monitor_snapshot":
@@ -1560,15 +1517,12 @@ class AgentKernel:
             payload = getattr(record, "output_json", {})
             if not isinstance(payload, dict) or payload.get("status") != "ok":
                 continue
-            nested_tools = _nested_bitpro_tools(payload)
             metrics = payload.get("metrics")
             metrics = metrics if isinstance(metrics, dict) else {}
             drift = payload.get("drift")
             drift = drift if isinstance(drift, dict) else {}
             bitpro_paper_lines.extend(
                 [
-                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
-                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
                     (
                         "- 监控快照: {snapshot_id}, strategy_id={strategy_id}, "
                         "previous={previous}"
@@ -1601,7 +1555,7 @@ class AgentKernel:
             )
             alerts = drift.get("alerts")
             alerts = alerts if isinstance(alerts, list) else []
-            for alert in alerts:
+            for alert in alerts[:3]:
                 if not isinstance(alert, dict):
                     continue
                 bitpro_paper_lines.append(
@@ -1613,7 +1567,7 @@ class AgentKernel:
                 )
             data_gaps = drift.get("data_gaps")
             data_gaps = data_gaps if isinstance(data_gaps, list) else []
-            for gap in data_gaps:
+            for gap in data_gaps[:3]:
                 bitpro_paper_lines.append(f"- 数据缺口: {gap}")
             bitpro_paper_lines.append("")
         lifecycle_tool_names = {
@@ -1703,6 +1657,27 @@ class AgentKernel:
         if bitpro_backtest_lines or bitpro_backtest_detail_lines or bitpro_paper_lines:
             return "\n".join(sections)
         return "\n".join([*sections, final_message])
+
+
+def _compact_final_message(value: object, *, max_chars: int = 240) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    parts: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        while line.startswith(("#", "-", "*")):
+            line = line[1:].strip()
+        if line:
+            parts.append(line)
+        if len(" ".join(parts)) >= max_chars:
+            break
+    summary = " ".join(parts).strip()
+    if len(summary) <= max_chars:
+        return summary
+    return summary[: max_chars - 1].rstrip() + "..."
 
 
 def _classify_intent(prompt: str) -> str:

@@ -69,6 +69,10 @@ set `HYPERTRADE_RENDERER=plain` when raw Markdown is needed for scripts.
 Rich terminal output hides run metadata and trace tables by default so routine answers show
 only the core report; set `HYPERTRADE_TRACE=summary` for a compact trace or
 `HYPERTRADE_TRACE=full` when a full audit trace is needed.
+Streaming progress is compact by default (`Agent: running/completed`). Set
+`HYPERTRADE_PROGRESS=full` to see every tool start/completion line. BitPro paper
+monitor/equity/event reports prefer concise conclusions and core metrics; set
+`HYPERTRADE_REPORT_SOURCE=tools` only when raw tool evidence tables are needed.
 
 ```text
 /help

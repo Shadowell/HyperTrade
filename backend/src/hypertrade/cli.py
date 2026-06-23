@@ -2080,6 +2080,12 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     if _show_trace_output() and isinstance(trace_events, list) and trace_events:
         _render_rich_trace_summary(trace_events, console=console)
 
+    if _prefer_final_report(run):
+        console.print(Markdown(raw_markdown))
+        return True
+    if _prefer_compact_paper_report(run):
+        _render_rich_compact_bitpro_paper_report(run, console=console)
+        return True
     if has_structured_market_summary and isinstance(report, dict):
         _render_rich_market_summary(report, console=console)
     elif has_structured_tools and isinstance(trace_events, list):
@@ -2880,6 +2886,9 @@ def _rich_drawdown_style(value: object) -> str:
 def _render_structured_report(run: dict[str, Any], *, output: TextIO) -> bool:
     if _prefer_final_report(run):
         return False
+    if _prefer_compact_paper_report(run):
+        _render_compact_bitpro_paper_report(run, output=output)
+        return True
     report = run.get("report_json", {})
     if not isinstance(report, dict) or not report:
         return False
@@ -2894,19 +2903,59 @@ def _render_structured_report(run: dict[str, Any], *, output: TextIO) -> bool:
 
 
 def _prefer_final_report(run: dict[str, Any]) -> bool:
-    source = os.getenv("HYPERTRADE_REPORT_SOURCE", "final").strip().lower()
-    if source in {"tool", "tools", "trace", "structured"}:
+    if _report_source_forces_tool_output():
         return False
     markdown = str(run.get("report_markdown", "")).strip()
     if not markdown:
         return False
+    if _is_noisy_paper_markdown(markdown):
+        return False
+    return bool(_paper_tool_outputs_by_tool(run))
+
+
+def _prefer_compact_paper_report(run: dict[str, Any]) -> bool:
+    if _report_source_forces_tool_output():
+        return False
+    if _prefer_final_report(run):
+        return False
+    return bool(_paper_tool_outputs_by_tool(run))
+
+
+def _report_source_forces_tool_output() -> bool:
+    source = os.getenv("HYPERTRADE_REPORT_SOURCE", "final").strip().lower()
+    return source in {"tool", "tools", "trace", "structured"}
+
+
+def _paper_tool_outputs_by_tool(run: dict[str, Any]) -> dict[str, dict[str, Any]]:
     trace_events = run.get("trace_events", [])
     if not isinstance(trace_events, list):
+        return {}
+    outputs: dict[str, dict[str, Any]] = {}
+    for event in trace_events:
+        if not isinstance(event, dict):
+            continue
+        tool_name = str(event.get("tool_name", ""))
+        if tool_name not in _FINAL_REPORT_FIRST_TOOLS:
+            continue
+        payload = event.get("output_json", {})
+        if isinstance(payload, dict) and payload.get("found", True):
+            outputs[tool_name] = payload
+    return outputs
+
+
+def _is_noisy_paper_markdown(markdown: str) -> bool:
+    if "BitPro 模拟盘状态" not in markdown:
         return False
-    return any(
-        isinstance(event, dict) and str(event.get("tool_name", "")) in _FINAL_REPORT_FIRST_TOOLS
-        for event in trace_events
+    noisy_markers = (
+        "权益点 ",
+        "运行策略清单:",
+        "Paper Equity Curve",
+        "还有 ",
     )
+    if any(marker in markdown for marker in noisy_markers):
+        return True
+    bullet_count = sum(1 for line in markdown.splitlines() if line.lstrip().startswith("- "))
+    return bullet_count > 14
 
 
 _FINAL_REPORT_FIRST_TOOLS = {
@@ -2915,6 +2964,148 @@ _FINAL_REPORT_FIRST_TOOLS = {
     "bitpro_paper_equity_curve",
     "bitpro_paper_monitor_snapshot",
 }
+
+
+def _render_compact_bitpro_paper_report(run: dict[str, Any], *, output: TextIO) -> None:
+    lines = _compact_bitpro_paper_lines(run)
+    print("", file=output)
+    print("BitPro 模拟盘摘要:", file=output)
+    for line in lines:
+        print(f"- {line}", file=output)
+
+
+def _render_rich_compact_bitpro_paper_report(run: dict[str, Any], *, console: Any) -> None:
+    from rich.panel import Panel
+
+    lines = _compact_bitpro_paper_lines(run)
+    console.print(Panel("\n".join(lines), title="BitPro 模拟盘摘要", border_style="cyan"))
+
+
+def _compact_bitpro_paper_lines(run: dict[str, Any]) -> list[str]:
+    payloads = _paper_tool_outputs_by_tool(run)
+    lines: list[str] = []
+
+    dashboard = payloads.get("bitpro_paper_dashboard")
+    if dashboard:
+        dashboard_payload = dashboard.get("dashboard")
+        dashboard_payload = dashboard_payload if isinstance(dashboard_payload, dict) else {}
+        system = dashboard_payload.get("system")
+        system = system if isinstance(system, dict) else {}
+        equity = dashboard_payload.get("equity")
+        equity = equity if isinstance(equity, dict) else {}
+        performance = dashboard_payload.get("performance")
+        performance = performance if isinstance(performance, dict) else {}
+        lines.append(
+            (
+                "运行: strategy_id={strategy_id}, {state}/{mode}, equity={equity}, "
+                "PnL={pnl}, drawdown={drawdown}"
+            ).format(
+                strategy_id=_display_value(system.get("strategy_id")),
+                state=_display_value(system.get("state")),
+                mode=_display_value(system.get("mode")),
+                equity=_format_number(equity.get("current")),
+                pnl=_format_percent(performance.get("total_pnl_pct")),
+                drawdown=_format_percent(performance.get("max_drawdown")),
+            )
+        )
+        monitor = dashboard.get("monitor_summary")
+        monitor = monitor if isinstance(monitor, dict) else {}
+        inventory = monitor.get("running_inventory")
+        inventory = inventory if isinstance(inventory, dict) else {}
+        if inventory:
+            coverage = "truncated" if inventory.get("is_truncated") else "complete"
+            lines.append(
+                "覆盖: running listed={listed}, total={total}, {coverage}".format(
+                    listed=inventory.get("listed_count", "n/a"),
+                    total=inventory.get("reported_total", "n/a"),
+                    coverage=coverage,
+                )
+            )
+        _append_compact_paper_findings(lines, monitor)
+
+    equity_payload = payloads.get("bitpro_paper_equity_curve")
+    if equity_payload:
+        summary = equity_payload.get("equity_summary")
+        summary = summary if isinstance(summary, dict) else {}
+        points = equity_payload.get("equity_curve")
+        points = points if isinstance(points, list) else []
+        lines.append(
+            (
+                "权益曲线: strategy={strategy}, points={points}, latest={latest}, "
+                "latest_drawdown={latest_dd}, max_drawdown={max_dd}"
+            ).format(
+                strategy=_display_value(equity_payload.get("strategy_id"), default="all"),
+                points=summary.get("count", len(points)),
+                latest=_format_number(summary.get("latest_equity")),
+                latest_dd=_format_percent(summary.get("latest_drawdown_pct")),
+                max_dd=_format_percent(summary.get("max_drawdown_pct")),
+            )
+        )
+
+    events_payload = payloads.get("bitpro_paper_events")
+    if events_payload:
+        summary = events_payload.get("event_summary")
+        summary = summary if isinstance(summary, dict) else {}
+        events = events_payload.get("events")
+        events = events if isinstance(events, list) else []
+        lines.append(
+            "事件: strategy={strategy}, count={count}, errors={errors}, latest={latest}".format(
+                strategy=_display_value(events_payload.get("strategy_id"), default="all"),
+                count=summary.get("count", len(events)),
+                errors=summary.get("error_count", 0),
+                latest=_display_value(summary.get("latest_event_at")),
+            )
+        )
+
+    snapshot = payloads.get("bitpro_paper_monitor_snapshot")
+    if snapshot:
+        metrics = snapshot.get("metrics")
+        metrics = metrics if isinstance(metrics, dict) else {}
+        drift = snapshot.get("drift")
+        drift = drift if isinstance(drift, dict) else {}
+        lines.append(
+            (
+                "快照: strategy={strategy}, equity={equity}, PnL={pnl}, drawdown={drawdown}, "
+                "error_delta={error_delta}"
+            ).format(
+                strategy=_display_value(snapshot.get("strategy_id"), default="all"),
+                equity=_format_number(metrics.get("latest_equity")),
+                pnl=_format_percent(metrics.get("total_pnl_pct")),
+                drawdown=_format_percent(metrics.get("max_drawdown_pct")),
+                error_delta=drift.get("error_count_delta", "n/a"),
+            )
+        )
+        _append_compact_paper_findings(lines, drift)
+
+    return lines or ["暂无可用的模拟盘摘要。"]
+
+
+def _append_compact_paper_findings(lines: list[str], payload: dict[str, Any]) -> None:
+    findings: list[str] = []
+    alerts = payload.get("alerts")
+    alerts = alerts if isinstance(alerts, list) else []
+    for alert in alerts[:2]:
+        if isinstance(alert, dict):
+            findings.append(
+                "{level}/{code}: {message}".format(
+                    level=alert.get("level", "info"),
+                    code=alert.get("code", "unknown"),
+                    message=alert.get("message", "n/a"),
+                )
+            )
+    gaps = payload.get("data_gaps")
+    gaps = gaps if isinstance(gaps, list) else []
+    for gap in gaps[:2]:
+        findings.append(f"gap: {gap}")
+    if findings:
+        lines.append("提醒: " + "；".join(findings))
+
+
+def _display_value(value: object, *, default: str = "n/a") -> str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    return text or default
 
 
 def _render_structured_market_summary(report: dict[str, Any], *, output: TextIO) -> None:

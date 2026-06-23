@@ -90,9 +90,10 @@ hypertrade ask "查看 BitPro 回测 result 196 的权益曲线和交易证据"
 
 Expected server observations:
 
-- CLI prints run id and tool progress lines.
-- Free-form prompts print readable Agent statuses for run creation, planning, tool execution, tool completion, and final report generation.
+- CLI prints compact run progress by default (`Agent: running` and `Agent: completed`), without per-tool progress spam.
+- Set `HYPERTRADE_PROGRESS=full` only when per-tool run creation, planning, execution, completion, and final-report progress lines are needed for debugging.
 - Free-form market prompts prefer compact structured CLI report sections such as `Ticker`, `Trend`, and `Relative strength` instead of run metadata, trace tables, wrapper report panels, or raw Markdown when trace payloads are available.
+- BitPro paper monitor/equity/event prompts prefer concise conclusions and core metrics; raw paper evidence tables require `HYPERTRADE_REPORT_SOURCE=tools`.
 - Rich terminal rendering can be forced with `HYPERTRADE_RENDERER=rich`; script-friendly plain text can be forced with `HYPERTRADE_RENDERER=plain`.
 - Deterministic market shortcuts print exact ticker, K-line trend, and relative-strength blocks without starting an LLM-planned Agent run.
 - Paper slash commands print the simulated session state and can pause/resume the paper runtime without touching live trading.

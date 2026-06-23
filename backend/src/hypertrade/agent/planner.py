@@ -727,6 +727,9 @@ unavailable; never synthesize paper event or curve rows.
 Use bitpro_paper_monitor_snapshot when the user asks to monitor paper drift,
 compare with the previous paper state, record a monitor snapshot, or ask what
 changed since the last paper check. This is read-only evidence capture.
+For BitPro paper monitoring/equity/event answers, summarize the conclusion and
+core metrics only. Do not list raw strategy inventories, individual equity
+points, or ordinary event rows unless the user explicitly asks for raw evidence.
 Use bitpro_backtest_list_results when the user asks about BitPro backtest
 performance, rankings, winners, or thresholds such as 回测收益大于100%. Report the
 actual total_return_pct metric from BitPro backtest results; do not substitute
