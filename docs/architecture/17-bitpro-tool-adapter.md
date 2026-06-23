@@ -24,6 +24,8 @@ The adapter starts from read-first discovery and then permits non-live strategy 
 
 Research/backtest/paper writes are allowed only through explicit Agent tool calls such as strategy generation, strategy creation, BitPro-owned backtest jobs, and paper/simulation lifecycle control. Live write tools must be added later and separately. Any testnet or live write path needs explicit scopes, idempotency keys, approval gates, risk prechecks, redacted audit events, and structured refusal reasons.
 
+Remote Agent authentication uses BitPro MCP Agent tokens, not browser login cookies. BitPro administrators generate `bp_mcp_` tokens from Settings -> Agent Access -> MCP Agent Token or through `POST /api/v2/settings/mcp-agent-tokens`; BitPro stores token hashes only and returns plaintext once. HyperTrade stores the selected token only in server-side environment such as `BITPRO_MCP_API_TOKEN`, sends it with `X-BitPro-MCP-Token`, and exposes only redacted contract metadata through `/api/harness/overview`. The adapter reports scope classes `R` read, `W` research/backtest/paper mutation, `L` live diagnostics, and `T` live mutation; HyperTrade continues to block `T` tools.
+
 The production strategy R&D loop is:
 
 1. Call `bitpro_capabilities`, then `bitpro_health`.
@@ -38,7 +40,7 @@ The production strategy R&D loop is:
 
 Server evidence on 2026-06-09 validated this loop through BitPro MCP against `http://127.0.0.1:8889/api/v2`: ETH/USDT:USDT 1h had 720 real candles from 2026-05-10T14:00:00Z to 2026-06-09T13:00:00Z; strategy `#293` passed `strategy_validate_code`; backtest job `a292d098-0657-411d-9fff-3c82b9b384d8` completed with result `#196`; metrics were 4.0441% return, 1.4438% max drawdown, 11 trades, 0.8029 Sharpe, and 63.64% win rate; paper simulation for strategy `#293` was started in dry-run mode. Live mutation tools were skipped.
 
-Operational data-access steps are documented in `docs/runbooks/bitpro-mcp-data-access.md`. The first HyperTrade implementation lives in `backend/src/hypertrade/bitpro/mcp.py`: every flow starts with `bitpro_capabilities` and `bitpro_health`, then selects the smallest tool for market data, strategy lifecycle, backtest, paper/simulation, or live read-only diagnostics. Live write tools are blocked in this adapter.
+Operational data-access steps are documented in `docs/runbooks/bitpro-mcp-data-access.md`. The first HyperTrade implementation lives in `backend/src/hypertrade/bitpro/mcp.py`: every flow starts with `bitpro_capabilities` and `bitpro_health`, then selects the smallest tool for market data, strategy lifecycle, backtest, paper/simulation, or live read-only diagnostics. Live write tools are blocked in this adapter. The local capability document mirrors BitPro's `agent_auth`, `remote_mcp`, `tool_groups`, token-management routes, and idempotency requirements so the Agent can diagnose `401` authentication failures without depending on a BitPro web session.
 
 The BitPro `/live/dashboard` response is treated as a current paper engine/dashboard view, not proof that only one strategy is running. When HyperTrade calls `bitpro_paper_dashboard` without a `strategy_id`, the adapter also reads `strategy_search(status=running)` with safe pagination and returns `paper_scope` plus `running_strategies`. Reports must distinguish the current dashboard strategy from the complete running strategy inventory exposed by BitPro.
 
@@ -113,6 +115,8 @@ BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必�
 
 研究、回测、模拟盘写入只允许通过明确 Agent 工具调用执行，例如策略生成、策略创建、BitPro 回测 job 和 paper/simulation 生命周期控制。实盘写工具必须后续单独加入。任何 Testnet 或实盘写入路径都必须具备明确 scope、幂等键、审批门、风控预检、脱敏审计事件和结构化拒绝原因。
 
+远程 Agent 认证使用 BitPro MCP Agent Token，不依赖浏览器登录 cookie。BitPro 管理员可在设置页 `Agent 接入 / MCP Agent Token` 生成 `bp_mcp_` token，或调用 `POST /api/v2/settings/mcp-agent-tokens`；BitPro 只保存哈希，明文只返回一次。HyperTrade 只把选中的 token 存在服务器环境，例如 `BITPRO_MCP_API_TOKEN`，调用 BitPro 时通过 `X-BitPro-MCP-Token` 发送，`/api/harness/overview` 只暴露脱敏合同元数据。适配器报告 `R` 只读、`W` 研究/回测/模拟盘写、`L` 实盘诊断、`T` 实盘写四类 scope；HyperTrade 继续阻断 `T` 工具。
+
 生产级策略研发闭环：
 
 1. 先调用 `bitpro_capabilities`，再调用 `bitpro_health`。
@@ -127,7 +131,7 @@ BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必�
 
 2026-06-09 服务器验证已经跑通该闭环：通过 BitPro MCP 访问 `http://127.0.0.1:8889/api/v2`；ETH/USDT:USDT 1h 有 720 根真实 K 线，覆盖 2026-05-10T14:00:00Z 到 2026-06-09T13:00:00Z；策略 `#293` 通过 `strategy_validate_code`；回测任务 `a292d098-0657-411d-9fff-3c82b9b384d8` 完成并生成结果 `#196`；指标为收益 4.0441%、最大回撤 1.4438%、11 笔交易、Sharpe 0.8029、胜率 63.64%；策略 `#293` 已以 dry-run 模式启动模拟盘。实盘写工具已跳过。
 
-具体数据调用步骤见 `docs/runbooks/bitpro-mcp-data-access.md`。第一版 HyperTrade 实现在 `backend/src/hypertrade/bitpro/mcp.py`：每条链路先调用 `bitpro_capabilities` 和 `bitpro_health`，再根据行情数据、策略生命周期、回测、模拟盘或实盘只读诊断选择最小工具。实盘写工具在该 adapter 内默认阻断。
+具体数据调用步骤见 `docs/runbooks/bitpro-mcp-data-access.md`。第一版 HyperTrade 实现在 `backend/src/hypertrade/bitpro/mcp.py`：每条链路先调用 `bitpro_capabilities` 和 `bitpro_health`，再根据行情数据、策略生命周期、回测、模拟盘或实盘只读诊断选择最小工具。实盘写工具在该 adapter 内默认阻断。本地 capability 文档同步 BitPro 的 `agent_auth`、`remote_mcp`、`tool_groups`、Token 管理路由和幂等要求，使 Agent 遇到 `401` 时能定位到 MCP Agent Token 配置，而不是依赖 BitPro Web 登录态。
 
 BitPro `/live/dashboard` 返回被视为当前模拟盘引擎/dashboard 视图，不能据此判断“只有一个策略在运行”。当 `bitpro_paper_dashboard` 未传 `strategy_id` 时，HyperTrade 会用安全分页额外读取 `strategy_search(status=running)`，并返回 `paper_scope` 与 `running_strategies`。报告必须区分当前 dashboard 策略和 BitPro 暴露的完整 running 策略清单。
 

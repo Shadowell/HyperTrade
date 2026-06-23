@@ -178,7 +178,45 @@ const overview = {
     api_base: "http://127.0.0.1:8889/api/v2",
     auth_header: "X-BitPro-MCP-Token",
     token_configured: true,
+    token_source: "bitpro_settings_agent_token_or_server_env",
+    remote_mcp: {
+      transport: "streamable-http",
+      path_default: "/api/v2/mcp/",
+      auth_header_default: "X-BitPro-MCP-Token",
+      token_env: "BITPRO_MCP_API_TOKEN",
+      token_status_path: "/settings/mcp-token",
+      token_generate_path: "/settings/mcp-token/generate"
+    },
+    agent_auth: {
+      auth_header_default: "X-BitPro-MCP-Token",
+      static_token_env: "BITPRO_MCP_API_TOKEN",
+      token_management: {
+        settings_routes: {
+          list: "GET /api/v2/settings/mcp-agent-tokens",
+          create: "POST /api/v2/settings/mcp-agent-tokens",
+          revoke: "DELETE /api/v2/settings/mcp-agent-tokens/{token_id}"
+        },
+        plaintext_returned_once: true,
+        default_tool_groups: ["read", "research_backtest_paper_mutation", "live_diagnostic"]
+      },
+      scope_classes: {
+        R: { label: "read", tool_group: "read" },
+        W: { label: "research_backtest_paper_mutation", tool_group: "research_backtest_paper_mutation" },
+        L: { label: "live_diagnostic", tool_group: "live_diagnostic" },
+        T: { label: "live_mutation", tool_group: "live_mutation" }
+      },
+      idempotency: {
+        required_tools: ["backtest_start_job", "paper_start"]
+      }
+    },
+    tool_groups: {
+      read: ["bitpro_capabilities", "bitpro_health", "market_klines"],
+      research_backtest_paper_mutation: ["strategy_create", "backtest_start_job", "paper_start"],
+      live_diagnostic: ["live_preflight", "trading_positions"],
+      live_mutation: ["trading_futures_order"]
+    },
     live_write_enabled: false,
+    live_write_scope: "hypertrade_mcp_live_write_gate",
     tools: [
       "bitpro_capabilities",
       "bitpro_health",
@@ -251,7 +289,10 @@ test("renders harness observability from live overview", async () => {
   expect(screen.getByText("报告阅读")).toBeInTheDocument();
   expect(screen.getByText("异动榜")).toBeInTheDocument();
   expect(screen.getAllByText("最近运行").length).toBeGreaterThanOrEqual(1);
-  expect(screen.queryByText("BitPro MCP 接入")).not.toBeInTheDocument();
+  expect(screen.getByText("BitPro MCP 接入")).toBeInTheDocument();
+  expect(screen.getByText("BitPro 设置 / 服务器环境")).toBeInTheDocument();
+  expect(screen.getAllByText("X-BitPro-MCP-Token").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("R / W / L / T")).toBeInTheDocument();
   expect(screen.queryByText("模拟盘运行")).not.toBeInTheDocument();
   expect(screen.queryByText("策略实验室")).not.toBeInTheDocument();
   expect(screen.queryByText("实盘审批")).not.toBeInTheDocument();

@@ -232,7 +232,39 @@ type HarnessOverview = {
     api_base: string;
     auth_header: string;
     token_configured: boolean;
+    token_source?: string;
+    remote_mcp?: {
+      transport?: string;
+      path_default?: string;
+      auth_header_default?: string;
+      token_env?: string;
+      token_status_path?: string;
+      token_generate_path?: string;
+    };
+    agent_auth?: {
+      auth_header_default?: string;
+      static_token_env?: string;
+      token_management?: {
+        settings_routes?: Record<string, string>;
+        plaintext_returned_once?: boolean;
+        default_tool_groups?: string[];
+      };
+      scope_classes?: Record<
+        string,
+        {
+          label?: string;
+          tool_group?: string;
+          description?: string;
+        }
+      >;
+      idempotency?: {
+        required_tools?: string[];
+      };
+    };
+    tool_groups?: Record<string, string[]>;
     live_write_enabled: boolean;
+    live_write_scope?: string;
+    live_write_note?: string;
     tools: string[];
   };
   evals: EvalStatus;
@@ -357,6 +389,11 @@ const copy = {
     writeBlocked: "写工具需审批",
     mcpAdapter: "适配器",
     mcpApiBase: "API Base",
+    mcpAuthHeader: "认证 Header",
+    mcpTokenSource: "Token 来源",
+    mcpTokenSourceSettings: "BitPro 设置 / 服务器环境",
+    mcpScopes: "Scope 分组",
+    mcpTools: "工具数量",
     mcpTokenReady: "Token 已配置",
     mcpTokenMissing: "Token 未配置",
     mcpLiveWriteOff: "实盘写关闭",
@@ -492,6 +529,11 @@ const copy = {
     writeBlocked: "Writes require approval",
     mcpAdapter: "Adapter",
     mcpApiBase: "API Base",
+    mcpAuthHeader: "Auth Header",
+    mcpTokenSource: "Token Source",
+    mcpTokenSourceSettings: "BitPro Settings / server env",
+    mcpScopes: "Scope Groups",
+    mcpTools: "Tool Count",
     mcpTokenReady: "Token configured",
     mcpTokenMissing: "Token missing",
     mcpLiveWriteOff: "Live writes off",
@@ -618,7 +660,43 @@ const previewOverview: HarnessOverview = {
     api_base: "http://127.0.0.1:8889/api/v2",
     auth_header: "X-BitPro-MCP-Token",
     token_configured: false,
+    token_source: "bitpro_settings_agent_token_or_server_env",
+    remote_mcp: {
+      transport: "streamable-http",
+      path_default: "/api/v2/mcp/",
+      auth_header_default: "X-BitPro-MCP-Token",
+      token_env: "BITPRO_MCP_API_TOKEN",
+      token_status_path: "/settings/mcp-token",
+      token_generate_path: "/settings/mcp-token/generate"
+    },
+    agent_auth: {
+      auth_header_default: "X-BitPro-MCP-Token",
+      static_token_env: "BITPRO_MCP_API_TOKEN",
+      token_management: {
+        settings_routes: {
+          list: "GET /api/v2/settings/mcp-agent-tokens",
+          create: "POST /api/v2/settings/mcp-agent-tokens",
+          revoke: "DELETE /api/v2/settings/mcp-agent-tokens/{token_id}"
+        },
+        plaintext_returned_once: true,
+        default_tool_groups: ["read", "research_backtest_paper_mutation", "live_diagnostic"]
+      },
+      scope_classes: {
+        R: { label: "read", tool_group: "read" },
+        W: { label: "research_backtest_paper_mutation", tool_group: "research_backtest_paper_mutation" },
+        L: { label: "live_diagnostic", tool_group: "live_diagnostic" },
+        T: { label: "live_mutation", tool_group: "live_mutation" }
+      },
+      idempotency: { required_tools: ["backtest_start_job", "paper_start"] }
+    },
+    tool_groups: {
+      read: ["bitpro_capabilities", "bitpro_health", "market_klines"],
+      research_backtest_paper_mutation: ["strategy_create", "backtest_start_job", "paper_start"],
+      live_diagnostic: ["live_preflight", "trading_positions"],
+      live_mutation: ["trading_futures_order"]
+    },
     live_write_enabled: false,
+    live_write_scope: "hypertrade_mcp_live_write_gate",
     tools: [
       "bitpro_capabilities",
       "bitpro_health",
@@ -1034,6 +1112,57 @@ function App() {
                   </strong>
                 </div>
               </div>
+              {activeOverview.bitpro ? (
+                <div className="mt-6 rounded-md border border-ink/10 bg-paper/70 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold">{t.bitproMcp}</h3>
+                      <p className="mt-1 text-xs leading-5 text-ink/50">{t.bitproMcpHint}</p>
+                    </div>
+                    <span
+                      className={`inline-flex items-center gap-2 rounded border px-2 py-1 text-xs font-semibold ${
+                        activeOverview.bitpro.token_configured
+                          ? "border-signal/25 text-signal"
+                          : "border-danger/25 text-danger"
+                      }`}
+                    >
+                      <StatusDot enabled={activeOverview.bitpro.token_configured} />
+                      {activeOverview.bitpro.token_configured ? t.mcpTokenReady : t.mcpTokenMissing}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 max-md:grid-cols-1">
+                    <div className="mini-block">
+                      <span>{t.mcpApiBase}</span>
+                      <strong className="truncate font-mono">{activeOverview.bitpro.api_base}</strong>
+                    </div>
+                    <div className="mini-block">
+                      <span>{t.mcpAuthHeader}</span>
+                      <strong className="truncate font-mono">{activeOverview.bitpro.auth_header}</strong>
+                    </div>
+                    <div className="mini-block">
+                      <span>{t.mcpTokenSource}</span>
+                      <strong>{formatTokenSource(activeOverview.bitpro.token_source, t)}</strong>
+                    </div>
+                    <div className="mini-block">
+                      <span>{t.mcpScopes}</span>
+                      <strong className="font-mono">
+                        {Object.keys(activeOverview.bitpro.agent_auth?.scope_classes ?? {}).join(" / ") ||
+                          "R / W / L / T"}
+                      </strong>
+                    </div>
+                    <div className="mini-block">
+                      <span>{t.mcpAdapter}</span>
+                      <strong className="truncate font-mono">{activeOverview.bitpro.adapter}</strong>
+                    </div>
+                    <div className="mini-block">
+                      <span>{t.mcpTools}</span>
+                      <strong className="font-mono">
+                        {formatMetricNumber(activeOverview.bitpro.tools.length)}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </section>
 
@@ -1230,6 +1359,13 @@ function providerLabel(provider: ProviderStatus | undefined, t: Record<string, s
   }
   const model = provider.model || provider.name;
   return `${provider.display_name} / ${model}`;
+}
+
+function formatTokenSource(source: string | undefined, t: Record<string, string>): string {
+  if (source === "bitpro_settings_agent_token_or_server_env") {
+    return t.mcpTokenSourceSettings;
+  }
+  return source || "n/a";
 }
 
 function statusLabel(status: string | undefined): string {

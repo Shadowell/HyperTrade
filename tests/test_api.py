@@ -366,6 +366,17 @@ def test_api_exposes_bitpro_mcp_read_adapter(tmp_path):
     assert "strategy_create" in overview["bitpro"]["tools"]
     assert "strategy_update" in overview["bitpro"]["tools"]
     assert "paper_start" in overview["bitpro"]["tools"]
+    assert overview["bitpro"]["token_source"] == "bitpro_settings_agent_token_or_server_env"
+    assert overview["bitpro"]["remote_mcp"]["path_default"] == "/api/v2/mcp/"
+    assert overview["bitpro"]["agent_auth"]["auth_header_default"] == "X-BitPro-MCP-Token"
+    assert overview["bitpro"]["agent_auth"]["token_management"]["settings_routes"] == {
+        "list": "GET /api/v2/settings/mcp-agent-tokens",
+        "create": "POST /api/v2/settings/mcp-agent-tokens",
+        "revoke": "DELETE /api/v2/settings/mcp-agent-tokens/{token_id}",
+    }
+    assert overview["bitpro"]["agent_auth"]["scope_classes"]["L"]["tool_group"] == "live_diagnostic"
+    assert "backtest_start_job" in overview["bitpro"]["agent_auth"]["idempotency"]["required_tools"]
+    assert "live_diagnostic" in overview["bitpro"]["tool_groups"]
 
     health = client.get("/api/bitpro/health").json()
     klines = client.get("/api/bitpro/market/klines/ETH?timeframe=1H&limit=12").json()

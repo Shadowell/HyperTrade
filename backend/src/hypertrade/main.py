@@ -24,7 +24,12 @@ from sqlalchemy import desc, func, select
 
 from hypertrade.agent.kernel import AgentKernel, CompletedAgentRun
 from hypertrade.backtest.service import BacktestService
-from hypertrade.bitpro.mcp import BitProMcpClient, BitProMcpError, BitProToolAdapter
+from hypertrade.bitpro.mcp import (
+    BitProMcpClient,
+    BitProMcpError,
+    BitProToolAdapter,
+    bitpro_capabilities,
+)
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import (
     AgentRun,
@@ -295,6 +300,7 @@ def create_app(
             trace_events = session.scalars(
                 select(TraceEvent).order_by(desc(TraceEvent.created_at)).limit(12)
             ).all()
+            bitpro_contract = bitpro_capabilities()
             return {
                 "generated_at": utc_now().isoformat(),
                 "providers": providers_payload,
@@ -349,6 +355,10 @@ def create_app(
                     "api_base": app_settings.bitpro_mcp_api_base,
                     "auth_header": app_settings.bitpro_mcp_auth_header,
                     "token_configured": bool(app_settings.bitpro_mcp_api_token),
+                    "token_source": "bitpro_settings_agent_token_or_server_env",
+                    "remote_mcp": bitpro_contract["remote_mcp"],
+                    "agent_auth": bitpro_contract["agent_auth"],
+                    "tool_groups": bitpro_contract["tool_groups"],
                     "live_write_enabled": False,
                     "live_write_scope": "hypertrade_mcp_live_write_gate",
                     "live_write_note": (

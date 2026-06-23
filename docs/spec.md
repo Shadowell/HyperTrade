@@ -79,6 +79,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Sprint 42 BitPro paper evidence layer: `bitpro_paper_events` and `bitpro_paper_equity_curve` read bounded event/error and equity/drawdown evidence for paper monitoring, with structured Agent/CLI reports.
 - Sprint 43 BitPro paper monitor snapshots: `bitpro_paper_monitor_snapshot` persists read-only paper dashboard/event/equity summaries, compares each capture with the previous snapshot for the same scope, and reports drift alerts/data gaps.
 - Sprint 44 strategy library memory: `strategy_knowledge` Memory cards are aggregated into strategy-level evidence summaries through `StrategyLibraryService`, `GET /api/strategy/library`, CLI `/strategy library`, Agent tool `strategy_library_search`, and ToolRegistry entry `strategy.library_search`.
+- BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
 - BitPro external API adapter contract for backtest data, base market data, paper/simulation state, and live trading state without copying BitPro business logic.
@@ -144,6 +145,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Operator can use `docs/knowledge/tool-usage-guide.md` to validate each Agent tool surface and follow related operational source-code comments.
 - Operator can review the BitPro tool-surface requirements before wiring external data, backtest, paper/simulation, or live-state APIs into Agent tools.
 - Operator can call BitPro read tools through HyperTrade API/Agent paths while every flow starts with `bitpro_capabilities` and `bitpro_health`.
+- Operator can verify BitPro MCP Agent Token wiring from `/harness` and `/api/harness/overview`: token values stay hidden, but the auth header, token source, BitPro token-management routes, R/W/L/T scope classes, live-diagnostic group, and idempotency-required tools are visible for Agent authentication debugging.
 - Developer can run backtests with `candle_source=bitpro_mcp` or `/backtest --source bitpro_mcp` to use BitPro `market_klines` data without direct database access.
 - Agent can use BitPro strategy lifecycle tools to generate/create/update strategy drafts, start/query BitPro-owned backtest jobs, and configure/control paper validation while real-account write tools remain blocked.
 - Agent can complete the BitPro strategy R&D loop through MCP only: `bitpro_capabilities` -> `bitpro_health` -> real K-line coverage confirmation -> `strategy_validate_code` -> `strategy_create` with DB-backed `script_content` -> optional `strategy_update` for canonical metadata/renaming -> `backtest_start_job`/result inspection -> gated `paper_configure`/`paper_start`.

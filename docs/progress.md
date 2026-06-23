@@ -12,6 +12,7 @@
 
 ## Latest Completed Work
 
+- Aligned the HyperTrade BitPro adapter with BitPro MCP Agent Token management: local `bitpro_capabilities` and `/api/harness/overview` now expose `remote_mcp`, `agent_auth`, token-management routes, R/W/L/T scope classes, live-diagnostic grouping, and idempotency-required tools without exposing token plaintext; `/harness` also shows a compact BitPro MCP access status panel for Token source/header/scope checks.
 - Tightened CLI/Agent paper-report output: default stream progress now folds to `Agent: running/completed`, Rich and plain renderers prefer concise final BitPro paper reports, old noisy paper Markdown with strategy inventories or equity-point samples is folded into a compact paper summary, and `HYPERTRADE_PROGRESS=full` / `HYPERTRADE_REPORT_SOURCE=tools` keep debug/audit detail available.
 - Shortened server-side BitPro paper final reports: paper dashboard/events/equity/snapshot sections now include the planner conclusion plus core metrics, alerts, data gaps, and latest error only, without raw strategy inventory rows, equity-point samples, ordinary event rows, contract/tool-order fields, or citation sections.
 - Made default CLI run rendering report-focused and compact: run headers, status/tool trace tables, folded-trace notices, and wrapper `Agent Report` panels are hidden unless `HYPERTRADE_TRACE=summary/full` is set; Markdown report spacing is compacted and horizontal separators are removed.

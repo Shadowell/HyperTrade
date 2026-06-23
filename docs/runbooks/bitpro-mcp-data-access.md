@@ -11,9 +11,10 @@ This runbook describes how HyperTrade or an external Agent should call BitPro MC
 - Default API base reported by BitPro capabilities: `http://127.0.0.1:8889/api/v2`.
 - Docker Compose deployments should set `BITPRO_MCP_API_BASE=http://host.docker.internal:8889/api/v2`; `docker-compose.yml` maps `host.docker.internal` to the Linux host gateway for `api` and `worker`.
 - Token header: `X-BitPro-MCP-Token`, unless `BITPRO_MCP_AUTH_HEADER` overrides it.
-- Token environment variable: `BITPRO_MCP_API_TOKEN`.
+- Token source: generate an MCP Agent Token in BitPro Settings -> Agent Access -> MCP Agent Token, or through `POST /api/v2/settings/mcp-agent-tokens`; the legacy `/settings/mcp-token/generate` UI path remains a compatible operator shortcut.
+- Token environment variable in HyperTrade: `BITPRO_MCP_API_TOKEN`.
 
-Do not place tokens in the frontend. MCP tokens belong in server-side environment files such as `/opt/hypertrade/.env` or the process manager environment.
+Do not place tokens in the frontend. MCP tokens belong in server-side environment files such as `/opt/hypertrade/.env` or the process manager environment. BitPro stores only token hashes and returns plaintext only at creation time.
 
 ## Required Call Order
 
@@ -22,6 +23,7 @@ Every Agent flow starts with discovery and health checks:
 1. `bitpro_capabilities`
    - Parameters: `{}`
    - Use it to read `contract_version`, supported transports, remote MCP path, tool groups, tool endpoints, permissions, disabled features, data policy, and live-trading flags.
+   - Use `agent_auth` to understand the expected header, Token management routes, scope classes, and tools that require idempotency keys.
 
 2. `bitpro_health`
    - Parameters: `{}`
@@ -92,7 +94,8 @@ HyperTrade now includes a BitPro MCP adapter in `backend/src/hypertrade/bitpro/m
 5. Agent calls persist nested BitPro trace events such as `bitpro.capabilities`, `bitpro.health`, `bitpro.market_klines`, `bitpro.strategy_create`, `bitpro.strategy_update`, `bitpro.backtest_start_job`, `bitpro.backtest_list_results`, `bitpro.backtest_get_result`, and `bitpro.paper_start`.
 6. Strategy lifecycle writes are limited to BitPro research/backtest/paper tools. They require an explicit user request and must remain auditable in the Agent trace.
 7. Backtests can use `candle_source=bitpro_mcp` or CLI `/backtest --source bitpro_mcp --symbol ETH --bar 1H --limit 200`.
-8. Keep live write tools disabled until a separate contract adds explicit approval and risk gates.
+8. Surface `remote_mcp`, `agent_auth`, `tool_groups`, and token status in `/api/harness/overview` without exposing token plaintext.
+9. Keep live write tools disabled until a separate contract adds explicit approval and risk gates.
 
 For a page-parity answer such as `回测收益大于100%的策略有哪些`, the Agent should call
 `bitpro_backtest_list_results` with parameters similar to:
@@ -119,7 +122,7 @@ All endpoints require the normal HyperTrade admin session:
 - `GET /api/bitpro/paper/dashboard`
 - `GET /api/bitpro/live/positions?exchange=okx&symbol=ETH`
 
-The `/harness` overview exposes adapter status under `bitpro` without exposing the token value.
+The `/harness` overview exposes adapter status under `bitpro` without exposing the token value. Operators should see API base, auth header, token configured status, token source, scope classes, and the HyperTrade live-write gate.
 
 ## Production Connectivity Check
 

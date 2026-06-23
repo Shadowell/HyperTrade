@@ -17,12 +17,14 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
   - risk, permission, health, and audit metadata
 - Keep HyperTrade independent from BitPro business logic. BitPro is an external provider reached through explicit API contracts.
 - Implement the first HyperTrade adapter for BitPro MCP/API: capability discovery, health checks, K-line reads, strategy lifecycle writes for research/backtest/paper workflows, paper dashboard reads, live-position diagnostics, Agent tool schemas, and a `bitpro_mcp` backtest data source.
+- Align HyperTrade's BitPro capability metadata with BitPro MCP Agent Token management so Agent authentication can be debugged through stable contract fields instead of browser session state.
 
 ## BitPro Capabilities Needed
 
 ### Cross-Cutting API Contract
 
-- Service-to-service auth with separate read-only and write scopes.
+- Service-to-service auth with separate read-only, research/backtest/paper write, live-diagnostic, and live-write scopes.
+- MCP Agent Token generation and revocation routes that let operators create `bp_mcp_` tokens from BitPro Settings or `POST /api/v2/settings/mcp-agent-tokens`; plaintext is returned once, hashes are stored server-side, and HyperTrade consumes the token only through server-side environment.
 - Environment separation for local, testnet/simulation, and production.
 - Capability discovery endpoint that reports supported tools, versions, permissions, and disabled features.
 - Health/version endpoint with data freshness and degraded-source flags.
@@ -83,6 +85,7 @@ Reposition HyperTrade as a production-grade, stable Agent capability platform an
 - `docs/spec.md`, `docs/progress.md`, and architecture docs describe production-grade Agent operation.
 - BitPro tool-surface requirements are documented before implementation starts.
 - HyperTrade exposes BitPro read and non-live lifecycle adapter tools, and each data flow starts with `bitpro_capabilities` and `bitpro_health`.
+- `/api/harness/overview` and local `bitpro_capabilities` expose BitPro `remote_mcp`, `agent_auth`, token-management routes, R/W/L/T scope classes, live-diagnostic grouping, and idempotency requirements without exposing token plaintext.
 - Backtests can use `candle_source=bitpro_mcp` to fetch real BitPro K-line data through `market_klines`.
 - Agent strategy flows can use BitPro research/backtest/paper mutation tools for explicit strategy generation, strategy creation/update, BitPro-owned backtest jobs, and paper/simulation lifecycle control.
 - Agent backtest-result queries can read BitPro-owned result records through `bitpro_backtest_list_results`, filter by actual `total_return_pct`, and report threshold/ranking answers without substituting annualized return, strategy descriptions, or inferred values.

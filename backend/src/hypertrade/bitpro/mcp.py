@@ -89,12 +89,69 @@ RESEARCH_MUTATION_TOOLS = {
 
 LOCAL_ONLY_TOOLS = {"strategy_validate_code"}
 
+LIVE_DIAGNOSTIC_TOOLS = {
+    "live_preflight",
+    "trading_balance",
+    "trading_positions",
+    "trading_open_orders",
+}
+
 LIVE_MUTATION_TOOLS = {
     "live_promote",
     "trading_spot_order",
     "trading_futures_order",
     "trading_cancel_order",
     "trading_transfer",
+}
+
+MCP_SCOPE_CLASSES: dict[str, dict[str, str]] = {
+    "R": {
+        "label": "read",
+        "tool_group": "read",
+        "description": "Read-only market, strategy, backtest, paper, and health tools.",
+    },
+    "W": {
+        "label": "research_backtest_paper_mutation",
+        "tool_group": "research_backtest_paper_mutation",
+        "description": "Research, sync, backtest, and paper/simulation mutation tools.",
+    },
+    "L": {
+        "label": "live_diagnostic",
+        "tool_group": "live_diagnostic",
+        "description": "Read-only live preflight, balance, position, and open-order diagnostics.",
+    },
+    "T": {
+        "label": "live_mutation",
+        "tool_group": "live_mutation",
+        "description": "Real trading mutation tools; blocked by HyperTrade's adapter today.",
+    },
+}
+
+MCP_IDEMPOTENCY_REQUIRED_TOOLS = sorted(RESEARCH_MUTATION_TOOLS | LIVE_MUTATION_TOOLS)
+
+MCP_AGENT_AUTH_POLICY: dict[str, Any] = {
+    "auth_header_default": DEFAULT_AUTH_HEADER,
+    "static_token_env": "BITPRO_MCP_API_TOKEN",
+    "plaintext_returned_once": True,
+    "token_management": {
+        "settings_routes": {
+            "list": "GET /api/v2/settings/mcp-agent-tokens",
+            "create": "POST /api/v2/settings/mcp-agent-tokens",
+            "revoke": "DELETE /api/v2/settings/mcp-agent-tokens/{token_id}",
+        },
+        "plaintext_returned_once": True,
+        "storage": "bitpro_sqlite_sha256_hash_only",
+        "default_tool_groups": [
+            "read",
+            "research_backtest_paper_mutation",
+            "live_diagnostic",
+        ],
+    },
+    "idempotency": {
+        "field": "idempotency_key",
+        "header": "Idempotency-Key",
+        "required_tools": MCP_IDEMPOTENCY_REQUIRED_TOOLS,
+    },
 }
 
 
@@ -883,10 +940,22 @@ def bitpro_capabilities() -> dict[str, Any]:
             "path_default": "/api/v2/mcp/",
             "auth_header_default": DEFAULT_AUTH_HEADER,
             "token_env": "BITPRO_MCP_API_TOKEN",
+            "token_status_path": "/settings/mcp-token",
+            "token_generate_path": "/settings/mcp-token/generate",
+        },
+        "agent_auth": {
+            **MCP_AGENT_AUTH_POLICY,
+            "scope_classes": {name: dict(policy) for name, policy in MCP_SCOPE_CLASSES.items()},
+            "idempotency": {
+                "field": "idempotency_key",
+                "header": "Idempotency-Key",
+                "required_tools": list(MCP_IDEMPOTENCY_REQUIRED_TOOLS),
+            },
         },
         "tool_groups": {
             "read": ["bitpro_capabilities", *READ_TOOL_ENDPOINTS.keys()],
             "research_backtest_paper_mutation": sorted(RESEARCH_MUTATION_TOOLS),
+            "live_diagnostic": sorted(LIVE_DIAGNOSTIC_TOOLS),
             "live_mutation": sorted(LIVE_MUTATION_TOOLS),
         },
         "tool_endpoints": {

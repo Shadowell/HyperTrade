@@ -106,6 +106,24 @@ def test_bitpro_capabilities_label_live_flag_as_mcp_gate() -> None:
     assert capabilities["live_trading_enabled_scope"] == "hypertrade_mcp_live_write_gate"
     assert "not the BitPro runtime mode" in capabilities["live_trading_enabled_note"]
     assert "write/order tools" in capabilities["live_trading_enabled_note"]
+    assert capabilities["remote_mcp"]["token_status_path"] == "/settings/mcp-token"
+    assert capabilities["remote_mcp"]["token_generate_path"] == "/settings/mcp-token/generate"
+    assert capabilities["agent_auth"]["auth_header_default"] == "X-BitPro-MCP-Token"
+    assert capabilities["agent_auth"]["static_token_env"] == "BITPRO_MCP_API_TOKEN"
+    assert capabilities["agent_auth"]["token_management"]["settings_routes"] == {
+        "list": "GET /api/v2/settings/mcp-agent-tokens",
+        "create": "POST /api/v2/settings/mcp-agent-tokens",
+        "revoke": "DELETE /api/v2/settings/mcp-agent-tokens/{token_id}",
+    }
+    assert capabilities["agent_auth"]["token_management"]["plaintext_returned_once"] is True
+    assert capabilities["agent_auth"]["scope_classes"]["R"]["tool_group"] == "read"
+    assert (
+        capabilities["agent_auth"]["scope_classes"]["W"]["tool_group"]
+        == "research_backtest_paper_mutation"
+    )
+    assert capabilities["agent_auth"]["scope_classes"]["L"]["tool_group"] == "live_diagnostic"
+    assert capabilities["agent_auth"]["scope_classes"]["T"]["tool_group"] == "live_mutation"
+    assert "backtest_start_job" in capabilities["agent_auth"]["idempotency"]["required_tools"]
 
 
 def test_bitpro_mcp_client_allows_research_backtest_and_paper_writes() -> None:
