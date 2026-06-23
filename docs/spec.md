@@ -110,6 +110,7 @@ its own Agent capabilities:
 - Sprint 46 strategy evidence schema: new `strategy_knowledge` cards store versioned `StrategyEvidence` JSON payloads while `StrategyLibraryService` remains backward compatible with legacy text cards.
 - Strategy iteration planning can read prior strategy-library evidence through `strategy_experiment_plan`, `/api/strategy/experiments/iterate`, and CLI `/experiment iterate <prompt>` without triggering paper, live, or BitPro write tools.
 - Sprint 55 CLI slash command candidates: incomplete slash prefixes such as `/st` or `/me` render filtered candidates with purpose descriptions, and readline Tab completion can display the same described candidate list.
+- Sprint 56 market heat summary: broad market heat/sentiment/breadth prompts route to `market_summary`, compute OKX SWAP breadth metrics, and render a conclusion before raw ticker details.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -132,6 +133,7 @@ its own Agent capabilities:
 - Privileged mutations such as provider selection, paper lifecycle control, live order approval/execution, Memory disable, and Feishu send still require admin session auth.
 - `/api/harness/tools` shows live order approval gating.
 - User can create an Agent market-summary run and inspect trace events.
+- User can ask `看下目前市场的热度怎么样` and receive a market heat conclusion with sample count, advancer/decliner breadth, average change, strongest/weakest symbols, and top movers rather than only ticker tables.
 - User can ask for a specific listed OKX SWAP symbol, such as ETH/SOL/DOGE/PEPE, and the Agent can
   call the exact ticker tool instead of returning only the all-market movers list.
 - User can ask for a specific symbol's recent trend and the Agent can call the candle research tool

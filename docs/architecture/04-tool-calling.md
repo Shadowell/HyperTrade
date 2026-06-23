@@ -28,6 +28,8 @@ Policy:
 Specific ticker lookup:
 
 - `market_summary` is for all-market OKX SWAP summaries and top movers.
+- All-market heat, sentiment, breadth, risk-appetite, 大盘, 全市场, or 行情归纳
+  prompts must use `market_summary`, not a few `market_ticker` calls.
 - `market_ticker` is for one listed OKX USDT perpetual swap symbol or instrument id.
 - `market_candles` is for recent OHLCV trend research on one OKX SWAP instrument.
 - `market_compare` is for comparing relative strength across 2-6 OKX SWAP instruments.
@@ -65,6 +67,8 @@ ToolRegistry 是 Agent 可调用工具的唯一目录。Sprint 01 包含行情�
 单标的精确行情：
 
 - `market_summary` 用于 OKX SWAP 全市场归纳和异动榜。
+- 全市场热度、市场情绪、breadth、风险偏好、大盘、全市场或行情归纳类问题必须使用
+  `market_summary`，不能只用几个 `market_ticker` 调用替代。
 - `market_ticker` 用于一个已上线 OKX USDT 永续标的或 instrument id。
 - `market_candles` 用于一个 OKX SWAP 标的的近期 OHLCV 趋势研究。
 - `market_compare` 用于 2-6 个 OKX SWAP 标的之间的强弱比较。

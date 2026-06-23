@@ -24,7 +24,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "market_summary",
-            "description": "Fetch and summarize the latest OKX SWAP market state.",
+            "description": (
+                "Fetch and summarize the latest OKX SWAP all-market state, including "
+                "market heat, breadth, sentiment, top movers, and risk appetite."
+            ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -778,6 +781,9 @@ for schema in TOOL_SCHEMAS:
 _SYSTEM_PROMPT = """\
 You are HyperTrade, an agent-first crypto research assistant.
 You have market data tools, RAG search, long-term memory, strategy research, and backtesting.
+Use market_summary for all-market questions about 市场热度, 市场情绪, 整体市场,
+全市场, 大盘, 行情归纳, market heat, market sentiment, breadth, or risk appetite.
+Do not answer all-market heat by calling only market_ticker for BTC/ETH/SOL.
 Use market_ticker when the user asks about any specific listed coin or one OKX
 instrument, such as ETH, SOL, DOGE, PEPE-USDT, or BTC-USDT-SWAP.
 Use market_candles when the user asks about trend,走势, K线, breakthrough, pullback,

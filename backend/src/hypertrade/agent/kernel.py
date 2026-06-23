@@ -110,7 +110,9 @@ class AgentKernel:
                 },
                 event_sink=event_sink,
             )
-            if provider is not None:
+            if provider is not None and _is_market_heat_prompt(prompt):
+                self._run_hardcoded(run_id, prompt, event_sink=event_sink)
+            elif provider is not None:
                 self._run_with_planner(run_id, prompt, settings, event_sink=event_sink)
             else:
                 self._run_hardcoded(run_id, prompt, event_sink=event_sink)
@@ -829,6 +831,7 @@ class AgentKernel:
             "market_scope": "OKX SWAP",
             "trigger": "user_request",
             "top_movers": market_payload["top_movers"],
+            "heat_summary": market_payload.get("heat_summary", _market_heat_summary([])),
             "data_source": market_payload.get("data_source", "db_fallback"),
             "as_of_utc": market_payload.get("as_of_utc", datetime.now(UTC).isoformat()),
             "rag_hits": rag_hits,
@@ -1005,13 +1008,34 @@ class AgentKernel:
     def _market_summary_payload(self) -> dict[str, Any]:
         source, error = self._refresh_market_snapshot()
         if source != "okx_rest":
+            latest_rows = self.market.latest_tickers(limit=250)
+            top_movers = [
+                {
+                    "inst_id": row.inst_id,
+                    "last": str(row.last),
+                    "volume_ccy_24h": str(row.volume_ccy_24h),
+                    "change_utc0_pct": str(row.change_utc0_pct),
+                }
+                for row in self.market.top_movers(limit=10)
+            ]
+            if latest_rows:
+                return {
+                    "market_scope": "OKX SWAP",
+                    "top_movers": top_movers,
+                    "heat_summary": _market_heat_summary(latest_rows),
+                    "data_source": "db_fallback",
+                    "as_of_utc": datetime.now(UTC).isoformat(),
+                    "unavailable_reason": error or "okx_rest_unavailable",
+                }
             return {
                 "market_scope": "OKX SWAP",
                 "top_movers": [],
+                "heat_summary": _market_heat_summary([]),
                 "data_source": source,
                 "as_of_utc": datetime.now(UTC).isoformat(),
                 "unavailable_reason": error or "okx_rest_unavailable",
             }
+        latest_rows = self.market.latest_tickers(limit=250)
         top_movers = [
             {
                 "inst_id": row.inst_id,
@@ -1024,6 +1048,7 @@ class AgentKernel:
         return {
             "market_scope": "OKX SWAP",
             "top_movers": top_movers,
+            "heat_summary": _market_heat_summary(latest_rows),
             "data_source": source,
             "as_of_utc": datetime.now(UTC).isoformat(),
         }
@@ -1190,6 +1215,8 @@ class AgentKernel:
     @staticmethod
     def _render_market_report(report: dict[str, Any]) -> str:
         movers = report.get("top_movers", [])
+        heat = report.get("heat_summary")
+        heat = heat if isinstance(heat, dict) else _market_heat_summary([])
         lines = [
             "# OKX 永续合约行情归纳",
             "",
@@ -1197,6 +1224,28 @@ class AgentKernel:
             "**触发方式**: 用户按需发起",
             f"**数据时间(UTC)**: {report.get('as_of_utc', 'n/a')}",
             f"**数据来源**: {report.get('data_source', 'unknown')}",
+            "",
+            "## 市场热度总结",
+            "",
+            f"- 结论: {heat.get('conclusion', '当前市场热度暂不可用。')}",
+            (
+                "- 样本: {sample_count} 个合约，上涨 {advancers_count} 个"
+                "({advancers_pct}%)，下跌 {decliners_count} 个({decliners_pct}%)，"
+                "平均涨跌幅 {average_change_pct}%"
+            ).format(
+                sample_count=heat.get("sample_count", 0),
+                advancers_count=heat.get("advancers_count", 0),
+                advancers_pct=heat.get("advancers_pct", "0.000000"),
+                decliners_count=heat.get("decliners_count", 0),
+                decliners_pct=heat.get("decliners_pct", "0.000000"),
+                average_change_pct=heat.get("average_change_pct", "0.000000"),
+            ),
+            (
+                "- 最强/最弱: {top_gainer} / {top_loser}"
+            ).format(
+                top_gainer=heat.get("top_gainer", "n/a"),
+                top_loser=heat.get("top_loser", "n/a"),
+            ),
             "",
             "## 异动榜",
         ]
@@ -1218,6 +1267,7 @@ class AgentKernel:
         final_message: str,
         tool_calls: list[Any],
     ) -> str:
+        market_summary_lines: list[str] = []
         ticker_lines: list[str] = []
         candle_lines: list[str] = []
         compare_lines: list[str] = []
@@ -1231,6 +1281,14 @@ class AgentKernel:
         citation_lines: list[str] = []
         unavailable_lines: list[str] = []
         governance_lines: list[str] = []
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") not in {"market_summary", "market.summary"}:
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict):
+                continue
+            market_summary_lines.extend(_market_summary_report_lines(payload))
+            market_summary_lines.append("")
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "market_ticker":
                 continue
@@ -1933,6 +1991,14 @@ class AgentKernel:
             sections.extend(["## 数据暂不可用", "", *unavailable_lines])
         if governance_lines:
             sections.extend(["## 风控治理", "", *governance_lines, ""])
+        market_tool_sections = bool(
+            market_summary_lines or ticker_lines or candle_lines or compare_lines
+        )
+        final_summary = _compact_final_message(final_message)
+        if market_tool_sections and final_summary:
+            sections.extend(["## 总结", "", f"- {final_summary}", ""])
+        if market_summary_lines:
+            sections.extend(["## 市场热度总结", "", *market_summary_lines])
         if ticker_lines:
             sections.extend(["## 单标的行情", "", *ticker_lines])
         if candle_lines:
@@ -1986,6 +2052,13 @@ def _compact_final_message(value: object, *, max_chars: int = 240) -> str:
         return _compact_long_final_message(raw_lines, max_chars=max_chars)
     parts: list[str] = []
     for line in raw_lines:
+        lowered = line.lower()
+        if (
+            "not investment advice" in lowered
+            or "research output only" in lowered
+            or "不构成投资建议" in line
+        ):
+            continue
         if "|" in line:
             continue
         if line.startswith("#"):
@@ -2159,6 +2232,189 @@ def _unique_symbols(symbols: list[str]) -> list[str]:
         seen.add(key)
         result.append(value)
     return result[:6]
+
+
+def _is_market_heat_prompt(prompt: str) -> bool:
+    value = prompt.strip().lower()
+    if not value:
+        return False
+    heat_terms = (
+        "市场热度",
+        "热度",
+        "市场情绪",
+        "情绪",
+        "整体市场",
+        "全市场",
+        "大盘",
+        "行情归纳",
+        "行情概览",
+        "市场概况",
+        "market heat",
+        "market sentiment",
+        "risk appetite",
+        "breadth",
+    )
+    return any(term in value for term in heat_terms)
+
+
+def _market_heat_summary(rows: list[Any]) -> dict[str, Any]:
+    changes: list[tuple[str, Decimal]] = []
+    for row in rows:
+        inst_id = str(getattr(row, "inst_id", "unknown"))
+        change = _as_decimal(getattr(row, "change_utc0_pct", "0"))
+        changes.append((inst_id, change))
+    if not changes:
+        return {
+            "sample_count": 0,
+            "advancers_count": 0,
+            "decliners_count": 0,
+            "flat_count": 0,
+            "advancers_pct": "0.000000",
+            "decliners_pct": "0.000000",
+            "average_change_pct": "0.000000",
+            "median_change_pct": "0.000000",
+            "heat_level": "unavailable",
+            "top_gainer": "n/a",
+            "top_loser": "n/a",
+            "conclusion": "当前市场热度暂不可用，缺少可统计的 OKX SWAP ticker 样本。",
+        }
+
+    sample_count = len(changes)
+    advancers = [(inst_id, change) for inst_id, change in changes if change > 0]
+    decliners = [(inst_id, change) for inst_id, change in changes if change < 0]
+    flat_count = sample_count - len(advancers) - len(decliners)
+    total_change = sum((change for _, change in changes), Decimal("0"))
+    average = total_change / Decimal(sample_count)
+    median = _median_decimal([change for _, change in changes])
+    advancers_pct = Decimal(len(advancers)) * Decimal("100") / Decimal(sample_count)
+    decliners_pct = Decimal(len(decliners)) * Decimal("100") / Decimal(sample_count)
+    top_gainer = max(changes, key=lambda item: item[1])
+    top_loser = min(changes, key=lambda item: item[1])
+    heat_level = _market_heat_level(
+        average_change=average,
+        advancers_pct=advancers_pct,
+        decliners_pct=decliners_pct,
+    )
+    return {
+        "sample_count": sample_count,
+        "advancers_count": len(advancers),
+        "decliners_count": len(decliners),
+        "flat_count": flat_count,
+        "advancers_pct": _decimal_text(advancers_pct),
+        "decliners_pct": _decimal_text(decliners_pct),
+        "average_change_pct": _decimal_text(average),
+        "median_change_pct": _decimal_text(median),
+        "heat_level": heat_level,
+        "top_gainer": _format_heat_leader(top_gainer),
+        "top_loser": _format_heat_leader(top_loser),
+        "conclusion": _market_heat_conclusion(
+            heat_level=heat_level,
+            average_change=average,
+            advancers_pct=advancers_pct,
+            decliners_pct=decliners_pct,
+        ),
+    }
+
+
+def _market_summary_report_lines(payload: dict[str, Any]) -> list[str]:
+    heat = payload.get("heat_summary")
+    heat = heat if isinstance(heat, dict) else _market_heat_summary([])
+    lines = [
+        f"- 结论: {heat.get('conclusion', '当前市场热度暂不可用。')}",
+        (
+            "- 样本: {sample_count} 个合约，上涨 {advancers_count} 个"
+            "({advancers_pct}%)，下跌 {decliners_count} 个({decliners_pct}%)，"
+            "平均涨跌幅 {average_change_pct}%"
+        ).format(
+            sample_count=heat.get("sample_count", 0),
+            advancers_count=heat.get("advancers_count", 0),
+            advancers_pct=heat.get("advancers_pct", "0.000000"),
+            decliners_count=heat.get("decliners_count", 0),
+            decliners_pct=heat.get("decliners_pct", "0.000000"),
+            average_change_pct=heat.get("average_change_pct", "0.000000"),
+        ),
+        (
+            "- 最强/最弱: {top_gainer} / {top_loser}"
+        ).format(
+            top_gainer=heat.get("top_gainer", "n/a"),
+            top_loser=heat.get("top_loser", "n/a"),
+        ),
+        "",
+        "### 异动榜",
+    ]
+    movers = payload.get("top_movers")
+    movers = movers if isinstance(movers, list) else []
+    if not movers:
+        lines.append("- 当前无法获取实时 OKX 行情，未输出异动榜。")
+        reason = payload.get("unavailable_reason")
+        if isinstance(reason, str) and reason:
+            lines.append(f"- 原因: {reason}")
+        return lines
+    for mover in movers[:10]:
+        if not isinstance(mover, dict):
+            continue
+        lines.append(
+            (
+                "- {inst_id}: 最新价 {last}, UTC0 涨跌幅 {change_utc0_pct}%, "
+                "24h 成交额 {volume_ccy_24h}"
+            ).format(
+                inst_id=mover.get("inst_id", "unknown"),
+                last=mover.get("last", "n/a"),
+                change_utc0_pct=mover.get("change_utc0_pct", "n/a"),
+                volume_ccy_24h=mover.get("volume_ccy_24h", "n/a"),
+            )
+        )
+    return lines
+
+
+def _median_decimal(values: list[Decimal]) -> Decimal:
+    ordered = sorted(values)
+    midpoint = len(ordered) // 2
+    if len(ordered) % 2 == 1:
+        return ordered[midpoint]
+    return (ordered[midpoint - 1] + ordered[midpoint]) / Decimal("2")
+
+
+def _market_heat_level(
+    *,
+    average_change: Decimal,
+    advancers_pct: Decimal,
+    decliners_pct: Decimal,
+) -> str:
+    if average_change >= Decimal("1") and advancers_pct >= Decimal("55"):
+        return "hot"
+    if average_change >= Decimal("0.2") and advancers_pct >= Decimal("45"):
+        return "warm"
+    if average_change <= Decimal("-1") and decliners_pct >= Decimal("55"):
+        return "risk_off"
+    if average_change <= Decimal("-0.2") and decliners_pct >= Decimal("45"):
+        return "cold"
+    return "neutral"
+
+
+def _market_heat_conclusion(
+    *,
+    heat_level: str,
+    average_change: Decimal,
+    advancers_pct: Decimal,
+    decliners_pct: Decimal,
+) -> str:
+    label = {
+        "hot": "偏热",
+        "warm": "温和偏热",
+        "neutral": "中性",
+        "cold": "偏冷",
+        "risk_off": "风险偏弱",
+    }.get(heat_level, "不可用")
+    average = _decimal_text(average_change)
+    advancers = _decimal_text(advancers_pct)
+    decliners = _decimal_text(decliners_pct)
+    return f"{label}：样本平均涨跌幅 {average}% ，上涨占比 {advancers}% ，下跌占比 {decliners}% 。"
+
+
+def _format_heat_leader(item: tuple[str, Decimal]) -> str:
+    inst_id, change = item
+    return f"{inst_id} ({_decimal_text(change)}%)"
 
 
 def _strength_score(payload: dict[str, Any]) -> Decimal:

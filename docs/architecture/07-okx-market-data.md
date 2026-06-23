@@ -11,6 +11,8 @@ Data flow:
 3. REST tickers are also used as fallback after repeated WS failures.
 4. Parsed tickers are upserted into `market_tickers`.
 5. The agent reads latest movers from PostgreSQL when the user asks for a summary.
+   Market heat summaries also compute breadth from recent ticker snapshots:
+   advancers, decliners, average UTC0 change, and strongest/weakest symbols.
 6. The agent reads one exact `market_tickers.inst_id` when the user asks for a specific listed
    symbol through the `market_ticker` tool.
 7. The agent fetches recent candles from OKX REST on demand for `market_candles`; Sprint 10 does not
@@ -40,6 +42,8 @@ Sprint 01 覆盖 OKX 全市场永续合约 `SWAP`。行情使用 mainnet；交�
 3. WS 连续失败后也用 REST tickers 降级。
 4. 解析后的 ticker upsert 到 `market_tickers`。
 5. 用户发起归纳时，Agent 从 PostgreSQL 读取最新异动。
+   市场热度总结还会基于近期 ticker 快照计算 breadth：上涨数、下跌数、平均 UTC0
+   涨跌幅、最强/最弱标的。
 6. 用户询问具体已上线标的时，Agent 通过 `market_ticker` 精确读取一个
    `market_tickers.inst_id`。
 7. 用户询问走势或 K 线研究时，Agent 通过 `market_candles` 按需从 OKX REST 获取近期 K 线；

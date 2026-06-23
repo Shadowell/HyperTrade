@@ -653,6 +653,44 @@ def test_agent_acceptance_specific_symbol_report_uses_exact_ticker_tool(
     assert "Not investment advice" not in replay.messages[0][0]["content"]
 
 
+def test_agent_acceptance_market_heat_uses_summary_not_ticker(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = _memory_db()
+    repository = MarketRepository(db)
+    for inst_id, change in [
+        ("BTC-USDT-SWAP", Decimal("-2.367")),
+        ("ETH-USDT-SWAP", Decimal("-3.924")),
+        ("SOL-USDT-SWAP", Decimal("-4.172")),
+    ]:
+        repository.upsert_ticker_snapshot(
+            inst_id=inst_id,
+            inst_type="SWAP",
+            last=Decimal("100"),
+            volume_ccy_24h=Decimal("1000000"),
+            change_utc0_pct=change,
+        )
+    replay = _patch_replay_llm(monkeypatch, [])
+    kernel = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
+        knowledge_dir=str(tmp_path),
+    )
+    monkeypatch.setattr(kernel, "_refresh_market_snapshot", lambda: ("unavailable", "offline"))
+
+    run = kernel.run_chat("看下目前市场的热度怎么样")
+
+    assert replay.messages == []
+    assert run.status == "completed"
+    assert _tool_names(run) == ["market.summary", "rag.search", "memory.write"]
+    assert "## 市场热度总结" in run.report_markdown
+    assert "结论:" in run.report_markdown
+    assert "样本:" in run.report_markdown
+    assert "## 单标的行情" not in run.report_markdown
+    _assert_research_quality(run.report_markdown)
+
+
 def test_agent_trace_records_enforced_tool_policy(monkeypatch, tmp_path) -> None:
     db = _memory_db()
     MarketRepository(db).upsert_ticker_snapshot(

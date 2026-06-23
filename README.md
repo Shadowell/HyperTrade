@@ -75,6 +75,10 @@ Streaming progress is compact by default (`Agent: running/completed`). Set
 `HYPERTRADE_PROGRESS=full` to see every tool start/completion line. BitPro paper
 monitor/equity/event reports prefer concise conclusions and core metrics; set
 `HYPERTRADE_REPORT_SOURCE=tools` only when raw tool evidence tables are needed.
+Broad prompts such as `看下目前市场的热度怎么样` return a market heat summary with
+advancer/decliner breadth, average change, strongest/weakest symbols, and the
+top movers; set `HYPERTRADE_REPORT_SOURCE=tools` to inspect raw ticker/candle
+tables instead.
 
 ```text
 /help

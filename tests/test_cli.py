@@ -728,6 +728,17 @@ def test_render_run_prefers_structured_market_summary_over_raw_markdown(capsys) 
                 "trigger": "user_request",
                 "data_source": "okx_rest",
                 "as_of_utc": "2026-06-02T08:00:00+00:00",
+                "heat_summary": {
+                    "sample_count": 3,
+                    "advancers_count": 1,
+                    "decliners_count": 2,
+                    "advancers_pct": "33.333333",
+                    "decliners_pct": "66.666667",
+                    "average_change_pct": "-2.300000",
+                    "top_gainer": "ETH-USDT-SWAP (1.230000%)",
+                    "top_loser": "SOL-USDT-SWAP (-4.100000%)",
+                    "conclusion": "风险偏弱：样本平均涨跌幅 -2.300000%。",
+                },
                 "top_movers": [
                     {
                         "inst_id": "ETH-USDT-SWAP",
@@ -750,6 +761,8 @@ def test_render_run_prefers_structured_market_summary_over_raw_markdown(capsys) 
     assert "Market Report" in output
     assert "Scope: OKX SWAP" in output
     assert "Source: okx_rest" in output
+    assert "Market heat:" in output
+    assert "风险偏弱" in output
     assert "Top movers:" in output
     assert "ETH-USDT-SWAP" in output
     assert "Knowledge hits:" in output
@@ -757,12 +770,12 @@ def test_render_run_prefers_structured_market_summary_over_raw_markdown(capsys) 
     assert "Research output only. Not investment advice." not in output
 
 
-def test_render_run_prefers_structured_tool_outputs_over_planner_markdown(capsys) -> None:
+def test_render_run_prefers_final_market_summary_over_detail_tables(capsys) -> None:
     render_run(
         {
             "id": "run_tools",
             "status": "completed",
-            "report_markdown": "# Planner Markdown Should Not Render",
+            "report_markdown": "## 总结\n\n- 当前市场热度偏冷，BTC/ETH/SOL 同步回落。",
             "report_json": {
                 "planner": "deepseek",
                 "disclaimer": "Research output only. Not investment advice.",
@@ -798,11 +811,58 @@ def test_render_run_prefers_structured_tool_outputs_over_planner_markdown(capsys
     )
 
     output = capsys.readouterr().out
-    assert "Agent Report" not in output
+    assert "当前市场热度偏冷" in output
+    assert "Ticker:" not in output
+    assert "Trend:" not in output
+    assert "Research output only. Not investment advice." not in output
+
+
+def test_render_run_can_force_structured_market_tool_outputs(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("HYPERTRADE_REPORT_SOURCE", "tools")
+    render_run(
+        {
+            "id": "run_tools",
+            "status": "completed",
+            "report_markdown": "## 总结\n\n- 当前市场热度偏冷，BTC/ETH/SOL 同步回落。",
+            "report_json": {
+                "planner": "deepseek",
+                "disclaimer": "Research output only. Not investment advice.",
+            },
+            "trace_events": [
+                {
+                    "tool_name": "market_ticker",
+                    "status": "completed",
+                    "output_json": {
+                        "found": True,
+                        "inst_id": "ETH-USDT-SWAP",
+                        "last": "3500.000000000000",
+                        "change_utc0_pct": "1.230000",
+                        "volume_ccy_24h": "987654.000000000000",
+                        "data_source": "okx_rest",
+                    },
+                },
+                {
+                    "tool_name": "market_candles",
+                    "status": "completed",
+                    "output_json": {
+                        "found": True,
+                        "inst_id": "ETH-USDT-SWAP",
+                        "bar": "1H",
+                        "candle_count": 100,
+                        "return_pct": "2.400000",
+                        "trend_bias": "up",
+                        "data_source": "okx_rest",
+                    },
+                },
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
     assert "Ticker:" in output
     assert "Trend:" in output
     assert "ETH-USDT-SWAP" in output
-    assert "Planner Markdown Should Not Render" not in output
+    assert "当前市场热度偏冷" not in output
     assert "Research output only. Not investment advice." not in output
 
 
@@ -1321,6 +1381,7 @@ def test_welcome_banner_does_not_repeat_fixed_risk_warning() -> None:
 
 def test_render_run_can_use_rich_structured_output(monkeypatch) -> None:
     monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    monkeypatch.setenv("HYPERTRADE_REPORT_SOURCE", "tools")
     output = StringIO()
 
     render_run(

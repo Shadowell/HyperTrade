@@ -11,6 +11,8 @@ runbooks, and sprint state. Chat history is not considered durable project state
   roadmap and parallel sprint plan for Agent development.
 - `contracts/sprint-55-cli-slash-command-candidates.md`: focused CLI polish
   contract for slash command candidate filtering.
+- `contracts/sprint-56-market-heat-summary.md`: focused market-reporting
+  contract for summary-first market heat answers.
 - `agent-prompts/parallel-sprint-prompts.md`: copy-ready prompts for Agents
   implementing Sprint 45-54 in parallel.
 - `knowledge/tool-usage-guide.md`: operator-facing guide for validating Agent tools.

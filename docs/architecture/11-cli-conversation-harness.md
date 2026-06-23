@@ -89,6 +89,9 @@ Streaming progress is also folded by default into `Agent: running` and `Agent: c
 monitoring, equity, and event runs, the default renderer prefers the final concise report and
 falls back to a compact paper summary if older runs contain noisy sample rows; raw tool
 evidence tables require `HYPERTRADE_REPORT_SOURCE=tools`.
+For market detail tool runs, the default renderer prefers the final Agent summary so broad
+market-heat prompts do not collapse into standalone ticker tables. Operators can still set
+`HYPERTRADE_REPORT_SOURCE=tools` to inspect raw ticker, candle, or comparison blocks.
 
 This keeps Provider configuration, Tool Call policy, RAG, Memory, approval gates, and trace persistence in one runtime boundary. The terminal becomes another harness surface alongside `/harness`.
 
@@ -168,5 +171,7 @@ CLI 会先把这些事件渲染成进度行，再打印最终落库的 run 报�
 `HYPERTRADE_PROGRESS=full` 可恢复每个工具的开始/完成日志。BitPro 模拟盘监控、权益曲线和事件报告默认显示
 最终简洁报告；如果历史 run 保存了噪声样本行，CLI 会回退成紧凑模拟盘摘要。只有设置
 `HYPERTRADE_REPORT_SOURCE=tools` 时才展示原始工具证据表。
+市场明细工具 run 默认优先显示最终 Agent 总结，因此市场热度类问题不会退化成孤立 ticker
+表格；需要排查时仍可设置 `HYPERTRADE_REPORT_SOURCE=tools` 查看原始 ticker、K线或强弱比较块。
 
 这样 Provider 配置、Tool Call 策略、RAG、Memory、审批门和 trace 持久化仍保持在同一个运行边界内。终端只是 `/harness` 之外的另一个 Harness 入口。

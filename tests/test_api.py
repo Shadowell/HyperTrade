@@ -156,6 +156,56 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     assert paused_overview["live_orders"]["total_count"] == 1
 
 
+def test_api_market_heat_prompt_returns_summary(tmp_path):
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    repository = MarketRepository(db)
+    repository.upsert_ticker_snapshot(
+        inst_id="BTC-USDT-SWAP",
+        inst_type="SWAP",
+        last=Decimal("62479.1"),
+        volume_ccy_24h=Decimal("109556.77"),
+        change_utc0_pct=Decimal("-2.367"),
+    )
+    repository.upsert_ticker_snapshot(
+        inst_id="ETH-USDT-SWAP",
+        inst_type="SWAP",
+        last=Decimal("1659.6"),
+        volume_ccy_24h=Decimal("4852653.03"),
+        change_utc0_pct=Decimal("-3.924"),
+    )
+    repository.upsert_ticker_snapshot(
+        inst_id="SOL-USDT-SWAP",
+        inst_type="SWAP",
+        last=Decimal("68.9"),
+        volume_ccy_24h=Decimal("12600982.08"),
+        change_utc0_pct=Decimal("-4.172"),
+    )
+    knowledge_dir = tmp_path / "knowledge"
+    knowledge_dir.mkdir()
+    app = create_app(
+        settings=Settings(
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            KNOWLEDGE_DIR=knowledge_dir,
+            DEEPSEEK_API_KEY="",
+            OKX_REST_URL="http://127.0.0.1:9",
+        ),
+        db=db,
+    )
+    client = TestClient(app)
+
+    response = client.post("/api/agent/runs", json={"prompt": "看下目前市场的热度怎么样"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "市场热度总结" in body["report_markdown"]
+    assert "结论:" in body["report_markdown"]
+    assert "样本:" in body["report_markdown"]
+    assert body["report_json"]["heat_summary"]["sample_count"] == 3
+    assert body["report_json"]["heat_summary"]["decliners_count"] == 3
+
+
 def test_public_workbench_can_read_observability_without_login(tmp_path):
     db = Database("sqlite:///:memory:")
     db.create_all()

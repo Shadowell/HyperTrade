@@ -2426,6 +2426,9 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     if _prefer_compact_paper_report(run):
         _render_rich_compact_bitpro_paper_report(run, console=console)
         return True
+    if _prefer_market_final_report(run):
+        console.print(Markdown(raw_markdown))
+        return True
     if has_structured_market_summary and isinstance(report, dict):
         _render_rich_market_summary(report, console=console)
     elif has_structured_tools and isinstance(trace_events, list):
@@ -2689,6 +2692,32 @@ def _render_rich_market_summary(report: dict[str, Any], *, console: Any) -> None
     meta.add_row("Source", str(report.get("data_source", "unknown")))
     meta.add_row("As of UTC", str(report.get("as_of_utc", "n/a")))
     console.print(Panel(meta, title="Market Report", border_style="green"))
+
+    heat = report.get("heat_summary")
+    if isinstance(heat, dict):
+        heat_text = "\n".join(
+            [
+                f"结论: {heat.get('conclusion', '当前市场热度暂不可用。')}",
+                (
+                    "样本: {sample_count} | 上涨 {advancers_count}({advancers_pct}%) | "
+                    "下跌 {decliners_count}({decliners_pct}%) | 平均 {average_change_pct}%"
+                ).format(
+                    sample_count=heat.get("sample_count", 0),
+                    advancers_count=heat.get("advancers_count", 0),
+                    advancers_pct=heat.get("advancers_pct", "0.000000"),
+                    decliners_count=heat.get("decliners_count", 0),
+                    decliners_pct=heat.get("decliners_pct", "0.000000"),
+                    average_change_pct=heat.get("average_change_pct", "0.000000"),
+                ),
+                (
+                    "最强/最弱: {top_gainer} / {top_loser}"
+                ).format(
+                    top_gainer=heat.get("top_gainer", "n/a"),
+                    top_loser=heat.get("top_loser", "n/a"),
+                ),
+            ]
+        )
+        console.print(Panel(heat_text, title="市场热度", border_style="yellow"))
 
     movers = Table(title="Top Movers", show_header=True, header_style="bold")
     movers.add_column("Instrument")
@@ -3237,6 +3266,8 @@ def _render_structured_report(run: dict[str, Any], *, output: TextIO) -> bool:
     if _prefer_compact_paper_report(run):
         _render_compact_bitpro_paper_report(run, output=output)
         return True
+    if _prefer_market_final_report(run):
+        return False
     if not isinstance(report, dict) or not report:
         return False
     if isinstance(report.get("top_movers"), list):
@@ -3268,6 +3299,15 @@ def _prefer_compact_paper_report(run: dict[str, Any]) -> bool:
     return bool(_paper_tool_outputs_by_tool(run))
 
 
+def _prefer_market_final_report(run: dict[str, Any]) -> bool:
+    if _report_source_forces_tool_output():
+        return False
+    markdown = str(run.get("report_markdown", "")).strip()
+    if not markdown:
+        return False
+    return bool(_market_detail_tool_outputs(run))
+
+
 def _report_source_forces_tool_output() -> bool:
     source = os.getenv("HYPERTRADE_REPORT_SOURCE", "final").strip().lower()
     return source in {"tool", "tools", "trace", "structured", "audit", "provenance"}
@@ -3278,6 +3318,22 @@ def _show_report_block_audit() -> bool:
     if source in {"audit", "audits", "provenance", "source", "sources"}:
         return True
     return _show_full_trace()
+
+
+def _market_detail_tool_outputs(run: dict[str, Any]) -> list[dict[str, Any]]:
+    trace_events = run.get("trace_events", [])
+    if not isinstance(trace_events, list):
+        return []
+    outputs: list[dict[str, Any]] = []
+    for event in trace_events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("tool_name") not in {"market_ticker", "market_candles", "market_compare"}:
+            continue
+        payload = event.get("output_json", {})
+        if isinstance(payload, dict) and payload.get("found", True):
+            outputs.append(payload)
+    return outputs
 
 
 def _paper_tool_outputs_by_tool(run: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -3471,6 +3527,34 @@ def _render_structured_market_summary(report: dict[str, Any], *, output: TextIO)
     print(f"Source: {report.get('data_source', 'unknown')}", file=output)
     print(f"As of UTC: {report.get('as_of_utc', 'n/a')}", file=output)
     print("", file=output)
+
+    heat = report.get("heat_summary")
+    if isinstance(heat, dict):
+        print("Market heat:", file=output)
+        print(f"- Conclusion: {heat.get('conclusion', '当前市场热度暂不可用。')}", file=output)
+        print(
+            (
+                "- Sample: {sample_count}; advancers={advancers_count} "
+                "({advancers_pct}%); decliners={decliners_count} "
+                "({decliners_pct}%); average_change={average_change_pct}%"
+            ).format(
+                sample_count=heat.get("sample_count", 0),
+                advancers_count=heat.get("advancers_count", 0),
+                advancers_pct=heat.get("advancers_pct", "0.000000"),
+                decliners_count=heat.get("decliners_count", 0),
+                decliners_pct=heat.get("decliners_pct", "0.000000"),
+                average_change_pct=heat.get("average_change_pct", "0.000000"),
+            ),
+            file=output,
+        )
+        print(
+            "- Strongest/weakest: {top_gainer} / {top_loser}".format(
+                top_gainer=heat.get("top_gainer", "n/a"),
+                top_loser=heat.get("top_loser", "n/a"),
+            ),
+            file=output,
+        )
+        print("", file=output)
 
     movers = report.get("top_movers", [])
     print("Top movers:", file=output)
