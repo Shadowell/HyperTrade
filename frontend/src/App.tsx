@@ -1,10 +1,13 @@
 import {
   Activity,
+  AlertTriangle,
+  Archive,
   Bot,
   Brain,
   Cable,
   CheckCircle2,
   Clock3,
+  FileText,
   Languages,
   Layers3,
   LineChart,
@@ -25,19 +28,22 @@ import {
 } from "react";
 
 type Language = "zh" | "en";
-type NavSection = "harness" | "runs" | "memory" | "rag";
+type NavSection = "harness" | "strategy" | "alerts" | "runs" | "memory" | "rag";
 
 type TraceEvent = {
   id?: string;
   tool_name: string;
   status: string;
   created_at?: string;
+  input_json?: Record<string, unknown>;
+  output_json?: Record<string, unknown>;
 };
 
 type AgentRun = {
   id: string;
   status: string;
   report_markdown: string;
+  report_json?: Record<string, unknown>;
   run_state_json?: {
     current_node?: string;
   };
@@ -175,6 +181,72 @@ type EvalStatus = {
   case_count: number;
   cases: Array<{ name: string; status: string; expectation?: string }>;
   mode: string;
+};
+
+type StrategyEvidence = {
+  memory_id?: string;
+  experiment_id?: string;
+  research_id?: string;
+  backtest_id?: string;
+  bitpro_result_id?: string;
+  variant_id?: string;
+  passed?: boolean;
+  total_return_pct?: string;
+  max_drawdown_pct?: string;
+  trade_count?: number;
+  score?: string;
+  data?: Record<string, unknown>;
+  gate_results?: Record<string, unknown>;
+  failure_reasons?: string[];
+  next_experiment?: string;
+  created_at?: string;
+};
+
+type StrategyLibraryItem = {
+  strategy_key: string;
+  evidence_count: number;
+  passed_count: number;
+  failed_count: number;
+  best?: StrategyEvidence;
+  latest?: StrategyEvidence;
+  variants?: Array<{ variant_id: string; evidence_count: number; passed_count: number }>;
+  failure_reasons?: string[];
+  next_experiments?: string[];
+  source_memory_ids?: string[];
+};
+
+type StrategyLibraryPayload = {
+  source: string;
+  memory_count: number;
+  items: StrategyLibraryItem[];
+};
+
+type MonitorAlert = {
+  id?: string;
+  severity?: string;
+  code?: string;
+  title?: string;
+  message?: string;
+  source_id?: string;
+  created_at?: string;
+  threshold?: string;
+  source_refs?: string[];
+};
+
+type EvidenceSelection = {
+  title: string;
+  rows: Array<{ label: string; value: string }>;
+};
+
+type ReportBlock = {
+  block_type?: string;
+  title?: string;
+  severity?: string;
+  notes?: unknown;
+  metrics?: unknown;
+  rows?: unknown;
+  missing?: unknown;
+  source_refs?: unknown;
 };
 
 type HarnessOverview = {
@@ -407,7 +479,33 @@ const copy = {
     routeRag: "知识库",
     dataContract: "数据合同",
     latestResult: "最新结果",
-    auditBoundary: "审计边界"
+    auditBoundary: "审计边界",
+    strategyLibrary: "策略库",
+    strategyEvidence: "策略证据",
+    strategyLibraryHint: "从 Memory 中聚合本地策略实验、回测和 BitPro 结果证据。",
+    noStrategyEvidence: "暂无策略证据",
+    bestEvidence: "最佳证据",
+    sourceMemories: "来源 Memory",
+    failureReasons: "失败原因",
+    nextExperiment: "下一步实验",
+    evidenceDrilldown: "证据详情",
+    selectEvidence: "选择一条策略或 trace 证据",
+    monitorAlerts: "监控告警",
+    alertStatus: "告警状态",
+    alertStatusHint: "展示只读监控告警、审批等待和风险状态。",
+    noMonitorAlerts: "暂无监控告警",
+    approvalRisk: "审批与风险",
+    reportBlocks: "结构化报告",
+    markdownFallback: "Markdown 回退",
+    loadRun: "查看运行",
+    traceEvidence: "Trace 证据",
+    sourceRefs: "来源",
+    missingData: "缺失数据",
+    evidenceCount: "证据数",
+    passFail: "通过 / 失败",
+    variants: "变体",
+    score: "评分",
+    noSourceIds: "暂无来源 ID"
   },
   en: {
     product: "HyperTrade",
@@ -547,7 +645,33 @@ const copy = {
     routeRag: "Knowledge Base",
     dataContract: "Data Contract",
     latestResult: "Latest Result",
-    auditBoundary: "Audit Boundary"
+    auditBoundary: "Audit Boundary",
+    strategyLibrary: "Strategy Library",
+    strategyEvidence: "Strategy Evidence",
+    strategyLibraryHint: "Aggregate local experiment, backtest, and BitPro result evidence from Memory.",
+    noStrategyEvidence: "No strategy evidence",
+    bestEvidence: "Best Evidence",
+    sourceMemories: "Source Memories",
+    failureReasons: "Failure Reasons",
+    nextExperiment: "Next Experiment",
+    evidenceDrilldown: "Evidence Detail",
+    selectEvidence: "Select strategy or trace evidence",
+    monitorAlerts: "Monitor Alerts",
+    alertStatus: "Alert Status",
+    alertStatusHint: "Read-only monitor alerts, pending approvals, and risk state.",
+    noMonitorAlerts: "No monitor alerts",
+    approvalRisk: "Approval and Risk",
+    reportBlocks: "Structured Report",
+    markdownFallback: "Markdown Fallback",
+    loadRun: "Open Run",
+    traceEvidence: "Trace Evidence",
+    sourceRefs: "Sources",
+    missingData: "Missing Data",
+    evidenceCount: "Evidence",
+    passFail: "Pass / Fail",
+    variants: "Variants",
+    score: "Score",
+    noSourceIds: "No source ids"
   }
 } satisfies Record<Language, Record<string, string>>;
 
@@ -735,8 +859,17 @@ function App() {
   const [ragQuery, setRagQuery] = useState("risk");
   const [ragHits, setRagHits] = useState<RagHit[]>([]);
   const [showRawMarkdown, setShowRawMarkdown] = useState(false);
+  const [strategyLibrary, setStrategyLibrary] = useState<StrategyLibraryPayload>({
+    source: "memory.strategy_knowledge",
+    memory_count: 0,
+    items: []
+  });
+  const [strategyQuery, setStrategyQuery] = useState("");
+  const [monitorAlerts, setMonitorAlerts] = useState<MonitorAlert[]>([]);
+  const [evidenceSelection, setEvidenceSelection] = useState<EvidenceSelection | null>(null);
   const t = copy[language];
   const activeOverview = overview ?? previewOverview;
+  const reportBlocks = useMemo(() => reportBlocksFromRun(run), [run]);
   const defaultProvider =
     activeOverview.providers.find((provider) => provider.default) ?? activeOverview.providers[0];
   const traceEvents =
@@ -789,6 +922,29 @@ function App() {
     }
   }, []);
 
+  const refreshStrategyLibrary = useCallback(async (query = "") => {
+    const suffix = query ? `?query=${encodeURIComponent(query)}` : "";
+    const response = await fetch(`/api/strategy/library${suffix}`, { credentials: "include" });
+    if (response.ok) {
+      const payload = (await response.json()) as StrategyLibraryPayload;
+      setStrategyLibrary({
+        source: payload.source ?? "memory.strategy_knowledge",
+        memory_count: payload.memory_count ?? 0,
+        items: Array.isArray(payload.items) ? payload.items : []
+      });
+    }
+  }, []);
+
+  const refreshMonitorAlerts = useCallback(async () => {
+    const response = await fetch("/api/monitor/alerts", { credentials: "include" });
+    if (response.ok) {
+      const payload = (await response.json()) as { items?: MonitorAlert[] };
+      setMonitorAlerts(Array.isArray(payload.items) ? payload.items : []);
+      return;
+    }
+    setMonitorAlerts([]);
+  }, []);
+
   const refreshOverview = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -796,6 +952,8 @@ function App() {
       if (response.ok) {
         setOverview((await response.json()) as HarnessOverview);
         await refreshMemoryItems();
+        await refreshStrategyLibrary();
+        await refreshMonitorAlerts();
         setHarnessError("");
         return;
       }
@@ -803,7 +961,7 @@ function App() {
     } finally {
       setRefreshing(false);
     }
-  }, [refreshMemoryItems]);
+  }, [refreshMemoryItems, refreshMonitorAlerts, refreshStrategyLibrary]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -873,6 +1031,27 @@ function App() {
     await refreshMemoryItems(memoryQuery);
   }
 
+  async function handleStrategySearch() {
+    await refreshStrategyLibrary(strategyQuery);
+  }
+
+  async function handleLoadRun(runId: string) {
+    const response = await fetch(`/api/agent/runs/${encodeURIComponent(runId)}`, {
+      credentials: "include"
+    });
+    if (response.ok) {
+      setRun((await response.json()) as AgentRun);
+    }
+  }
+
+  function handleSelectStrategyEvidence(item: StrategyLibraryItem) {
+    setEvidenceSelection(strategyEvidenceSelection(item, t));
+  }
+
+  function handleSelectTraceEvidence(event: TraceEvent) {
+    setEvidenceSelection(traceEvidenceSelection(event, t));
+  }
+
   return (
     <div className="min-h-[100dvh] bg-paper text-ink">
       <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_20%_10%,rgba(184,137,59,0.10),transparent_28%),linear-gradient(rgba(17,21,19,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(17,21,19,0.035)_1px,transparent_1px)] bg-[size:auto,28px_28px,28px_28px]" />
@@ -906,6 +1085,22 @@ function App() {
             >
               <TerminalSquare size={16} />
               {t.harness}
+            </a>
+            <a
+              className={navItemClass("strategy")}
+              href="#strategy"
+              onClick={(event) => handleNavClick("strategy", event)}
+            >
+              <Archive size={16} />
+              {t.strategyLibrary}
+            </a>
+            <a
+              className={navItemClass("alerts")}
+              href="#alerts"
+              onClick={(event) => handleNavClick("alerts", event)}
+            >
+              <AlertTriangle size={16} />
+              {t.monitorAlerts}
             </a>
             <a
               className={navItemClass("runs")}
@@ -1049,6 +1244,8 @@ function App() {
                 <pre className="report-block">
                   {busy ? `${t.overviewLoading}...` : run.report_markdown}
                 </pre>
+              ) : reportBlocks.length > 0 ? (
+                <StructuredReport blocks={reportBlocks} markdown={run.report_markdown} t={t} />
               ) : (
                 <div className="markdown-report">
                   {busy ? t.overviewLoading : renderMarkdown(run.report_markdown)}
@@ -1078,10 +1275,12 @@ function App() {
               </div>
               <div className="mt-2 trace-list">
                 {traceEvents.map((event, index) => (
-                  <div
-                    className="trace-row"
+                  <button
+                    className="trace-row w-full text-left"
                     key={`${event.tool_name}-${event.id ?? index}`}
+                    onClick={() => handleSelectTraceEvidence(event)}
                     style={cascadeStyle(index)}
+                    type="button"
                   >
                     <span className="font-mono text-xs text-ink/45">
                       {String(index + 1).padStart(2, "0")}
@@ -1090,7 +1289,7 @@ function App() {
                     <span className="ml-auto rounded border border-signal/30 px-2 py-1 text-xs text-signal">
                       {statusLabel(event.status)}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
               <div className="mt-6 grid grid-cols-3 gap-3 max-md:grid-cols-1">
@@ -1163,6 +1362,186 @@ function App() {
                   </div>
                 </div>
               ) : null}
+            </div>
+          </section>
+
+          <section className="mt-5 grid grid-cols-[1.1fr_0.9fr] gap-5 max-xl:grid-cols-1" id="strategy">
+            <div className="panel">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="section-title">{t.strategyEvidence}</h2>
+                  <p className="mt-1 text-sm text-ink/50">{t.strategyLibraryHint}</p>
+                </div>
+                <Archive size={18} className="text-brass" />
+              </div>
+              <div className="mt-4 grid grid-cols-[1fr_auto] gap-2 max-sm:grid-cols-1">
+                <input
+                  className="field-light"
+                  onChange={(event) => setStrategyQuery(event.target.value)}
+                  placeholder={t.strategyKey}
+                  value={strategyQuery}
+                />
+                <button className="icon-button justify-center" onClick={handleStrategySearch} type="button">
+                  <Brain size={14} />
+                  {t.query}
+                </button>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-3 max-md:grid-cols-1">
+                <div className="mini-block">
+                  <span>{t.source}</span>
+                  <strong className="truncate font-mono">{strategyLibrary.source}</strong>
+                </div>
+                <div className="mini-block">
+                  <span>{t.evidenceCount}</span>
+                  <strong className="font-mono">{strategyLibrary.memory_count}</strong>
+                </div>
+                <div className="mini-block">
+                  <span>{t.latestResult}</span>
+                  <strong className="font-mono">{strategyLibrary.items[0]?.strategy_key ?? "n/a"}</strong>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {strategyLibrary.items.length === 0 ? (
+                  <div className="empty-row">{t.noStrategyEvidence}</div>
+                ) : (
+                  strategyLibrary.items.map((item, index) => (
+                    <button
+                      className="strategy-card text-left"
+                      key={item.strategy_key}
+                      onClick={() => handleSelectStrategyEvidence(item)}
+                      style={cascadeStyle(index)}
+                      type="button"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <strong className="font-mono">{item.strategy_key}</strong>
+                          <div className="mt-1 text-xs text-ink/45">
+                            {t.passFail}: {item.passed_count} / {item.failed_count}
+                          </div>
+                        </div>
+                        <span className="rounded border border-brass/25 px-2 py-1 text-xs text-brass">
+                          {item.evidence_count} {t.evidenceCount}
+                        </span>
+                      </div>
+                      <div className="evidence-grid">
+                        <EvidenceMetric label={t.bestEvidence} value={item.best?.variant_id ?? "n/a"} />
+                        <EvidenceMetric
+                          label={t.returnPct}
+                          value={formatPercentValue(item.best?.total_return_pct)}
+                        />
+                        <EvidenceMetric
+                          label={t.maxDrawdown}
+                          value={formatPercentValue(item.best?.max_drawdown_pct)}
+                        />
+                        <EvidenceMetric label={t.trades} value={String(item.best?.trade_count ?? "n/a")} />
+                      </div>
+                      <SourceIdStrip evidence={item.best} sourceMemoryIds={item.source_memory_ids ?? []} />
+                      {item.failure_reasons?.length ? (
+                        <div className="evidence-note">
+                          <span>{t.failureReasons}</span>
+                          <strong>{item.failure_reasons.join(", ")}</strong>
+                        </div>
+                      ) : null}
+                      {item.next_experiments?.length ? (
+                        <div className="evidence-note">
+                          <span>{t.nextExperiment}</span>
+                          <strong>{item.next_experiments[0]}</strong>
+                        </div>
+                      ) : null}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="panel">
+              <div className="flex items-center justify-between gap-4">
+                <h2 className="section-title">{t.evidenceDrilldown}</h2>
+                <FileText size={18} className="text-brass" />
+              </div>
+              {evidenceSelection ? (
+                <div className="mt-4 grid gap-2">
+                  <div className="text-sm font-semibold">{evidenceSelection.title}</div>
+                  {evidenceSelection.rows.map((row) => (
+                    <div className="evidence-detail-row" key={`${row.label}-${row.value}`}>
+                      <span>{row.label}</span>
+                      <strong>
+                        {row.label}: {row.value}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-row mt-4">{t.selectEvidence}</div>
+              )}
+            </div>
+          </section>
+
+          <section className="mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1" id="alerts">
+            <div className="panel">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="section-title">{t.alertStatus}</h2>
+                  <p className="mt-1 text-sm text-ink/50">{t.alertStatusHint}</p>
+                </div>
+                <AlertTriangle size={18} className="text-brass" />
+              </div>
+              <div className="mt-4 space-y-2">
+                {monitorAlerts.length === 0 ? (
+                  <div className="empty-row">{t.noMonitorAlerts}</div>
+                ) : (
+                  monitorAlerts.map((alert, index) => (
+                    <div className="alert-row" key={alert.id ?? `${alert.code}-${index}`}>
+                      <span className="font-mono text-xs text-ink/45">
+                        {alert.severity ?? "info"}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-semibold">{alert.title ?? alert.code ?? "alert"}</div>
+                        <div className="truncate text-xs text-ink/50">
+                          {alert.message ?? alert.source_id ?? "n/a"}
+                        </div>
+                      </div>
+                      <span className="rounded border border-ink/10 px-2 py-1 text-xs">
+                        {alert.source_id ?? alert.id ?? "n/a"}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="panel">
+              <div className="flex items-center justify-between gap-4">
+                <h2 className="section-title">{t.approvalRisk}</h2>
+                <CheckCircle2 size={18} className="text-signal" />
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 max-md:grid-cols-1">
+                <div className="mini-block">
+                  <span>{t.pending}</span>
+                  <strong className="font-mono">{activeOverview.live_orders.pending_approval_count}</strong>
+                </div>
+                <div className="mini-block">
+                  <span>{t.orderIntent}</span>
+                  <strong className="font-mono">{activeOverview.live_orders.total_count}</strong>
+                </div>
+              </div>
+              <div className="mt-4 space-y-2">
+                {activeOverview.live_orders.recent.length === 0 ? (
+                  <div className="empty-row">{t.noIntents}</div>
+                ) : (
+                  activeOverview.live_orders.recent.slice(0, 5).map((intent) => (
+                    <div className="status-row" key={intent.id}>
+                      <span className="font-mono text-xs text-ink/55">{intent.id}</span>
+                      <span className="min-w-0 truncate text-sm">
+                        {intent.inst_id} / {intent.side} / {intent.size}
+                      </span>
+                      <span className="rounded border border-brass/25 px-2 py-1 text-xs text-brass">
+                        {intent.risk_status ?? intent.status}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </section>
 
@@ -1334,13 +1713,19 @@ function App() {
                   <div className="empty-row">{t.noRuns}</div>
                 ) : (
                   activeOverview.agent_runs.recent.map((recentRun, index) => (
-                    <div className="run-row" key={recentRun.id} style={cascadeStyle(index)}>
+                    <button
+                      className="run-row w-full text-left"
+                      key={recentRun.id}
+                      onClick={() => handleLoadRun(recentRun.id)}
+                      style={cascadeStyle(index)}
+                      type="button"
+                    >
                       <span className="font-mono text-xs text-ink/55">{recentRun.id}</span>
                       <span className="min-w-0 truncate text-sm">{recentRun.prompt}</span>
                       <span className="rounded border border-signal/25 px-2 py-1 text-xs text-signal">
                         {statusLabel(recentRun.status)}
                       </span>
-                    </div>
+                    </button>
                   ))
                 )}
               </div>
@@ -1397,7 +1782,13 @@ function activeSectionFromHash(): NavSection {
     return "harness";
   }
   const section = window.location.hash.replace("#", "");
-  if (section === "runs" || section === "memory" || section === "rag") {
+  if (
+    section === "strategy" ||
+    section === "alerts" ||
+    section === "runs" ||
+    section === "memory" ||
+    section === "rag"
+  ) {
     return section;
   }
   return "harness";
@@ -1434,6 +1825,294 @@ function formatAge(seconds: number | null): string {
     return `${Math.floor(seconds / 60)}分`;
   }
   return `${Math.floor(seconds / 3600)}时`;
+}
+
+function formatPercentValue(value: string | undefined): string {
+  if (!value || value === "n/a") {
+    return "n/a";
+  }
+  return value.endsWith("%") ? value : `${value}%`;
+}
+
+function EvidenceMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function SourceIdStrip({
+  evidence,
+  sourceMemoryIds
+}: {
+  evidence: StrategyEvidence | undefined;
+  sourceMemoryIds: string[];
+}) {
+  const ids = [
+    evidence?.memory_id ? `memory: ${evidence.memory_id}` : "",
+    evidence?.experiment_id ? `experiment: ${evidence.experiment_id}` : "",
+    evidence?.backtest_id ? `backtest: ${evidence.backtest_id}` : "",
+    evidence?.bitpro_result_id ? `#${evidence.bitpro_result_id}` : "",
+    ...sourceMemoryIds
+      .filter((id) => id && id !== evidence?.memory_id)
+      .slice(0, 3)
+      .map((id) => `memory: ${id}`)
+  ].filter(Boolean);
+  return (
+    <div className="evidence-id-strip">
+      {ids.length === 0 ? (
+        <span>n/a</span>
+      ) : (
+        ids.map((id) => (
+          <span className="evidence-chip" key={id}>
+            {id}
+          </span>
+        ))
+      )}
+    </div>
+  );
+}
+
+function StructuredReport({
+  blocks,
+  markdown,
+  t
+}: {
+  blocks: ReportBlock[];
+  markdown: string;
+  t: Record<string, string>;
+}) {
+  return (
+    <div className="structured-report">
+      <div className="flex items-center justify-between gap-3">
+        <h4>{t.reportBlocks}</h4>
+        <span className="font-mono text-xs text-ink/45">{blocks.length}</span>
+      </div>
+      <div className="mt-3 grid gap-3">
+        {blocks.map((block, index) => (
+          <div className="report-card" key={`${block.title ?? block.block_type}-${index}`}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <span>{block.block_type ?? "block"}</span>
+                <strong>{block.title ?? "Report block"}</strong>
+              </div>
+              {block.severity ? (
+                <span className="rounded border border-brass/25 px-2 py-1 text-xs text-brass">
+                  {block.severity}
+                </span>
+              ) : null}
+            </div>
+            <ReportNotes notes={block.notes} />
+            <ReportMetrics metrics={block.metrics} rows={block.rows} />
+            <ReportSourceList label={t.sourceRefs} prefix="source" values={block.source_refs} />
+            <ReportSourceList label={t.missingData} prefix="missing" values={block.missing} />
+          </div>
+        ))}
+      </div>
+      <h4 className="mt-4">{t.markdownFallback}</h4>
+      <div className="markdown-report">{renderMarkdown(markdown)}</div>
+    </div>
+  );
+}
+
+function ReportNotes({ notes }: { notes: unknown }) {
+  const items = toStringList(notes);
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <ul className="report-note-list">
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+function ReportMetrics({ metrics, rows }: { metrics: unknown; rows: unknown }) {
+  const metricRows = keyValueRows(metrics);
+  const dataRows = Array.isArray(rows) ? rows.filter(isRecord).slice(0, 5) : [];
+  if (metricRows.length === 0 && dataRows.length === 0) {
+    return null;
+  }
+  return (
+    <div className="report-metric-list">
+      {metricRows.map((row) => (
+        <div key={`${row.label}-${row.value}`}>
+          <span>{row.label}</span>
+          <strong>{row.value}</strong>
+        </div>
+      ))}
+      {dataRows.map((row, index) => (
+        <div key={`row-${index}`}>
+          <span>row {index + 1}</span>
+          <strong>
+            {Object.entries(row)
+              .slice(0, 4)
+              .map(([key, value]) => `${key}=${stringifyValue(value)}`)
+              .join(" / ")}
+          </strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReportSourceList({
+  label,
+  prefix,
+  values
+}: {
+  label: string;
+  prefix: string;
+  values: unknown;
+}) {
+  const items = toStringList(values);
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <div className="mt-3">
+      <div className="mb-2 text-xs uppercase text-ink/45">{label}</div>
+      <div className="flex flex-wrap gap-2">
+        {items.map((item) => (
+          <span className="evidence-chip" key={item}>
+            {prefix}: {item}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function reportBlocksFromRun(run: AgentRun): ReportBlock[] {
+  const reportJson = run.report_json;
+  if (!reportJson) {
+    return [];
+  }
+  const blocks = reportJson.report_blocks ?? reportJson.blocks;
+  if (!Array.isArray(blocks)) {
+    return [];
+  }
+  return blocks.filter(isRecord).map((block) => ({
+    block_type: stringOrUndefined(block.block_type),
+    title: stringOrUndefined(block.title),
+    severity: stringOrUndefined(block.severity),
+    notes: block.notes,
+    metrics: block.metrics,
+    rows: block.rows,
+    missing: block.missing,
+    source_refs: block.source_refs
+  }));
+}
+
+function strategyEvidenceSelection(
+  item: StrategyLibraryItem,
+  t: Record<string, string>
+): EvidenceSelection {
+  const best = item.best ?? {};
+  const rows = [
+    { label: "memory", value: best.memory_id ?? "n/a" },
+    { label: "experiment", value: best.experiment_id ?? "n/a" },
+    { label: "backtest", value: best.backtest_id ?? "n/a" },
+    { label: "bitpro_result", value: best.bitpro_result_id ?? "n/a" },
+    { label: t.returnPct, value: formatPercentValue(best.total_return_pct) },
+    { label: t.maxDrawdown, value: formatPercentValue(best.max_drawdown_pct) },
+    { label: t.score, value: best.score ?? "n/a" },
+    { label: t.sourceMemories, value: (item.source_memory_ids ?? []).join(", ") || t.noSourceIds }
+  ];
+  return {
+    title: item.strategy_key,
+    rows
+  };
+}
+
+function traceEvidenceSelection(event: TraceEvent, t: Record<string, string>): EvidenceSelection {
+  return {
+    title: `${t.traceEvidence}: ${event.tool_name}`,
+    rows: [
+      { label: "trace", value: event.id ?? "n/a" },
+      { label: "tool", value: event.tool_name },
+      { label: "status", value: event.status },
+      { label: "created_at", value: event.created_at ?? "n/a" },
+      { label: "input", value: summarizeRecord(event.input_json) },
+      { label: "output", value: summarizeRecord(event.output_json) }
+    ]
+  };
+}
+
+function keyValueRows(value: unknown): Array<{ label: string; value: string }> {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (!isRecord(item)) {
+          return null;
+        }
+        const label = stringOrUndefined(item.label ?? item.name ?? item.key);
+        if (!label) {
+          return null;
+        }
+        return { label, value: stringifyValue(item.value ?? item.amount ?? item.metric ?? "") };
+      })
+      .filter((item): item is { label: string; value: string } => Boolean(item));
+  }
+  if (isRecord(value)) {
+    return Object.entries(value).map(([label, item]) => ({
+      label,
+      value: stringifyValue(item)
+    }));
+  }
+  return [];
+}
+
+function toStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map(stringifyValue).filter((item) => item.length > 0);
+  }
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
+  }
+  return [];
+}
+
+function summarizeRecord(value: Record<string, unknown> | undefined): string {
+  if (!value) {
+    return "n/a";
+  }
+  const entries = Object.entries(value).slice(0, 4);
+  if (entries.length === 0) {
+    return "n/a";
+  }
+  return entries.map(([key, item]) => `${key}=${stringifyValue(item)}`).join(" / ");
+}
+
+function stringifyValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(stringifyValue).join(", ");
+  }
+  if (isRecord(value)) {
+    return Object.entries(value)
+      .slice(0, 4)
+      .map(([key, item]) => `${key}=${stringifyValue(item)}`)
+      .join(" / ");
+  }
+  return String(value);
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function renderMarkdown(markdown: string): ReactNode {

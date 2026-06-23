@@ -89,6 +89,7 @@ class FakeAgentClient:
         self.prompts: list[str] = []
         self.research_prompts: list[str] = []
         self.experiment_prompts: list[str] = []
+        self.iteration_prompts: list[str] = []
         self.backtest_calls: list[dict[str, Any]] = []
         self.strategy_library_queries: list[str] = []
         self.price_symbols: list[str] = []
@@ -344,6 +345,16 @@ class FakeAgentClient:
             "research_id": "srch_cli",
             "backtest_id": "bt_cli",
             "report_markdown": "# Experiment\n\nCritique and next experiment. 不构成投资建议。",
+        }
+
+    def create_strategy_iteration(self, prompt: str) -> dict[str, Any]:
+        self.iteration_prompts.append(prompt)
+        return {
+            "id": "exp_iter_cli",
+            "status": "completed",
+            "research_id": "srch_iter_cli",
+            "backtest_id": "bt_iter_cli",
+            "report_markdown": "# Iteration\n\nPrior Evidence. 未声称改进。不构成投资建议。",
         }
 
     def run_backtest(
@@ -1864,6 +1875,7 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
             "/candles ETH --bar 1H --limit 50",
             "/compare ETH SOL --bar 4H --limit 100",
             "/experiment 研究ETH突破",
+            "/experiment iterate 继续优化 momentum_breakout_v1",
             "/paper status",
             "/paper pause",
             "/paper resume",
@@ -1912,7 +1924,9 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
     assert "K-line trend:" in output
     assert "Relative strength:" in output
     assert "Strategy experiment completed" in output
+    assert "Strategy iteration completed" in output
     assert client.experiment_prompts == ["研究ETH突破"]
+    assert client.iteration_prompts == ["继续优化 momentum_breakout_v1"]
     assert client.price_symbols == ["ETH"]
     assert client.candle_calls == [{"symbol": "ETH", "bar": "1H", "limit": 50}]
     assert client.compare_calls == [{"symbols": ["ETH", "SOL"], "bar": "4H", "limit": 100}]
@@ -1986,20 +2000,44 @@ def test_render_tools_includes_tool_descriptions() -> None:
                 "category": "market",
                 "requires_approval": False,
                 "description": "Summarize market.",
+                "policy": {
+                    "scope": "read",
+                    "approval": "none",
+                    "idempotency": "not_required",
+                    "source_of_truth": "okx_rest",
+                    "timeout_class": "standard",
+                    "safe_sample_limit": 10,
+                    "failure_behavior": "return_unavailable",
+                },
             },
             {
                 "name": "live.order_intent",
                 "category": "live",
                 "requires_approval": True,
                 "description": "Create order intent.",
+                "policy": {
+                    "scope": "testnet_write",
+                    "approval": "required",
+                    "idempotency": "required",
+                    "source_of_truth": "hypertrade_db",
+                    "timeout_class": "quick",
+                    "safe_sample_limit": 1,
+                    "failure_behavior": "return_structured_error",
+                },
             },
         ],
         output=output,
     )
 
     rendered = output.getvalue()
-    assert "- market.summary [market]: Summarize market." in rendered
-    assert "- live.order_intent [live] approval: Create order intent." in rendered
+    assert (
+        "- market.summary [market] scope=read approval=none idempotency=not_required: "
+        "Summarize market."
+    ) in rendered
+    assert (
+        "- live.order_intent [live] scope=testnet_write approval=required "
+        "idempotency=required: Create order intent."
+    ) in rendered
 
 
 def test_render_tools_uses_distinct_tty_colors(monkeypatch) -> None:
@@ -2013,12 +2051,30 @@ def test_render_tools_uses_distinct_tty_colors(monkeypatch) -> None:
                 "category": "market",
                 "requires_approval": False,
                 "description": "Summarize market.",
+                "policy": {
+                    "scope": "read",
+                    "approval": "none",
+                    "idempotency": "not_required",
+                    "source_of_truth": "okx_rest",
+                    "timeout_class": "standard",
+                    "safe_sample_limit": 10,
+                    "failure_behavior": "return_unavailable",
+                },
             },
             {
                 "name": "live.order_intent",
                 "category": "live",
                 "requires_approval": True,
                 "description": "Create order intent.",
+                "policy": {
+                    "scope": "testnet_write",
+                    "approval": "required",
+                    "idempotency": "required",
+                    "source_of_truth": "hypertrade_db",
+                    "timeout_class": "quick",
+                    "safe_sample_limit": 1,
+                    "failure_behavior": "return_structured_error",
+                },
             },
         ],
         output=output,

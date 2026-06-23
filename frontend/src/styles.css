@@ -52,6 +52,13 @@ body {
     animation-delay: calc(var(--index) * 45ms);
   }
 
+  button.trace-row,
+  button.run-row,
+  button.strategy-card {
+    @apply cursor-pointer border-x-0 border-b-0 bg-transparent text-inherit;
+    font: inherit;
+  }
+
   .trace-list {
     @apply rounded-md border border-ink/10 bg-paper/70 px-3;
   }
@@ -141,7 +148,9 @@ body {
   }
 
   .strategy-card {
-    @apply grid gap-2 rounded-md border border-ink/10 bg-paper/70 p-3;
+    @apply grid w-full gap-2 rounded-md border border-ink/10 bg-paper/70 p-3 transition duration-300 ease-out hover:border-ink/25 hover:bg-white;
+    animation: fade-slide-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--index) * 45ms);
   }
 
   .strategy-card strong {
@@ -150,6 +159,75 @@ body {
 
   .strategy-card p {
     @apply m-0 line-clamp-3 text-sm leading-6 text-ink/60;
+  }
+
+  .evidence-grid {
+    @apply grid grid-cols-4 gap-2 max-md:grid-cols-2 max-sm:grid-cols-1;
+  }
+
+  .evidence-grid div,
+  .report-metric-list div {
+    @apply min-w-0 rounded-md border border-ink/10 bg-white/70 px-3 py-2;
+  }
+
+  .evidence-grid span,
+  .report-metric-list span,
+  .evidence-note span,
+  .evidence-detail-row span,
+  .report-card span {
+    @apply block text-[11px] uppercase tracking-normal text-ink/45;
+  }
+
+  .evidence-grid strong,
+  .report-metric-list strong,
+  .evidence-note strong,
+  .evidence-detail-row strong,
+  .report-card strong {
+    @apply mt-1 block min-w-0 break-words text-sm font-semibold text-ink;
+  }
+
+  .evidence-id-strip {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .evidence-chip {
+    @apply max-w-full break-all rounded border border-ink/10 bg-white/80 px-2 py-1 font-mono text-xs text-ink/65;
+  }
+
+  .evidence-note {
+    @apply rounded-md border border-ink/10 bg-white/60 px-3 py-2;
+  }
+
+  .evidence-detail-row {
+    @apply grid grid-cols-[0.32fr_1fr] gap-3 rounded-md border border-ink/10 bg-paper/70 px-3 py-2 max-sm:grid-cols-1;
+  }
+
+  .structured-report {
+    @apply mt-4 rounded-md border border-ink/10 bg-white px-5 py-4 text-sm leading-7 text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.65)];
+  }
+
+  .structured-report h4 {
+    @apply text-sm font-semibold text-ink;
+  }
+
+  .report-card {
+    @apply rounded-md border border-ink/10 bg-paper/70 px-3 py-3;
+  }
+
+  .report-note-list {
+    @apply mt-3 grid gap-2;
+  }
+
+  .report-note-list li {
+    @apply rounded-md border border-ink/10 bg-white/75 px-3 py-2 text-ink/75;
+  }
+
+  .report-metric-list {
+    @apply mt-3 grid grid-cols-2 gap-2 max-sm:grid-cols-1;
+  }
+
+  .alert-row {
+    @apply grid grid-cols-[0.35fr_1fr_auto] items-center gap-3 rounded-md border border-ink/10 bg-paper/70 px-3 py-2 text-sm transition duration-300 hover:bg-white max-sm:grid-cols-1;
   }
 
   .memory-row {

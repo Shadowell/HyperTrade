@@ -46,16 +46,35 @@ counts, variant summaries, failure reasons, next experiments, and source memory
 ids. This makes the local strategy library an auditable view over Memory, not a
 second persistence path.
 
+Sprint 46 replaces new strategy-memory text cards with `StrategyEvidence`
+schema payloads stored in `MemoryItem.content`. The public strategy-library
+shape remains compatible with Sprint 44, but the parser now prefers the
+versioned schema and only falls back to legacy text parsing for older memories.
+The schema preserves decimal-style metrics as strings and carries source ids,
+gate results, missing-field defaults, source data, and research-only boundaries
+for future iteration workflows.
+
+Sprint 47 adds evidence-driven iteration planning. `StrategyIterationService`
+reads `StrategyLibraryService` first, records prior source memory ids and
+experiment/backtest ids, builds a bounded adjacent variant plan, and lets
+`StrategyExperimentService.create_iteration` run only those local backtests
+through the existing `BacktestService`. Iteration reports compare the new winner
+against prior best evidence and explicitly refuse improvement claims when
+metrics are missing or the new result is worse.
+
 ## Surfaces
 
 - API: `POST /api/strategy/experiments`
+- API: `POST /api/strategy/experiments/iterate`
 - API: `GET /api/strategy/experiments`
 - API: `GET /api/memory?kind=strategy_knowledge`
 - API: `GET /api/strategy/library?query=<text>&strategy_key=<key>`
 - CLI: `/experiment <prompt>`
+- CLI: `/experiment iterate <prompt>`
 - CLI: `/memory search <strategy or variant>`
 - CLI: `/strategy library [query]`
 - Agent tool: `strategy_library_search`
+- Agent tool: `strategy_experiment_plan`
 - Frontend: latest experiment card in `/harness`
 
 All reports include a research-only disclaimer. The workflow remains local

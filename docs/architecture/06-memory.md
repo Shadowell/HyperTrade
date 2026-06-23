@@ -46,6 +46,22 @@ New strategy knowledge cards include `variant_count`, `gate_results`, and
 `failure_reasons` fields so failed experiments can be reused as evidence rather
 than disappearing from future research.
 
+## Sprint 46 Update
+
+New `strategy_knowledge` writes use a versioned `StrategyEvidence` JSON payload
+inside `MemoryItem.content` instead of relying on semi-structured text parsing.
+The current schema version is `strategy_evidence.v1`. Memory table shape,
+`kind + content` exact dedupe, tags, source run/tool audit fields, and ordinary
+Memory search behavior are unchanged.
+
+The schema records strategy key, experiment/research/backtest ids, optional
+BitPro result id, variant id/count, parameters, string-preserved metrics,
+gate results, failure reasons, source data, next experiment guidance,
+boundaries, and pass/fail status. `StrategyLibraryService` parses this payload
+first and falls back to the legacy text-card parser when older production
+memories do not contain the schema. Missing structured fields surface as `n/a`,
+empty strings, empty lists, or empty maps rather than invented values.
+
 ## 中文
 
 Memory 自动写入，但必须可审计。每条 memory 记录 kind、content、source run id、source tool、时间戳和 disabled 状态。
@@ -83,3 +99,17 @@ memory ids。API `/api/strategy/library`、CLI `/strategy library` 与 Agent
 
 新的策略知识卡会写入 `variant_count`、`gate_results` 和
 `failure_reasons`，让失败实验也能作为未来研发的可检索证据，而不是被忽略。
+
+## Sprint 46 更新
+
+新的 `strategy_knowledge` 写入会在 `MemoryItem.content` 中保存版本化
+`StrategyEvidence` JSON payload，不再依赖脆弱的半结构文本解析。当前 schema
+版本是 `strategy_evidence.v1`。Memory 表结构、`kind + content` 精确去重、
+tags、source run/tool 审计字段和普通 Memory 搜索行为保持不变。
+
+该 schema 记录 strategy key、experiment/research/backtest id、可选 BitPro
+result id、variant id/count、参数、以字符串保留精度的指标、gate results、
+failure reasons、source data、下一轮实验建议、边界和 pass/fail 状态。
+`StrategyLibraryService` 会优先解析这个 payload；旧生产 memory 没有 schema
+时继续走 legacy 文本卡解析。缺失字段显示为 `n/a`、空字符串、空列表或空
+map，不会编造数值。

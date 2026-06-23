@@ -4,18 +4,102 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 44 strategy library memory verified locally with `./scripts/check.sh`.
+- Last verified state: combined Agent 47 working tree verified locally with
+  `./scripts/check.sh` (`pytest` 203 passed).
 
 ## Active Contract
 
-- No active implementation contract. Last completed: `docs/contracts/sprint-55-cli-slash-command-candidates.md`.
+- `docs/contracts/sprint-47-evidence-driven-strategy-loop.md` for the current
+  Agent 47 pass and `docs/contracts/sprint-49-risk-governance-policy.md` for
+  the Agent 49 pass. Other parallel Sprint 45/48/55 work remains in the same
+  working tree and must not be reverted.
+
+## Current In-Progress Work
+
+- Agent 49 / Sprint 49 risk governance policy is implemented locally on top of
+  the Sprint 45 tool-policy metadata: `RiskGovernancePolicy` evaluates
+  registered Agent tools before execution, classifies read/research-write/
+  paper-write/testnet-write/live-diagnostic scopes, denies write-like external
+  actions missing `idempotency_key`, records `policy_decision` in graph trace,
+  and renders denied BitPro lifecycle writes in a `风控治理` report section
+  without calling the external adapter.
+- Focused Sprint 49 verification passed with `uv run pytest
+  tests/test_risk_governance_policy.py
+  tests/test_agent_acceptance.py::test_agent_acceptance_governance_denies_write_without_idempotency
+  -q` -> 4 passed, and `uv run pytest tests/test_live_order_intents.py
+  tests/test_tool_registry.py tests/test_api.py tests/test_cli.py
+  tests/test_agent_acceptance.py::test_agent_acceptance_bitpro_strategy_lifecycle_is_audited
+  tests/test_agent_acceptance.py::test_agent_acceptance_governance_denies_write_without_idempotency
+  -q` -> 75 passed.
+- Full repository verification passed with `./scripts/check.sh` -> frontend
+  install/lint/test/build passed; ruff and mypy passed; pytest passed with
+  203 tests.
+- Agent 48 / Sprint 48 multi-source market intelligence is implemented locally:
+  `market_intelligence` reads OKX public funding/open-interest evidence, adds
+  deterministic curated context from
+  `docs/knowledge/market-intelligence-curated.md`, normalizes source/freshness/
+  missing-field fields through `MarketIntelligenceService`, and renders a
+  compact `市场情报` report section. Planner schema/prompt guidance, ToolRegistry
+  exposure, product docs, architecture docs, and the operator guide were updated.
+- Agent 47 / Sprint 47 evidence-driven strategy loop is implemented locally:
+  `StrategyIterationService` reads `StrategyLibraryService` before iteration,
+  produces bounded source-backed variant plans, `/api/strategy/experiments/iterate`
+  and CLI `/experiment iterate <prompt>` run those variants through existing
+  safe backtest paths, and reports compare the new winner against prior best
+  evidence without claiming improvement when metrics are missing or worse.
+- Focused Agent 47 verification passed with `uv run pytest
+  tests/test_strategy_library.py tests/test_strategy_backtest_api.py
+  tests/test_agent_planner.py tests/test_cli.py tests/test_tool_registry.py -q`
+  -> 95 passed.
+- Sprint 47 contract verification passed with `uv run pytest
+  tests/test_strategy_library.py tests/test_strategy_backtest_api.py -q` -> 12
+  passed and `uv run pytest tests/test_agent_planner.py
+  tests/test_agent_acceptance.py -q` -> 38 passed.
+- Agent 45 / Sprint 45 runtime reliability is being implemented in parallel:
+  ToolRegistry now exposes first-class policy metadata, `/api/harness/tools`
+  and CLI `/tools` render scope/approval/idempotency, Agent trace payloads carry
+  policy decisions, tool timeout/exception paths return structured unavailable
+  payloads with missing-data report notes, and admin-authenticated run
+  cancellation persists `status=canceled`.
+- Focused Sprint 45 verification passed with `uv run pytest tests/test_tool_registry.py
+  tests/test_agent_planner.py tests/test_cli.py tests/test_api.py::test_api_exposes_health_harness_and_agent_run
+  tests/test_api.py::test_api_can_cancel_running_agent_run
+  tests/test_agent_acceptance.py::test_agent_trace_records_enforced_tool_policy
+  tests/test_agent_acceptance.py::test_agent_tool_timeout_is_structured_and_keeps_run_completed
+  tests/test_agent_acceptance.py::test_agent_tool_exception_is_structured_and_keeps_run_completed -q`
+  -> 88 passed.
+- Full repository verification passed after resolving frontend build/test
+  blockers in parallel UI changes: `./scripts/check.sh` -> frontend
+  install/lint/test/build passed; ruff and mypy passed; pytest passed with
+  203 tests.
+- Added CLI slash-command candidate filtering: incomplete prefixes such as `/st`
+  or `/me` now render filtered command candidates with the same descriptions as
+  `/help`, and real TTY readline completion registers a display hook for
+  described Tab candidates.
+- Focused verification for the Sprint 55 CLI slice passed with targeted
+  `tests/test_cli.py` candidate/history tests.
+- Full repository verification passed for the combined working tree with
+  `./scripts/check.sh`: frontend install/lint/test/build passed; ruff and mypy
+  passed; pytest passed with 203 tests.
 
 ## Latest Completed Work
 
-- Added Sprint 55 CLI slash-command candidate filtering: incomplete prefixes
-  such as `/st` or `/me` now render filtered command candidates with the same
-  descriptions as `/help`, and real TTY readline completion registers a display
-  hook for described Tab candidates.
+- Added Sprint 48 multi-source market intelligence: connector-neutral result
+  schema/service layer, OKX funding/open-interest client reads, curated context
+  fixture, Agent planner schema, kernel executor branch, ToolRegistry entry, and
+  compact report rendering. Verification is covered by
+  `tests/test_market_intelligence.py`, planner/registry tests, and the combined
+  `./scripts/check.sh` pass with 203 Python tests.
+- Added Sprint 46 strategy evidence schema: new `strategy_knowledge` Memory
+  writes now store versioned `StrategyEvidence` JSON payloads in
+  `MemoryItem.content`, preserving exact Memory dedupe/search behavior while
+  letting `StrategyLibraryService` prefer structured evidence and fall back to
+  legacy text cards. The strategy library now preserves schema version,
+  optional BitPro result ids, source data, research-only boundaries, gate
+  results, failure reasons, and safe missing-field defaults; focused Sprint 46
+  verification passed with `uv run pytest tests/test_strategy_library.py
+  tests/test_strategy_backtest_api.py -q` and `uv run pytest tests/test_cli.py
+  tests/test_agent_planner.py -q`.
 - Added the post-Sprint-44 capability roadmap for parallel Agent development:
   `docs/architecture/18-hypertrade-capability-roadmap.md` defines the target
   capability map and dependencies, and Sprint contracts 45-54 split Agent

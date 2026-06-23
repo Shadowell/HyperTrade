@@ -1,8 +1,72 @@
+from decimal import Decimal
+
 from fastapi.testclient import TestClient
 from hypertrade.config import Settings
 from hypertrade.db import Database
 from hypertrade.main import create_app
 from hypertrade.market.okx import parse_okx_candle
+from hypertrade.memory.service import MemoryService
+from hypertrade.strategy.evidence import (
+    STRATEGY_EVIDENCE_SCHEMA_VERSION,
+    StrategyEvidence,
+    parse_strategy_evidence,
+)
+
+
+def _seed_strategy_evidence_memory(
+    db: Database,
+    *,
+    experiment_id: str,
+    memory_return: str,
+    passed: bool,
+    failure_reasons: list[str] | None = None,
+) -> str:
+    evidence = StrategyEvidence(
+        strategy_key="momentum_breakout_v1",
+        experiment_id=experiment_id,
+        research_id=f"srch_{experiment_id}",
+        backtest_id=f"bt_{experiment_id}",
+        variant_id="fast" if passed else "baseline",
+        variant_count=3,
+        parameters={"sma_period": "3", "breakout_pct": "0.0"},
+        metrics={
+            "total_return_pct": memory_return,
+            "max_drawdown_pct": "0.0" if passed else "6.5",
+            "trade_count": "10" if passed else "4",
+            "score": memory_return,
+        },
+        gate_results={
+            "min_trade_count": True,
+            "max_drawdown_pct": True,
+            "require_non_negative_return": passed,
+        },
+        failure_reasons=failure_reasons or [],
+        source_data={
+            "source": "sample_candles",
+            "inst_id": "ETH-USDT-SWAP",
+            "bar": "1H",
+            "candle_count": "100",
+        },
+        next_experiment="Reduce breakout_pct before retesting.",
+        boundaries=["research_only", "no_bitpro_write", "no_live_or_testnet_order"],
+        passed=passed,
+    )
+    item = MemoryService(db).write(
+        content=evidence.to_memory_content(),
+        kind="strategy_knowledge",
+        source_run_id=experiment_id,
+        source_tool="strategy.experiment",
+        tags=[
+            "strategy",
+            "strategy_knowledge",
+            "strategy_experiment",
+            "evidence",
+            "momentum_breakout_v1",
+        ],
+        importance=Decimal("0.82") if passed else Decimal("0.68"),
+        confidence=Decimal("0.74"),
+    )
+    return item.id
 
 
 def test_strategy_research_and_backtest_api(tmp_path) -> None:
@@ -93,16 +157,24 @@ def test_strategy_experiment_workflow_api(tmp_path) -> None:
     knowledge = knowledge_items[0]
     assert knowledge["source_run_id"] == experiment["id"]
     assert knowledge["source_tool"] == "strategy.experiment"
-    assert "策略经验" in knowledge["content"]
-    assert f"experiment={experiment['id']}" in knowledge["content"]
-    assert f"backtest={winner['backtest_id']}" in knowledge["content"]
-    assert f"winner={winner['variant_id']}" in knowledge["content"]
-    assert "total_return_pct=" in knowledge["content"]
-    assert "max_drawdown_pct=" in knowledge["content"]
-    assert "variant_count=3" in knowledge["content"]
-    assert "gate_results=" in knowledge["content"]
-    assert "failure_reasons=" in knowledge["content"]
-    assert "next_experiment=" in knowledge["content"]
+    evidence = parse_strategy_evidence(knowledge["content"])
+    assert evidence is not None
+    assert evidence.schema_version == STRATEGY_EVIDENCE_SCHEMA_VERSION
+    assert evidence.strategy_key == "momentum_breakout_v1"
+    assert evidence.experiment_id == experiment["id"]
+    assert evidence.research_id == experiment["research_id"]
+    assert evidence.backtest_id == winner["backtest_id"]
+    assert evidence.variant_id == winner["variant_id"]
+    assert evidence.variant_count == 3
+    assert evidence.metrics["total_return_pct"] == str(winner["metrics"]["total_return_pct"])
+    assert evidence.metrics["max_drawdown_pct"] == str(winner["metrics"]["max_drawdown_pct"])
+    assert evidence.gate_results == winner["gate_results"]
+    assert evidence.source_data["source"] == "sample_candles"
+    assert evidence.boundaries == [
+        "research_only",
+        "no_bitpro_write",
+        "no_live_or_testnet_order",
+    ]
     assert {
         "strategy",
         "strategy_knowledge",
@@ -124,7 +196,71 @@ def test_strategy_experiment_workflow_api(tmp_path) -> None:
     assert library["items"][0]["evidence_count"] == 1
     assert library["items"][0]["best"]["backtest_id"] == winner["backtest_id"]
     assert library["items"][0]["best"]["variant_id"] == winner["variant_id"]
+    assert library["items"][0]["best"]["schema_version"] == STRATEGY_EVIDENCE_SCHEMA_VERSION
     assert library["items"][0]["source_memory_ids"] == [knowledge["id"]]
+
+
+def test_strategy_iteration_workflow_uses_prior_evidence_and_refuses_worse_claim(
+    tmp_path,
+) -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    failed_memory_id = _seed_strategy_evidence_memory(
+        db,
+        experiment_id="exp_failed_prior",
+        memory_return="-4.2",
+        passed=False,
+        failure_reasons=["require_non_negative_return"],
+    )
+    best_memory_id = _seed_strategy_evidence_memory(
+        db,
+        experiment_id="exp_best_prior",
+        memory_return="99.0",
+        passed=True,
+    )
+    app = create_app(
+        settings=Settings(ADMIN_USERNAME="admin", ADMIN_PASSWORD="secret", KNOWLEDGE_DIR=tmp_path),
+        db=db,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/strategy/experiments/iterate",
+        json={"prompt": "继续优化 momentum_breakout_v1"},
+    )
+
+    assert response.status_code == 200
+    experiment = response.json()
+    report_json = experiment["report_json"]
+    prior = report_json["prior_evidence"]
+    assert set(prior["source_memory_ids"]) == {failed_memory_id, best_memory_id}
+    assert prior["best"]["memory_id"] == best_memory_id
+    assert report_json["variant_plan"]["mode"] == "evidence_driven"
+    assert all(item["reason"] for item in report_json["variant_plan"]["variants"])
+    assert any(
+        best_memory_id == item["source_memory_id"]
+        for item in report_json["variant_plan"]["variants"]
+    )
+    comparison = report_json["result_comparison"]
+    assert comparison["claim"] == "not_improved"
+    assert comparison["can_claim_improvement"] is False
+    assert comparison["prior_best"]["memory_id"] == best_memory_id
+    assert "## Prior Evidence" in experiment["report_markdown"]
+    assert best_memory_id in experiment["report_markdown"]
+    assert "未声称改进" in experiment["report_markdown"]
+
+    new_memory = client.get(
+        "/api/memory",
+        params={"kind": "strategy_knowledge", "query": experiment["id"]},
+    ).json()["items"][0]
+    assert new_memory["source_run_id"] == experiment["id"]
+    library = client.get(
+        "/api/strategy/library",
+        params={"strategy_key": "momentum_breakout_v1"},
+    ).json()
+    item = library["items"][0]
+    assert item["evidence_count"] == 3
+    assert new_memory["id"] in item["source_memory_ids"]
 
 
 def test_backtest_api_accepts_live_okx_candle_options(monkeypatch, tmp_path) -> None:

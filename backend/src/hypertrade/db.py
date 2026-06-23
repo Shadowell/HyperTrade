@@ -207,6 +207,55 @@ class BitProPaperMonitorSnapshot(Base, TimestampMixin):
     tool_calls_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
 
 
+class MonitorDefinition(Base, TimestampMixin):
+    __tablename__ = "monitor_definitions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("mon"))
+    name: Mapped[str] = mapped_column(String(160))
+    monitor_type: Mapped[str] = mapped_column(String(64), index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    scope_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    thresholds_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    schedule_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    notification_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class MonitorRun(Base, TimestampMixin):
+    __tablename__ = "monitor_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("mrun"))
+    monitor_id: Mapped[str] = mapped_column(String(32), index=True)
+    monitor_type: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="running", index=True)
+    previous_run_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scope_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    source_tools_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    metric_snapshot_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    drift_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    alerts_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    data_gaps_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    recommended_actions_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    result_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    error: Mapped[str] = mapped_column(Text, default="")
+
+
+class MonitorAlertEvent(Base, TimestampMixin):
+    __tablename__ = "monitor_alert_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("alrt"))
+    monitor_id: Mapped[str] = mapped_column(String(32), index=True)
+    run_id: Mapped[str] = mapped_column(String(32), index=True)
+    level: Mapped[str] = mapped_column(String(32), default="warning", index=True)
+    code: Mapped[str] = mapped_column(String(96), index=True)
+    message: Mapped[str] = mapped_column(Text)
+    source_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    threshold_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    metric_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="open", index=True)
+
+
 class StrategyResearch(Base, TimestampMixin):
     __tablename__ = "strategy_research"
 

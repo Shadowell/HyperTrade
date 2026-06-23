@@ -14,9 +14,13 @@ Strategy experiments should move through the same evidence loop:
 Current implementation:
 
 - CLI: `/experiment <prompt>`
+- CLI: `/experiment iterate <prompt>`
 - CLI: `/strategy library [query]`
 - API: `POST /api/strategy/experiments`
+- API: `POST /api/strategy/experiments/iterate`
 - API: `GET /api/strategy/library?query=<text>&strategy_key=<key>`
+- Agent tool: `strategy_library_search`
+- Agent tool: `strategy_experiment_plan`
 - Search memory: `/memory search momentum_breakout_v1`
 - Search API: `GET /api/memory?kind=strategy_knowledge&tag=strategy`
 
@@ -26,6 +30,8 @@ Expected evidence:
 - linked `srch_*` research id
 - winning `bt_*` backtest id
 - candidate variants with params, return, drawdown, trade count, score, and gates
+- for iteration runs: prior source memory ids, prior experiment/backtest ids,
+  planned variant reasons, and result comparison against prior best evidence
 - data source, instrument, bar, and candle count
 - critique notes and next-experiment suggestion
 - source-bound `strategy_knowledge` memory item
@@ -36,10 +42,22 @@ Recommended research loop:
 
 1. Search `/strategy library <strategy or symbol>` before creating a new idea.
 2. Treat failed evidence as useful constraints, especially `failure_reasons`.
-3. Only run `/experiment` when the next test is grounded in prior evidence or
+3. Use `/experiment iterate <prompt>` when continuing or optimizing an existing
+   strategy. The workflow reads strategy-library evidence first, plans at most a
+   bounded set of adjacent variants, and records why each variant exists.
+4. Only run `/experiment` when the next test is grounded in prior evidence or
    clearly explores a new hypothesis.
-4. After the experiment completes, re-run `/strategy library` to confirm the
+5. After the experiment completes, re-run `/strategy library` to confirm the
    new memory card is visible in the grouped strategy view.
+
+Improvement claims:
+
+- If no prior evidence exists, the iteration report must say it is creating a
+  first baseline.
+- If prior or new metrics are missing, the report must refuse to claim
+  improvement.
+- If the new winner does not beat prior return without worse drawdown, the
+  report must mark the result as `not_improved`.
 
 Boundaries:
 

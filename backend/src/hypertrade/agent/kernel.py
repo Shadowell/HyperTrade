@@ -10,6 +10,7 @@ the frontend harness and CLI can show what the Agent is doing.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -27,14 +28,18 @@ from hypertrade.db import AgentRun, Database, TraceEvent
 from hypertrade.live.service import LiveOrderIntentService
 from hypertrade.market.analysis import summarize_candles
 from hypertrade.market.client import OkxRestClient
+from hypertrade.market.intelligence import MarketIntelligenceService
 from hypertrade.market.okx import OkxCandle
 from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagService
+from hypertrade.reporting.blocks import build_report_blocks_from_tool_calls
+from hypertrade.risk.governance import GovernanceDecision, RiskGovernancePolicy
+from hypertrade.strategy.iteration import StrategyIterationService
 from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.service import StrategyResearchService
-from hypertrade.tools.registry import ToolRegistry
+from hypertrade.tools.registry import ToolPolicy, ToolRegistry
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,7 @@ class AgentKernel:
         self.memory = MemoryService(db)
         self.rag = RagService(db, knowledge_dir=knowledge_dir)
         self.tools = ToolRegistry.default()
+        self.governance = RiskGovernancePolicy(self.tools)
 
     def run_chat(self, prompt: str) -> CompletedAgentRun:
         return self.run_chat_with_events(prompt)
@@ -168,6 +174,12 @@ class AgentKernel:
             "graph": self._get_run_state(run_id).get("graph", []),
             "disclaimer": "Research output only. Not investment advice.",
         }
+        report_blocks = build_report_blocks_from_tool_calls(
+            result.final_message,
+            result.tool_calls,
+        )
+        if report_blocks:
+            report_json["report_blocks"] = [block.to_dict() for block in report_blocks]
         report_markdown = self._render_planner_report(result.final_message, result.tool_calls)
         self._graph_node(
             run_id,
@@ -185,20 +197,43 @@ class AgentKernel:
         event_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> ToolExecutor:
         def executor(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
-            # Only live order intent creation enters the approval family. Market,
-            # RAG, memory, and research tools remain auto-executable in V1.
+            decision = self.governance.evaluate(tool_name, args)
+            policy = decision.policy
+            # Tool policy is enforced at the Agent runtime boundary. Planner
+            # schemas help with selection, but only this trusted path decides
+            # whether a tool is allowed and how overruns are reported.
             self._graph_node(
                 run_id,
                 "approval_check",
                 {"tool_name": tool_name},
-                {"requires_approval": tool_name == "live_order_intent"},
+                decision.as_trace_payload(),
                 event_sink=event_sink,
             )
+            if not decision.allowed:
+                result = self._governance_denial_payload(tool_name, decision)
+                self._graph_node(
+                    run_id,
+                    "execute_tool",
+                    {"tool_name": tool_name, "args": args},
+                    {"status": "denied", "policy_decision": decision.as_trace_payload()},
+                    event_sink=event_sink,
+                )
+                _emit(
+                    event_sink,
+                    {
+                        "event": "tool_completed",
+                        "run_id": run_id,
+                        "tool_name": tool_name,
+                        "status": "denied",
+                        "output_json": result,
+                    },
+                )
+                return result
             self._graph_node(
                 run_id,
                 "execute_tool",
                 {"tool_name": tool_name, "args": args},
-                {"status": "started"},
+                {"status": "started", "policy_decision": decision.as_trace_payload()},
                 event_sink=event_sink,
             )
             _emit(
@@ -210,6 +245,31 @@ class AgentKernel:
                     "input_json": args,
                 },
             )
+            started_at = time.monotonic()
+            if self._is_run_canceled(run_id):
+                result = self._tool_error_payload(
+                    tool_name,
+                    policy,
+                    error_type="run_canceled",
+                    message="run canceled before tool execution",
+                    retryable=False,
+                )
+                result = self._attach_tool_execution_metadata(
+                    result,
+                    policy,
+                    duration_seconds=time.monotonic() - started_at,
+                )
+                _emit(
+                    event_sink,
+                    {
+                        "event": "tool_completed",
+                        "run_id": run_id,
+                        "tool_name": tool_name,
+                        "status": "completed",
+                        "output_json": result,
+                    },
+                )
+                return result
             # This dispatch table is the Agent "tool call" bridge. The LLM only
             # selects a name and JSON arguments; trusted Python code performs the
             # actual database, OKX, RAG, memory, or strategy operation.
@@ -230,6 +290,11 @@ class AgentKernel:
                     symbols=[str(symbol) for symbol in symbols],
                     bar=str(args.get("bar", "4H")),
                     limit=int(args.get("limit", 100)),
+                )
+            elif tool_name == "market_intelligence":
+                result = self._market_intelligence_payload(
+                    symbol=str(args.get("symbol", "")),
+                    include_curated=bool(args.get("include_curated", True)),
                 )
             elif tool_name == "rag_search":
                 self.rag.scan_once()
@@ -277,6 +342,12 @@ class AgentKernel:
                     query=str(args.get("query", "")),
                     strategy_key=str(args.get("strategy_key", "")),
                     limit=int(args.get("limit", 10)),
+                )
+            elif tool_name == "strategy_experiment_plan":
+                result = StrategyIterationService(self.db).plan(
+                    str(args.get("prompt", "")),
+                    strategy_key=str(args.get("strategy_key", "momentum_breakout_v1")),
+                    max_variants=int(args.get("max_variants", 3)),
                 )
             elif tool_name == "strategy_draft":
                 research_prompt = str(args.get("prompt", ""))
@@ -456,7 +527,8 @@ class AgentKernel:
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "live_order_intent":
-                result = LiveOrderIntentService(self.db, settings=self._settings).create(
+                settings = self._settings if self._settings is not None else get_settings()
+                result = LiveOrderIntentService(self.db, settings=settings).create(
                     symbol=str(args.get("symbol", "")),
                     side=str(args.get("side", "")),
                     size=str(args.get("size", "")),
@@ -467,7 +539,21 @@ class AgentKernel:
                     source_run_id=run_id,
                 )
             else:
-                result = {"error": f"unknown tool: {tool_name}"}
+                result = self._tool_error_payload(
+                    tool_name,
+                    policy,
+                    error_type="unknown_tool",
+                    message=f"unknown tool: {tool_name}",
+                    retryable=False,
+                )
+            duration_seconds = time.monotonic() - started_at
+            if duration_seconds > self._tool_timeout_seconds(policy):
+                result = self._tool_timeout_payload(tool_name, policy)
+            result = self._attach_tool_execution_metadata(
+                result,
+                policy,
+                duration_seconds=duration_seconds,
+            )
             _emit(
                 event_sink,
                 {
@@ -481,6 +567,113 @@ class AgentKernel:
             return result
 
         return executor
+
+    def _tool_policy(self, tool_name: str) -> ToolPolicy:
+        try:
+            return self.tools.get_for_runtime_name(tool_name).policy
+        except KeyError:
+            return ToolPolicy(
+                scope="read",
+                approval="blocked",
+                source_of_truth="unknown",
+                timeout_class="quick",
+                failure_behavior="return_structured_error",
+            )
+
+    @staticmethod
+    def _policy_outcome(policy: ToolPolicy) -> str:
+        if policy.approval == "blocked":
+            return "blocked"
+        return "approval_required" if policy.approval == "required" else "allowed"
+
+    def _tool_timeout_seconds(self, policy: ToolPolicy) -> float:
+        settings = self._settings if self._settings is not None else get_settings()
+        if policy.timeout_class == "quick":
+            return settings.agent_tool_timeout_quick_seconds
+        if policy.timeout_class == "long":
+            return settings.agent_tool_timeout_long_seconds
+        return settings.agent_tool_timeout_standard_seconds
+
+    @staticmethod
+    def _governance_denial_payload(
+        tool_name: str,
+        decision: GovernanceDecision,
+    ) -> dict[str, Any]:
+        return {
+            "status": "denied",
+            "execution_status": "denied",
+            "tool_name": tool_name,
+            "requested_tool_name": decision.requested_tool_name,
+            "registry_tool_name": decision.registry_tool_name,
+            "missing_fields": list(decision.missing_fields),
+            "denial_reason": decision.denial_reason,
+            "policy": decision.policy.to_dict(),
+            "policy_outcome": decision.status,
+            "policy_decision": decision.as_trace_payload(),
+        }
+
+    @staticmethod
+    def _attach_tool_execution_metadata(
+        payload: dict[str, Any],
+        policy: ToolPolicy,
+        *,
+        duration_seconds: float,
+    ) -> dict[str, Any]:
+        result = dict(payload)
+        result.setdefault("policy", policy.to_dict())
+        result.setdefault("policy_outcome", AgentKernel._policy_outcome(policy))
+        result.setdefault("execution_status", "completed")
+        result["execution_ms"] = round(duration_seconds * 1000, 3)
+        return result
+
+    @staticmethod
+    def _tool_timeout_payload(tool_name: str, policy: ToolPolicy) -> dict[str, Any]:
+        timeout_class = policy.timeout_class
+        return {
+            "status": "unavailable",
+            "execution_status": "timeout",
+            "unavailable_reason": "tool_timeout",
+            "error": {
+                "type": "timeout",
+                "message": f"{tool_name} exceeded {timeout_class} timeout",
+                "retryable": True,
+            },
+            "missing_data": [
+                {
+                    "field": "tool_result",
+                    "reason": "tool_timeout",
+                    "source_of_truth": policy.source_of_truth,
+                }
+            ],
+        }
+
+    @staticmethod
+    def _tool_error_payload(
+        tool_name: str,
+        policy: ToolPolicy,
+        *,
+        error_type: str,
+        message: str,
+        retryable: bool,
+    ) -> dict[str, Any]:
+        return {
+            "status": "unavailable",
+            "execution_status": "error",
+            "unavailable_reason": error_type,
+            "error": {
+                "type": error_type,
+                "message": message[:240],
+                "retryable": retryable,
+            },
+            "missing_data": [
+                {
+                    "field": "tool_result",
+                    "reason": error_type,
+                    "source_of_truth": policy.source_of_truth,
+                }
+            ],
+            "tool_name": tool_name,
+        }
 
     def _bitpro_adapter(self) -> Any:
         if self.bitpro_adapter is None:
@@ -522,18 +715,19 @@ class AgentKernel:
     ) -> None:
         # The fallback path is deliberately deterministic. It keeps local tests,
         # demos, and first-time setup useful even when no provider API key exists.
+        market_decision = self.governance.evaluate("market.summary", {"prompt": prompt})
         self._graph_node(
             run_id,
             "approval_check",
             {"tool_name": "market.summary"},
-            {"requires_approval": False},
+            market_decision.as_trace_payload(),
             event_sink=event_sink,
         )
         self._graph_node(
             run_id,
             "execute_tool",
             {"tool_name": "market.summary"},
-            {"status": "started"},
+            {"status": "started", "policy_decision": market_decision.as_trace_payload()},
             event_sink=event_sink,
         )
         _emit(
@@ -554,18 +748,19 @@ class AgentKernel:
         )
 
         _emit(event_sink, {"event": "tool_started", "run_id": run_id, "tool_name": "rag.search"})
+        rag_decision = self.governance.evaluate("rag.search", {"query": "market risk"})
         self._graph_node(
             run_id,
             "approval_check",
             {"tool_name": "rag.search"},
-            {"requires_approval": False},
+            rag_decision.as_trace_payload(),
             event_sink=event_sink,
         )
         self._graph_node(
             run_id,
             "execute_tool",
             {"tool_name": "rag.search"},
-            {"status": "started"},
+            {"status": "started", "policy_decision": rag_decision.as_trace_payload()},
             event_sink=event_sink,
         )
         self.rag.scan_once()
@@ -592,18 +787,19 @@ class AgentKernel:
         )
 
         _emit(event_sink, {"event": "tool_started", "run_id": run_id, "tool_name": "memory.write"})
+        memory_decision = self.governance.evaluate("memory.write", {"kind": "market_summary"})
         self._graph_node(
             run_id,
             "approval_check",
             {"tool_name": "memory.write"},
-            {"requires_approval": False},
+            memory_decision.as_trace_payload(),
             event_sink=event_sink,
         )
         self._graph_node(
             run_id,
             "execute_tool",
             {"tool_name": "memory.write"},
-            {"status": "started"},
+            {"status": "started", "policy_decision": memory_decision.as_trace_payload()},
             event_sink=event_sink,
         )
         memory_item = self.memory.write(
@@ -681,6 +877,15 @@ class AgentKernel:
                 trace_events=list(events),
             )
 
+    def cancel_run(
+        self,
+        run_id: str,
+        *,
+        reason: str = "canceled_by_operator",
+    ) -> CompletedAgentRun:
+        self._cancel_run(run_id, reason)
+        return self.get_run(run_id)
+
     def _create_run(self, prompt: str) -> str:
         with self.db.session() as session:
             run = AgentRun(prompt=prompt, status="running")
@@ -698,10 +903,38 @@ class AgentKernel:
             run = session.get(AgentRun, run_id)
             if run is None:
                 raise KeyError(run_id)
+            if run.status == "canceled":
+                return
             run.status = "completed"
             run.report_markdown = report_markdown
             run.report_json = report_json
             run.run_state_json = {**(run.run_state_json or {}), "final_answer": report_markdown}
+
+    def _cancel_run(self, run_id: str, reason: str) -> None:
+        with self.db.session() as session:
+            run = session.get(AgentRun, run_id)
+            if run is None:
+                raise KeyError(run_id)
+            run.status = "canceled"
+            run.error = reason
+            run.report_markdown = f"Agent run canceled: {reason}"
+            run.report_json = {
+                "status": "canceled",
+                "error": {
+                    "type": "run_canceled",
+                    "message": reason,
+                    "retryable": False,
+                },
+            }
+            state = dict(run.run_state_json or {})
+            state["canceled"] = True
+            state["cancel_reason"] = reason
+            run.run_state_json = state
+
+    def _is_run_canceled(self, run_id: str) -> bool:
+        with self.db.session() as session:
+            run = session.get(AgentRun, run_id)
+            return bool(run is not None and run.status == "canceled")
 
     def _fail_run(self, run_id: str, error: str) -> None:
         with self.db.session() as session:
@@ -910,6 +1143,18 @@ class AgentKernel:
             "as_of_utc": datetime.now(UTC).isoformat(),
         }
 
+    def _market_intelligence_payload(
+        self,
+        *,
+        symbol: str,
+        include_curated: bool = True,
+    ) -> dict[str, Any]:
+        settings = self._settings if self._settings is not None else get_settings()
+        return MarketIntelligenceService(settings=settings).collect(
+            symbol=symbol,
+            include_curated=include_curated,
+        )
+
     def _fetch_market_candles(
         self,
         inst_id: str,
@@ -976,6 +1221,7 @@ class AgentKernel:
         ticker_lines: list[str] = []
         candle_lines: list[str] = []
         compare_lines: list[str] = []
+        intelligence_lines: list[str] = []
         bitpro_lines: list[str] = []
         bitpro_backtest_lines: list[str] = []
         bitpro_backtest_detail_lines: list[str] = []
@@ -983,6 +1229,8 @@ class AgentKernel:
         bitpro_lifecycle_lines: list[str] = []
         strategy_library_lines: list[str] = []
         citation_lines: list[str] = []
+        unavailable_lines: list[str] = []
+        governance_lines: list[str] = []
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "market_ticker":
                 continue
@@ -1053,6 +1301,52 @@ class AgentKernel:
                         )
                     )
             compare_lines.append("")
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "market_intelligence":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict):
+                continue
+            inst_id = str(payload.get("inst_id", payload.get("symbol", "unknown")))
+            intelligence_lines.append(f"- 标的: {inst_id}")
+            results = payload.get("results")
+            results = results if isinstance(results, list) else []
+            if not results:
+                intelligence_lines.append("- 暂无可用市场情报来源。")
+            for item in results[:5]:
+                if not isinstance(item, dict):
+                    continue
+                metrics = item.get("metrics")
+                metrics = metrics if isinstance(metrics, dict) else {}
+                metric_text = ", ".join(
+                    f"{key}={value}" for key, value in metrics.items()
+                ) or "n/a"
+                missing = item.get("missing_fields")
+                missing = missing if isinstance(missing, list) else []
+                sample = item.get("sample")
+                sample = sample if isinstance(sample, list) else []
+                intelligence_lines.extend(
+                    [
+                        f"- 来源: {item.get('source', 'unknown')}",
+                        f"- source_path: {item.get('source_path', 'unknown')}",
+                        (
+                            "- as_of: {as_of}, freshness_seconds={freshness}"
+                        ).format(
+                            as_of=item.get("as_of", "n/a"),
+                            freshness=item.get("freshness_seconds", "n/a"),
+                        ),
+                        f"- 指标: {metric_text}",
+                    ]
+                )
+                if missing:
+                    intelligence_lines.append(
+                        "- 缺失字段: " + ", ".join(str(field) for field in missing)
+                    )
+                if sample:
+                    intelligence_lines.append(
+                        "- 样本: " + " | ".join(str(value) for value in sample[:3])
+                    )
+            intelligence_lines.append("")
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "strategy_library_search":
                 continue
@@ -1573,6 +1867,21 @@ class AgentKernel:
             payload = getattr(record, "output_json", {})
             if not isinstance(payload, dict):
                 continue
+            if payload.get("status") == "denied":
+                missing_fields = payload.get("missing_fields")
+                missing_fields = missing_fields if isinstance(missing_fields, list) else []
+                line = (
+                    "- {tool}: denied, reason={reason}"
+                ).format(
+                    tool=tool_name,
+                    reason=payload.get("denial_reason", "unknown"),
+                )
+                if missing_fields:
+                    line += ", missing_fields=" + ", ".join(
+                        str(field) for field in missing_fields
+                    )
+                governance_lines.append(line)
+                continue
             nested_tools = _nested_bitpro_tools(payload)
             line = f"- {tool_name}: {payload.get('status', 'unknown')}"
             strategy = payload.get("strategy")
@@ -1597,13 +1906,41 @@ class AgentKernel:
             bitpro_lifecycle_lines.append(line)
         if bitpro_lifecycle_lines:
             bitpro_lifecycle_lines.append("")
+        for record in tool_calls:
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict):
+                continue
+            is_unavailable = payload.get("status") == "unavailable"
+            is_error = payload.get("execution_status") in {"timeout", "error"}
+            if not is_unavailable and not is_error:
+                continue
+            error = payload.get("error")
+            error = error if isinstance(error, dict) else {}
+            policy = payload.get("policy")
+            policy = policy if isinstance(policy, dict) else {}
+            unavailable_lines.append(
+                "- {tool}: 数据暂不可用，原因 {reason}，来源 {source}".format(
+                    tool=getattr(record, "tool_name", "unknown"),
+                    reason=error.get("message")
+                    or payload.get("unavailable_reason", "unknown"),
+                    source=policy.get("source_of_truth", "unknown"),
+                )
+            )
+        if unavailable_lines:
+            unavailable_lines.append("")
         sections: list[str] = []
+        if unavailable_lines:
+            sections.extend(["## 数据暂不可用", "", *unavailable_lines])
+        if governance_lines:
+            sections.extend(["## 风控治理", "", *governance_lines, ""])
         if ticker_lines:
             sections.extend(["## 单标的行情", "", *ticker_lines])
         if candle_lines:
             sections.extend(["## K线趋势特征", "", *candle_lines])
         if compare_lines:
             sections.extend(["## 多标的强弱比较", "", *compare_lines])
+        if intelligence_lines:
+            sections.extend(["## 市场情报", "", *intelligence_lines])
         if strategy_library_lines:
             sections.extend(["## 策略库记忆", "", *strategy_library_lines])
         if bitpro_lines:

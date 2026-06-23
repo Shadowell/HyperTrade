@@ -31,6 +31,7 @@ from hypertrade.bitpro.mcp import (
     bitpro_capabilities,
 )
 from hypertrade.config import Settings, get_settings
+from hypertrade.connectors.registry import ConnectorRegistry
 from hypertrade.db import (
     AgentRun,
     Database,
@@ -46,6 +47,7 @@ from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.live.service import LiveOrderIntentService
 from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
+from hypertrade.monitoring import MonitorService
 from hypertrade.paper.service import PaperTradingService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagHit, RagService
@@ -67,8 +69,26 @@ class BitProApiAdapter(Protocol):
         """Read BitPro K-lines through the MCP tool contract."""
         ...
 
-    def paper_dashboard(self) -> dict[str, Any]:
+    def paper_dashboard(self, *, strategy_id: int | None = None) -> dict[str, Any]:
         """Read BitPro paper/simulation dashboard state."""
+        ...
+
+    def paper_events(
+        self,
+        *,
+        strategy_id: int | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Read BitPro paper/simulation events."""
+        ...
+
+    def paper_equity_curve(
+        self,
+        *,
+        strategy_id: int | None = None,
+        sample_limit: int = 50,
+    ) -> dict[str, Any]:
+        """Read BitPro paper/simulation equity curve."""
         ...
 
     def live_positions(
@@ -271,6 +291,10 @@ def create_app(
     def tools() -> dict[str, list[dict[str, object]]]:
         return {"tools": [_tool_to_dict(tool) for tool in ToolRegistry.default().list_tools()]}
 
+    @app.get("/api/connectors/capabilities")
+    def connector_capabilities() -> dict[str, object]:
+        return ConnectorRegistry.default(settings=app_settings).capabilities_payload()
+
     @app.get("/api/evals/status")
     def eval_status() -> dict[str, Any]:
         return AgentEvalSuite().status()
@@ -281,6 +305,7 @@ def create_app(
             selected=str(app.state.active_chat_provider)
         )
         tools_payload = [_tool_to_dict(tool) for tool in ToolRegistry.default().list_tools()]
+        connectors_payload = ConnectorRegistry.default(settings=app_settings).capabilities_payload()
         top_movers = [
             {
                 "inst_id": row.inst_id,
@@ -305,6 +330,7 @@ def create_app(
                 "generated_at": utc_now().isoformat(),
                 "providers": providers_payload,
                 "tools": tools_payload,
+                "connectors": connectors_payload["connectors"],
                 "market": {
                     "ticker_count": _count_rows(session, MarketTicker),
                     "latest_ticker_at": _iso_or_none(latest_market_at),
@@ -446,6 +472,20 @@ def create_app(
             raise HTTPException(status_code=404, detail="Run not found") from exc
         return _run_to_dict(run)
 
+    @app.post("/api/agent/runs/{run_id}/cancel")
+    def cancel_run(run_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            kernel = AgentKernel(
+                database,
+                knowledge_dir=str(app_settings.knowledge_dir),
+                settings=app_settings,
+                provider_name=str(app.state.active_chat_provider),
+            )
+            run = kernel.cancel_run(run_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Run not found") from exc
+        return _run_to_dict(run)
+
     @app.get("/api/market/tickers/latest")
     def latest_tickers(limit: int = 50) -> dict[str, list[dict[str, str]]]:
         rows = MarketRepository(database).latest_tickers(limit=limit)
@@ -520,6 +560,36 @@ def create_app(
         adapter = get_bitpro_adapter()
         return _bitpro_read_or_502(adapter, adapter.paper_dashboard)
 
+    @app.get("/api/monitors")
+    def list_monitors() -> dict[str, list[dict[str, Any]]]:
+        return {
+            "items": MonitorService(
+                database,
+                bitpro_adapter=get_bitpro_adapter(),
+            ).list_monitors()
+        }
+
+    @app.post("/api/monitors/{monitor_id}/run")
+    def run_monitor(monitor_id: str) -> dict[str, Any]:
+        try:
+            return MonitorService(
+                database,
+                bitpro_adapter=get_bitpro_adapter(),
+            ).run_monitor(monitor_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Monitor not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/alerts")
+    def list_alerts(limit: int = 50) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "items": MonitorService(
+                database,
+                bitpro_adapter=get_bitpro_adapter(),
+            ).list_alerts(limit=limit)
+        }
+
     @app.get("/api/bitpro/live/positions")
     def bitpro_live_positions(
         _: AdminUser,
@@ -562,6 +632,12 @@ def create_app(
         payload: StrategyResearchPayload,
     ) -> dict[str, Any]:
         return StrategyExperimentService(database).create(payload.prompt)
+
+    @app.post("/api/strategy/experiments/iterate")
+    def create_strategy_iteration(
+        payload: StrategyResearchPayload,
+    ) -> dict[str, Any]:
+        return StrategyExperimentService(database).create_iteration(payload.prompt)
 
     @app.get("/api/strategy/experiments")
     def list_strategy_experiments() -> dict[str, list[dict[str, Any]]]:
@@ -760,12 +836,16 @@ def _format_sse(event: dict[str, Any]) -> str:
 
 
 def _tool_to_dict(tool: ToolDefinition) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "name": tool.name,
         "description": tool.description,
         "category": tool.category,
         "requires_approval": tool.requires_approval,
+        "policy": tool.policy.to_dict(),
     }
+    if tool.connector_origin is not None:
+        payload["connector_origin"] = dict(tool.connector_origin)
+    return payload
 
 
 def _run_to_dict(run: CompletedAgentRun) -> dict[str, Any]:

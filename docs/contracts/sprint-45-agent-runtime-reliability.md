@@ -44,7 +44,7 @@ clearer retry/error behavior without changing trading business logic.
 - Planner tool schemas guide model choice, but trusted Python code must enforce
   policy.
 - Policy fields should be stable strings, not prose:
-  `scope=read|write|paper_write|testnet_write|live_write`,
+  `scope=read|research_write|paper_write|testnet_write|live_diagnostic_read|live_write`,
   `approval=none|required|blocked`,
   `idempotency=not_required|required`.
 - Long-running tools should return a structured timeout payload where possible
@@ -83,4 +83,3 @@ Manual or QA checks:
 
 - Next likely step: Sprint 49 can consume the policy metadata for broader risk
   governance.
-

@@ -79,5 +79,10 @@ Manual or QA checks:
 
 ## Handoff
 
+- Implemented locally with `market_intelligence`, `MarketIntelligenceService`,
+  OKX public funding/open-interest reads, deterministic curated context, planner
+  schema/prompt guidance, ToolRegistry exposure, and compact `市场情报` report
+  rendering.
+- Verification added in `tests/test_market_intelligence.py`,
+  `tests/test_agent_planner.py`, and `tests/test_tool_registry.py`.
 - Next likely step: Sprint 50 can standardize market-intelligence report blocks.
-

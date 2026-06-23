@@ -43,6 +43,17 @@ hypertrade
 /tools
 ```
 
+`/tools` 会显示每个工具的 category、purpose 以及紧凑 policy：
+
+- `scope`：`read`、`research_write`、`paper_write`、`testnet_write`、
+  `live_diagnostic_read` 或 `live_write`
+- `approval`：`none`、`required` 或 `blocked`
+- `idempotency`：`not_required` 或 `required`
+
+同一份 policy 也会出现在 `/api/harness/tools`、`/api/harness/overview.tools`
+和 Agent trace payload 中。运行时以 Python policy/governance 决策为准；planner
+schema 只负责引导模型选择工具。
+
 常用工具路径：
 
 - 行情摘要：`market_summary`
@@ -59,6 +70,28 @@ hypertrade
 
 - `backend/src/hypertrade/tools/registry.py`
 - `backend/src/hypertrade/agent/kernel.py`
+
+可靠性验证：
+
+```bash
+curl -sS http://127.0.0.1:3334/api/harness/tools | jq '.tools[] | {name, policy}'
+```
+
+你应该观察：
+
+- 每个工具都有 `policy.scope`、`policy.approval`、`policy.idempotency`、
+  `policy.source_of_truth`、`policy.timeout_class` 和 `policy.safe_sample_limit`
+- 触发工具调用后，业务 trace 的 `output_json.policy` 与 graph trace 的
+  `policy_decision` 能对应同一个工具
+- `bitpro_strategy_create`、`bitpro_backtest_start_job`、`bitpro_paper_start`
+  等外部写动作必须携带 `idempotency_key`；缺失时 AgentKernel 会在
+  `graph.approval_check` / `graph.execute_tool` 留下 `status=denied` 的治理
+  trace，报告中出现 `风控治理` 区块，并且不会调用 BitPro adapter
+- 如果工具超时或执行异常，报告中会出现“数据暂不可用”，trace 中会保留
+  `status=unavailable`、`execution_status=timeout|error`、`error` 和
+  `missing_data`
+- 管理员可调用 `POST /api/agent/runs/{run_id}/cancel` 把长运行中的 run
+  持久化为 `canceled`
 
 ## 3. Provider Router
 
@@ -168,6 +201,7 @@ curl -sS "http://127.0.0.1:3334/api/strategy/library?query=momentum_breakout_v1"
 /price ETH
 /candles ETH --bar 1H --limit 100
 /compare ETH SOL --bar 4H --limit 100
+hypertrade ask "看 ETH 资金费率和持仓变化"
 ```
 
 这些命令适合验证：
@@ -176,12 +210,18 @@ curl -sS "http://127.0.0.1:3334/api/strategy/library?query=momentum_breakout_v1"
 - OKX REST 数据读取
 - candle trend feature
 - relative strength ranking
+- `market_intelligence` 工具会读取 OKX public funding/open-interest，并合并
+  curated context。报告应显示 `source`、`source_path`、`as_of`、
+  `freshness_seconds`、`metrics`、`missing_fields` 和样本；缺失字段必须原样
+  标注，不要把情报上下文写成买卖建议。
 
 相关代码：
 
 - `backend/src/hypertrade/market/client.py`
 - `backend/src/hypertrade/market/analysis.py`
+- `backend/src/hypertrade/market/intelligence.py`
 - `backend/src/hypertrade/market/repository.py`
+- `docs/knowledge/market-intelligence-curated.md`
 
 ## 7. Strategy Research and Backtest
 

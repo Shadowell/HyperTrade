@@ -108,6 +108,30 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "market_intelligence",
+            "description": (
+                "Read-only multi-source market intelligence for one symbol, including "
+                "OKX public funding, open interest, and curated market context."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or OKX SWAP instrument id.",
+                    },
+                    "include_curated": {
+                        "type": "boolean",
+                        "description": "Include deterministic curated context, default true.",
+                    },
+                },
+                "required": ["symbol"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "rag_search",
             "description": "Search the project knowledge base for relevant trading context.",
             "parameters": {
@@ -177,6 +201,35 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "strategy_experiment_plan",
+            "description": (
+                "Read strategy-library evidence and produce bounded candidate variants "
+                "for the next strategy experiment without running paper, live, or "
+                "BitPro write tools."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "Strategy iteration prompt or operator goal.",
+                    },
+                    "strategy_key": {
+                        "type": "string",
+                        "description": "Optional canonical strategy key filter.",
+                    },
+                    "max_variants": {
+                        "type": "integer",
+                        "description": "Maximum bounded candidate variants to plan.",
+                    },
+                },
+                "required": ["prompt"],
             },
         },
     },
@@ -691,6 +744,37 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
 ]
 
+_IDEMPOTENCY_REQUIRED_TOOL_NAMES = {
+    "bitpro_strategy_generate",
+    "bitpro_strategy_create",
+    "bitpro_strategy_update",
+    "bitpro_backtest_start_job",
+    "bitpro_paper_configure",
+    "bitpro_paper_start",
+    "bitpro_paper_pause",
+    "bitpro_paper_resume",
+    "bitpro_paper_stop",
+    "live_order_intent",
+}
+
+for schema in TOOL_SCHEMAS:
+    function = schema.get("function", {})
+    name = function.get("name")
+    if name not in _IDEMPOTENCY_REQUIRED_TOOL_NAMES:
+        continue
+    parameters = function.get("parameters", {})
+    properties = parameters.setdefault("properties", {})
+    properties.setdefault(
+        "idempotency_key",
+        {
+            "type": "string",
+            "description": (
+                "Unique key for this requested write action, for example "
+                "run id + tool purpose."
+            ),
+        },
+    )
+
 _SYSTEM_PROMPT = """\
 You are HyperTrade, an agent-first crypto research assistant.
 You have market data tools, RAG search, long-term memory, strategy research, and backtesting.
@@ -700,10 +784,16 @@ Use market_candles when the user asks about trend,走势, K线, breakthrough, pu
 support/resistance, or multi-period market research for a specific symbol.
 Use market_compare when the user asks to compare two or more symbols, relative
 strength, 哪个更强, 跑赢, 强弱, or leader/laggard.
+Use market_intelligence when the user asks about funding, open interest,
+资金费率, 持仓, OI, news, onchain, sentiment, 情绪, 链上, or source-backed market
+context beyond price/K-line data. Treat this as context, not buy/sell advice.
 Use strategy_library_search when the user asks about previous strategy
 experience, 策略库, 历史策略, 记忆沉淀, what has worked/failed, failure reasons,
 or the next strategy experiment. Treat it as evidence from strategy_knowledge
 memory, not as unsourced model recall.
+Use strategy_experiment_plan after strategy_library_search when the user asks
+to continue, iterate, optimize, or plan a next strategy experiment from prior
+evidence. Keep variants bounded and source them to strategy-library evidence.
 Use bitpro_capabilities and bitpro_health before BitPro-specific read tools.
 Do not infer BitPro live runtime status from bitpro_capabilities.live_trading_enabled;
 that flag is the HyperTrade MCP live write/order gate. Use bitpro_paper_dashboard
@@ -741,6 +831,8 @@ artifact rows.
 When the user asks BitPro to develop, store, backtest, or paper-validate a strategy,
 use BitPro strategy/backtest/paper tools. These are research/simulation writes,
 not live trading writes.
+For BitPro strategy/backtest/paper write tools and live_order_intent, include a
+unique idempotency_key. Without it, trusted governance policy will deny execution.
 Plan which tools to call, execute them, then write a concise Markdown report.
 When the user asks to place or prepare an order, use live_order_intent only to
 create a pending human approval item. Never claim that an exchange order was executed.
@@ -802,7 +894,10 @@ class AgentPlanner:
             messages.append(assistant_msg)
 
             for tc in response.tool_calls:
-                result = executor(tc.name, tc.arguments)
+                try:
+                    result = executor(tc.name, tc.arguments)
+                except Exception as exc:  # noqa: BLE001 - preserve run traceability
+                    result = _executor_error_payload(tc.name, exc)
                 tool_calls.append(ToolCallRecord(tc.name, tc.arguments, result))
                 messages.append(
                     {
@@ -816,3 +911,24 @@ class AgentPlanner:
             final_message="Planning loop reached max iterations.",
             tool_calls=tool_calls,
         )
+
+
+def _executor_error_payload(tool_name: str, exc: Exception) -> dict[str, Any]:
+    return {
+        "status": "unavailable",
+        "execution_status": "error",
+        "unavailable_reason": "execution_error",
+        "error": {
+            "type": "execution_error",
+            "message": str(exc)[:240],
+            "retryable": True,
+        },
+        "missing_data": [
+            {
+                "field": "tool_result",
+                "reason": "execution_error",
+                "source_of_truth": "tool_executor",
+            }
+        ],
+        "tool_name": tool_name,
+    }

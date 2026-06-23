@@ -67,6 +67,18 @@ class Settings(BaseSettings):
     knowledge_dir: Path = Field(default=Path("docs/knowledge"), alias="KNOWLEDGE_DIR")
     raw_market_retention_days: int = Field(default=7, alias="RAW_MARKET_RETENTION_DAYS")
     llm_daily_soft_budget_usd: float = Field(default=5.0, alias="LLM_DAILY_SOFT_BUDGET_USD")
+    agent_tool_timeout_quick_seconds: float = Field(
+        default=5.0,
+        alias="AGENT_TOOL_TIMEOUT_QUICK_SECONDS",
+    )
+    agent_tool_timeout_standard_seconds: float = Field(
+        default=30.0,
+        alias="AGENT_TOOL_TIMEOUT_STANDARD_SECONDS",
+    )
+    agent_tool_timeout_long_seconds: float = Field(
+        default=120.0,
+        alias="AGENT_TOOL_TIMEOUT_LONG_SECONDS",
+    )
     bitpro_sqlite_path: Path = Field(default=Path(""), alias="BITPRO_SQLITE_PATH")
     bitpro_mcp_api_base: str = Field(
         default="http://127.0.0.1:8889/api/v2",

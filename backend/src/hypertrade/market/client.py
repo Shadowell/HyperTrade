@@ -45,6 +45,25 @@ class OkxRestClient:
             payload = response.json()
         return [parse_okx_candle(item) for item in payload.get("data", [])]
 
+    async def fetch_funding_rate(self, *, inst_id: str) -> dict[str, Any]:
+        async with httpx.AsyncClient(base_url=self.settings.okx_rest_url, timeout=15) as client:
+            response = await client.get("/api/v5/public/funding-rate", params={"instId": inst_id})
+            response.raise_for_status()
+            payload = response.json()
+        data = payload.get("data", [])
+        return dict(data[0]) if data else {}
+
+    async def fetch_open_interest(self, *, inst_id: str) -> dict[str, Any]:
+        async with httpx.AsyncClient(base_url=self.settings.okx_rest_url, timeout=15) as client:
+            response = await client.get(
+                "/api/v5/public/open-interest",
+                params={"instType": "SWAP", "instId": inst_id},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        data = payload.get("data", [])
+        return dict(data[0]) if data else {}
+
 
 class OkxWsTickerStream:
     def __init__(self, settings: Settings) -> None:

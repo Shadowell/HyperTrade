@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import select
 
 from hypertrade.db import Database, MemoryItem, utc_now
+from hypertrade.strategy.evidence import StrategyEvidence, parse_strategy_evidence
 
 
 class StrategyLibraryService:
@@ -75,6 +76,10 @@ class StrategyLibraryService:
 
 
 def _parse_strategy_memory(item: MemoryItem) -> dict[str, Any]:
+    structured = parse_strategy_evidence(item.content)
+    if structured is not None:
+        return _parse_structured_strategy_memory(item, structured)
+
     lines = [line.strip() for line in item.content.splitlines() if line.strip()]
     identity = _parse_pairs(_line_after_prefix(lines, "experiment="), separator=";")
     metrics = _parse_pairs(_line_after_prefix(lines, "metrics="), separator=";")
@@ -84,7 +89,9 @@ def _parse_strategy_memory(item: MemoryItem) -> dict[str, Any]:
     failure_reasons = _split_reasons(_line_after_prefix(lines, "failure_reasons="))
     next_experiment = _line_after_prefix(lines, "next_experiment=")
     variant_count = _safe_int(_line_after_prefix(lines, "variant_count="))
+    boundaries = _split_reasons(_line_after_prefix(lines, "boundary="))
     return {
+        "schema_version": "",
         "memory_id": item.id,
         "created_at": item.created_at.isoformat(),
         "source_run_id": item.source_run_id,
@@ -93,6 +100,7 @@ def _parse_strategy_memory(item: MemoryItem) -> dict[str, Any]:
         "experiment_id": identity.get("experiment", item.source_run_id),
         "research_id": identity.get("research", ""),
         "backtest_id": identity.get("backtest", ""),
+        "bitpro_result_id": identity.get("bitpro_result_id", ""),
         "variant_id": identity.get("winner", ""),
         "passed": _bool_text(identity.get("passed")),
         "variant_count": variant_count,
@@ -105,6 +113,42 @@ def _parse_strategy_memory(item: MemoryItem) -> dict[str, Any]:
         "gate_results": gate_results,
         "failure_reasons": failure_reasons,
         "next_experiment": next_experiment,
+        "boundaries": boundaries,
+        "tags": item.tags,
+        "importance": str(item.importance),
+        "confidence": str(item.confidence),
+        "_raw_content": item.content,
+    }
+
+
+def _parse_structured_strategy_memory(
+    item: MemoryItem,
+    evidence: StrategyEvidence,
+) -> dict[str, Any]:
+    return {
+        "schema_version": evidence.schema_version,
+        "memory_id": item.id,
+        "created_at": item.created_at.isoformat(),
+        "source_run_id": item.source_run_id,
+        "source_tool": item.source_tool,
+        "strategy_key": evidence.strategy_key,
+        "experiment_id": evidence.experiment_id or item.source_run_id,
+        "research_id": evidence.research_id,
+        "backtest_id": evidence.backtest_id,
+        "bitpro_result_id": evidence.bitpro_result_id,
+        "variant_id": evidence.variant_id,
+        "passed": evidence.passed,
+        "variant_count": evidence.variant_count,
+        "params": evidence.parameters,
+        "total_return_pct": evidence.metrics.get("total_return_pct", "n/a"),
+        "max_drawdown_pct": evidence.metrics.get("max_drawdown_pct", "n/a"),
+        "trade_count": _safe_int(evidence.metrics.get("trade_count")),
+        "score": evidence.metrics.get("score", "n/a"),
+        "data": evidence.source_data,
+        "gate_results": evidence.gate_results,
+        "failure_reasons": evidence.failure_reasons,
+        "next_experiment": evidence.next_experiment,
+        "boundaries": evidence.boundaries,
         "tags": item.tags,
         "importance": str(item.importance),
         "confidence": str(item.confidence),
@@ -157,10 +201,12 @@ def _public_evidence(row: dict[str, Any]) -> dict[str, Any]:
     if not row:
         return {}
     return {
+        "schema_version": row.get("schema_version", ""),
         "memory_id": row.get("memory_id", ""),
         "experiment_id": row.get("experiment_id", ""),
         "research_id": row.get("research_id", ""),
         "backtest_id": row.get("backtest_id", ""),
+        "bitpro_result_id": row.get("bitpro_result_id", ""),
         "variant_id": row.get("variant_id", ""),
         "passed": bool(row.get("passed")),
         "variant_count": row.get("variant_count", 0),
@@ -173,6 +219,7 @@ def _public_evidence(row: dict[str, Any]) -> dict[str, Any]:
         "gate_results": row.get("gate_results", {}),
         "failure_reasons": row.get("failure_reasons", []),
         "next_experiment": row.get("next_experiment", ""),
+        "boundaries": row.get("boundaries", []),
         "created_at": row.get("created_at", ""),
     }
 

@@ -155,6 +155,32 @@ class TestAgentPlannerMarketCompareTool:
         }
 
 
+def test_market_intelligence_schema_exposes_read_only_sources() -> None:
+    schema = next(
+        item for item in TOOL_SCHEMAS if item["function"]["name"] == "market_intelligence"
+    )
+
+    description = schema["function"]["description"]
+    properties = schema["function"]["parameters"]["properties"]
+
+    assert "funding" in description
+    assert "open interest" in description
+    assert "curated" in description
+    assert "Read-only" in description
+    assert properties["symbol"]["type"] == "string"
+    assert properties["include_curated"]["type"] == "boolean"
+
+
+def test_planner_prompt_guides_funding_open_interest_questions_to_intelligence_tool() -> None:
+    prompt = planner_module._SYSTEM_PROMPT
+
+    assert "market_intelligence" in prompt
+    assert "funding" in prompt
+    assert "open interest" in prompt
+    assert "资金费率" in prompt
+    assert "持仓" in prompt
+
+
 def test_strategy_library_search_schema_exposes_memory_sedimentation() -> None:
     schema = next(
         item for item in TOOL_SCHEMAS if item["function"]["name"] == "strategy_library_search"
@@ -163,6 +189,18 @@ def test_strategy_library_search_schema_exposes_memory_sedimentation() -> None:
     assert "strategy_knowledge" in schema["function"]["description"]
     properties = schema["function"]["parameters"]["properties"]
     assert {"query", "strategy_key", "limit"} <= set(properties)
+
+
+def test_strategy_experiment_plan_schema_exposes_evidence_loop_contract() -> None:
+    schema = next(
+        item for item in TOOL_SCHEMAS if item["function"]["name"] == "strategy_experiment_plan"
+    )
+
+    description = schema["function"]["description"]
+    properties = schema["function"]["parameters"]["properties"]
+    assert "strategy-library evidence" in description
+    assert "bounded candidate variants" in description
+    assert {"prompt", "strategy_key", "max_variants"} <= set(properties)
 
 
 def test_can_call_strategy_library_search_tool() -> None:
@@ -192,6 +230,54 @@ def test_can_call_strategy_library_search_tool() -> None:
     assert result.tool_calls[0].input_json == {
         "query": "momentum",
         "strategy_key": "momentum_breakout_v1",
+    }
+
+
+def test_can_call_strategy_library_before_strategy_experiment_plan() -> None:
+    library_call = ToolCallRequest(
+        id="call_strategy_library",
+        name="strategy_library_search",
+        arguments={"query": "momentum_breakout_v1", "strategy_key": "momentum_breakout_v1"},
+    )
+    plan_call = ToolCallRequest(
+        id="call_strategy_experiment_plan",
+        name="strategy_experiment_plan",
+        arguments={
+            "prompt": "继续优化 momentum_breakout_v1",
+            "strategy_key": "momentum_breakout_v1",
+            "max_variants": 3,
+        },
+    )
+    llm = _fake_llm(
+        ChatResponse(content="", tool_calls=[library_call]),
+        ChatResponse(content="", tool_calls=[plan_call]),
+        ChatResponse(content="已基于策略库证据生成下一轮实验计划。", tool_calls=[]),
+    )
+    planner = AgentPlanner(llm)
+    result = planner.run(
+        "继续优化 momentum_breakout_v1",
+        _static_executor(
+            {
+                "strategy_library_search": {
+                    "source": "memory.strategy_knowledge",
+                    "items": [{"strategy_key": "momentum_breakout_v1"}],
+                },
+                "strategy_experiment_plan": {
+                    "mode": "evidence_driven",
+                    "variants": [{"variant_id": "evidence_baseline"}],
+                },
+            }
+        ),
+    )
+
+    assert [call.tool_name for call in result.tool_calls] == [
+        "strategy_library_search",
+        "strategy_experiment_plan",
+    ]
+    assert result.tool_calls[1].input_json == {
+        "prompt": "继续优化 momentum_breakout_v1",
+        "strategy_key": "momentum_breakout_v1",
+        "max_variants": 3,
     }
 
 

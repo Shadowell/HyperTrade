@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Iterable
 from decimal import Decimal
 from typing import Any
@@ -652,6 +653,158 @@ def test_agent_acceptance_specific_symbol_report_uses_exact_ticker_tool(
     assert "Not investment advice" not in replay.messages[0][0]["content"]
 
 
+def test_agent_trace_records_enforced_tool_policy(monkeypatch, tmp_path) -> None:
+    db = _memory_db()
+    MarketRepository(db).upsert_ticker_snapshot(
+        inst_id="DOGE-USDT-SWAP",
+        inst_type="SWAP",
+        last=Decimal("0.200000000000"),
+        volume_ccy_24h=Decimal("1200000.000000000000"),
+        change_utc0_pct=Decimal("1.500000"),
+    )
+    _patch_replay_llm(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_ticker",
+                        name="market_ticker",
+                        arguments={"symbol": "DOGE"},
+                    )
+                ],
+            ),
+            ChatResponse(content="DOGE 已查询。", tool_calls=[]),
+        ],
+    )
+    kernel = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
+        knowledge_dir=str(tmp_path),
+    )
+    monkeypatch.setattr(kernel, "_refresh_market_snapshot", lambda: ("unavailable", "offline"))
+
+    run = kernel.run_chat("看下DOGE行情")
+
+    ticker_event = _business_events(run)[0]
+    assert ticker_event.output_json["policy"] == {
+        "scope": "read",
+        "approval": "none",
+        "idempotency": "not_required",
+        "source_of_truth": "okx_rest",
+        "timeout_class": "quick",
+        "safe_sample_limit": 1,
+        "failure_behavior": "return_unavailable",
+    }
+    approval_node = next(
+        event
+        for event in run.trace_events
+        if event.tool_name == "graph.approval_check"
+        and event.input_json.get("tool_name") == "market_ticker"
+    )
+    assert approval_node.output_json["policy"]["scope"] == "read"
+    assert (
+        approval_node.output_json.get("policy_outcome")
+        or approval_node.output_json.get("status")
+    ) == "allowed"
+
+
+def test_agent_tool_timeout_is_structured_and_keeps_run_completed(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = _memory_db()
+    _patch_replay_llm(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_candles",
+                        name="market_candles",
+                        arguments={"symbol": "ETH", "bar": "1H", "limit": 100},
+                    )
+                ],
+            ),
+            ChatResponse(content="ETH K线暂时不可用。", tool_calls=[]),
+        ],
+    )
+    kernel = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
+        knowledge_dir=str(tmp_path),
+    )
+    monkeypatch.setattr(kernel, "_tool_timeout_seconds", lambda policy: 0.01, raising=False)
+
+    def slow_candles_payload(*, symbol: str, bar: str, limit: int) -> dict[str, Any]:
+        time.sleep(0.05)
+        return _candle_summary(symbol=symbol, bar=bar)
+
+    monkeypatch.setattr(kernel, "_market_candles_payload", slow_candles_payload)
+
+    run = kernel.run_chat("看下ETH走势")
+
+    assert run.status == "completed"
+    candle_event = _business_events(run)[0]
+    assert candle_event.tool_name == "market_candles"
+    assert candle_event.output_json["status"] == "unavailable"
+    assert candle_event.output_json["execution_status"] == "timeout"
+    assert candle_event.output_json["error"] == {
+        "type": "timeout",
+        "message": "market_candles exceeded quick timeout",
+        "retryable": True,
+    }
+    assert candle_event.output_json["missing_data"][0]["reason"] == "tool_timeout"
+    assert candle_event.output_json["policy"]["timeout_class"] == "quick"
+    assert "数据暂不可用" in run.report_markdown
+
+
+def test_agent_tool_exception_is_structured_and_keeps_run_completed(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = _memory_db()
+    _patch_replay_llm(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_candles",
+                        name="market_candles",
+                        arguments={"symbol": "ETH", "bar": "1H", "limit": 100},
+                    )
+                ],
+            ),
+            ChatResponse(content="ETH K线暂时不可用。", tool_calls=[]),
+        ],
+    )
+    kernel = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
+        knowledge_dir=str(tmp_path),
+    )
+
+    def failing_candles_payload(*, symbol: str, bar: str, limit: int) -> dict[str, Any]:
+        raise RuntimeError("upstream candle parser failed")
+
+    monkeypatch.setattr(kernel, "_market_candles_payload", failing_candles_payload)
+
+    run = kernel.run_chat("看下ETH走势")
+
+    assert run.status == "completed"
+    candle_event = _business_events(run)[0]
+    assert candle_event.output_json["status"] == "unavailable"
+    assert candle_event.output_json["execution_status"] == "error"
+    assert candle_event.output_json["error"]["type"] == "execution_error"
+    assert candle_event.output_json["error"]["message"] == "upstream candle parser failed"
+    assert candle_event.output_json["error"]["retryable"] is True
+    assert "数据暂不可用" in run.report_markdown
+
+
 def test_agent_acceptance_trend_and_relative_strength_reports_are_structured(
     monkeypatch,
     tmp_path,
@@ -1150,6 +1303,50 @@ def test_agent_acceptance_bitpro_paper_monitor_snapshot_reports_drift(
     _assert_research_quality(run.report_markdown)
 
 
+def test_agent_acceptance_governance_denies_write_without_idempotency(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = _memory_db()
+    _patch_replay_llm(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_paper_start",
+                        name="bitpro_paper_start",
+                        arguments={"strategy_id": 7},
+                    )
+                ],
+            ),
+            ChatResponse(content="模拟盘启动未执行，因为治理策略拒绝了请求。", tool_calls=[]),
+        ],
+    )
+
+    run = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
+        knowledge_dir=str(tmp_path),
+        bitpro_adapter=ReplayBitProAdapter(),
+    ).run_chat("启动 BitPro 模拟盘策略 7")
+
+    names = _tool_names(run)
+    assert names == ["bitpro_paper_start"]
+    policy_event = _business_events(run)[0]
+    assert policy_event.output_json["status"] == "denied"
+    assert policy_event.output_json["policy"]["scope"] == "paper_write"
+    assert policy_event.output_json["missing_fields"] == ["idempotency_key"]
+    assert policy_event.output_json["denial_reason"] == (
+        "missing required field: idempotency_key"
+    )
+    assert "bitpro.paper_start" not in names
+    assert "## 风控治理" in run.report_markdown
+    assert "bitpro_paper_start: denied" in run.report_markdown
+    assert "missing required field: idempotency_key" in run.report_markdown
+
+
 def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
     monkeypatch,
     tmp_path,
@@ -1168,6 +1365,7 @@ def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
                             "prompt": "ETH 趋势突破策略",
                             "symbol": "ETH",
                             "timeframe": "1H",
+                            "idempotency_key": "test_generate_42",
                         },
                     )
                 ],
@@ -1183,6 +1381,7 @@ def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
                             "script_content": "class ETHTrendBreakout: pass",
                             "description": "Agent generated research draft",
                             "symbols": ["ETH"],
+                            "idempotency_key": "test_create_42",
                         },
                     )
                 ],
@@ -1200,6 +1399,7 @@ def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
                             "initial_capital": 10000,
                             "symbol": "ETH",
                             "timeframe": "1H",
+                            "idempotency_key": "test_backtest_42",
                         },
                     )
                 ],
@@ -1215,6 +1415,7 @@ def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
                             "name": "[合约][1H][CTA] ETH · EMA ATR趋势回撤 · 10000U",
                             "description": "Canonical BitPro strategy name",
                             "symbols": ["ETH/USDT:USDT"],
+                            "idempotency_key": "test_update_42",
                         },
                     )
                 ],
@@ -1235,7 +1436,11 @@ def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
                     ToolCallRequest(
                         id="call_paper_configure",
                         name="bitpro_paper_configure",
-                        arguments={"strategy_id": 42, "initial_equity": 10000},
+                        arguments={
+                            "strategy_id": 42,
+                            "initial_equity": 10000,
+                            "idempotency_key": "test_paper_configure_42",
+                        },
                     )
                 ],
             ),
@@ -1245,7 +1450,10 @@ def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
                     ToolCallRequest(
                         id="call_paper_start",
                         name="bitpro_paper_start",
-                        arguments={"strategy_id": 7},
+                        arguments={
+                            "strategy_id": 7,
+                            "idempotency_key": "test_paper_start_7",
+                        },
                     )
                 ],
             ),

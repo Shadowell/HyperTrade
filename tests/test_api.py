@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from hypertrade.agent.kernel import AgentKernel
 from hypertrade.bitpro.mcp import BitProMcpError
 from hypertrade.config import Settings
-from hypertrade.db import Database
+from hypertrade.db import AgentRun, Database
 from hypertrade.main import create_app
 from hypertrade.market.repository import MarketRepository
 
@@ -45,7 +45,18 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     )
     assert login_response.status_code == 200
     assert "secure" not in login_response.headers["set-cookie"].lower()
-    assert client.get("/api/harness/tools").json()["tools"][-1]["requires_approval"] is True
+    tools = client.get("/api/harness/tools").json()["tools"]
+    assert tools[-1]["requires_approval"] is True
+    market_summary = next(tool for tool in tools if tool["name"] == "market.summary")
+    assert market_summary["policy"] == {
+        "scope": "read",
+        "approval": "none",
+        "idempotency": "not_required",
+        "source_of_truth": "okx_rest",
+        "timeout_class": "standard",
+        "safe_sample_limit": 10,
+        "failure_behavior": "return_unavailable",
+    }
     assert client.get("/api/harness/providers").json()["providers"][0]["name"] == "deepseek"
 
     response = client.post("/api/agent/runs", json={"prompt": "请做行情归纳"})
@@ -77,6 +88,10 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     assert overview["trace"]["total_count"] >= 9
     assert overview["providers"][0]["name"] == "deepseek"
     assert overview["tools"][-1]["requires_approval"] is True
+    live_intent = next(tool for tool in overview["tools"] if tool["name"] == "live.order_intent")
+    assert live_intent["policy"]["scope"] == "testnet_write"
+    assert live_intent["policy"]["approval"] == "required"
+    assert live_intent["policy"]["idempotency"] == "required"
     assert overview["paper"]["session"]["status"] == "running"
 
     rag_hits = client.get("/api/rag/search?query=risk").json()["hits"]
@@ -97,6 +112,11 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
         "memory_behavior",
         "risk_refusal",
         "testnet_order_safety",
+        "strategy_library_history_source",
+        "bitpro_backtest_page_parity",
+        "missing_artifact_disclosure",
+        "paper_monitor_read_only",
+        "compact_report_rendering",
     }
     assert expected_eval_cases == {
         case["name"] for case in evals["cases"]
@@ -225,6 +245,44 @@ def test_api_streams_agent_run_events(tmp_path):
     assert "event: tool_started" in body
     assert "event: tool_completed" in body
     assert "event: run_completed" in body
+
+
+def test_api_can_cancel_running_agent_run(tmp_path):
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    with db.session() as session:
+        run = AgentRun(prompt="long running prompt", status="running")
+        session.add(run)
+        session.flush()
+        run_id = run.id
+    app = create_app(
+        settings=Settings(
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            KNOWLEDGE_DIR=tmp_path,
+            DEEPSEEK_API_KEY="",
+        ),
+        db=db,
+    )
+    client = TestClient(app)
+    assert client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "secret"},
+    ).status_code == 200
+
+    canceled = client.post(f"/api/agent/runs/{run_id}/cancel")
+
+    assert canceled.status_code == 200
+    body = canceled.json()
+    assert body["status"] == "canceled"
+    assert body["report_json"]["error"] == {
+        "type": "run_canceled",
+        "message": "canceled_by_operator",
+        "retryable": False,
+    }
+    detail = client.get(f"/api/agent/runs/{run_id}").json()
+    assert detail["status"] == "canceled"
+    assert detail["report_markdown"] == "Agent run canceled: canceled_by_operator"
 
 
 def test_api_can_switch_active_provider_without_exposing_keys(tmp_path):

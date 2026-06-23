@@ -6,11 +6,24 @@ ToolRegistry is the single catalog for agent-callable tools. Sprint 01 tools are
 
 Policy:
 
-- non-live tools can run automatically from chat
-- live order intent requires approval
-- every tool call must create a trace event
+- every registered tool has `ToolPolicy` metadata: scope, approval,
+  idempotency, source of truth, timeout class, safe sample limit, and failure
+  behavior
+- the trusted runtime evaluates policy before execution and stores the policy
+  decision in `graph.approval_check`, `graph.execute_tool`, and business trace
+  payloads
+- read tools can run automatically from chat; approval-required or blocked
+  tools are surfaced through structured policy outcomes instead of hidden
+  planner behavior
+- idempotency-required tools must supply an idempotency key before execution
 - large outputs should be summarized before entering model context
 - external BitPro calls must go through explicit adapter tools with scopes, idempotency, and audit correlation
+- tool timeout overruns and execution exceptions return structured
+  `status=unavailable` payloads with `missing_data` notes so reports do not
+  collapse into opaque stack traces
+- admin-authenticated `POST /api/agent/runs/{run_id}/cancel` persists
+  `status=canceled`; an in-flight run checks cancellation at the next tool
+  boundary
 
 Specific ticker lookup:
 
@@ -34,11 +47,20 @@ ToolRegistry 是 Agent 可调用工具的唯一目录。Sprint 01 包含行情�
 
 策略：
 
-- 非实盘工具可由聊天自动触发
-- 实盘订单意图必须审批
+- 每个注册工具都有 `ToolPolicy` 元数据：scope、approval、idempotency、
+  source of truth、timeout class、safe sample limit 和 failure behavior
+- 可信运行时在执行前评估 policy，并把决策写入 `graph.approval_check`、
+  `graph.execute_tool` 和业务 trace payload
+- 只读工具可由聊天自动触发；需要审批或被阻断的工具会以结构化 policy outcome
+  展示，而不是隐藏在 planner 行为里
+- 要求幂等的工具必须携带 idempotency key 才能执行
 - 每次工具调用必须生成 trace event
 - 大结果进入模型上下文前要摘要
 - 外部 BitPro 调用必须通过显式 adapter tool，并带有权限 scope、幂等和审计关联
+- 工具超时和执行异常会返回结构化 `status=unavailable` payload，并带
+  `missing_data`，报告不会退化成不透明异常字符串
+- 管理员可通过 `POST /api/agent/runs/{run_id}/cancel` 持久化取消状态；
+  运行中的 Agent 会在下一次工具边界检查取消状态
 
 单标的精确行情：
 

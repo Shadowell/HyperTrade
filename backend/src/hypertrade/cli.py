@@ -21,7 +21,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol, TextIO
+from typing import Any, Literal, Protocol, TextIO, cast
 from urllib.parse import quote
 
 import httpx
@@ -30,10 +30,12 @@ from sqlalchemy import desc, select
 from hypertrade.agent.kernel import AgentKernel, CompletedAgentRun
 from hypertrade.backtest.service import BacktestService
 from hypertrade.config import Settings, get_settings
+from hypertrade.connectors.registry import ConnectorRegistry
 from hypertrade.db import AgentRun, Database, TraceEvent
 from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.memory.service import MemoryService
 from hypertrade.providers.runtime import ProviderRuntime
+from hypertrade.reporting.blocks import ReportBlock, render_report_blocks
 from hypertrade.strategy.experiment import StrategyExperimentService
 from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.service import StrategyResearchService
@@ -51,6 +53,8 @@ class AgentClient(Protocol):
 
     def list_tools(self) -> list[dict[str, Any]]: ...
 
+    def list_connectors(self) -> dict[str, Any]: ...
+
     def list_runs(self) -> list[dict[str, Any]]: ...
 
     def list_memory(self) -> list[dict[str, Any]]: ...
@@ -63,6 +67,12 @@ class AgentClient(Protocol):
 
     def get_evals_status(self) -> dict[str, Any]: ...
 
+    def list_monitors(self) -> list[dict[str, Any]]: ...
+
+    def run_monitor(self, monitor_id: str) -> dict[str, Any]: ...
+
+    def list_alerts(self) -> list[dict[str, Any]]: ...
+
     def list_strategy_research(self) -> list[dict[str, Any]]: ...
 
     def list_strategy_library(self, query: str = "") -> dict[str, Any]: ...
@@ -72,6 +82,8 @@ class AgentClient(Protocol):
     def create_strategy_research(self, prompt: str) -> dict[str, Any]: ...
 
     def create_strategy_experiment(self, prompt: str) -> dict[str, Any]: ...
+
+    def create_strategy_iteration(self, prompt: str) -> dict[str, Any]: ...
 
     def run_backtest(
         self,
@@ -152,12 +164,16 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("/model <provider>", "Switch the active chat provider for this CLI session."),
     ("/providers", "List configured providers and key status."),
     ("/tools", "List registered Agent tools with category, approval gate, and purpose."),
+    ("/connectors", "List external connector capabilities and secret-redacted auth status."),
     ("/runs", "List recent Agent runs."),
     ("/memory", "List active audited memory."),
     ("/memory search <query>", "Search audited memory by text."),
     ("/memory disable <mem_id>", "Disable one memory item without deleting audit history."),
     ("/rag <query>", "Search project and trading knowledge chunks."),
     ("/evals", "Show deterministic Agent eval status."),
+    ("/monitors", "List configured read-only monitors."),
+    ("/monitor run <monitor_id>", "Run one monitor manually and persist alerts."),
+    ("/alerts", "List recent monitor alert events."),
     ("/strategy", "List recent strategy research records."),
     ("/strategy library [query]", "Summarize strategy_knowledge memory as a strategy library."),
     ("/backtests", "List recent backtest runs."),
@@ -191,6 +207,7 @@ SLASH_COMMAND_COMPLETIONS: tuple[str, ...] = tuple(
 SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
     "/model": ("deepseek", "openai", "openrouter", "qwen"),
     "/memory": ("search", "disable"),
+    "/monitor": ("run",),
     "/strategy": ("library",),
     "/backtest": ("list", "latest", "--live", "--source bitpro_mcp"),
     "/paper": ("status", "pause", "resume", "close", "reset"),
@@ -491,6 +508,9 @@ class AgentApiClient:
     def list_tools(self) -> list[dict[str, Any]]:
         return self._get_list("/api/harness/tools", "tools")
 
+    def list_connectors(self) -> dict[str, Any]:
+        return self._get_object("/api/connectors/capabilities")
+
     def list_runs(self) -> list[dict[str, Any]]:
         return self._get_list("/api/agent/runs", "runs")
 
@@ -512,6 +532,15 @@ class AgentApiClient:
     def get_evals_status(self) -> dict[str, Any]:
         return self._get_object("/api/evals/status")
 
+    def list_monitors(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/monitors", "items")
+
+    def run_monitor(self, monitor_id: str) -> dict[str, Any]:
+        return self._post_object(f"/api/monitors/{monitor_id}/run", {})
+
+    def list_alerts(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/alerts", "items")
+
     def list_strategy_research(self) -> list[dict[str, Any]]:
         return self._get_list("/api/strategy/research", "items")
 
@@ -527,6 +556,9 @@ class AgentApiClient:
 
     def create_strategy_experiment(self, prompt: str) -> dict[str, Any]:
         return self._post_object("/api/strategy/experiments", {"prompt": prompt})
+
+    def create_strategy_iteration(self, prompt: str) -> dict[str, Any]:
+        return self._post_object("/api/strategy/experiments/iterate", {"prompt": prompt})
 
     def run_backtest(
         self,
@@ -734,6 +766,9 @@ class LocalAgentClient:
     def list_tools(self) -> list[dict[str, Any]]:
         return [_tool_to_dict(tool) for tool in ToolRegistry.default().list_tools()]
 
+    def list_connectors(self) -> dict[str, Any]:
+        return ConnectorRegistry.default(settings=self.settings).capabilities_payload()
+
     def list_runs(self) -> list[dict[str, Any]]:
         with self.db.session() as session:
             runs = session.scalars(select(AgentRun).order_by(desc(AgentRun.created_at)).limit(10))
@@ -796,6 +831,23 @@ class LocalAgentClient:
     def get_evals_status(self) -> dict[str, Any]:
         return AgentEvalSuite().status()
 
+    def list_monitors(self) -> list[dict[str, Any]]:
+        from hypertrade.monitoring import MonitorService
+
+        return MonitorService(self.db).list_monitors()
+
+    def run_monitor(self, monitor_id: str) -> dict[str, Any]:
+        from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
+        from hypertrade.monitoring import MonitorService
+
+        adapter = BitProToolAdapter(BitProMcpClient(settings=self.settings))
+        return MonitorService(self.db, bitpro_adapter=adapter).run_monitor(monitor_id)
+
+    def list_alerts(self) -> list[dict[str, Any]]:
+        from hypertrade.monitoring import MonitorService
+
+        return MonitorService(self.db).list_alerts()
+
     def list_strategy_research(self) -> list[dict[str, Any]]:
         return StrategyResearchService(self.db).list_recent(limit=10)
 
@@ -810,6 +862,9 @@ class LocalAgentClient:
 
     def create_strategy_experiment(self, prompt: str) -> dict[str, Any]:
         return StrategyExperimentService(self.db).create(prompt)
+
+    def create_strategy_iteration(self, prompt: str) -> dict[str, Any]:
+        return StrategyExperimentService(self.db).create_iteration(prompt)
 
     def run_backtest(
         self,
@@ -1190,6 +1245,8 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
         render_providers(client.get_model_status(), output=output)
     elif name == "/tools":
         render_tools(client.list_tools(), output=output)
+    elif name == "/connectors":
+        render_connectors(client.list_connectors(), output=output)
     elif name == "/runs":
         render_runs(client.list_runs(), output=output)
     elif name == "/memory":
@@ -1198,6 +1255,12 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
         handle_rag_command(command, client=client, output=output)
     elif name in {"/evals", "/eval"}:
         render_evals_status(client.get_evals_status(), output=output)
+    elif name == "/monitors":
+        render_monitors(client.list_monitors(), output=output)
+    elif name == "/monitor":
+        handle_monitor_command(command, client=client, output=output)
+    elif name == "/alerts":
+        render_alerts(client.list_alerts(), output=output)
     elif name in {"/strategy", "/strategies"}:
         handle_strategy_command(command, client=client, output=output)
     elif name == "/backtests":
@@ -1302,14 +1365,48 @@ def handle_experiment_command(command: str, *, client: AgentClient, output: Text
     parts = command.split(maxsplit=1)
     if len(parts) == 1:
         print("Usage: /experiment <prompt>", file=output)
+        print("Usage: /experiment iterate <prompt>", file=output)
         print("Example: /experiment 研究ETH趋势突破并给出回测改进建议", file=output)
         return
+    prompt = parts[1].strip()
+    if prompt.lower().startswith("iterate "):
+        iteration_prompt = prompt.split(maxsplit=1)[1].strip() if " " in prompt else ""
+        if not iteration_prompt:
+            print("Usage: /experiment iterate <prompt>", file=output)
+            return
+        try:
+            experiment = client.create_strategy_iteration(iteration_prompt)
+        except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+            print(f"Strategy iteration failed: {exc}", file=output)
+            return
+        render_strategy_iteration_result(experiment, output=output)
+        return
     try:
-        experiment = client.create_strategy_experiment(parts[1].strip())
+        experiment = client.create_strategy_experiment(prompt)
     except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
         print(f"Experiment failed: {exc}", file=output)
         return
     render_strategy_experiment_result(experiment, output=output)
+
+
+def handle_monitor_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    parts = command.split()
+    subcommand = parts[1].lower() if len(parts) > 1 else "list"
+    if subcommand in {"list", "ls"}:
+        render_monitors(client.list_monitors(), output=output)
+        return
+    if subcommand == "run":
+        if len(parts) < 3:
+            print("Usage: /monitor run <monitor_id>", file=output)
+            return
+        try:
+            result = client.run_monitor(parts[2])
+        except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+            print(f"Monitor run failed: {exc}", file=output)
+            return
+        render_monitor_run(result, output=output)
+        return
+    print("Usage: /monitor list|run <monitor_id>", file=output)
 
 
 def handle_backtest_command(command: str, *, client: AgentClient, output: TextIO) -> None:
@@ -1694,6 +1791,20 @@ def render_strategy_experiment_result(experiment: dict[str, Any], *, output: Tex
     )
 
 
+def render_strategy_iteration_result(experiment: dict[str, Any], *, output: TextIO) -> None:
+    print("Strategy iteration completed:", file=output)
+    print(f"- ID: {experiment.get('id', 'unknown')}", file=output)
+    print(f"- Research: {experiment.get('research_id', 'n/a')}", file=output)
+    print(f"- Backtest: {experiment.get('backtest_id', 'n/a')}", file=output)
+    print(f"- Status: {experiment.get('status', 'unknown')}", file=output)
+    print("", file=output)
+    _render_markdown_report(
+        str(experiment.get("report_markdown", "")),
+        output=output,
+        title="Strategy Iteration",
+    )
+
+
 def render_backtest_result(result: dict[str, Any], *, output: TextIO) -> None:
     metrics = result.get("metrics", {})
     if not isinstance(metrics, dict):
@@ -1929,16 +2040,45 @@ def render_tools(items: list[dict[str, Any]], *, output: TextIO) -> None:
         return
     for item in items:
         description = str(item.get("description") or "No description configured.")
-        gate = (
-            f" {_paint('approval', 'approval', output=output)}"
-            if item.get("requires_approval")
-            else ""
+        policy = item.get("policy")
+        policy = policy if isinstance(policy, dict) else {}
+        approval = str(
+            policy.get(
+                "approval",
+                "required" if item.get("requires_approval") else "none",
+            )
         )
+        policy_text = (
+            f"scope={policy.get('scope', 'unknown')} "
+            f"approval={approval} "
+            f"idempotency={policy.get('idempotency', 'unknown')}"
+        )
+        policy_style = "approval" if approval == "required" else "muted"
         name = _paint(item.get("name", "unknown"), "tool", output=output)
         category = _paint(f"[{item.get('category', 'unknown')}]", "category", output=output)
         print(
-            f"- {name} {category}{gate}: "
+            f"- {name} {category} {_paint(policy_text, policy_style, output=output)}: "
             f"{_paint(description, 'muted', output=output)}",
+            file=output,
+        )
+
+
+def render_connectors(payload: dict[str, Any], *, output: TextIO) -> None:
+    print("Connectors:", file=output)
+    connectors = payload.get("connectors", {})
+    if not isinstance(connectors, dict) or not connectors:
+        print("- none", file=output)
+        return
+    for connector_id, raw_capability in sorted(connectors.items()):
+        capability = raw_capability if isinstance(raw_capability, dict) else {}
+        auth = capability.get("auth", {})
+        auth_payload = auth if isinstance(auth, dict) else {}
+        read_tools = capability.get("read_tools", [])
+        read_tool_count = len(read_tools) if isinstance(read_tools, list) else 0
+        status = "configured" if auth_payload.get("configured") else "not_configured"
+        print(
+            f"- {connector_id}: {capability.get('name', connector_id)} "
+            f"({status}, read_tools={read_tool_count})",
             file=output,
         )
 
@@ -2008,6 +2148,91 @@ def render_evals_status(payload: dict[str, Any], *, output: TextIO) -> None:
             continue
         print(
             f"- {case.get('name', 'unknown')} {case.get('status', 'unknown')}",
+            file=output,
+        )
+
+
+def render_monitors(items: list[dict[str, Any]], *, output: TextIO) -> None:
+    print("Monitors:", file=output)
+    if not items:
+        print("- none", file=output)
+        return
+    for item in items[:20]:
+        enabled = "enabled" if item.get("enabled", True) else "disabled"
+        last_status = item.get("last_status") or "never"
+        last_run_id = item.get("last_run_id") or "n/a"
+        print(
+            "- {id} [{kind}] {enabled} last={last_status} run={last_run}: {name}".format(
+                id=item.get("id", "unknown"),
+                kind=item.get("monitor_type", "unknown"),
+                enabled=enabled,
+                last_status=last_status,
+                last_run=last_run_id,
+                name=item.get("name", ""),
+            ),
+            file=output,
+        )
+
+
+def render_monitor_run(payload: dict[str, Any], *, output: TextIO) -> None:
+    print(f"Monitor run: {payload.get('run_id', 'unknown')}", file=output)
+    print(f"- Monitor: {payload.get('monitor_id', 'unknown')}", file=output)
+    print(f"- Status: {payload.get('status', 'unknown')}", file=output)
+    previous = payload.get("previous_run_id")
+    if previous:
+        print(f"- Previous: {previous}", file=output)
+    metrics = payload.get("metric_snapshot")
+    metrics = metrics if isinstance(metrics, dict) else {}
+    if metrics:
+        print("- Metrics:", file=output)
+        for key in sorted(metrics):
+            print(f"  {key}: {metrics[key]}", file=output)
+    alerts = payload.get("alerts")
+    alerts = alerts if isinstance(alerts, list) else []
+    print("- Alerts:", file=output)
+    if alerts:
+        for alert in alerts[:10]:
+            if not isinstance(alert, dict):
+                continue
+            print(
+                "  [{level}] {code}: {message}".format(
+                    level=alert.get("level", "warning"),
+                    code=alert.get("code", "monitor_alert"),
+                    message=alert.get("message", ""),
+                ),
+                file=output,
+            )
+    else:
+        print("  none", file=output)
+    data_gaps = payload.get("data_gaps")
+    data_gaps = data_gaps if isinstance(data_gaps, list) else []
+    if data_gaps:
+        print("- Data gaps:", file=output)
+        for gap in data_gaps[:10]:
+            print(f"  {gap}", file=output)
+    actions = payload.get("recommended_actions")
+    actions = actions if isinstance(actions, list) else []
+    if actions:
+        print("- Recommended read-only actions:", file=output)
+        for action in actions[:5]:
+            print(f"  {action}", file=output)
+
+
+def render_alerts(items: list[dict[str, Any]], *, output: TextIO) -> None:
+    print("Recent alerts:", file=output)
+    if not items:
+        print("- none", file=output)
+        return
+    for item in items[:20]:
+        print(
+            "- {id} [{level}] {code} monitor={monitor} run={run}: {message}".format(
+                id=item.get("id", "unknown"),
+                level=item.get("level", "warning"),
+                code=item.get("code", "monitor_alert"),
+                monitor=item.get("monitor_id", "unknown"),
+                run=item.get("run_id", "unknown"),
+                message=item.get("message", ""),
+            ),
             file=output,
         )
 
@@ -2164,11 +2389,18 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
         report.get("top_movers"),
         list,
     )
+    report_blocks = report.get("report_blocks") if isinstance(report, dict) else None
+    has_report_blocks = isinstance(report_blocks, list) and bool(report_blocks)
     has_structured_tools = isinstance(trace_events, list) and _has_structured_market_tool_output(
         trace_events
     )
     raw_markdown = _strip_report_icons(str(run.get("report_markdown", ""))).strip()
-    if not has_structured_market_summary and not has_structured_tools and not raw_markdown:
+    if (
+        not has_report_blocks
+        and not has_structured_market_summary
+        and not has_structured_tools
+        and not raw_markdown
+    ):
         return False
 
     if _show_trace_output():
@@ -2184,6 +2416,10 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     if _show_trace_output() and isinstance(trace_events, list) and trace_events:
         _render_rich_trace_summary(trace_events, console=console)
 
+    if has_report_blocks:
+        report_block_items = cast(list[ReportBlock | dict[str, Any]], report_blocks)
+        console.print(render_report_blocks(report_block_items, audit=_show_report_block_audit()))
+        return True
     if _prefer_final_report(run):
         console.print(Markdown(raw_markdown))
         return True
@@ -2988,12 +3224,19 @@ def _rich_drawdown_style(value: object) -> str:
 
 
 def _render_structured_report(run: dict[str, Any], *, output: TextIO) -> bool:
+    report = run.get("report_json", {})
+    if isinstance(report, dict):
+        report_blocks = report.get("report_blocks")
+        if isinstance(report_blocks, list) and report_blocks:
+            rendered = render_report_blocks(report_blocks, audit=_show_report_block_audit())
+            if rendered.strip():
+                print(rendered, file=output)
+                return True
     if _prefer_final_report(run):
         return False
     if _prefer_compact_paper_report(run):
         _render_compact_bitpro_paper_report(run, output=output)
         return True
-    report = run.get("report_json", {})
     if not isinstance(report, dict) or not report:
         return False
     if isinstance(report.get("top_movers"), list):
@@ -3027,7 +3270,14 @@ def _prefer_compact_paper_report(run: dict[str, Any]) -> bool:
 
 def _report_source_forces_tool_output() -> bool:
     source = os.getenv("HYPERTRADE_REPORT_SOURCE", "final").strip().lower()
-    return source in {"tool", "tools", "trace", "structured"}
+    return source in {"tool", "tools", "trace", "structured", "audit", "provenance"}
+
+
+def _show_report_block_audit() -> bool:
+    source = os.getenv("HYPERTRADE_REPORT_SOURCE", "final").strip().lower()
+    if source in {"audit", "audits", "provenance", "source", "sources"}:
+        return True
+    return _show_full_trace()
 
 
 def _paper_tool_outputs_by_tool(run: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -4032,6 +4282,7 @@ def _tool_to_dict(tool: ToolDefinition) -> dict[str, Any]:
         "description": tool.description,
         "category": tool.category,
         "requires_approval": tool.requires_approval,
+        "policy": tool.policy.to_dict(),
     }
 
 

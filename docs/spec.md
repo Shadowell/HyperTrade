@@ -99,6 +99,16 @@ its own Agent capabilities:
 - Sprint 42 BitPro paper evidence layer: `bitpro_paper_events` and `bitpro_paper_equity_curve` read bounded event/error and equity/drawdown evidence for paper monitoring, with structured Agent/CLI reports.
 - Sprint 43 BitPro paper monitor snapshots: `bitpro_paper_monitor_snapshot` persists read-only paper dashboard/event/equity summaries, compares each capture with the previous snapshot for the same scope, and reports drift alerts/data gaps.
 - Sprint 44 strategy library memory: `strategy_knowledge` Memory cards are aggregated into strategy-level evidence summaries through `StrategyLibraryService`, `GET /api/strategy/library`, CLI `/strategy library`, Agent tool `strategy_library_search`, and ToolRegistry entry `strategy.library_search`.
+- Sprint 48 multi-source market intelligence: Agent tool `market_intelligence`
+  reads OKX public funding/open-interest evidence plus deterministic curated
+  market context, normalizes provenance/freshness/missing-field fields, and
+  renders a compact `市场情报` report section as context rather than advice.
+- Sprint 49 risk governance policy: `RiskGovernancePolicy` enforces
+  ToolRegistry scope/approval/idempotency metadata before Agent tool execution,
+  denies write-like external actions without `idempotency_key`, records
+  `policy_decision` trace payloads, and renders clear governance denial reasons.
+- Sprint 46 strategy evidence schema: new `strategy_knowledge` cards store versioned `StrategyEvidence` JSON payloads while `StrategyLibraryService` remains backward compatible with legacy text cards.
+- Strategy iteration planning can read prior strategy-library evidence through `strategy_experiment_plan`, `/api/strategy/experiments/iterate`, and CLI `/experiment iterate <prompt>` without triggering paper, live, or BitPro write tools.
 - Sprint 55 CLI slash command candidates: incomplete slash prefixes such as `/st` or `/me` render filtered candidates with purpose descriptions, and readline Tab completion can display the same described candidate list.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
@@ -128,6 +138,9 @@ its own Agent capabilities:
   to return OHLCV-derived features.
 - User can compare multiple listed OKX SWAP symbols and the Agent can return relative strength
   rankings.
+- User can ask for funding/open-interest context, such as `看 ETH 资金费率和持仓变化`,
+  and the Agent can call `market_intelligence`, show source paths, timestamps,
+  metrics, missing fields, and curated context without turning it into buy/sell advice.
 - User can create a strategy research record and run a deterministic Backtrader backtest.
 - Developer can run `hypertrade` as a standalone CLI Agent and see run id, tool calls, and report output.
 - Developer can use the production host `hypertrade` wrapper as a remote client without attaching to the long-running API service container, so deploy-time API replacement does not terminate the terminal session.
@@ -163,6 +176,8 @@ its own Agent capabilities:
 - Completed local strategy experiments are automatically searchable through Memory as `strategy_knowledge`, with source experiment/backtest ids and evidence metrics rather than unsourced strategy claims.
 - Developer can run `/strategy library [query]` or `GET /api/strategy/library` to inspect grouped local strategy evidence: evidence counts, pass/fail counts, best/latest backtest evidence, variants, failure reasons, next experiments, and source Memory ids.
 - Agent can use `strategy_library_search` for strategy-library/history/next-experiment questions so prior local strategy experience comes from audited `strategy_knowledge` evidence instead of model recall.
+- New strategy evidence cards expose `schema_version=strategy_evidence.v1`, preserve decimal metrics as strings, keep source ids/boundaries visible, and let missing fields surface as `n/a` or empty values instead of inferred data.
+- Developer can run `/experiment iterate <prompt>` or call `strategy_experiment_plan` to produce bounded candidate variants from prior strategy-library evidence before any new paper/live promotion path.
 - Developer can run `/evals` and inspect deterministic Agent eval status.
 - Operator can use `docs/knowledge/tool-usage-guide.md` to validate each Agent tool surface and follow related operational source-code comments.
 - Operator can review the BitPro tool-surface requirements before wiring external data, backtest, paper/simulation, or live-state APIs into Agent tools.

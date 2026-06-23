@@ -310,6 +310,117 @@ test("renders harness observability from live overview", async () => {
   expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
 });
 
+test("renders strategy library evidence and source drilldown ids", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/harness/overview")) {
+      return jsonResponse(overview);
+    }
+    if (url.endsWith("/api/memory")) {
+      return jsonResponse({ items: [] });
+    }
+    if (url.endsWith("/api/strategy/library")) {
+      return jsonResponse(strategyLibrary);
+    }
+    if (url.endsWith("/api/monitor/alerts")) {
+      return jsonResponse({ items: [] });
+    }
+    return jsonResponse({}, 404);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(<App />);
+
+  expect(await screen.findByText("策略库")).toBeInTheDocument();
+  expect(screen.getByText("memory.strategy_knowledge")).toBeInTheDocument();
+  expect((await screen.findAllByText("momentum_breakout_v1")).length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("momentum_breakout_v1").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("fast")).toBeInTheDocument();
+  expect(screen.getByText("12.5%")).toBeInTheDocument();
+  expect(screen.getByText("require_non_negative_return")).toBeInTheDocument();
+  expect(screen.getByText("Test adjacent SMA windows around 3 on BitPro MCP candles.")).toBeInTheDocument();
+  expect(screen.getAllByText(/mem_winning/).length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText(/exp_winning/)).toBeInTheDocument();
+  expect(screen.getByText(/bt_winning/)).toBeInTheDocument();
+  expect(screen.getByText("#196")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /momentum_breakout_v1/ }));
+
+  expect(screen.getByText("证据详情")).toBeInTheDocument();
+  expect(screen.getAllByText("memory: mem_winning").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("experiment: exp_winning").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("backtest: bt_winning").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("bitpro_result: 196")).toBeInTheDocument();
+});
+
+test("renders monitor empty states and readonly approval risk status", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/harness/overview")) {
+        return jsonResponse(overview);
+      }
+      if (url.endsWith("/api/memory")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.endsWith("/api/strategy/library")) {
+        return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
+      }
+      if (url.endsWith("/api/monitor/alerts")) {
+        return jsonResponse({}, 404);
+      }
+      return jsonResponse({}, 404);
+    })
+  );
+
+  render(<App />);
+
+  expect(await screen.findByText("监控告警")).toBeInTheDocument();
+  expect(screen.getByText("暂无策略证据")).toBeInTheDocument();
+  expect(screen.getByText("暂无监控告警")).toBeInTheDocument();
+  expect(screen.getByText("待审批")).toBeInTheDocument();
+  expect(await screen.findByText("loi_live")).toBeInTheDocument();
+  expect(screen.getByText("allowed")).toBeInTheDocument();
+  expect(screen.queryByText("API 404")).not.toBeInTheDocument();
+});
+
+test("loads a recent run and renders structured report blocks with audit sources", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/harness/overview")) {
+      return jsonResponse(overview);
+    }
+    if (url.endsWith("/api/memory")) {
+      return jsonResponse({ items: [] });
+    }
+    if (url.endsWith("/api/strategy/library")) {
+      return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
+    }
+    if (url.endsWith("/api/monitor/alerts")) {
+      return jsonResponse({ items: [] });
+    }
+    if (url.endsWith("/api/agent/runs/run_live")) {
+      return jsonResponse(structuredRun);
+    }
+    return jsonResponse({}, 404);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: /run_live/ }));
+
+  expect(await screen.findByText("结构化报告")).toBeInTheDocument();
+  expect(screen.getByText("监控结论")).toBeInTheDocument();
+  expect(screen.getByText("风险正常")).toBeInTheDocument();
+  expect(screen.getByText("total_pnl_pct")).toBeInTheDocument();
+  expect(screen.getByText("-3.3")).toBeInTheDocument();
+  expect(screen.getAllByText("source: tool:bitpro_paper_dashboard").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("missing: per_strategy_drawdown")).toBeInTheDocument();
+  expect(screen.getByText("Markdown fallback paragraph")).toBeInTheDocument();
+});
+
 test("sidebar navigation keeps the clicked section active", async () => {
   vi.stubGlobal(
     "fetch",
@@ -324,6 +435,12 @@ test("sidebar navigation keeps the clicked section active", async () => {
       if (url.endsWith("/api/memory")) {
         return jsonResponse({ items: [] });
       }
+      if (url.endsWith("/api/strategy/library")) {
+        return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
+      }
+      if (url.endsWith("/api/monitor/alerts")) {
+        return jsonResponse({ items: [] });
+      }
       return jsonResponse({}, 404);
     })
   );
@@ -332,14 +449,94 @@ test("sidebar navigation keeps the clicked section active", async () => {
 
   const harnessLink = screen.getByRole("link", { name: "工作台" });
   const runsLink = screen.getByRole("link", { name: "最近运行" });
+  const strategyLink = screen.getByRole("link", { name: "策略库" });
   expect(harnessLink).toHaveClass("nav-item-active");
 
-  fireEvent.click(runsLink);
+  fireEvent.click(strategyLink);
 
-  expect(runsLink).toHaveClass("nav-item-active");
+  expect(strategyLink).toHaveClass("nav-item-active");
   expect(harnessLink).not.toHaveClass("nav-item-active");
+  fireEvent.click(runsLink);
+  expect(runsLink).toHaveClass("nav-item-active");
+  expect(strategyLink).not.toHaveClass("nav-item-active");
   expect(await screen.findByText("344")).toBeInTheDocument();
 });
+
+const strategyLibrary = {
+  source: "memory.strategy_knowledge",
+  memory_count: 2,
+  items: [
+    {
+      strategy_key: "momentum_breakout_v1",
+      evidence_count: 2,
+      passed_count: 1,
+      failed_count: 1,
+      best: {
+        memory_id: "mem_winning",
+        experiment_id: "exp_winning",
+        research_id: "srch_winning",
+        backtest_id: "bt_winning",
+        bitpro_result_id: "196",
+        variant_id: "fast",
+        passed: true,
+        total_return_pct: "12.5",
+        max_drawdown_pct: "3.1",
+        trade_count: 8,
+        score: "11.75",
+        data: { source: "bitpro_mcp_market_klines", inst_id: "ETH-USDT-SWAP" },
+        gate_results: { min_trade_count: true }
+      },
+      latest: {
+        memory_id: "mem_winning",
+        experiment_id: "exp_winning",
+        backtest_id: "bt_winning",
+        variant_id: "fast"
+      },
+      variants: [
+        { variant_id: "baseline", evidence_count: 1, passed_count: 0 },
+        { variant_id: "fast", evidence_count: 1, passed_count: 1 }
+      ],
+      failure_reasons: ["require_non_negative_return"],
+      next_experiments: ["Test adjacent SMA windows around 3 on BitPro MCP candles."],
+      source_memory_ids: ["mem_losing", "mem_winning"]
+    }
+  ]
+};
+
+const structuredRun = {
+  id: "run_live",
+  status: "completed",
+  report_markdown: "# Markdown fallback\n\nMarkdown fallback paragraph",
+  report_json: {
+    report_blocks: [
+      {
+        block_type: "summary",
+        title: "监控结论",
+        notes: ["风险正常"],
+        source_refs: ["tool:bitpro_paper_dashboard"]
+      },
+      {
+        block_type: "metric_table",
+        title: "核心指标",
+        metrics: [
+          { label: "total_pnl_pct", value: "-3.3" },
+          { label: "max_drawdown_pct", value: "12.4" }
+        ],
+        missing: ["per_strategy_drawdown"],
+        source_refs: ["tool:bitpro_paper_dashboard"]
+      }
+    ]
+  },
+  run_state_json: { current_node: "final_report" },
+  trace_events: [
+    {
+      id: "trace_live",
+      tool_name: "bitpro_paper_dashboard",
+      status: "completed",
+      created_at: "2026-05-27T00:00:00+08:00"
+    }
+  ]
+};
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
