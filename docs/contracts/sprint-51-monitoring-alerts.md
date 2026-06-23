@@ -62,7 +62,8 @@ otherwise expose manual monitor run first and document scheduler follow-up.
 ## Verification
 
 ```bash
-uv run pytest tests/test_bitpro_paper_monitor.py tests/test_cli.py -q
+uv run pytest tests/test_monitoring_alerts.py tests/test_bitpro_paper_monitor_service.py -q
+uv run pytest tests/test_cli.py tests/test_api.py -q
 uv run pytest tests/test_agent_acceptance.py -q
 ./scripts/check.sh
 ```
@@ -80,4 +81,3 @@ Manual or QA checks:
 ## Handoff
 
 - Next likely step: Sprint 52 can render monitors and alerts in `/harness`.
-

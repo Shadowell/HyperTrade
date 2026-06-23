@@ -18,6 +18,7 @@ runbooks, and sprint state. Chat history is not considered durable project state
 - `knowledge/tool-usage-guide.md`: operator-facing guide for validating Agent tools.
 - `runbooks/deployment-smoke.md`: post-deploy smoke checklist.
 - `runbooks/bitpro-mcp-data-access.md`: BitPro MCP access and safety procedure.
+- `runbooks/monitoring-alerts.md`: monitor execution and alert triage procedure.
 
 ## Current Capability Map
 
@@ -31,6 +32,7 @@ runbooks, and sprint state. Chat history is not considered durable project state
 | Strategy research | `/research`, `/backtest`, `/experiment` | `architecture/16-strategy-agent-workflow.md` |
 | Strategy knowledge memory | `/strategy library`, `GET /api/strategy/library`, `kind=strategy_knowledge` memory search | `knowledge/strategy-research-playbook.md` |
 | BitPro MCP | Agent tools, API adapter, backtest artifacts, paper evidence snapshots | `architecture/17-bitpro-tool-adapter.md` |
+| Monitoring and alerts | `/monitors`, `/monitor run`, `/alerts`, monitor API | `runbooks/monitoring-alerts.md` |
 | Capability roadmap | Parallel Agent sprint contracts after Sprint 44 | `architecture/18-hypertrade-capability-roadmap.md` |
 | Parallel Agent prompts | Copy-ready prompts for Sprint 45-54 Agents | `agent-prompts/parallel-sprint-prompts.md` |
 | Risk/Testnet execution | `/live intent`, `/live approve`, `/live execute` | `architecture/14-risk-engine.md`, `architecture/15-okx-testnet-execution.md` |

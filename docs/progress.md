@@ -19,6 +19,11 @@
 
 ## Latest Completed Work
 
+- Added the Sprint 51 monitoring and alerts runbook and docs links for
+  `/monitors`, `/monitor run <monitor_id>`, `/alerts`, and the matching monitor
+  API. The runbook records the read-only boundary, default monitors,
+  threshold/alert payloads, and manual smoke path for BitPro paper monitoring,
+  strategy-library freshness, and connector health.
 - Added Sprint 56 market heat summaries: broad all-market heat/sentiment/breadth
   prompts now route to `market_summary`, compute OKX SWAP breadth metrics
   (`advancers`, `decliners`, average UTC0 change, strongest/weakest symbols),

@@ -95,6 +95,9 @@ tables instead.
 /memory search risk
 /model deepseek
 /experiment 研究ETH趋势突破
+/monitors
+/monitor run mon_bitpro_paper_all
+/alerts
 /live execute loi_...
 /evals
 ```
@@ -106,4 +109,4 @@ tables instead.
 - `docs/progress.md`: latest implementation/deployment state.
 - `docs/architecture/`: module-level architecture notes.
 - `docs/knowledge/tool-usage-guide.md`: operator guide for Agent tools and validation.
-- `docs/runbooks/`: deployment, BitPro MCP, smoke, backup, and incident procedures.
+- `docs/runbooks/`: deployment, BitPro MCP, monitoring, smoke, backup, and incident procedures.
