@@ -4,21 +4,34 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 56 market heat summary verified locally with
-  `./scripts/check.sh` (`pytest` 206 passed).
+- Last verified state: Agent 53 evaluation suite verified locally on the
+  current Sprint 56 baseline with `./scripts/check.sh` (`pytest` 207 passed).
 
 ## Active Contract
 
 - No active implementation contract. Last completed:
-  `docs/contracts/sprint-56-market-heat-summary.md`.
+  `docs/contracts/sprint-53-agent-evaluation-suite.md` on top of the current
+  Sprint 56 baseline.
 
 ## Current In-Progress Work
 
-- None. Sprint 56 is complete in this branch; select a new contract before
+- None. Agent 53 is complete in this branch; select a new contract before
   starting more implementation scope.
 
 ## Latest Completed Work
 
+- Added Agent 53 / Sprint 53 evaluation suite hardening: `/evals` now exposes
+  deterministic guardrail cases for strategy-library source use, BitPro
+  page-parity result metrics, missing artifact disclosure, paper-monitor
+  read-only behavior, and compact/default report rendering. The eval contract
+  includes required/forbidden tools, report fragments, source ids, and
+  missing-data expectations; fixture helpers cover source-bound tool outputs and
+  strategy-memory evidence.
+- Verification: `uv run pytest tests/test_agent_acceptance.py -q` -> 16
+  passed; `uv run pytest tests/test_agent_eval_suite.py -q` -> 5 passed;
+  `uv run pytest tests/test_api.py tests/test_cli.py -q` -> 69 passed;
+  `./scripts/check.sh` -> frontend install/lint/test/build passed, ruff and
+  mypy passed, pytest 207 passed.
 - Added the Sprint 51 monitoring and alerts runbook and docs links for
   `/monitors`, `/monitor run <monitor_id>`, `/alerts`, and the matching monitor
   API. The runbook records the read-only boundary, default monitors,

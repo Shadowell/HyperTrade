@@ -108,6 +108,10 @@ its own Agent capabilities:
   ToolRegistry scope/approval/idempotency metadata before Agent tool execution,
   denies write-like external actions without `idempotency_key`, records
   `policy_decision` trace payloads, and renders clear governance denial reasons.
+- Sprint 53 Agent evaluation suite: deterministic eval cases now guard
+  strategy-library source use, BitPro page-parity result metrics, missing
+  artifact disclosure, paper-monitor read-only behavior, and compact/default
+  report rendering in addition to the original tool/RAG/Memory/risk checks.
 - Sprint 46 strategy evidence schema: new `strategy_knowledge` cards store versioned `StrategyEvidence` JSON payloads while `StrategyLibraryService` remains backward compatible with legacy text cards.
 - Strategy iteration planning can read prior strategy-library evidence through `strategy_experiment_plan`, `/api/strategy/experiments/iterate`, and CLI `/experiment iterate <prompt>` without triggering paper, live, or BitPro write tools.
 - Sprint 55 CLI slash command candidates: incomplete slash prefixes such as `/st` or `/me` render filtered candidates with purpose descriptions, and readline Tab completion can display the same described candidate list.
@@ -181,7 +185,9 @@ its own Agent capabilities:
 - Agent can use `strategy_library_search` for strategy-library/history/next-experiment questions so prior local strategy experience comes from audited `strategy_knowledge` evidence instead of model recall.
 - New strategy evidence cards expose `schema_version=strategy_evidence.v1`, preserve decimal metrics as strings, keep source ids/boundaries visible, and let missing fields surface as `n/a` or empty values instead of inferred data.
 - Developer can run `/experiment iterate <prompt>` or call `strategy_experiment_plan` to produce bounded candidate variants from prior strategy-library evidence before any new paper/live promotion path.
-- Developer can run `/evals` and inspect deterministic Agent eval status.
+- Developer can run `/evals` and inspect deterministic Agent eval status for
+  tool choice, source-of-truth usage, unsupported-claim guardrails,
+  missing-data preservation, and compact report rendering.
 - Operator can use `docs/knowledge/tool-usage-guide.md` to validate each Agent tool surface and follow related operational source-code comments.
 - Operator can review the BitPro tool-surface requirements before wiring external data, backtest, paper/simulation, or live-state APIs into Agent tools.
 - Operator can call BitPro read tools through HyperTrade API/Agent paths while every flow starts with `bitpro_capabilities` and `bitpro_health`.

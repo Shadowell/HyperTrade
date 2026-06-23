@@ -29,7 +29,7 @@ Run the full project check:
 | RAG + Memory | `结合知识库和记忆，说下资金费率风险` | `rag_search`, `memory_search`, `memory_write` | Trace links RAG hit source path, writes audited memory id, and records tool inputs in `report_json`. |
 | Strategy + backtest | `研究ETH趋势突破并回测` | `strategy_draft`, `backtest_run` | Trace contains `srch_*` research id, `bt_*` backtest id, completed status, metrics, and a research/risk boundary when the report discusses strategy or backtest conclusions. |
 
-## Sprint 24-31 Additions
+## Sprint 24+ Additions
 
 | Case | Entry point | Expected checks |
 | --- | --- | --- |
@@ -43,7 +43,7 @@ Run the full project check:
 | Strategy knowledge memory | `POST /api/strategy/experiments` then `GET /api/memory?kind=strategy_knowledge` | Memory contains one source-bound strategy evidence card with experiment/backtest ids, winner, metrics, gates, and tags. |
 | Strategy library memory | `/strategy library momentum_breakout_v1` or `GET /api/strategy/library` | Shows grouped strategy evidence with source memory ids, best/latest evidence, pass/fail counts, failure reasons, and next experiments. |
 | Strategy library Agent | `总结策略库里 momentum_breakout_v1 的历史经验` | Calls `strategy_library_search` and reports evidence from `strategy_knowledge` memory, not unsourced model recall. |
-| Eval suite | `/evals` | Deterministic eval status shows tool selection, RAG citation, memory, risk refusal, and Testnet safety cases. |
+| Eval suite | `/evals` | Deterministic eval status shows tool selection, RAG citation, memory, risk refusal, Testnet safety, strategy-library source use, BitPro page parity, missing artifact disclosure, paper monitor read-only behavior, and compact report rendering. |
 | BitPro result ranking | `查看 BitPro 回测收益大于100%的策略有哪些` | Calls `bitpro_backtest_list_results` and reports actual `total_return_pct`, not annualized return or memory. |
 | BitPro result detail | `查看 BitPro 回测 result 196 的权益曲线和交易证据` | Calls `bitpro_backtest_get_result`, reports real metrics and bounded artifact availability, and does not invent missing rows. |
 | BitPro paper monitor | `监控 BitPro 所有运行中的模拟盘策略` | Calls `bitpro_paper_dashboard` plus running strategy inventory, reports alerts/data gaps/read-only actions. |
@@ -105,6 +105,7 @@ Expected server observations:
 - Strategy experiments create searchable `strategy_knowledge` memory cards.
 - Strategy library output groups prior `strategy_knowledge` evidence and keeps source memory ids visible.
 - BitPro backtest ranking/detail reports use page-parity result metrics and keep low-signal lifecycle/tool-order/RAG citation noise out of the default report body.
+- `/evals` shows the Sprint 53 guardrail cases and fails if required tool calls, source ids, missing-data notes, or compact-report invariants disappear.
 
 ## Notes
 
