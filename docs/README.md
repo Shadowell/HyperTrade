@@ -7,6 +7,8 @@ runbooks, and sprint state. Chat history is not considered durable project state
 
 - `spec.md`: product scope, V1 acceptance criteria, and explicit out-of-scope boundaries.
 - `progress.md`: latest completed work, verification status, and deployment notes.
+- `architecture/18-hypertrade-capability-roadmap.md`: post-Sprint-44 capability
+  roadmap and parallel sprint plan for Agent development.
 - `knowledge/tool-usage-guide.md`: operator-facing guide for validating Agent tools.
 - `runbooks/deployment-smoke.md`: post-deploy smoke checklist.
 - `runbooks/bitpro-mcp-data-access.md`: BitPro MCP access and safety procedure.
@@ -23,6 +25,7 @@ runbooks, and sprint state. Chat history is not considered durable project state
 | Strategy research | `/research`, `/backtest`, `/experiment` | `architecture/16-strategy-agent-workflow.md` |
 | Strategy knowledge memory | `/strategy library`, `GET /api/strategy/library`, `kind=strategy_knowledge` memory search | `knowledge/strategy-research-playbook.md` |
 | BitPro MCP | Agent tools, API adapter, backtest artifacts, paper evidence snapshots | `architecture/17-bitpro-tool-adapter.md` |
+| Capability roadmap | Parallel Agent sprint contracts after Sprint 44 | `architecture/18-hypertrade-capability-roadmap.md` |
 | Risk/Testnet execution | `/live intent`, `/live approve`, `/live execute` | `architecture/14-risk-engine.md`, `architecture/15-okx-testnet-execution.md` |
 | CLI | `hypertrade`, `ht`, slash commands | `architecture/11-cli-conversation-harness.md` |
 | Frontend workbench | `/harness` core console | `architecture/09-frontend-harness.md` |

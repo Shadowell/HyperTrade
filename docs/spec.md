@@ -26,6 +26,26 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 6. User creates auditable strategy research records and Backtrader backtests through API/CLI workflows.
 7. Developer runs `hypertrade` for a standalone terminal Agent, or `hypertrade --remote <url>` to connect to a deployed API.
 
+## Post-Sprint-44 Capability Roadmap
+
+The next development phase is split into parallel contracts under
+`docs/contracts/sprint-45-*` through `docs/contracts/sprint-54-*`. The governing
+design document is `docs/architecture/18-hypertrade-capability-roadmap.md`.
+
+The roadmap keeps BitPro as the trading-system platform while HyperTrade grows
+its own Agent capabilities:
+
+- Agent runtime reliability and tool policy
+- structured strategy evidence
+- evidence-driven strategy iteration
+- multi-source market intelligence
+- risk and governance policy
+- report provenance
+- monitoring and alerts
+- frontend operator console
+- Agent evaluation suite
+- connector framework
+
 ## V1 In Scope
 
 - FastAPI backend with public workbench observability/read endpoints and admin session auth for privileged mutations.

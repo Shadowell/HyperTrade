@@ -12,6 +12,14 @@
 
 ## Latest Completed Work
 
+- Added the post-Sprint-44 capability roadmap for parallel Agent development:
+  `docs/architecture/18-hypertrade-capability-roadmap.md` defines the target
+  capability map and dependencies, and Sprint contracts 45-54 split Agent
+  runtime reliability, strategy evidence schema, evidence-driven strategy loops,
+  multi-source market intelligence, risk governance, report provenance,
+  monitoring/alerts, frontend operator console, evals, and connector framework
+  into independent handoff packages.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 161 tests.
 - Aligned the HyperTrade BitPro adapter with BitPro MCP Agent Token management: local `bitpro_capabilities` and `/api/harness/overview` now expose `remote_mcp`, `agent_auth`, token-management routes, R/W/L/T scope classes, live-diagnostic grouping, and idempotency-required tools without exposing token plaintext; `/harness` also shows a compact BitPro MCP access status panel for Token source/header/scope checks.
 - Tightened CLI/Agent paper-report output: default stream progress now folds to `Agent: running/completed`, Rich and plain renderers prefer concise final BitPro paper reports, old noisy paper Markdown with strategy inventories or equity-point samples is folded into a compact paper summary, and `HYPERTRADE_PROGRESS=full` / `HYPERTRADE_REPORT_SOURCE=tools` keep debug/audit detail available.
 - Shortened server-side BitPro paper final reports: paper dashboard/events/equity/snapshot sections now include the planner conclusion plus core metrics, alerts, data gaps, and latest error only, without raw strategy inventory rows, equity-point samples, ordinary event rows, contract/tool-order fields, or citation sections.
