@@ -15,6 +15,8 @@ files into the RAG tables by file hash.
 - `rag-usage.md`: how curated Markdown becomes searchable context.
 - `strategy-research-playbook.md`: local strategy experiment workflow,
   evidence expectations, and `strategy_knowledge` memory sedimentation.
+- `connector-framework-guide.md`: trusted connector shape, secret rules, and
+  the checklist for adding new connector-backed sources.
 
 ## Writing Rules
 

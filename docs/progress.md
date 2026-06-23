@@ -4,22 +4,33 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Agent 53 evaluation suite verified locally on the
-  current Sprint 56 baseline with `./scripts/check.sh` (`pytest` 207 passed).
+- Last verified state: Agent 54 connector framework verified locally with
+  `./scripts/check.sh` (`pytest` 207 passed).
 
 ## Active Contract
 
 - No active implementation contract. Last completed:
-  `docs/contracts/sprint-53-agent-evaluation-suite.md` on top of the current
-  Sprint 56 baseline.
+  `docs/contracts/sprint-54-connector-framework.md`.
 
 ## Current In-Progress Work
 
-- None. Agent 53 is complete in this branch; select a new contract before
+- None. Sprint 54 is complete in this branch; select a new contract before
   starting more implementation scope.
 
 ## Latest Completed Work
 
+- Added Sprint 54 connector framework: trusted connector protocol/dataclasses,
+  `ConnectorRegistry`, deterministic `FixtureConnector`, and `BitProConnector`
+  compatibility wrapper over the existing BitPro MCP adapter. Redacted
+  connector capabilities are exposed through `GET /api/connectors/capabilities`,
+  `/api/harness/overview.connectors`, CLI `/connectors`, and ToolRegistry
+  `connector_origin` metadata for BitPro-backed tools. Focused verification:
+  `uv run pytest tests/test_connector_framework.py tests/test_tool_registry.py
+  -q`, `uv run pytest tests/test_cli.py -q`,
+  `uv run pytest tests/test_api.py -q`, contract verification
+  `uv run pytest tests/test_bitpro_mcp_adapter.py tests/test_tool_registry.py
+  -q`, `uv run pytest tests/test_agent_acceptance.py -q`, and full
+  `./scripts/check.sh` (`pytest` 207 passed).
 - Added Agent 53 / Sprint 53 evaluation suite hardening: `/evals` now exposes
   deterministic guardrail cases for strategy-library source use, BitPro
   page-parity result metrics, missing artifact disclosure, paper-monitor

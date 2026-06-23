@@ -20,6 +20,7 @@ from hypertrade.cli import (
     handle_slash_command,
     main,
     render_backtest_result,
+    render_connectors,
     render_run,
     render_run_stream,
     render_slash_help,
@@ -148,6 +149,32 @@ class FakeAgentClient:
                 "description": "Create order intent.",
             },
         ]
+
+    def list_connectors(self) -> dict[str, Any]:
+        return {
+            "connectors": {
+                "bitpro": {
+                    "display_name": "BitPro MCP",
+                    "health": {"status": "not_checked"},
+                    "auth": {"configured": True, "secret_redacted": True},
+                    "supported_scopes": ["read", "research_backtest_paper_mutation"],
+                    "tools": [
+                        {
+                            "name": "market_klines",
+                            "scope": "read",
+                            "safe_read": True,
+                            "idempotency_required": False,
+                        },
+                        {
+                            "name": "paper_start",
+                            "scope": "research_backtest_paper_mutation",
+                            "safe_read": False,
+                            "idempotency_required": True,
+                        },
+                    ],
+                }
+            }
+        }
 
     def list_runs(self) -> list[dict[str, Any]]:
         return [{"id": "run_recent", "status": "completed", "prompt": "请做行情归纳"}]
@@ -1923,6 +1950,7 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
             "/model deepseek",
             "/providers",
             "/tools",
+            "/connectors",
             "/runs",
             "/memory",
             "/memory search 风控",
@@ -1966,6 +1994,9 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
     assert "Summarize market." in output
     assert "live.order_intent" in output
     assert "Create order intent." in output
+    assert "Connectors:" in output
+    assert "bitpro BitPro MCP health=not_checked auth=configured" in output
+    assert "market_klines scope=read safe_read=yes idempotency=not_required" in output
     assert "run_recent" in output
     assert "mem_recent" in output
     assert "mem_search" in output
@@ -2099,6 +2130,37 @@ def test_render_tools_includes_tool_descriptions() -> None:
         "- live.order_intent [live] scope=testnet_write approval=required "
         "idempotency=required: Create order intent."
     ) in rendered
+
+
+def test_render_connectors_shows_origin_scope_and_secret_status() -> None:
+    output = StringIO()
+
+    render_connectors(
+        {
+            "connectors": {
+                "fixture": {
+                    "display_name": "Fixture Connector",
+                    "health": {"status": "ok"},
+                    "auth": {"configured": False, "secret_redacted": True},
+                    "supported_scopes": ["read"],
+                    "tools": [
+                        {
+                            "name": "fixture_echo",
+                            "scope": "read",
+                            "safe_read": True,
+                            "idempotency_required": False,
+                        }
+                    ],
+                }
+            }
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "Connectors:" in rendered
+    assert "- fixture Fixture Connector health=ok auth=not_configured scopes=read" in rendered
+    assert "fixture_echo scope=read safe_read=yes idempotency=not_required" in rendered
 
 
 def test_render_tools_uses_distinct_tty_colors(monkeypatch) -> None:

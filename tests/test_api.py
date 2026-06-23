@@ -33,6 +33,7 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
             KNOWLEDGE_DIR=knowledge_dir,
             DEEPSEEK_API_KEY="",
             OKX_REST_URL="http://127.0.0.1:9",
+            BITPRO_MCP_API_TOKEN="api-secret-token",
         ),
         db=db,
     )
@@ -92,7 +93,19 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     assert live_intent["policy"]["scope"] == "testnet_write"
     assert live_intent["policy"]["approval"] == "required"
     assert live_intent["policy"]["idempotency"] == "required"
+    bitpro_tool = next(tool for tool in overview["tools"] if tool["name"] == "bitpro.market_klines")
+    assert bitpro_tool["connector_origin"] == {
+        "connector_id": "bitpro",
+        "tool": "market_klines",
+    }
+    assert overview["connectors"]["bitpro"]["auth"]["configured"] is True
+    assert "api-secret-token" not in repr(overview["connectors"])
     assert overview["paper"]["session"]["status"] == "running"
+
+    connectors = client.get("/api/connectors/capabilities").json()
+    assert connectors["connectors"]["bitpro"]["display_name"] == "BitPro MCP"
+    assert connectors["connectors"]["bitpro"]["auth"]["secret_redacted"] is True
+    assert "api-secret-token" not in repr(connectors)
 
     rag_hits = client.get("/api/rag/search?query=risk").json()["hits"]
     assert rag_hits[0]["title"] == "risk"

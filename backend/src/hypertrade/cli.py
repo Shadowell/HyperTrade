@@ -2073,14 +2073,31 @@ def render_connectors(payload: dict[str, Any], *, output: TextIO) -> None:
         capability = raw_capability if isinstance(raw_capability, dict) else {}
         auth = capability.get("auth", {})
         auth_payload = auth if isinstance(auth, dict) else {}
-        read_tools = capability.get("read_tools", [])
-        read_tool_count = len(read_tools) if isinstance(read_tools, list) else 0
-        status = "configured" if auth_payload.get("configured") else "not_configured"
+        health = capability.get("health", {})
+        health_payload = health if isinstance(health, dict) else {}
+        tools = capability.get("tools", [])
+        tool_payloads = (
+            [tool for tool in tools if isinstance(tool, dict)]
+            if isinstance(tools, list)
+            else []
+        )
+        scopes = capability.get("supported_scopes", [])
+        scope_text = ",".join(str(scope) for scope in scopes) if isinstance(scopes, list) else "n/a"
+        auth_status = "configured" if auth_payload.get("configured") else "not_configured"
         print(
-            f"- {connector_id}: {capability.get('name', connector_id)} "
-            f"({status}, read_tools={read_tool_count})",
+            f"- {connector_id} {capability.get('display_name', connector_id)} "
+            f"health={health_payload.get('status', 'unknown')} "
+            f"auth={auth_status} scopes={scope_text}",
             file=output,
         )
+        for tool in tool_payloads[:8]:
+            safe_read = "yes" if tool.get("safe_read") else "no"
+            idempotency = "required" if tool.get("idempotency_required") else "not_required"
+            print(
+                f"  - {tool.get('name', 'unknown')} scope={tool.get('scope', 'unknown')} "
+                f"safe_read={safe_read} idempotency={idempotency}",
+                file=output,
+            )
 
 
 def render_runs(items: list[dict[str, Any]], *, output: TextIO) -> None:

@@ -2,9 +2,9 @@
 
 ## Product Summary
 
-HyperTrade is a crypto trading agent for market research and execution. V1 focuses on stable agent capabilities: provider configuration, tool calls, RAG, memory, trace, market ingestion, risk gates, testnet execution, BitPro strategy lifecycle orchestration, and operator-facing harnesses.
+HyperTrade is a crypto trading agent for market research and execution. V1 focuses on stable agent capabilities: provider configuration, tool calls, RAG, memory, trace, market ingestion, connector capability discovery, risk gates, testnet execution, BitPro strategy lifecycle orchestration, and operator-facing harnesses.
 
-HyperTrade 是一个面向行情研究与执行的加密交易 Agent。V1 重点是稳定 Agent 能力：Provider 配置、Tool Call、RAG、Memory、Trace、行情采集、风控门禁、Testnet 执行、BitPro 策略生命周期编排和面向操作员的 Harness。
+HyperTrade 是一个面向行情研究与执行的加密交易 Agent。V1 重点是稳定 Agent 能力：Provider 配置、Tool Call、RAG、Memory、Trace、行情采集、Connector 能力发现、风控门禁、Testnet 执行、BitPro 策略生命周期编排和面向操作员的 Harness。
 
 BitPro is treated as the base trading-system platform: it owns market/reference data, strategy storage, backtest execution, metrics, paper/simulation runtime, and future live execution. HyperTrade is the Agent control and research layer: it discovers BitPro capabilities, reads/writes through MCP tools only, generates and validates `BaseStrategy` code, starts BitPro-owned backtests, inspects real evidence, and promotes only passing candidates into paper simulation. HyperTrade must not copy BitPro business logic or bypass BitPro risk boundaries.
 
@@ -112,6 +112,12 @@ its own Agent capabilities:
   strategy-library source use, BitPro page-parity result metrics, missing
   artifact disclosure, paper-monitor read-only behavior, and compact/default
   report rendering in addition to the original tool/RAG/Memory/risk checks.
+- Sprint 54 connector framework: trusted in-repo connectors expose redacted
+  capability/auth/tool metadata through `ConnectorRegistry`,
+  `GET /api/connectors/capabilities`, `/api/harness/overview.connectors`, CLI
+  `/connectors`, and ToolRegistry connector-origin rows; BitPro is represented
+  through a compatibility connector and fixture connectors support
+  deterministic tests.
 - Sprint 46 strategy evidence schema: new `strategy_knowledge` cards store versioned `StrategyEvidence` JSON payloads while `StrategyLibraryService` remains backward compatible with legacy text cards.
 - Strategy iteration planning can read prior strategy-library evidence through `strategy_experiment_plan`, `/api/strategy/experiments/iterate`, and CLI `/experiment iterate <prompt>` without triggering paper, live, or BitPro write tools.
 - Sprint 55 CLI slash command candidates: incomplete slash prefixes such as `/st` or `/me` render filtered candidates with purpose descriptions, and readline Tab completion can display the same described candidate list.
@@ -162,6 +168,10 @@ its own Agent capabilities:
 - Developer can enter `/` to display slash commands and press Tab after `/` or a partial slash command to complete commands/common subcommands in real TTY sessions.
 - Developer can enter a short incomplete slash prefix such as `/st` or `/me` and see filtered candidate commands with descriptions instead of a generic unknown-command page.
 - Developer can read a purpose description beside every `/help` slash command and every `/tools` Agent tool row.
+- Developer can run CLI `/connectors` or `GET /api/connectors/capabilities` to
+  inspect connector health/auth status, supported scopes, idempotency
+  requirements, source-of-truth notes, and tool descriptors without exposing
+  plaintext secrets.
 - Developer can run `/research <prompt>` and `/backtest` from interactive CLI chat to create research and backtest records.
 - Developer can run Backtrader backtests with recent OKX candles through API or CLI options.
 - Developer can run Agent acceptance tests and review a documented test plan for expected tool calls, trace output, and report quality.

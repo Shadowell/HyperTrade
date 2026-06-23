@@ -388,6 +388,7 @@ def _with_default_policy(tool: ToolDefinition) -> ToolDefinition:
         category=tool.category,
         requires_approval=tool.requires_approval or policy.approval == "required",
         policy=policy,
+        connector_origin=tool.connector_origin,
     )
 
 
