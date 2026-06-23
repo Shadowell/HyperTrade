@@ -4,21 +4,28 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Agent 54 connector framework verified locally with
+- Last verified state: Agent 52 frontend operator console verified locally with
   `./scripts/check.sh` (`pytest` 207 passed).
 
 ## Active Contract
 
 - No active implementation contract. Last completed:
-  `docs/contracts/sprint-54-connector-framework.md`.
+  `docs/contracts/sprint-52-frontend-operator-console.md`.
 
 ## Current In-Progress Work
 
-- None. Sprint 54 is complete in this branch; select a new contract before
+- None. Sprint 52 is complete in this branch; select a new contract before
   starting more implementation scope.
 
 ## Latest Completed Work
 
+- Completed Agent 52 / Sprint 52 frontend operator console polish:
+  `/harness` keeps BitPro result ids labeled as `bitpro_result`, reads monitor
+  alerts from the actual `/api/alerts` endpoint, and documents the Strategy
+  Library, structured report block, evidence drilldown, alert empty-state, and
+  read-only approval/risk surfaces. Verification passed with frontend
+  lint/test/build, API smoke for `/api/strategy/library`, `/api/alerts`, and
+  `/api/health`, plus full `./scripts/check.sh` (`pytest` 207 passed).
 - Added Sprint 54 connector framework: trusted connector protocol/dataclasses,
   `ConnectorRegistry`, deterministic `FixtureConnector`, and `BitProConnector`
   compatibility wrapper over the existing BitPro MCP adapter. Redacted

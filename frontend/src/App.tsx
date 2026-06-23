@@ -936,7 +936,7 @@ function App() {
   }, []);
 
   const refreshMonitorAlerts = useCallback(async () => {
-    const response = await fetch("/api/monitor/alerts", { credentials: "include" });
+    const response = await fetch("/api/alerts", { credentials: "include" });
     if (response.ok) {
       const payload = (await response.json()) as { items?: MonitorAlert[] };
       setMonitorAlerts(Array.isArray(payload.items) ? payload.items : []);
@@ -1854,7 +1854,7 @@ function SourceIdStrip({
     evidence?.memory_id ? `memory: ${evidence.memory_id}` : "",
     evidence?.experiment_id ? `experiment: ${evidence.experiment_id}` : "",
     evidence?.backtest_id ? `backtest: ${evidence.backtest_id}` : "",
-    evidence?.bitpro_result_id ? `#${evidence.bitpro_result_id}` : "",
+    evidence?.bitpro_result_id ? `bitpro_result: ${evidence.bitpro_result_id}` : "",
     ...sourceMemoryIds
       .filter((id) => id && id !== evidence?.memory_id)
       .slice(0, 3)

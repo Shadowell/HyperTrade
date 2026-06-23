@@ -322,7 +322,7 @@ test("renders strategy library evidence and source drilldown ids", async () => {
     if (url.endsWith("/api/strategy/library")) {
       return jsonResponse(strategyLibrary);
     }
-    if (url.endsWith("/api/monitor/alerts")) {
+    if (url.endsWith("/api/alerts")) {
       return jsonResponse({ items: [] });
     }
     return jsonResponse({}, 404);
@@ -342,7 +342,7 @@ test("renders strategy library evidence and source drilldown ids", async () => {
   expect(screen.getAllByText(/mem_winning/).length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText(/exp_winning/)).toBeInTheDocument();
   expect(screen.getByText(/bt_winning/)).toBeInTheDocument();
-  expect(screen.getByText("#196")).toBeInTheDocument();
+  expect(screen.getAllByText("bitpro_result: 196").length).toBeGreaterThanOrEqual(1);
 
   fireEvent.click(screen.getByRole("button", { name: /momentum_breakout_v1/ }));
 
@@ -350,7 +350,7 @@ test("renders strategy library evidence and source drilldown ids", async () => {
   expect(screen.getAllByText("memory: mem_winning").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("experiment: exp_winning").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("backtest: bt_winning").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("bitpro_result: 196")).toBeInTheDocument();
+  expect(screen.getAllByText("bitpro_result: 196").length).toBeGreaterThanOrEqual(1);
 });
 
 test("renders monitor empty states and readonly approval risk status", async () => {
@@ -367,7 +367,7 @@ test("renders monitor empty states and readonly approval risk status", async () 
       if (url.endsWith("/api/strategy/library")) {
         return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
       }
-      if (url.endsWith("/api/monitor/alerts")) {
+      if (url.endsWith("/api/alerts")) {
         return jsonResponse({}, 404);
       }
       return jsonResponse({}, 404);
@@ -397,7 +397,7 @@ test("loads a recent run and renders structured report blocks with audit sources
     if (url.endsWith("/api/strategy/library")) {
       return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
     }
-    if (url.endsWith("/api/monitor/alerts")) {
+    if (url.endsWith("/api/alerts")) {
       return jsonResponse({ items: [] });
     }
     if (url.endsWith("/api/agent/runs/run_live")) {
@@ -438,7 +438,7 @@ test("sidebar navigation keeps the clicked section active", async () => {
       if (url.endsWith("/api/strategy/library")) {
         return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
       }
-      if (url.endsWith("/api/monitor/alerts")) {
+      if (url.endsWith("/api/alerts")) {
         return jsonResponse({ items: [] });
       }
       return jsonResponse({}, 404);
