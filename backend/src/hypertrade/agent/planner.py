@@ -312,6 +312,35 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "bitpro_paper_monitor_snapshot",
+            "description": (
+                "Capture a durable BitPro paper/simulation monitoring snapshot. "
+                "Read-only. Reads dashboard, event stream, and equity curve evidence, "
+                "then compares it with the previous snapshot for drift."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {
+                        "type": "integer",
+                        "description": "Optional BitPro strategy id filter.",
+                    },
+                    "event_limit": {
+                        "type": "integer",
+                        "description": "Maximum paper events to request, default 50.",
+                    },
+                    "equity_sample_limit": {
+                        "type": "integer",
+                        "description": "Maximum equity curve rows to sample, default 50.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "bitpro_live_positions",
             "description": "Read BitPro live account positions for diagnostics only. Never writes.",
             "parameters": {
@@ -660,6 +689,9 @@ exceptions, order rejects, or why a paper strategy behaved abnormally.
 Use bitpro_paper_equity_curve when the user asks about paper equity, PnL curve,
 drawdown, drift, or time-series monitoring evidence. Report missing rows as
 unavailable; never synthesize paper event or curve rows.
+Use bitpro_paper_monitor_snapshot when the user asks to monitor paper drift,
+compare with the previous paper state, record a monitor snapshot, or ask what
+changed since the last paper check. This is read-only evidence capture.
 Use bitpro_backtest_list_results when the user asks about BitPro backtest
 performance, rankings, winners, or thresholds such as 回测收益大于100%. Report the
 actual total_return_pct metric from BitPro backtest results; do not substitute

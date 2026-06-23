@@ -769,6 +769,63 @@ def test_render_run_structured_output_renders_bitpro_paper_evidence(capsys) -> N
     assert "Equity: points=3, sample=1, latest=102.5, max_drawdown=1.5%" in output
 
 
+def test_render_run_structured_output_renders_bitpro_paper_monitor_snapshot(capsys) -> None:
+    render_run(
+        {
+            "id": "run_paper_snapshot",
+            "status": "completed",
+            "report_markdown": "## raw fallback",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {
+                    "tool_name": "bitpro_paper_monitor_snapshot",
+                    "status": "completed",
+                    "output_json": {
+                        "status": "ok",
+                        "contract_version": "bitpro-mcp-v1",
+                        "snapshot_id": "bpms_second",
+                        "previous_snapshot_id": "bpms_first",
+                        "scope_key": "105",
+                        "strategy_id": 105,
+                        "metrics": {
+                            "latest_equity": "101.5",
+                            "total_pnl_pct": "1.5",
+                            "max_drawdown_pct": "5.2",
+                            "event_count": 2,
+                            "error_count": 2,
+                        },
+                        "drift": {
+                            "mode": "compared",
+                            "equity_delta": "-2.5",
+                            "total_pnl_delta_pct": "-2.5",
+                            "max_drawdown_delta_pct": "3.2",
+                            "error_count_delta": 2,
+                            "alerts": [
+                                {
+                                    "level": "warning",
+                                    "code": "pnl_drop",
+                                    "message": "total_pnl_pct dropped by -2.5%",
+                                }
+                            ],
+                            "data_gaps": [],
+                        },
+                    },
+                }
+            ],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "BitPro Paper Monitor Snapshot:" in output
+    assert "Snapshot: bpms_second, strategy=105, previous=bpms_first" in output
+    assert "Metrics: equity=101.5, pnl=1.5%, drawdown=5.2%, errors=2" in output
+    assert (
+        "Drift: mode=compared, equity_delta=-2.5, pnl_delta=-2.5%, "
+        "drawdown_delta=3.2%, error_delta=2"
+    ) in output
+    assert "warning/pnl_drop: total_pnl_pct dropped by -2.5%" in output
+
+
 def test_welcome_banner_does_not_repeat_fixed_risk_warning() -> None:
     output = StringIO()
 

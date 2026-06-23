@@ -57,6 +57,15 @@ equity/drawdown points, and reports latest equity plus drawdown summaries. These
 tools complement the dashboard; they do not mutate paper state and they do not
 invent missing rows.
 
+Paper monitor snapshots persist this read-only evidence in HyperTrade. The
+`bitpro_paper_monitor_snapshot` Agent tool captures dashboard, event summary, and
+equity summary through the existing MCP/API read tools, stores normalized metrics
+and nested BitPro tool calls, then compares the capture with the previous snapshot
+for the same strategy/all-strategy scope. Drift alerts cover equity drops, PnL
+drops, drawdown expansion, and newly observed event errors. Missing comparable
+metrics remain data gaps; the snapshot tool never pauses, resumes, stops, or
+starts paper/live trading.
+
 BitPro backtest ranking and threshold questions are answered through
 `bitpro_backtest_list_results`, not by reading strategy descriptions or planner
 memory. The adapter uses BitPro `offset`/`limit` pagination, normalizes the
@@ -125,6 +134,8 @@ BitPro `/live/dashboard` 返回被视为当前模拟盘引擎/dashboard 视图�
 模拟盘监控是确定性且只读的。适配器从当前 dashboard 指标和 running 策略清单生成 `monitor_summary`：权益、总收益、Sharpe、回撤、清单覆盖、告警、数据缺口和建议检查动作。如果 `strategy_search(status=running)` 不包含逐策略收益或回撤，HyperTrade 必须把它报告为数据缺口，而不是推断这些指标。
 
 模拟盘监控证据拆成独立只读工具。`bitpro_paper_events` 读取 `/live/events`，支持可选 `strategy_id` 和有界 `limit`，标准化事件/错误行，并报告事件数量、错误数量和最新事件时间。`bitpro_paper_equity_curve` 读取 `/live/equity_curve`，支持可选 `strategy_id`，保留有界权益/回撤样本，并报告最新权益和回撤摘要。这些工具补充 dashboard 视图，不修改模拟盘状态，也不合成缺失样本。
+
+模拟盘监控快照把这些只读证据持久化在 HyperTrade。`bitpro_paper_monitor_snapshot` Agent 工具通过现有 MCP/API 只读工具捕获 dashboard、事件摘要和权益摘要，保存标准化指标和嵌套 BitPro tool calls，然后与相同策略/全局 scope 的上一条快照比较。漂移告警覆盖权益下降、PnL 下降、回撤扩大和新增事件错误。缺失的可比指标只能作为 data gap 展示；快照工具绝不暂停、恢复、停止或启动模拟盘/实盘。
 
 BitPro 回测排行和阈值问题必须通过 `bitpro_backtest_list_results` 回答，不能读取策略描述或 planner 记忆来推断。适配器使用 BitPro `offset`/`limit` 分页，把真实结果指标标准化为 `total_return_pct`，可在本地按阈值过滤，并用 `strategy_get` 补齐策略名以贴近页面展示。年化收益只能作为独立字段展示，不能替代回测总收益。
 

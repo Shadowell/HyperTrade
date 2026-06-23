@@ -148,6 +148,11 @@ class ToolRegistry:
                     "bitpro",
                 ),
                 ToolDefinition(
+                    "bitpro.paper_monitor_snapshot",
+                    "Capture a read-only BitPro paper monitor snapshot and drift.",
+                    "bitpro",
+                ),
+                ToolDefinition(
                     "bitpro.live_positions",
                     "Read BitPro live account positions for diagnostics only.",
                     "bitpro",

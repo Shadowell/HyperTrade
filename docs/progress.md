@@ -4,14 +4,16 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: BitPro MCP strategy R&D loop validated on `47.79.36.92` with strategy `#293`, backtest result `#196`, and paper dry-run started through MCP only.
+- Last verified state: Sprint 43 BitPro paper monitor snapshots verified locally with `./scripts/check.sh`.
 
 ## Active Contract
 
-- No active implementation contract. Last completed: `docs/contracts/sprint-42-bitpro-paper-evidence-layer.md`.
+- No active implementation contract. Last completed: `docs/contracts/sprint-43-paper-monitor-snapshots.md`.
 
 ## Latest Completed Work
 
+- Added Sprint 43 BitPro paper monitor snapshots: Agent tool `bitpro_paper_monitor_snapshot` now captures dashboard, event summary, and equity summary through read-only BitPro MCP/API tools, persists normalized metrics and nested BitPro tool calls, compares with the previous snapshot for the same scope, and renders PnL/equity/drawdown/error drift in Agent/CLI reports without triggering paper or live write tools.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 142 tests.
 - Added Sprint 42 BitPro paper evidence layer: Agent tools `bitpro_paper_events` and `bitpro_paper_equity_curve` now preflight through BitPro MCP, read bounded event/error and equity/drawdown evidence, record nested trace calls, and render source-bound Agent/CLI paper monitoring evidence without synthesizing missing rows.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 137 tests.
 - Added Sprint 41 documentation refresh: root READMEs, `docs/README.md`, knowledge guides, architecture notes, deployment docs, testing plan, and smoke runbook now describe the current production Agent surface, BitPro MCP boundaries, page-focused BitPro reports, strategy knowledge memory, and operator validation paths.

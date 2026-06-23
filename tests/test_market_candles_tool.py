@@ -315,6 +315,59 @@ def test_planner_report_renders_bitpro_paper_event_and_equity_evidence() -> None
     assert "max_drawdown=1.5%" in report
 
 
+def test_planner_report_renders_bitpro_paper_snapshot_drift() -> None:
+    report = AgentKernel._render_planner_report(
+        "模拟盘快照完成。",
+        [
+            ToolCallRecord(
+                tool_name="bitpro_paper_monitor_snapshot",
+                input_json={"strategy_id": 105},
+                output_json={
+                    "status": "ok",
+                    "snapshot_id": "bpms_second",
+                    "previous_snapshot_id": "bpms_first",
+                    "strategy_id": 105,
+                    "metrics": {
+                        "latest_equity": "101.5",
+                        "total_pnl_pct": "1.5",
+                        "max_drawdown_pct": "5.2",
+                        "error_count": 2,
+                    },
+                    "drift": {
+                        "mode": "compared",
+                        "equity_delta": "-2.5",
+                        "total_pnl_delta_pct": "-2.5",
+                        "max_drawdown_delta_pct": "3.2",
+                        "error_count_delta": 2,
+                        "alerts": [
+                            {
+                                "level": "warning",
+                                "code": "pnl_drop",
+                                "message": "total_pnl_pct dropped by -2.5%",
+                            }
+                        ],
+                        "data_gaps": [],
+                    },
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
+                        {"tool": "bitpro_health", "status": "success", "parameters": {}},
+                        {"tool": "paper_dashboard", "status": "success", "parameters": {}},
+                    ],
+                },
+            )
+        ],
+    )
+
+    assert "## BitPro 模拟盘状态" in report
+    assert "监控快照: bpms_second, strategy_id=105, previous=bpms_first" in report
+    assert "当前指标: equity=101.5, total_pnl=1.5%, max_drawdown=5.2%, errors=2" in report
+    assert "快照漂移: mode=compared, equity_delta=-2.5" in report
+    assert "pnl_delta=-2.5%" in report
+    assert "drawdown_delta=3.2%" in report
+    assert "error_delta=2" in report
+    assert "告警 warning/pnl_drop: total_pnl_pct dropped by -2.5%" in report
+
+
 def test_planner_report_renders_bitpro_backtest_total_return_results() -> None:
     report = AgentKernel._render_planner_report(
         "已读取 BitPro 回测结果。",

@@ -255,6 +255,7 @@ def test_planner_exposes_bitpro_read_tool_schemas() -> None:
         "bitpro_paper_dashboard",
         "bitpro_paper_events",
         "bitpro_paper_equity_curve",
+        "bitpro_paper_monitor_snapshot",
         "bitpro_live_positions",
     } <= names
 
@@ -294,6 +295,24 @@ def test_bitpro_paper_evidence_tool_schemas_are_read_only() -> None:
         equity_schema["function"]["parameters"]["properties"]["sample_limit"]["type"]
         == "integer"
     )
+
+
+def test_bitpro_paper_monitor_snapshot_schema_exposes_drift_capture() -> None:
+    schema = next(
+        item
+        for item in TOOL_SCHEMAS
+        if item["function"]["name"] == "bitpro_paper_monitor_snapshot"
+    )
+
+    description = schema["function"]["description"]
+    properties = schema["function"]["parameters"]["properties"]
+
+    assert "Read-only" in description
+    assert "snapshot" in description
+    assert "drift" in description
+    assert properties["strategy_id"]["type"] == "integer"
+    assert properties["event_limit"]["type"] == "integer"
+    assert properties["equity_sample_limit"]["type"] == "integer"
 
 
 def test_planner_exposes_bitpro_strategy_lifecycle_tool_schemas() -> None:
@@ -354,6 +373,7 @@ def test_planner_prompt_does_not_treat_bitpro_live_gate_as_runtime_status() -> N
     assert "bitpro_paper_dashboard" in prompt
     assert "bitpro_paper_events" in prompt
     assert "bitpro_paper_equity_curve" in prompt
+    assert "bitpro_paper_monitor_snapshot" in prompt
     assert "Do not summarize paper dashboard evidence as BitPro live trading disabled" in prompt
 
 

@@ -187,6 +187,26 @@ class PaperEvent(Base, TimestampMixin):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class BitProPaperMonitorSnapshot(Base, TimestampMixin):
+    __tablename__ = "bitpro_paper_monitor_snapshots"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("bpms"))
+    scope_key: Mapped[str] = mapped_column(String(64), default="all", index=True)
+    strategy_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    previous_snapshot_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(String(32), default="completed", index=True)
+    dashboard_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    running_strategies_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    monitor_summary_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    event_summary_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    equity_summary_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    metrics_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    drift_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    tool_calls_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+
+
 class StrategyResearch(Base, TimestampMixin):
     __tablename__ = "strategy_research"
 

@@ -2175,6 +2175,8 @@ def _render_rich_tool_report(
             _render_rich_bitpro_paper_events(payload, console=console)
         elif tool_name == "bitpro_paper_equity_curve":
             _render_rich_bitpro_paper_equity_curve(payload, console=console)
+        elif tool_name == "bitpro_paper_monitor_snapshot":
+            _render_rich_bitpro_paper_monitor_snapshot(payload, console=console)
 
 
 def _render_rich_ticker(payload: dict[str, Any], *, console: Any) -> None:
@@ -2409,6 +2411,68 @@ def _render_rich_bitpro_paper_equity_curve(payload: dict[str, Any], *, console: 
                 str(point.get("equity", "n/a")),
                 _format_percent(point.get("drawdown_pct")),
             )
+        console.print(table)
+
+
+def _render_rich_bitpro_paper_monitor_snapshot(payload: dict[str, Any], *, console: Any) -> None:
+    from rich.panel import Panel
+    from rich.table import Table
+
+    metrics = payload.get("metrics")
+    metrics = metrics if isinstance(metrics, dict) else {}
+    drift = payload.get("drift")
+    drift = drift if isinstance(drift, dict) else {}
+    alerts = drift.get("alerts")
+    alerts = alerts if isinstance(alerts, list) else []
+    data_gaps = drift.get("data_gaps")
+    data_gaps = data_gaps if isinstance(data_gaps, list) else []
+
+    summary_text = "\n".join(
+        [
+            (
+                "快照: {snapshot}, strategy={strategy}, previous={previous}"
+            ).format(
+                snapshot=payload.get("snapshot_id", "n/a"),
+                strategy=payload.get("strategy_id", "all"),
+                previous=payload.get("previous_snapshot_id") or "none",
+            ),
+            (
+                "指标: equity={equity}, pnl={pnl}, drawdown={drawdown}, errors={errors}"
+            ).format(
+                equity=_format_number(metrics.get("latest_equity")),
+                pnl=_format_percent(metrics.get("total_pnl_pct")),
+                drawdown=_format_percent(metrics.get("max_drawdown_pct")),
+                errors=metrics.get("error_count", "n/a"),
+            ),
+            (
+                "漂移: mode={mode}, equity_delta={equity_delta}, pnl_delta={pnl_delta}, "
+                "drawdown_delta={drawdown_delta}, error_delta={error_delta}"
+            ).format(
+                mode=drift.get("mode", "unknown"),
+                equity_delta=_format_number(drift.get("equity_delta")),
+                pnl_delta=_format_percent(drift.get("total_pnl_delta_pct")),
+                drawdown_delta=_format_percent(drift.get("max_drawdown_delta_pct")),
+                error_delta=drift.get("error_count_delta", "n/a"),
+            ),
+            f"合同: {payload.get('contract_version', 'unknown')}",
+        ]
+    )
+    console.print(Panel(summary_text, title="BitPro 模拟盘监控快照", border_style="magenta"))
+
+    if alerts or data_gaps:
+        table = Table(title="Snapshot Findings", show_header=True, header_style="bold", expand=True)
+        table.add_column("Type", ratio=2)
+        table.add_column("Code", ratio=3)
+        table.add_column("Message", ratio=7, overflow="fold")
+        for alert in alerts:
+            if isinstance(alert, dict):
+                table.add_row(
+                    str(alert.get("level", "info")),
+                    str(alert.get("code", "unknown")),
+                    str(alert.get("message", "n/a")),
+                )
+        for gap in data_gaps:
+            table.add_row("gap", "-", str(gap))
         console.print(table)
 
 
@@ -2660,6 +2724,7 @@ def _has_structured_market_tool_output(trace_events: list[Any]) -> bool:
         "bitpro_paper_dashboard",
         "bitpro_paper_events",
         "bitpro_paper_equity_curve",
+        "bitpro_paper_monitor_snapshot",
     }
     for event in trace_events:
         if not isinstance(event, dict):
@@ -2699,6 +2764,8 @@ def _render_structured_tool_report(
             _render_tool_bitpro_paper_events_block(payload, output=output)
         elif tool_name == "bitpro_paper_equity_curve":
             _render_tool_bitpro_paper_equity_block(payload, output=output)
+        elif tool_name == "bitpro_paper_monitor_snapshot":
+            _render_tool_bitpro_paper_monitor_snapshot_block(payload, output=output)
 
 def _render_tool_ticker_block(payload: dict[str, Any], *, output: TextIO) -> None:
     print("", file=output)
@@ -2892,6 +2959,68 @@ def _render_tool_bitpro_paper_equity_block(payload: dict[str, Any], *, output: T
             ),
             file=output,
         )
+
+
+def _render_tool_bitpro_paper_monitor_snapshot_block(
+    payload: dict[str, Any],
+    *,
+    output: TextIO,
+) -> None:
+    metrics = payload.get("metrics")
+    metrics = metrics if isinstance(metrics, dict) else {}
+    drift = payload.get("drift")
+    drift = drift if isinstance(drift, dict) else {}
+    alerts = drift.get("alerts")
+    alerts = alerts if isinstance(alerts, list) else []
+    data_gaps = drift.get("data_gaps")
+    data_gaps = data_gaps if isinstance(data_gaps, list) else []
+
+    print("", file=output)
+    print("BitPro Paper Monitor Snapshot:", file=output)
+    print(
+        "- Snapshot: {snapshot}, strategy={strategy}, previous={previous}".format(
+            snapshot=payload.get("snapshot_id", "n/a"),
+            strategy=payload.get("strategy_id", "all"),
+            previous=payload.get("previous_snapshot_id") or "none",
+        ),
+        file=output,
+    )
+    print(
+        "- Metrics: equity={equity}, pnl={pnl}, drawdown={drawdown}, errors={errors}".format(
+            equity=_format_number(metrics.get("latest_equity")),
+            pnl=_format_percent(metrics.get("total_pnl_pct")),
+            drawdown=_format_percent(metrics.get("max_drawdown_pct")),
+            errors=metrics.get("error_count", "n/a"),
+        ),
+        file=output,
+    )
+    print(
+        "- Drift: mode={mode}, equity_delta={equity_delta}, pnl_delta={pnl_delta}, "
+        "drawdown_delta={drawdown_delta}, error_delta={error_delta}".format(
+            mode=drift.get("mode", "unknown"),
+            equity_delta=_format_number(drift.get("equity_delta")),
+            pnl_delta=_format_percent(drift.get("total_pnl_delta_pct")),
+            drawdown_delta=_format_percent(drift.get("max_drawdown_delta_pct")),
+            error_delta=drift.get("error_count_delta", "n/a"),
+        ),
+        file=output,
+    )
+    if alerts:
+        print("- Alerts:", file=output)
+        for alert in alerts:
+            if isinstance(alert, dict):
+                print(
+                    "  - {level}/{code}: {message}".format(
+                        level=alert.get("level", "info"),
+                        code=alert.get("code", "unknown"),
+                        message=alert.get("message", "n/a"),
+                    ),
+                    file=output,
+                )
+    if data_gaps:
+        print("- Data gaps:", file=output)
+        for gap in data_gaps:
+            print(f"  - {gap}", file=output)
 
 
 def _render_tool_bitpro_backtest_block(payload: dict[str, Any], *, output: TextIO) -> None:

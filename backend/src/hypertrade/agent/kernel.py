@@ -21,6 +21,7 @@ from sqlalchemy import select
 from hypertrade.agent.planner import AgentPlanner, PlannerResult, ToolExecutor
 from hypertrade.backtest.service import BacktestService
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
+from hypertrade.bitpro.paper_monitor import BitProPaperMonitorService
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import AgentRun, Database, TraceEvent
 from hypertrade.live.service import LiveOrderIntentService
@@ -310,6 +311,17 @@ class AgentKernel:
                 result = self._bitpro_adapter().paper_equity_curve(
                     strategy_id=int(strategy_id) if strategy_id is not None else None,
                     sample_limit=int(args.get("sample_limit", 50)),
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_paper_monitor_snapshot":
+                strategy_id = args.get("strategy_id")
+                result = BitProPaperMonitorService(
+                    self.db,
+                    bitpro_adapter=self._bitpro_adapter(),
+                ).capture(
+                    strategy_id=int(strategy_id) if strategy_id is not None else None,
+                    event_limit=int(args.get("event_limit", 50)),
+                    equity_sample_limit=int(args.get("equity_sample_limit", 50)),
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_live_positions":
@@ -1465,6 +1477,68 @@ class AgentKernel:
             count = summary.get("count")
             if isinstance(count, int) and count > len(points[:10]):
                 bitpro_paper_lines.append(f"- 还有 {count - len(points[:10])} 个权益点未展开。")
+            bitpro_paper_lines.append("")
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "bitpro_paper_monitor_snapshot":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or payload.get("status") != "ok":
+                continue
+            nested_tools = _nested_bitpro_tools(payload)
+            metrics = payload.get("metrics")
+            metrics = metrics if isinstance(metrics, dict) else {}
+            drift = payload.get("drift")
+            drift = drift if isinstance(drift, dict) else {}
+            bitpro_paper_lines.extend(
+                [
+                    f"- 合同版本: {payload.get('contract_version', 'unknown')}",
+                    f"- 工具顺序: {', '.join(nested_tools) if nested_tools else 'n/a'}",
+                    (
+                        "- 监控快照: {snapshot_id}, strategy_id={strategy_id}, "
+                        "previous={previous}"
+                    ).format(
+                        snapshot_id=payload.get("snapshot_id", "n/a"),
+                        strategy_id=payload.get("strategy_id", "all"),
+                        previous=payload.get("previous_snapshot_id", "none"),
+                    ),
+                    (
+                        "- 当前指标: equity={equity}, total_pnl={pnl}%, "
+                        "max_drawdown={drawdown}%, errors={errors}"
+                    ).format(
+                        equity=metrics.get("latest_equity", "n/a"),
+                        pnl=metrics.get("total_pnl_pct", "n/a"),
+                        drawdown=metrics.get("max_drawdown_pct", "n/a"),
+                        errors=metrics.get("error_count", "n/a"),
+                    ),
+                    (
+                        "- 快照漂移: mode={mode}, equity_delta={equity_delta}, "
+                        "pnl_delta={pnl_delta}%, drawdown_delta={drawdown_delta}%, "
+                        "error_delta={error_delta}"
+                    ).format(
+                        mode=drift.get("mode", "unknown"),
+                        equity_delta=drift.get("equity_delta", "n/a"),
+                        pnl_delta=drift.get("total_pnl_delta_pct", "n/a"),
+                        drawdown_delta=drift.get("max_drawdown_delta_pct", "n/a"),
+                        error_delta=drift.get("error_count_delta", "n/a"),
+                    ),
+                ]
+            )
+            alerts = drift.get("alerts")
+            alerts = alerts if isinstance(alerts, list) else []
+            for alert in alerts:
+                if not isinstance(alert, dict):
+                    continue
+                bitpro_paper_lines.append(
+                    "- 告警 {level}/{code}: {message}".format(
+                        level=alert.get("level", "info"),
+                        code=alert.get("code", "unknown"),
+                        message=alert.get("message", "n/a"),
+                    )
+                )
+            data_gaps = drift.get("data_gaps")
+            data_gaps = data_gaps if isinstance(data_gaps, list) else []
+            for gap in data_gaps:
+                bitpro_paper_lines.append(f"- 数据缺口: {gap}")
             bitpro_paper_lines.append("")
         lifecycle_tool_names = {
             "bitpro_strategy_search",

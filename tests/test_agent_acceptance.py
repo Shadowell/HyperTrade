@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 from hypertrade.agent.kernel import AgentKernel
+from hypertrade.bitpro.paper_monitor import BitProPaperMonitorService
 from hypertrade.config import Settings
 from hypertrade.db import Database
 from hypertrade.market.repository import MarketRepository
@@ -371,6 +372,9 @@ class ReplayBitProAdapter:
         }
 
     def paper_dashboard(self, *, strategy_id: int | None = None) -> dict[str, Any]:
+        equity = getattr(self, "paper_dashboard_equity", getattr(self, "paper_equity", "96.7"))
+        pnl = getattr(self, "paper_pnl", "-3.3")
+        drawdown = getattr(self, "paper_drawdown", "12.4")
         return {
             "status": "ok",
             "contract_version": "bitpro-mcp-v1",
@@ -383,11 +387,11 @@ class ReplayBitProAdapter:
                     "strategy_id": strategy_id or 105,
                     "strategy": "[合约][1H][CTA] SOL · EMA5/20趋势跟踪对照版 · 100U",
                 },
-                "equity": {"current": 96.7},
+                "equity": {"current": equity},
                 "performance": {
-                    "total_pnl_pct": -3.3,
+                    "total_pnl_pct": pnl,
                     "sharpe_ratio": 0.2,
-                    "max_drawdown": 12.4,
+                    "max_drawdown": drawdown,
                 },
             },
             "paper_scope": {
@@ -425,10 +429,10 @@ class ReplayBitProAdapter:
                     "strategy_name": "[合约][1H][CTA] SOL · EMA5/20趋势跟踪对照版 · 100U",
                     "state": "running",
                     "mode": "paper",
-                    "total_pnl_pct": "-3.3",
-                    "max_drawdown_pct": "12.4",
+                    "total_pnl_pct": pnl,
+                    "max_drawdown_pct": drawdown,
                     "sharpe_ratio": "0.2",
-                    "equity": "96.7",
+                    "equity": equity,
                 },
                 "running_inventory": {
                     "listed_count": 2,
@@ -479,25 +483,27 @@ class ReplayBitProAdapter:
         }
 
     def paper_events(self, *, strategy_id: int | None = None, limit: int = 50) -> dict[str, Any]:
+        error_count = int(getattr(self, "paper_error_count", 1))
+        events = [
+            {
+                "id": 9001,
+                "strategy_id": strategy_id or 105,
+                "level": "error",
+                "type": "order_rejected",
+                "message": "insufficient paper balance",
+                "timestamp": "2026-06-23T09:10:00Z",
+            }
+        ][:error_count]
         return {
             "status": "ok",
             "contract_version": "bitpro-mcp-v1",
             "strategy_id": strategy_id,
             "limit": limit,
-            "events": [
-                {
-                    "id": 9001,
-                    "strategy_id": strategy_id or 105,
-                    "level": "error",
-                    "type": "order_rejected",
-                    "message": "insufficient paper balance",
-                    "timestamp": "2026-06-23T09:10:00Z",
-                }
-            ],
+            "events": events,
             "event_summary": {
-                "count": 1,
-                "sample_count": 1,
-                "error_count": 1,
+                "count": error_count,
+                "sample_count": len(events),
+                "error_count": error_count,
                 "latest_event_at": "2026-06-23T09:10:00Z",
             },
             "tool_calls": [
@@ -517,6 +523,8 @@ class ReplayBitProAdapter:
         strategy_id: int | None = None,
         sample_limit: int = 50,
     ) -> dict[str, Any]:
+        equity = getattr(self, "paper_equity", "102.5")
+        drawdown = getattr(self, "paper_drawdown", "1.5")
         return {
             "status": "ok",
             "contract_version": "bitpro-mcp-v1",
@@ -525,17 +533,17 @@ class ReplayBitProAdapter:
             "equity_curve": [
                 {
                     "timestamp": "2026-06-23T08:00:00Z",
-                    "equity": "101.25",
-                    "drawdown_pct": "1.5",
+                    "equity": equity,
+                    "drawdown_pct": drawdown,
                 }
             ],
             "equity_summary": {
                 "count": 3,
                 "sample_count": 1,
                 "latest_at": "2026-06-23T09:00:00Z",
-                "latest_equity": "102.5",
-                "latest_drawdown_pct": "0.8",
-                "max_drawdown_pct": "1.5",
+                "latest_equity": equity,
+                "latest_drawdown_pct": drawdown,
+                "max_drawdown_pct": drawdown,
             },
             "tool_calls": [
                 {"tool": "bitpro_capabilities", "status": "success", "parameters": {}},
@@ -1075,6 +1083,66 @@ def test_agent_acceptance_bitpro_paper_evidence_reads_events_and_equity(
     assert "9001 error/order_rejected: insufficient paper balance" in run.report_markdown
     assert "权益曲线证据: strategy_id=105" in run.report_markdown
     assert "latest_equity=102.5" in run.report_markdown
+    _assert_research_quality(run.report_markdown)
+
+
+def test_agent_acceptance_bitpro_paper_monitor_snapshot_reports_drift(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = _memory_db()
+    _patch_replay_llm(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_paper_snapshot",
+                        name="bitpro_paper_monitor_snapshot",
+                        arguments={"strategy_id": 105},
+                    )
+                ],
+            ),
+            ChatResponse(content="已读取 BitPro 模拟盘监控快照。", tool_calls=[]),
+        ],
+    )
+
+    previous_adapter = ReplayBitProAdapter()
+    previous_adapter.paper_equity = "104"
+    previous_adapter.paper_pnl = "4.0"
+    previous_adapter.paper_drawdown = "2.0"
+    previous_adapter.paper_error_count = 0
+    BitProPaperMonitorService(db, bitpro_adapter=previous_adapter).capture(strategy_id=105)
+
+    current_adapter = ReplayBitProAdapter()
+    current_adapter.paper_equity = "101.5"
+    current_adapter.paper_pnl = "1.5"
+    current_adapter.paper_drawdown = "5.2"
+    current_adapter.paper_error_count = 2
+
+    run = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
+        knowledge_dir=str(tmp_path),
+        bitpro_adapter=current_adapter,
+    ).run_chat("生成 BitPro 策略 105 的模拟盘监控快照，并和上一条快照比较漂移")
+
+    names = _tool_names(run)
+    assert "bitpro_paper_monitor_snapshot" in names
+    assert "bitpro.paper_dashboard" in names
+    assert "bitpro.paper_events" in names
+    assert "bitpro.paper_equity_curve" in names
+    snapshot_event = next(
+        event
+        for event in _business_events(run)
+        if event.tool_name == "bitpro_paper_monitor_snapshot"
+    )
+    assert snapshot_event.output_json["drift"]["mode"] == "compared"
+    assert snapshot_event.output_json["drift"]["equity_delta"] == "-2.5"
+    assert "监控快照:" in run.report_markdown
+    assert "快照漂移: mode=compared" in run.report_markdown
+    assert "告警 warning/pnl_drop" in run.report_markdown
     _assert_research_quality(run.report_markdown)
 
 
