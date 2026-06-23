@@ -10,7 +10,7 @@ HyperTrade 是一个面向行情研究与执行的加密交易 Agent。它不在
 - Provider Router：DeepSeek 默认，OpenAI/OpenRouter/Qwen chat 扩展位，CLI/API/前端可切换。
 - Tool Call：行情、RAG、Memory、策略、回测、paper、live intent、Testnet execute。
 - RAG：PostgreSQL/pgvector 兼容字段，citation-ready 命中。
-- Memory：去重、tags、importance、confidence、usage audit；策略实验会沉淀 `strategy_knowledge` 记忆卡。
+- Memory：去重、tags、importance、confidence、usage audit；策略实验会沉淀 `strategy_knowledge` 记忆卡，并可聚合为策略库视图。
 - 交易边界：Mainnet 执行阻断；OKX Testnet 可在审批和风控后 signed order。
 - 策略工作流：研究、多版本回测证据、critique、下一实验建议、策略知识沉淀。
 - BitPro MCP：健康检查、K 线直连、策略生成/创建/更新、BitPro 回测 job/result/artifact、模拟盘生命周期、监控快照和实盘持仓只读诊断入口。
@@ -36,6 +36,7 @@ HyperTrade 是一个面向行情研究与执行的加密交易 Agent。它不在
 /model deepseek
 /rag 风控
 /memory search 风控
+/strategy library momentum_breakout_v1
 /experiment 研究ETH趋势突破
 /live intents
 /live execute loi_...

@@ -4,14 +4,19 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 43 BitPro paper monitor snapshots verified locally with `./scripts/check.sh`.
+- Last verified state: Sprint 44 strategy library memory verified locally with `./scripts/check.sh`.
 
 ## Active Contract
 
-- No active implementation contract. Last completed: `docs/contracts/sprint-43-paper-monitor-snapshots.md`.
+- No active implementation contract. Last completed: `docs/contracts/sprint-44-strategy-library-memory.md`.
 
 ## Latest Completed Work
 
+- Made default CLI run rendering report-focused and compact: run headers, status/tool trace tables, folded-trace notices, and wrapper `Agent Report` panels are hidden unless `HYPERTRADE_TRACE=summary/full` is set; Markdown report spacing is compacted and horizontal separators are removed.
+- Added Sprint 44 strategy library memory: audited `strategy_knowledge` Memory cards now aggregate into strategy-level summaries with evidence counts, pass/fail counts, best/latest evidence, variants, failure reasons, next experiments, and source memory ids. The capability is exposed through `GET /api/strategy/library`, CLI `/strategy library [query]`, Agent planner tool `strategy_library_search`, and ToolRegistry entry `strategy.library_search`; new strategy memory cards include variant count, gate results, and failure reasons.
+- `uv run pytest tests/test_strategy_library.py tests/test_strategy_backtest_api.py tests/test_agent_planner.py tests/test_market_candles_tool.py tests/test_cli.py tests/test_tool_registry.py -q` -> 84 passed.
+- `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 152 tests.
+- Added CLI slash-command discovery: entering `/` now displays the command list without an unknown-command warning, and real TTY readline sessions register Tab completion for slash commands plus common subcommands such as `/model`, `/memory`, `/paper`, `/live`, and `/backtest`.
 - Added Sprint 43 BitPro paper monitor snapshots: Agent tool `bitpro_paper_monitor_snapshot` now captures dashboard, event summary, and equity summary through read-only BitPro MCP/API tools, persists normalized metrics and nested BitPro tool calls, compares with the previous snapshot for the same scope, and renders PnL/equity/drawdown/error drift in Agent/CLI reports without triggering paper or live write tools.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 143 tests.
 - Added Sprint 42 BitPro paper evidence layer: Agent tools `bitpro_paper_events` and `bitpro_paper_equity_curve` now preflight through BitPro MCP, read bounded event/error and equity/drawdown evidence, record nested trace calls, and render source-bound Agent/CLI paper monitoring evidence without synthesizing missing rows.

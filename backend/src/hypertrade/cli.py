@@ -35,6 +35,7 @@ from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.memory.service import MemoryService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.strategy.experiment import StrategyExperimentService
+from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.service import StrategyResearchService
 from hypertrade.tools.registry import ToolDefinition, ToolRegistry
 
@@ -63,6 +64,8 @@ class AgentClient(Protocol):
     def get_evals_status(self) -> dict[str, Any]: ...
 
     def list_strategy_research(self) -> list[dict[str, Any]]: ...
+
+    def list_strategy_library(self, query: str = "") -> dict[str, Any]: ...
 
     def list_backtests(self) -> list[dict[str, Any]]: ...
 
@@ -156,6 +159,7 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("/rag <query>", "Search project and trading knowledge chunks."),
     ("/evals", "Show deterministic Agent eval status."),
     ("/strategy", "List recent strategy research records."),
+    ("/strategy library [query]", "Summarize strategy_knowledge memory as a strategy library."),
     ("/backtests", "List recent backtest runs."),
     ("/price ETH", "Fetch one exact OKX SWAP ticker without LLM planning."),
     ("/candles ETH --bar 1H --limit 100", "Fetch candles and derived trend features."),
@@ -180,6 +184,24 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("/backtest --live --symbol ETH --bar 1H --limit 100", "Backtest with recent live candles."),
     ("/backtest --source bitpro_mcp --symbol ETH --bar 1H", "Backtest with BitPro MCP K-lines."),
 )
+
+SLASH_COMMAND_COMPLETIONS: tuple[str, ...] = tuple(
+    dict.fromkeys(command.split()[0] for command, _ in SLASH_COMMAND_HELP)
+)
+SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
+    "/model": ("deepseek", "openai", "openrouter", "qwen"),
+    "/memory": ("search", "disable"),
+    "/strategy": ("library",),
+    "/backtest": ("list", "latest", "--live", "--source bitpro_mcp"),
+    "/paper": ("status", "pause", "resume", "close", "reset"),
+    "/live": ("intents", "intent", "approve", "reject", "execute"),
+    "/price": ("BTC", "ETH", "SOL", "DOGE", "PEPE"),
+    "/ticker": ("BTC", "ETH", "SOL", "DOGE", "PEPE"),
+    "/candles": ("BTC", "ETH", "SOL", "DOGE", "PEPE", "--bar 1H", "--limit 100"),
+    "/kline": ("BTC", "ETH", "SOL", "DOGE", "PEPE", "--bar 1H", "--limit 100"),
+    "/klines": ("BTC", "ETH", "SOL", "DOGE", "PEPE", "--bar 1H", "--limit 100"),
+    "/compare": ("BTC", "ETH", "SOL", "DOGE", "PEPE"),
+}
 
 
 @dataclass(frozen=True)
@@ -265,7 +287,50 @@ def configure_interactive_history(
             module.read_history_file(history_file)
     if hasattr(module, "write_history_file"):
         register_exit(module.write_history_file, history_file)
+    _configure_slash_command_completion(module)
     return InteractiveHistory(enabled=True, readline_module=module)
+
+
+def _configure_slash_command_completion(module: Any) -> None:
+    if not hasattr(module, "set_completer"):
+        return
+    module.set_completer(_make_slash_command_completer(module))
+    if hasattr(module, "parse_and_bind"):
+        with suppress(Exception):
+            module.parse_and_bind("tab: complete")
+
+
+def _make_slash_command_completer(module: Any) -> Callable[[str, int], str | None]:
+    def complete(text: str, state: int) -> str | None:
+        line = text
+        begidx = 0
+        if hasattr(module, "get_line_buffer"):
+            line = str(module.get_line_buffer())
+        if hasattr(module, "get_begidx"):
+            begidx = int(module.get_begidx())
+        matches = _slash_command_completion_matches(line=line, text=text, begidx=begidx)
+        if state < 0 or state >= len(matches):
+            return None
+        return matches[state]
+
+    return complete
+
+
+def _slash_command_completion_matches(*, line: str, text: str, begidx: int) -> list[str]:
+    if not line.startswith("/"):
+        return []
+    if begidx == 0:
+        query = text.lower()
+        return [
+            f"{command} "
+            for command in SLASH_COMMAND_COMPLETIONS
+            if command.lower().startswith(query)
+        ]
+
+    command = line.split(maxsplit=1)[0].lower()
+    candidates = SLASH_ARGUMENT_COMPLETIONS.get(command, ())
+    query = text.lower()
+    return [f"{candidate} " for candidate in candidates if candidate.lower().startswith(query)]
 
 
 def client_env_path() -> Path:
@@ -394,6 +459,10 @@ class AgentApiClient:
 
     def list_strategy_research(self) -> list[dict[str, Any]]:
         return self._get_list("/api/strategy/research", "items")
+
+    def list_strategy_library(self, query: str = "") -> dict[str, Any]:
+        suffix = f"?query={quote(query)}" if query else ""
+        return self._get_object(f"/api/strategy/library{suffix}")
 
     def list_backtests(self) -> list[dict[str, Any]]:
         return self._get_list("/api/backtests", "items")
@@ -674,6 +743,9 @@ class LocalAgentClient:
 
     def list_strategy_research(self) -> list[dict[str, Any]]:
         return StrategyResearchService(self.db).list_recent(limit=10)
+
+    def list_strategy_library(self, query: str = "") -> dict[str, Any]:
+        return StrategyLibraryService(self.db).search(query=query)
 
     def list_backtests(self) -> list[dict[str, Any]]:
         return BacktestService(self.db).list_recent(limit=10)
@@ -1053,7 +1125,7 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
     name = command.split(maxsplit=1)[0].lower()
     # Keep this dispatcher flat and explicit so CLI -> Agent/tool/API wiring is
     # easy to audit during production operations.
-    if name in {"/help", "/?", "/commands", "/command"}:
+    if name in {"/", "/help", "/?", "/commands", "/command"}:
         render_slash_help(output=output)
     elif name == "/status":
         render_status(client.get_status(), output=output)
@@ -1072,7 +1144,7 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
     elif name in {"/evals", "/eval"}:
         render_evals_status(client.get_evals_status(), output=output)
     elif name in {"/strategy", "/strategies"}:
-        render_strategy_research(client.list_strategy_research(), output=output)
+        handle_strategy_command(command, client=client, output=output)
     elif name == "/backtests":
         render_backtests(client.list_backtests(), output=output)
     elif name == "/backtest":
@@ -1476,6 +1548,15 @@ def handle_rag_command(command: str, *, client: AgentClient, output: TextIO) -> 
     render_rag_hits(client.search_rag(parts[1].strip()), output=output)
 
 
+def handle_strategy_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    parts = command.split(maxsplit=2)
+    if len(parts) >= 2 and parts[1].lower() in {"library", "lib", "memory"}:
+        query = parts[2].strip() if len(parts) >= 3 else ""
+        render_strategy_library(client.list_strategy_library(query), output=output)
+        return
+    render_strategy_research(client.list_strategy_research(), output=output)
+
+
 def _latest_strategy_research(client: AgentClient) -> dict[str, Any] | None:
     items = client.list_strategy_research()
     return items[0] if items else None
@@ -1840,6 +1921,71 @@ def render_strategy_research(items: list[dict[str, Any]], *, output: TextIO) -> 
         )
 
 
+def render_strategy_library(payload: dict[str, Any], *, output: TextIO) -> None:
+    print("Strategy library:", file=output)
+    print(f"- Source: {payload.get('source', 'unknown')}", file=output)
+    print(f"- Memory evidence: {payload.get('memory_count', 0)}", file=output)
+    items = payload.get("items")
+    items = items if isinstance(items, list) else []
+    if not items:
+        print("- none", file=output)
+        return
+    for item in items[:10]:
+        if not isinstance(item, dict):
+            continue
+        print(
+            "- {strategy}: evidence={evidence} pass={passed} fail={failed}".format(
+                strategy=item.get("strategy_key", "unknown"),
+                evidence=item.get("evidence_count", 0),
+                passed=item.get("passed_count", 0),
+                failed=item.get("failed_count", 0),
+            ),
+            file=output,
+        )
+        best = item.get("best")
+        best = best if isinstance(best, dict) else {}
+        if best:
+            print(
+                (
+                    "  best: memory={memory} experiment={experiment} "
+                    "backtest={backtest} winner={winner}"
+                ).format(
+                    memory=best.get("memory_id", "n/a"),
+                    experiment=best.get("experiment_id", "n/a"),
+                    backtest=best.get("backtest_id", "n/a"),
+                    winner=best.get("variant_id", "n/a"),
+                ),
+                file=output,
+            )
+            print(
+                (
+                    "  metrics: return={return_pct}% drawdown={drawdown}% "
+                    "trades={trades} score={score}"
+                ).format(
+                    return_pct=best.get("total_return_pct", "n/a"),
+                    drawdown=best.get("max_drawdown_pct", "n/a"),
+                    trades=best.get("trade_count", "n/a"),
+                    score=best.get("score", "n/a"),
+                ),
+                file=output,
+            )
+        failure_reasons = item.get("failure_reasons")
+        if isinstance(failure_reasons, list) and failure_reasons:
+            print(
+                f"  failure reasons: {', '.join(str(value) for value in failure_reasons)}",
+                file=output,
+            )
+        next_steps = item.get("next_experiments")
+        if isinstance(next_steps, list) and next_steps:
+            print(f"  next: {next_steps[0]}", file=output)
+        source_ids = item.get("source_memory_ids")
+        if isinstance(source_ids, list) and source_ids:
+            print(
+                f"  source memories: {', '.join(str(value) for value in source_ids)}",
+                file=output,
+            )
+
+
 def render_backtests(items: list[dict[str, Any]], *, output: TextIO) -> None:
     print("Backtests:", file=output)
     if not items:
@@ -1860,10 +2006,11 @@ def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
     output = output or sys.stdout
     if _should_render_rich(output) and _render_rich_run(run, output=output):
         return
-    print(f"Run: {run.get('id', 'unknown')}", file=output)
-    print(f"Status: {run.get('status', 'unknown')}", file=output)
     trace_events = run.get("trace_events", [])
-    if isinstance(trace_events, list) and trace_events:
+    if _show_trace_output():
+        print(f"Run: {run.get('id', 'unknown')}", file=output)
+        print(f"Status: {run.get('status', 'unknown')}", file=output)
+    if _show_trace_output() and isinstance(trace_events, list) and trace_events:
         print("Tools:", file=output)
         for event in trace_events:
             if not isinstance(event, dict):
@@ -1872,7 +2019,7 @@ def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
                 f"- {event.get('tool_name', 'unknown')}: {event.get('status', 'unknown')}",
                 file=output,
             )
-    print("", file=output)
+        print("", file=output)
     if _render_structured_report(run, output=output):
         return
     _render_markdown_report(
@@ -1920,16 +2067,17 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     if not has_structured_market_summary and not has_structured_tools and not raw_markdown:
         return False
 
-    header = Table.grid(expand=True)
-    header.add_column(ratio=1)
-    header.add_column(justify="right")
-    header.add_row(
-        Text(str(run.get("id", "unknown")), style="bold"),
-        Text(str(run.get("status", "unknown")), style="green"),
-    )
-    console.print(Panel(header, title="HyperTrade Run", border_style="cyan"))
+    if _show_trace_output():
+        header = Table.grid(expand=True)
+        header.add_column(ratio=1)
+        header.add_column(justify="right")
+        header.add_row(
+            Text(str(run.get("id", "unknown")), style="bold"),
+            Text(str(run.get("status", "unknown")), style="green"),
+        )
+        console.print(Panel(header, title="HyperTrade Run", border_style="cyan"))
 
-    if isinstance(trace_events, list) and trace_events:
+    if _show_trace_output() and isinstance(trace_events, list) and trace_events:
         _render_rich_trace_summary(trace_events, console=console)
 
     if has_structured_market_summary and isinstance(report, dict):
@@ -1937,9 +2085,7 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     elif has_structured_tools and isinstance(trace_events, list):
         _render_rich_tool_report(trace_events, report=report, console=console)
     else:
-        console.print(
-            Panel(Markdown(raw_markdown), title="Agent Report", border_style="green")
-        )
+        console.print(Markdown(raw_markdown))
 
     return True
 
@@ -1987,8 +2133,24 @@ def _render_rich_trace_summary(trace_events: list[Any], *, console: Any) -> None
 
 
 def _show_full_trace() -> bool:
-    value = os.getenv("HYPERTRADE_TRACE", "summary").strip().lower()
+    value = _trace_display_mode()
     return value in {"all", "debug", "full", "verbose"}
+
+
+def _show_trace_output() -> bool:
+    return _trace_display_mode() in {
+        "all",
+        "compact",
+        "debug",
+        "folded",
+        "full",
+        "summary",
+        "verbose",
+    }
+
+
+def _trace_display_mode() -> str:
+    return os.getenv("HYPERTRADE_TRACE", "off").strip().lower()
 
 
 def _partition_trace_events(
@@ -2061,7 +2223,6 @@ def _render_rich_markdown(markdown: str, *, output: TextIO, title: str) -> bool:
     try:
         from rich.console import Console
         from rich.markdown import Markdown
-        from rich.panel import Panel
     except ImportError:
         return False
 
@@ -2071,7 +2232,7 @@ def _render_rich_markdown(markdown: str, *, output: TextIO, title: str) -> bool:
         color_system=_rich_color_system(),
         width=120,
     )
-    console.print(Panel(Markdown(markdown), title=title, border_style="green"))
+    console.print(Markdown(markdown))
     return True
 
 
@@ -2084,7 +2245,34 @@ def _strip_report_icons(markdown: str) -> str:
         "".join(ch for ch in line if not _is_report_icon_char(ch))
         for line in markdown.splitlines()
     ]
-    return "\n".join(_normalize_markdown_line_spacing(line) for line in lines)
+    normalized = "\n".join(_normalize_markdown_line_spacing(line) for line in lines)
+    return _compact_markdown_report(normalized)
+
+
+def _compact_markdown_report(markdown: str) -> str:
+    compact_lines: list[str] = []
+    previous_blank = False
+    for raw_line in markdown.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if _is_markdown_horizontal_rule(stripped):
+            continue
+        if not stripped:
+            if compact_lines and not previous_blank:
+                compact_lines.append("")
+            previous_blank = True
+            continue
+        compact_lines.append(line)
+        previous_blank = False
+    while compact_lines and compact_lines[-1] == "":
+        compact_lines.pop()
+    return "\n".join(compact_lines)
+
+
+def _is_markdown_horizontal_rule(stripped: str) -> bool:
+    if len(stripped) < 3:
+        return False
+    return set(stripped) in ({"-"}, {"_"}, {"*"})
 
 
 def _is_report_icon_char(ch: str) -> bool:
@@ -2149,9 +2337,6 @@ def _render_rich_tool_report(
     report: object,
     console: Any,
 ) -> None:
-    from rich.panel import Panel
-
-    console.print(Panel("Agent Report", border_style="green"))
     for event in trace_events:
         if not isinstance(event, dict):
             continue
@@ -2740,7 +2925,6 @@ def _render_structured_tool_report(
     report: dict[str, Any],
     output: TextIO,
 ) -> None:
-    print("Agent Report", file=output)
     for event in trace_events:
         if not isinstance(event, dict):
             continue

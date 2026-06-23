@@ -99,6 +99,9 @@ def test_strategy_experiment_workflow_api(tmp_path) -> None:
     assert f"winner={winner['variant_id']}" in knowledge["content"]
     assert "total_return_pct=" in knowledge["content"]
     assert "max_drawdown_pct=" in knowledge["content"]
+    assert "variant_count=3" in knowledge["content"]
+    assert "gate_results=" in knowledge["content"]
+    assert "failure_reasons=" in knowledge["content"]
     assert "next_experiment=" in knowledge["content"]
     assert {
         "strategy",
@@ -113,6 +116,15 @@ def test_strategy_experiment_workflow_api(tmp_path) -> None:
         params={"kind": "strategy_knowledge", "query": winner["variant_id"]},
     ).json()["items"]
     assert hits[0]["id"] == knowledge["id"]
+
+    library = client.get("/api/strategy/library", params={"query": winner["variant_id"]}).json()
+    assert library["source"] == "memory.strategy_knowledge"
+    assert library["memory_count"] == 1
+    assert library["items"][0]["strategy_key"] == "momentum_breakout_v1"
+    assert library["items"][0]["evidence_count"] == 1
+    assert library["items"][0]["best"]["backtest_id"] == winner["backtest_id"]
+    assert library["items"][0]["best"]["variant_id"] == winner["variant_id"]
+    assert library["items"][0]["source_memory_ids"] == [knowledge["id"]]
 
 
 def test_backtest_api_accepts_live_okx_candle_options(monkeypatch, tmp_path) -> None:

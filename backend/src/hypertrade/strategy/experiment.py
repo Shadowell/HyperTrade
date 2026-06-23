@@ -207,6 +207,8 @@ def _winner_summary(winner: dict[str, Any]) -> dict[str, Any]:
         "backtest_id": winner["backtest_id"],
         "strategy_params": winner["strategy_params"],
         "metrics": winner["metrics"],
+        "gate_results": winner["gate_results"],
+        "failure_reasons": _failure_reasons(winner["gate_results"]),
         "score": winner["score"],
         "passed": winner["passed"],
         "selection_reason": (
@@ -355,6 +357,11 @@ def _render_strategy_knowledge_memory(
 ) -> str:
     metrics = _as_dict(winner.get("metrics"))
     data_selection = _as_dict(report_json.get("data_selection"))
+    variants = report_json.get("variants")
+    variants = variants if isinstance(variants, list) else []
+    gate_results = _as_dict(winner.get("gate_results"))
+    failure_reasons = winner.get("failure_reasons")
+    failure_reasons = failure_reasons if isinstance(failure_reasons, list) else []
     gates = _as_dict(report_json.get("evidence_gates"))
     revision = _as_dict(report_json.get("revision_suggestion"))
     return "\n".join(
@@ -368,6 +375,7 @@ def _render_strategy_knowledge_memory(
                 f"winner={winner.get('variant_id', '')}; "
                 f"passed={str(bool(winner.get('passed'))).lower()}"
             ),
+            f"variant_count={len(variants)}",
             f"params={_stable_mapping(_as_dict(winner.get('strategy_params')))}",
             (
                 "metrics="
@@ -384,6 +392,8 @@ def _render_strategy_knowledge_memory(
                 f"candle_count={data_selection.get('candle_count', 'n/a')}"
             ),
             f"evidence_gates={_stable_mapping(gates)}",
+            f"gate_results={_stable_mapping(gate_results)}",
+            f"failure_reasons={', '.join(failure_reasons) if failure_reasons else 'none'}",
             f"next_experiment={revision.get('next_experiment', '')}",
             "boundary=research_only; no_bitpro_write; no_live_or_testnet_order",
         ]
@@ -426,6 +436,10 @@ def _stable_mapping(mapping: dict[str, Any]) -> str:
     if not mapping:
         return "none"
     return ", ".join(f"{key}={mapping[key]}" for key in sorted(mapping))
+
+
+def _failure_reasons(gate_results: dict[str, bool]) -> list[str]:
+    return [key for key, passed in sorted(gate_results.items()) if not passed]
 
 
 def _as_dict(value: Any) -> dict[str, Any]:

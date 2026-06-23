@@ -21,7 +21,7 @@ runbooks, and sprint state. Chat history is not considered durable project state
 | RAG | `/rag`, `/api/rag/search`, Memory/RAG panels | `architecture/05-rag-pgvector.md` |
 | Memory | `/memory`, `/api/memory`, audited items | `architecture/06-memory.md` |
 | Strategy research | `/research`, `/backtest`, `/experiment` | `architecture/16-strategy-agent-workflow.md` |
-| Strategy knowledge memory | `kind=strategy_knowledge` memory search | `knowledge/strategy-research-playbook.md` |
+| Strategy knowledge memory | `/strategy library`, `GET /api/strategy/library`, `kind=strategy_knowledge` memory search | `knowledge/strategy-research-playbook.md` |
 | BitPro MCP | Agent tools, API adapter, backtest artifacts, paper evidence snapshots | `architecture/17-bitpro-tool-adapter.md` |
 | Risk/Testnet execution | `/live intent`, `/live approve`, `/live execute` | `architecture/14-risk-engine.md`, `architecture/15-okx-testnet-execution.md` |
 | CLI | `hypertrade`, `ht`, slash commands | `architecture/11-cli-conversation-harness.md` |

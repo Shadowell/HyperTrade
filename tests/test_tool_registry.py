@@ -17,6 +17,7 @@ def test_tool_registry_exposes_sprint_one_tools_and_live_gate():
         "bitpro.paper_monitor_snapshot",
         "bitpro.live_positions",
     } <= names
+    assert "strategy.library_search" in names
     assert all(tool.description.strip() for tool in registry.list_tools())
     assert registry.get("market.summary").requires_approval is False
     assert registry.get("bitpro.market_klines").requires_approval is False

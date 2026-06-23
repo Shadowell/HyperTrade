@@ -14,7 +14,7 @@ hypertrade ask "看下ETH行情"
 hypertrade --remote http://127.0.0.1:3334 ask "看下ETH行情"
 printf "/status\n/model\n/evals\n:q\n" | hypertrade --remote http://127.0.0.1:3334
 printf "/rag 风控\n/memory search 风控\n:q\n" | hypertrade --remote http://127.0.0.1:3334
-printf "/experiment 研究ETH趋势突破\n/memory search momentum_breakout_v1\n:q\n" | hypertrade --remote http://127.0.0.1:3334
+printf "/experiment 研究ETH趋势突破\n/memory search momentum_breakout_v1\n/strategy library momentum_breakout_v1\n:q\n" | hypertrade --remote http://127.0.0.1:3334
 ```
 
 Expected:
@@ -24,6 +24,7 @@ Expected:
 - `/evals` returns deterministic passed cases.
 - `/rag` and `/memory search` return stable output or `none` without crashing.
 - `/experiment` creates an `exp_*` experiment and a searchable `strategy_knowledge` memory item.
+- `/strategy library` groups strategy memory evidence and shows source memory ids plus next-experiment guidance when evidence exists.
 
 Optional BitPro MCP smoke when the production BitPro MCP endpoint is configured:
 

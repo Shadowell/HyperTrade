@@ -32,6 +32,7 @@ from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagService
+from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.service import StrategyResearchService
 from hypertrade.tools.registry import ToolRegistry
 
@@ -271,6 +272,12 @@ class AgentKernel:
                         for m in items[-10:]
                     ]
                 }
+            elif tool_name == "strategy_library_search":
+                result = StrategyLibraryService(self.db).search(
+                    query=str(args.get("query", "")),
+                    strategy_key=str(args.get("strategy_key", "")),
+                    limit=int(args.get("limit", 10)),
+                )
             elif tool_name == "strategy_draft":
                 research_prompt = str(args.get("prompt", ""))
                 result = StrategyResearchService(self.db).create(research_prompt)
@@ -974,6 +981,7 @@ class AgentKernel:
         bitpro_backtest_detail_lines: list[str] = []
         bitpro_paper_lines: list[str] = []
         bitpro_lifecycle_lines: list[str] = []
+        strategy_library_lines: list[str] = []
         citation_lines: list[str] = []
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "market_ticker":
@@ -1044,7 +1052,75 @@ class AgentKernel:
                             trend_bias=row.get("trend_bias", "unknown"),
                         )
                     )
-                compare_lines.append("")
+            compare_lines.append("")
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "strategy_library_search":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict):
+                continue
+            strategy_library_lines.extend(
+                [
+                    f"- 来源: {payload.get('source', 'unknown')}",
+                    f"- 记忆证据数: {payload.get('memory_count', 0)}",
+                ]
+            )
+            items = payload.get("items")
+            items = items if isinstance(items, list) else []
+            if not items:
+                strategy_library_lines.append("- 未找到匹配的策略经验。")
+            for item in items[:10]:
+                if not isinstance(item, dict):
+                    continue
+                strategy_library_lines.append(
+                    (
+                        "- {strategy} | 证据: {evidence} 条，pass={passed}，fail={failed}"
+                    ).format(
+                        strategy=item.get("strategy_key", "unknown"),
+                        evidence=item.get("evidence_count", 0),
+                        passed=item.get("passed_count", 0),
+                        failed=item.get("failed_count", 0),
+                    )
+                )
+                best = item.get("best")
+                best = best if isinstance(best, dict) else {}
+                if best:
+                    strategy_library_lines.append(
+                        (
+                            "- 最佳证据: memory={memory}, experiment={experiment}, "
+                            "backtest={backtest}, winner={winner}"
+                        ).format(
+                            memory=best.get("memory_id", "n/a"),
+                            experiment=best.get("experiment_id", "n/a"),
+                            backtest=best.get("backtest_id", "n/a"),
+                            winner=best.get("variant_id", "n/a"),
+                        )
+                    )
+                    strategy_library_lines.append(
+                        (
+                            "- 指标: 收益={return_pct}%, 回撤={drawdown}%, "
+                            "交易={trades}, score={score}"
+                        ).format(
+                            return_pct=best.get("total_return_pct", "n/a"),
+                            drawdown=best.get("max_drawdown_pct", "n/a"),
+                            trades=best.get("trade_count", "n/a"),
+                            score=best.get("score", "n/a"),
+                        )
+                    )
+                failure_reasons = item.get("failure_reasons")
+                if isinstance(failure_reasons, list) and failure_reasons:
+                    strategy_library_lines.append(
+                        "- 失败原因: " + ", ".join(str(value) for value in failure_reasons)
+                    )
+                next_experiments = item.get("next_experiments")
+                if isinstance(next_experiments, list) and next_experiments:
+                    strategy_library_lines.append(f"- 下一轮: {next_experiments[0]}")
+                source_memory_ids = item.get("source_memory_ids")
+                if isinstance(source_memory_ids, list) and source_memory_ids:
+                    strategy_library_lines.append(
+                        "- 来源记忆: " + ", ".join(str(value) for value in source_memory_ids)
+                    )
+            strategy_library_lines.append("")
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "bitpro_market_klines":
                 continue
@@ -1593,6 +1669,8 @@ class AgentKernel:
             sections.extend(["## K线趋势特征", "", *candle_lines])
         if compare_lines:
             sections.extend(["## 多标的强弱比较", "", *compare_lines])
+        if strategy_library_lines:
+            sections.extend(["## 策略库记忆", "", *strategy_library_lines])
         if bitpro_lines:
             sections.extend(["## BitPro MCP K线直连", "", *bitpro_lines])
         if bitpro_backtest_lines:

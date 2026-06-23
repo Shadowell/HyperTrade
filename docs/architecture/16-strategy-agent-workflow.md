@@ -35,18 +35,27 @@ experiment.
 The existing Memory service stores the reusable strategy knowledge card rather
 than adding a separate strategy-library table. Each completed experiment writes
 one `strategy_knowledge` item with experiment/research/backtest ids, winning
-variant, parameters, return, drawdown, trade count, gates, data selection, and
-next-experiment guidance. Tags include `strategy`, `strategy_experiment`,
-`evidence`, the strategy key, and the winning variant so Agent runs can retrieve
-prior evidence through normal Memory search.
+variant, variant count, parameters, return, drawdown, trade count, gate results,
+failure reasons, data selection, and next-experiment guidance. Tags include
+`strategy`, `strategy_experiment`, `evidence`, the strategy key, and the winning
+variant so Agent runs can retrieve prior evidence through normal Memory search.
+
+Sprint 44 adds `StrategyLibraryService` as a read model over those Memory cards.
+It groups evidence by strategy key and returns best/latest evidence, pass/fail
+counts, variant summaries, failure reasons, next experiments, and source memory
+ids. This makes the local strategy library an auditable view over Memory, not a
+second persistence path.
 
 ## Surfaces
 
 - API: `POST /api/strategy/experiments`
 - API: `GET /api/strategy/experiments`
 - API: `GET /api/memory?kind=strategy_knowledge`
+- API: `GET /api/strategy/library?query=<text>&strategy_key=<key>`
 - CLI: `/experiment <prompt>`
 - CLI: `/memory search <strategy or variant>`
+- CLI: `/strategy library [query]`
+- Agent tool: `strategy_library_search`
 - Frontend: latest experiment card in `/harness`
 
 All reports include a research-only disclaimer. The workflow remains local

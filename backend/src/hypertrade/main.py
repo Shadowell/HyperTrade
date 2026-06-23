@@ -45,6 +45,7 @@ from hypertrade.paper.service import PaperTradingService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagHit, RagService
 from hypertrade.strategy.experiment import StrategyExperimentService
+from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.sdk import Candle
 from hypertrade.strategy.service import StrategyResearchService
 from hypertrade.tools.registry import ToolDefinition, ToolRegistry
@@ -555,6 +556,18 @@ def create_app(
     @app.get("/api/strategy/experiments")
     def list_strategy_experiments() -> dict[str, list[dict[str, Any]]]:
         return {"items": StrategyExperimentService(database).list_recent()}
+
+    @app.get("/api/strategy/library")
+    def strategy_library(
+        query: str = "",
+        strategy_key: str = "",
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        return StrategyLibraryService(database).search(
+            query=query,
+            strategy_key=strategy_key,
+            limit=limit,
+        )
 
     @app.post("/api/backtests")
     def create_backtest(payload: BacktestPayload) -> dict[str, Any]:

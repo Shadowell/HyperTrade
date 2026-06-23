@@ -155,6 +155,46 @@ class TestAgentPlannerMarketCompareTool:
         }
 
 
+def test_strategy_library_search_schema_exposes_memory_sedimentation() -> None:
+    schema = next(
+        item for item in TOOL_SCHEMAS if item["function"]["name"] == "strategy_library_search"
+    )
+
+    assert "strategy_knowledge" in schema["function"]["description"]
+    properties = schema["function"]["parameters"]["properties"]
+    assert {"query", "strategy_key", "limit"} <= set(properties)
+
+
+def test_can_call_strategy_library_search_tool() -> None:
+    tool_call = ToolCallRequest(
+        id="call_strategy_library",
+        name="strategy_library_search",
+        arguments={"query": "momentum", "strategy_key": "momentum_breakout_v1"},
+    )
+    llm = _fake_llm(
+        ChatResponse(content="", tool_calls=[tool_call]),
+        ChatResponse(content="策略库经验已读取。", tool_calls=[]),
+    )
+    planner = AgentPlanner(llm)
+    result = planner.run(
+        "查看之前沉淀的策略经验",
+        _static_executor(
+            {
+                "strategy_library_search": {
+                    "source": "memory.strategy_knowledge",
+                    "items": [{"strategy_key": "momentum_breakout_v1"}],
+                }
+            }
+        ),
+    )
+
+    assert result.tool_calls[0].tool_name == "strategy_library_search"
+    assert result.tool_calls[0].input_json == {
+        "query": "momentum",
+        "strategy_key": "momentum_breakout_v1",
+    }
+
+
 class TestAgentPlannerMultiTurnChain:
     def test_research_then_backtest_chain(self) -> None:
         research_call = ToolCallRequest(

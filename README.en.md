@@ -10,7 +10,7 @@ HyperTrade is a crypto trading agent for market research and execution. It is in
 - Provider Router with DeepSeek default and OpenAI/OpenRouter/Qwen chat extension paths.
 - Tool calling for market, RAG, Memory, strategy, backtest, paper, live intent, and Testnet execution.
 - RAG citations backed by PostgreSQL/pgvector-compatible chunk metadata.
-- Memory v2 with dedupe, tags, importance, confidence, and usage audit.
+- Memory v2 with dedupe, tags, importance, confidence, usage audit, and a strategy-library read model over strategy evidence.
 - Trading boundary: Mainnet execution is blocked; OKX Testnet signed execution is allowed only after approval and risk checks.
 - Strategy workflow with research, multi-variant backtest evidence, critique, next experiment suggestion, and searchable `strategy_knowledge` memory cards.
 - BitPro MCP adapter for health checks, direct K-line reads, strategy generation/create/update, BitPro backtest jobs/results/artifacts, paper lifecycle, paper monitoring snapshots, and live-position read-only diagnostics.
@@ -33,6 +33,7 @@ HyperTrade is a crypto trading agent for market research and execution. It is in
 /model deepseek
 /rag risk
 /memory search risk
+/strategy library momentum_breakout_v1
 /experiment research ETH breakout
 /live intents
 /live execute loi_...

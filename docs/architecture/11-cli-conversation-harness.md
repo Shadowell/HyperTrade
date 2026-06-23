@@ -30,6 +30,10 @@ process is not killed by `docker compose up -d api worker`.
 Interactive chat also supports slash commands for harness inspection without starting a new Agent run.
 `/help` renders every command with a short purpose statement, and `/tools` renders each
 registered Agent tool with category, approval marker, and registry description:
+Entering `/` alone renders the same command list. In real TTY sessions, readline Tab
+completion is registered for slash commands and common subcommands, so `/`, `/m`, or
+`/paper ` can reveal available commands without requiring the operator to remember the
+full spelling.
 
 - `/help`, `/status`, `/model`, `/providers`
 - `/tools`, `/runs`, `/memory`
@@ -71,10 +75,10 @@ Report rendering prefers structured JSON/trace payloads when available. If a run
 Markdown, Rich-capable interactive output renders headings, lists, emphasis, and tables instead
 of printing raw Markdown source. `HYPERTRADE_RENDERER=plain` keeps the raw Markdown fallback for
 automation.
-Rich run output folds low-signal trace rows by default: graph runtime nodes, BitPro
-capability/health preflight rows, and nested BitPro subcalls are summarized instead of printed as
-a long table. Business-level tool calls remain visible with an aggregated call count. Operators can
-set `HYPERTRADE_TRACE=full` to print the complete trace table during audits or debugging.
+Default run output is report-focused: run metadata, tool trace tables, and wrapper report
+panels are hidden so routine answers stay compact. Operators can set
+`HYPERTRADE_TRACE=summary` to print a compact folded trace, or
+`HYPERTRADE_TRACE=full` to print the complete trace table during audits or debugging.
 
 This keeps Provider configuration, Tool Call policy, RAG, Memory, approval gates, and trace persistence in one runtime boundary. The terminal becomes another harness surface alongside `/harness`.
 
@@ -107,6 +111,8 @@ CLI 会显示可重试的远程 API 连接提示。
 交互式 chat 还支持斜杠命令，用于查看 Harness 状态而无需发起新的 Agent run。`/help`
 会为每条命令显示用途说明，`/tools` 会为每个 Agent 工具显示 category、approval 标记和
 registry 描述：
+只输入 `/` 会展示同一份命令列表。真实 TTY 会注册 readline Tab 补全，因此输入 `/`、`/m`
+或 `/paper ` 后按 Tab 可以展示/补全可用命令与常见子命令，不需要操作员记住完整拼写。
 
 - `/help`、`/status`、`/model`、`/providers`
 - `/tools`、`/runs`、`/memory`
@@ -142,8 +148,8 @@ CLI 会先把这些事件渲染成进度行，再打印最终落库的 run 报�
 报告渲染优先使用结构化 JSON/trace payload。只有 Markdown 的 run 在 Rich/交互式输出下会
 渲染成标题、列表、强调和表格，而不是直接打印 Markdown 源码。`HYPERTRADE_RENDERER=plain`
 保留原始 Markdown fallback，供自动化脚本使用。
-Rich run 输出默认折叠低信号 trace 行：graph 运行时节点、BitPro capability/health 预检行、
-以及嵌套 BitPro 子调用会被汇总，不再作为长表全部打印。业务级工具调用仍会显示，并聚合调用
-次数。需要审计或排障时，可设置 `HYPERTRADE_TRACE=full` 打印完整 trace 表。
+默认 run 输出只聚焦报告正文：run metadata、tool trace 表和外层 report 面板都会隐藏，让日常回答更紧凑。
+需要排障时，可设置 `HYPERTRADE_TRACE=summary` 打印折叠后的简表，或设置
+`HYPERTRADE_TRACE=full` 打印完整 trace 表。
 
 这样 Provider 配置、Tool Call 策略、RAG、Memory、审批门和 trace 持久化仍保持在同一个运行边界内。终端只是 `/harness` 之外的另一个 Harness 入口。

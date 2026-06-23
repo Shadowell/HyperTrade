@@ -368,6 +368,54 @@ def test_planner_report_renders_bitpro_paper_snapshot_drift() -> None:
     assert "告警 warning/pnl_drop: total_pnl_pct dropped by -2.5%" in report
 
 
+def test_planner_report_renders_strategy_library_summary() -> None:
+    report = AgentKernel._render_planner_report(
+        "策略库经验已读取。",
+        [
+            ToolCallRecord(
+                tool_name="strategy_library_search",
+                input_json={"query": "momentum"},
+                output_json={
+                    "source": "memory.strategy_knowledge",
+                    "memory_count": 2,
+                    "items": [
+                        {
+                            "strategy_key": "momentum_breakout_v1",
+                            "evidence_count": 2,
+                            "passed_count": 1,
+                            "failed_count": 1,
+                            "best": {
+                                "memory_id": "mem_fast",
+                                "experiment_id": "exp_fast",
+                                "backtest_id": "bt_fast",
+                                "variant_id": "fast",
+                                "total_return_pct": "12.5",
+                                "max_drawdown_pct": "3.1",
+                                "trade_count": 8,
+                                "score": "11.75",
+                            },
+                            "failure_reasons": ["require_non_negative_return"],
+                            "next_experiments": [
+                                "Test adjacent SMA windows around 3 on BitPro MCP candles."
+                            ],
+                            "source_memory_ids": ["mem_slow", "mem_fast"],
+                        }
+                    ],
+                },
+            )
+        ],
+    )
+
+    assert "## 策略库记忆" in report
+    assert "momentum_breakout_v1" in report
+    assert "证据: 2 条，pass=1，fail=1" in report
+    assert "最佳证据: memory=mem_fast, experiment=exp_fast, backtest=bt_fast, winner=fast" in report
+    assert "收益=12.5%, 回撤=3.1%, 交易=8, score=11.75" in report
+    assert "失败原因: require_non_negative_return" in report
+    assert "下一轮: Test adjacent SMA windows around 3 on BitPro MCP candles." in report
+    assert "来源记忆: mem_slow, mem_fast" in report
+
+
 def test_planner_report_renders_bitpro_backtest_total_return_results() -> None:
     report = AgentKernel._render_planner_report(
         "已读取 BitPro 回测结果。",

@@ -11,7 +11,10 @@ from hypertrade.cli import (
     AgentApiClient,
     CliConfig,
     LocalAgentClient,
+    _compact_markdown_report,
+    _slash_command_completion_matches,
     configure_interactive_history,
+    handle_slash_command,
     main,
     render_backtest_result,
     render_run,
@@ -35,6 +38,8 @@ class FakeReadline:
         self.read_path = ""
         self.write_path = ""
         self.added: list[str] = []
+        self.completer: Any | None = None
+        self.bindings: list[str] = []
 
     def read_history_file(self, path: str) -> None:
         self.read_path = path
@@ -56,6 +61,12 @@ class FakeReadline:
             return None
         return self.added[index - 1]
 
+    def set_completer(self, completer: Any) -> None:
+        self.completer = completer
+
+    def parse_and_bind(self, binding: str) -> None:
+        self.bindings.append(binding)
+
 
 class FakeAgentClient:
     def __init__(self) -> None:
@@ -64,6 +75,7 @@ class FakeAgentClient:
         self.research_prompts: list[str] = []
         self.experiment_prompts: list[str] = []
         self.backtest_calls: list[dict[str, Any]] = []
+        self.strategy_library_queries: list[str] = []
         self.price_symbols: list[str] = []
         self.candle_calls: list[dict[str, Any]] = []
         self.compare_calls: list[dict[str, Any]] = []
@@ -172,6 +184,34 @@ class FakeAgentClient:
 
     def list_strategy_research(self) -> list[dict[str, Any]]:
         return [{"id": "srch_recent", "strategy_key": "momentum_breakout_v1", "title": "趋势突破"}]
+
+    def list_strategy_library(self, query: str = "") -> dict[str, Any]:
+        self.strategy_library_queries.append(query)
+        return {
+            "source": "memory.strategy_knowledge",
+            "memory_count": 2,
+            "items": [
+                {
+                    "strategy_key": "momentum_breakout_v1",
+                    "evidence_count": 2,
+                    "passed_count": 1,
+                    "failed_count": 1,
+                    "best": {
+                        "memory_id": "mem_fast",
+                        "experiment_id": "exp_fast",
+                        "backtest_id": "bt_fast",
+                        "variant_id": "fast",
+                        "total_return_pct": "12.5",
+                        "max_drawdown_pct": "3.1",
+                        "trade_count": 8,
+                        "score": "11.75",
+                    },
+                    "failure_reasons": ["require_non_negative_return"],
+                    "next_experiments": ["Test adjacent SMA windows around 3."],
+                    "source_memory_ids": ["mem_slow", "mem_fast"],
+                }
+            ],
+        }
 
     def list_backtests(self) -> list[dict[str, Any]]:
         return [
@@ -500,6 +540,8 @@ def test_configure_interactive_history_reads_and_writes_history(tmp_path) -> Non
     assert fake_readline.history_length == 1000
     assert fake_readline.read_path == str(tmp_path / "history")
     assert registered == [(fake_readline.write_history_file, (str(tmp_path / "history"),))]
+    assert fake_readline.completer is not None
+    assert "tab: complete" in fake_readline.bindings
 
     history.add("看下ETH行情")
     history.add("")
@@ -507,6 +549,49 @@ def test_configure_interactive_history_reads_and_writes_history(tmp_path) -> Non
     history.add("/tools")
 
     assert fake_readline.added == ["看下ETH行情", "/tools"]
+
+
+def test_slash_command_completion_matches_commands_and_subcommands() -> None:
+    root_matches = _slash_command_completion_matches(line="/", text="/", begidx=0)
+    model_matches = _slash_command_completion_matches(line="/m", text="/m", begidx=0)
+    paper_matches = _slash_command_completion_matches(
+        line="/paper ",
+        text="",
+        begidx=len("/paper "),
+    )
+    live_matches = _slash_command_completion_matches(
+        line="/live e",
+        text="e",
+        begidx=len("/live "),
+    )
+
+    assert "/help " in root_matches
+    assert "/tools " in root_matches
+    assert "/model " in model_matches
+    assert "/memory " in model_matches
+    assert "status " in paper_matches
+    assert "pause " in paper_matches
+    assert "execute " in live_matches
+    assert _slash_command_completion_matches(line="看下 ETH", text="ETH", begidx=3) == []
+
+
+def test_slash_command_root_displays_help_without_unknown_message() -> None:
+    output = StringIO()
+
+    handle_slash_command("/", client=FakeAgentClient(), output=output)
+
+    rendered = output.getvalue()
+    assert "Slash commands:" in rendered
+    assert "/tools" in rendered
+    assert "Unknown command" not in rendered
+
+
+def test_compact_markdown_report_removes_excess_spacing_and_rules() -> None:
+    compact = _compact_markdown_report(
+        "# 标题\n\n\n正文\n\n---\n\n\n## 小节\n\n\n- 项目\n\n\n"
+    )
+
+    assert compact == "# 标题\n\n正文\n\n## 小节\n\n- 项目"
 
 
 def test_interactive_history_does_not_duplicate_readline_auto_added_item(tmp_path) -> None:
@@ -533,8 +618,9 @@ def test_ask_prints_agent_run_trace_and_report(capsys) -> None:
     assert client.logged_in is True
     assert client.prompts == ["请做行情归纳"]
     output = capsys.readouterr().out
-    assert "run_cli" in output
-    assert "market.summary" in output
+    assert "Run:" not in output
+    assert "Tools:" not in output
+    assert "Agent status: executing tool market.summary" in output
     assert "# CLI Report" in output
 
 
@@ -619,7 +705,7 @@ def test_render_run_prefers_structured_tool_outputs_over_planner_markdown(capsys
     )
 
     output = capsys.readouterr().out
-    assert "Agent Report" in output
+    assert "Agent Report" not in output
     assert "Ticker:" in output
     assert "Trend:" in output
     assert "ETH-USDT-SWAP" in output
@@ -870,12 +956,14 @@ def test_render_run_can_use_rich_structured_output(monkeypatch) -> None:
 
     rendered = output.getvalue()
     assert "┏" in rendered
-    assert "Agent Report" in rendered
     assert "ETH-USDT-SWAP" in rendered
+    assert "HyperTrade Run" not in rendered
+    assert "Tool Trace" not in rendered
+    assert "Agent Report" not in rendered
     assert "Rich Markdown Should Not Render" not in rendered
 
 
-def test_rich_run_collapses_internal_trace_by_default(monkeypatch) -> None:
+def test_rich_run_hides_trace_shell_by_default(monkeypatch) -> None:
     monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
     monkeypatch.delenv("HYPERTRADE_TRACE", raising=False)
     output = StringIO()
@@ -902,13 +990,46 @@ def test_rich_run_collapses_internal_trace_by_default(monkeypatch) -> None:
     )
 
     rendered = output.getvalue()
-    assert "Tool Trace Summary" in rendered
-    assert "bitpro_strategy_search" in rendered
-    assert "memory_search" in rendered
-    assert "Trace folded: 6 internal events hidden" in rendered
+    assert "Report" in rendered
+    assert "ok" in rendered
+    assert "HyperTrade Run" not in rendered
+    assert "Tool Trace Summary" not in rendered
+    assert "bitpro_strategy_search" not in rendered
+    assert "memory_search" not in rendered
+    assert "Trace folded" not in rendered
     assert "graph.intent_classify" not in rendered
     assert "bitpro.capabilities" not in rendered
     assert "bitpro.strategy_search" not in rendered
+
+
+def test_rich_run_can_show_trace_summary(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    monkeypatch.setenv("HYPERTRADE_TRACE", "summary")
+    output = StringIO()
+
+    render_run(
+        {
+            "id": "run_folded",
+            "status": "completed",
+            "report_markdown": "# Report\n\nok",
+            "report_json": {"planner": "deepseek"},
+            "trace_events": [
+                {"tool_name": "graph.intent_classify", "status": "completed"},
+                {"tool_name": "bitpro.capabilities", "status": "completed"},
+                {"tool_name": "bitpro_strategy_search", "status": "completed"},
+                {"tool_name": "memory_search", "status": "completed"},
+                {"tool_name": "graph.final_report", "status": "completed"},
+            ],
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "HyperTrade Run" in rendered
+    assert "Tool Trace Summary" in rendered
+    assert "bitpro_strategy_search" in rendered
+    assert "memory_search" in rendered
+    assert "Trace folded" in rendered
 
 
 def test_rich_run_can_show_full_trace(monkeypatch) -> None:
@@ -932,6 +1053,7 @@ def test_rich_run_can_show_full_trace(monkeypatch) -> None:
     )
 
     rendered = output.getvalue()
+    assert "HyperTrade Run" in rendered
     assert "Tool Trace" in rendered
     assert "Tool Trace Summary" not in rendered
     assert "graph.intent_classify" in rendered
@@ -960,9 +1082,11 @@ def test_render_run_uses_rich_markdown_for_unknown_report(monkeypatch) -> None:
     )
 
     rendered = output.getvalue()
-    assert "Agent Report" in rendered
     assert "HyperTrade 技能清单" in rendered
     assert "market_summary" in rendered
+    assert "Agent Report" not in rendered
+    assert "HyperTrade Run" not in rendered
+    assert "Tool Trace" not in rendered
     assert "# HyperTrade" not in rendered
     assert "|---|---|" not in rendered
 
@@ -1264,8 +1388,10 @@ def test_workflow_results_use_rich_markdown_when_enabled(monkeypatch) -> None:
     )
 
     rendered = output.getvalue()
-    assert "Strategy Research" in rendered
-    assert "Backtest Report" in rendered
+    assert "Strategy Research" not in rendered
+    assert "Backtest Report" not in rendered
+    assert "Research" in rendered
+    assert "Backtest" in rendered
     assert "# Research" not in rendered
     assert "|---|---|" not in rendered
 
@@ -1308,8 +1434,9 @@ def test_chat_reuses_client_until_exit(capsys) -> None:
     assert client.logged_in is True
     assert client.prompts == ["研究趋势突破策略"]
     output = capsys.readouterr().out
-    assert "run_cli" in output
-    assert "memory.write" in output
+    assert "Run:" not in output
+    assert "Tools:" not in output
+    assert "# CLI Report" in output
 
 
 def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
@@ -1330,6 +1457,7 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
             "/rag 风控",
             "/evals",
             "/strategy",
+            "/strategy library momentum",
             "/backtests",
             "/price ETH",
             "/candles ETH --bar 1H --limit 50",
@@ -1374,6 +1502,10 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
     assert "tool_selection passed" in output
     assert client.disabled_memory_ids == ["mem_recent"]
     assert "srch_recent" in output
+    assert "Strategy library:" in output
+    assert "momentum_breakout_v1" in output
+    assert "best: memory=mem_fast experiment=exp_fast backtest=bt_fast winner=fast" in output
+    assert client.strategy_library_queries == ["momentum"]
     assert "bt_recent" in output
     assert "ETH-USDT-SWAP" in output
     assert "K-line trend:" in output
@@ -1524,7 +1656,9 @@ def test_bare_command_starts_chat_loop(capsys) -> None:
     assert client.prompts == ["请做行情归纳"]
     output = capsys.readouterr().out
     assert "HyperTrade CLI chat" in output
-    assert "run_cli" in output
+    assert "Run:" not in output
+    assert "Tools:" not in output
+    assert "# CLI Report" in output
 
 
 def test_chat_continues_after_remote_stream_disconnect(capsys) -> None:

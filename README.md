@@ -2,7 +2,7 @@
 
 [中文](README.zh-CN.md) | [English](README.en.md)
 
-HyperTrade is a crypto trading agent for market research and execution. Current V1 covers observable Agent graph runs, provider routing, tool calling, RAG citations, audited Memory, OKX market research, paper trading, strategy experiments, strategy knowledge memory, risk-gated live intents, OKX Testnet signed execution, and a BitPro MCP adapter for external data access, backtest artifacts, paper evidence snapshots, plus non-live strategy lifecycle workflows.
+HyperTrade is a crypto trading agent for market research and execution. Current V1 covers observable Agent graph runs, provider routing, tool calling, RAG citations, audited Memory, OKX market research, paper trading, strategy experiments, strategy library memory, risk-gated live intents, OKX Testnet signed execution, and a BitPro MCP adapter for external data access, backtest artifacts, paper evidence snapshots, plus non-live strategy lifecycle workflows.
 
 > Research output only. Nothing in this repository is investment advice.
 
@@ -60,12 +60,15 @@ uv run hypertrade --local
 In interactive chat, slash commands inspect harness state without starting a new Agent run.
 `/help` explains every command, and `/tools` shows each Agent tool with its category,
 approval gate, and purpose:
+Enter `/` to display the command list, or press Tab after `/` or a partial command such
+as `/m` to complete available slash commands and common subcommands.
 Free-form Agent prompts show a live `Thought` / `Thinking` status block in interactive
 terminals while the planner or tools are still running.
 Interactive terminals also render Markdown reports into readable headings, lists, and tables;
 set `HYPERTRADE_RENDERER=plain` when raw Markdown is needed for scripts.
-Rich terminal output folds internal graph/preflight trace rows into a compact tool summary by
-default; set `HYPERTRADE_TRACE=full` when a full audit trace is needed.
+Rich terminal output hides run metadata and trace tables by default so routine answers show
+only the core report; set `HYPERTRADE_TRACE=summary` for a compact trace or
+`HYPERTRADE_TRACE=full` when a full audit trace is needed.
 
 ```text
 /help
@@ -74,6 +77,7 @@ default; set `HYPERTRADE_TRACE=full` when a full audit trace is needed.
 /runs
 /memory
 /strategy
+/strategy library momentum_breakout_v1
 /research 研究BTC趋势突破
 /backtest
 /backtest latest

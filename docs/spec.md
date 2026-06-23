@@ -78,6 +78,8 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Sprint 41 documentation refresh: README, docs index, knowledge guides, architecture notes, testing plan, and runbooks describe the current Agent, BitPro MCP, strategy knowledge, and deployment validation paths.
 - Sprint 42 BitPro paper evidence layer: `bitpro_paper_events` and `bitpro_paper_equity_curve` read bounded event/error and equity/drawdown evidence for paper monitoring, with structured Agent/CLI reports.
 - Sprint 43 BitPro paper monitor snapshots: `bitpro_paper_monitor_snapshot` persists read-only paper dashboard/event/equity summaries, compares each capture with the previous snapshot for the same scope, and reports drift alerts/data gaps.
+- Sprint 44 strategy library memory: `strategy_knowledge` Memory cards are aggregated into strategy-level evidence summaries through `StrategyLibraryService`, `GET /api/strategy/library`, CLI `/strategy library`, Agent tool `strategy_library_search`, and ToolRegistry entry `strategy.library_search`.
+- CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
 - BitPro external API adapter contract for backtest data, base market data, paper/simulation state, and live trading state without copying BitPro business logic.
 
@@ -115,6 +117,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Developer can press the up arrow in an interactive `hypertrade` chat session to recall prior prompts from the current or saved local history.
 - Developer can distinguish command help, tool rows, Agent progress, success, warning, and error output by color in interactive terminals.
 - Developer can use CLI slash commands such as `/tools`, `/runs`, `/memory`, `/strategy`, and `/backtests` in interactive chat.
+- Developer can enter `/` to display slash commands and press Tab after `/` or a partial slash command to complete commands/common subcommands in real TTY sessions.
 - Developer can read a purpose description beside every `/help` slash command and every `/tools` Agent tool row.
 - Developer can run `/research <prompt>` and `/backtest` from interactive CLI chat to create research and backtest records.
 - Developer can run Backtrader backtests with recent OKX candles through API or CLI options.
@@ -122,7 +125,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Developer can run deterministic CLI market commands such as `/price`, `/candles`, and `/compare` without waiting for LLM planning.
 - Developer can see readable Agent progress statuses while free-form prompts are running.
 - Developer can read structured CLI report sections for market runs, and unknown Markdown reports render as terminal headings, lists, and tables in interactive/Rich mode.
-- Developer can read Rich CLI run output without low-signal trace noise: graph/preflight/nested rows are folded into a compact summary by default, while `HYPERTRADE_TRACE=full` shows the full trace for audits.
+- Developer can read compact CLI run output focused on the report body: run metadata and tool trace tables are hidden by default, `HYPERTRADE_TRACE=summary` shows a compact trace, and `HYPERTRADE_TRACE=full` shows the full trace for audits.
 - Routine market/RAG/Memory CLI outputs do not repeat a fixed investment-advice disclaimer; strategy, backtest, Testnet, live-order, or recommendation-like prompts still surface the research/risk boundary.
 - Developer can enable Rich terminal rendering for structured CLI reports while keeping plain output for scripts.
 - Developer can inspect and control the simulated paper runtime from CLI slash commands.
@@ -133,6 +136,8 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 - Developer can create, approve, and execute OKX Testnet order intents after risk checks.
 - Developer can run `/experiment <prompt>` to create strategy research, compare multiple backtest variants, inspect the winning evidence, and read the next experiment recommendation.
 - Completed local strategy experiments are automatically searchable through Memory as `strategy_knowledge`, with source experiment/backtest ids and evidence metrics rather than unsourced strategy claims.
+- Developer can run `/strategy library [query]` or `GET /api/strategy/library` to inspect grouped local strategy evidence: evidence counts, pass/fail counts, best/latest backtest evidence, variants, failure reasons, next experiments, and source Memory ids.
+- Agent can use `strategy_library_search` for strategy-library/history/next-experiment questions so prior local strategy experience comes from audited `strategy_knowledge` evidence instead of model recall.
 - Developer can run `/evals` and inspect deterministic Agent eval status.
 - Operator can use `docs/knowledge/tool-usage-guide.md` to validate each Agent tool surface and follow related operational source-code comments.
 - Operator can review the BitPro tool-surface requirements before wiring external data, backtest, paper/simulation, or live-state APIs into Agent tools.

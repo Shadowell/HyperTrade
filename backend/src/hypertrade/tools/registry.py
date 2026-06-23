@@ -51,6 +51,11 @@ class ToolRegistry:
                 ToolDefinition("memory.write", "Write audited long-term memory.", "memory"),
                 ToolDefinition("memory.search", "Read active long-term memory.", "memory"),
                 ToolDefinition("strategy.draft", "Draft runtime strategy artifacts.", "strategy"),
+                ToolDefinition(
+                    "strategy.library_search",
+                    "Search aggregated strategy_knowledge memory evidence.",
+                    "strategy",
+                ),
                 ToolDefinition("backtest.run", "Run Backtrader strategy backtests.", "backtest"),
                 ToolDefinition(
                     "bitpro.capabilities",

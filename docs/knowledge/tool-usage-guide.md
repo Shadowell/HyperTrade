@@ -147,12 +147,15 @@ Memory 和 RAG 的区别：
 
 ```bash
 /memory search momentum_breakout_v1
+/strategy library momentum_breakout_v1
 curl -sS "http://127.0.0.1:3334/api/memory?kind=strategy_knowledge&tag=strategy"
+curl -sS "http://127.0.0.1:3334/api/strategy/library?query=momentum_breakout_v1"
 ```
 
 相关代码：
 
 - `backend/src/hypertrade/memory/service.py`
+- `backend/src/hypertrade/strategy/library.py`
 - `docs/knowledge/memory-policy.md`
 
 ## 6. Market Tools
@@ -191,6 +194,7 @@ curl -sS "http://127.0.0.1:3334/api/memory?kind=strategy_knowledge&tag=strategy"
 /backtest --live --symbol ETH --bar 1H --limit 100
 /backtest --source bitpro_mcp --symbol ETH --bar 1H --limit 200
 /experiment 研究ETH趋势突破并给出回测改进建议
+/strategy library momentum_breakout_v1
 ```
 
 你应该观察：
@@ -201,12 +205,15 @@ curl -sS "http://127.0.0.1:3334/api/memory?kind=strategy_knowledge&tag=strategy"
 - data source、bar、candle_count、candidate variants、winner、trade summary、risk notes
 - Memory 中出现 `kind=strategy_knowledge` 的证据卡，`source_run_id` 指向 `exp_*`，`source_tool` 为 `strategy.experiment`
 - 该证据卡可以通过 strategy key、`winner:<variant>` 或 `strategy` tag 检索
+- `/strategy library` 会把多条 `strategy_knowledge` 证据卡聚合为策略级视图，展示证据数、通过/失败数、最佳/最新证据、失败原因、下一轮实验和来源 memory ids
+- Agent 回答“之前哪些策略有效/失败/下一步怎么试”这类问题时，应调用 `strategy_library_search`，不要凭模型记忆概括
 
 相关代码：
 
 - `backend/src/hypertrade/strategy/service.py`
 - `backend/src/hypertrade/backtest/service.py`
 - `backend/src/hypertrade/strategy/experiment.py`
+- `backend/src/hypertrade/strategy/library.py`
 - `docs/knowledge/strategy-research-playbook.md`
 
 ## 8. BitPro MCP Lifecycle Adapter

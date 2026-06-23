@@ -152,6 +152,37 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "strategy_library_search",
+            "description": (
+                "Search aggregated strategy_knowledge memory evidence before proposing "
+                "or iterating strategy research. Returns best/latest evidence, failures, "
+                "next experiments, and source memory ids."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Optional keyword such as symbol, variant, failure, or note."
+                        ),
+                    },
+                    "strategy_key": {
+                        "type": "string",
+                        "description": "Optional canonical strategy key filter.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum strategy summaries to return, default 10.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "strategy_draft",
             "description": "Create a strategy research record from a hypothesis or question.",
             "parameters": {
@@ -669,6 +700,10 @@ Use market_candles when the user asks about trend,走势, K线, breakthrough, pu
 support/resistance, or multi-period market research for a specific symbol.
 Use market_compare when the user asks to compare two or more symbols, relative
 strength, 哪个更强, 跑赢, 强弱, or leader/laggard.
+Use strategy_library_search when the user asks about previous strategy
+experience, 策略库, 历史策略, 记忆沉淀, what has worked/failed, failure reasons,
+or the next strategy experiment. Treat it as evidence from strategy_knowledge
+memory, not as unsourced model recall.
 Use bitpro_capabilities and bitpro_health before BitPro-specific read tools.
 Do not infer BitPro live runtime status from bitpro_capabilities.live_trading_enabled;
 that flag is the HyperTrade MCP live write/order gate. Use bitpro_paper_dashboard

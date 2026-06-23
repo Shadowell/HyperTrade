@@ -14,7 +14,9 @@ Strategy experiments should move through the same evidence loop:
 Current implementation:
 
 - CLI: `/experiment <prompt>`
+- CLI: `/strategy library [query]`
 - API: `POST /api/strategy/experiments`
+- API: `GET /api/strategy/library?query=<text>&strategy_key=<key>`
 - Search memory: `/memory search momentum_breakout_v1`
 - Search API: `GET /api/memory?kind=strategy_knowledge&tag=strategy`
 
@@ -27,6 +29,17 @@ Expected evidence:
 - data source, instrument, bar, and candle count
 - critique notes and next-experiment suggestion
 - source-bound `strategy_knowledge` memory item
+- strategy library summary with source memory ids, best/latest evidence,
+  pass/fail counts, failure reasons, and next experiment suggestions
+
+Recommended research loop:
+
+1. Search `/strategy library <strategy or symbol>` before creating a new idea.
+2. Treat failed evidence as useful constraints, especially `failure_reasons`.
+3. Only run `/experiment` when the next test is grounded in prior evidence or
+   clearly explores a new hypothesis.
+4. After the experiment completes, re-run `/strategy library` to confirm the
+   new memory card is visible in the grouped strategy view.
 
 Boundaries:
 
