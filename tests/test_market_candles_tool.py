@@ -330,10 +330,10 @@ def test_planner_report_skips_table_like_bitpro_paper_final_message() -> None:
         [
             ToolCallRecord(
                 tool_name="bitpro_paper_equity_curve",
-                input_json={"strategy_id": 105, "sample_limit": 2},
+                input_json={"sample_limit": 2},
                 output_json={
                     "status": "ok",
-                    "strategy_id": 105,
+                    "strategy_id": None,
                     "equity_curve": [
                         {
                             "timestamp": "2026-06-23T08:00:00Z",
@@ -355,7 +355,8 @@ def test_planner_report_skips_table_like_bitpro_paper_final_message() -> None:
 
     assert "结论:" not in report
     assert "| 指标 |" not in report
-    assert "权益曲线: strategy_id=105, points=400" in report
+    assert "权益曲线: strategy_id=all, points=400" in report
+    assert "strategy_id=None" not in report
     assert "2026-06-23T08:00:00Z" not in report
 
 

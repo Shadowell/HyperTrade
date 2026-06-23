@@ -1442,7 +1442,7 @@ class AgentKernel:
                         "- 事件: strategy_id={strategy_id}, count={count}, "
                         "errors={errors}, latest={latest}"
                     ).format(
-                        strategy_id=payload.get("strategy_id", "all"),
+                        strategy_id=_paper_strategy_id(payload),
                         count=summary.get("count", len(events)),
                         errors=summary.get("error_count", 0),
                         latest=summary.get("latest_event_at", "n/a"),
@@ -1482,7 +1482,7 @@ class AgentKernel:
                         "latest_at={latest_at}, latest_equity={latest}, "
                         "latest_drawdown={latest_dd}%, max_drawdown={max_dd}%"
                     ).format(
-                        strategy_id=payload.get("strategy_id", "all"),
+                        strategy_id=_paper_strategy_id(payload),
                         count=summary.get("count", len(points)),
                         latest_at=summary.get("latest_at", "n/a"),
                         latest=summary.get("latest_equity", "n/a"),
@@ -1509,7 +1509,7 @@ class AgentKernel:
                         "previous={previous}"
                     ).format(
                         snapshot_id=payload.get("snapshot_id", "n/a"),
-                        strategy_id=payload.get("strategy_id", "all"),
+                        strategy_id=_paper_strategy_id(payload),
                         previous=payload.get("previous_snapshot_id", "none"),
                     ),
                     (
@@ -1686,6 +1686,11 @@ def _compact_long_final_message(lines: list[str], *, max_chars: int) -> str:
             return line
         return line[: max_chars - 1].rstrip() + "..."
     return ""
+
+
+def _paper_strategy_id(payload: dict[str, Any]) -> object:
+    strategy_id = payload.get("strategy_id")
+    return "all" if strategy_id is None else strategy_id
 
 
 def _classify_intent(prompt: str) -> str:
