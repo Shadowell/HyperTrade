@@ -19,6 +19,9 @@
   multi-source market intelligence, risk governance, report provenance,
   monitoring/alerts, frontend operator console, evals, and connector framework
   into independent handoff packages.
+- Added copy-ready prompts for parallel development agents in
+  `docs/agent-prompts/parallel-sprint-prompts.md`, covering Sprint 45-54 plus a
+  coordination-only lead Agent prompt.
 - `./scripts/check.sh` -> frontend install/lint/test/build passed; ruff, mypy, pytest passed with 161 tests.
 - Aligned the HyperTrade BitPro adapter with BitPro MCP Agent Token management: local `bitpro_capabilities` and `/api/harness/overview` now expose `remote_mcp`, `agent_auth`, token-management routes, R/W/L/T scope classes, live-diagnostic grouping, and idempotency-required tools without exposing token plaintext; `/harness` also shows a compact BitPro MCP access status panel for Token source/header/scope checks.
 - Tightened CLI/Agent paper-report output: default stream progress now folds to `Agent: running/completed`, Rich and plain renderers prefer concise final BitPro paper reports, old noisy paper Markdown with strategy inventories or equity-point samples is folded into a compact paper summary, and `HYPERTRADE_PROGRESS=full` / `HYPERTRADE_REPORT_SOURCE=tools` keep debug/audit detail available.
