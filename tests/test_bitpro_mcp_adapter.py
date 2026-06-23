@@ -745,7 +745,7 @@ def test_bitpro_paper_events_reads_bounded_event_stream() -> None:
                                 "level": "error",
                                 "type": "order_rejected",
                                 "message": "insufficient paper balance",
-                                "created_at": "2026-06-23T09:10:00Z",
+                                "created_at": 1782194405064,
                             },
                             {
                                 "id": 9000,
@@ -780,13 +780,13 @@ def test_bitpro_paper_events_reads_bounded_event_stream() -> None:
         "level": "error",
         "type": "order_rejected",
         "message": "insufficient paper balance",
-        "timestamp": "2026-06-23T09:10:00Z",
+        "timestamp": "2026-06-23T06:00:05.064000+00:00",
     }
     assert result["event_summary"] == {
         "count": 2,
         "sample_count": 2,
         "error_count": 1,
-        "latest_event_at": "2026-06-23T09:10:00Z",
+        "latest_event_at": "2026-06-23T06:00:05.064000+00:00",
     }
     assert [call["tool"] for call in result["tool_calls"]] == [
         "bitpro_capabilities",
@@ -824,7 +824,7 @@ def test_bitpro_paper_equity_curve_reads_bounded_curve() -> None:
                     "data": {
                         "curve": [
                             {
-                                "timestamp": "2026-06-23T07:00:00Z",
+                                "timestamp": 1780921260636,
                                 "equity": 100,
                                 "drawdown": 0,
                             },
@@ -857,7 +857,11 @@ def test_bitpro_paper_equity_curve_reads_bounded_curve() -> None:
     assert result["strategy_id"] == 105
     assert result["sample_limit"] == 2
     assert result["equity_curve"] == [
-        {"timestamp": "2026-06-23T07:00:00Z", "equity": "100", "drawdown_pct": "0"},
+        {
+            "timestamp": "2026-06-08T12:21:00.636000+00:00",
+            "equity": "100",
+            "drawdown_pct": "0",
+        },
         {"timestamp": "2026-06-23T08:00:00Z", "equity": "101.25", "drawdown_pct": "1.5"},
     ]
     assert result["equity_summary"] == {

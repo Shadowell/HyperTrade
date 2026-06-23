@@ -1723,12 +1723,14 @@ def _extract_nested_rows(raw: Any, keys: tuple[str, ...]) -> list[dict[str, Any]
 
 
 def _paper_event_item(row: dict[str, Any]) -> dict[str, Any]:
-    timestamp = _first_present(
-        row.get("timestamp"),
-        row.get("created_at"),
-        row.get("event_time"),
-        row.get("time"),
-        row.get("ts"),
+    timestamp = _timestamp_text(
+        _first_present(
+            row.get("timestamp"),
+            row.get("created_at"),
+            row.get("event_time"),
+            row.get("time"),
+            row.get("ts"),
+        )
     )
     return _compact(
         {
@@ -1783,11 +1785,13 @@ def _paper_event_summary(
 
 
 def _paper_equity_point(row: dict[str, Any]) -> dict[str, Any]:
-    timestamp = _first_present(
-        row.get("timestamp"),
-        row.get("created_at"),
-        row.get("time"),
-        row.get("ts"),
+    timestamp = _timestamp_text(
+        _first_present(
+            row.get("timestamp"),
+            row.get("created_at"),
+            row.get("time"),
+            row.get("ts"),
+        )
     )
     return _compact(
         {
@@ -1844,6 +1848,17 @@ def _row_to_candle(row: dict[str, Any]) -> Candle:
         close=Decimal(str(row["close"])),
         volume=Decimal(str(row.get("volume") or row.get("vol") or row.get("volume_ccy") or 0)),
     )
+
+
+def _timestamp_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and any(marker in value for marker in ("T", "-", ":")):
+        return value
+    try:
+        return _timestamp_to_iso(value)
+    except (TypeError, ValueError, OverflowError):
+        return str(value)
 
 
 def _timestamp_to_iso(value: Any) -> str:
