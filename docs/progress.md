@@ -5,7 +5,9 @@
 - Branch: `main`
 - Harness status: active
 - Last verified state: Sprint 66 README architecture/onboarding refresh verified
-  locally with `./scripts/check.sh` (`pytest` 233 passed).
+  locally with `./scripts/check.sh` (`pytest` 233 passed), deployed through
+  GitHub Actions run `28083972320` for SHA `c58b21498247ff6a55b87b0a4f62c5591fa0d880`,
+  and production-smoked with `GET http://47.79.36.92:3333/api/health`.
 
 ## Active Contract
 
@@ -13,12 +15,11 @@
 
 ## Current In-Progress Work
 
-- Sprint 66 README architecture/onboarding refresh is implemented and locally
-  verified. The remaining handoff step is the standard main-branch push,
-  deployment watch, and production health verification.
+- Sprint 66 README architecture/onboarding refresh was committed, pushed,
+  deployed, and production-smoked; no README refresh implementation work
+  remains.
 - Sprint 65 live strategy performance routing was committed, pushed, deployed,
-  and production-smoked separately from the README refresh. The remaining
-  README/Sprint 66 files in the worktree are unrelated to this fix.
+  and production-smoked separately from the README refresh.
 
 ## Latest Completed Work
 
@@ -27,7 +28,9 @@
   HyperTrade/BitPro boundary, summarizes V1 capabilities, documents core
   workflows, names the Codex model allowlist behavior, and adds safety,
   documentation-map, and repository-layout sections. Verification passed with
-  full `./scripts/check.sh` (`pytest` 233 passed).
+  full `./scripts/check.sh` (`pytest` 233 passed). Deployment run `28083972320`
+  completed successfully for SHA `c58b21498247ff6a55b87b0a4f62c5591fa0d880`, and
+  public `GET http://47.79.36.92:3333/api/health` returned `ok`.
 - Added Sprint 65 live strategy performance routing: prompts such as
   `看下实盘收益最高的策略` now route directly to the read-only
   `bitpro_live_strategy_performance` tool instead of falling back to OKX market
