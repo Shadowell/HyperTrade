@@ -5,8 +5,9 @@
 - Branch: `main`
 - Harness status: active
 - Last verified state: Sprint 69 README framework guide verified locally with
-  `./scripts/check.sh` (`pytest` 236 passed). Commit, push, deployment watch,
-  and production health verification are pending.
+  `./scripts/check.sh` (`pytest` 236 passed), deployed through GitHub Actions
+  run `28086647977` for SHA `944a062`, and production-smoked with
+  `GET http://47.79.36.92:3333/api/health`.
 
 ## Active Contract
 
@@ -14,12 +15,8 @@
 
 ## Current In-Progress Work
 
-- Sprint 69 README framework guide is implemented locally: root `README.md` now
-  follows a mature open-source framework structure with positioning,
-  architecture, component responsibilities, installation, usage recipes,
-  API/CLI examples, configuration, deployment, testing, troubleshooting, and
-  development workflow. Full `./scripts/check.sh` passed (`pytest` 236 passed);
-  deployment is pending.
+- Sprint 69 README framework guide was committed, pushed, deployed, and
+  production-smoked; no implementation work remains for this slice.
 - Sprint 67 LLM planner routing and Sprint 68 live BitPro routing evals were
   committed, pushed, deployed, and production-smoked separately from the README
   framework guide work.
@@ -33,7 +30,9 @@
   CLI/API usage, BitPro workflows, monitoring, Testnet guardrails,
   configuration, production deployment, evals, troubleshooting, repository
   layout, and development workflow. Verification passed with full
-  `./scripts/check.sh` (`pytest` 236 passed).
+  `./scripts/check.sh` (`pytest` 236 passed). Deployment run `28086647977`
+  completed successfully for SHA `944a062`, and public
+  `GET http://47.79.36.92:3333/api/health` returned `ok`.
 - Added Sprint 68 live BitPro routing evals: `/evals` now includes
   `live_order_history_source` and `live_strategy_performance_source`, requiring
   `bitpro_live_order_history` / `bitpro_live_strategy_performance`, forbidding
