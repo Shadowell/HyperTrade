@@ -79,29 +79,34 @@
   <!-- 5 outputs -->
   <path class="arrow" d="M1423 555h38"/>
   <g transform="translate(1463 300)">
-    <rect width="285" height="380" rx="9" class="panel teal"/>
+    <rect width="285" height="390" rx="9" class="panel teal"/>
     <circle cx="42" cy="30" r="17" fill="#0d9488"/><text x="37" y="37" class="num">5</text>
-    <text x="82" y="37" class="panel-title" fill="#0f766e">Execution and Output</text>
+    <text x="82" y="29" class="panel-title" fill="#0f766e">Execution and</text>
+    <text x="82" y="53" class="panel-title" fill="#0f766e">Output</text>
     <rect x="18" y="78" width="249" height="70" rx="8" class="card teal"/><text x="48" y="108" class="card-title">Operator Reports</text><text x="48" y="130" class="body">CLI / Web / API report blocks</text>
-    <rect x="18" y="168" width="249" height="82" rx="8" class="card teal"/><text x="48" y="198" class="card-title">BitPro Strategy Flow</text><text x="48" y="220" class="body">strategy_create/update, validate</text><text x="48" y="239" class="body">backtest_start/result, paper monitor</text>
-    <rect x="18" y="270" width="249" height="82" rx="8" class="card teal"/><text x="48" y="300" class="card-title">Risk-Gated Execution</text><text x="48" y="322" class="body">order intents, approval, OKX Testnet</text><text x="48" y="341" class="small">Mainnet execution blocked in V1</text>
+    <rect x="18" y="166" width="249" height="86" rx="8" class="card teal"/><text x="48" y="195" class="card-title">BitPro Strategy Flow</text><text x="48" y="217" class="body">strategy_create/update</text><text x="48" y="236" class="body">validate, backtest, paper</text>
+    <rect x="18" y="270" width="249" height="100" rx="8" class="card teal"/><text x="48" y="298" class="card-title">Risk-Gated Execution</text><text x="48" y="320" class="body">order intents, approval</text><text x="48" y="339" class="body">OKX Testnet execution</text><text x="48" y="358" class="small">Mainnet execution blocked in V1</text>
   </g>
 
   <!-- 6/9 side panels -->
   <g transform="translate(1463 708)">
-    <rect width="285" height="116" rx="9" class="panel blue"/>
+    <rect width="285" height="132" rx="9" class="panel blue"/>
     <circle cx="42" cy="28" r="17" fill="#1d73f8"/><text x="37" y="35" class="num">6</text>
-    <text x="82" y="35" class="panel-title" fill="#1d73f8">Multi-Agent Workflow</text>
-    <text x="36" y="75" class="body">Research Agent → Strategy Agent → Monitor Agent</text>
-    <text x="36" y="96" class="small">共享同一套工具合同、证据模型与风控边界</text>
+    <text x="82" y="29" class="panel-title" fill="#1d73f8">Multi-Agent</text>
+    <text x="82" y="53" class="panel-title" fill="#1d73f8">Workflow</text>
+    <text x="36" y="80" class="body">Research Agent → Strategy Agent</text>
+    <text x="36" y="101" class="body">→ Monitor Agent</text>
+    <text x="36" y="122" class="small">共享同一套工具合同、证据模型与风控边界</text>
   </g>
   <g transform="translate(1463 852)">
-    <rect width="285" height="150" rx="9" class="panel red"/>
+    <rect width="285" height="166" rx="9" class="panel red"/>
     <circle cx="42" cy="28" r="17" fill="#e11d48"/><text x="37" y="35" class="num">9</text>
-    <text x="82" y="35" class="panel-title" fill="#be123c">Safety and Compliance</text>
-    <text x="36" y="75" class="body">- 全部 Agent/tool 调用可审计</text>
-    <text x="36" y="100" class="body">- scoped tokens, RBAC, idempotency</text>
-    <text x="36" y="125" class="body">- paper-first, live write explicit opt-in</text>
+    <text x="82" y="29" class="panel-title" fill="#be123c">Safety and</text>
+    <text x="82" y="53" class="panel-title" fill="#be123c">Compliance</text>
+    <text x="36" y="84" class="body">- 全部 Agent/tool 调用可审计</text>
+    <text x="36" y="109" class="body">- scoped tokens, RBAC, idempotency</text>
+    <text x="36" y="134" class="body">- paper-first, live write</text>
+    <text x="47" y="154" class="body">explicit opt-in</text>
   </g>
   <path class="dash" d="M1460 930h-46"/>
 
