@@ -140,6 +140,9 @@ its own Agent capabilities:
 - Sprint 63 CLI selectable candidates: slash command and slash argument
   candidate lists render stable numbers, and interactive chat can dispatch a
   selected candidate directly by number.
+- Sprint 64 Codex GPT-5.5 option: the default Codex model allowlist includes
+  `gpt-5.5` between `gpt-5.4` and `gpt-5.4-mini`, while `CODEX_MODEL` remains
+  the default selected model.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.

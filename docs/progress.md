@@ -4,23 +4,26 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 63 CLI selectable candidates verified locally
-  with `./scripts/check.sh` (`pytest` 228 passed), deployed through GitHub
-  Actions run `28078753185`, and smoke-tested on production SHA
-  `3343f14322f7a095c7dd54bd158d634f2b8ec1f1`.
+- Last verified state: Sprint 64 Codex GPT-5.5 option verified locally with
+  `./scripts/check.sh` (`pytest` 229 passed).
 
 ## Active Contract
 
-- No active implementation contract. Last completed:
-  `docs/contracts/sprint-63-cli-selectable-candidates.md`.
+- `docs/contracts/sprint-64-codex-gpt-55-option.md`
 
 ## Current In-Progress Work
 
-- None. Sprint 63 is complete in this branch; select a new contract before
-  starting more implementation scope.
+- Sprint 64 is implemented and locally verified; commit, push, deployment
+  watch, and production health verification are next.
 
 ## Latest Completed Work
 
+- Added Sprint 64 Codex GPT-5.5 option: default `CODEX_MODEL_OPTIONS` now
+  includes `gpt-5.5` between `gpt-5.4` and `gpt-5.4-mini`, while `CODEX_MODEL`
+  remains `gpt-5.4`. This explains why 5.5 was missing before: the CLI model
+  picker is backed by a configured allowlist rather than live model discovery.
+  Verification passed with focused provider tests and full `./scripts/check.sh`
+  (`pytest` 229 passed).
 - Added Sprint 63 CLI selectable candidates: slash command and slash argument
   candidate lists now render numbered alternatives, interactive chat prompts
   for a candidate number, and selected candidates dispatch through the same

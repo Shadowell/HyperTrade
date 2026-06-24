@@ -42,6 +42,15 @@ def test_codex_provider_status_reads_codex_cli_auth_without_exposing_token(tmp_p
     assert chat_provider.model == "gpt-5.4"
 
 
+def test_codex_default_model_options_include_gpt_5_5() -> None:
+    runtime = ProviderRuntime(Settings(DEEPSEEK_API_KEY="", CODEX_API_KEY="codex-token"))
+
+    providers = runtime.list_providers(selected="codex")
+    codex = next(provider for provider in providers if provider["name"] == "codex")
+
+    assert codex["model_options"] == ["gpt-5.4", "gpt-5.5", "gpt-5.4-mini"]
+
+
 def test_codex_provider_accepts_hermes_openai_codex_alias(tmp_path) -> None:
     auth_path = tmp_path / "auth.json"
     auth_path.write_text(

@@ -110,7 +110,7 @@ class Settings(BaseSettings):
     )
     codex_model: str = Field(default="gpt-5.4", alias="CODEX_MODEL")
     codex_model_options: str = Field(
-        default="gpt-5.4,gpt-5.4-mini",
+        default="gpt-5.4,gpt-5.5,gpt-5.4-mini",
         alias="CODEX_MODEL_OPTIONS",
     )
     codex_timeout_seconds: float = Field(default=90.0, alias="CODEX_TIMEOUT_SECONDS")
