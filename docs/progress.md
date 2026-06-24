@@ -5,19 +5,19 @@
 - Branch: `main`
 - Harness status: active
 - Last verified state: Sprint 63 CLI selectable candidates verified locally
-  with `./scripts/check.sh` (`pytest` 228 passed).
+  with `./scripts/check.sh` (`pytest` 228 passed), deployed through GitHub
+  Actions run `28078753185`, and smoke-tested on production SHA
+  `3343f14322f7a095c7dd54bd158d634f2b8ec1f1`.
 
 ## Active Contract
 
-- `docs/contracts/sprint-60-monitor-scheduler.md`
-- `docs/contracts/sprint-61-cli-codex-model-picker.md`
-- `docs/contracts/sprint-62-live-order-history-routing.md`
-- `docs/contracts/sprint-63-cli-selectable-candidates.md`
+- No active implementation contract. Last completed:
+  `docs/contracts/sprint-63-cli-selectable-candidates.md`.
 
 ## Current In-Progress Work
 
-- Sprint 63 is implemented and locally verified; commit, push, deployment
-  watch, and production health verification are next.
+- None. Sprint 63 is complete in this branch; select a new contract before
+  starting more implementation scope.
 
 ## Latest Completed Work
 
