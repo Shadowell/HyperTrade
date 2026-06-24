@@ -6,7 +6,9 @@
 - Harness status: active
 - Last verified state: Sprint 67 LLM planner routing and Sprint 68 live BitPro
   routing evals verified locally with `./scripts/check.sh` (`pytest` 236
-  passed). Deployment is pending for the current commit.
+  passed), deployed through GitHub Actions run `28085079651` for SHA `3638c8f`,
+  and production-smoked with `GET http://47.79.36.92:3333/api/health` plus live
+  strategy/order Agent prompts.
 
 ## Active Contract
 
@@ -15,15 +17,9 @@
 
 ## Current In-Progress Work
 
-- Sprint 67 LLM planner routing is implemented locally: free-form Agent prompts
-  now route through a configured chat provider and `AgentPlanner`; when no chat
-  provider is configured, runs complete with a provider-unavailable report and
-  no business tool calls.
-- Sprint 68 live BitPro routing evals are implemented locally: `/evals` now
-  requires live order-history and live strategy-performance prompts to use the
-  matching BitPro diagnostic tools and fail generic market-report fallbacks.
-- Full `./scripts/check.sh` passed (`pytest` 236 passed); deployment is pending
-  for the current commit.
+- Sprint 67 LLM planner routing and Sprint 68 live BitPro routing evals were
+  committed, pushed, deployed, and production-smoked; no implementation work
+  remains for this slice.
 
 ## Latest Completed Work
 
@@ -33,6 +29,9 @@
   `market_summary`, and failing if reports render `Market Report`, `Top Movers`,
   or `市场热度总结` instead of BitPro live evidence. Focused verification passed
   with `uv run pytest tests/test_agent_eval_suite.py tests/test_api.py -q`.
+  Production Agent smoke `run_4601238b5b324c2d8df7` answered
+  `我的实盘最近的一笔订单是什么` with `BitPro 实盘订单` and
+  `bitpro.live_order_history` trace, without `Market Report`/`Top Movers`.
 - Added Sprint 67 LLM planner routing: `AgentKernel.run_chat_with_events()` no
   longer maps natural-language prompts to tools through keyword branches or a
   no-key market/RAG/Memory fallback. Provider-backed runs go through
@@ -42,7 +41,12 @@
   provider-backed market heat, live order history, live strategy performance,
   API streaming, local CLI no-provider behavior, and the provider-unavailable
   boundary. Verification passed with full `./scripts/check.sh` (`pytest` 236
-  passed).
+  passed). Deployment run `28085079651` completed successfully for SHA
+  `3638c8f`, and public `GET http://47.79.36.92:3333/api/health` returned `ok`.
+  Production Agent smoke `run_a45184edde354514abdf` answered
+  `看下实盘收益最高的策略` with `BitPro 实盘策略收益` and
+  `bitpro.live_strategy_performance` trace, without `Market Report`/`Top
+  Movers`.
 - Added Sprint 66 README architecture/onboarding refresh: the root README now
   embeds `docs/assets/hypertrade-architecture.svg`, explains the
   HyperTrade/BitPro boundary, summarizes V1 capabilities, documents core
