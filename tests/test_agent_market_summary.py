@@ -1,13 +1,47 @@
 from decimal import Decimal
+from typing import Any
 
 from hypertrade.agent.kernel import AgentKernel
 from hypertrade.config import Settings
 from hypertrade.db import Database
 from hypertrade.market.repository import MarketRepository
+from hypertrade.providers.deepseek import ChatResponse, ToolCallRequest
 from hypertrade.rag.service import RagService
 
 
-def test_agent_chat_market_summary_creates_report_trace_and_memory(tmp_path):
+class ReplayChatProvider:
+    name = "replay"
+    model = "planner-test"
+
+    def __init__(self, responses: list[ChatResponse]) -> None:
+        self._responses = responses
+        self.messages: list[list[dict[str, Any]]] = []
+
+    def chat(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> ChatResponse:
+        self.messages.append(messages)
+        if not self._responses:
+            raise AssertionError("No replay response left")
+        return self._responses.pop(0)
+
+
+def _patch_replay_provider(
+    monkeypatch,
+    responses: list[ChatResponse],
+) -> ReplayChatProvider:
+    provider = ReplayChatProvider(responses)
+    monkeypatch.setattr(
+        "hypertrade.providers.runtime.ProviderRuntime.get_chat_provider",
+        lambda self, selected=None, selected_model=None: provider,
+    )
+    return provider
+
+
+def test_agent_chat_market_summary_creates_report_trace_and_memory(monkeypatch, tmp_path):
     db = Database("sqlite:///:memory:")
     db.create_all()
     repo = MarketRepository(db)
@@ -33,10 +67,39 @@ def test_agent_chat_market_summary_creates_report_trace_and_memory(tmp_path):
     )
     RagService(db, knowledge_dir=knowledge_dir).scan_once()
 
+    replay = _patch_replay_provider(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_market",
+                        name="market_summary",
+                        arguments={},
+                    ),
+                    ToolCallRequest(
+                        id="call_rag",
+                        name="rag_search",
+                        arguments={"query": "market risk", "limit": 3},
+                    ),
+                    ToolCallRequest(
+                        id="call_memory",
+                        name="memory_write",
+                        arguments={
+                            "kind": "market_summary",
+                            "content": "Latest market summary requested by user prompt.",
+                        },
+                    ),
+                ],
+            ),
+            ChatResponse(content="已完成 OKX 永续合约行情归纳。", tool_calls=[]),
+        ],
+    )
     kernel = AgentKernel(
         db,
         settings=Settings(
-            DEEPSEEK_API_KEY="",
+            DEEPSEEK_API_KEY="test-key",
             KNOWLEDGE_DIR=tmp_path,
             OKX_REST_URL="http://127.0.0.1:9",
         ),
@@ -64,13 +127,37 @@ def test_agent_chat_market_summary_creates_report_trace_and_memory(tmp_path):
     assert "graph.intent_classify" in graph_names
     assert "graph.final_report" in graph_names
     assert tool_names == [
-        "market.summary",
-        "rag.search",
-        "memory.write",
+        "market_summary",
+        "rag_search",
+        "memory_write",
     ]
+    assert replay.messages
+    assert run.report_json["planner"] == "replay"
 
 
-def test_agent_routes_live_order_history_prompt_away_from_market_fallback(tmp_path):
+def test_agent_without_provider_does_not_guess_business_tool_route(tmp_path):
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    kernel = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="", KNOWLEDGE_DIR=tmp_path),
+    )
+
+    run = kernel.run_chat("帮我判断一下现在应该看哪个交易方向")
+
+    assert run.status == "completed"
+    assert "未配置可用 Chat Provider" in run.report_markdown
+    assert "市场热度总结" not in run.report_markdown
+    assert run.report_json["status"] == "provider_unavailable"
+    tool_names = [
+        event.tool_name
+        for event in run.trace_events
+        if not event.tool_name.startswith("graph.")
+    ]
+    assert tool_names == []
+
+
+def test_agent_routes_live_order_history_prompt_through_planner(monkeypatch, tmp_path):
     class FakeBitProAdapter:
         def live_order_history(self, *, exchange="okx", symbol=None, limit=50):
             return {
@@ -108,9 +195,25 @@ def test_agent_routes_live_order_history_prompt_away_from_market_fallback(tmp_pa
 
     db = Database("sqlite:///:memory:")
     db.create_all()
+    replay = _patch_replay_provider(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_live_orders",
+                        name="bitpro_live_order_history",
+                        arguments={"exchange": "okx", "limit": 1},
+                    )
+                ],
+            ),
+            ChatResponse(content="已读取最近一笔实盘订单。", tool_calls=[]),
+        ],
+    )
     kernel = AgentKernel(
         db,
-        settings=Settings(DEEPSEEK_API_KEY="", KNOWLEDGE_DIR=tmp_path),
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
         bitpro_adapter=FakeBitProAdapter(),
     )
 
@@ -127,9 +230,11 @@ def test_agent_routes_live_order_history_prompt_away_from_market_fallback(tmp_pa
     ]
     assert "bitpro.live_order_history" in tool_names
     assert "market.summary" not in tool_names
+    assert replay.messages
+    assert run.report_json["planner"] == "replay"
 
 
-def test_agent_routes_live_strategy_performance_prompt_away_from_market_fallback(tmp_path):
+def test_agent_routes_live_strategy_performance_prompt_through_planner(monkeypatch, tmp_path):
     class FakeBitProAdapter:
         def live_strategy_performance(self, *, exchange="okx", limit=20):
             return {
@@ -166,9 +271,25 @@ def test_agent_routes_live_strategy_performance_prompt_away_from_market_fallback
 
     db = Database("sqlite:///:memory:")
     db.create_all()
+    replay = _patch_replay_provider(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_live_strategies",
+                        name="bitpro_live_strategy_performance",
+                        arguments={"exchange": "okx", "limit": 20},
+                    )
+                ],
+            ),
+            ChatResponse(content="已读取实盘策略收益排行。", tool_calls=[]),
+        ],
+    )
     kernel = AgentKernel(
         db,
-        settings=Settings(DEEPSEEK_API_KEY="", KNOWLEDGE_DIR=tmp_path),
+        settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
         bitpro_adapter=FakeBitProAdapter(),
     )
 
@@ -186,3 +307,5 @@ def test_agent_routes_live_strategy_performance_prompt_away_from_market_fallback
     ]
     assert "bitpro.live_strategy_performance" in tool_names
     assert "market.summary" not in tool_names
+    assert replay.messages
+    assert run.report_json["planner"] == "replay"

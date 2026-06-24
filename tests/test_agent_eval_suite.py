@@ -17,6 +17,8 @@ def test_eval_suite_exposes_sprint_53_cases_with_contract_fields() -> None:
         "missing_artifact_disclosure",
         "paper_monitor_read_only",
         "compact_report_rendering",
+        "live_order_history_source",
+        "live_strategy_performance_source",
     }
     assert status["status"] == "passed"
     assert status["case_count"] == len(expected_cases)
@@ -32,6 +34,8 @@ def test_eval_suite_exposes_sprint_53_cases_with_contract_fields() -> None:
             "missing_artifact_disclosure",
             "paper_monitor_read_only",
             "compact_report_rendering",
+            "live_order_history_source",
+            "live_strategy_performance_source",
         }
     }
     for case in sprint_53_cases.values():
@@ -107,6 +111,52 @@ def test_missing_artifact_eval_fails_when_unavailable_artifact_disappears() -> N
 
     assert result["status"] == "failed"
     assert "missing_data_not_reported" in _finding_codes(result)
+
+
+def test_live_order_history_eval_rejects_market_summary_fallback() -> None:
+    suite = AgentEvalSuite()
+    case = suite.get_case("live_order_history_source")
+
+    result = suite.evaluate_case(
+        case,
+        EvalObservation(
+            prompt=case.prompt,
+            tool_calls=["market_summary"],
+            report_markdown="## 市场热度总结\nTop movers cannot answer live account orders.",
+            source_ids=["okx_rest:market_summary"],
+        ),
+    )
+
+    assert result["status"] == "failed"
+    assert {
+        "required_tool_missing",
+        "forbidden_tool_used",
+        "forbidden_report_fragment",
+        "source_id_missing",
+    }.issubset(_finding_codes(result))
+
+
+def test_live_strategy_performance_eval_rejects_market_summary_fallback() -> None:
+    suite = AgentEvalSuite()
+    case = suite.get_case("live_strategy_performance_source")
+
+    result = suite.evaluate_case(
+        case,
+        EvalObservation(
+            prompt=case.prompt,
+            tool_calls=["market_summary"],
+            report_markdown="## Market Report\nTop Movers are not live strategy returns.",
+            source_ids=["okx_rest:market_summary"],
+        ),
+    )
+
+    assert result["status"] == "failed"
+    assert {
+        "required_tool_missing",
+        "forbidden_tool_used",
+        "forbidden_report_fragment",
+        "source_id_missing",
+    }.issubset(_finding_codes(result))
 
 
 def test_fixture_helpers_build_source_bound_tool_outputs_and_memory_evidence() -> None:

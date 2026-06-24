@@ -26,6 +26,8 @@ exact prose snapshots.
 | `missing_artifact_disclosure` | Specific BitPro result-detail prompts keep unavailable artifacts visible instead of smoothing over missing rows. |
 | `paper_monitor_read_only` | Paper-monitor prompts stay read-only, surface alerts, and preserve missing per-strategy metric gaps. |
 | `compact_report_rendering` | Default report rendering avoids low-signal trace, contract, and raw inventory noise. |
+| `live_order_history_source` | Live order-history prompts call `bitpro_live_order_history` and never substitute all-market summaries. |
+| `live_strategy_performance_source` | Live strategy performance prompts call `bitpro_live_strategy_performance` and rank BitPro `return_pct` evidence. |
 
 ## Case Contract
 

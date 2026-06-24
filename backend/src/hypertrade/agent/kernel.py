@@ -19,7 +19,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from hypertrade.agent.planner import AgentPlanner, PlannerResult, ToolCallRecord, ToolExecutor
+from hypertrade.agent.planner import AgentPlanner, PlannerResult, ToolExecutor
 from hypertrade.backtest.service import BacktestService
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.bitpro.paper_monitor import BitProPaperMonitorService
@@ -95,7 +95,10 @@ class AgentKernel:
                 run_id,
                 "intent_classify",
                 {"prompt": prompt},
-                {"intent": _classify_intent(prompt)},
+                {
+                    "intent": "pending_llm_planner",
+                    "intent_source": "configured_chat_provider",
+                },
                 event_sink=event_sink,
             )
             provider = self._get_chat_provider(settings)
@@ -110,35 +113,21 @@ class AgentKernel:
                     "model": self.provider_model or "",
                 },
                 {
-                    "planner": provider.name if provider else "deterministic_fallback",
+                    "planner": provider.name if provider else "provider_unavailable",
                     "model": provider.model if provider else "",
                 },
                 event_sink=event_sink,
             )
-            if _is_live_order_history_prompt(prompt):
-                self._run_deterministic_tool(
+            if provider is not None:
+                self._run_with_planner(
                     run_id,
-                    tool_name="bitpro_live_order_history",
-                    args={"exchange": "okx", "limit": 1},
-                    final_message="已读取最近一笔实盘订单。",
-                    planner_name="deterministic_live_order_router",
+                    prompt,
+                    settings,
+                    provider=provider,
                     event_sink=event_sink,
                 )
-            elif _is_live_strategy_performance_prompt(prompt):
-                self._run_deterministic_tool(
-                    run_id,
-                    tool_name="bitpro_live_strategy_performance",
-                    args={"exchange": "okx", "limit": 20},
-                    final_message="已读取实盘策略收益排行。",
-                    planner_name="deterministic_live_strategy_performance_router",
-                    event_sink=event_sink,
-                )
-            elif provider is not None and _is_market_heat_prompt(prompt):
-                self._run_hardcoded(run_id, prompt, event_sink=event_sink)
-            elif provider is not None:
-                self._run_with_planner(run_id, prompt, settings, event_sink=event_sink)
             else:
-                self._run_hardcoded(run_id, prompt, event_sink=event_sink)
+                self._complete_provider_unavailable(run_id, prompt, event_sink=event_sink)
         except Exception as exc:
             self._fail_run(run_id, str(exc))
             _emit(
@@ -163,11 +152,12 @@ class AgentKernel:
         prompt: str,
         settings: Any,
         *,
+        provider: Any | None = None,
         event_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
-        llm = self._get_chat_provider(settings)
+        llm = provider if provider is not None else self._get_chat_provider(settings)
         if llm is None:
-            self._run_hardcoded(run_id, prompt, event_sink=event_sink)
+            self._complete_provider_unavailable(run_id, prompt, event_sink=event_sink)
             return
         planner = AgentPlanner(llm)
         executor = self._build_executor(run_id, event_sink=event_sink)
@@ -200,6 +190,13 @@ class AgentKernel:
             "graph": self._get_run_state(run_id).get("graph", []),
             "disclaimer": "Research output only. Not investment advice.",
         }
+        for record in result.tool_calls:
+            if record.tool_name != "market_summary" or not isinstance(record.output_json, dict):
+                continue
+            for key in ("top_movers", "heat_summary", "data_source", "as_of_utc"):
+                if key in record.output_json:
+                    report_json[key] = record.output_json[key]
+            break
         report_blocks = build_report_blocks_from_tool_calls(
             result.final_message,
             result.tool_calls,
@@ -216,6 +213,53 @@ class AgentKernel:
         )
         self._complete_run(run_id, report_markdown, report_json)
 
+    def _complete_provider_unavailable(
+        self,
+        run_id: str,
+        prompt: str,
+        *,
+        event_sink: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
+        self._graph_node(
+            run_id,
+            "reflect",
+            {"tool_count": 0},
+            {
+                "summary": (
+                    "chat provider unavailable; no natural-language tool route "
+                    "was guessed"
+                )
+            },
+            event_sink=event_sink,
+        )
+        report_markdown = (
+            "# Agent 无法完成意图识别\n\n"
+            "未配置可用 Chat Provider，因此无法由 LLM/Planner 判断这个自然语言"
+            "请求应该调用哪些工具。\n\n"
+            "本次运行没有执行 market、BitPro、RAG 或 Memory 工具，也没有根据关键词"
+            "猜测业务路线。\n\n"
+            f"- 用户请求: {prompt[:240]}"
+        )
+        self._graph_node(
+            run_id,
+            "final_report",
+            {"format": "markdown"},
+            {"characters": len(report_markdown)},
+            event_sink=event_sink,
+        )
+        report_json = {
+            "status": "provider_unavailable",
+            "market_scope": "not_selected",
+            "trigger": "user_request",
+            "planner": "provider_unavailable",
+            "model": "",
+            "tool_calls": [],
+            "citations": [],
+            "graph": self._get_run_state(run_id).get("graph", []),
+            "disclaimer": "Research output only. Not investment advice.",
+        }
+        self._complete_run(run_id, report_markdown, report_json)
+
     def _get_chat_provider(self, settings: Settings) -> Any | None:
         runtime = ProviderRuntime(settings)
         if self.provider_model:
@@ -224,50 +268,6 @@ class AgentKernel:
                 selected_model=self.provider_model,
             )
         return runtime.get_chat_provider(selected=self.provider_name)
-
-    def _run_deterministic_tool(
-        self,
-        run_id: str,
-        *,
-        tool_name: str,
-        args: dict[str, Any],
-        final_message: str,
-        planner_name: str,
-        event_sink: Callable[[dict[str, Any]], None] | None = None,
-    ) -> None:
-        executor = self._build_executor(run_id, event_sink=event_sink)
-        output = executor(tool_name, args)
-        record = ToolCallRecord(tool_name=tool_name, input_json=args, output_json=output)
-        self._trace(run_id, record.tool_name, record.input_json, record.output_json)
-        self._graph_node(
-            run_id,
-            "reflect",
-            {"tool_count": 1},
-            {"summary": _reflection_summary(PlannerResult(final_message, [record]))},
-            event_sink=event_sink,
-        )
-        report_json: dict[str, Any] = {
-            "market_scope": "external_bitpro",
-            "trigger": "user_request",
-            "planner": planner_name,
-            "model": "",
-            "tool_calls": [{"tool": tool_name, "input": args}],
-            "citations": [],
-            "graph": self._get_run_state(run_id).get("graph", []),
-            "disclaimer": "Research output only. Not investment advice.",
-        }
-        report_blocks = build_report_blocks_from_tool_calls(final_message, [record])
-        if report_blocks:
-            report_json["report_blocks"] = [block.to_dict() for block in report_blocks]
-        report_markdown = self._render_planner_report(final_message, [record])
-        self._graph_node(
-            run_id,
-            "final_report",
-            {"format": "markdown"},
-            {"characters": len(report_markdown)},
-            event_sink=event_sink,
-        )
-        self._complete_run(run_id, report_markdown, report_json)
 
     def _build_executor(
         self,
@@ -793,157 +793,6 @@ class AgentKernel:
                     "error": str(call.get("error", "")),
                 },
             )
-
-    # ------------------------------------------------------------------
-    # Hardcoded fallback path (no API key configured)
-    # ------------------------------------------------------------------
-
-    def _run_hardcoded(
-        self,
-        run_id: str,
-        prompt: str,
-        *,
-        event_sink: Callable[[dict[str, Any]], None] | None = None,
-    ) -> None:
-        # The fallback path is deliberately deterministic. It keeps local tests,
-        # demos, and first-time setup useful even when no provider API key exists.
-        market_decision = self.governance.evaluate("market.summary", {"prompt": prompt})
-        self._graph_node(
-            run_id,
-            "approval_check",
-            {"tool_name": "market.summary"},
-            market_decision.as_trace_payload(),
-            event_sink=event_sink,
-        )
-        self._graph_node(
-            run_id,
-            "execute_tool",
-            {"tool_name": "market.summary"},
-            {"status": "started", "policy_decision": market_decision.as_trace_payload()},
-            event_sink=event_sink,
-        )
-        _emit(
-            event_sink,
-            {"event": "tool_started", "run_id": run_id, "tool_name": "market.summary"},
-        )
-        market_payload = self._market_summary_payload()
-        self._trace(run_id, "market.summary", {"prompt": prompt}, market_payload)
-        _emit(
-            event_sink,
-            {
-                "event": "tool_completed",
-                "run_id": run_id,
-                "tool_name": "market.summary",
-                "status": "completed",
-                "output_json": market_payload,
-            },
-        )
-
-        _emit(event_sink, {"event": "tool_started", "run_id": run_id, "tool_name": "rag.search"})
-        rag_decision = self.governance.evaluate("rag.search", {"query": "market risk"})
-        self._graph_node(
-            run_id,
-            "approval_check",
-            {"tool_name": "rag.search"},
-            rag_decision.as_trace_payload(),
-            event_sink=event_sink,
-        )
-        self._graph_node(
-            run_id,
-            "execute_tool",
-            {"tool_name": "rag.search"},
-            {"status": "started", "policy_decision": rag_decision.as_trace_payload()},
-            event_sink=event_sink,
-        )
-        self.rag.scan_once()
-        rag_hits = [
-            {
-                "source_path": hit.source_path,
-                "title": hit.title,
-                "chunk_index": hit.chunk_index,
-                "content": hit.content[:240],
-                "score": hit.score,
-            }
-            for hit in self.rag.search("volume risk market funding open interest", limit=3)
-        ]
-        self._trace(run_id, "rag.search", {"query": "market risk"}, {"hits": rag_hits})
-        _emit(
-            event_sink,
-            {
-                "event": "tool_completed",
-                "run_id": run_id,
-                "tool_name": "rag.search",
-                "status": "completed",
-                "output_json": {"hits": rag_hits},
-            },
-        )
-
-        _emit(event_sink, {"event": "tool_started", "run_id": run_id, "tool_name": "memory.write"})
-        memory_decision = self.governance.evaluate("memory.write", {"kind": "market_summary"})
-        self._graph_node(
-            run_id,
-            "approval_check",
-            {"tool_name": "memory.write"},
-            memory_decision.as_trace_payload(),
-            event_sink=event_sink,
-        )
-        self._graph_node(
-            run_id,
-            "execute_tool",
-            {"tool_name": "memory.write"},
-            {"status": "started", "policy_decision": memory_decision.as_trace_payload()},
-            event_sink=event_sink,
-        )
-        memory_item = self.memory.write(
-            content=f"Latest market summary requested by user prompt: {prompt[:120]}",
-            kind="market_summary",
-            source_run_id=run_id,
-            source_tool="memory.write",
-        )
-        self._trace(
-            run_id,
-            "memory.write",
-            {"kind": "market_summary"},
-            {"memory_id": memory_item.id},
-        )
-        _emit(
-            event_sink,
-            {
-                "event": "tool_completed",
-                "run_id": run_id,
-                "tool_name": "memory.write",
-                "status": "completed",
-                "output_json": {"memory_id": memory_item.id},
-            },
-        )
-
-        report_json = {
-            "market_scope": "OKX SWAP",
-            "trigger": "user_request",
-            "top_movers": market_payload["top_movers"],
-            "heat_summary": market_payload.get("heat_summary", _market_heat_summary([])),
-            "data_source": market_payload.get("data_source", "db_fallback"),
-            "as_of_utc": market_payload.get("as_of_utc", datetime.now(UTC).isoformat()),
-            "rag_hits": rag_hits,
-            "citations": rag_hits,
-            "graph": self._get_run_state(run_id).get("graph", []),
-            "disclaimer": "Research output only. Not investment advice.",
-        }
-        self._graph_node(
-            run_id,
-            "reflect",
-            {"tool_count": 3},
-            {"summary": "deterministic market summary fallback completed"},
-            event_sink=event_sink,
-        )
-        self._graph_node(
-            run_id,
-            "final_report",
-            {"format": "markdown"},
-            {"characters": len(self._render_market_report(report_json))},
-            event_sink=event_sink,
-        )
-        self._complete_run(run_id, self._render_market_report(report_json), report_json)
 
     # ------------------------------------------------------------------
     # DB helpers
@@ -2355,17 +2204,6 @@ def _order_value(order: dict[str, Any], *keys: str) -> str:
     return "n/a"
 
 
-def _classify_intent(prompt: str) -> str:
-    text = prompt.casefold()
-    if any(word in text for word in ("下单", "订单", "order", "buy", "sell", "做多", "做空")):
-        return "order"
-    if any(word in text for word in ("回测", "backtest", "策略", "strategy", "experiment")):
-        return "strategy"
-    if any(word in text for word in ("行情", "价格", "走势", "compare", "比较", "ticker")):
-        return "market"
-    return "general"
-
-
 def _reflection_summary(result: PlannerResult) -> str:
     names = [record.tool_name for record in result.tool_calls]
     if not names:
@@ -2486,83 +2324,6 @@ def _unique_symbols(symbols: list[str]) -> list[str]:
         seen.add(key)
         result.append(value)
     return result[:6]
-
-
-def _is_market_heat_prompt(prompt: str) -> bool:
-    value = prompt.strip().lower()
-    if not value:
-        return False
-    heat_terms = (
-        "市场热度",
-        "热度",
-        "市场情绪",
-        "情绪",
-        "整体市场",
-        "全市场",
-        "大盘",
-        "行情归纳",
-        "行情概览",
-        "市场概况",
-        "market heat",
-        "market sentiment",
-        "risk appetite",
-        "breadth",
-    )
-    return any(term in value for term in heat_terms)
-
-
-def _is_live_order_history_prompt(prompt: str) -> bool:
-    value = prompt.strip().casefold()
-    if not value:
-        return False
-    live_terms = ("实盘", "真实账户", "真实交易", "live", "real-account", "real account")
-    order_terms = ("订单", "order")
-    history_terms = (
-        "最近",
-        "最新",
-        "历史",
-        "明细",
-        "记录",
-        "成交",
-        "拒单",
-        "latest",
-        "last",
-        "recent",
-        "history",
-        "filled",
-        "rejected",
-    )
-    return (
-        any(term in value for term in live_terms)
-        and any(term in value for term in order_terms)
-        and any(term in value for term in history_terms)
-    )
-
-
-def _is_live_strategy_performance_prompt(prompt: str) -> bool:
-    value = prompt.strip().casefold()
-    if not value:
-        return False
-    live_terms = ("实盘", "真实账户", "真实交易", "live", "real-account", "real account")
-    strategy_terms = ("策略", "strategy")
-    performance_terms = (
-        "收益",
-        "收益率",
-        "盈利",
-        "盈亏",
-        "利润",
-        "pnl",
-        "profit",
-        "return",
-        "performance",
-    )
-    rank_terms = ("最高", "最好", "最强", "排行", "排名", "top", "best", "highest", "rank")
-    return (
-        any(term in value for term in live_terms)
-        and any(term in value for term in strategy_terms)
-        and any(term in value for term in performance_terms)
-        and any(term in value for term in rank_terms)
-    )
 
 
 def _market_heat_summary(rows: list[Any]) -> dict[str, Any]:

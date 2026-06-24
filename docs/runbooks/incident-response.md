@@ -26,7 +26,9 @@ Actions:
 
 - Switch CLI/API provider with `/model deepseek` or `/model openrouter`.
 - Confirm server `.env` keys and base URLs.
-- Use deterministic fallback by clearing provider key only for local tests.
+- Clear provider keys only to verify the provider-unavailable boundary; the
+  Agent should not guess market, BitPro, RAG, or Memory routes without a chat
+  provider.
 
 ## Worker Crash
 
@@ -47,4 +49,3 @@ Actions:
 - Inspect Alembic version table.
 - Restore PostgreSQL backup if schema is partially changed.
 - Re-run deploy only after the migration reason is understood.
-

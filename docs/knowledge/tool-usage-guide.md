@@ -118,7 +118,9 @@ hypertrade
 
 - DeepSeek 是默认 provider。
 - provider 切换只影响 chat/planner，不影响 embedding provider。
-- 没有 key 的 provider 会显示 missing，但系统会保留 deterministic fallback。
+- 没有可用 key 的 provider 会显示 missing；自然语言 Agent run 会返回
+  `provider_unavailable`，不会用关键词猜测 market、BitPro、RAG 或 Memory
+  工具路线。
 
 相关代码：
 

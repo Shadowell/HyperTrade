@@ -62,7 +62,9 @@ its own Agent capabilities:
 - Sprint 05 standalone hybrid CLI runtime with local AgentKernel mode and remote API mode.
 - Sprint 06 CLI slash commands for status, tools, runs, memory, strategy research, and backtests.
 - Sprint 07 CLI shortcuts `/research` and `/backtest` for strategy workflow triggers.
-- Sprint 08 LLM-driven `AgentPlanner` using DeepSeek function calling; hardcoded fallback when no key.
+- Sprint 08 LLM-driven `AgentPlanner` using DeepSeek function calling; when no
+  chat provider is configured, free-form Agent runs return a provider-unavailable
+  report instead of guessing a tool route.
 - Sprint 09 exact `market_ticker` tool for any listed OKX USDT SWAP symbol or instrument id.
 - Sprint 10 `market_candles` tool for recent OKX candles and deterministic trend features.
 - Sprint 11 `market_compare` tool for multi-symbol relative strength ranking.
@@ -133,20 +135,28 @@ its own Agent capabilities:
   provider choices and, for Codex, a numbered model list backed by
   `CODEX_MODEL_OPTIONS`; API provider selection can carry a validated session
   model override without exposing tokens.
-- Sprint 62 live order-history routing: real-account order-history prompts such
-  as `我的实盘最近的一笔订单是什么` route deterministically to the read-only
-  BitPro live order-history diagnostic path and render `BitPro 实盘订单` evidence
-  instead of falling back to all-market reports.
+- Sprint 62 live order-history tool coverage: planner guidance and read-only
+  BitPro diagnostics let real-account order-history prompts such as
+  `我的实盘最近的一笔订单是什么` render `BitPro 实盘订单` evidence instead of
+  falling back to all-market reports.
 - Sprint 63 CLI selectable candidates: slash command and slash argument
   candidate lists render stable numbers, and interactive chat can dispatch a
   selected candidate directly by number.
 - Sprint 64 Codex GPT-5.5 option: the default Codex model allowlist includes
   `gpt-5.5` between `gpt-5.4` and `gpt-5.4-mini`, while `CODEX_MODEL` remains
   the default selected model.
-- Sprint 65 live strategy performance routing: real-account strategy performance
-  prompts such as `看下实盘收益最高的策略` route deterministically to BitPro
-  `/live/strategies`, rank by `return_pct`, render `BitPro 实盘策略收益`, and do
-  not fall back to OKX all-market reports.
+- Sprint 65 live strategy performance tool coverage: planner guidance and
+  read-only BitPro diagnostics let real-account strategy performance prompts
+  such as `看下实盘收益最高的策略` read BitPro `/live/strategies`, rank by
+  `return_pct`, render `BitPro 实盘策略收益`, and avoid OKX all-market fallback.
+- Sprint 67 LLM planner routing: free-form natural-language Agent prompts no
+  longer use keyword branches or hidden market fallbacks in `AgentKernel`.
+  Configured providers own semantic tool selection through `AgentPlanner`; no
+  provider means an auditable provider-unavailable report with no business tool
+  calls.
+- Sprint 68 live BitPro routing evals: `/evals` includes live order-history and
+  live strategy-performance guardrails that require the matching BitPro
+  diagnostic tools and fail generic market-report fallbacks.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -169,7 +179,10 @@ its own Agent capabilities:
 - Privileged mutations such as provider selection, paper lifecycle control, live order approval/execution, Memory disable, and Feishu send still require admin session auth.
 - `/api/harness/tools` shows live order approval gating.
 - User can create an Agent market-summary run and inspect trace events.
-- User can ask `看下目前市场的热度怎么样` and receive a market heat conclusion with sample count, advancer/decliner breadth, average change, strongest/weakest symbols, and top movers rather than only ticker tables.
+- With a chat provider configured, user can ask `看下目前市场的热度怎么样`
+  and receive a market heat conclusion with sample count, advancer/decliner
+  breadth, average change, strongest/weakest symbols, and top movers rather
+  than only ticker tables.
 - User can ask for a specific listed OKX SWAP symbol, such as ETH/SOL/DOGE/PEPE, and the Agent can
   call the exact ticker tool instead of returning only the all-market movers list.
 - User can ask for a specific symbol's recent trend and the Agent can call the candle research tool
@@ -235,6 +248,10 @@ its own Agent capabilities:
 - Developer can run `/evals` and inspect deterministic Agent eval status for
   tool choice, source-of-truth usage, unsupported-claim guardrails,
   missing-data preservation, and compact report rendering.
+- `/evals` includes live BitPro routing guardrails for
+  `我的实盘最近的一笔订单是什么` and `看下实盘收益最高的策略`; these cases require the
+  matching BitPro live diagnostic tools and fail if the Agent substitutes
+  generic `market_summary` / `Market Report` evidence.
 - Operator can use `docs/knowledge/tool-usage-guide.md` to validate each Agent tool surface and follow related operational source-code comments.
 - Operator can review the BitPro tool-surface requirements before wiring external data, backtest, paper/simulation, or live-state APIs into Agent tools.
 - Operator can call BitPro read tools through HyperTrade API/Agent paths while every flow starts with `bitpro_capabilities` and `bitpro_health`.
@@ -250,8 +267,20 @@ its own Agent capabilities:
 - Agent can summarize BitPro paper monitoring state with source-bound alerts and read-only recommended actions, while calling out missing per-strategy PnL/drawdown metrics as data gaps rather than inferred facts.
 - Agent can inspect BitPro paper/simulation event streams and equity curves through read-only MCP tools, reporting event counts, error counts, latest event time, equity samples, latest equity, and drawdown evidence without synthesizing missing rows.
 - Agent can capture a BitPro paper monitor snapshot through read-only dashboard/events/equity tools, persist it, compare it with the previous snapshot for the same strategy or all-strategy scope, and report PnL/equity/drawdown/error drift without triggering paper or live write tools.
-- Agent can answer live-account order-history questions, including `我的实盘最近的一笔订单是什么`, through read-only BitPro live diagnostics, reporting the latest returned order id, symbol, side, status, price/size, timestamp, and strategy attribution when BitPro provides it; the Agent must not use `market_summary` for these prompts.
-- Agent can answer live strategy performance questions, including `看下实盘收益最高的策略`, through read-only BitPro live diagnostics, ranking `/live/strategies` rows by `return_pct` and reporting `total_pnl` without using `market_summary`.
+- With a chat provider configured, Agent can answer live-account order-history
+  questions, including `我的实盘最近的一笔订单是什么`, by having the planner choose
+  read-only BitPro live diagnostics, reporting the latest returned order id,
+  symbol, side, status, price/size, timestamp, and strategy attribution when
+  BitPro provides it; the Agent must not use `market_summary` for these prompts.
+- With a chat provider configured, Agent can answer live strategy performance
+  questions, including `看下实盘收益最高的策略`, by having the planner choose
+  read-only BitPro live diagnostics, ranking `/live/strategies` rows by
+  `return_pct` and reporting `total_pnl` without using `market_summary`.
+- Free-form natural-language Agent prompts use the configured chat provider and
+  `AgentPlanner` as the semantic source of truth for tool choice. If no chat
+  provider is configured, HyperTrade returns an auditable
+  `provider_unavailable` result and does not guess a market, BitPro, RAG, or
+  Memory route from keywords.
 - Operator can run `GET /api/monitors`, `POST /api/monitors/{monitor_id}/run`, `GET /api/alerts`, CLI `/monitors`, `/monitor run <monitor_id>`, and `/alerts` to inspect persisted monitor definitions, runs, thresholds, source tools, alert events, data gaps, and recommended read-only actions.
 - Operator can leave `MONITOR_SCHEDULER_ENABLED=true` so the worker persists
   due monitor runs and alert events automatically, or disable the scheduled

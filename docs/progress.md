@@ -4,25 +4,45 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 66 README architecture/onboarding refresh verified
-  locally with `./scripts/check.sh` (`pytest` 233 passed), deployed through
-  GitHub Actions run `28083972320` for SHA `c58b21498247ff6a55b87b0a4f62c5591fa0d880`,
-  and production-smoked with `GET http://47.79.36.92:3333/api/health`.
+- Last verified state: Sprint 67 LLM planner routing and Sprint 68 live BitPro
+  routing evals verified locally with `./scripts/check.sh` (`pytest` 236
+  passed). Deployment is pending for the current commit.
 
 ## Active Contract
 
-- `docs/contracts/sprint-66-readme-architecture-refresh.md`
+- `docs/contracts/sprint-67-llm-planner-routing.md`
+- `docs/contracts/sprint-68-live-bitpro-routing-evals.md`
 
 ## Current In-Progress Work
 
-- Sprint 66 README architecture/onboarding refresh was committed, pushed,
-  deployed, and production-smoked; no README refresh implementation work
-  remains.
-- Sprint 65 live strategy performance routing was committed, pushed, deployed,
-  and production-smoked separately from the README refresh.
+- Sprint 67 LLM planner routing is implemented locally: free-form Agent prompts
+  now route through a configured chat provider and `AgentPlanner`; when no chat
+  provider is configured, runs complete with a provider-unavailable report and
+  no business tool calls.
+- Sprint 68 live BitPro routing evals are implemented locally: `/evals` now
+  requires live order-history and live strategy-performance prompts to use the
+  matching BitPro diagnostic tools and fail generic market-report fallbacks.
+- Full `./scripts/check.sh` passed (`pytest` 236 passed); deployment is pending
+  for the current commit.
 
 ## Latest Completed Work
 
+- Added Sprint 68 live BitPro routing evals: `/evals` now includes
+  `live_order_history_source` and `live_strategy_performance_source`, requiring
+  `bitpro_live_order_history` / `bitpro_live_strategy_performance`, forbidding
+  `market_summary`, and failing if reports render `Market Report`, `Top Movers`,
+  or `市场热度总结` instead of BitPro live evidence. Focused verification passed
+  with `uv run pytest tests/test_agent_eval_suite.py tests/test_api.py -q`.
+- Added Sprint 67 LLM planner routing: `AgentKernel.run_chat_with_events()` no
+  longer maps natural-language prompts to tools through keyword branches or a
+  no-key market/RAG/Memory fallback. Provider-backed runs go through
+  `AgentPlanner`; provider-unavailable runs produce an auditable report with no
+  business tool calls. Planner-backed `market_summary` reports still promote
+  heat-summary metadata for API/front-end consumers. Regression tests cover
+  provider-backed market heat, live order history, live strategy performance,
+  API streaming, local CLI no-provider behavior, and the provider-unavailable
+  boundary. Verification passed with full `./scripts/check.sh` (`pytest` 236
+  passed).
 - Added Sprint 66 README architecture/onboarding refresh: the root README now
   embeds `docs/assets/hypertrade-architecture.svg`, explains the
   HyperTrade/BitPro boundary, summarizes V1 capabilities, documents core
@@ -31,10 +51,12 @@
   full `./scripts/check.sh` (`pytest` 233 passed). Deployment run `28083972320`
   completed successfully for SHA `c58b21498247ff6a55b87b0a4f62c5591fa0d880`, and
   public `GET http://47.79.36.92:3333/api/health` returned `ok`.
-- Added Sprint 65 live strategy performance routing: prompts such as
-  `看下实盘收益最高的策略` now route directly to the read-only
-  `bitpro_live_strategy_performance` tool instead of falling back to OKX market
-  heat. The BitPro adapter preflights capability/health, reads
+- Added Sprint 65 live strategy performance coverage: prompts such as
+  `看下实盘收益最高的策略` gained read-only
+  `bitpro_live_strategy_performance` evidence instead of falling back to OKX
+  market heat. Sprint 67 later moved free-form natural-language selection to
+  the LLM planner rather than kernel keyword routing. The BitPro adapter
+  preflights capability/health, reads
   `/live/strategies`, ranks returned rows by the page metric `return_pct`,
   reports `total_pnl` when present, and renders a `BitPro 实盘策略收益` section.
   Verification passed with focused Agent/planner/adapter/report/registry tests
@@ -56,12 +78,14 @@
   `/st` and argument candidates such as `/model c`, which continues into the
   Codex model picker after selecting `codex`. Verification passed with focused
   CLI tests and full `./scripts/check.sh` (`pytest` 228 passed).
-- Added Sprint 62 live order-history routing: live/real-account order-history
-  prompts such as `我的实盘最近的一笔订单是什么` now route directly to the
-  read-only `bitpro_live_order_history` tool instead of market fallback. The
-  BitPro adapter preflights capability/health, reads `/trading/orders/history`,
-  records source tool calls, and planner guidance forbids `market_summary` for
-  live account order-history questions. Verification passed with focused
+- Added Sprint 62 live order-history coverage: live/real-account order-history
+  prompts such as `我的实盘最近的一笔订单是什么` gained read-only
+  `bitpro_live_order_history` evidence instead of market fallback. Sprint 67
+  later moved free-form natural-language selection to the LLM planner rather
+  than kernel keyword routing. The BitPro adapter preflights capability/health,
+  reads `/trading/orders/history`, records source tool calls, and planner
+  guidance forbids `market_summary` for live account order-history questions.
+  Verification passed with focused
   planner/adapter/Agent tests and full `./scripts/check.sh` (`pytest` 225
   passed).
 - Added Sprint 61 CLI Codex model picker: interactive `/model` now renders a
@@ -251,7 +275,7 @@
 - Added Sprint 06 CLI slash commands for `/help`, `/status`, `/model`, `/providers`, `/tools`, `/runs`, `/memory`, `/strategy`, and `/backtests` in local and remote interactive chat.
 - Added Sprint 07 CLI workflow shortcuts `/research <prompt>` and `/backtest` to trigger strategy research and Backtrader backtests without a full Agent run.
 
-- Added Sprint 08 LLM-driven agent planner: `DeepSeekClient`, `AgentPlanner` multi-turn tool-calling loop, and updated `AgentKernel` to use real DeepSeek function calling when `DEEPSEEK_API_KEY` is configured, with hardcoded fallback when not.
+- Added Sprint 08 LLM-driven agent planner: `DeepSeekClient`, `AgentPlanner` multi-turn tool-calling loop, and updated `AgentKernel` to use real DeepSeek function calling when `DEEPSEEK_API_KEY` is configured. Sprint 67 later removed the natural-language no-key market fallback.
 - Fixed DeepSeek thinking-mode compatibility by preserving `reasoning_content` across tool-call turns.
 - Added Sprint 09 exact market ticker path: `market_ticker` planner tool, `market.ticker` registry entry, exact `MarketRepository.get_ticker()`, and symbol normalization for any listed OKX USDT SWAP symbol such as ETH, SOL, DOGE, or PEPE.
 - Added stable planner report rendering for successful `market_ticker` calls so CLI/API answers always include exact price, UTC0 change, 24h volume, source, and timestamp.
@@ -272,7 +296,7 @@
 - Added Sprint 21 live/testnet order approval gate locally: `live_order_intents` schema/service/API/CLI, Agent planner `live_order_intent` tool, and approve/reject status transitions without exchange execution.
 - Added Sprint 22 frontend harness parity locally: `/harness` now includes Agent streaming status, market ticker/candle/compare shortcuts, paper close/reset controls, and Live Approval intent create/approve/reject UI.
 - Added Sprint 23 frontend UX locally: styled Markdown report reader with raw toggle, Memory Manager with inspect/disable, and full backtest parameter form for strategy/source/symbol/bar/limit/cash.
-- Added Sprint 24 Agent graph runtime locally: graph node trace events, `run_state_json`, streaming graph status, and deterministic fallback path.
+- Added Sprint 24 Agent graph runtime locally: graph node trace events, `run_state_json`, and streaming graph status. Sprint 67 later replaced the natural-language deterministic fallback path with provider-unavailable reporting.
 - Added Sprint 25 Provider Router locally: `ChatProvider` protocol, OpenAI-compatible adapter, provider selection API, CLI `/model <provider>`, and frontend provider switcher.
 - Added Sprint 26 RAG v2 locally: citation-ready RAG hits, deterministic vector fallback, `/api/rag/search`, CLI `/rag`, frontend RAG search, and Agent citation block support.
 - Added Sprint 27 Memory v2 locally: importance/tags/confidence/usage fields, exact dedupe, search API, CLI `/memory search` and `/memory disable`, and frontend Memory search/tag display.

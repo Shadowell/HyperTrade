@@ -2515,7 +2515,9 @@ def test_local_agent_client_runs_kernel(tmp_path) -> None:
     assert run["status"] == "completed"
     trace_names = [event["tool_name"] for event in run["trace_events"]]
     assert trace_names[0] == "graph.intent_classify"
-    assert "market.summary" in trace_names
+    assert "market.summary" not in trace_names
+    assert run["report_json"]["status"] == "provider_unavailable"
+    assert run["report_json"]["tool_calls"] == []
     assert run["run_state_json"]["current_node"] == "final_report"
 
 

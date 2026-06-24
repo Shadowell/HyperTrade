@@ -671,7 +671,22 @@ def test_agent_acceptance_market_heat_uses_summary_not_ticker(
             volume_ccy_24h=Decimal("1000000"),
             change_utc0_pct=change,
         )
-    replay = _patch_replay_llm(monkeypatch, [])
+    replay = _patch_replay_llm(
+        monkeypatch,
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_market_heat",
+                        name="market_summary",
+                        arguments={},
+                    )
+                ],
+            ),
+            ChatResponse(content="市场热度已归纳。", tool_calls=[]),
+        ],
+    )
     kernel = AgentKernel(
         db,
         settings=Settings(DEEPSEEK_API_KEY="test-key", KNOWLEDGE_DIR=tmp_path),
@@ -681,9 +696,9 @@ def test_agent_acceptance_market_heat_uses_summary_not_ticker(
 
     run = kernel.run_chat("看下目前市场的热度怎么样")
 
-    assert replay.messages == []
+    assert replay.messages
     assert run.status == "completed"
-    assert _tool_names(run) == ["market.summary", "rag.search", "memory.write"]
+    assert _tool_names(run) == ["market_summary"]
     assert "## 市场热度总结" in run.report_markdown
     assert "结论:" in run.report_markdown
     assert "样本:" in run.report_markdown

@@ -155,6 +155,32 @@ class AgentEvalSuite:
                 forbidden_report_fragments=("tool_calls", "bitpro_capabilities", "Trace folded"),
                 expected_source_ids=("run:compact_paper_report",),
             ),
+            AgentEvalCase(
+                name="live_order_history_source",
+                prompt="我的实盘最近的一笔订单是什么",
+                expectation=(
+                    "Live order-history prompts must call BitPro live order diagnostics "
+                    "and must not fall back to all-market summaries."
+                ),
+                required_tools=("bitpro_live_order_history",),
+                forbidden_tools=("market_summary", "market.summary"),
+                required_report_fragments=("BitPro 实盘订单", "最近订单"),
+                forbidden_report_fragments=("市场热度总结", "Market Report", "Top Movers"),
+                expected_source_ids=("bitpro_live_order_history:latest",),
+            ),
+            AgentEvalCase(
+                name="live_strategy_performance_source",
+                prompt="看下实盘收益最高的策略",
+                expectation=(
+                    "Live strategy performance prompts must call BitPro live strategy "
+                    "performance diagnostics and rank BitPro return_pct evidence."
+                ),
+                required_tools=("bitpro_live_strategy_performance",),
+                forbidden_tools=("market_summary", "market.summary"),
+                required_report_fragments=("BitPro 实盘策略收益", "return_pct", "最高策略"),
+                forbidden_report_fragments=("市场热度总结", "Market Report", "Top Movers"),
+                expected_source_ids=("bitpro_live_strategy_performance:top",),
+            ),
         ]
 
     def get_case(self, name: str) -> AgentEvalCase:
@@ -346,6 +372,22 @@ class AgentEvalSuite:
                 tool_calls=["bitpro_paper_dashboard"],
                 report_markdown="监控结论: read_only\n核心指标: equity, pnl, drawdown.",
                 source_ids=["run:compact_paper_report"],
+            ),
+            "live_order_history_source": EvalObservation(
+                prompt="我的实盘最近的一笔订单是什么",
+                tool_calls=["bitpro_live_order_history"],
+                report_markdown=(
+                    "## BitPro 实盘订单\n最近订单: ord_2 ETH/USDT:USDT buy closed."
+                ),
+                source_ids=["bitpro_live_order_history:latest"],
+            ),
+            "live_strategy_performance_source": EvalObservation(
+                prompt="看下实盘收益最高的策略",
+                tool_calls=["bitpro_live_strategy_performance"],
+                report_markdown=(
+                    "## BitPro 实盘策略收益\n排名口径=return_pct；最高策略: #107."
+                ),
+                source_ids=["bitpro_live_strategy_performance:top"],
             ),
         }
         try:

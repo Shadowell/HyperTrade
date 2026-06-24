@@ -9,7 +9,9 @@ Upgrade the Agent runtime from a mostly linear planner/executor flow into an obs
 - Add graph nodes: `intent_classify`, `plan_tools`, `approval_check`, `execute_tool`, `reflect`, `final_report`.
 - Persist graph state in `agent_runs.run_state_json`.
 - Emit graph trace events and streaming progress events.
-- Keep deterministic fallback when no chat provider key is configured.
+- Keep deterministic fallback when no chat provider key is configured. Superseded
+  by Sprint 67, which replaces free-form natural-language fallback with an
+  auditable provider-unavailable boundary.
 - Keep business tool traces visible for existing market, RAG, memory, strategy, backtest, and live intent paths.
 
 ## Acceptance
@@ -25,4 +27,3 @@ Upgrade the Agent runtime from a mostly linear planner/executor flow into an obs
 uv run pytest tests/test_agent_market_summary.py tests/test_agent_acceptance.py -q
 ./scripts/check.sh
 ```
-

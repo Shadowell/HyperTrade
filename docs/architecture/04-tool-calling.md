@@ -15,6 +15,9 @@ Policy:
 - read tools can run automatically from chat; approval-required or blocked
   tools are surfaced through structured policy outcomes instead of hidden
   planner behavior
+- free-form natural-language prompts do not use kernel keyword routers; a
+  configured chat provider and `AgentPlanner` select tool names, while the
+  trusted runtime only validates and executes the selected calls
 - idempotency-required tools must supply an idempotency key before execution
 - large outputs should be summarized before entering model context
 - external BitPro calls must go through explicit adapter tools with scopes, idempotency, and audit correlation
@@ -28,20 +31,23 @@ Policy:
 Specific ticker lookup:
 
 - `market_summary` is for all-market OKX SWAP summaries and top movers.
-- All-market heat, sentiment, breadth, risk-appetite, 大盘, 全市场, or 行情归纳
-  prompts must use `market_summary`, not a few `market_ticker` calls.
+- The planner should choose `market_summary` for all-market heat, sentiment,
+  breadth, risk-appetite, 大盘, 全市场, or 行情归纳 prompts, not a few
+  `market_ticker` calls.
 - `market_ticker` is for one listed OKX USDT perpetual swap symbol or instrument id.
 - `market_candles` is for recent OHLCV trend research on one OKX SWAP instrument.
 - `market_compare` is for comparing relative strength across 2-6 OKX SWAP instruments.
 - `bitpro.*` tools are reserved for external BitPro API capabilities such as backtest data, base market data, paper/simulation state, and live trading state.
-- Live account order-history prompts such as `我的实盘最近的一笔订单是什么`
-  use `bitpro_live_order_history` / `bitpro.live_order_history`, not
-  `market_summary`. This tool is read-only live diagnostics; live order
-  placement, cancellation, and transfer remain separate write-gated paths.
-- Live strategy performance prompts such as `看下实盘收益最高的策略` use
-  `bitpro_live_strategy_performance` / `bitpro.live_strategy_performance`, not
-  `market_summary`. The tool reads BitPro `/live/strategies`, ranks by
-  `return_pct`, and reports `total_pnl` only when BitPro provides it.
+- The planner should choose `bitpro_live_order_history` /
+  `bitpro.live_order_history` for live account order-history prompts such as
+  `我的实盘最近的一笔订单是什么`, not `market_summary`. This tool is read-only
+  live diagnostics; live order placement, cancellation, and transfer remain
+  separate write-gated paths.
+- The planner should choose `bitpro_live_strategy_performance` /
+  `bitpro.live_strategy_performance` for live strategy performance prompts such
+  as `看下实盘收益最高的策略`, not `market_summary`. The tool reads BitPro
+  `/live/strategies`, ranks by `return_pct`, and reports `total_pnl` only when
+  BitPro provides it.
 - Common user inputs are normalized to OKX instrument ids: `eth` -> `ETH-USDT-SWAP`,
   `SOL-USDT` -> `SOL-USDT-SWAP`, `doge_usdt` -> `DOGE-USDT-SWAP`.
 - The planner prompt instructs the LLM to choose `market_ticker` for any specific listed coin, not
@@ -63,6 +69,8 @@ ToolRegistry 是 Agent 可调用工具的唯一目录。Sprint 01 包含行情�
   `graph.execute_tool` 和业务 trace payload
 - 只读工具可由聊天自动触发；需要审批或被阻断的工具会以结构化 policy outcome
   展示，而不是隐藏在 planner 行为里
+- 自然语言提示不再由 kernel 里的关键词路由决定工具；配置好的 chat provider 和
+  `AgentPlanner` 负责选择工具名，可信运行时只做校验、执行和审计
 - 要求幂等的工具必须携带 idempotency key 才能执行
 - 每次工具调用必须生成 trace event
 - 大结果进入模型上下文前要摘要
@@ -75,17 +83,17 @@ ToolRegistry 是 Agent 可调用工具的唯一目录。Sprint 01 包含行情�
 单标的精确行情：
 
 - `market_summary` 用于 OKX SWAP 全市场归纳和异动榜。
-- 全市场热度、市场情绪、breadth、风险偏好、大盘、全市场或行情归纳类问题必须使用
-  `market_summary`，不能只用几个 `market_ticker` 调用替代。
+- 全市场热度、市场情绪、breadth、风险偏好、大盘、全市场或行情归纳类问题应由
+  planner 选择 `market_summary`，不能只用几个 `market_ticker` 调用替代。
 - `market_ticker` 用于一个已上线 OKX USDT 永续标的或 instrument id。
 - `market_candles` 用于一个 OKX SWAP 标的的近期 OHLCV 趋势研究。
 - `market_compare` 用于 2-6 个 OKX SWAP 标的之间的强弱比较。
 - `bitpro.*` 工具预留给外部 BitPro API 能力，例如回测数据、基础行情、模拟盘状态和实盘状态。
-- `我的实盘最近的一笔订单是什么` 这类实盘订单历史问题使用
+- `我的实盘最近的一笔订单是什么` 这类实盘订单历史问题应由 planner 选择
   `bitpro_live_order_history` / `bitpro.live_order_history`，不能回退到
   `market_summary`。该工具只是实盘只读诊断；真实下单、撤单和划转仍属于
   单独写入门禁路径。
-- `看下实盘收益最高的策略` 这类实盘策略收益问题使用
+- `看下实盘收益最高的策略` 这类实盘策略收益问题应由 planner 选择
   `bitpro_live_strategy_performance` / `bitpro.live_strategy_performance`，
   不能回退到 `market_summary`。该工具读取 BitPro `/live/strategies`，按
   `return_pct` 排名，并且只展示 BitPro 返回的 `total_pnl`。

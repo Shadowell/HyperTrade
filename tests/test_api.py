@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 
 from fastapi.testclient import TestClient
 from hypertrade.agent.kernel import AgentKernel
@@ -7,9 +8,71 @@ from hypertrade.config import Settings
 from hypertrade.db import AgentRun, Database
 from hypertrade.main import create_app
 from hypertrade.market.repository import MarketRepository
+from hypertrade.providers.deepseek import ChatResponse, ToolCallRequest
 
 
-def test_api_exposes_health_harness_and_agent_run(tmp_path):
+class ReplayChatProvider:
+    name = "replay"
+    model = "api-test"
+
+    def __init__(self, responses: list[ChatResponse]) -> None:
+        self._responses = responses
+
+    def chat(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> ChatResponse:
+        if not self._responses:
+            raise AssertionError("No replay response left")
+        return self._responses.pop(0)
+
+
+def _patch_replay_provider(
+    monkeypatch,
+    responses: list[ChatResponse],
+) -> None:
+    provider = ReplayChatProvider(responses)
+    monkeypatch.setattr(
+        "hypertrade.providers.runtime.ProviderRuntime.get_chat_provider",
+        lambda self, selected=None, selected_model=None: provider,
+    )
+
+
+def _market_summary_replay(*, with_rag_memory: bool = False) -> list[ChatResponse]:
+    tool_calls = [
+        ToolCallRequest(
+            id="call_market",
+            name="market_summary",
+            arguments={},
+        )
+    ]
+    if with_rag_memory:
+        tool_calls.extend(
+            [
+                ToolCallRequest(
+                    id="call_rag",
+                    name="rag_search",
+                    arguments={"query": "market risk", "limit": 3},
+                ),
+                ToolCallRequest(
+                    id="call_memory",
+                    name="memory_write",
+                    arguments={
+                        "kind": "market_summary",
+                        "content": "Latest market summary requested by user prompt.",
+                    },
+                ),
+            ]
+        )
+    return [
+        ChatResponse(content="", tool_calls=tool_calls),
+        ChatResponse(content="已完成行情归纳。", tool_calls=[]),
+    ]
+
+
+def test_api_exposes_health_harness_and_agent_run(monkeypatch, tmp_path):
     db = Database("sqlite:///:memory:")
     db.create_all()
     MarketRepository(db).upsert_ticker_snapshot(
@@ -25,13 +88,14 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
         "Risk control comes before signal strength.",
         encoding="utf-8",
     )
+    _patch_replay_provider(monkeypatch, _market_summary_replay(with_rag_memory=True))
 
     app = create_app(
         settings=Settings(
             ADMIN_USERNAME="admin",
             ADMIN_PASSWORD="secret",
             KNOWLEDGE_DIR=knowledge_dir,
-            DEEPSEEK_API_KEY="",
+            DEEPSEEK_API_KEY="test-key",
             OKX_REST_URL="http://127.0.0.1:9",
             BITPRO_MCP_API_TOKEN="api-secret-token",
         ),
@@ -76,7 +140,7 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     assert "graph.plan_tools" in trace_names
     assert "graph.reflect" in trace_names
     assert "graph.final_report" in trace_names
-    assert "market.summary" in trace_names
+    assert "market_summary" in trace_names
     assert body["run_state_json"]["current_node"] == "final_report"
 
     overview = client.get("/api/harness/overview").json()
@@ -130,6 +194,8 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
         "missing_artifact_disclosure",
         "paper_monitor_read_only",
         "compact_report_rendering",
+        "live_order_history_source",
+        "live_strategy_performance_source",
     }
     assert expected_eval_cases == {
         case["name"] for case in evals["cases"]
@@ -169,7 +235,7 @@ def test_api_exposes_health_harness_and_agent_run(tmp_path):
     assert paused_overview["live_orders"]["total_count"] == 1
 
 
-def test_api_market_heat_prompt_returns_summary(tmp_path):
+def test_api_market_heat_prompt_returns_summary(monkeypatch, tmp_path):
     db = Database("sqlite:///:memory:")
     db.create_all()
     repository = MarketRepository(db)
@@ -196,12 +262,13 @@ def test_api_market_heat_prompt_returns_summary(tmp_path):
     )
     knowledge_dir = tmp_path / "knowledge"
     knowledge_dir.mkdir()
+    _patch_replay_provider(monkeypatch, _market_summary_replay())
     app = create_app(
         settings=Settings(
             ADMIN_USERNAME="admin",
             ADMIN_PASSWORD="secret",
             KNOWLEDGE_DIR=knowledge_dir,
-            DEEPSEEK_API_KEY="",
+            DEEPSEEK_API_KEY="test-key",
             OKX_REST_URL="http://127.0.0.1:9",
         ),
         db=db,
@@ -275,17 +342,18 @@ def test_public_workbench_can_read_observability_without_login(tmp_path):
     assert client.post("/api/paper/control", json={"action": "pause"}).status_code == 401
 
 
-def test_api_streams_agent_run_events(tmp_path):
+def test_api_streams_agent_run_events(monkeypatch, tmp_path):
     db = Database("sqlite:///:memory:")
     db.create_all()
     knowledge_dir = tmp_path / "knowledge"
     knowledge_dir.mkdir()
+    _patch_replay_provider(monkeypatch, _market_summary_replay())
     app = create_app(
         settings=Settings(
             ADMIN_USERNAME="admin",
             ADMIN_PASSWORD="secret",
             KNOWLEDGE_DIR=knowledge_dir,
-            DEEPSEEK_API_KEY="",
+            DEEPSEEK_API_KEY="test-key",
         ),
         db=db,
     )
@@ -383,7 +451,8 @@ def test_api_can_switch_active_provider_without_exposing_keys(tmp_path):
     assert selected["key_status"] == "missing"
     run = client.post("/api/agent/runs", json={"prompt": "请做行情归纳"}).json()
     assert run["status"] == "completed"
-    assert run["report_json"]["data_source"] in {"okx_rest", "unavailable"}
+    assert run["report_json"]["status"] == "provider_unavailable"
+    assert run["report_json"]["tool_calls"] == []
 
 
 def test_api_can_select_codex_provider_model_without_exposing_keys(tmp_path):
