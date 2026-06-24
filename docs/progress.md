@@ -4,22 +4,30 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprints 60/61/62 verified locally with
-  `./scripts/check.sh` (`pytest` 225 passed).
+- Last verified state: Sprint 63 CLI selectable candidates verified locally
+  with `./scripts/check.sh` (`pytest` 228 passed).
 
 ## Active Contract
 
 - `docs/contracts/sprint-60-monitor-scheduler.md`
 - `docs/contracts/sprint-61-cli-codex-model-picker.md`
 - `docs/contracts/sprint-62-live-order-history-routing.md`
+- `docs/contracts/sprint-63-cli-selectable-candidates.md`
 
 ## Current In-Progress Work
 
-- Sprints 60/61/62 are implemented and locally verified; commit, push,
-  deployment watch, and production health verification are next.
+- Sprint 63 is implemented and locally verified; commit, push, deployment
+  watch, and production health verification are next.
 
 ## Latest Completed Work
 
+- Added Sprint 63 CLI selectable candidates: slash command and slash argument
+  candidate lists now render numbered alternatives, interactive chat prompts
+  for a candidate number, and selected candidates dispatch through the same
+  deterministic slash-command handlers. This includes partial commands such as
+  `/st` and argument candidates such as `/model c`, which continues into the
+  Codex model picker after selecting `codex`. Verification passed with focused
+  CLI tests and full `./scripts/check.sh` (`pytest` 228 passed).
 - Added Sprint 62 live order-history routing: live/real-account order-history
   prompts such as `我的实盘最近的一笔订单是什么` now route directly to the
   read-only `bitpro_live_order_history` tool instead of market fallback. The

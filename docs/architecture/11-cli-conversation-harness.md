@@ -36,9 +36,11 @@ completion is registered for slash commands and common subcommands, so `/`, `/m`
 full spelling.
 Short incomplete prefixes such as `/st` or `/me` render a filtered candidate list with
 the same descriptions used by `/help`; the readline completion display hook also uses
-that candidate renderer when Tab completion is shown. HyperTrade still uses the standard
-readline input boundary here, so live per-keystroke dropdown navigation is a future TUI
-enhancement rather than part of the current CLI loop.
+that candidate renderer when Tab completion is shown. In interactive chat, displayed
+slash command and argument candidates are numbered; entering a number dispatches the
+selected candidate through the same deterministic slash-command handler. HyperTrade
+still uses the standard readline input boundary here, so live per-keystroke dropdown
+navigation is a future TUI enhancement rather than part of the current CLI loop.
 
 - `/help`, `/status`, `/model`, `/providers`
 - `/tools`, `/runs`, `/memory`
@@ -127,8 +129,10 @@ registry 描述：
 只输入 `/` 会展示同一份命令列表。真实 TTY 会注册 readline Tab 补全，因此输入 `/`、`/m`
 或 `/paper ` 后按 Tab 可以展示/补全可用命令与常见子命令，不需要操作员记住完整拼写。
 输入 `/st`、`/me` 这类未完整前缀时，会展示带用途说明的过滤候选列表；readline 的 Tab
-候选展示也复用同一个候选渲染器。这里仍然基于标准 readline 输入边界，因此每个按键实时刷新的
-下拉式命令面板属于后续 TUI 增强，而不是当前 CLI loop 的职责。
+候选展示也复用同一个候选渲染器。交互式 chat 中，展示出来的 slash command 和 argument
+候选会带稳定编号；输入编号即可把该候选交给同一套确定性 slash-command handler 执行。这里仍然
+基于标准 readline 输入边界，因此每个按键实时刷新的下拉式命令面板属于后续 TUI 增强，而不是
+当前 CLI loop 的职责。
 
 - `/help`、`/status`、`/model`、`/providers`
 - `/tools`、`/runs`、`/memory`

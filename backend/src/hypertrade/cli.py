@@ -1284,7 +1284,23 @@ def handle_slash_command(
     client: AgentClient,
     output: TextIO,
     input_fn: Callable[[str], str] | None = None,
+    candidate_selected: bool = False,
 ) -> None:
+    selected_candidate = _prompt_slash_candidate_selection(
+        command,
+        input_fn=input_fn,
+        output=output,
+    )
+    if selected_candidate is not None:
+        if selected_candidate:
+            handle_slash_command(
+                selected_candidate,
+                client=client,
+                output=output,
+                input_fn=input_fn,
+                candidate_selected=True,
+            )
+        return
     name = command.split(maxsplit=1)[0].lower()
     if _slash_argument_candidates(command):
         render_slash_command_candidates(command, output=output)
@@ -1296,7 +1312,13 @@ def handle_slash_command(
     elif name == "/status":
         render_status(client.get_status(), output=output)
     elif name == "/model":
-        render_model(command, client=client, output=output, input_fn=input_fn)
+        render_model(
+            command,
+            client=client,
+            output=output,
+            input_fn=input_fn,
+            prompt_model=candidate_selected,
+        )
     elif name in {"/provider", "/providers"}:
         render_providers(client.get_model_status(), output=output)
     elif name == "/tools":
@@ -1372,9 +1394,9 @@ def render_slash_command_candidates(prefix: str, *, output: TextIO) -> None:
             file=output,
         )
         argument_width = max(len(candidate) for candidate in argument_matches)
-        for candidate in argument_matches:
+        for index, candidate in enumerate(argument_matches, 1):
             print(
-                f"- {_paint(f'{candidate:<{argument_width}}', 'command', output=output)}",
+                f"{index}. {_paint(f'{candidate:<{argument_width}}', 'command', output=output)}",
                 file=output,
             )
         remaining_arguments = len(all_argument_matches) - len(argument_matches)
@@ -1412,10 +1434,10 @@ def render_slash_command_candidates(prefix: str, *, output: TextIO) -> None:
         file=output,
     )
     command_width = max(len(command) for command, _ in matches)
-    for command, description in matches:
+    for index, (command, description) in enumerate(matches, 1):
         padded_command = f"{command:<{command_width}}"
         print(
-            f"- {_paint(padded_command, 'command', output=output)}  "
+            f"{index}. {_paint(padded_command, 'command', output=output)}  "
             f"{_paint(description, 'muted', output=output)}",
             file=output,
         )
@@ -1437,6 +1459,79 @@ def render_slash_command_candidates(prefix: str, *, output: TextIO) -> None:
         ),
         file=output,
     )
+
+
+def _prompt_slash_candidate_selection(
+    prefix: str,
+    *,
+    input_fn: Callable[[str], str] | None,
+    output: TextIO,
+) -> str | None:
+    if input_fn is None:
+        return None
+    argument_matches = _slash_argument_candidates(prefix, limit=SLASH_CANDIDATE_LIMIT)
+    if argument_matches:
+        render_slash_command_candidates(prefix, output=output)
+        selected = _prompt_numbered_candidate(
+            argument_matches,
+            input_fn=input_fn,
+            output=output,
+        )
+        if selected is None:
+            return ""
+        command_name = prefix.strip().split(maxsplit=1)[0]
+        return f"{command_name} {selected}"
+
+    stripped = prefix.strip()
+    name = stripped.split(maxsplit=1)[0].lower() if stripped else ""
+    should_prompt_commands = stripped == "/" or (
+        _looks_like_slash_prefix(stripped) and name not in SLASH_COMMAND_COMPLETIONS
+    )
+    if not should_prompt_commands:
+        return None
+    command_matches = _slash_command_candidates(stripped, limit=SLASH_CANDIDATE_LIMIT)
+    if not command_matches:
+        return None
+    render_slash_command_candidates(stripped, output=output)
+    selected = _prompt_numbered_candidate(
+        [command for command, _ in command_matches],
+        input_fn=input_fn,
+        output=output,
+    )
+    if selected is None:
+        return ""
+    return _selectable_slash_command(selected)
+
+
+def _prompt_numbered_candidate(
+    candidates: Sequence[str],
+    *,
+    input_fn: Callable[[str], str],
+    output: TextIO,
+) -> str | None:
+    choice = input_fn("Candidate number (blank to cancel): ").strip()
+    if not choice:
+        print("Candidate selection canceled.", file=output)
+        return None
+    selected = _select_numbered_item(choice, candidates)
+    if selected is None:
+        print("Invalid candidate selection.", file=output)
+        return None
+    return selected
+
+
+def _selectable_slash_command(command: str) -> str:
+    parts = command.split()
+    if not parts:
+        return command
+    if parts[:2] == ["/live", "intent"]:
+        return "/live intent"
+    selected: list[str] = []
+    for part in parts:
+        if any(marker in part for marker in ("<", "[", "|", "*")) or part.startswith("--"):
+            break
+        selected.append(part)
+    return " ".join(selected) if selected else parts[0]
 
 
 def handle_research_command(command: str, *, client: AgentClient, output: TextIO) -> None:
@@ -2094,6 +2189,7 @@ def render_model(
     client: AgentClient,
     output: TextIO,
     input_fn: Callable[[str], str] | None = None,
+    prompt_model: bool = False,
 ) -> None:
     parts = command.split(maxsplit=1)
     status = client.get_model_status()
@@ -2108,6 +2204,13 @@ def render_model(
             _prompt_model_selection(status, client=client, input_fn=input_fn, output=output)
         return
     requested_provider, requested_model = _parse_model_selection_argument(parts[1].strip())
+    if prompt_model and input_fn is not None and not requested_model:
+        provider = _find_provider_status(status, requested_provider)
+        if provider is not None:
+            selected_model = _prompt_provider_model(provider, input_fn=input_fn, output=output)
+            if selected_model is None:
+                return
+            requested_model = selected_model
     try:
         switched = client.set_model(requested_provider, requested_model)
     except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
@@ -2201,6 +2304,14 @@ def _provider_options(status: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(providers, list):
         return []
     return [dict(provider) for provider in providers if isinstance(provider, dict)]
+
+
+def _find_provider_status(status: dict[str, Any], provider_name: str) -> dict[str, Any] | None:
+    normalized = ProviderRuntime.normalize_provider_name(provider_name)
+    for provider in _provider_options(status):
+        if ProviderRuntime.normalize_provider_name(str(provider.get("name", ""))) == normalized:
+            return provider
+    return None
 
 
 def _select_numbered_item[T](choice: str, items: Sequence[T]) -> T | None:

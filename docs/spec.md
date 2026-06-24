@@ -137,6 +137,9 @@ its own Agent capabilities:
   as `我的实盘最近的一笔订单是什么` route deterministically to the read-only
   BitPro live order-history diagnostic path and render `BitPro 实盘订单` evidence
   instead of falling back to all-market reports.
+- Sprint 63 CLI selectable candidates: slash command and slash argument
+  candidate lists render stable numbers, and interactive chat can dispatch a
+  selected candidate directly by number.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -183,6 +186,9 @@ its own Agent capabilities:
 - Developer can enter `/` to display slash commands and press Tab after `/` or a partial slash command to complete commands/common subcommands in real TTY sessions.
 - Developer can enter a short incomplete slash prefix such as `/st` or `/me` and see filtered candidate commands with descriptions instead of a generic unknown-command page.
 - Developer can enter a partial known slash argument such as `/model c` and see matching argument candidates such as `codex` instead of dispatching the incomplete argument.
+- Developer can select any displayed slash command or argument candidate by
+  number in interactive chat, so `/st` can run `/status` and `/model c` can
+  choose `codex` without retyping the candidate.
 - Developer can read a purpose description beside every `/help` slash command and every `/tools` Agent tool row.
 - Developer can run CLI `/connectors` or `GET /api/connectors/capabilities` to
   inspect connector health/auth status, supported scopes, idempotency

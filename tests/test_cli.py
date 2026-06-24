@@ -680,6 +680,25 @@ def test_slash_command_candidates_render_for_partial_command() -> None:
     assert "Unknown command" not in rendered
 
 
+def test_slash_command_candidate_can_be_selected_by_number() -> None:
+    client = FakeAgentClient()
+    output = StringIO()
+    inputs = iter(["1"])
+
+    handle_slash_command(
+        "/st",
+        client=client,
+        output=output,
+        input_fn=_next_input(inputs),
+    )
+
+    rendered = output.getvalue()
+    assert "Slash command candidates for /st:" in rendered
+    assert "1. /status" in rendered
+    assert "Status:" in rendered
+    assert "Unknown command" not in rendered
+
+
 def test_slash_command_display_hook_renders_filtered_candidates(tmp_path) -> None:
     fake_readline = FakeReadline()
     fake_readline.line_buffer = "/me"
@@ -733,6 +752,45 @@ def test_slash_partial_argument_renders_candidates_without_dispatch() -> None:
     assert "codex" in rendered
     assert "Model switch failed" not in rendered
     assert client.selected_model == "deepseek"
+
+
+def test_slash_partial_argument_can_be_selected_by_number() -> None:
+    client = FakeAgentClient()
+    output = StringIO()
+    inputs = iter(["1", "2"])
+
+    handle_slash_command(
+        "/model c",
+        client=client,
+        output=output,
+        input_fn=_next_input(inputs),
+    )
+
+    rendered = output.getvalue()
+    assert "Slash argument candidates for /model c:" in rendered
+    assert "1. codex" in rendered
+    assert "Select Codex model:" in rendered
+    assert "Model switched: codex" in rendered
+    assert "- Model: gpt-5.4-mini" in rendered
+    assert client.selected_model == "codex"
+    assert client.selected_provider_model == "gpt-5.4-mini"
+
+
+def test_slash_candidate_selection_blank_cancels() -> None:
+    client = FakeAgentClient()
+    output = StringIO()
+    inputs = iter([""])
+
+    handle_slash_command(
+        "/st",
+        client=client,
+        output=output,
+        input_fn=_next_input(inputs),
+    )
+
+    rendered = output.getvalue()
+    assert "Candidate selection canceled." in rendered
+    assert "Status:" not in rendered
 
 
 def test_model_command_selects_provider_and_codex_model_from_numbered_lists() -> None:
