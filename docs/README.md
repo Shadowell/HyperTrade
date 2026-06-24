@@ -13,6 +13,8 @@ runbooks, and sprint state. Chat history is not considered durable project state
   roadmap and parallel sprint plan for Agent development.
 - `architecture/20-connector-framework.md`: trusted connector capability
   registry and BitPro compatibility path.
+- `architecture/21-world-model-agent-action-plan.md`: world-model-driven
+  strategy Agent action plan and phased execution guide.
 - `contracts/sprint-57-architecture-diagram.md`: current architecture diagram
   contract.
 - `contracts/sprint-56-market-heat-summary.md`: focused market-reporting
@@ -40,6 +42,7 @@ runbooks, and sprint state. Chat history is not considered durable project state
 | Strategy knowledge memory | `/strategy library`, `GET /api/strategy/library`, `kind=strategy_knowledge` memory search | `knowledge/strategy-research-playbook.md` |
 | BitPro MCP | Agent tools, API adapter, backtest artifacts, paper evidence snapshots | `architecture/17-bitpro-tool-adapter.md` |
 | Connector framework | `GET /api/connectors/capabilities`, CLI `/connectors`, ToolRegistry origin metadata | `architecture/20-connector-framework.md`, `knowledge/connector-framework-guide.md` |
+| World-model strategy Agent | `WorldState`, action simulation, risk-gated decision cycle | `architecture/21-world-model-agent-action-plan.md` |
 | Monitoring and alerts | `/monitors`, `/monitor run`, `/alerts`, monitor API | `runbooks/monitoring-alerts.md` |
 | Capability roadmap | Parallel Agent sprint contracts after Sprint 44 | `architecture/18-hypertrade-capability-roadmap.md` |
 | Parallel Agent prompts | Copy-ready prompts for Sprint 45-54 Agents | `agent-prompts/parallel-sprint-prompts.md` |
