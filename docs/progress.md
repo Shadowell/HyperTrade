@@ -16,9 +16,9 @@
 - Sprint 66 README architecture/onboarding refresh is implemented and locally
   verified. The remaining handoff step is the standard main-branch push,
   deployment watch, and production health verification.
-- Sprint 65 live strategy performance routing has been implemented and verified
-  separately; it should be committed/deployed as its own bugfix slice without
-  staging unrelated README refresh files.
+- Sprint 65 live strategy performance routing was committed, pushed, deployed,
+  and production-smoked separately from the README refresh. The remaining
+  README/Sprint 66 files in the worktree are unrelated to this fix.
 
 ## Latest Completed Work
 
@@ -35,7 +35,11 @@
   `/live/strategies`, ranks returned rows by the page metric `return_pct`,
   reports `total_pnl` when present, and renders a `BitPro 实盘策略收益` section.
   Verification passed with focused Agent/planner/adapter/report/registry tests
-  and full `./scripts/check.sh` (`pytest` 233 passed).
+  and full `./scripts/check.sh` (`pytest` 233 passed). Deployment run
+  `28083803949` completed successfully for SHA `d3173a1`, public
+  `GET http://47.79.36.92:3333/api/health` returned `ok`, and remote CLI smoke
+  run `run_233a0cf96acb45a9a12f` answered `看下实盘收益最高的策略` with
+  `BitPro 实盘策略收益` plus `bitpro.live_strategy_performance` trace.
 - Added Sprint 64 Codex GPT-5.5 option: default `CODEX_MODEL_OPTIONS` now
   includes `gpt-5.5` between `gpt-5.4` and `gpt-5.4-mini`, while `CODEX_MODEL`
   remains `gpt-5.4`. This explains why 5.5 was missing before: the CLI model
