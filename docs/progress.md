@@ -4,25 +4,36 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 67 LLM planner routing and Sprint 68 live BitPro
-  routing evals verified locally with `./scripts/check.sh` (`pytest` 236
-  passed), deployed through GitHub Actions run `28085079651` for SHA `3638c8f`,
-  and production-smoked with `GET http://47.79.36.92:3333/api/health` plus live
-  strategy/order Agent prompts.
+- Last verified state: Sprint 69 README framework guide verified locally with
+  `./scripts/check.sh` (`pytest` 236 passed). Commit, push, deployment watch,
+  and production health verification are pending.
 
 ## Active Contract
 
-- `docs/contracts/sprint-67-llm-planner-routing.md`
-- `docs/contracts/sprint-68-live-bitpro-routing-evals.md`
+- `docs/contracts/sprint-69-readme-framework-guide.md`
 
 ## Current In-Progress Work
 
+- Sprint 69 README framework guide is implemented locally: root `README.md` now
+  follows a mature open-source framework structure with positioning,
+  architecture, component responsibilities, installation, usage recipes,
+  API/CLI examples, configuration, deployment, testing, troubleshooting, and
+  development workflow. Full `./scripts/check.sh` passed (`pytest` 236 passed);
+  deployment is pending.
 - Sprint 67 LLM planner routing and Sprint 68 live BitPro routing evals were
-  committed, pushed, deployed, and production-smoked; no implementation work
-  remains for this slice.
+  committed, pushed, deployed, and production-smoked separately from the README
+  framework guide work.
 
 ## Latest Completed Work
 
+- Added Sprint 69 README framework guide: the root README now gives a
+  framework-grade introduction for operators, engineers, and external Agent
+  integrators. It documents the HyperTrade/BitPro boundary, layered
+  architecture, component map, prompt execution flow, local SQLite quickstart,
+  CLI/API usage, BitPro workflows, monitoring, Testnet guardrails,
+  configuration, production deployment, evals, troubleshooting, repository
+  layout, and development workflow. Verification passed with full
+  `./scripts/check.sh` (`pytest` 236 passed).
 - Added Sprint 68 live BitPro routing evals: `/evals` now includes
   `live_order_history_source` and `live_strategy_performance_source`, requiring
   `bitpro_live_order_history` / `bitpro_live_strategy_performance`, forbidding

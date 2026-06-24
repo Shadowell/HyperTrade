@@ -157,6 +157,10 @@ its own Agent capabilities:
 - Sprint 68 live BitPro routing evals: `/evals` includes live order-history and
   live strategy-performance guardrails that require the matching BitPro
   diagnostic tools and fail generic market-report fallbacks.
+- Sprint 69 README framework guide: the root README is the public framework
+  entrypoint, covering architecture, component responsibilities, installation,
+  usage recipes, API/CLI examples, configuration, deployment, verification,
+  troubleshooting, and development workflow.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
