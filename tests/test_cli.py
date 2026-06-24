@@ -676,6 +676,40 @@ def test_slash_command_display_hook_renders_filtered_candidates(tmp_path) -> Non
     assert fake_readline.redisplay_count == 1
 
 
+def test_slash_command_display_hook_renders_argument_candidates(tmp_path) -> None:
+    fake_readline = FakeReadline()
+    fake_readline.line_buffer = "/model c"
+    configure_interactive_history(
+        enabled=True,
+        history_path=tmp_path / "history",
+        readline_module=fake_readline,
+    )
+    assert fake_readline.display_hook is not None
+    output = StringIO()
+
+    with redirect_stdout(output):
+        fake_readline.display_hook("c", ["codex "], len("codex "))
+
+    rendered = output.getvalue()
+    assert "Slash argument candidates for /model c:" in rendered
+    assert "codex" in rendered
+    assert "No slash command matches" not in rendered
+    assert fake_readline.redisplay_count == 1
+
+
+def test_slash_partial_argument_renders_candidates_without_dispatch() -> None:
+    client = FakeAgentClient()
+    output = StringIO()
+
+    handle_slash_command("/model c", client=client, output=output)
+
+    rendered = output.getvalue()
+    assert "Slash argument candidates for /model c:" in rendered
+    assert "codex" in rendered
+    assert "Model switch failed" not in rendered
+    assert client.selected_model == "deepseek"
+
+
 def test_slash_command_root_displays_help_without_unknown_message() -> None:
     output = StringIO()
 

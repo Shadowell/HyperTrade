@@ -4,21 +4,28 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 58 Codex provider runtime verified locally with
-  `./scripts/check.sh` (`pytest` 211 passed).
+- Last verified state: Sprint 59 CLI argument candidate display verified
+  locally with `./scripts/check.sh` (`pytest` 213 passed).
 
 ## Active Contract
 
 - No active implementation contract. Last completed:
-  `docs/contracts/sprint-58-codex-provider-runtime.md`.
+  `docs/contracts/sprint-59-cli-argument-candidates.md`.
 
 ## Current In-Progress Work
 
-- None. Sprint 58 is complete in this branch; select a new contract before
+- None. Sprint 59 is complete in this branch; select a new contract before
   starting more implementation scope.
 
 ## Latest Completed Work
 
+- Added Sprint 59 CLI argument candidate display fix: slash-command candidate
+  rendering now also understands argument completions from
+  `SLASH_ARGUMENT_COMPLETIONS`, so inputs such as `/model c` show `codex`
+  instead of displaying no matches or dispatching `c` as a fake provider. The
+  readline display hook and Enter-on-partial-argument path are covered by
+  focused CLI regression tests. Verification passed with focused candidate
+  tests and full `./scripts/check.sh` (`pytest` 213 passed).
 - Added Sprint 58 Codex provider runtime: HyperTrade now exposes `codex` as a
   selectable chat/planner provider, accepts Hermes-style `openai-codex` as an
   alias, reads server-only `CODEX_API_KEY` or `CODEX_AUTH_JSON` access tokens

@@ -170,6 +170,7 @@ its own Agent capabilities:
 - Developer can use CLI slash commands such as `/tools`, `/runs`, `/memory`, `/strategy`, and `/backtests` in interactive chat.
 - Developer can enter `/` to display slash commands and press Tab after `/` or a partial slash command to complete commands/common subcommands in real TTY sessions.
 - Developer can enter a short incomplete slash prefix such as `/st` or `/me` and see filtered candidate commands with descriptions instead of a generic unknown-command page.
+- Developer can enter a partial known slash argument such as `/model c` and see matching argument candidates such as `codex` instead of dispatching the incomplete argument.
 - Developer can read a purpose description beside every `/help` slash command and every `/tools` Agent tool row.
 - Developer can run CLI `/connectors` or `GET /api/connectors/capabilities` to
   inspect connector health/auth status, supported scopes, idempotency

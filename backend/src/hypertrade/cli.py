@@ -392,6 +392,32 @@ def _slash_command_candidates(
     return matches[:limit]
 
 
+def _slash_argument_candidates(
+    prefix: str,
+    *,
+    limit: int | None = SLASH_CANDIDATE_LIMIT,
+) -> list[str]:
+    raw = prefix.strip()
+    if not raw.startswith("/"):
+        return []
+    if " " not in raw:
+        return []
+    command, rest = raw.split(maxsplit=1)
+    candidates = SLASH_ARGUMENT_COMPLETIONS.get(command.lower(), ())
+    if not candidates:
+        return []
+    normalized_rest = rest.lower()
+    matches = [
+        candidate
+        for candidate in candidates
+        if candidate.lower().startswith(normalized_rest)
+        and candidate.lower() != normalized_rest
+    ]
+    if limit is None:
+        return matches
+    return matches[:limit]
+
+
 def _slash_candidate_matches_prefix(command: str, normalized_prefix: str) -> bool:
     normalized_command = " ".join(command.lower().split())
     command_name = normalized_command.split(maxsplit=1)[0]
@@ -1233,6 +1259,9 @@ def _paint(text: object, style: str, *, output: TextIO) -> str:
 
 def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -> None:
     name = command.split(maxsplit=1)[0].lower()
+    if _slash_argument_candidates(command):
+        render_slash_command_candidates(command, output=output)
+        return
     # Keep this dispatcher flat and explicit so CLI -> Agent/tool/API wiring is
     # easy to audit during production operations.
     if name in {"/", "/help", "/?", "/commands", "/command"}:
@@ -1303,7 +1332,43 @@ def render_slash_help(*, output: TextIO) -> None:
 def render_slash_command_candidates(prefix: str, *, output: TextIO) -> None:
     matches = _slash_command_candidates(prefix, limit=SLASH_CANDIDATE_LIMIT)
     all_matches = _slash_command_candidates(prefix, limit=None)
+    argument_matches = _slash_argument_candidates(prefix, limit=SLASH_CANDIDATE_LIMIT)
+    all_argument_matches = _slash_argument_candidates(prefix, limit=None)
     display_prefix = prefix.strip() or "/"
+    if all_argument_matches:
+        print(
+            _paint(
+                f"Slash argument candidates for {display_prefix}:",
+                "section",
+                output=output,
+            ),
+            file=output,
+        )
+        argument_width = max(len(candidate) for candidate in argument_matches)
+        for candidate in argument_matches:
+            print(
+                f"- {_paint(f'{candidate:<{argument_width}}', 'command', output=output)}",
+                file=output,
+            )
+        remaining_arguments = len(all_argument_matches) - len(argument_matches)
+        if remaining_arguments > 0:
+            print(
+                _paint(
+                    f"... {remaining_arguments} more matches. Type more characters.",
+                    "muted",
+                    output=output,
+                ),
+                file=output,
+            )
+        print(
+            _paint(
+                "Tip: press Tab to complete, or type the full argument to run it.",
+                "muted",
+                output=output,
+            ),
+            file=output,
+        )
+        return
     if not all_matches:
         print(
             _paint(f"No slash command matches: {display_prefix}", "warning", output=output),
