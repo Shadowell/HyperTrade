@@ -64,6 +64,9 @@ Enter `/` to display the command list, or press Tab after `/` or a partial comma
 as `/m` to complete available slash commands and common subcommands.
 Short incomplete prefixes such as `/st` or `/me` render a filtered candidate list with
 descriptions instead of starting an Agent run or dumping the full help page.
+Run `/model` in interactive chat to choose the active provider from a numbered
+list; when Codex is selected, its model is chosen from the configured
+`CODEX_MODEL_OPTIONS` list. Scripted switches such as `/model codex` still work.
 Free-form Agent prompts show a live `Thought` / `Thinking` status block in interactive
 terminals while the planner or tools are still running.
 Interactive terminals also render Markdown reports into readable headings, lists, and tables;

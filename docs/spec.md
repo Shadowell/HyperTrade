@@ -125,6 +125,18 @@ its own Agent capabilities:
 - Sprint 58 Codex provider runtime: `codex`/`openai-codex` routes chat/planner
   calls through the Codex Responses API while HyperTrade keeps tool execution,
   policy, trace, RAG, and Memory inside its own Agent runtime.
+- Sprint 60 monitor scheduler worker: default monitor definitions have
+  conservative interval schedules, and the worker can run due monitors
+  automatically while preserving the same read-only BitPro/tool boundary as
+  manual monitor runs.
+- Sprint 61 CLI Codex model picker: interactive `/model` renders numbered
+  provider choices and, for Codex, a numbered model list backed by
+  `CODEX_MODEL_OPTIONS`; API provider selection can carry a validated session
+  model override without exposing tokens.
+- Sprint 62 live order-history routing: real-account order-history prompts such
+  as `我的实盘最近的一笔订单是什么` route deterministically to the read-only
+  BitPro live order-history diagnostic path and render `BitPro 实盘订单` evidence
+  instead of falling back to all-market reports.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -191,6 +203,10 @@ its own Agent capabilities:
 - Developer can run backtests from archived BitPro K-line data without copying BitPro business logic.
 - Developer can inspect Agent graph state and graph trace nodes for each run.
 - Developer can switch chat providers from CLI/API/frontend without exposing provider keys.
+- Developer can run interactive CLI `/model` and select a provider by number
+  rather than typing its name; selecting Codex then shows a numbered model list
+  from `CODEX_MODEL_OPTIONS`, and the chosen model is used for the current
+  local or remote session.
 - Developer can select `codex` or Hermes-style `openai-codex` as the active
   chat provider when `CODEX_API_KEY` or `CODEX_AUTH_JSON` provides a Codex
   access token; provider status never exposes the token, and Codex does not
@@ -221,6 +237,10 @@ its own Agent capabilities:
 - Agent can summarize BitPro paper monitoring state with source-bound alerts and read-only recommended actions, while calling out missing per-strategy PnL/drawdown metrics as data gaps rather than inferred facts.
 - Agent can inspect BitPro paper/simulation event streams and equity curves through read-only MCP tools, reporting event counts, error counts, latest event time, equity samples, latest equity, and drawdown evidence without synthesizing missing rows.
 - Agent can capture a BitPro paper monitor snapshot through read-only dashboard/events/equity tools, persist it, compare it with the previous snapshot for the same strategy or all-strategy scope, and report PnL/equity/drawdown/error drift without triggering paper or live write tools.
+- Agent can answer live-account order-history questions, including `我的实盘最近的一笔订单是什么`, through read-only BitPro live diagnostics, reporting the latest returned order id, symbol, side, status, price/size, timestamp, and strategy attribution when BitPro provides it; the Agent must not use `market_summary` for these prompts.
 - Operator can run `GET /api/monitors`, `POST /api/monitors/{monitor_id}/run`, `GET /api/alerts`, CLI `/monitors`, `/monitor run <monitor_id>`, and `/alerts` to inspect persisted monitor definitions, runs, thresholds, source tools, alert events, data gaps, and recommended read-only actions.
+- Operator can leave `MONITOR_SCHEDULER_ENABLED=true` so the worker persists
+  due monitor runs and alert events automatically, or disable the scheduled
+  path while keeping manual CLI/API monitor runs available.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.

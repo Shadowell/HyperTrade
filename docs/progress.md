@@ -4,21 +4,45 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 59 CLI argument candidate display verified
-  locally with `./scripts/check.sh` (`pytest` 213 passed).
+- Last verified state: Sprints 60/61/62 verified locally with
+  `./scripts/check.sh` (`pytest` 225 passed).
 
 ## Active Contract
 
-- No active implementation contract. Last completed:
-  `docs/contracts/sprint-59-cli-argument-candidates.md`.
+- `docs/contracts/sprint-60-monitor-scheduler.md`
+- `docs/contracts/sprint-61-cli-codex-model-picker.md`
+- `docs/contracts/sprint-62-live-order-history-routing.md`
 
 ## Current In-Progress Work
 
-- None. Sprint 59 is complete in this branch; select a new contract before
-  starting more implementation scope.
+- Sprints 60/61/62 are implemented and locally verified; commit, push,
+  deployment watch, and production health verification are next.
 
 ## Latest Completed Work
 
+- Added Sprint 62 live order-history routing: live/real-account order-history
+  prompts such as `我的实盘最近的一笔订单是什么` now route directly to the
+  read-only `bitpro_live_order_history` tool instead of market fallback. The
+  BitPro adapter preflights capability/health, reads `/trading/orders/history`,
+  records source tool calls, and planner guidance forbids `market_summary` for
+  live account order-history questions. Verification passed with focused
+  planner/adapter/Agent tests and full `./scripts/check.sh` (`pytest` 225
+  passed).
+- Added Sprint 61 CLI Codex model picker: interactive `/model` now renders a
+  numbered provider list and, when Codex is selected, a numbered Codex model
+  list sourced from `CODEX_MODEL_OPTIONS`. Local and remote sessions carry the
+  selected model into `AgentKernel` chat/planner calls, API provider selection
+  validates optional model overrides, and provider status exposes
+  `model_options` without exposing Codex tokens. Verification passed with
+  focused provider/API/CLI tests and full `./scripts/check.sh` (`pytest` 225
+  passed).
+- Added Sprint 60 monitor scheduler worker: default monitor definitions now use
+  conservative interval schedules, `MonitorService.run_due_monitors()` runs due
+  monitors while skipping manual/disabled/not-due definitions, and
+  `hypertrade.worker` has a `MONITOR_SCHEDULER_ENABLED`-gated scheduler loop
+  that persists monitor runs and alert events without calling paper/live write
+  tools. Verification passed with focused monitor/worker tests and full
+  `./scripts/check.sh` (`pytest` 225 passed).
 - Added Sprint 59 CLI argument candidate display fix: slash-command candidate
   rendering now also understands argument completions from
   `SLASH_ARGUMENT_COMPLETIONS`, so inputs such as `/model c` show `codex`

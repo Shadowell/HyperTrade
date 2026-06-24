@@ -1,10 +1,13 @@
 import asyncio
 import logging
+from typing import Any
 
-from hypertrade.config import get_settings
+from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
+from hypertrade.config import Settings, get_settings
 from hypertrade.db import Database
 from hypertrade.market.client import MarketIngestor
 from hypertrade.market.repository import MarketRepository
+from hypertrade.monitoring import MonitorService
 from hypertrade.paper.service import PaperTradingService
 from hypertrade.rag.service import RagService
 
@@ -50,6 +53,40 @@ async def paper_trading_loop(db: Database) -> None:
         await asyncio.sleep(settings.paper_loop_interval_seconds)
 
 
+def monitor_scheduler_once(
+    db: Database,
+    *,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    active_settings = settings or get_settings()
+    if not active_settings.monitor_scheduler_enabled:
+        return {
+            "status": "disabled",
+            "ran": [],
+            "skipped": [],
+            "failed": [],
+        }
+    adapter = BitProToolAdapter(BitProMcpClient(settings=active_settings))
+    return MonitorService(db, bitpro_adapter=adapter).run_due_monitors()
+
+
+async def monitor_scheduler_loop(db: Database) -> None:
+    settings = get_settings()
+    while True:
+        try:
+            result = monitor_scheduler_once(db, settings=settings)
+            logger.info(
+                "monitor_scheduler status=%s ran=%s skipped=%s failed=%s",
+                result.get("status"),
+                len(result.get("ran", [])),
+                len(result.get("skipped", [])),
+                len(result.get("failed", [])),
+            )
+        except Exception:
+            logger.exception("monitor_scheduler failed")
+        await asyncio.sleep(settings.monitor_loop_interval_seconds)
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     settings = get_settings()
@@ -61,6 +98,8 @@ async def main() -> None:
     ]
     if settings.paper_enabled:
         tasks.append(paper_trading_loop(db))
+    if settings.monitor_scheduler_enabled:
+        tasks.append(monitor_scheduler_loop(db))
     await asyncio.gather(*tasks)
 
 

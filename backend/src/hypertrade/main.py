@@ -134,6 +134,7 @@ class AgentRunPayload(BaseModel):
 
 class ProviderSelectionPayload(BaseModel):
     provider: str
+    model: str = ""
 
 
 class PaperControlPayload(BaseModel):
@@ -194,6 +195,7 @@ def create_app(
     app.state.settings = app_settings
     app.state.db = database
     app.state.active_chat_provider = app_settings.active_chat_provider
+    app.state.active_chat_model = ""
     app.state.bitpro_adapter = bitpro_adapter
     app.add_middleware(
         CORSMiddleware,
@@ -232,6 +234,12 @@ def create_app(
         adapter: BitProApiAdapter = app.state.bitpro_adapter
         return adapter
 
+    def active_provider_models() -> dict[str, str]:
+        active_model = str(getattr(app.state, "active_chat_model", "") or "")
+        if not active_model:
+            return {}
+        return {str(app.state.active_chat_provider): active_model}
+
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "service": "hypertrade-api"}
@@ -264,7 +272,8 @@ def create_app(
     def providers() -> dict[str, list[dict[str, object]]]:
         return {
             "providers": ProviderRuntime(app_settings).list_providers(
-                selected=str(app.state.active_chat_provider)
+                selected=str(app.state.active_chat_provider),
+                selected_models=active_provider_models(),
             )
         }
 
@@ -275,8 +284,16 @@ def create_app(
         known = {str(provider["name"]) for provider in runtime.list_providers()}
         if requested not in known:
             raise HTTPException(status_code=400, detail="Unknown provider")
+        try:
+            selected_model = runtime.validate_model_choice(requested, payload.model)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         app.state.active_chat_provider = requested
-        providers_payload = runtime.list_providers(selected=requested)
+        app.state.active_chat_model = selected_model
+        providers_payload = runtime.list_providers(
+            selected=requested,
+            selected_models=active_provider_models(),
+        )
         selected = next(
             (provider for provider in providers_payload if provider["name"] == requested),
             providers_payload[0],
@@ -302,7 +319,8 @@ def create_app(
     @app.get("/api/harness/overview")
     def harness_overview() -> dict[str, Any]:
         providers_payload = ProviderRuntime(app_settings).list_providers(
-            selected=str(app.state.active_chat_provider)
+            selected=str(app.state.active_chat_provider),
+            selected_models=active_provider_models(),
         )
         tools_payload = [_tool_to_dict(tool) for tool in ToolRegistry.default().list_tools()]
         connectors_payload = ConnectorRegistry.default(settings=app_settings).capabilities_payload()
@@ -424,6 +442,7 @@ def create_app(
             knowledge_dir=str(app_settings.knowledge_dir),
             settings=app_settings,
             provider_name=str(app.state.active_chat_provider),
+            provider_model=str(app.state.active_chat_model or "") or None,
         )
         run = kernel.run_chat(payload.prompt)
         return _run_to_dict(run)
@@ -436,6 +455,7 @@ def create_app(
                 app_settings,
                 payload.prompt,
                 provider_name=str(app.state.active_chat_provider),
+                provider_model=str(app.state.active_chat_model or "") or None,
             ),
             media_type="text/event-stream",
         )
@@ -804,6 +824,7 @@ def _agent_run_sse(
     settings: Settings,
     prompt: str,
     provider_name: str | None = None,
+    provider_model: str | None = None,
 ) -> Any:
     events: Queue[dict[str, Any] | None] = Queue()
 
@@ -814,6 +835,7 @@ def _agent_run_sse(
                 knowledge_dir=str(settings.knowledge_dir),
                 settings=settings,
                 provider_name=provider_name,
+                provider_model=provider_model,
             )
             run = kernel.run_chat_with_events(prompt, event_sink=events.put)
             events.put({"event": "final", "run": _run_to_dict(run)})

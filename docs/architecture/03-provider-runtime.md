@@ -9,6 +9,7 @@ Provider records expose:
 - name and display name
 - base URL
 - model
+- model options where the provider supports session-level model selection
 - enabled/missing status
 - default flag
 
@@ -42,6 +43,16 @@ back as `function_call_output` input items. Codex never executes HyperTrade
 tools, shell commands, patches, approvals, BitPro actions, or exchange actions
 directly.
 
+## Sprint 61 Codex Model Picker Update
+
+`CODEX_MODEL` remains the default Codex model. `CODEX_MODEL_OPTIONS` is a
+comma-separated allowlist used by the API and CLI to present safe selectable
+Codex models. API `POST /api/harness/provider-selection` accepts an optional
+`model` field, validates it against the provider's `model_options`, and stores
+the choice only as session/process state. Interactive CLI `/model` renders a
+numbered provider list and, when Codex is selected, a numbered Codex model list;
+the selected model is passed into `AgentKernel` for chat/planner calls.
+
 ## 中文
 
 ProviderRuntime 展示模型 Provider 的配置状态，但不返回密钥。DeepSeek 官方 API 是默认聊天模型；Qwen embedding 单独用于 RAG。
@@ -51,6 +62,7 @@ Provider 状态包含：
 - name 和 display name
 - base URL
 - model
+- 支持会话级模型选择时的 model options
 - enabled/missing 状态
 - default 标记
 
@@ -67,3 +79,12 @@ ProviderRuntime 现在不仅展示配置，也负责把 chat/planner 调用路�
 - 前端 `/harness` provider 下拉选择
 
 DeepSeek、OpenAI、OpenRouter、Qwen chat 使用 OpenAI-compatible adapter。Codex 使用指向 Codex backend 的 Responses API 专用 adapter，并接受 `openai-codex` 作为 `codex` 的别名。Anthropic、Gemini、Ollama 保留扩展位。Provider 切换只影响 chat/planner，不影响 RAG embedding。
+
+## Sprint 61 Codex 模型选择更新
+
+`CODEX_MODEL` 仍是 Codex 默认模型。`CODEX_MODEL_OPTIONS` 是逗号分隔的
+模型白名单，API 与 CLI 只从这份列表提供可选模型。`POST
+/api/harness/provider-selection` 支持可选 `model` 字段，并按
+`model_options` 校验后只保存为会话/进程状态。交互式 CLI `/model` 先展示
+provider 编号列表；选中 Codex 后再展示 Codex 模型编号列表，最终把选中的模型传给
+`AgentKernel` 的 chat/planner 调用。

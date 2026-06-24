@@ -33,14 +33,32 @@ curl -s -X POST http://127.0.0.1:3334/api/monitors/mon_bitpro_paper_all/run
 curl -s http://127.0.0.1:3334/api/alerts
 ```
 
+## Scheduled Worker
+
+The worker checks monitor schedules every `MONITOR_LOOP_INTERVAL_SECONDS`
+seconds. The default is `60`, which is only the scheduler tick; each monitor has
+its own interval schedule.
+
+Configuration:
+
+```bash
+MONITOR_SCHEDULER_ENABLED=true
+MONITOR_LOOP_INTERVAL_SECONDS=60
+```
+
+Set `MONITOR_SCHEDULER_ENABLED=false` to stop automatic monitor runs while
+keeping manual CLI/API monitor runs available.
+
 ## Default Monitors
 
 - `mon_bitpro_paper_all`: reads BitPro paper dashboard, events, equity curve, and
-  HyperTrade paper-monitor snapshots; thresholds cover drawdown, error count,
-  equity/PnL drift, and missing data.
+  HyperTrade paper-monitor snapshots every 300 seconds; thresholds cover
+  drawdown, error count, equity/PnL drift, and missing data.
 - `mon_strategy_library_freshness`: reads audited `strategy_knowledge` Memory
-  through `StrategyLibraryService`; thresholds cover stale or missing evidence.
-- `mon_connector_health`: reads connector health, initially BitPro MCP health.
+  through `StrategyLibraryService` every 3600 seconds; thresholds cover stale or
+  missing evidence.
+- `mon_connector_health`: reads connector health, initially BitPro MCP health,
+  every 600 seconds.
 
 ## Read-Only Boundary
 
@@ -91,5 +109,6 @@ hypertrade /alerts
 curl -s http://127.0.0.1:3334/api/health
 ```
 
-Confirm monitor output includes read-only source tools only, alert source ids,
-thresholds, data gaps, and recommended read-only actions.
+Confirm default monitor schedules use `mode=interval`, monitor output includes
+read-only source tools only, and alert events include source ids, thresholds,
+data gaps, and recommended read-only actions.

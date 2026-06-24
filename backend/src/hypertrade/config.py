@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     paper_slippage_bps: str = Field(default="2", alias="PAPER_SLIPPAGE_BPS")
 
     feishu_webhook_url: str = Field(default="", alias="FEISHU_WEBHOOK_URL")
+    monitor_scheduler_enabled: bool = Field(default=True, alias="MONITOR_SCHEDULER_ENABLED")
+    monitor_loop_interval_seconds: int = Field(default=60, alias="MONITOR_LOOP_INTERVAL_SECONDS")
     rag_scan_interval_seconds: int = Field(default=600, alias="RAG_SCAN_INTERVAL_SECONDS")
     knowledge_dir: Path = Field(default=Path("docs/knowledge"), alias="KNOWLEDGE_DIR")
     raw_market_retention_days: int = Field(default=7, alias="RAW_MARKET_RETENTION_DAYS")
@@ -107,6 +109,10 @@ class Settings(BaseSettings):
         alias="CODEX_AUTH_JSON",
     )
     codex_model: str = Field(default="gpt-5.4", alias="CODEX_MODEL")
+    codex_model_options: str = Field(
+        default="gpt-5.4,gpt-5.4-mini",
+        alias="CODEX_MODEL_OPTIONS",
+    )
     codex_timeout_seconds: float = Field(default=90.0, alias="CODEX_TIMEOUT_SECONDS")
     openrouter_base_url: str = Field(
         default="https://openrouter.ai/api/v1",

@@ -43,6 +43,7 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "trading_balance": {"method": "GET", "path": "/trading/accounts/balance"},
     "trading_positions": {"method": "GET", "path": "/trading/accounts/positions"},
     "trading_open_orders": {"method": "GET", "path": "/trading/orders/open"},
+    "trading_order_history": {"method": "GET", "path": "/trading/orders/history"},
 }
 
 RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
@@ -94,6 +95,7 @@ LIVE_DIAGNOSTIC_TOOLS = {
     "trading_balance",
     "trading_positions",
     "trading_open_orders",
+    "trading_order_history",
 }
 
 LIVE_MUTATION_TOOLS = {
@@ -118,7 +120,10 @@ MCP_SCOPE_CLASSES: dict[str, dict[str, str]] = {
     "L": {
         "label": "live_diagnostic",
         "tool_group": "live_diagnostic",
-        "description": "Read-only live preflight, balance, position, and open-order diagnostics.",
+        "description": (
+            "Read-only live preflight, balance, position, open-order, and order-history "
+            "diagnostics."
+        ),
     },
     "T": {
         "label": "live_mutation",
@@ -893,6 +898,33 @@ class BitProToolAdapter:
             "contract_version": str(capabilities.get("contract_version", "")),
             "health": health,
             "positions": positions,
+            "tool_calls": self.last_tool_calls,
+        }
+
+    def live_order_history(
+        self,
+        *,
+        exchange: str = "okx",
+        symbol: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        safe_limit = max(1, min(int(limit), 200))
+        params: dict[str, Any] = {"exchange": exchange, "limit": safe_limit}
+        if symbol:
+            params["symbol"] = _normalize_bitpro_symbol(symbol)
+        raw = self._call("trading_order_history", params)
+        orders = [_live_order_item(row) for row in _extract_live_order_rows(raw)]
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "exchange": exchange,
+            "symbol": params.get("symbol"),
+            "limit": safe_limit,
+            "orders": orders,
+            "order_summary": _live_order_summary(orders),
             "tool_calls": self.last_tool_calls,
         }
 
@@ -1756,6 +1788,21 @@ def _extract_paper_equity_rows(raw: Any) -> list[dict[str, Any]]:
     )
 
 
+def _extract_live_order_rows(raw: Any) -> list[dict[str, Any]]:
+    return _extract_nested_rows(
+        raw,
+        (
+            "orders",
+            "order_history",
+            "orderHistory",
+            "items",
+            "rows",
+            "results",
+            "data",
+        ),
+    )
+
+
 def _extract_nested_rows(raw: Any, keys: tuple[str, ...]) -> list[dict[str, Any]]:
     if isinstance(raw, list):
         return [_ensure_dict(row) for row in raw]
@@ -1789,6 +1836,71 @@ def _extract_nested_rows(raw: Any, keys: tuple[str, ...]) -> list[dict[str, Any]
             if isinstance(value, list):
                 return [_ensure_dict(row) for row in value]
     return []
+
+
+def _live_order_item(row: dict[str, Any]) -> dict[str, Any]:
+    order_id = _first_present(
+        row.get("order_id"),
+        row.get("ordId"),
+        row.get("ord_id"),
+        row.get("id"),
+    )
+    timestamp = _timestamp_text(
+        _first_present(
+            row.get("timestamp"),
+            row.get("created_at"),
+            row.get("createdAt"),
+            row.get("cTime"),
+            row.get("uTime"),
+            row.get("time"),
+            row.get("ts"),
+        )
+    )
+    return _compact(
+        {
+            "id": order_id,
+            "order_id": order_id,
+            "client_order_id": _first_present(
+                row.get("client_order_id"),
+                row.get("clOrdId"),
+                row.get("clientOrderId"),
+            ),
+            "symbol": _first_present(row.get("symbol"), row.get("instId"), row.get("inst_id")),
+            "side": row.get("side"),
+            "pos_side": _first_present(row.get("posSide"), row.get("pos_side")),
+            "status": _first_present(row.get("status"), row.get("state")),
+            "type": _first_present(row.get("type"), row.get("order_type"), row.get("ordType")),
+            "average": _decimal_text(
+                _first_present(row.get("average"), row.get("avgPx"), row.get("avg_price"))
+            ),
+            "price": _decimal_text(_first_present(row.get("price"), row.get("px"))),
+            "amount": _decimal_text(
+                _first_present(row.get("amount"), row.get("qty"), row.get("sz"))
+            ),
+            "filled": _decimal_text(
+                _first_present(row.get("filled"), row.get("filled_qty"), row.get("accFillSz"))
+            ),
+            "fee": _decimal_text(_first_present(row.get("fee"), row.get("fee_amount"))),
+            "pnl": _decimal_text(_first_present(row.get("pnl"), row.get("realizedPnl"))),
+            "margin_mode": _first_present(row.get("margin_mode"), row.get("tdMode")),
+            "timestamp": timestamp,
+            "bitpro_source": row.get("bitpro_source"),
+            "bitpro_source_label": row.get("bitpro_source_label"),
+            "source_strategy_id": row.get("source_strategy_id"),
+            "source_strategy_name": row.get("source_strategy_name"),
+            "subscription_id": row.get("subscription_id"),
+            "signal_event_id": row.get("signal_event_id"),
+        }
+    )
+
+
+def _live_order_summary(orders: list[dict[str, Any]]) -> dict[str, Any]:
+    latest = orders[0] if orders else None
+    return {
+        "count": len(orders),
+        "latest_order_id": latest.get("order_id") if latest else None,
+        "latest_timestamp": latest.get("timestamp") if latest else None,
+    }
 
 
 def _paper_event_item(row: dict[str, Any]) -> dict[str, Any]:

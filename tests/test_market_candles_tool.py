@@ -360,6 +360,58 @@ def test_planner_report_skips_table_like_bitpro_paper_final_message() -> None:
     assert "2026-06-23T08:00:00Z" not in report
 
 
+def test_planner_report_renders_bitpro_live_order_history_latest_order() -> None:
+    report = AgentKernel._render_planner_report(
+        "已读取最近一笔实盘订单。",
+        [
+            ToolCallRecord(
+                tool_name="bitpro_live_order_history",
+                input_json={"exchange": "okx", "limit": 1},
+                output_json={
+                    "status": "ok",
+                    "contract_version": "bitpro-mcp-v1",
+                    "exchange": "okx",
+                    "limit": 1,
+                    "orders": [
+                        {
+                            "id": "ord_2",
+                            "order_id": "ord_2",
+                            "client_order_id": "bp_live_abc",
+                            "symbol": "ETH/USDT:USDT",
+                            "side": "buy",
+                            "status": "closed",
+                            "type": "market",
+                            "average": "3500",
+                            "amount": "0.2",
+                            "filled": "0.2",
+                            "timestamp": "2026-06-24T05:20:00Z",
+                            "bitpro_source_label": "手动/外部订单",
+                        }
+                    ],
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                        {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                        {
+                            "tool": "trading_order_history",
+                            "parameters": {"exchange": "okx", "limit": 1},
+                            "status": "success",
+                        },
+                    ],
+                },
+            )
+        ],
+    )
+
+    assert "## BitPro 实盘订单" in report
+    assert "结论: 已读取最近一笔实盘订单。" in report
+    assert "订单数量: 1" in report
+    assert "最近订单: ord_2 ETH/USDT:USDT buy closed" in report
+    assert "均价=3500" in report
+    assert "成交量=0.2" in report
+    assert "策略来源=手动/外部订单" in report
+    assert "市场热度总结" not in report
+
+
 def test_planner_report_renders_bitpro_paper_snapshot_drift() -> None:
     report = AgentKernel._render_planner_report(
         "模拟盘快照完成。",

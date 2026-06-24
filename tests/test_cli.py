@@ -99,6 +99,7 @@ class FakeAgentClient:
         self.paper_actions: list[str] = []
         self.live_decisions: list[dict[str, str]] = []
         self.selected_model = "deepseek"
+        self.selected_provider_model = "deepseek-v4-flash"
         self.disabled_memory_ids: list[str] = []
 
     def login(self) -> None:
@@ -485,23 +486,47 @@ class FakeAgentClient:
         }
 
     def get_model_status(self) -> dict[str, Any]:
+        codex_model = (
+            self.selected_provider_model if self.selected_model == "codex" else "gpt-5.4"
+        )
+        providers = [
+            {
+                "name": "deepseek",
+                "display_name": "DeepSeek",
+                "model": "deepseek-v4-flash",
+                "model_options": ["deepseek-v4-flash"],
+                "enabled": True,
+                "default": self.selected_model == "deepseek",
+                "key_status": "configured",
+            },
+            {
+                "name": "codex",
+                "display_name": "Codex",
+                "model": codex_model,
+                "model_options": ["gpt-5.4", "gpt-5.4-mini"],
+                "enabled": True,
+                "default": self.selected_model == "codex",
+                "key_status": "configured",
+            },
+        ]
+        selected = next(
+            (provider for provider in providers if provider["name"] == self.selected_model),
+            providers[0],
+        )
         return {
             "default_provider": self.selected_model,
-            "model": "deepseek-v4-flash",
-            "providers": [
-                {
-                    "name": "deepseek",
-                    "display_name": "DeepSeek",
-                    "model": "deepseek-v4-flash",
-                    "enabled": True,
-                    "default": True,
-                    "key_status": "configured",
-                }
-            ],
+            "model": selected["model"],
+            "providers": providers,
         }
 
-    def set_model(self, provider: str) -> dict[str, Any]:
+    def set_model(self, provider: str, model: str = "") -> dict[str, Any]:
         self.selected_model = provider
+        if model:
+            self.selected_provider_model = model
+        elif provider == "codex":
+            self.selected_provider_model = "gpt-5.4"
+        else:
+            self.selected_provider_model = "deepseek-v4-flash"
         return self.get_model_status()
 
     def list_live_order_intents(self) -> list[dict[str, Any]]:
@@ -707,6 +732,46 @@ def test_slash_partial_argument_renders_candidates_without_dispatch() -> None:
     assert "Slash argument candidates for /model c:" in rendered
     assert "codex" in rendered
     assert "Model switch failed" not in rendered
+    assert client.selected_model == "deepseek"
+
+
+def test_model_command_selects_provider_and_codex_model_from_numbered_lists() -> None:
+    client = FakeAgentClient()
+    output = StringIO()
+    inputs = iter(["2", "2"])
+
+    handle_slash_command(
+        "/model",
+        client=client,
+        output=output,
+        input_fn=_next_input(inputs),
+    )
+
+    rendered = output.getvalue()
+    assert "Select provider:" in rendered
+    assert "1. deepseek" in rendered
+    assert "2. codex" in rendered
+    assert "Select Codex model:" in rendered
+    assert "Model switched: codex" in rendered
+    assert "- Model: gpt-5.4-mini" in rendered
+    assert client.selected_model == "codex"
+    assert client.selected_provider_model == "gpt-5.4-mini"
+
+
+def test_model_command_blank_provider_selection_cancels() -> None:
+    client = FakeAgentClient()
+    output = StringIO()
+    inputs = iter([""])
+
+    handle_slash_command(
+        "/model",
+        client=client,
+        output=output,
+        input_fn=_next_input(inputs),
+    )
+
+    rendered = output.getvalue()
+    assert "Model selection canceled." in rendered
     assert client.selected_model == "deepseek"
 
 
@@ -1981,6 +2046,7 @@ def test_chat_handles_slash_commands_without_agent_run(capsys) -> None:
             "/commands",
             "/status",
             "/model",
+            "",
             "/model deepseek",
             "/providers",
             "/tools",

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from io import StringIO
 from typing import Any
 
 from fastapi.testclient import TestClient
 from hypertrade.cli import handle_slash_command
 from hypertrade.config import Settings
-from hypertrade.db import Database, MonitorAlertEvent, MonitorDefinition, MonitorRun
+from hypertrade.db import Database, MonitorAlertEvent, MonitorDefinition, MonitorRun, utc_now
 from hypertrade.main import create_app
 from hypertrade.monitoring import MonitorService
 from sqlalchemy import select
@@ -237,6 +238,82 @@ def test_monitor_api_lists_runs_and_alerts() -> None:
     assert alerts
     assert alerts[0]["run_id"] == run_body["run_id"]
     assert "paper_" not in alerts[0]["code"] or alerts[0]["level"] in {"warning", "critical"}
+
+
+def test_default_monitors_use_conservative_interval_schedules() -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    service = MonitorService(
+        db,
+        bitpro_adapter=ReplayMonitorAdapter(equity="100", pnl="0", drawdown="0", errors=0),
+    )
+
+    schedules = {monitor["id"]: monitor["schedule"] for monitor in service.list_monitors()}
+
+    assert schedules["mon_bitpro_paper_all"] == {
+        "mode": "interval",
+        "interval_seconds": 300,
+    }
+    assert schedules["mon_connector_health"] == {
+        "mode": "interval",
+        "interval_seconds": 600,
+    }
+    assert schedules["mon_strategy_library_freshness"] == {
+        "mode": "interval",
+        "interval_seconds": 3600,
+    }
+
+
+def test_monitor_service_runs_due_monitors_and_skips_manual_disabled_or_not_due() -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    service = MonitorService(
+        db,
+        bitpro_adapter=ReplayMonitorAdapter(equity="100", pnl="0", drawdown="0", errors=0),
+    )
+    service.upsert_monitor(
+        monitor_id="mon_manual_test",
+        name="Manual only",
+        monitor_type="connector_health",
+        scope={"connector": "bitpro_mcp"},
+        thresholds={"missing_data": True},
+        schedule={"mode": "manual"},
+    )
+    service.upsert_monitor(
+        monitor_id="mon_disabled_test",
+        name="Disabled interval",
+        monitor_type="connector_health",
+        scope={"connector": "bitpro_mcp"},
+        thresholds={"missing_data": True},
+        schedule={"mode": "interval", "interval_seconds": 60},
+        enabled=False,
+    )
+    now = utc_now()
+
+    first = service.run_due_monitors(now=now)
+
+    assert {run["monitor_id"] for run in first["ran"]} == {
+        "mon_bitpro_paper_all",
+        "mon_connector_health",
+        "mon_strategy_library_freshness",
+    }
+    first_skips = {skip["monitor_id"]: skip["reason"] for skip in first["skipped"]}
+    assert first_skips["mon_manual_test"] == "manual_schedule"
+    assert first_skips["mon_disabled_test"] == "disabled"
+
+    second = service.run_due_monitors(now=now + timedelta(seconds=60))
+
+    assert second["ran"] == []
+    second_skips = {skip["monitor_id"]: skip["reason"] for skip in second["skipped"]}
+    assert second_skips["mon_bitpro_paper_all"] == "not_due"
+    assert second_skips["mon_connector_health"] == "not_due"
+    assert second_skips["mon_strategy_library_freshness"] == "not_due"
+    assert second_skips["mon_manual_test"] == "manual_schedule"
+    assert second_skips["mon_disabled_test"] == "disabled"
+
+    third = service.run_due_monitors(now=now + timedelta(seconds=301))
+
+    assert {run["monitor_id"] for run in third["ran"]} == {"mon_bitpro_paper_all"}
 
 
 class FakeMonitorClient:

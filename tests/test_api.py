@@ -386,6 +386,57 @@ def test_api_can_switch_active_provider_without_exposing_keys(tmp_path):
     assert run["report_json"]["data_source"] in {"okx_rest", "unavailable"}
 
 
+def test_api_can_select_codex_provider_model_without_exposing_keys(tmp_path):
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    knowledge_dir = tmp_path / "knowledge"
+    knowledge_dir.mkdir()
+    app = create_app(
+        settings=Settings(
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            KNOWLEDGE_DIR=knowledge_dir,
+            DEEPSEEK_API_KEY="",
+            CODEX_API_KEY="codex-secret-token",
+            CODEX_MODEL="gpt-5.4",
+            CODEX_MODEL_OPTIONS="gpt-5.4,gpt-5.4-mini",
+        ),
+        db=db,
+    )
+    client = TestClient(app)
+    assert client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "secret"},
+    ).status_code == 200
+
+    switched = client.post(
+        "/api/harness/provider-selection",
+        json={"provider": "codex", "model": "gpt-5.4-mini"},
+    )
+
+    assert switched.status_code == 200
+    body = switched.json()
+    assert body["default_provider"] == "codex"
+    assert body["model"] == "gpt-5.4-mini"
+    assert "codex-secret-token" not in str(body)
+    selected = next(provider for provider in body["providers"] if provider["name"] == "codex")
+    assert selected["model"] == "gpt-5.4-mini"
+    assert selected["model_options"] == ["gpt-5.4", "gpt-5.4-mini"]
+
+    overview = client.get("/api/harness/overview").json()
+    overview_selected = next(
+        provider for provider in overview["providers"] if provider["name"] == "codex"
+    )
+    assert overview_selected["model"] == "gpt-5.4-mini"
+
+    invalid = client.post(
+        "/api/harness/provider-selection",
+        json={"provider": "codex", "model": "not-a-codex-model"},
+    )
+
+    assert invalid.status_code == 400
+
+
 def test_api_exposes_deterministic_market_shortcuts(monkeypatch, tmp_path):
     db = Database("sqlite:///:memory:")
     db.create_all()

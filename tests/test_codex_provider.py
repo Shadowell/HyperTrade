@@ -63,6 +63,35 @@ def test_codex_provider_accepts_hermes_openai_codex_alias(tmp_path) -> None:
     assert chat_provider.name == "codex"
 
 
+def test_codex_provider_status_supports_selected_model_options() -> None:
+    runtime = ProviderRuntime(
+        Settings(
+            DEEPSEEK_API_KEY="",
+            CODEX_API_KEY="codex-secret-token",
+            CODEX_MODEL="gpt-5.4",
+            CODEX_MODEL_OPTIONS="gpt-5.4,gpt-5.4-mini",
+        )
+    )
+
+    providers = runtime.list_providers(
+        selected="codex",
+        selected_models={"codex": "gpt-5.4-mini"},
+    )
+    codex = next(provider for provider in providers if provider["name"] == "codex")
+
+    assert codex["model"] == "gpt-5.4-mini"
+    assert codex["model_options"] == ["gpt-5.4", "gpt-5.4-mini"]
+    assert "codex-secret-token" not in str(codex)
+
+    chat_provider = runtime.get_chat_provider(
+        selected="codex",
+        selected_model="gpt-5.4-mini",
+    )
+
+    assert chat_provider is not None
+    assert chat_provider.model == "gpt-5.4-mini"
+
+
 def test_codex_provider_posts_responses_payload_and_parses_tool_call() -> None:
     captured: dict[str, Any] = {}
 

@@ -5,6 +5,7 @@ chat provider. It never exposes API keys in status payloads; API, CLI, and the
 frontend only see provider names, model names, and key status.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from hypertrade.config import Settings
@@ -21,6 +22,7 @@ class ProviderDefinition:
     model: str
     enabled: bool
     default: bool = False
+    model_options: tuple[str, ...] = ()
 
 
 class ProviderRuntime:
@@ -34,8 +36,20 @@ class ProviderRuntime:
         cleaned = (name or "").strip().lower()
         return cls.PROVIDER_ALIASES.get(cleaned, cleaned)
 
-    def list_providers(self, *, selected: str | None = None) -> list[dict[str, object]]:
+    def list_providers(
+        self,
+        *,
+        selected: str | None = None,
+        selected_models: Mapping[str, str] | None = None,
+    ) -> list[dict[str, object]]:
         selected_name = self.normalize_provider_name(selected or self.settings.active_chat_provider)
+        selected_model_map = {
+            self.normalize_provider_name(provider): model.strip()
+            for provider, model in (selected_models or {}).items()
+            if model.strip()
+        }
+        codex_model_options = self._codex_model_options()
+        codex_model = selected_model_map.get("codex") or self.settings.codex_model
         codex_token = resolve_codex_access_token(
             api_key=self.settings.codex_api_key,
             auth_json=self.settings.codex_auth_json,
@@ -63,9 +77,10 @@ class ProviderRuntime:
                 "codex",
                 "Codex",
                 self.settings.codex_base_url,
-                self.settings.codex_model,
+                codex_model,
                 bool(codex_token),
                 selected_name == "codex",
+                codex_model_options,
             ),
             ProviderDefinition("anthropic", "Anthropic", "", "", False),
             ProviderDefinition("gemini", "Gemini", "", "", False),
@@ -93,6 +108,9 @@ class ProviderRuntime:
                 "display_name": provider.display_name,
                 "base_url": provider.base_url,
                 "model": provider.model,
+                "model_options": list(
+                    provider.model_options or ((provider.model,) if provider.model else ())
+                ),
                 "enabled": provider.enabled,
                 "default": provider.default,
                 "key_status": "configured" if provider.enabled else "missing",
@@ -100,8 +118,14 @@ class ProviderRuntime:
             for provider in providers
         ]
 
-    def get_chat_provider(self, *, selected: str | None = None) -> ChatProvider | None:
+    def get_chat_provider(
+        self,
+        *,
+        selected: str | None = None,
+        selected_model: str | None = None,
+    ) -> ChatProvider | None:
         name = self.normalize_provider_name(selected or self.settings.active_chat_provider)
+        model_override = (selected_model or "").strip()
         # Returning None is intentional: AgentKernel will use the deterministic
         # graph path, which keeps tests and first-run demos stable without keys.
         if name == "deepseek" and self.settings.deepseek_api_key:
@@ -126,7 +150,7 @@ class ProviderRuntime:
                 return CodexResponsesChatProvider(
                     api_key=codex_token,
                     base_url=self.settings.codex_base_url,
-                    model=self.settings.codex_model,
+                    model=model_override or self.settings.codex_model,
                     timeout_seconds=self.settings.codex_timeout_seconds,
                 )
         if (
@@ -148,3 +172,37 @@ class ProviderRuntime:
                 model=self.settings.qwen_chat_model,
             )
         return None
+
+    def validate_model_choice(self, provider: str, model: str | None) -> str:
+        requested = (model or "").strip()
+        if not requested:
+            return ""
+        normalized_provider = self.normalize_provider_name(provider)
+        providers = self.list_providers(selected=normalized_provider)
+        selected = next(
+            (item for item in providers if item.get("name") == normalized_provider),
+            None,
+        )
+        if selected is None:
+            raise ValueError(f"unknown provider: {provider}")
+        raw_options = selected.get("model_options", [])
+        options = (
+            [str(option) for option in raw_options if str(option)]
+            if isinstance(raw_options, list | tuple)
+            else []
+        )
+        if options and requested not in options:
+            raise ValueError(f"unknown model for {normalized_provider}: {requested}")
+        if not options and requested != str(selected.get("model", "")):
+            raise ValueError(f"unknown model for {normalized_provider}: {requested}")
+        return requested
+
+    def _codex_model_options(self) -> tuple[str, ...]:
+        configured = [
+            item.strip()
+            for item in self.settings.codex_model_options.split(",")
+            if item.strip()
+        ]
+        current = self.settings.codex_model.strip()
+        ordered = [current, *configured] if current else configured
+        return tuple(dict.fromkeys(ordered))

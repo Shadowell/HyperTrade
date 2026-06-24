@@ -15,8 +15,8 @@ class ChatProvider(Protocol):
 
 `ProviderRuntime` exposes:
 
-- `list_providers(selected=...)`
-- `get_chat_provider(selected=...)`
+- `list_providers(selected=..., selected_models=...)`
+- `get_chat_provider(selected=..., selected_model=...)`
 
 ## Supported Slots
 
@@ -24,7 +24,7 @@ class ChatProvider(Protocol):
 | --- | --- | --- |
 | DeepSeek | Enabled | Default provider. |
 | OpenAI | Enabled via OpenAI-compatible adapter | Requires `OPENAI_API_KEY`. |
-| Codex | Enabled via Responses API adapter | Requires `CODEX_API_KEY` or `CODEX_AUTH_JSON`; `openai-codex` is accepted as an alias. |
+| Codex | Enabled via Responses API adapter | Requires `CODEX_API_KEY` or `CODEX_AUTH_JSON`; `openai-codex` is accepted as an alias, and selectable models come from `CODEX_MODEL_OPTIONS`. |
 | OpenRouter | Enabled via OpenAI-compatible adapter | Requires `OPENROUTER_API_KEY` and model. |
 | Qwen chat | Enabled via OpenAI-compatible adapter | Uses Qwen compatible-mode endpoint. |
 | Anthropic/Gemini/Ollama | Status placeholders | Kept as extension slots. |
@@ -32,10 +32,14 @@ class ChatProvider(Protocol):
 ## Selection
 
 - API: `POST /api/harness/provider-selection`
-- CLI: `/model` and `/model <provider>`
+- CLI: interactive `/model` numbered selection and scripted `/model <provider>`
 - Frontend: provider select in `/harness`
 
-Provider selection is process/session state. It does not store secrets or affect embedding provider selection.
+Provider and model selection are process/session state. They do not store
+secrets or affect embedding provider selection. API model overrides are
+validated against the selected provider's `model_options`; Codex options are
+configured through `CODEX_MODEL_OPTIONS`, with `CODEX_MODEL` remaining the
+default when no session override is selected.
 
 ## Codex Boundary
 

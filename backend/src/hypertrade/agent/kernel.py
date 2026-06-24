@@ -19,7 +19,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from hypertrade.agent.planner import AgentPlanner, PlannerResult, ToolExecutor
+from hypertrade.agent.planner import AgentPlanner, PlannerResult, ToolCallRecord, ToolExecutor
 from hypertrade.backtest.service import BacktestService
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.bitpro.paper_monitor import BitProPaperMonitorService
@@ -62,11 +62,13 @@ class AgentKernel:
         knowledge_dir: str = "docs/knowledge",
         settings: Settings | None = None,
         provider_name: str | None = None,
+        provider_model: str | None = None,
         bitpro_adapter: Any | None = None,
     ) -> None:
         self.db = db
         self._settings = settings
         self.provider_name = provider_name
+        self.provider_model = provider_model
         self.bitpro_adapter = bitpro_adapter
         self.market = MarketRepository(db)
         self.memory = MemoryService(db)
@@ -96,21 +98,33 @@ class AgentKernel:
                 {"intent": _classify_intent(prompt)},
                 event_sink=event_sink,
             )
-            provider = ProviderRuntime(settings).get_chat_provider(selected=self.provider_name)
+            provider = self._get_chat_provider(settings)
             # Provider routing is isolated here: the planner can be DeepSeek,
             # OpenRouter, Qwen, etc., while all downstream tool execution stays
             # provider-agnostic.
             self._graph_node(
                 run_id,
                 "plan_tools",
-                {"provider": self.provider_name or settings.active_chat_provider},
+                {
+                    "provider": self.provider_name or settings.active_chat_provider,
+                    "model": self.provider_model or "",
+                },
                 {
                     "planner": provider.name if provider else "deterministic_fallback",
                     "model": provider.model if provider else "",
                 },
                 event_sink=event_sink,
             )
-            if provider is not None and _is_market_heat_prompt(prompt):
+            if _is_live_order_history_prompt(prompt):
+                self._run_deterministic_tool(
+                    run_id,
+                    tool_name="bitpro_live_order_history",
+                    args={"exchange": "okx", "limit": 1},
+                    final_message="已读取最近一笔实盘订单。",
+                    planner_name="deterministic_live_order_router",
+                    event_sink=event_sink,
+                )
+            elif provider is not None and _is_market_heat_prompt(prompt):
                 self._run_hardcoded(run_id, prompt, event_sink=event_sink)
             elif provider is not None:
                 self._run_with_planner(run_id, prompt, settings, event_sink=event_sink)
@@ -142,7 +156,7 @@ class AgentKernel:
         *,
         event_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
-        llm = ProviderRuntime(settings).get_chat_provider(selected=self.provider_name)
+        llm = self._get_chat_provider(settings)
         if llm is None:
             self._run_hardcoded(run_id, prompt, event_sink=event_sink)
             return
@@ -163,6 +177,7 @@ class AgentKernel:
             {"summary": _reflection_summary(result)},
             event_sink=event_sink,
         )
+
         report_json: dict[str, Any] = {
             "market_scope": "OKX SWAP",
             "trigger": "user_request",
@@ -183,6 +198,59 @@ class AgentKernel:
         if report_blocks:
             report_json["report_blocks"] = [block.to_dict() for block in report_blocks]
         report_markdown = self._render_planner_report(result.final_message, result.tool_calls)
+        self._graph_node(
+            run_id,
+            "final_report",
+            {"format": "markdown"},
+            {"characters": len(report_markdown)},
+            event_sink=event_sink,
+        )
+        self._complete_run(run_id, report_markdown, report_json)
+
+    def _get_chat_provider(self, settings: Settings) -> Any | None:
+        runtime = ProviderRuntime(settings)
+        if self.provider_model:
+            return runtime.get_chat_provider(
+                selected=self.provider_name,
+                selected_model=self.provider_model,
+            )
+        return runtime.get_chat_provider(selected=self.provider_name)
+
+    def _run_deterministic_tool(
+        self,
+        run_id: str,
+        *,
+        tool_name: str,
+        args: dict[str, Any],
+        final_message: str,
+        planner_name: str,
+        event_sink: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
+        executor = self._build_executor(run_id, event_sink=event_sink)
+        output = executor(tool_name, args)
+        record = ToolCallRecord(tool_name=tool_name, input_json=args, output_json=output)
+        self._trace(run_id, record.tool_name, record.input_json, record.output_json)
+        self._graph_node(
+            run_id,
+            "reflect",
+            {"tool_count": 1},
+            {"summary": _reflection_summary(PlannerResult(final_message, [record]))},
+            event_sink=event_sink,
+        )
+        report_json: dict[str, Any] = {
+            "market_scope": "external_bitpro",
+            "trigger": "user_request",
+            "planner": planner_name,
+            "model": "",
+            "tool_calls": [{"tool": tool_name, "input": args}],
+            "citations": [],
+            "graph": self._get_run_state(run_id).get("graph", []),
+            "disclaimer": "Research output only. Not investment advice.",
+        }
+        report_blocks = build_report_blocks_from_tool_calls(final_message, [record])
+        if report_blocks:
+            report_json["report_blocks"] = [block.to_dict() for block in report_blocks]
+        report_markdown = self._render_planner_report(final_message, [record])
         self._graph_node(
             run_id,
             "final_report",
@@ -408,6 +476,13 @@ class AgentKernel:
                 result = self._bitpro_adapter().live_positions(
                     exchange=str(args.get("exchange", "okx")),
                     symbol=str(args["symbol"]) if args.get("symbol") else None,
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_live_order_history":
+                result = self._bitpro_adapter().live_order_history(
+                    exchange=str(args.get("exchange", "okx")),
+                    symbol=str(args["symbol"]) if args.get("symbol") else None,
+                    limit=int(args.get("limit", 50)),
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_strategy_search":
@@ -1276,6 +1351,7 @@ class AgentKernel:
         bitpro_backtest_lines: list[str] = []
         bitpro_backtest_detail_lines: list[str] = []
         bitpro_paper_lines: list[str] = []
+        bitpro_live_order_lines: list[str] = []
         bitpro_lifecycle_lines: list[str] = []
         strategy_library_lines: list[str] = []
         citation_lines: list[str] = []
@@ -1903,6 +1979,43 @@ class AgentKernel:
             for gap in data_gaps[:3]:
                 bitpro_paper_lines.append(f"- 数据缺口: {gap}")
             bitpro_paper_lines.append("")
+        if any(
+            str(getattr(record, "tool_name", "")) == "bitpro_live_order_history"
+            for record in tool_calls
+        ):
+            summary = _compact_final_message(final_message)
+            if summary:
+                bitpro_live_order_lines.extend([f"- 结论: {summary}", ""])
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "bitpro_live_order_history":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or payload.get("status") != "ok":
+                continue
+            orders = payload.get("orders")
+            orders = orders if isinstance(orders, list) else []
+            summary = payload.get("order_summary")
+            summary = summary if isinstance(summary, dict) else {}
+            bitpro_live_order_lines.extend(
+                [
+                    (
+                        "- 来源: exchange={exchange}, symbol={symbol}, limit={limit}, "
+                        "订单数量: {count}"
+                    ).format(
+                        exchange=payload.get("exchange", "okx"),
+                        symbol=payload.get("symbol") or "all",
+                        limit=payload.get("limit", "n/a"),
+                        count=summary.get("count", len(orders)),
+                    ),
+                ]
+            )
+            if not orders:
+                bitpro_live_order_lines.append("- 最近订单: 暂无 BitPro 返回的实盘历史订单。")
+                bitpro_live_order_lines.append("")
+                continue
+            latest = orders[0] if isinstance(orders[0], dict) else {}
+            bitpro_live_order_lines.append("- 最近订单: " + _format_live_order_line(latest))
+            bitpro_live_order_lines.append("")
         lifecycle_tool_names = {
             "bitpro_strategy_search",
             "bitpro_strategy_generate",
@@ -2017,10 +2130,15 @@ class AgentKernel:
             sections.extend(["## BitPro 回测详情", "", *bitpro_backtest_detail_lines])
         if bitpro_paper_lines:
             sections.extend(["## BitPro 模拟盘状态", "", *bitpro_paper_lines])
+        if bitpro_live_order_lines:
+            sections.extend(["## BitPro 实盘订单", "", *bitpro_live_order_lines])
         if bitpro_lifecycle_lines:
             sections.extend(["## BitPro 策略生命周期", "", *bitpro_lifecycle_lines])
         has_bitpro_evidence_report = bool(
-            bitpro_backtest_lines or bitpro_backtest_detail_lines or bitpro_paper_lines
+            bitpro_backtest_lines
+            or bitpro_backtest_detail_lines
+            or bitpro_paper_lines
+            or bitpro_live_order_lines
         )
         citations = [] if has_bitpro_evidence_report else _citations_from_tool_calls(tool_calls)
         if citations:
@@ -2038,7 +2156,12 @@ class AgentKernel:
             sections.extend(["## 引用来源", "", *citation_lines])
         if not sections:
             return final_message
-        if bitpro_backtest_lines or bitpro_backtest_detail_lines or bitpro_paper_lines:
+        if (
+            bitpro_backtest_lines
+            or bitpro_backtest_detail_lines
+            or bitpro_paper_lines
+            or bitpro_live_order_lines
+        ):
             return "\n".join(sections)
         return "\n".join([*sections, final_message])
 
@@ -2103,9 +2226,35 @@ def _paper_strategy_id(payload: dict[str, Any]) -> object:
     return "all" if strategy_id is None else strategy_id
 
 
+def _format_live_order_line(order: dict[str, Any]) -> str:
+    order_id = _order_value(order, "order_id", "id")
+    symbol = _order_value(order, "symbol", "inst_id", "instId")
+    side = _order_value(order, "side")
+    status = _order_value(order, "status", "state")
+    order_type = _order_value(order, "type", "order_type", "ordType")
+    average = _order_value(order, "average", "avgPx", "avg_price")
+    amount = _order_value(order, "amount", "qty", "sz")
+    filled = _order_value(order, "filled", "filled_qty", "accFillSz")
+    timestamp = _order_value(order, "timestamp", "created_at", "cTime", "uTime")
+    source = _order_value(order, "bitpro_source_label", "source_strategy_name")
+    return (
+        f"{order_id} {symbol} {side} {status} | type={order_type}, "
+        f"均价={average}, 委托量={amount}, 成交量={filled}, 时间={timestamp}, "
+        f"策略来源={source}"
+    )
+
+
+def _order_value(order: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = order.get(key)
+        if value is not None and str(value) != "":
+            return str(value)
+    return "n/a"
+
+
 def _classify_intent(prompt: str) -> str:
     text = prompt.casefold()
-    if any(word in text for word in ("下单", "order", "buy", "sell", "做多", "做空")):
+    if any(word in text for word in ("下单", "订单", "order", "buy", "sell", "做多", "做空")):
         return "order"
     if any(word in text for word in ("回测", "backtest", "策略", "strategy", "experiment")):
         return "strategy"
@@ -2179,6 +2328,7 @@ def _bitpro_trace_tool_name(tool_name: str) -> str:
         "paper_events": "bitpro.paper_events",
         "paper_equity_curve": "bitpro.paper_equity_curve",
         "trading_positions": "bitpro.live_positions",
+        "trading_order_history": "bitpro.live_order_history",
     }.get(tool_name, "")
 
 
@@ -2255,6 +2405,34 @@ def _is_market_heat_prompt(prompt: str) -> bool:
         "breadth",
     )
     return any(term in value for term in heat_terms)
+
+
+def _is_live_order_history_prompt(prompt: str) -> bool:
+    value = prompt.strip().casefold()
+    if not value:
+        return False
+    live_terms = ("实盘", "真实账户", "真实交易", "live", "real-account", "real account")
+    order_terms = ("订单", "order")
+    history_terms = (
+        "最近",
+        "最新",
+        "历史",
+        "明细",
+        "记录",
+        "成交",
+        "拒单",
+        "latest",
+        "last",
+        "recent",
+        "history",
+        "filled",
+        "rejected",
+    )
+    return (
+        any(term in value for term in live_terms)
+        and any(term in value for term in order_terms)
+        and any(term in value for term in history_terms)
+    )
 
 
 def _market_heat_summary(rows: list[Any]) -> dict[str, Any]:

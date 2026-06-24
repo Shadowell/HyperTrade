@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Protocol
 
@@ -33,7 +33,7 @@ DEFAULT_MONITORS: tuple[dict[str, Any], ...] = (
             "pnl_drop_pct": "1",
             "missing_data": True,
         },
-        "schedule": {"mode": "manual"},
+        "schedule": {"mode": "interval", "interval_seconds": 300},
         "notification": {"sink": "log"},
     },
     {
@@ -42,7 +42,7 @@ DEFAULT_MONITORS: tuple[dict[str, Any], ...] = (
         "monitor_type": "strategy_library_freshness",
         "scope": {"query": "", "limit": 20},
         "thresholds": {"max_age_hours": 168, "missing_data": True},
-        "schedule": {"mode": "manual"},
+        "schedule": {"mode": "interval", "interval_seconds": 3600},
         "notification": {"sink": "log"},
     },
     {
@@ -51,7 +51,7 @@ DEFAULT_MONITORS: tuple[dict[str, Any], ...] = (
         "monitor_type": "connector_health",
         "scope": {"connector": "bitpro_mcp"},
         "thresholds": {"missing_data": True},
-        "schedule": {"mode": "manual"},
+        "schedule": {"mode": "interval", "interval_seconds": 600},
         "notification": {"sink": "log"},
     },
 )
@@ -119,16 +119,24 @@ class MonitorService:
         self.notification_sink = notification_sink or LogNotificationSink()
 
     def ensure_default_monitors(self) -> None:
-        for definition in DEFAULT_MONITORS:
-            self.upsert_monitor(
-                monitor_id=str(definition["id"]),
-                name=str(definition["name"]),
-                monitor_type=str(definition["monitor_type"]),
-                scope=dict(definition["scope"]),
-                thresholds=dict(definition["thresholds"]),
-                schedule=dict(definition["schedule"]),
-                notification=dict(definition["notification"]),
-            )
+        with self.db.session() as session:
+            for definition in DEFAULT_MONITORS:
+                monitor_id = str(definition["id"])
+                row = session.get(MonitorDefinition, monitor_id)
+                if row is None:
+                    row = MonitorDefinition(
+                        id=monitor_id,
+                        name=str(definition["name"]),
+                        monitor_type=str(definition["monitor_type"]),
+                    )
+                    session.add(row)
+                    row.enabled = True
+                row.name = str(definition["name"])
+                row.monitor_type = str(definition["monitor_type"])
+                row.scope_json = dict(definition["scope"])
+                row.thresholds_json = dict(definition["thresholds"])
+                row.schedule_json = dict(definition["schedule"])
+                row.notification_json = dict(definition["notification"])
 
     def upsert_monitor(
         self,
@@ -184,6 +192,70 @@ class MonitorService:
                 .limit(safe_limit)
             ).all()
             return [_alert_row_to_dict(row) for row in rows]
+
+    def run_due_monitors(self, *, now: datetime | None = None) -> dict[str, Any]:
+        self.ensure_default_monitors()
+        reference_time = _aware_datetime(now or utc_now())
+        candidates: list[dict[str, Any]] = []
+        with self.db.session() as session:
+            definitions = session.scalars(
+                select(MonitorDefinition).order_by(MonitorDefinition.id)
+            ).all()
+            for definition in definitions:
+                last_run = session.scalars(
+                    select(MonitorRun)
+                    .where(MonitorRun.monitor_id == definition.id)
+                    .where(MonitorRun.status == "completed")
+                    .order_by(desc(MonitorRun.completed_at))
+                    .limit(1)
+                ).first()
+                due, reason, next_run_at = _monitor_due_status(
+                    enabled=definition.enabled,
+                    schedule=_dict_or_empty(definition.schedule_json),
+                    last_run_at=last_run.completed_at if last_run is not None else None,
+                    now=reference_time,
+                )
+                candidates.append(
+                    {
+                        "monitor_id": definition.id,
+                        "due": due,
+                        "reason": reason,
+                        "next_run_at": next_run_at.isoformat() if next_run_at else None,
+                    }
+                )
+
+        ran: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        failed: list[dict[str, Any]] = []
+        for candidate in candidates:
+            monitor_id = str(candidate["monitor_id"])
+            if not candidate["due"]:
+                skipped.append(
+                    {
+                        "monitor_id": monitor_id,
+                        "reason": candidate["reason"],
+                        "next_run_at": candidate["next_run_at"],
+                    }
+                )
+                continue
+            try:
+                ran.append(self.run_monitor(monitor_id))
+            except Exception as exc:
+                LOGGER.exception("monitor_scheduler failed monitor_id=%s", monitor_id)
+                failed.append(
+                    {
+                        "monitor_id": monitor_id,
+                        "reason": "run_failed",
+                        "error": str(exc),
+                    }
+                )
+        return {
+            "status": "completed" if not failed else "completed_with_errors",
+            "now": reference_time.isoformat(),
+            "ran": ran,
+            "skipped": skipped,
+            "failed": failed,
+        }
 
     def run_monitor(self, monitor_id: str) -> dict[str, Any]:
         with self.db.session() as session:
@@ -632,6 +704,37 @@ def _missing_adapter_result(source: str) -> dict[str, Any]:
         "recommended_actions": ["Configure the connector adapter before running this monitor."],
         "raw": {},
     }
+
+
+def _monitor_due_status(
+    *,
+    enabled: bool,
+    schedule: dict[str, Any],
+    last_run_at: datetime | None,
+    now: datetime,
+) -> tuple[bool, str, datetime | None]:
+    if not enabled:
+        return False, "disabled", None
+    mode = str(schedule.get("mode") or "manual")
+    if mode == "manual":
+        return False, "manual_schedule", None
+    if mode != "interval":
+        return False, "unsupported_schedule", None
+    interval_seconds = _safe_int(schedule.get("interval_seconds"), default=0)
+    if interval_seconds <= 0:
+        return False, "invalid_interval", None
+    if last_run_at is None:
+        return True, "due", None
+    next_run_at = _aware_datetime(last_run_at) + timedelta(seconds=interval_seconds)
+    if _aware_datetime(now) >= next_run_at:
+        return True, "due", next_run_at
+    return False, "not_due", next_run_at
+
+
+def _aware_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _write_tool_calls(source_tools: list[dict[str, Any]]) -> list[str]:

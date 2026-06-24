@@ -22,6 +22,13 @@ The adapter starts from read-first discovery and then permits non-live strategy 
 - `bitpro.live_state`: live balances, positions, open orders, order history, fills, subscriptions, and exposure.
 - `bitpro.audit`: request/run/tool correlation, append-only events, and redacted exchange metadata.
 
+Live order-history reads are exposed to the Agent as `bitpro_live_order_history`
+and registered in ToolRegistry as `bitpro.live_order_history`. The tool calls
+BitPro's read-only `/trading/orders/history` path after the standard
+`bitpro_capabilities` -> `bitpro_health` preflight, renders the latest returned
+order in a `BitPro 实盘订单` section, and must never be used for order placement,
+cancellation, transfer, or other live writes.
+
 Research/backtest/paper writes are allowed only through explicit Agent tool calls such as strategy generation, strategy creation, BitPro-owned backtest jobs, and paper/simulation lifecycle control. Live write tools must be added later and separately. Any testnet or live write path needs explicit scopes, idempotency keys, approval gates, risk prechecks, redacted audit events, and structured refusal reasons.
 
 Remote Agent authentication uses BitPro MCP Agent tokens, not browser login cookies. BitPro administrators generate `bp_mcp_` tokens from Settings -> Agent Access -> MCP Agent Token or through `POST /api/v2/settings/mcp-agent-tokens`; BitPro stores token hashes only and returns plaintext once. HyperTrade stores the selected token only in server-side environment such as `BITPRO_MCP_API_TOKEN`, sends it with `X-BitPro-MCP-Token`, and exposes only redacted contract metadata through `/api/harness/overview`. The adapter reports scope classes `R` read, `W` research/backtest/paper mutation, `L` live diagnostics, and `T` live mutation; HyperTrade continues to block `T` tools.
@@ -112,6 +119,12 @@ BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必�
 - `bitpro.paper_state`：模拟盘 session、余额、持仓、订单、成交、事件和策略关联。
 - `bitpro.live_state`：实盘余额、持仓、挂单、历史订单、成交、订阅和风险暴露。
 - `bitpro.audit`：request/run/tool 关联、追加式事件和脱敏交易所元数据。
+
+实盘订单历史读取通过 Agent 工具 `bitpro_live_order_history` 暴露，并在
+ToolRegistry 中注册为 `bitpro.live_order_history`。该工具在标准
+`bitpro_capabilities` -> `bitpro_health` 预检后调用 BitPro 只读
+`/trading/orders/history` 路径，在报告中渲染 `BitPro 实盘订单` 和最近订单；
+不得用于下单、撤单、划转或任何实盘写入。
 
 研究、回测、模拟盘写入只允许通过明确 Agent 工具调用执行，例如策略生成、策略创建、BitPro 回测 job 和 paper/simulation 生命周期控制。实盘写工具必须后续单独加入。任何 Testnet 或实盘写入路径都必须具备明确 scope、幂等键、审批门、风控预检、脱敏审计事件和结构化拒绝原因。
 

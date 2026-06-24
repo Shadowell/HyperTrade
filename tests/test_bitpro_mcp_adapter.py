@@ -88,6 +88,70 @@ def test_bitpro_mcp_client_rejects_live_write_tools_before_http() -> None:
         client.call_tool("trading_futures_order", {"symbol": "ETH/USDT:USDT"})
 
 
+def test_bitpro_adapter_reads_live_order_history_after_preflight() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "query": dict(request.url.params),
+            }
+        )
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/trading/orders/history":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "exchange": "okx",
+                        "orders": [
+                            {
+                                "id": "ord_2",
+                                "symbol": "ETH/USDT:USDT",
+                                "side": "buy",
+                                "status": "closed",
+                                "average": "3500",
+                                "amount": "0.2",
+                                "filled": "0.2",
+                                "timestamp": "2026-06-24T05:20:00Z",
+                                "bitpro_source_label": "手动/外部订单",
+                            }
+                        ],
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    client = BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = BitProToolAdapter(client).live_order_history(exchange="okx", limit=1)
+
+    assert result["status"] == "ok"
+    assert result["exchange"] == "okx"
+    assert result["limit"] == 1
+    assert result["orders"][0]["id"] == "ord_2"
+    assert [call["tool"] for call in result["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "trading_order_history",
+    ]
+    assert seen == [
+        {"method": "GET", "path": "/api/v2/system/health", "query": {}},
+        {
+            "method": "GET",
+            "path": "/api/v2/trading/orders/history",
+            "query": {"exchange": "okx", "limit": "1"},
+        },
+    ]
+
+
 def test_bitpro_capabilities_label_live_flag_as_mcp_gate() -> None:
     client = BitProMcpClient(
         settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),

@@ -64,6 +64,7 @@ schema 只负责引导模型选择工具。
 - 记忆写入/搜索：`memory_write`、`memory_search`
 - 策略研究：`strategy_draft`
 - 回测：`backtest_run`
+- 实盘订单历史只读诊断：`bitpro_live_order_history`
 - live/testnet 意图：`live_order_intent`
 
 相关代码：
@@ -270,6 +271,7 @@ hypertrade ask "查看 BitPro 回测 result 196 的权益曲线和交易证据"
 hypertrade ask "监控 BitPro 所有运行中的模拟盘策略，给出异常和建议动作"
 hypertrade ask "查看 BitPro 策略 105 的模拟盘事件、错误和权益曲线"
 hypertrade ask "生成 BitPro 策略 105 的模拟盘监控快照，并和上一条快照比较漂移，只读，不要执行任何实盘写入"
+hypertrade ask "我的实盘最近的一笔订单是什么"
 ```
 
 API：
@@ -291,6 +293,7 @@ curl -sS "http://127.0.0.1:3334/api/bitpro/live/positions?symbol=ETH"
 - 模拟盘监控问题 trace 里应有 `bitpro.paper_dashboard` 和 `bitpro.strategy_search`，报告应包含 `监控结论`、告警、数据缺口和只读建议动作；如果 running 清单没有逐策略收益/回撤，必须写成缺失项，不能推断。
 - 模拟盘事件/权益曲线问题 trace 里应有 `bitpro.paper_events` 和/或 `bitpro.paper_equity_curve`，报告应写事件总数、错误数、最新事件时间、权益样本数、最新权益和回撤摘要；缺失事件或权益点必须写不可用/空结果，不能补假样本。
 - 模拟盘监控快照问题 trace 里应有顶层 `bitpro_paper_monitor_snapshot`，并展开嵌套 `bitpro.paper_dashboard`、`bitpro.paper_events`、`bitpro.paper_equity_curve`；报告应写 snapshot id、previous snapshot id、当前指标、漂移 delta、告警和 data gaps。第一条快照是 baseline，后续同 scope 快照才会出现 compared 漂移。
+- 实盘最近订单/历史订单问题 trace 里应有 `bitpro.live_order_history`，报告应出现 `BitPro 实盘订单`，并显示最近返回订单的订单号、交易对、方向、状态、均价、数量、时间和策略来源；不能输出 `市场热度总结` 代替订单证据。
 - `/harness` 的 BitPro MCP 面板显示 `mcp_non_live_lifecycle`、API base、认证 header、Token 来源、scope 分组、工具数量和实盘写关闭状态。
 - `BITPRO_MCP_API_TOKEN` 只在服务器环境配置，不能放进前端或仓库；Token 应在 BitPro 设置页 `MCP Agent Token` 或 `POST /api/v2/settings/mcp-agent-tokens` 生成，明文只在创建时返回一次。
 - `live_promote`、真实下单、撤单、划转等实盘写工具仍然不应被调用。

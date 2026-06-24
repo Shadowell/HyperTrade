@@ -101,7 +101,7 @@ class AgentClient(Protocol):
 
     def get_model_status(self) -> dict[str, Any]: ...
 
-    def set_model(self, provider: str) -> dict[str, Any]: ...
+    def set_model(self, provider: str, model: str = "") -> dict[str, Any]: ...
 
     def get_market_ticker(self, symbol: str) -> dict[str, Any]: ...
 
@@ -648,8 +648,11 @@ class AgentApiClient:
             "providers": [dict(provider) for provider in providers if isinstance(provider, dict)],
         }
 
-    def set_model(self, provider: str) -> dict[str, Any]:
-        return self._post_object("/api/harness/provider-selection", {"provider": provider})
+    def set_model(self, provider: str, model: str = "") -> dict[str, Any]:
+        body = {"provider": provider}
+        if model:
+            body["model"] = model
+        return self._post_object("/api/harness/provider-selection", body)
 
     def get_market_ticker(self, symbol: str) -> dict[str, Any]:
         return self._get_object(f"/api/market/ticker/{symbol}")
@@ -765,6 +768,7 @@ class LocalAgentClient:
         self.settings = settings or get_settings()
         self.db = db or Database(self.settings.database_url)
         self.selected_provider = self.settings.active_chat_provider
+        self.selected_provider_model = ""
 
     def login(self) -> None:
         return None
@@ -775,6 +779,7 @@ class LocalAgentClient:
             knowledge_dir=str(self.settings.knowledge_dir),
             settings=self.settings,
             provider_name=self.selected_provider,
+            provider_model=self.selected_provider_model or None,
         ).run_chat(prompt)
         return _completed_run_to_dict(run)
 
@@ -785,6 +790,7 @@ class LocalAgentClient:
             knowledge_dir=str(self.settings.knowledge_dir),
             settings=self.settings,
             provider_name=self.selected_provider,
+            provider_model=self.selected_provider_model or None,
         ).run_chat_with_events(prompt, event_sink=events.append)
         yield from events
         yield {"event": "final", "run": _completed_run_to_dict(run)}
@@ -923,7 +929,15 @@ class LocalAgentClient:
         }
 
     def get_model_status(self) -> dict[str, Any]:
-        providers = ProviderRuntime(self.settings).list_providers(selected=self.selected_provider)
+        selected_models = (
+            {self.selected_provider: self.selected_provider_model}
+            if self.selected_provider_model
+            else {}
+        )
+        providers = ProviderRuntime(self.settings).list_providers(
+            selected=self.selected_provider,
+            selected_models=selected_models,
+        )
         provider = next(
             (
                 item
@@ -938,12 +952,19 @@ class LocalAgentClient:
             "providers": providers,
         }
 
-    def set_model(self, provider: str) -> dict[str, Any]:
+    def set_model(self, provider: str, model: str = "") -> dict[str, Any]:
         requested = ProviderRuntime.normalize_provider_name(provider)
-        providers = ProviderRuntime(self.settings).list_providers(selected=requested)
+        runtime = ProviderRuntime(self.settings)
+        providers = runtime.list_providers(selected=requested)
         if requested not in {str(item.get("name")) for item in providers}:
             raise ValueError(f"unknown provider: {provider}")
+        selected_model = runtime.validate_model_choice(requested, model)
         self.selected_provider = requested
+        self.selected_provider_model = selected_model
+        providers = runtime.list_providers(
+            selected=requested,
+            selected_models={requested: selected_model} if selected_model else {},
+        )
         selected = next(item for item in providers if item.get("name") == requested)
         return {
             "default_provider": requested,
@@ -1137,7 +1158,7 @@ def run_chat(
         if prompt.startswith("/"):
             # Slash commands are deterministic shortcuts. They inspect or run a
             # specific tool surface without starting a free-form Agent run.
-            handle_slash_command(prompt, client=client, output=output)
+            handle_slash_command(prompt, client=client, output=output, input_fn=input_fn)
             continue
         render_run_stream(client, prompt, output=output)
 
@@ -1257,7 +1278,13 @@ def _paint(text: object, style: str, *, output: TextIO) -> str:
     return f"{prefix}{value}{reset}"
 
 
-def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+def handle_slash_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+    input_fn: Callable[[str], str] | None = None,
+) -> None:
     name = command.split(maxsplit=1)[0].lower()
     if _slash_argument_candidates(command):
         render_slash_command_candidates(command, output=output)
@@ -1269,7 +1296,7 @@ def handle_slash_command(command: str, *, client: AgentClient, output: TextIO) -
     elif name == "/status":
         render_status(client.get_status(), output=output)
     elif name == "/model":
-        render_model(command, client=client, output=output)
+        render_model(command, client=client, output=output, input_fn=input_fn)
     elif name in {"/provider", "/providers"}:
         render_providers(client.get_model_status(), output=output)
     elif name == "/tools":
@@ -2061,23 +2088,136 @@ def render_status(status: dict[str, Any], *, output: TextIO) -> None:
         print(f"- Tickers: {status.get('tickers')}", file=output)
 
 
-def render_model(command: str, *, client: AgentClient, output: TextIO) -> None:
+def render_model(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+    input_fn: Callable[[str], str] | None = None,
+) -> None:
     parts = command.split(maxsplit=1)
     status = client.get_model_status()
     if len(parts) == 1:
         print("Model:", file=output)
         print(f"- Provider: {status.get('default_provider', 'unknown')}", file=output)
         print(f"- Model: {status.get('model', 'unknown')}", file=output)
-        print("- Switch: /model <provider>", file=output)
+        if input_fn is None:
+            print("- Switch: /model <provider>", file=output)
+            _render_model_provider_list(status, output=output)
+        else:
+            _prompt_model_selection(status, client=client, input_fn=input_fn, output=output)
         return
-    requested = parts[1].strip()
+    requested_provider, requested_model = _parse_model_selection_argument(parts[1].strip())
     try:
-        switched = client.set_model(requested)
+        switched = client.set_model(requested_provider, requested_model)
     except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
         print(f"Model switch failed: {exc}", file=output)
         return
-    print(f"Model switched: {switched.get('default_provider', requested)}", file=output)
+    print(f"Model switched: {switched.get('default_provider', requested_provider)}", file=output)
     print(f"- Model: {switched.get('model', 'unknown')}", file=output)
+
+
+def _prompt_model_selection(
+    status: dict[str, Any],
+    *,
+    client: AgentClient,
+    input_fn: Callable[[str], str],
+    output: TextIO,
+) -> None:
+    providers = _provider_options(status)
+    if not providers:
+        print("Select provider:", file=output)
+        print("- none", file=output)
+        return
+    _render_model_provider_list(status, output=output)
+    choice = input_fn("Provider number (blank to cancel): ").strip()
+    if not choice:
+        print("Model selection canceled.", file=output)
+        return
+    selected_provider = _select_numbered_item(choice, providers)
+    if selected_provider is None:
+        print("Invalid provider selection.", file=output)
+        return
+
+    provider_name = str(selected_provider.get("name", ""))
+    selected_model = _prompt_provider_model(selected_provider, input_fn=input_fn, output=output)
+    if selected_model is None:
+        return
+    try:
+        switched = client.set_model(provider_name, selected_model)
+    except Exception as exc:  # noqa: BLE001 - surface CLI-friendly errors
+        print(f"Model switch failed: {exc}", file=output)
+        return
+    print(f"Model switched: {switched.get('default_provider', provider_name)}", file=output)
+    print(f"- Model: {switched.get('model', 'unknown')}", file=output)
+
+
+def _prompt_provider_model(
+    provider: dict[str, Any],
+    *,
+    input_fn: Callable[[str], str],
+    output: TextIO,
+) -> str | None:
+    model_options = [
+        str(option)
+        for option in provider.get("model_options", [])
+        if str(option)
+    ]
+    if len(model_options) <= 1:
+        return model_options[0] if model_options else ""
+    display_name = str(provider.get("display_name") or provider.get("name") or "Provider")
+    current_model = str(provider.get("model") or "")
+    print(f"Select {display_name} model:", file=output)
+    for index, model in enumerate(model_options, 1):
+        current = " current" if model == current_model else ""
+        print(f"{index}. {model}{current}", file=output)
+    choice = input_fn("Model number (blank to cancel): ").strip()
+    if not choice:
+        print("Model selection canceled.", file=output)
+        return None
+    selected_model = _select_numbered_item(choice, model_options)
+    if selected_model is None:
+        print("Invalid model selection.", file=output)
+        return None
+    return selected_model
+
+
+def _render_model_provider_list(status: dict[str, Any], *, output: TextIO) -> None:
+    providers = _provider_options(status)
+    print("Select provider:", file=output)
+    if not providers:
+        print("- none", file=output)
+        return
+    for index, provider in enumerate(providers, 1):
+        name = provider.get("name", "unknown")
+        model = provider.get("model", "unknown")
+        enabled = "enabled" if provider.get("enabled") else "disabled"
+        current = " current" if provider.get("default") else ""
+        print(f"{index}. {name} ({model}, {enabled}{current})", file=output)
+
+
+def _provider_options(status: dict[str, Any]) -> list[dict[str, Any]]:
+    providers = status.get("providers", [])
+    if not isinstance(providers, list):
+        return []
+    return [dict(provider) for provider in providers if isinstance(provider, dict)]
+
+
+def _select_numbered_item[T](choice: str, items: Sequence[T]) -> T | None:
+    try:
+        index = int(choice)
+    except ValueError:
+        return None
+    if index < 1 or index > len(items):
+        return None
+    return items[index - 1]
+
+
+def _parse_model_selection_argument(argument: str) -> tuple[str, str]:
+    if ":" not in argument:
+        return argument, ""
+    provider, model = argument.split(":", 1)
+    return provider.strip(), model.strip()
 
 
 def render_providers(status: dict[str, Any], *, output: TextIO) -> None:

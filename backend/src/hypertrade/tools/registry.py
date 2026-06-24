@@ -231,6 +231,11 @@ class ToolRegistry:
                     "Read BitPro live account positions for diagnostics only.",
                     "bitpro",
                 ),
+                ToolDefinition(
+                    "bitpro.live_order_history",
+                    "Read BitPro live account order history for diagnostics only.",
+                    "bitpro",
+                ),
                 ToolDefinition("paper.session", "Control paper trading sessions.", "paper"),
                 ToolDefinition(
                     "live.order_intent",
@@ -269,6 +274,19 @@ def _default_policy_for(
         )
     if name.startswith("bitpro."):
         bitpro_tool = name.removeprefix("bitpro.")
+        if bitpro_tool in {
+            "live_positions",
+            "live_order_history",
+        }:
+            return ToolPolicy(
+                scope="live_diagnostic_read",
+                approval="none",
+                idempotency="not_required",
+                source_of_truth="bitpro_mcp",
+                timeout_class="standard",
+                safe_sample_limit=20,
+                failure_behavior="return_unavailable",
+            )
         if bitpro_tool in {
             "paper_configure",
             "paper_start",
@@ -376,6 +394,7 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "bitpro_paper_equity_curve": "bitpro.paper_equity_curve",
     "bitpro_paper_monitor_snapshot": "bitpro.paper_monitor_snapshot",
     "bitpro_live_positions": "bitpro.live_positions",
+    "bitpro_live_order_history": "bitpro.live_order_history",
     "live_order_intent": "live.order_intent",
 }
 

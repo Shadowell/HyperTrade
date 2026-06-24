@@ -383,7 +383,25 @@ def test_planner_exposes_bitpro_read_tool_schemas() -> None:
         "bitpro_paper_equity_curve",
         "bitpro_paper_monitor_snapshot",
         "bitpro_live_positions",
+        "bitpro_live_order_history",
     } <= names
+
+
+def test_bitpro_live_order_history_schema_targets_recent_order_queries() -> None:
+    schema = next(
+        item for item in TOOL_SCHEMAS if item["function"]["name"] == "bitpro_live_order_history"
+    )
+
+    description = schema["function"]["description"]
+    properties = schema["function"]["parameters"]["properties"]
+
+    assert "Read-only" in description
+    assert "recent" in description
+    assert "最近" in description
+    assert "order history" in description
+    assert properties["exchange"]["type"] == "string"
+    assert properties["symbol"]["type"] == "string"
+    assert properties["limit"]["type"] == "integer"
 
 
 def test_bitpro_paper_dashboard_schema_discourages_accidental_single_strategy_filter() -> None:
@@ -500,6 +518,8 @@ def test_planner_prompt_does_not_treat_bitpro_live_gate_as_runtime_status() -> N
     assert "bitpro_paper_events" in prompt
     assert "bitpro_paper_equity_curve" in prompt
     assert "bitpro_paper_monitor_snapshot" in prompt
+    assert "bitpro_live_order_history" in prompt
+    assert "Do not use market_summary for live account order-history questions" in prompt
     assert "Do not summarize paper dashboard evidence as BitPro live trading disabled" in prompt
 
 
