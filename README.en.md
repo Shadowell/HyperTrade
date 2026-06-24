@@ -7,7 +7,7 @@ HyperTrade is a crypto trading agent for market research and execution. It is in
 ## Current V1 Capabilities
 
 - Observable Agent graph runtime with intent, plan, approval, tool, reflect, and report nodes.
-- Provider Router with DeepSeek default and OpenAI/OpenRouter/Qwen chat extension paths.
+- Provider Router with DeepSeek default plus OpenAI/Codex/OpenRouter/Qwen chat extension paths.
 - Tool calling for market, RAG, Memory, strategy, backtest, paper, live intent, and Testnet execution.
 - RAG citations backed by PostgreSQL/pgvector-compatible chunk metadata.
 - Memory v2 with dedupe, tags, importance, confidence, usage audit, and a strategy-library read model over strategy evidence.
@@ -22,7 +22,7 @@ HyperTrade is a crypto trading agent for market research and execution. It is in
 - Backend: FastAPI, SQLAlchemy 2, Alembic, uv, pytest, ruff, mypy.
 - Storage: PostgreSQL + pgvector.
 - RAG: Qwen `text-embedding-v4` config path; deterministic embedding fallback for local tests.
-- LLM: DeepSeek official API, default `deepseek-v4-flash`.
+- LLM: DeepSeek official API by default; Codex can be selected through the Responses API provider.
 - Frontend: React, Vite, TypeScript, Tailwind, shadcn-style UI, lucide-react.
 - Deploy: Docker Compose, host Nginx, GitHub Actions self-hosted runner.
 
@@ -31,6 +31,7 @@ HyperTrade is a crypto trading agent for market research and execution. It is in
 ```text
 /status
 /model deepseek
+/model codex
 /rag risk
 /memory search risk
 /strategy library momentum_breakout_v1

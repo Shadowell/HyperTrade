@@ -205,7 +205,7 @@ SLASH_COMMAND_COMPLETIONS: tuple[str, ...] = tuple(
     dict.fromkeys(command.split()[0] for command, _ in SLASH_COMMAND_HELP)
 )
 SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
-    "/model": ("deepseek", "openai", "openrouter", "qwen"),
+    "/model": ("deepseek", "openai", "codex", "openai-codex", "openrouter", "qwen"),
     "/memory": ("search", "disable"),
     "/monitor": ("run",),
     "/strategy": ("library",),
@@ -913,7 +913,7 @@ class LocalAgentClient:
         }
 
     def set_model(self, provider: str) -> dict[str, Any]:
-        requested = provider.strip().lower()
+        requested = ProviderRuntime.normalize_provider_name(provider)
         providers = ProviderRuntime(self.settings).list_providers(selected=requested)
         if requested not in {str(item.get("name")) for item in providers}:
             raise ValueError(f"unknown provider: {provider}")

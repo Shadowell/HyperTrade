@@ -122,6 +122,9 @@ its own Agent capabilities:
 - Strategy iteration planning can read prior strategy-library evidence through `strategy_experiment_plan`, `/api/strategy/experiments/iterate`, and CLI `/experiment iterate <prompt>` without triggering paper, live, or BitPro write tools.
 - Sprint 55 CLI slash command candidates: incomplete slash prefixes such as `/st` or `/me` render filtered candidates with purpose descriptions, and readline Tab completion can display the same described candidate list.
 - Sprint 56 market heat summary: broad market heat/sentiment/breadth prompts route to `market_summary`, compute OKX SWAP breadth metrics, and render a conclusion before raw ticker details.
+- Sprint 58 Codex provider runtime: `codex`/`openai-codex` routes chat/planner
+  calls through the Codex Responses API while HyperTrade keeps tool execution,
+  policy, trace, RAG, and Memory inside its own Agent runtime.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -187,6 +190,10 @@ its own Agent capabilities:
 - Developer can run backtests from archived BitPro K-line data without copying BitPro business logic.
 - Developer can inspect Agent graph state and graph trace nodes for each run.
 - Developer can switch chat providers from CLI/API/frontend without exposing provider keys.
+- Developer can select `codex` or Hermes-style `openai-codex` as the active
+  chat provider when `CODEX_API_KEY` or `CODEX_AUTH_JSON` provides a Codex
+  access token; provider status never exposes the token, and Codex does not
+  execute HyperTrade tools or approval decisions directly.
 - Developer can search RAG citations and Memory from CLI/API/frontend.
 - Developer can create, approve, and execute OKX Testnet order intents after risk checks.
 - Developer can run `/experiment <prompt>` to create strategy research, compare multiple backtest variants, inspect the winning evidence, and read the next experiment recommendation.

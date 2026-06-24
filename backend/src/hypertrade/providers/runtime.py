@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from hypertrade.config import Settings
 from hypertrade.providers.chat import ChatProvider, OpenAICompatibleChatProvider
+from hypertrade.providers.codex import CodexResponsesChatProvider, resolve_codex_access_token
 from hypertrade.providers.deepseek import DeepSeekClient
 
 
@@ -23,11 +24,22 @@ class ProviderDefinition:
 
 
 class ProviderRuntime:
+    PROVIDER_ALIASES = {"openai-codex": "codex", "openai_codex": "codex"}
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
+    @classmethod
+    def normalize_provider_name(cls, name: str | None) -> str:
+        cleaned = (name or "").strip().lower()
+        return cls.PROVIDER_ALIASES.get(cleaned, cleaned)
+
     def list_providers(self, *, selected: str | None = None) -> list[dict[str, object]]:
-        selected_name = selected or self.settings.active_chat_provider
+        selected_name = self.normalize_provider_name(selected or self.settings.active_chat_provider)
+        codex_token = resolve_codex_access_token(
+            api_key=self.settings.codex_api_key,
+            auth_json=self.settings.codex_auth_json,
+        )
         # Missing providers are still listed so the harness can teach the full
         # ecosystem without requiring every API key during local development.
         providers = [
@@ -46,6 +58,14 @@ class ProviderRuntime:
                 self.settings.openai_model,
                 bool(self.settings.openai_api_key),
                 selected_name == "openai",
+            ),
+            ProviderDefinition(
+                "codex",
+                "Codex",
+                self.settings.codex_base_url,
+                self.settings.codex_model,
+                bool(codex_token),
+                selected_name == "codex",
             ),
             ProviderDefinition("anthropic", "Anthropic", "", "", False),
             ProviderDefinition("gemini", "Gemini", "", "", False),
@@ -81,7 +101,7 @@ class ProviderRuntime:
         ]
 
     def get_chat_provider(self, *, selected: str | None = None) -> ChatProvider | None:
-        name = selected or self.settings.active_chat_provider
+        name = self.normalize_provider_name(selected or self.settings.active_chat_provider)
         # Returning None is intentional: AgentKernel will use the deterministic
         # graph path, which keeps tests and first-run demos stable without keys.
         if name == "deepseek" and self.settings.deepseek_api_key:
@@ -97,6 +117,18 @@ class ProviderRuntime:
                 base_url=self.settings.openai_base_url,
                 model=self.settings.openai_model,
             )
+        if name == "codex":
+            codex_token = resolve_codex_access_token(
+                api_key=self.settings.codex_api_key,
+                auth_json=self.settings.codex_auth_json,
+            )
+            if codex_token:
+                return CodexResponsesChatProvider(
+                    api_key=codex_token,
+                    base_url=self.settings.codex_base_url,
+                    model=self.settings.codex_model,
+                    timeout_seconds=self.settings.codex_timeout_seconds,
+                )
         if (
             name == "openrouter"
             and self.settings.openrouter_api_key

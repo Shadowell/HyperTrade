@@ -270,7 +270,7 @@ def create_app(
 
     @app.post("/api/harness/provider-selection")
     def select_provider(payload: ProviderSelectionPayload, _: AdminUser) -> dict[str, Any]:
-        requested = payload.provider.strip().lower()
+        requested = ProviderRuntime.normalize_provider_name(payload.provider)
         runtime = ProviderRuntime(app_settings)
         known = {str(provider["name"]) for provider in runtime.list_providers()}
         if requested not in known:

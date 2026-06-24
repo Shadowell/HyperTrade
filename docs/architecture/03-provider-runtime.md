@@ -24,7 +24,23 @@ Runtime surfaces:
 - CLI `/model` and `/model <provider>`
 - frontend `/harness` provider selector
 
-DeepSeek, OpenAI, OpenRouter, and Qwen chat use OpenAI-compatible chat completion adapters. Anthropic, Gemini, and Ollama remain extension slots. Runtime selection affects chat/planning only; Qwen embedding remains separate for RAG.
+DeepSeek, OpenAI, OpenRouter, and Qwen chat use OpenAI-compatible chat completion adapters. Codex uses a dedicated Responses API adapter pointed at the Codex backend, with `openai-codex` accepted as an alias for `codex`. Anthropic, Gemini, and Ollama remain extension slots. Runtime selection affects chat/planning only; Qwen embedding remains separate for RAG.
+
+## Sprint 58 Codex Update
+
+Codex is available as a chat/planner provider when either `CODEX_API_KEY` is
+set to a bearer token or `CODEX_AUTH_JSON` points to a Codex/Hermes auth file
+that contains an `access_token`. The default auth path is `~/.codex/auth.json`,
+which matches the local Codex CLI convention; operators may point
+`CODEX_AUTH_JSON` at `~/.hermes/auth.json` if they want to reuse Hermes-managed
+`openai-codex` tokens.
+
+The Codex adapter converts HyperTrade's existing chat-completions style tool
+schemas to Responses API `function` tools, parses Codex `function_call` output
+items back into `ToolCallRequest`, and sends trusted HyperTrade tool results
+back as `function_call_output` input items. Codex never executes HyperTrade
+tools, shell commands, patches, approvals, BitPro actions, or exchange actions
+directly.
 
 ## 中文
 
@@ -50,4 +66,4 @@ ProviderRuntime 现在不仅展示配置，也负责把 chat/planner 调用路�
 - CLI `/model` 与 `/model <provider>`
 - 前端 `/harness` provider 下拉选择
 
-DeepSeek、OpenAI、OpenRouter、Qwen chat 使用 OpenAI-compatible adapter。Anthropic、Gemini、Ollama 保留扩展位。Provider 切换只影响 chat/planner，不影响 RAG embedding。
+DeepSeek、OpenAI、OpenRouter、Qwen chat 使用 OpenAI-compatible adapter。Codex 使用指向 Codex backend 的 Responses API 专用 adapter，并接受 `openai-codex` 作为 `codex` 的别名。Anthropic、Gemini、Ollama 保留扩展位。Provider 切换只影响 chat/planner，不影响 RAG embedding。

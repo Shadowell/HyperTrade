@@ -7,7 +7,7 @@ HyperTrade 是一个面向行情研究与执行的加密交易 Agent。它不在
 ## 当前 V1 能力
 
 - Agent graph runtime：可观察的 intent、plan、approval、tool、reflect、report 节点。
-- Provider Router：DeepSeek 默认，OpenAI/OpenRouter/Qwen chat 扩展位，CLI/API/前端可切换。
+- Provider Router：DeepSeek 默认，OpenAI/Codex/OpenRouter/Qwen chat 扩展位，CLI/API/前端可切换。
 - Tool Call：行情、RAG、Memory、策略、回测、paper、live intent、Testnet execute。
 - RAG：PostgreSQL/pgvector 兼容字段，citation-ready 命中。
 - Memory：去重、tags、importance、confidence、usage audit；策略实验会沉淀 `strategy_knowledge` 记忆卡，并可聚合为策略库视图。
@@ -22,7 +22,7 @@ HyperTrade 是一个面向行情研究与执行的加密交易 Agent。它不在
 - Backend：FastAPI、SQLAlchemy 2、Alembic、uv、pytest、ruff、mypy。
 - Storage：PostgreSQL + pgvector。
 - RAG：Qwen `text-embedding-v4` 配置位，V1 本地测试使用确定性 embedding fallback。
-- LLM：DeepSeek 官方 API，默认 `deepseek-v4-flash`。
+- LLM：默认 DeepSeek 官方 API；也可通过 Responses API Provider 选择 Codex。
 - Frontend：React、Vite、TypeScript、Tailwind、shadcn 风格组件、lucide-react。
 - Deploy：Docker Compose、宿主机 Nginx、GitHub Actions self-hosted runner。
 
@@ -34,6 +34,7 @@ HyperTrade 是一个面向行情研究与执行的加密交易 Agent。它不在
 /status
 /tools
 /model deepseek
+/model codex
 /rag 风控
 /memory search 风控
 /strategy library momentum_breakout_v1

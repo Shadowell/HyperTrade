@@ -4,21 +4,29 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 57 architecture diagram verified locally with
-  `./scripts/check.sh` (`pytest` 207 passed).
+- Last verified state: Sprint 58 Codex provider runtime verified locally with
+  `./scripts/check.sh` (`pytest` 211 passed).
 
 ## Active Contract
 
 - No active implementation contract. Last completed:
-  `docs/contracts/sprint-57-architecture-diagram.md`.
+  `docs/contracts/sprint-58-codex-provider-runtime.md`.
 
 ## Current In-Progress Work
 
-- None. Sprint 57 is complete in this branch; select a new contract before
+- None. Sprint 58 is complete in this branch; select a new contract before
   starting more implementation scope.
 
 ## Latest Completed Work
 
+- Added Sprint 58 Codex provider runtime: HyperTrade now exposes `codex` as a
+  selectable chat/planner provider, accepts Hermes-style `openai-codex` as an
+  alias, reads server-only `CODEX_API_KEY` or `CODEX_AUTH_JSON` access tokens
+  without exposing secrets in provider status, and routes planner calls through
+  the Codex Responses API while HyperTrade still owns ToolRegistry execution,
+  risk policy, trace, RAG, and Memory. Verification passed with focused
+  ruff/mypy/provider/API/CLI tests and full `./scripts/check.sh` (`pytest` 211
+  passed).
 - Added Sprint 57 architecture diagram: `docs/assets/hypertrade-architecture.svg`
   provides a poster-style layered map for client access, data inputs, Agent
   gateway, HyperTrade engine, execution/output, multi-Agent workflow,

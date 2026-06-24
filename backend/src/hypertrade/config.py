@@ -97,6 +97,17 @@ class Settings(BaseSettings):
     openai_base_url: str = Field(default="https://api.openai.com/v1", alias="OPENAI_BASE_URL")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
+    codex_base_url: str = Field(
+        default="https://chatgpt.com/backend-api/codex",
+        alias="CODEX_BASE_URL",
+    )
+    codex_api_key: str = Field(default="", alias="CODEX_API_KEY")
+    codex_auth_json: Path = Field(
+        default_factory=lambda: Path.home() / ".codex" / "auth.json",
+        alias="CODEX_AUTH_JSON",
+    )
+    codex_model: str = Field(default="gpt-5.4", alias="CODEX_MODEL")
+    codex_timeout_seconds: float = Field(default=90.0, alias="CODEX_TIMEOUT_SECONDS")
     openrouter_base_url: str = Field(
         default="https://openrouter.ai/api/v1",
         alias="OPENROUTER_BASE_URL",
