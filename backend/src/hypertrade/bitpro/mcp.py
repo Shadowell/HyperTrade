@@ -39,6 +39,7 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "paper_dashboard": {"method": "GET", "path": "/live/dashboard"},
     "paper_events": {"method": "GET", "path": "/live/events"},
     "paper_equity_curve": {"method": "GET", "path": "/live/equity_curve"},
+    "live_strategies": {"method": "GET", "path": "/live/strategies"},
     "live_preflight": {"method": "POST", "path": "/live/promote/preflight"},
     "trading_balance": {"method": "GET", "path": "/trading/accounts/balance"},
     "trading_positions": {"method": "GET", "path": "/trading/accounts/positions"},
@@ -96,6 +97,7 @@ LIVE_DIAGNOSTIC_TOOLS = {
     "trading_positions",
     "trading_open_orders",
     "trading_order_history",
+    "live_strategies",
 }
 
 LIVE_MUTATION_TOOLS = {
@@ -925,6 +927,40 @@ class BitProToolAdapter:
             "limit": safe_limit,
             "orders": orders,
             "order_summary": _live_order_summary(orders),
+            "tool_calls": self.last_tool_calls,
+        }
+
+    def live_strategy_performance(
+        self,
+        *,
+        exchange: str = "okx",
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        safe_limit = max(1, min(int(limit), 100))
+        raw = self._call("live_strategies", {})
+        rows = [_live_strategy_item(row) for row in _extract_live_strategy_rows(raw)]
+        if exchange:
+            rows = [
+                row
+                for row in rows
+                if str(row.get("exchange") or "").casefold() == exchange.casefold()
+            ]
+        rows.sort(
+            key=lambda row: _decimal_or_none(row.get("return_pct")) or Decimal("-Infinity"),
+            reverse=True,
+        )
+        strategies = rows[:safe_limit]
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "exchange": exchange,
+            "limit": safe_limit,
+            "rank_basis": "return_pct",
+            "strategies": strategies,
+            "performance_summary": _live_strategy_performance_summary(strategies),
             "tool_calls": self.last_tool_calls,
         }
 
@@ -1803,6 +1839,21 @@ def _extract_live_order_rows(raw: Any) -> list[dict[str, Any]]:
     )
 
 
+def _extract_live_strategy_rows(raw: Any) -> list[dict[str, Any]]:
+    return _extract_nested_rows(
+        raw,
+        (
+            "strategies",
+            "live_strategies",
+            "liveStrategies",
+            "items",
+            "rows",
+            "results",
+            "data",
+        ),
+    )
+
+
 def _extract_nested_rows(raw: Any, keys: tuple[str, ...]) -> list[dict[str, Any]]:
     if isinstance(raw, list):
         return [_ensure_dict(row) for row in raw]
@@ -1836,6 +1887,68 @@ def _extract_nested_rows(raw: Any, keys: tuple[str, ...]) -> list[dict[str, Any]
             if isinstance(value, list):
                 return [_ensure_dict(row) for row in value]
     return []
+
+
+def _live_strategy_item(row: dict[str, Any]) -> dict[str, Any]:
+    strategy_id = _first_present(row.get("strategy_id"), row.get("strategyId"), row.get("id"))
+    symbols = _first_present(row.get("symbols"), row.get("trade_symbols"), row.get("tradeSymbols"))
+    if isinstance(symbols, str):
+        symbol_values = [symbols]
+    elif isinstance(symbols, list):
+        symbol_values = [str(symbol) for symbol in symbols if symbol is not None]
+    else:
+        symbol_values = []
+    return _compact(
+        {
+            "strategy_id": strategy_id,
+            "strategy_name": _first_present(
+                row.get("strategy_name"),
+                row.get("strategyName"),
+                row.get("name"),
+            ),
+            "status": row.get("status"),
+            "workspace_status": _first_present(
+                row.get("workspace_status"),
+                row.get("workspaceStatus"),
+            ),
+            "exchange": row.get("exchange"),
+            "account_id": _first_present(row.get("account_id"), row.get("accountId")),
+            "account_ids": _first_present(row.get("account_ids"), row.get("accountIds")),
+            "symbols": symbol_values,
+            "market_type": _first_present(row.get("market_type"), row.get("marketType")),
+            "total_pnl": _decimal_text(
+                _first_present(row.get("total_pnl"), row.get("totalPnl"), row.get("pnl"))
+            ),
+            "return_pct": _decimal_text(
+                _first_present(row.get("return_pct"), row.get("returnPct"), row.get("pnl_pct"))
+            ),
+            "deployed": row.get("deployed"),
+            "deployment_status": _first_present(
+                row.get("deployment_status"),
+                row.get("deploymentStatus"),
+            ),
+            "live_subscription_id": _first_present(
+                row.get("live_subscription_id"),
+                row.get("liveSubscriptionId"),
+                row.get("subscription_id"),
+            ),
+            "updated_at": _first_present(row.get("updated_at"), row.get("updatedAt")),
+            "created_at": _first_present(row.get("created_at"), row.get("createdAt")),
+        }
+    )
+
+
+def _live_strategy_performance_summary(strategies: list[dict[str, Any]]) -> dict[str, Any]:
+    top = strategies[0] if strategies else None
+    return _compact(
+        {
+            "count": len(strategies),
+            "top_strategy_id": top.get("strategy_id") if top else None,
+            "top_strategy_name": top.get("strategy_name") if top else None,
+            "top_return_pct": top.get("return_pct") if top else None,
+            "top_total_pnl": top.get("total_pnl") if top else None,
+        }
+    )
 
 
 def _live_order_item(row: dict[str, Any]) -> dict[str, Any]:

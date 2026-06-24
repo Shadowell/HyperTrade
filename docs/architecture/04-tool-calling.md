@@ -38,6 +38,10 @@ Specific ticker lookup:
   use `bitpro_live_order_history` / `bitpro.live_order_history`, not
   `market_summary`. This tool is read-only live diagnostics; live order
   placement, cancellation, and transfer remain separate write-gated paths.
+- Live strategy performance prompts such as `看下实盘收益最高的策略` use
+  `bitpro_live_strategy_performance` / `bitpro.live_strategy_performance`, not
+  `market_summary`. The tool reads BitPro `/live/strategies`, ranks by
+  `return_pct`, and reports `total_pnl` only when BitPro provides it.
 - Common user inputs are normalized to OKX instrument ids: `eth` -> `ETH-USDT-SWAP`,
   `SOL-USDT` -> `SOL-USDT-SWAP`, `doge_usdt` -> `DOGE-USDT-SWAP`.
 - The planner prompt instructs the LLM to choose `market_ticker` for any specific listed coin, not
@@ -81,6 +85,10 @@ ToolRegistry 是 Agent 可调用工具的唯一目录。Sprint 01 包含行情�
   `bitpro_live_order_history` / `bitpro.live_order_history`，不能回退到
   `market_summary`。该工具只是实盘只读诊断；真实下单、撤单和划转仍属于
   单独写入门禁路径。
+- `看下实盘收益最高的策略` 这类实盘策略收益问题使用
+  `bitpro_live_strategy_performance` / `bitpro.live_strategy_performance`，
+  不能回退到 `market_summary`。该工具读取 BitPro `/live/strategies`，按
+  `return_pct` 排名，并且只展示 BitPro 返回的 `total_pnl`。
 - 常见输入会归一化为 OKX instrument id：`eth` -> `ETH-USDT-SWAP`，
   `SOL-USDT` -> `SOL-USDT-SWAP`，`doge_usdt` -> `DOGE-USDT-SWAP`。
 - planner prompt 明确要求：用户问任意具体币种时使用 `market_ticker`，不是只支持 BTC。

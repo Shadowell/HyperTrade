@@ -4,20 +4,38 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 64 Codex GPT-5.5 option verified locally with
-  `./scripts/check.sh` (`pytest` 229 passed).
+- Last verified state: Sprint 66 README architecture/onboarding refresh verified
+  locally with `./scripts/check.sh` (`pytest` 233 passed).
 
 ## Active Contract
 
-- `docs/contracts/sprint-64-codex-gpt-55-option.md`
+- `docs/contracts/sprint-66-readme-architecture-refresh.md`
 
 ## Current In-Progress Work
 
-- Sprint 64 is implemented and locally verified; commit, push, deployment
-  watch, and production health verification are next.
+- Sprint 66 README architecture/onboarding refresh is implemented and locally
+  verified. The remaining handoff step is the standard main-branch push,
+  deployment watch, and production health verification.
+- Sprint 65 live strategy performance routing has been implemented and verified
+  separately; it should be committed/deployed as its own bugfix slice without
+  staging unrelated README refresh files.
 
 ## Latest Completed Work
 
+- Added Sprint 66 README architecture/onboarding refresh: the root README now
+  embeds `docs/assets/hypertrade-architecture.svg`, explains the
+  HyperTrade/BitPro boundary, summarizes V1 capabilities, documents core
+  workflows, names the Codex model allowlist behavior, and adds safety,
+  documentation-map, and repository-layout sections. Verification passed with
+  full `./scripts/check.sh` (`pytest` 233 passed).
+- Added Sprint 65 live strategy performance routing: prompts such as
+  `看下实盘收益最高的策略` now route directly to the read-only
+  `bitpro_live_strategy_performance` tool instead of falling back to OKX market
+  heat. The BitPro adapter preflights capability/health, reads
+  `/live/strategies`, ranks returned rows by the page metric `return_pct`,
+  reports `total_pnl` when present, and renders a `BitPro 实盘策略收益` section.
+  Verification passed with focused Agent/planner/adapter/report/registry tests
+  and full `./scripts/check.sh` (`pytest` 233 passed).
 - Added Sprint 64 Codex GPT-5.5 option: default `CODEX_MODEL_OPTIONS` now
   includes `gpt-5.5` between `gpt-5.4` and `gpt-5.4-mini`, while `CODEX_MODEL`
   remains `gpt-5.4`. This explains why 5.5 was missing before: the CLI model

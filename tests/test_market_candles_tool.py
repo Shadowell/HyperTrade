@@ -412,6 +412,75 @@ def test_planner_report_renders_bitpro_live_order_history_latest_order() -> None
     assert "市场热度总结" not in report
 
 
+def test_planner_report_renders_bitpro_live_strategy_performance_top_strategy() -> None:
+    report = AgentKernel._render_planner_report(
+        "已读取实盘策略收益排行。",
+        [
+            ToolCallRecord(
+                tool_name="bitpro_live_strategy_performance",
+                input_json={"exchange": "okx", "limit": 20},
+                output_json={
+                    "status": "ok",
+                    "contract_version": "bitpro-mcp-v1",
+                    "exchange": "okx",
+                    "limit": 20,
+                    "rank_basis": "return_pct",
+                    "strategies": [
+                        {
+                            "strategy_id": 105,
+                            "strategy_name": "Alpha Live",
+                            "status": "running",
+                            "workspace_status": "deployed",
+                            "exchange": "okx",
+                            "account_id": "main",
+                            "symbols": ["ETH/USDT:USDT"],
+                            "total_pnl": "123.45",
+                            "return_pct": "4.56",
+                        },
+                        {
+                            "strategy_id": 106,
+                            "strategy_name": "Beta Live",
+                            "status": "running",
+                            "workspace_status": "deployed",
+                            "exchange": "okx",
+                            "account_id": "main",
+                            "symbols": ["BTC/USDT:USDT"],
+                            "total_pnl": "300",
+                            "return_pct": "2.1",
+                        },
+                    ],
+                    "performance_summary": {
+                        "count": 2,
+                        "top_strategy_id": 105,
+                        "top_strategy_name": "Alpha Live",
+                        "top_return_pct": "4.56",
+                        "top_total_pnl": "123.45",
+                    },
+                    "tool_calls": [
+                        {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                        {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                        {"tool": "live_strategies", "parameters": {}, "status": "success"},
+                    ],
+                },
+            )
+        ],
+    )
+
+    assert "## BitPro 实盘策略收益" in report
+    assert "结论: 已读取实盘策略收益排行。" in report
+    assert "排名口径=return_pct" in report
+    assert "最高策略: #105 Alpha Live 收益率=4.56% 收益金额=123.45" in report
+    assert (
+        "1. #105 Alpha Live status=running/deployed symbols=ETH/USDT:USDT "
+        "收益率=4.56% 收益金额=123.45 account=main"
+    ) in report
+    assert (
+        "2. #106 Beta Live status=running/deployed symbols=BTC/USDT:USDT "
+        "收益率=2.1% 收益金额=300 account=main"
+    ) in report
+    assert "市场热度总结" not in report
+
+
 def test_planner_report_renders_bitpro_paper_snapshot_drift() -> None:
     report = AgentKernel._render_planner_report(
         "模拟盘快照完成。",

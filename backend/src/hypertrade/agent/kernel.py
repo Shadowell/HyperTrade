@@ -124,6 +124,15 @@ class AgentKernel:
                     planner_name="deterministic_live_order_router",
                     event_sink=event_sink,
                 )
+            elif _is_live_strategy_performance_prompt(prompt):
+                self._run_deterministic_tool(
+                    run_id,
+                    tool_name="bitpro_live_strategy_performance",
+                    args={"exchange": "okx", "limit": 20},
+                    final_message="已读取实盘策略收益排行。",
+                    planner_name="deterministic_live_strategy_performance_router",
+                    event_sink=event_sink,
+                )
             elif provider is not None and _is_market_heat_prompt(prompt):
                 self._run_hardcoded(run_id, prompt, event_sink=event_sink)
             elif provider is not None:
@@ -483,6 +492,12 @@ class AgentKernel:
                     exchange=str(args.get("exchange", "okx")),
                     symbol=str(args["symbol"]) if args.get("symbol") else None,
                     limit=int(args.get("limit", 50)),
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_live_strategy_performance":
+                result = self._bitpro_adapter().live_strategy_performance(
+                    exchange=str(args.get("exchange", "okx")),
+                    limit=int(args.get("limit", 20)),
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_strategy_search":
@@ -1352,6 +1367,7 @@ class AgentKernel:
         bitpro_backtest_detail_lines: list[str] = []
         bitpro_paper_lines: list[str] = []
         bitpro_live_order_lines: list[str] = []
+        bitpro_live_strategy_lines: list[str] = []
         bitpro_lifecycle_lines: list[str] = []
         strategy_library_lines: list[str] = []
         citation_lines: list[str] = []
@@ -2016,6 +2032,55 @@ class AgentKernel:
             latest = orders[0] if isinstance(orders[0], dict) else {}
             bitpro_live_order_lines.append("- 最近订单: " + _format_live_order_line(latest))
             bitpro_live_order_lines.append("")
+        if any(
+            str(getattr(record, "tool_name", "")) == "bitpro_live_strategy_performance"
+            for record in tool_calls
+        ):
+            summary = _compact_final_message(final_message)
+            if summary:
+                bitpro_live_strategy_lines.extend([f"- 结论: {summary}", ""])
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "bitpro_live_strategy_performance":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or payload.get("status") != "ok":
+                continue
+            strategies = payload.get("strategies")
+            strategies = strategies if isinstance(strategies, list) else []
+            performance_summary = payload.get("performance_summary")
+            performance_summary = (
+                performance_summary if isinstance(performance_summary, dict) else {}
+            )
+            bitpro_live_strategy_lines.extend(
+                [
+                    (
+                        "- 来源: exchange={exchange}, limit={limit}, 排名口径={rank_basis}, "
+                        "策略数量: {count}"
+                    ).format(
+                        exchange=payload.get("exchange", "okx"),
+                        limit=payload.get("limit", "n/a"),
+                        rank_basis=payload.get("rank_basis", "return_pct"),
+                        count=performance_summary.get("count", len(strategies)),
+                    ),
+                ]
+            )
+            if not strategies:
+                bitpro_live_strategy_lines.append(
+                    "- 最高策略: 暂无 BitPro 返回的实盘策略收益数据。"
+                )
+                bitpro_live_strategy_lines.append("")
+                continue
+            top = strategies[0] if isinstance(strategies[0], dict) else {}
+            bitpro_live_strategy_lines.append(
+                "- 最高策略: " + _format_live_strategy_top_line(top)
+            )
+            for index, strategy in enumerate(strategies[:5], start=1):
+                if not isinstance(strategy, dict):
+                    continue
+                bitpro_live_strategy_lines.append(
+                    f"- {index}. {_format_live_strategy_rank_line(strategy)}"
+                )
+            bitpro_live_strategy_lines.append("")
         lifecycle_tool_names = {
             "bitpro_strategy_search",
             "bitpro_strategy_generate",
@@ -2132,6 +2197,8 @@ class AgentKernel:
             sections.extend(["## BitPro 模拟盘状态", "", *bitpro_paper_lines])
         if bitpro_live_order_lines:
             sections.extend(["## BitPro 实盘订单", "", *bitpro_live_order_lines])
+        if bitpro_live_strategy_lines:
+            sections.extend(["## BitPro 实盘策略收益", "", *bitpro_live_strategy_lines])
         if bitpro_lifecycle_lines:
             sections.extend(["## BitPro 策略生命周期", "", *bitpro_lifecycle_lines])
         has_bitpro_evidence_report = bool(
@@ -2139,6 +2206,7 @@ class AgentKernel:
             or bitpro_backtest_detail_lines
             or bitpro_paper_lines
             or bitpro_live_order_lines
+            or bitpro_live_strategy_lines
         )
         citations = [] if has_bitpro_evidence_report else _citations_from_tool_calls(tool_calls)
         if citations:
@@ -2244,6 +2312,41 @@ def _format_live_order_line(order: dict[str, Any]) -> str:
     )
 
 
+def _format_live_strategy_top_line(strategy: dict[str, Any]) -> str:
+    return (
+        f"#{_strategy_value(strategy, 'strategy_id', 'id')} "
+        f"{_strategy_value(strategy, 'strategy_name', 'name')} "
+        f"收益率={_strategy_value(strategy, 'return_pct')}% "
+        f"收益金额={_strategy_value(strategy, 'total_pnl', 'pnl')}"
+    )
+
+
+def _format_live_strategy_rank_line(strategy: dict[str, Any]) -> str:
+    symbols = strategy.get("symbols")
+    if isinstance(symbols, list):
+        symbol_text = ",".join(str(symbol) for symbol in symbols if symbol is not None) or "n/a"
+    else:
+        symbol_text = str(symbols) if symbols is not None and str(symbols) else "n/a"
+    status = _strategy_value(strategy, "status")
+    workspace_status = _strategy_value(strategy, "workspace_status", "deployment_status")
+    return (
+        f"#{_strategy_value(strategy, 'strategy_id', 'id')} "
+        f"{_strategy_value(strategy, 'strategy_name', 'name')} "
+        f"status={status}/{workspace_status} symbols={symbol_text} "
+        f"收益率={_strategy_value(strategy, 'return_pct')}% "
+        f"收益金额={_strategy_value(strategy, 'total_pnl', 'pnl')} "
+        f"account={_strategy_value(strategy, 'account_id')}"
+    )
+
+
+def _strategy_value(strategy: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = strategy.get(key)
+        if value is not None and str(value) != "":
+            return str(value)
+    return "n/a"
+
+
 def _order_value(order: dict[str, Any], *keys: str) -> str:
     for key in keys:
         value = order.get(key)
@@ -2329,6 +2432,7 @@ def _bitpro_trace_tool_name(tool_name: str) -> str:
         "paper_equity_curve": "bitpro.paper_equity_curve",
         "trading_positions": "bitpro.live_positions",
         "trading_order_history": "bitpro.live_order_history",
+        "live_strategies": "bitpro.live_strategy_performance",
     }.get(tool_name, "")
 
 
@@ -2432,6 +2536,32 @@ def _is_live_order_history_prompt(prompt: str) -> bool:
         any(term in value for term in live_terms)
         and any(term in value for term in order_terms)
         and any(term in value for term in history_terms)
+    )
+
+
+def _is_live_strategy_performance_prompt(prompt: str) -> bool:
+    value = prompt.strip().casefold()
+    if not value:
+        return False
+    live_terms = ("实盘", "真实账户", "真实交易", "live", "real-account", "real account")
+    strategy_terms = ("策略", "strategy")
+    performance_terms = (
+        "收益",
+        "收益率",
+        "盈利",
+        "盈亏",
+        "利润",
+        "pnl",
+        "profit",
+        "return",
+        "performance",
+    )
+    rank_terms = ("最高", "最好", "最强", "排行", "排名", "top", "best", "highest", "rank")
+    return (
+        any(term in value for term in live_terms)
+        and any(term in value for term in strategy_terms)
+        and any(term in value for term in performance_terms)
+        and any(term in value for term in rank_terms)
     )
 
 

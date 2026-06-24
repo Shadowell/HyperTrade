@@ -143,6 +143,10 @@ its own Agent capabilities:
 - Sprint 64 Codex GPT-5.5 option: the default Codex model allowlist includes
   `gpt-5.5` between `gpt-5.4` and `gpt-5.4-mini`, while `CODEX_MODEL` remains
   the default selected model.
+- Sprint 65 live strategy performance routing: real-account strategy performance
+  prompts such as `看下实盘收益最高的策略` route deterministically to BitPro
+  `/live/strategies`, rank by `return_pct`, render `BitPro 实盘策略收益`, and do
+  not fall back to OKX all-market reports.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -247,6 +251,7 @@ its own Agent capabilities:
 - Agent can inspect BitPro paper/simulation event streams and equity curves through read-only MCP tools, reporting event counts, error counts, latest event time, equity samples, latest equity, and drawdown evidence without synthesizing missing rows.
 - Agent can capture a BitPro paper monitor snapshot through read-only dashboard/events/equity tools, persist it, compare it with the previous snapshot for the same strategy or all-strategy scope, and report PnL/equity/drawdown/error drift without triggering paper or live write tools.
 - Agent can answer live-account order-history questions, including `我的实盘最近的一笔订单是什么`, through read-only BitPro live diagnostics, reporting the latest returned order id, symbol, side, status, price/size, timestamp, and strategy attribution when BitPro provides it; the Agent must not use `market_summary` for these prompts.
+- Agent can answer live strategy performance questions, including `看下实盘收益最高的策略`, through read-only BitPro live diagnostics, ranking `/live/strategies` rows by `return_pct` and reporting `total_pnl` without using `market_summary`.
 - Operator can run `GET /api/monitors`, `POST /api/monitors/{monitor_id}/run`, `GET /api/alerts`, CLI `/monitors`, `/monitor run <monitor_id>`, and `/alerts` to inspect persisted monitor definitions, runs, thresholds, source tools, alert events, data gaps, and recommended read-only actions.
 - Operator can leave `MONITOR_SCHEDULER_ENABLED=true` so the worker persists
   due monitor runs and alert events automatically, or disable the scheduled

@@ -67,7 +67,7 @@ The exact parameter schema must come from `bitpro_capabilities` and the BitPro i
 | Indicator snapshot | `market_indicators` | Keep indicator source and freshness in trace output. |
 | BitPro-owned backtest result | `backtest_get_job`, `backtest_list_results`, `backtest_get_result` | Use `backtest_list_results` for ranking or threshold questions; filter actual `total_return_pct`, not annualized return. Start jobs only when the user explicitly asks BitPro to own the run. |
 | Paper account state | `paper_dashboard`, `paper_events`, `paper_equity_curve` | Default to read-only. Writes require a separate user confirmation. |
-| Live account diagnostics | `live_preflight`, `trading_balance`, `trading_positions`, `trading_open_orders`, `trading_order_history` | Read-only only unless live-write confirmation is complete. Use order history for prompts such as `我的实盘最近的一笔订单是什么`. |
+| Live account diagnostics | `live_preflight`, `live_strategies`, `trading_balance`, `trading_positions`, `trading_open_orders`, `trading_order_history` | Read-only only unless live-write confirmation is complete. Use order history for prompts such as `我的实盘最近的一笔订单是什么`; use `live_strategies` for prompts such as `看下实盘收益最高的策略`, ranking BitPro `return_pct`. |
 
 ## Write Boundary
 
@@ -89,9 +89,9 @@ HyperTrade now includes a BitPro MCP adapter in `backend/src/hypertrade/bitpro/m
 
 1. Store `BITPRO_MCP_API_BASE`, `BITPRO_MCP_API_TOKEN`, and `BITPRO_MCP_AUTH_HEADER` server-side only.
 2. Use the adapter wrapper that always calls `bitpro_capabilities` and `bitpro_health` before task-specific tools.
-3. Registered HyperTrade read tools include `bitpro.capabilities`, `bitpro.health`, `bitpro.market_klines`, `bitpro.paper_dashboard`, `bitpro.live_positions`, and `bitpro.live_order_history`.
+3. Registered HyperTrade read tools include `bitpro.capabilities`, `bitpro.health`, `bitpro.market_klines`, `bitpro.paper_dashboard`, `bitpro.live_positions`, `bitpro.live_order_history`, and `bitpro.live_strategy_performance`.
 4. Registered HyperTrade strategy lifecycle tools include `bitpro.strategy_search`, `bitpro.strategy_generate`, `bitpro.strategy_create`, `bitpro.strategy_update`, `bitpro.backtest_start_job`, `bitpro.backtest_get_job`, `bitpro.backtest_list_results`, `bitpro.backtest_get_result`, `bitpro.paper_configure`, `bitpro.paper_start`, `bitpro.paper_pause`, `bitpro.paper_resume`, and `bitpro.paper_stop`.
-5. Agent calls persist nested BitPro trace events such as `bitpro.capabilities`, `bitpro.health`, `bitpro.market_klines`, `bitpro.strategy_create`, `bitpro.strategy_update`, `bitpro.backtest_start_job`, `bitpro.backtest_list_results`, `bitpro.backtest_get_result`, and `bitpro.paper_start`.
+5. Agent calls persist nested BitPro trace events such as `bitpro.capabilities`, `bitpro.health`, `bitpro.market_klines`, `bitpro.strategy_create`, `bitpro.strategy_update`, `bitpro.backtest_start_job`, `bitpro.backtest_list_results`, `bitpro.backtest_get_result`, `bitpro.live_strategy_performance`, and `bitpro.paper_start`.
 6. Strategy lifecycle writes are limited to BitPro research/backtest/paper tools. They require an explicit user request and must remain auditable in the Agent trace.
 7. Backtests can use `candle_source=bitpro_mcp` or CLI `/backtest --source bitpro_mcp --symbol ETH --bar 1H --limit 200`.
 8. Surface `remote_mcp`, `agent_auth`, `tool_groups`, and token status in `/api/harness/overview` without exposing token plaintext.

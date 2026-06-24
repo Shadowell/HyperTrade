@@ -17,6 +17,7 @@ def test_tool_registry_exposes_sprint_one_tools_and_live_gate():
         "bitpro.paper_monitor_snapshot",
         "bitpro.live_positions",
         "bitpro.live_order_history",
+        "bitpro.live_strategy_performance",
     } <= names
     assert "market.intelligence" in names
     assert "strategy.library_search" in names
@@ -52,6 +53,8 @@ def test_tool_registry_attaches_policy_metadata_to_every_tool():
     assert registry.get("bitpro.paper_start").policy.idempotency == "required"
     assert registry.get("bitpro.live_order_history").policy.scope == "live_diagnostic_read"
     assert registry.get("bitpro.live_order_history").policy.idempotency == "not_required"
+    assert registry.get("bitpro.live_strategy_performance").policy.scope == "live_diagnostic_read"
+    assert registry.get("bitpro.live_strategy_performance").policy.idempotency == "not_required"
     assert registry.get("live.order_intent").policy.scope == "testnet_write"
     assert registry.get("live.order_intent").policy.approval == "required"
     assert registry.get("live.order_intent").policy.idempotency == "required"

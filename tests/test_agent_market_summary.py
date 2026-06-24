@@ -127,3 +127,62 @@ def test_agent_routes_live_order_history_prompt_away_from_market_fallback(tmp_pa
     ]
     assert "bitpro.live_order_history" in tool_names
     assert "market.summary" not in tool_names
+
+
+def test_agent_routes_live_strategy_performance_prompt_away_from_market_fallback(tmp_path):
+    class FakeBitProAdapter:
+        def live_strategy_performance(self, *, exchange="okx", limit=20):
+            return {
+                "status": "ok",
+                "contract_version": "bitpro-mcp-v1",
+                "exchange": exchange,
+                "limit": limit,
+                "rank_basis": "return_pct",
+                "strategies": [
+                    {
+                        "strategy_id": 105,
+                        "strategy_name": "Alpha Live",
+                        "status": "running",
+                        "workspace_status": "deployed",
+                        "exchange": "okx",
+                        "account_id": "main",
+                        "symbols": ["ETH/USDT:USDT"],
+                        "total_pnl": "123.45",
+                        "return_pct": "4.56",
+                    }
+                ],
+                "performance_summary": {
+                    "count": 1,
+                    "top_strategy_id": 105,
+                    "top_return_pct": "4.56",
+                    "top_total_pnl": "123.45",
+                },
+                "tool_calls": [
+                    {"tool": "bitpro_capabilities", "parameters": {}, "status": "success"},
+                    {"tool": "bitpro_health", "parameters": {}, "status": "success"},
+                    {"tool": "live_strategies", "parameters": {}, "status": "success"},
+                ],
+            }
+
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    kernel = AgentKernel(
+        db,
+        settings=Settings(DEEPSEEK_API_KEY="", KNOWLEDGE_DIR=tmp_path),
+        bitpro_adapter=FakeBitProAdapter(),
+    )
+
+    run = kernel.run_chat("看下实盘收益最高的策略")
+
+    assert run.status == "completed"
+    assert "## BitPro 实盘策略收益" in run.report_markdown
+    assert "Alpha Live" in run.report_markdown
+    assert "收益率=4.56%" in run.report_markdown
+    assert "市场热度总结" not in run.report_markdown
+    tool_names = [
+        event.tool_name
+        for event in run.trace_events
+        if not event.tool_name.startswith("graph.")
+    ]
+    assert "bitpro.live_strategy_performance" in tool_names
+    assert "market.summary" not in tool_names

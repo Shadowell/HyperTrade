@@ -29,6 +29,14 @@ BitPro's read-only `/trading/orders/history` path after the standard
 order in a `BitPro 实盘订单` section, and must never be used for order placement,
 cancellation, transfer, or other live writes.
 
+Live strategy performance reads are exposed to the Agent as
+`bitpro_live_strategy_performance` and registered in ToolRegistry as
+`bitpro.live_strategy_performance`. The tool calls BitPro's read-only
+`/live/strategies` path after the same preflight, ranks rows by the BitPro page
+metric `return_pct`, and renders a `BitPro 实盘策略收益` section with `total_pnl`
+when BitPro returns it. Missing performance fields stay missing; HyperTrade does
+not infer them from strategy names, market movement, or memory.
+
 Research/backtest/paper writes are allowed only through explicit Agent tool calls such as strategy generation, strategy creation, BitPro-owned backtest jobs, and paper/simulation lifecycle control. Live write tools must be added later and separately. Any testnet or live write path needs explicit scopes, idempotency keys, approval gates, risk prechecks, redacted audit events, and structured refusal reasons.
 
 Remote Agent authentication uses BitPro MCP Agent tokens, not browser login cookies. BitPro administrators generate `bp_mcp_` tokens from Settings -> Agent Access -> MCP Agent Token or through `POST /api/v2/settings/mcp-agent-tokens`; BitPro stores token hashes only and returns plaintext once. HyperTrade stores the selected token only in server-side environment such as `BITPRO_MCP_API_TOKEN`, sends it with `X-BitPro-MCP-Token`, and exposes only redacted contract metadata through `/api/harness/overview`. The adapter reports scope classes `R` read, `W` research/backtest/paper mutation, `L` live diagnostics, and `T` live mutation; HyperTrade continues to block `T` tools.
@@ -125,6 +133,12 @@ ToolRegistry 中注册为 `bitpro.live_order_history`。该工具在标准
 `bitpro_capabilities` -> `bitpro_health` 预检后调用 BitPro 只读
 `/trading/orders/history` 路径，在报告中渲染 `BitPro 实盘订单` 和最近订单；
 不得用于下单、撤单、划转或任何实盘写入。
+
+实盘策略收益读取通过 Agent 工具 `bitpro_live_strategy_performance` 暴露，并在
+ToolRegistry 中注册为 `bitpro.live_strategy_performance`。该工具在同样预检后
+调用 BitPro 只读 `/live/strategies` 路径，按页面口径 `return_pct` 排名，并在
+报告中渲染 `BitPro 实盘策略收益`；`total_pnl` 只展示 BitPro 返回值，缺失时不
+从策略名称、行情涨跌或记忆推断。
 
 研究、回测、模拟盘写入只允许通过明确 Agent 工具调用执行，例如策略生成、策略创建、BitPro 回测 job 和 paper/simulation 生命周期控制。实盘写工具必须后续单独加入。任何 Testnet 或实盘写入路径都必须具备明确 scope、幂等键、审批门、风控预检、脱敏审计事件和结构化拒绝原因。
 

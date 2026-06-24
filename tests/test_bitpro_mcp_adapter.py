@@ -152,6 +152,85 @@ def test_bitpro_adapter_reads_live_order_history_after_preflight() -> None:
     ]
 
 
+def test_bitpro_adapter_reads_live_strategy_performance_after_preflight() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "query": dict(request.url.params),
+            }
+        )
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/live/strategies":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "strategies": [
+                            {
+                                "strategy_id": 105,
+                                "strategy_name": "Alpha Live",
+                                "status": "running",
+                                "workspace_status": "deployed",
+                                "exchange": "okx",
+                                "account_id": "main",
+                                "symbols": ["ETH/USDT:USDT"],
+                                "total_pnl": 123.45,
+                                "return_pct": 4.56,
+                            },
+                            {
+                                "strategy_id": 106,
+                                "strategy_name": "Beta Live",
+                                "status": "running",
+                                "workspace_status": "deployed",
+                                "exchange": "okx",
+                                "account_id": "main",
+                                "symbols": ["BTC/USDT:USDT"],
+                                "total_pnl": 300,
+                                "return_pct": 2.1,
+                            },
+                        ]
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    client = BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = BitProToolAdapter(client).live_strategy_performance(exchange="okx", limit=1)
+
+    assert result["status"] == "ok"
+    assert result["exchange"] == "okx"
+    assert result["limit"] == 1
+    assert result["rank_basis"] == "return_pct"
+    assert result["strategies"][0]["strategy_id"] == 105
+    assert result["strategies"][0]["return_pct"] == "4.56"
+    assert result["performance_summary"] == {
+        "count": 1,
+        "top_strategy_id": 105,
+        "top_strategy_name": "Alpha Live",
+        "top_return_pct": "4.56",
+        "top_total_pnl": "123.45",
+    }
+    assert [call["tool"] for call in result["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "live_strategies",
+    ]
+    assert seen == [
+        {"method": "GET", "path": "/api/v2/system/health", "query": {}},
+        {"method": "GET", "path": "/api/v2/live/strategies", "query": {}},
+    ]
+
+
 def test_bitpro_capabilities_label_live_flag_as_mcp_gate() -> None:
     client = BitProMcpClient(
         settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),

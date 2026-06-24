@@ -466,6 +466,28 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "bitpro_live_strategy_performance",
+            "description": (
+                "Read-only BitPro live strategy performance ranking for diagnostics. Use this "
+                "for highest/best live strategy return, 实盘收益最高, 实盘策略收益, "
+                "live strategy PnL, and return_pct ranking questions. Never writes."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "exchange": {"type": "string", "description": "Exchange name, default okx."},
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum ranked strategy rows to request, default 20.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "bitpro_strategy_search",
             "description": (
                 "Search BitPro strategy library before creating or selecting a strategy."
@@ -837,6 +859,10 @@ Use bitpro_live_order_history when the user asks about live/real-account orders,
 实盘订单, 最近一笔订单, 历史订单, filled/rejected live orders, or strategy
 attribution for real-account orders.
 Do not use market_summary for live account order-history questions.
+Use bitpro_live_strategy_performance when the user asks about live/real-account
+strategy returns, 实盘收益最高, 实盘策略收益, 实盘盈利, live strategy PnL,
+highest/best live strategy, or return_pct ranking.
+Do not use market_summary for live strategy performance questions.
 Use bitpro_paper_dashboard without strategy_id when the user asks about all/全部/
 哪些/几个 running paper or 模拟盘 strategies. Treat paper_scope.dashboard_scope=
 current_instance as only the current BitPro dashboard view; use

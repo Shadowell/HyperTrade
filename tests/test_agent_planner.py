@@ -384,6 +384,7 @@ def test_planner_exposes_bitpro_read_tool_schemas() -> None:
         "bitpro_paper_monitor_snapshot",
         "bitpro_live_positions",
         "bitpro_live_order_history",
+        "bitpro_live_strategy_performance",
     } <= names
 
 
@@ -401,6 +402,24 @@ def test_bitpro_live_order_history_schema_targets_recent_order_queries() -> None
     assert "order history" in description
     assert properties["exchange"]["type"] == "string"
     assert properties["symbol"]["type"] == "string"
+    assert properties["limit"]["type"] == "integer"
+
+
+def test_bitpro_live_strategy_performance_schema_targets_highest_return_queries() -> None:
+    schema = next(
+        item
+        for item in TOOL_SCHEMAS
+        if item["function"]["name"] == "bitpro_live_strategy_performance"
+    )
+
+    description = schema["function"]["description"]
+    properties = schema["function"]["parameters"]["properties"]
+
+    assert "Read-only" in description
+    assert "highest" in description
+    assert "实盘收益最高" in description
+    assert "return_pct" in description
+    assert properties["exchange"]["type"] == "string"
     assert properties["limit"]["type"] == "integer"
 
 
@@ -520,6 +539,8 @@ def test_planner_prompt_does_not_treat_bitpro_live_gate_as_runtime_status() -> N
     assert "bitpro_paper_monitor_snapshot" in prompt
     assert "bitpro_live_order_history" in prompt
     assert "Do not use market_summary for live account order-history questions" in prompt
+    assert "bitpro_live_strategy_performance" in prompt
+    assert "Do not use market_summary for live strategy performance questions" in prompt
     assert "Do not summarize paper dashboard evidence as BitPro live trading disabled" in prompt
 
 

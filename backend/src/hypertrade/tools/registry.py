@@ -236,6 +236,11 @@ class ToolRegistry:
                     "Read BitPro live account order history for diagnostics only.",
                     "bitpro",
                 ),
+                ToolDefinition(
+                    "bitpro.live_strategy_performance",
+                    "Read BitPro live strategy performance ranking for diagnostics only.",
+                    "bitpro",
+                ),
                 ToolDefinition("paper.session", "Control paper trading sessions.", "paper"),
                 ToolDefinition(
                     "live.order_intent",
@@ -277,6 +282,7 @@ def _default_policy_for(
         if bitpro_tool in {
             "live_positions",
             "live_order_history",
+            "live_strategy_performance",
         }:
             return ToolPolicy(
                 scope="live_diagnostic_read",
@@ -395,6 +401,7 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "bitpro_paper_monitor_snapshot": "bitpro.paper_monitor_snapshot",
     "bitpro_live_positions": "bitpro.live_positions",
     "bitpro_live_order_history": "bitpro.live_order_history",
+    "bitpro_live_strategy_performance": "bitpro.live_strategy_performance",
     "live_order_intent": "live.order_intent",
 }
 
