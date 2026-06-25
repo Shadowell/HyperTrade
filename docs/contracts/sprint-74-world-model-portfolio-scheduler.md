@@ -69,6 +69,15 @@ uv run pytest tests/test_world_model_portfolio.py tests/test_agent_eval_suite.py
 ./scripts/check.sh
 ```
 
+Current focused verification:
+
+- `uv run pytest tests/test_world_model_portfolio.py tests/test_agent_eval_suite.py -q`
+  passed with 13 tests after adding the portfolio scheduler view.
+- `uv run pytest tests/test_world_model_portfolio.py tests/test_world_model_snapshot.py tests/test_world_model_scenarios.py tests/test_world_model_defensive_actions.py tests/test_agent_eval_suite.py tests/test_api.py::test_api_exposes_health_harness_and_agent_run -q`
+  passed with 24 tests.
+- `./scripts/check.sh` passed with frontend lint/test/build, ruff, mypy, and
+  full Python pytest (`254 passed`).
+
 Manual or QA checks:
 
 - Ask for a portfolio allocation review and confirm source references include
@@ -86,5 +95,10 @@ Manual or QA checks:
 
 ## Handoff
 
+- Sprint 74 implementation entrypoints:
+  - `backend/src/hypertrade/world_model/portfolio.py`
+  - `GET /api/world-model/portfolio`
+  - `portfolio` field on `world_model_snapshot`
+  - deterministic eval case `world_model_portfolio_review`
 - Later work can add richer optimizer logic, external portfolio risk data, or
   live allocation workflows under a separate explicit live-risk contract.

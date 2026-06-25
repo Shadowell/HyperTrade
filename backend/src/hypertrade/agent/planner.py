@@ -139,7 +139,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "description": (
                 "Read-only global operator WorldState snapshot across market, strategy, "
                 "execution, tool health, deployment, missing data, source refs, and "
-                "safe candidate actions. Use for global/cross-asset world-model state."
+                "safe candidate actions, plus portfolio scheduling recommendations. "
+                "Use for global/cross-asset world-model state and portfolio review."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -855,6 +856,10 @@ Use world_model_snapshot when the user asks about the global operator state,
 across market, strategy, execution, tools, and deployment.
 Do not use market_summary as a substitute for global WorldState; market_summary
 only covers OKX crypto-market heat and cannot represent global operator/cross-asset state.
+Use world_model_snapshot when the user asks about portfolio, strategy allocation,
+策略权重, 组合调度, allocation review, which strategies to reduce, pause, observe,
+or backtest next. Portfolio answers must cite WorldState portfolio evidence and
+must not claim a live allocation change happened.
 Use strategy_library_search when the user asks about previous strategy
 experience, 策略库, 历史策略, 记忆沉淀, what has worked/failed, failure reasons,
 or the next strategy experiment. Treat it as evidence from strategy_knowledge

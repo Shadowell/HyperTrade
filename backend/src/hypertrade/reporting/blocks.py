@@ -326,6 +326,8 @@ def _world_model_blocks(
     missing = [str(item) for item in _list_values(payload.get("missing_data"))]
     decision = _dict_value(payload.get("decision"))
     defensive = _dict_value(payload.get("defensive_automation"))
+    portfolio = _dict_value(payload.get("portfolio"))
+    portfolio_state = _dict_value(portfolio.get("portfolio_state"))
     scenarios = [
         scenario
         for scenario in _list_values(payload.get("action_scenarios"))
@@ -451,6 +453,66 @@ def _world_model_blocks(
                 }
                 for attempt in _list_values(defensive.get("recent_attempts"))[:10]
                 if isinstance(attempt, dict)
+            ],
+        ),
+        ReportBlock(
+            block_type="portfolio_risk",
+            title="Global Portfolio Risk",
+            source_refs=sources,
+            metrics={
+                "strategy_count": portfolio_state.get("strategy_count", "n/a"),
+                "global_risk_regime": portfolio_state.get("global_risk_regime", "unknown"),
+                "execution_status": portfolio_state.get("execution_status", "unknown"),
+                "correlation_status": _dict_value(
+                    portfolio_state.get("correlation_proxy")
+                ).get("status", "unknown"),
+                "concentration_warnings": ",".join(
+                    str(item)
+                    for item in _list_values(portfolio_state.get("concentration_warnings"))
+                ),
+            },
+            missing=[str(item) for item in _list_values(portfolio.get("missing_evidence"))],
+        ),
+        ReportBlock(
+            block_type="portfolio_strategy_fit",
+            title="Global Portfolio Strategy Fit",
+            source_refs=sources,
+            rows=[
+                {
+                    "strategy_group": strategy.get("strategy_group", "unknown"),
+                    "evidence_freshness": strategy.get("evidence_freshness", "unknown"),
+                    "regime_fit": strategy.get("regime_fit", "unknown"),
+                    "active_status_label": strategy.get("active_status_label", "unknown"),
+                    "allocation_or_risk_budget": strategy.get(
+                        "allocation_or_risk_budget",
+                        "unknown",
+                    ),
+                }
+                for strategy in _list_values(portfolio_state.get("strategies"))
+                if isinstance(strategy, dict)
+            ],
+        ),
+        ReportBlock(
+            block_type="portfolio_recommendations",
+            title="Global Portfolio Recommended Actions",
+            source_refs=sources,
+            rows=[
+                {
+                    "rank": recommendation.get("rank", "n/a"),
+                    "recommendation_type": recommendation.get(
+                        "recommendation_type",
+                        "unknown",
+                    ),
+                    "score": recommendation.get("score", "n/a"),
+                    "policy_status": recommendation.get("policy_status", "unknown"),
+                    "allocation_change_allowed": recommendation.get(
+                        "allocation_change_allowed",
+                        False,
+                    ),
+                    "review_after": recommendation.get("review_after", "n/a"),
+                }
+                for recommendation in _list_values(portfolio.get("recommendations"))[:10]
+                if isinstance(recommendation, dict)
             ],
         ),
         ReportBlock(

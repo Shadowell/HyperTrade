@@ -33,6 +33,7 @@ from hypertrade.world_model.actions import candidate_actions
 from hypertrade.world_model.collectors import GLOBAL_MARKET_MISSING_DATA
 from hypertrade.world_model.defensive_actions import DefensiveActionEngine
 from hypertrade.world_model.evaluators import risk_regime_from_crypto
+from hypertrade.world_model.portfolio import PortfolioScheduler
 from hypertrade.world_model.records import build_decision_record
 from hypertrade.world_model.scenarios import ScenarioSimulator
 from hypertrade.world_model.schemas import WORLD_STATE_SCHEMA_VERSION, WorldStatePayload
@@ -89,6 +90,7 @@ class WorldModelService:
             self.db,
             settings=self.settings,
         ).status()
+        snapshot["portfolio"] = PortfolioScheduler().build(snapshot)
         return snapshot
 
     def _crypto_market(self, missing_data: list[str]) -> dict[str, Any]:

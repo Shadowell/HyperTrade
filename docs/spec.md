@@ -187,6 +187,14 @@ its own Agent capabilities:
   internal monitor alert. Missing idempotency, unsupported actions, offensive
   actions, stale evidence, and non-allowlisted requests are rejected without
   calling adapters or exchange paths.
+- Sprint 74 portfolio scheduler: `world_model_snapshot` and
+  `GET /api/world-model/portfolio` expose a rule-based portfolio view with
+  strategy groups, allocation/risk-budget labels, evidence freshness, recent
+  performance labels, drawdown availability, regime fit, correlation/shared
+  exposure proxy, active status labels, portfolio recommendations, and
+  missing-evidence markers. The scheduler recommends review, observation,
+  targeted backtests/experiments, or defensive requests; it does not perform
+  live allocation changes or offensive strategy promotion.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -223,6 +231,10 @@ its own Agent capabilities:
   `WORLD_MODEL_DEFENSIVE_ACTIONS_ENABLED=true`,
   `WORLD_MODEL_DEFENSIVE_ACTION_ALLOWLIST` contains the action, and an
   idempotency key is supplied.
+- User can ask `当前应该提高还是降低哪些策略权重`; the Agent uses
+  `world_model_snapshot` portfolio evidence, reports `recommendation_type`,
+  `policy_status`, missing evidence, and `allocation_change_allowed=False`
+  unless a later explicit live-risk contract changes that boundary.
 - With a chat provider configured, user can ask `看下目前市场的热度怎么样`
   and receive a market heat conclusion with sample count, advancer/decliner
   breadth, average change, strongest/weakest symbols, and top movers rather

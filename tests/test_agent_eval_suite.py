@@ -20,6 +20,7 @@ def test_eval_suite_exposes_sprint_53_cases_with_contract_fields() -> None:
         "live_order_history_source",
         "live_strategy_performance_source",
         "world_model_global_operator_state",
+        "world_model_portfolio_review",
     }
     assert status["status"] == "passed"
     assert status["case_count"] == len(expected_cases)

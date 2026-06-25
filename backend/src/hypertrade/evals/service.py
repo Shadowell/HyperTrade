@@ -165,6 +165,24 @@ class AgentEvalSuite:
                 missing_data_expectations=("global_market.us_equities_unavailable",),
             ),
             AgentEvalCase(
+                name="world_model_portfolio_review",
+                prompt="当前应该提高还是降低哪些策略权重",
+                expectation=(
+                    "Portfolio prompts must call world_model_snapshot and use "
+                    "portfolio scheduler evidence instead of live allocation writes."
+                ),
+                required_tools=("world_model_snapshot",),
+                forbidden_tools=("market_summary", "live_order_intent"),
+                required_report_fragments=(
+                    "portfolio",
+                    "recommendation_type",
+                    "policy_status",
+                    "allocation_change_allowed",
+                ),
+                forbidden_report_fragments=("已提高权重", "live allocation changed"),
+                expected_source_ids=("world_model:latest",),
+            ),
+            AgentEvalCase(
                 name="compact_report_rendering",
                 prompt="默认展示 BitPro 模拟盘监控报告",
                 expectation=(
@@ -399,6 +417,15 @@ class AgentEvalSuite:
                 ),
                 source_ids=["world_model:latest"],
                 missing_data=["global_market.us_equities_unavailable"],
+            ),
+            "world_model_portfolio_review": EvalObservation(
+                prompt="当前应该提高还是降低哪些策略权重",
+                tool_calls=["world_model_snapshot"],
+                report_markdown=(
+                    "portfolio recommendation_type=increase_observation_frequency; "
+                    "policy_status=allowed_read_only; allocation_change_allowed=False."
+                ),
+                source_ids=["world_model:latest"],
             ),
             "compact_report_rendering": EvalObservation(
                 prompt="默认展示 BitPro 模拟盘监控报告",

@@ -447,6 +447,14 @@ def create_app(
     def world_model_snapshot() -> dict[str, Any]:
         return WorldModelService(database, settings=app_settings).snapshot()
 
+    @app.get("/api/world-model/portfolio")
+    def world_model_portfolio() -> dict[str, Any]:
+        portfolio = WorldModelService(database, settings=app_settings).snapshot().get(
+            "portfolio",
+            {},
+        )
+        return portfolio if isinstance(portfolio, dict) else {}
+
     @app.get("/api/world-model/defensive-actions")
     def world_model_defensive_actions(_: AdminUser) -> dict[str, Any]:
         return DefensiveActionEngine(database, settings=app_settings).status()

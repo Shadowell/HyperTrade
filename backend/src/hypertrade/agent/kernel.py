@@ -1371,6 +1371,7 @@ class AgentKernel:
             scenarios = scenarios if isinstance(scenarios, list) else []
             decision = _dict_or_empty(payload.get("decision"))
             defensive = _dict_or_empty(payload.get("defensive_automation"))
+            portfolio = _dict_or_empty(payload.get("portfolio"))
             sources = payload.get("source_refs")
             sources = sources if isinstance(sources, list) else []
             world_model_lines.extend(
@@ -1433,7 +1434,33 @@ class AgentKernel:
                             score=scenario.get("score", "n/a"),
                             policy_status=scenario.get("policy_status", "unknown"),
                             confidence=scenario.get("confidence", "n/a"),
-                        )
+                    )
+                )
+            if portfolio:
+                portfolio_state = _dict_or_empty(portfolio.get("portfolio_state"))
+                portfolio_decision = _dict_or_empty(portfolio.get("decision"))
+                world_model_lines.append(
+                    (
+                        "- portfolio: strategies={count}, recommendation_type={rec}, "
+                        "policy_status={policy}, allocation_change_allowed={allowed}"
+                    ).format(
+                        count=portfolio_state.get("strategy_count", "n/a"),
+                        rec=portfolio_decision.get("recommendation_type", "unknown"),
+                        policy=portfolio_decision.get("policy_status", "unknown"),
+                        allowed=portfolio_decision.get(
+                            "allocation_change_allowed",
+                            False,
+                        ),
+                    )
+                )
+                missing_evidence = portfolio.get("missing_evidence")
+                missing_evidence = (
+                    missing_evidence if isinstance(missing_evidence, list) else []
+                )
+                if missing_evidence:
+                    world_model_lines.append(
+                        "- portfolio_missing_evidence: "
+                        + ", ".join(str(item) for item in missing_evidence[:8])
                     )
             if defensive:
                 allowlist = defensive.get("allowlist")

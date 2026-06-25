@@ -4,18 +4,22 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 73 world-model defensive automation gate verified
-  locally with `./scripts/check.sh` (`pytest` 250 passed). Production deployment
+- Last verified state: Sprint 74 world-model portfolio scheduler verified
+  locally with `./scripts/check.sh` (`pytest` 254 passed). Production deployment
   will be triggered by the required push to `origin/main` for this change.
 
 ## Active Contract
 
-- `docs/contracts/sprint-74-world-model-portfolio-scheduler.md`
+- No active implementation contract after Sprint 74. Select the next contract
+  under `docs/contracts/` before expanding scope.
 
 ## Current In-Progress Work
 
-- Sprint 74 is the next implementation slice: use world-model state and
-  defensive-action history for portfolio-level strategy scheduling.
+- Sprint 74 portfolio scheduler is implemented and focused-test verified. The
+  world-model snapshot and `GET /api/world-model/portfolio` expose a rule-based
+  portfolio view with strategy fit, evidence freshness, correlation proxy,
+  missing-evidence markers, and review recommendations while preserving the
+  no-live-allocation-mutation boundary.
 - Sprint 73 defensive automation gate is implemented and focused-test verified.
   Defensive actions are disabled by default, require explicit allowlist config
   and idempotency keys, and persist trace-backed audit attempts; the initial
@@ -38,6 +42,17 @@
 
 ## Latest Completed Work
 
+- Implemented Sprint 74 world-model portfolio scheduler: added
+  `PortfolioScheduler`, `GET /api/world-model/portfolio`, portfolio state in
+  `world_model_snapshot`, report blocks for portfolio risk/strategy fit/
+  recommendations, planner guidance for portfolio and `策略权重` prompts, and
+  eval coverage requiring `world_model_snapshot` for portfolio review. The
+  scheduler remains rule-based and evidence-bound: missing strategy or
+  cross-asset evidence leads to observation, targeted backtest/experiment, or
+  human-review recommendations instead of allocation increases; live allocation
+  mutation remains out of scope. Focused verification passed with portfolio/eval
+  tests (13 passed), broader world-model/API regression tests (24 passed), and
+  full `./scripts/check.sh` (`pytest` 254 passed).
 - Implemented Sprint 73 world-model defensive automation gate: added
   `DefensiveActionEngine`, config fields
   `WORLD_MODEL_DEFENSIVE_ACTIONS_ENABLED` and
