@@ -1367,6 +1367,9 @@ class AgentKernel:
             missing = missing if isinstance(missing, list) else []
             actions = payload.get("candidate_actions")
             actions = actions if isinstance(actions, list) else []
+            scenarios = payload.get("action_scenarios")
+            scenarios = scenarios if isinstance(scenarios, list) else []
+            decision = _dict_or_empty(payload.get("decision"))
             sources = payload.get("source_refs")
             sources = sources if isinstance(sources, list) else []
             world_model_lines.extend(
@@ -1397,11 +1400,40 @@ class AgentKernel:
                         api_health=deployment.get("api_health", "unknown"),
                     ),
                 ]
-            )
+                    )
             if missing:
                 world_model_lines.append(
                     "- missing_data: " + ", ".join(str(item) for item in missing[:12])
                 )
+            if decision:
+                world_model_lines.append(
+                    (
+                        "- 场景决策 decision: selected_action_id={selected}, score={score}, "
+                        "policy_status={policy_status}, review_after={review_after}"
+                    ).format(
+                        selected=decision.get("selected_action_id", "unknown"),
+                        score=decision.get("selected_score", "n/a"),
+                        policy_status=decision.get("policy_status", "unknown"),
+                        review_after=decision.get("review_after", "n/a"),
+                    )
+                )
+            if scenarios:
+                world_model_lines.append("- action_scenarios:")
+                for scenario in scenarios[:6]:
+                    if not isinstance(scenario, dict):
+                        continue
+                    world_model_lines.append(
+                        (
+                            "  - rank={rank}, action={action}, score={score}, "
+                            "policy_status={policy_status}, confidence={confidence}"
+                        ).format(
+                            rank=scenario.get("rank", "n/a"),
+                            action=scenario.get("action_id", "unknown"),
+                            score=scenario.get("score", "n/a"),
+                            policy_status=scenario.get("policy_status", "unknown"),
+                            confidence=scenario.get("confidence", "n/a"),
+                        )
+                    )
             if actions:
                 world_model_lines.append("- 候选动作:")
                 for action in actions[:6]:

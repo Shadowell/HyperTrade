@@ -32,6 +32,8 @@ from hypertrade.market.repository import MarketRepository
 from hypertrade.world_model.actions import candidate_actions
 from hypertrade.world_model.collectors import GLOBAL_MARKET_MISSING_DATA
 from hypertrade.world_model.evaluators import risk_regime_from_crypto
+from hypertrade.world_model.records import build_decision_record
+from hypertrade.world_model.scenarios import ScenarioSimulator
 from hypertrade.world_model.schemas import WORLD_STATE_SCHEMA_VERSION, WorldStatePayload
 
 
@@ -74,6 +76,14 @@ class WorldModelService:
             "source_refs": source_refs,
         }
         snapshot["candidate_actions"] = candidate_actions(snapshot)
+        snapshot["action_scenarios"] = ScenarioSimulator().simulate(
+            snapshot,
+            snapshot["candidate_actions"],
+        )
+        snapshot["decision"] = build_decision_record(
+            snapshot,
+            snapshot["action_scenarios"],
+        )
         return snapshot
 
     def _crypto_market(self, missing_data: list[str]) -> dict[str, Any]:

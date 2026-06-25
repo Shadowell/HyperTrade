@@ -324,6 +324,12 @@ def _world_model_blocks(
     tool_health = _dict_value(payload.get("tool_health"))
     deployment = _dict_value(payload.get("deployment"))
     missing = [str(item) for item in _list_values(payload.get("missing_data"))]
+    decision = _dict_value(payload.get("decision"))
+    scenarios = [
+        scenario
+        for scenario in _list_values(payload.get("action_scenarios"))
+        if isinstance(scenario, dict)
+    ]
     candidate_rows = [
         {
             "action_id": _dict_value(action).get("action_id", "unknown"),
@@ -349,6 +355,12 @@ def _world_model_blocks(
                     f"schema={payload.get('schema_version', 'unknown')}",
                     f"risk_regime={global_market.get('risk_regime', 'unknown')}",
                     f"cross_asset_signal={global_market.get('cross_asset_signal', 'unknown')}",
+                    (
+                        f"decision={decision.get('selected_action_id')} "
+                        f"policy_status={decision.get('policy_status')}"
+                        if decision
+                        else ""
+                    ),
                 ]
                 if note
             ],
@@ -380,6 +392,43 @@ def _world_model_blocks(
             title="Global WorldState Candidate Actions",
             source_refs=sources,
             rows=candidate_rows,
+        ),
+        ReportBlock(
+            block_type="scenario_comparison",
+            title="Global WorldState Scenario Comparison",
+            source_refs=sources,
+            rows=[
+                {
+                    "rank": scenario.get("rank", "n/a"),
+                    "action_id": scenario.get("action_id", "unknown"),
+                    "score": scenario.get("score", "n/a"),
+                    "policy_status": scenario.get("policy_status", "unknown"),
+                    "expected_benefit": _nested_score(
+                        scenario.get("expected_benefit")
+                    ),
+                    "downside": _nested_score(scenario.get("downside")),
+                    "confidence": scenario.get("confidence", "n/a"),
+                    "review_after": scenario.get("review_after", "n/a"),
+                }
+                for scenario in scenarios[:10]
+            ],
+        ),
+        ReportBlock(
+            block_type="decision",
+            title="Global WorldState Decision",
+            source_refs=sources,
+            metrics={
+                "decision_id": decision.get("decision_id", "n/a"),
+                "selected_action_id": decision.get("selected_action_id", "n/a"),
+                "selected_score": decision.get("selected_score", "n/a"),
+                "policy_status": decision.get("policy_status", "unknown"),
+                "review_after": decision.get("review_after", "n/a"),
+                "human_confirmation_required": decision.get(
+                    "human_confirmation_required",
+                    "n/a",
+                ),
+            },
+            notes=[str(decision.get("rationale", ""))] if decision else [],
         ),
         ReportBlock(
             block_type="risk_boundary",
@@ -500,6 +549,12 @@ def _display(value: object) -> str:
         return "n/a"
     text = str(value).strip()
     return text or "n/a"
+
+
+def _nested_score(value: object) -> object:
+    if not isinstance(value, dict):
+        return value
+    return value.get("score", "n/a")
 
 
 def _dict_value(value: object) -> dict[str, Any]:

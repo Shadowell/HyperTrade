@@ -173,6 +173,13 @@ its own Agent capabilities:
   candidate actions. Cross-asset feeds that are not wired yet are reported as
   `missing_data`; the Agent must not substitute `market_summary` for global
   WorldState prompts.
+- Sprint 72 scenario decision layer: `world_model_snapshot` also returns
+  deterministic `action_scenarios` and a `decision` record. Scenario scores show
+  expected benefit, downside, confidence, data-gap penalty, reversibility,
+  execution complexity, policy status/result, review window, and expected
+  follow-up evidence for observe/hold/monitor/trace/human-confirmation/pause
+  request/risk-reduction request actions. Scenario evaluation is still read-only
+  and must not call paper, BitPro lifecycle, Testnet, or live write tools.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -199,6 +206,9 @@ its own Agent capabilities:
   the Agent uses `world_model_snapshot`, reports source refs and missing
   cross-asset data, and does not call paper, BitPro lifecycle, Testnet, or live
   write tools from the snapshot path.
+- User can ask `现在应该继续持有还是降低风险`; the Agent can compare
+  `action_scenarios`, show `decision` and `policy_status`, and prefer
+  observation or human-confirmation when cross-asset data gaps are still large.
 - With a chat provider configured, user can ask `看下目前市场的热度怎么样`
   and receive a market heat conclusion with sample count, advancer/decliner
   breadth, average change, strongest/weakest symbols, and top movers rather

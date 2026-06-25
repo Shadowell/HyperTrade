@@ -80,6 +80,15 @@ uv run pytest tests/test_world_model_scenarios.py tests/test_agent_acceptance.py
 ./scripts/check.sh
 ```
 
+Current focused verification:
+
+- `uv run pytest tests/test_world_model_scenarios.py tests/test_world_model_snapshot.py tests/test_agent_eval_suite.py -q`
+  passed with 15 tests after adding scenario scoring and decision payloads.
+- `uv run pytest tests/test_world_model_scenarios.py tests/test_agent_acceptance.py -q`
+  passed with 19 tests.
+- `./scripts/check.sh` passed with frontend lint/test/build, ruff, mypy, and
+  full Python pytest (`246 passed`).
+
 Manual or QA checks:
 
 - Ask the Agent `现在应该继续持有还是降低风险` and confirm it compares actions
@@ -97,5 +106,10 @@ Manual or QA checks:
 
 ## Handoff
 
+- Sprint 72 implementation entrypoints:
+  - `backend/src/hypertrade/world_model/scenarios.py`
+  - `backend/src/hypertrade/world_model/scoring.py`
+  - `backend/src/hypertrade/world_model/records.py`
+  - `action_scenarios` and `decision` fields on `world_model_snapshot`
 - Next likely step: Sprint 73 allows selected defensive automation only after
   scenario records and review evidence are stable.

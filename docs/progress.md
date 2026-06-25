@@ -4,19 +4,24 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 71 read-only global WorldState snapshot verified
-  locally with `./scripts/check.sh` (`pytest` 242 passed). Production deployment
+- Last verified state: Sprint 72 world-model scenario decision layer verified
+  locally with `./scripts/check.sh` (`pytest` 246 passed). Production deployment
   will be triggered by the required push to `origin/main` for this change.
 
 ## Active Contract
 
-- `docs/contracts/sprint-72-world-model-scenario-decision.md`
+- `docs/contracts/sprint-73-world-model-defensive-automation.md`
 
 ## Current In-Progress Work
 
-- Sprint 72 is the next implementation slice: score defensive candidate actions
-  against the read-only `WorldState` from Sprint 71 without executing write
-  tools.
+- Sprint 73 is the next implementation slice: allow selected defensive
+  automation only after Sprint 72 scenario records and review evidence are
+  stable, still behind explicit policy gates.
+- Sprint 72 scenario decision is implemented and locally verified. The
+  `world_model_snapshot` payload now includes deterministic `action_scenarios`
+  and a `decision` record with benefit, downside, confidence, data-gap penalty,
+  reversibility, execution complexity, policy status/result, review window, and
+  follow-up evidence.
 - Sprint 71 read-only `WorldState` snapshot is implemented and locally
   verified. It exposes `GET /api/world-model/snapshot`, Agent tool
   `world_model_snapshot`, report blocks, missing-data markers, and eval
@@ -30,6 +35,16 @@
 
 ## Latest Completed Work
 
+- Implemented Sprint 72 world-model scenario decision layer: `ScenarioSimulator`
+  and `ActionScorer` compare observe/hold/monitor/trace/human-confirmation/
+  pause-request/risk-reduction-request actions against the read-only
+  `WorldState`. `world_model_snapshot` now returns `action_scenarios` and a
+  hash-linked `decision` record; reports render scenario comparison and
+  `policy_status`; evals fail if global operator answers omit scenario evidence
+  or policy status. The scorer is deterministic and source-bound, and missing
+  cross-asset data keeps risk-changing recommendations from ranking first.
+  Verification passed with focused scenario/acceptance tests (19 passed) and
+  full `./scripts/check.sh` (`pytest` 246 passed).
 - Implemented Sprint 71 read-only global WorldState snapshot: new
   `hypertrade.world_model` module assembles `global_market`, `crypto_market`,
   strategy, execution, tool-health, deployment, `missing_data`, source refs, and

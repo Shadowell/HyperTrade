@@ -91,6 +91,9 @@ def test_world_model_snapshot_reports_global_state_and_missing_cross_asset_sourc
         "inspect_trace",
         "request_human_confirmation",
     }
+    assert "action_scenarios" in snapshot
+    assert "decision" in snapshot
+    assert snapshot["decision"]["selected_action_id"]
     assert all(action["level"] in {"L0", "L1"} for action in snapshot["candidate_actions"])
     assert snapshot["source_refs"]
     assert "bp-secret-token" not in repr(snapshot)
@@ -116,6 +119,8 @@ def test_api_exposes_read_only_world_model_snapshot() -> None:
         "deployment",
         "missing_data",
         "candidate_actions",
+        "action_scenarios",
+        "decision",
         "source_refs",
     }
     assert "global_market.us_equities_unavailable" in body["missing_data"]
@@ -170,4 +175,6 @@ def test_agent_can_call_world_model_snapshot_without_write_tools(monkeypatch) ->
     )
     assert world_event["output_json"]["status"] == "completed"
     assert "global_market.us_equities_unavailable" in world_event["output_json"]["missing_data"]
+    assert world_event["output_json"]["decision"]["selected_action_id"]
     assert "全局世界模型" in body["report_markdown"]
+    assert "场景决策" in body["report_markdown"]

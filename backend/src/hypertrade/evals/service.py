@@ -152,7 +152,14 @@ class AgentEvalSuite:
                 ),
                 required_tools=("world_model_snapshot",),
                 forbidden_tools=("market_summary", "market.summary"),
-                required_report_fragments=("全局世界模型", "WorldState", "missing_data"),
+                required_report_fragments=(
+                    "全局世界模型",
+                    "WorldState",
+                    "missing_data",
+                    "action_scenarios",
+                    "decision",
+                    "policy_status",
+                ),
                 forbidden_report_fragments=("市场热度总结",),
                 expected_source_ids=("world_model:latest",),
                 missing_data_expectations=("global_market.us_equities_unavailable",),
@@ -386,7 +393,9 @@ class AgentEvalSuite:
                 tool_calls=["world_model_snapshot"],
                 report_markdown=(
                     "## 全局世界模型\nWorldState schema=world_state.v1; "
-                    "missing_data includes global_market.us_equities_unavailable."
+                    "missing_data includes global_market.us_equities_unavailable. "
+                    "action_scenarios compared; decision selected observe_more; "
+                    "policy_status=allowed_read_only."
                 ),
                 source_ids=["world_model:latest"],
                 missing_data=["global_market.us_equities_unavailable"],

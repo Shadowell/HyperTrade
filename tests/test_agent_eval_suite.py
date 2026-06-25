@@ -184,6 +184,28 @@ def test_world_model_eval_rejects_market_summary_fallback() -> None:
     }.issubset(_finding_codes(result))
 
 
+def test_world_model_eval_rejects_missing_scenario_decision_evidence() -> None:
+    suite = AgentEvalSuite()
+    case = suite.get_case("world_model_global_operator_state")
+
+    result = suite.evaluate_case(
+        case,
+        EvalObservation(
+            prompt=case.prompt,
+            tool_calls=["world_model_snapshot"],
+            report_markdown=(
+                "## 全局世界模型\nWorldState missing_data "
+                "global_market.us_equities_unavailable"
+            ),
+            source_ids=["world_model:latest"],
+            missing_data=["global_market.us_equities_unavailable"],
+        ),
+    )
+
+    assert result["status"] == "failed"
+    assert "required_report_fragment_missing" in _finding_codes(result)
+
+
 def test_fixture_helpers_build_source_bound_tool_outputs_and_memory_evidence() -> None:
     tool_output = AgentEvalSuite.tool_output_fixture(
         "bitpro_backtest_list_results",
