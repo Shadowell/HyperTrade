@@ -95,6 +95,13 @@ uv run pytest tests/test_world_model_snapshot.py tests/test_agent_planner.py tes
 ./scripts/check.sh
 ```
 
+Current focused verification:
+
+- `uv run pytest tests/test_world_model_snapshot.py tests/test_agent_planner.py tests/test_agent_eval_suite.py tests/test_report_blocks.py -q`
+  passed with 41 tests after implementing the Sprint 71 read-only snapshot path.
+- `./scripts/check.sh` passed with frontend lint/test/build, ruff, mypy, and
+  full Python pytest (`242 passed`).
+
 Manual or QA checks:
 
 - Ask the Agent `现在全局状态怎么样` and confirm the trace includes
@@ -114,5 +121,10 @@ Manual or QA checks:
 
 ## Handoff
 
-- Next likely step: Sprint 72 adds action scenario simulation and scoring on top
-  of this read-only `WorldState`.
+- Sprint 71 implementation entrypoints:
+  - `backend/src/hypertrade/world_model/service.py`
+  - `GET /api/world-model/snapshot`
+  - Agent tool `world_model_snapshot`
+  - deterministic eval case `world_model_global_operator_state`
+- Next likely step: Sprint 72 adds action scenario simulation and scoring on
+  top of this read-only `WorldState`.

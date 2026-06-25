@@ -4,20 +4,24 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 69 README framework guide verified locally with
-  `./scripts/check.sh` (`pytest` 236 passed), deployed through GitHub Actions
-  run `28086647977` for SHA `944a062`, and production-smoked with
-  `GET http://47.79.36.92:3333/api/health`.
+- Last verified state: Sprint 71 read-only global WorldState snapshot verified
+  locally with `./scripts/check.sh` (`pytest` 242 passed). Production deployment
+  will be triggered by the required push to `origin/main` for this change.
 
 ## Active Contract
 
-- `docs/contracts/sprint-71-world-model-readonly-snapshot.md`
+- `docs/contracts/sprint-72-world-model-scenario-decision.md`
 
 ## Current In-Progress Work
 
-- World-model phased development docs are drafted and verified. Sprint 71 is
-  the next implementation slice and stays read-only: global `WorldState`,
-  source refs, missing data, and L0/L1 candidate actions only.
+- Sprint 72 is the next implementation slice: score defensive candidate actions
+  against the read-only `WorldState` from Sprint 71 without executing write
+  tools.
+- Sprint 71 read-only `WorldState` snapshot is implemented and locally
+  verified. It exposes `GET /api/world-model/snapshot`, Agent tool
+  `world_model_snapshot`, report blocks, missing-data markers, and eval
+  guardrails requiring global operator prompts to use WorldState rather than
+  crypto-only market heat.
 - Sprint 69 README framework guide was committed, pushed, deployed, and
   production-smoked; no implementation work remains for that slice.
 - Sprint 67 LLM planner routing and Sprint 68 live BitPro routing evals were
@@ -26,6 +30,17 @@
 
 ## Latest Completed Work
 
+- Implemented Sprint 71 read-only global WorldState snapshot: new
+  `hypertrade.world_model` module assembles `global_market`, `crypto_market`,
+  strategy, execution, tool-health, deployment, `missing_data`, source refs, and
+  L0/L1 candidate actions without calling paper, BitPro lifecycle, Testnet, or
+  live write tools. The snapshot is exposed through
+  `GET /api/world-model/snapshot` and Agent tool `world_model_snapshot`;
+  reports render a `全局世界模型` section and structured report blocks; `/evals`
+  includes `world_model_global_operator_state` to forbid `market_summary`
+  fallback for global operator prompts. Verification passed with focused
+  world-model/planner/eval/report tests (41 passed) and full
+  `./scripts/check.sh` (`pytest` 242 passed).
 - Added world-model phased development docs: `docs/architecture/22-world-model-development-roadmap.md`
   maps LeCun-style world-model modules onto HyperTrade's production Agent
   boundary, keeps market state global and cross-asset, and defines the phase

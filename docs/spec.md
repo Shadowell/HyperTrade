@@ -166,6 +166,13 @@ its own Agent capabilities:
   global `WorldState`, scenario decision, defensive automation, and portfolio
   scheduling. The market state is global and cross-asset rather than only
   crypto; early phases remain read-only or human-confirmed.
+- Sprint 71 read-only WorldState snapshot: `GET /api/world-model/snapshot`
+  and Agent tool `world_model_snapshot` expose a global operator state across
+  `global_market`, `crypto_market`, strategy evidence, execution state, tool
+  health, deployment state, source references, missing data, and L0/L1
+  candidate actions. Cross-asset feeds that are not wired yet are reported as
+  `missing_data`; the Agent must not substitute `market_summary` for global
+  WorldState prompts.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -188,6 +195,10 @@ its own Agent capabilities:
 - Privileged mutations such as provider selection, paper lifecycle control, live order approval/execution, Memory disable, and Feishu send still require admin session auth.
 - `/api/harness/tools` shows live order approval gating.
 - User can create an Agent market-summary run and inspect trace events.
+- User can call `GET /api/world-model/snapshot` or ask `现在全局状态怎么样`;
+  the Agent uses `world_model_snapshot`, reports source refs and missing
+  cross-asset data, and does not call paper, BitPro lifecycle, Testnet, or live
+  write tools from the snapshot path.
 - With a chat provider configured, user can ask `看下目前市场的热度怎么样`
   and receive a market heat conclusion with sample count, advancer/decliner
   breadth, average change, strongest/weakest symbols, and top movers rather

@@ -40,6 +40,7 @@ from hypertrade.strategy.iteration import StrategyIterationService
 from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.service import StrategyResearchService
 from hypertrade.tools.registry import ToolPolicy, ToolRegistry
+from hypertrade.world_model.service import WorldModelService
 
 
 @dataclass(frozen=True)
@@ -375,6 +376,9 @@ class AgentKernel:
                     symbol=str(args.get("symbol", "")),
                     include_curated=bool(args.get("include_curated", True)),
                 )
+            elif tool_name == "world_model_snapshot":
+                settings = self._settings if self._settings is not None else get_settings()
+                result = WorldModelService(self.db, settings=settings).snapshot()
             elif tool_name == "rag_search":
                 self.rag.scan_once()
                 query = str(args.get("query", "market risk"))
@@ -1211,6 +1215,7 @@ class AgentKernel:
         candle_lines: list[str] = []
         compare_lines: list[str] = []
         intelligence_lines: list[str] = []
+        world_model_lines: list[str] = []
         bitpro_lines: list[str] = []
         bitpro_backtest_lines: list[str] = []
         bitpro_backtest_detail_lines: list[str] = []
@@ -1346,6 +1351,78 @@ class AgentKernel:
                         "- 样本: " + " | ".join(str(value) for value in sample[:3])
                     )
             intelligence_lines.append("")
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "world_model_snapshot":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict):
+                continue
+            global_market = _dict_or_empty(payload.get("global_market"))
+            crypto_market = _dict_or_empty(payload.get("crypto_market"))
+            strategy_state = _dict_or_empty(payload.get("strategy"))
+            execution = _dict_or_empty(payload.get("execution"))
+            tool_health = _dict_or_empty(payload.get("tool_health"))
+            deployment = _dict_or_empty(payload.get("deployment"))
+            missing = payload.get("missing_data")
+            missing = missing if isinstance(missing, list) else []
+            actions = payload.get("candidate_actions")
+            actions = actions if isinstance(actions, list) else []
+            sources = payload.get("source_refs")
+            sources = sources if isinstance(sources, list) else []
+            world_model_lines.extend(
+                [
+                    f"- schema_version: {payload.get('schema_version', 'unknown')}",
+                    f"- 生成时间: {payload.get('generated_at', 'n/a')}",
+                    (
+                        "- 全局风险状态: {risk}, cross_asset_signal={cross_asset}"
+                    ).format(
+                        risk=global_market.get("risk_regime", "unknown"),
+                        cross_asset=global_market.get("cross_asset_signal", "unknown"),
+                    ),
+                    (
+                        "- 加密市场: status={status}, tickers={tickers}, "
+                        "avg_change_utc0={avg}%"
+                    ).format(
+                        status=crypto_market.get("status", "unknown"),
+                        tickers=crypto_market.get("ticker_count", "n/a"),
+                        avg=crypto_market.get("average_change_utc0_pct", "n/a"),
+                    ),
+                    (
+                        "- 策略/执行/工具/部署: strategy={strategy}, execution={execution}, "
+                        "tool_health={tool_health}, api_health={api_health}"
+                    ).format(
+                        strategy=strategy_state.get("status", "unknown"),
+                        execution=execution.get("status", "unknown"),
+                        tool_health=tool_health.get("status", "unknown"),
+                        api_health=deployment.get("api_health", "unknown"),
+                    ),
+                ]
+            )
+            if missing:
+                world_model_lines.append(
+                    "- missing_data: " + ", ".join(str(item) for item in missing[:12])
+                )
+            if actions:
+                world_model_lines.append("- 候选动作:")
+                for action in actions[:6]:
+                    if not isinstance(action, dict):
+                        continue
+                    world_model_lines.append(
+                        "  - {level}/{action_id}: {reason}".format(
+                            level=action.get("level", "L0"),
+                            action_id=action.get("action_id", "unknown"),
+                            reason=action.get("reason", "n/a"),
+                        )
+                    )
+            if sources:
+                source_ids = [
+                    str(source.get("source_id", "unknown"))
+                    for source in sources[:8]
+                    if isinstance(source, dict)
+                ]
+                if source_ids:
+                    world_model_lines.append("- source_refs: " + ", ".join(source_ids))
+            world_model_lines.append("")
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "strategy_library_search":
                 continue
@@ -2034,6 +2111,8 @@ class AgentKernel:
             sections.extend(["## 多标的强弱比较", "", *compare_lines])
         if intelligence_lines:
             sections.extend(["## 市场情报", "", *intelligence_lines])
+        if world_model_lines:
+            sections.extend(["## 全局世界模型", "", *world_model_lines])
         if strategy_library_lines:
             sections.extend(["## 策略库记忆", "", *strategy_library_lines])
         if bitpro_lines:

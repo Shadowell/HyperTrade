@@ -171,6 +171,29 @@ def test_market_intelligence_schema_exposes_read_only_sources() -> None:
     assert properties["include_curated"]["type"] == "boolean"
 
 
+def test_world_model_snapshot_schema_exposes_global_operator_state() -> None:
+    schema = next(
+        item for item in TOOL_SCHEMAS if item["function"]["name"] == "world_model_snapshot"
+    )
+
+    description = schema["function"]["description"]
+
+    assert "Read-only" in description
+    assert "global" in description
+    assert "WorldState" in description
+    assert "cross-asset" in description
+    assert schema["function"]["parameters"]["required"] == []
+
+
+def test_planner_prompt_guides_global_operator_prompts_to_world_model() -> None:
+    prompt = planner_module._SYSTEM_PROMPT
+
+    assert "world_model_snapshot" in prompt
+    assert "global operator" in prompt
+    assert "Do not use market_summary as a substitute for global WorldState" in prompt
+    assert "全局状态" in prompt
+
+
 def test_planner_prompt_guides_funding_open_interest_questions_to_intelligence_tool() -> None:
     prompt = planner_module._SYSTEM_PROMPT
 

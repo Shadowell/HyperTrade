@@ -56,6 +56,7 @@ from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.sdk import Candle
 from hypertrade.strategy.service import StrategyResearchService
 from hypertrade.tools.registry import ToolDefinition, ToolRegistry
+from hypertrade.world_model.service import WorldModelService
 
 SESSION_COOKIE = "hypertrade_session"
 
@@ -434,6 +435,10 @@ def create_app(
                 },
                 "evals": AgentEvalSuite().status(),
             }
+
+    @app.get("/api/world-model/snapshot")
+    def world_model_snapshot() -> dict[str, Any]:
+        return WorldModelService(database, settings=app_settings).snapshot()
 
     @app.post("/api/agent/runs")
     def create_run(payload: AgentRunPayload) -> dict[str, Any]:

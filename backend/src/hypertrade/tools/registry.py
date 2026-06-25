@@ -107,6 +107,14 @@ class ToolRegistry:
                     "market",
                 ),
                 ToolDefinition(
+                    "world_model.snapshot",
+                    (
+                        "Read global operator WorldState across market, strategy, "
+                        "execution, tools, and deployment."
+                    ),
+                    "world_model",
+                ),
+                ToolDefinition(
                     "market.tickers",
                     "Read latest OKX SWAP ticker snapshots.",
                     "market",
@@ -372,6 +380,7 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "market_candles": "market.candles",
     "market_compare": "market.compare",
     "market_intelligence": "market.intelligence",
+    "world_model_snapshot": "world_model.snapshot",
     "rag_search": "rag.search",
     "memory_write": "memory.write",
     "memory_search": "memory.search",
@@ -463,6 +472,12 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
         timeout="standard",
         sample=6,
         failure="return_unavailable",
+    ),
+    "world_model.snapshot": _policy(
+        source="hypertrade_db+connector_registry",
+        timeout="standard",
+        sample=1,
+        failure="return_structured_error",
     ),
     "market.tickers": _policy(source="hypertrade_db", timeout="quick", sample=50),
     "rag.search": _policy(source="rag_index", timeout="quick", sample=5),

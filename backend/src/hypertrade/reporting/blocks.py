@@ -66,6 +66,8 @@ def build_report_blocks_from_tool_calls(
             continue
         if tool_name == "strategy_library_search":
             blocks.extend(_strategy_library_blocks(payload))
+        elif tool_name == "world_model_snapshot":
+            blocks.extend(_world_model_blocks(payload, compact_summary))
         elif tool_name == "bitpro_paper_dashboard" and payload.get("status", "ok") == "ok":
             blocks.extend(_bitpro_paper_dashboard_blocks(payload, compact_summary))
     return blocks
@@ -310,6 +312,90 @@ def _bitpro_paper_dashboard_blocks(
     return blocks
 
 
+def _world_model_blocks(
+    payload: dict[str, Any],
+    compact_summary: str,
+) -> list[ReportBlock]:
+    sources = _world_model_source_refs(payload)
+    global_market = _dict_value(payload.get("global_market"))
+    crypto_market = _dict_value(payload.get("crypto_market"))
+    strategy = _dict_value(payload.get("strategy"))
+    execution = _dict_value(payload.get("execution"))
+    tool_health = _dict_value(payload.get("tool_health"))
+    deployment = _dict_value(payload.get("deployment"))
+    missing = [str(item) for item in _list_values(payload.get("missing_data"))]
+    candidate_rows = [
+        {
+            "action_id": _dict_value(action).get("action_id", "unknown"),
+            "level": _dict_value(action).get("level", "L0"),
+            "requires_confirmation": _dict_value(action).get(
+                "requires_human_confirmation",
+                False,
+            ),
+            "reason": _dict_value(action).get("reason", "n/a"),
+        }
+        for action in _list_values(payload.get("candidate_actions"))
+        if isinstance(action, dict)
+    ]
+    blocks = [
+        ReportBlock(
+            block_type="summary",
+            title="Global WorldState",
+            source_refs=sources,
+            notes=[
+                note
+                for note in [
+                    compact_summary,
+                    f"schema={payload.get('schema_version', 'unknown')}",
+                    f"risk_regime={global_market.get('risk_regime', 'unknown')}",
+                    f"cross_asset_signal={global_market.get('cross_asset_signal', 'unknown')}",
+                ]
+                if note
+            ],
+            severity="warning" if missing else "info",
+        ),
+        ReportBlock(
+            block_type="metric_table",
+            title="Global WorldState Components",
+            source_refs=sources,
+            metrics={
+                "crypto_tickers": crypto_market.get("ticker_count", "n/a"),
+                "crypto_status": crypto_market.get("status", "unknown"),
+                "strategy_status": strategy.get("status", "unknown"),
+                "strategy_memory_count": strategy.get("memory_count", "n/a"),
+                "execution_status": execution.get("status", "unknown"),
+                "tool_health": tool_health.get("status", "unknown"),
+                "api_health": deployment.get("api_health", "unknown"),
+            },
+        ),
+        ReportBlock(
+            block_type="missing_data",
+            title="Global WorldState Missing Data",
+            source_refs=sources,
+            missing=missing,
+            severity="warning" if missing else "info",
+        ),
+        ReportBlock(
+            block_type="next_actions",
+            title="Global WorldState Candidate Actions",
+            source_refs=sources,
+            rows=candidate_rows,
+        ),
+        ReportBlock(
+            block_type="risk_boundary",
+            title="Global WorldState Risk Boundary",
+            source_refs=sources,
+            notes=["read-only WorldState snapshot; no execution or live-write tool was called"],
+        ),
+        ReportBlock(
+            block_type="audit_references",
+            title="Global WorldState Audit References",
+            source_refs=sources,
+        ),
+    ]
+    return blocks
+
+
 def _bitpro_source_refs(payload: dict[str, Any], *, source_id: str) -> list[SourceRef]:
     refs = [
         SourceRef(
@@ -337,6 +423,31 @@ def _bitpro_source_refs(payload: dict[str, Any], *, source_id: str) -> list[Sour
                     as_of=_as_of(payload),
                 )
             )
+    return _dedupe_sources(refs)
+
+
+def _world_model_source_refs(payload: dict[str, Any]) -> list[SourceRef]:
+    refs = [
+        SourceRef(
+            source_type=str(source.get("source_type", "unknown")),
+            source_id=str(source.get("source_id", "unknown")),
+            tool_name=str(source.get("tool_name", "world_model_snapshot")),
+            path=str(source.get("path", "unknown")),
+            as_of=source.get("as_of") if isinstance(source.get("as_of"), str) else None,
+        )
+        for source in _list_values(payload.get("source_refs"))
+        if isinstance(source, dict)
+    ]
+    if not refs:
+        refs.append(
+            SourceRef(
+                source_type="world_model",
+                source_id=str(payload.get("source_id", "world_model:latest")),
+                tool_name="world_model_snapshot",
+                path="hypertrade.world_model.service",
+                as_of=_as_of(payload),
+            )
+        )
     return _dedupe_sources(refs)
 
 
@@ -420,7 +531,7 @@ def _bitpro_path(tool: str) -> str:
 
 
 def _as_of(payload: dict[str, Any]) -> str | None:
-    for key in ("as_of_utc", "updated_at", "created_at"):
+    for key in ("as_of_utc", "generated_at", "updated_at", "created_at"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
             return value

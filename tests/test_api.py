@@ -194,6 +194,7 @@ def test_api_exposes_health_harness_and_agent_run(monkeypatch, tmp_path):
         "missing_artifact_disclosure",
         "paper_monitor_read_only",
         "compact_report_rendering",
+        "world_model_global_operator_state",
         "live_order_history_source",
         "live_strategy_performance_source",
     }

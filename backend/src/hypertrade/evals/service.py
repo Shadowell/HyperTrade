@@ -144,6 +144,20 @@ class AgentEvalSuite:
                 missing_data_expectations=("per_strategy_pnl_unavailable",),
             ),
             AgentEvalCase(
+                name="world_model_global_operator_state",
+                prompt="现在全局状态怎么样",
+                expectation=(
+                    "Global operator prompts must call world_model_snapshot, preserve "
+                    "WorldState missing-data markers, and avoid crypto-only market heat fallback."
+                ),
+                required_tools=("world_model_snapshot",),
+                forbidden_tools=("market_summary", "market.summary"),
+                required_report_fragments=("全局世界模型", "WorldState", "missing_data"),
+                forbidden_report_fragments=("市场热度总结",),
+                expected_source_ids=("world_model:latest",),
+                missing_data_expectations=("global_market.us_equities_unavailable",),
+            ),
+            AgentEvalCase(
                 name="compact_report_rendering",
                 prompt="默认展示 BitPro 模拟盘监控报告",
                 expectation=(
@@ -366,6 +380,16 @@ class AgentEvalSuite:
                 ),
                 source_ids=["bitpro_paper_dashboard:current"],
                 missing_data=["per_strategy_pnl_unavailable"],
+            ),
+            "world_model_global_operator_state": EvalObservation(
+                prompt="现在全局状态怎么样",
+                tool_calls=["world_model_snapshot"],
+                report_markdown=(
+                    "## 全局世界模型\nWorldState schema=world_state.v1; "
+                    "missing_data includes global_market.us_equities_unavailable."
+                ),
+                source_ids=["world_model:latest"],
+                missing_data=["global_market.us_equities_unavailable"],
             ),
             "compact_report_rendering": EvalObservation(
                 prompt="默认展示 BitPro 模拟盘监控报告",

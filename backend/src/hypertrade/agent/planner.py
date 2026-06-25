@@ -135,6 +135,18 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "world_model_snapshot",
+            "description": (
+                "Read-only global operator WorldState snapshot across market, strategy, "
+                "execution, tool health, deployment, missing data, source refs, and "
+                "safe candidate actions. Use for global/cross-asset world-model state."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "rag_search",
             "description": "Search the project knowledge base for relevant trading context.",
             "parameters": {
@@ -838,6 +850,11 @@ strength, 哪个更强, 跑赢, 强弱, or leader/laggard.
 Use market_intelligence when the user asks about funding, open interest,
 资金费率, 持仓, OI, news, onchain, sentiment, 情绪, 链上, or source-backed market
 context beyond price/K-line data. Treat this as context, not buy/sell advice.
+Use world_model_snapshot when the user asks about the global operator state,
+全局状态, 世界模型, 全局市场感受, cross-asset regime, what the Agent currently sees
+across market, strategy, execution, tools, and deployment.
+Do not use market_summary as a substitute for global WorldState; market_summary
+only covers OKX crypto-market heat and cannot represent global operator/cross-asset state.
 Use strategy_library_search when the user asks about previous strategy
 experience, 策略库, 历史策略, 记忆沉淀, what has worked/failed, failure reasons,
 or the next strategy experiment. Treat it as evidence from strategy_knowledge
