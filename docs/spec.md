@@ -161,6 +161,11 @@ its own Agent capabilities:
   entrypoint, covering architecture, component responsibilities, installation,
   usage recipes, API/CLI examples, configuration, deployment, verification,
   troubleshooting, and development workflow.
+- World-model development roadmap: `docs/architecture/22-world-model-development-roadmap.md`
+  splits LeCun-style world-model thinking into HyperTrade phases: read-only
+  global `WorldState`, scenario decision, defensive automation, and portfolio
+  scheduling. The market state is global and cross-asset rather than only
+  crypto; early phases remain read-only or human-confirmed.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.

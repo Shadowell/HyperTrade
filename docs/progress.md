@@ -11,18 +11,29 @@
 
 ## Active Contract
 
-- `docs/contracts/sprint-69-readme-framework-guide.md`
+- `docs/contracts/sprint-71-world-model-readonly-snapshot.md`
 
 ## Current In-Progress Work
 
+- World-model phased development docs are drafted and verified. Sprint 71 is
+  the next implementation slice and stays read-only: global `WorldState`,
+  source refs, missing data, and L0/L1 candidate actions only.
 - Sprint 69 README framework guide was committed, pushed, deployed, and
-  production-smoked; no implementation work remains for this slice.
+  production-smoked; no implementation work remains for that slice.
 - Sprint 67 LLM planner routing and Sprint 68 live BitPro routing evals were
   committed, pushed, deployed, and production-smoked separately from the README
   framework guide work.
 
 ## Latest Completed Work
 
+- Added world-model phased development docs: `docs/architecture/22-world-model-development-roadmap.md`
+  maps LeCun-style world-model modules onto HyperTrade's production Agent
+  boundary, keeps market state global and cross-asset, and defines the phase
+  sequence for read-only `WorldState`, scenario decision, defensive automation,
+  and portfolio scheduling. Sprint contracts 71-74 split those phases into
+  small, verifiable implementation slices with explicit source, permission,
+  missing-data, and no-live-write boundaries. Verification passed with full
+  `./scripts/check.sh` (`pytest` 236 passed).
 - Added Sprint 69 README framework guide: the root README now gives a
   framework-grade introduction for operators, engineers, and external Agent
   integrators. It documents the HyperTrade/BitPro boundary, layered
