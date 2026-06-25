@@ -1370,6 +1370,7 @@ class AgentKernel:
             scenarios = payload.get("action_scenarios")
             scenarios = scenarios if isinstance(scenarios, list) else []
             decision = _dict_or_empty(payload.get("decision"))
+            defensive = _dict_or_empty(payload.get("defensive_automation"))
             sources = payload.get("source_refs")
             sources = sources if isinstance(sources, list) else []
             world_model_lines.extend(
@@ -1416,7 +1417,7 @@ class AgentKernel:
                         policy_status=decision.get("policy_status", "unknown"),
                         review_after=decision.get("review_after", "n/a"),
                     )
-                )
+                    )
             if scenarios:
                 world_model_lines.append("- action_scenarios:")
                 for scenario in scenarios[:6]:
@@ -1434,6 +1435,19 @@ class AgentKernel:
                             confidence=scenario.get("confidence", "n/a"),
                         )
                     )
+            if defensive:
+                allowlist = defensive.get("allowlist")
+                allowlist = allowlist if isinstance(allowlist, list) else []
+                world_model_lines.append(
+                    (
+                        "- 防御自动化: enabled={enabled}, allowlist={allowlist}, "
+                        "recent_attempt_count={count}"
+                    ).format(
+                        enabled=defensive.get("enabled", False),
+                        allowlist=",".join(str(item) for item in allowlist) or "empty",
+                        count=defensive.get("recent_attempt_count", 0),
+                    )
+                )
             if actions:
                 world_model_lines.append("- 候选动作:")
                 for action in actions[:6]:

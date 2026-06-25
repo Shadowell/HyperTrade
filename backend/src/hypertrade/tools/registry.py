@@ -251,6 +251,11 @@ class ToolRegistry:
                 ),
                 ToolDefinition("paper.session", "Control paper trading sessions.", "paper"),
                 ToolDefinition(
+                    "world_model.defensive_action",
+                    "Execute an explicitly allowlisted defensive world-model action.",
+                    "world_model",
+                ),
+                ToolDefinition(
                     "live.order_intent",
                     "Create a live/testnet order intent for human approval.",
                     "live",
@@ -411,6 +416,7 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "bitpro_live_positions": "bitpro.live_positions",
     "bitpro_live_order_history": "bitpro.live_order_history",
     "bitpro_live_strategy_performance": "bitpro.live_strategy_performance",
+    "world_model_defensive_action": "world_model.defensive_action",
     "live_order_intent": "live.order_intent",
 }
 
@@ -590,6 +596,13 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
     ),
     "paper.session": _policy(
         scope="paper_write",
+        idempotency="required",
+        source="hypertrade_db",
+        timeout="quick",
+        sample=1,
+    ),
+    "world_model.defensive_action": _policy(
+        scope="research_write",
         idempotency="required",
         source="hypertrade_db",
         timeout="quick",

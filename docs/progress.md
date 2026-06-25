@@ -4,19 +4,22 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 72 world-model scenario decision layer verified
-  locally with `./scripts/check.sh` (`pytest` 246 passed). Production deployment
+- Last verified state: Sprint 73 world-model defensive automation gate verified
+  locally with `./scripts/check.sh` (`pytest` 250 passed). Production deployment
   will be triggered by the required push to `origin/main` for this change.
 
 ## Active Contract
 
-- `docs/contracts/sprint-73-world-model-defensive-automation.md`
+- `docs/contracts/sprint-74-world-model-portfolio-scheduler.md`
 
 ## Current In-Progress Work
 
-- Sprint 73 is the next implementation slice: allow selected defensive
-  automation only after Sprint 72 scenario records and review evidence are
-  stable, still behind explicit policy gates.
+- Sprint 74 is the next implementation slice: use world-model state and
+  defensive-action history for portfolio-level strategy scheduling.
+- Sprint 73 defensive automation gate is implemented and focused-test verified.
+  Defensive actions are disabled by default, require explicit allowlist config
+  and idempotency keys, and persist trace-backed audit attempts; the initial
+  executable fixture action raises an internal human-confirmation alert.
 - Sprint 72 scenario decision is implemented and locally verified. The
   `world_model_snapshot` payload now includes deterministic `action_scenarios`
   and a `decision` record with benefit, downside, confidence, data-gap penalty,
@@ -35,6 +38,18 @@
 
 ## Latest Completed Work
 
+- Implemented Sprint 73 world-model defensive automation gate: added
+  `DefensiveActionEngine`, config fields
+  `WORLD_MODEL_DEFENSIVE_ACTIONS_ENABLED` and
+  `WORLD_MODEL_DEFENSIVE_ACTION_ALLOWLIST`, ToolRegistry/governance policy for
+  `world_model.defensive_action`, trace-backed action attempts, monitor-alert
+  creation for `raise_human_confirmation_alert`, and admin APIs to inspect
+  config, attempts, and execute allowlisted actions. Missing idempotency,
+  offensive actions, unsupported actions, stale evidence, disabled automation,
+  and non-allowlisted requests are rejected or skipped without adapter/exchange
+  calls. Focused verification passed with defensive-action/governance tests
+  (7 passed), world-model/report/API regression tests (10 passed), and full
+  `./scripts/check.sh` (`pytest` 250 passed).
 - Implemented Sprint 72 world-model scenario decision layer: `ScenarioSimulator`
   and `ActionScorer` compare observe/hold/monitor/trace/human-confirmation/
   pause-request/risk-reduction-request actions against the read-only

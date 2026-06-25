@@ -126,6 +126,14 @@ class Settings(BaseSettings):
         alias="RISK_MAX_ORDER_NOTIONAL_USDT",
     )
     risk_max_open_intents: int = Field(default=5, alias="RISK_MAX_OPEN_INTENTS")
+    world_model_defensive_actions_enabled: bool = Field(
+        default=False,
+        alias="WORLD_MODEL_DEFENSIVE_ACTIONS_ENABLED",
+    )
+    world_model_defensive_action_allowlist: str = Field(
+        default="",
+        alias="WORLD_MODEL_DEFENSIVE_ACTION_ALLOWLIST",
+    )
 
 
 @lru_cache

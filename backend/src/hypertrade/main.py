@@ -56,6 +56,7 @@ from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.sdk import Candle
 from hypertrade.strategy.service import StrategyResearchService
 from hypertrade.tools.registry import ToolDefinition, ToolRegistry
+from hypertrade.world_model.defensive_actions import DefensiveActionEngine
 from hypertrade.world_model.service import WorldModelService
 
 SESSION_COOKIE = "hypertrade_session"
@@ -176,6 +177,12 @@ class LiveOrderIntentPayload(BaseModel):
 
 class LiveOrderDecisionPayload(BaseModel):
     reason: str = ""
+
+
+class DefensiveActionPayload(BaseModel):
+    action_id: str
+    idempotency_key: str = ""
+    world_state: dict[str, Any] | None = None
 
 
 def create_app(
@@ -439,6 +446,36 @@ def create_app(
     @app.get("/api/world-model/snapshot")
     def world_model_snapshot() -> dict[str, Any]:
         return WorldModelService(database, settings=app_settings).snapshot()
+
+    @app.get("/api/world-model/defensive-actions")
+    def world_model_defensive_actions(_: AdminUser) -> dict[str, Any]:
+        return DefensiveActionEngine(database, settings=app_settings).status()
+
+    @app.get("/api/world-model/defensive-action-attempts")
+    def world_model_defensive_action_attempts(
+        _: AdminUser,
+        limit: int = 25,
+    ) -> dict[str, Any]:
+        return {
+            "attempts": DefensiveActionEngine(database, settings=app_settings).list_attempts(
+                limit=limit,
+            )
+        }
+
+    @app.post("/api/world-model/defensive-actions/execute")
+    def execute_world_model_defensive_action(
+        payload: DefensiveActionPayload,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        world_state = payload.world_state or WorldModelService(
+            database,
+            settings=app_settings,
+        ).snapshot()
+        return DefensiveActionEngine(database, settings=app_settings).execute(
+            action_id=payload.action_id,
+            idempotency_key=payload.idempotency_key,
+            world_state=world_state,
+        )
 
     @app.post("/api/agent/runs")
     def create_run(payload: AgentRunPayload) -> dict[str, Any]:

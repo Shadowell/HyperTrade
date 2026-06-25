@@ -180,6 +180,13 @@ its own Agent capabilities:
   follow-up evidence for observe/hold/monitor/trace/human-confirmation/pause
   request/risk-reduction request actions. Scenario evaluation is still read-only
   and must not call paper, BitPro lifecycle, Testnet, or live write tools.
+- Sprint 73 defensive automation gate: defensive automation is disabled by
+  default and can run only explicitly allowlisted actions with idempotency keys.
+  `raise_human_confirmation_alert` is the initial safe fixture action; all
+  attempts are recorded through trace-backed audit and, when executed, an
+  internal monitor alert. Missing idempotency, unsupported actions, offensive
+  actions, stale evidence, and non-allowlisted requests are rejected without
+  calling adapters or exchange paths.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -209,6 +216,13 @@ its own Agent capabilities:
 - User can ask `现在应该继续持有还是降低风险`; the Agent can compare
   `action_scenarios`, show `decision` and `policy_status`, and prefer
   observation or human-confirmation when cross-asset data gaps are still large.
+- Admin can inspect `GET /api/world-model/defensive-actions` and
+  `GET /api/world-model/defensive-action-attempts`, and can execute an
+  allowlisted defensive action through
+  `POST /api/world-model/defensive-actions/execute` only when
+  `WORLD_MODEL_DEFENSIVE_ACTIONS_ENABLED=true`,
+  `WORLD_MODEL_DEFENSIVE_ACTION_ALLOWLIST` contains the action, and an
+  idempotency key is supplied.
 - With a chat provider configured, user can ask `看下目前市场的热度怎么样`
   and receive a market heat conclusion with sample count, advancer/decliner
   breadth, average change, strongest/weakest symbols, and top movers rather

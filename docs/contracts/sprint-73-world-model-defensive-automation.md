@@ -67,9 +67,18 @@ trading actions blocked.
 ## Verification
 
 ```bash
-uv run pytest tests/test_world_model_defensive_actions.py tests/test_risk_governance.py -q
+uv run pytest tests/test_world_model_defensive_actions.py tests/test_risk_governance_policy.py -q
 ./scripts/check.sh
 ```
+
+Current focused verification:
+
+- `uv run pytest tests/test_world_model_defensive_actions.py tests/test_risk_governance_policy.py -q`
+  passed with 7 tests after adding the defensive-action gate.
+- `uv run pytest tests/test_world_model_snapshot.py tests/test_world_model_scenarios.py tests/test_report_blocks.py tests/test_api.py::test_api_exposes_health_harness_and_agent_run -q`
+  passed with 10 tests.
+- `./scripts/check.sh` passed with frontend lint/test/build, ruff, mypy, and
+  full Python pytest (`250 passed`).
 
 Manual or QA checks:
 
@@ -88,5 +97,12 @@ Manual or QA checks:
 
 ## Handoff
 
+- Sprint 73 implementation entrypoints:
+  - `backend/src/hypertrade/world_model/defensive_actions.py`
+  - `WORLD_MODEL_DEFENSIVE_ACTIONS_ENABLED`
+  - `WORLD_MODEL_DEFENSIVE_ACTION_ALLOWLIST`
+  - `GET /api/world-model/defensive-actions`
+  - `GET /api/world-model/defensive-action-attempts`
+  - `POST /api/world-model/defensive-actions/execute`
 - Next likely step: Sprint 74 uses world-model state and defensive-action
   history for portfolio-level strategy scheduling.

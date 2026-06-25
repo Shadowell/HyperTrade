@@ -325,6 +325,7 @@ def _world_model_blocks(
     deployment = _dict_value(payload.get("deployment"))
     missing = [str(item) for item in _list_values(payload.get("missing_data"))]
     decision = _dict_value(payload.get("decision"))
+    defensive = _dict_value(payload.get("defensive_automation"))
     scenarios = [
         scenario
         for scenario in _list_values(payload.get("action_scenarios"))
@@ -429,6 +430,28 @@ def _world_model_blocks(
                 ),
             },
             notes=[str(decision.get("rationale", ""))] if decision else [],
+        ),
+        ReportBlock(
+            block_type="automation_status",
+            title="Global WorldState Defensive Automation",
+            source_refs=sources,
+            metrics={
+                "enabled": defensive.get("enabled", False),
+                "allowlist": ",".join(
+                    str(item) for item in _list_values(defensive.get("allowlist"))
+                ),
+                "recent_attempt_count": defensive.get("recent_attempt_count", 0),
+            },
+            rows=[
+                {
+                    "status": attempt.get("status", "unknown"),
+                    "action_id": attempt.get("action_id", "unknown"),
+                    "reason": attempt.get("reason", "n/a"),
+                    "idempotency_key": attempt.get("idempotency_key", "n/a"),
+                }
+                for attempt in _list_values(defensive.get("recent_attempts"))[:10]
+                if isinstance(attempt, dict)
+            ],
         ),
         ReportBlock(
             block_type="risk_boundary",

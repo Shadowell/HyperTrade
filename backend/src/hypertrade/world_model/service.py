@@ -31,6 +31,7 @@ from hypertrade.db import (
 from hypertrade.market.repository import MarketRepository
 from hypertrade.world_model.actions import candidate_actions
 from hypertrade.world_model.collectors import GLOBAL_MARKET_MISSING_DATA
+from hypertrade.world_model.defensive_actions import DefensiveActionEngine
 from hypertrade.world_model.evaluators import risk_regime_from_crypto
 from hypertrade.world_model.records import build_decision_record
 from hypertrade.world_model.scenarios import ScenarioSimulator
@@ -84,6 +85,10 @@ class WorldModelService:
             snapshot,
             snapshot["action_scenarios"],
         )
+        snapshot["defensive_automation"] = DefensiveActionEngine(
+            self.db,
+            settings=self.settings,
+        ).status()
         return snapshot
 
     def _crypto_market(self, missing_data: list[str]) -> dict[str, Any]:
