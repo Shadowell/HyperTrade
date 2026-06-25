@@ -4,8 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
-- Last verified state: Sprint 74 world-model portfolio scheduler verified
-  locally with `./scripts/check.sh` (`pytest` 254 passed). Production deployment
+- Last verified state: World-model Agent evaluation completed on 2026-06-25
+  with verdict `PASS WITH KNOWN GAPS`; focused tests, full `./scripts/check.sh`
+  (`pytest` 254 passed), production API smoke, and production Agent prompt
+  smoke were recorded in
+  `docs/qa/world-model-agent-evaluation-2026-06-25.md`. Production deployment
   will be triggered by the required push to `origin/main` for this change.
 
 ## Active Contract
@@ -15,6 +18,12 @@
 
 ## Current In-Progress Work
 
+- World-model Agent evaluation is complete. The Agent is production-safe for
+  read-only operator review, scenario comparison, defensive-review preparation,
+  and portfolio scheduling recommendations, but follow-up work should tighten
+  provider-backed planning so decision/portfolio prompts do not over-select
+  generic `market_summary`, add cross-asset provider contracts, and add a
+  staging defensive-action smoke.
 - Sprint 74 portfolio scheduler is implemented and focused-test verified. The
   world-model snapshot and `GET /api/world-model/portfolio` expose a rule-based
   portfolio view with strategy fit, evidence freshness, correlation proxy,
@@ -42,6 +51,19 @@
 
 ## Latest Completed Work
 
+- Completed world-model Agent evaluation across Sprints 71-74 and added
+  `docs/qa/world-model-agent-evaluation-2026-06-25.md`. Local focused
+  verification passed with world-model/eval tests (`23 passed`) and
+  Agent/API regression tests (`17 passed`); full `./scripts/check.sh` passed
+  with frontend install/lint/test/build, ruff, mypy, and Python pytest
+  (`254 passed`). Production smoke confirmed `/api/health`, `/api/evals/status`
+  (`status=passed`, `case_count=14`), `/api/world-model/snapshot`,
+  `/api/world-model/portfolio`, and admin protection on defensive-action
+  inspection. Production Agent prompt smoke confirmed `world_model_snapshot`
+  usage and no live-write tools for global state, hold/reduce-risk, and
+  strategy-weight prompts; it also found a follow-up gap where decision and
+  portfolio prompts can still over-select `market_summary` alongside
+  `world_model_snapshot`.
 - Implemented Sprint 74 world-model portfolio scheduler: added
   `PortfolioScheduler`, `GET /api/world-model/portfolio`, portfolio state in
   `world_model_snapshot`, report blocks for portfolio risk/strategy fit/
