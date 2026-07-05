@@ -1,75 +1,207 @@
 # HyperTrade
 
-HyperTrade 是一个面向行情研究与执行的加密交易 Agent。它不在 BitPro 项目下开发，也不复用 BitPro 的 AI 研发/自主交易逻辑；BitPro 可以通过稳定 MCP/API 合同提供外部数据、策略生命周期、回测、模拟盘和交易状态能力，由 HyperTrade 封装成可审计工具。
+**Agent 驱动的加密货币交易研究与执行框架**
 
-> 本项目输出仅用于研究辅助，不构成任何投资建议。
+[![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-18+-61DAFB.svg)](https://reactjs.org/)
 
-## 当前 V1 能力
+[📖 完整文档](README.md) | [English](README.en.md) | [文档中心](docs/documentation-index.md)
 
-- Agent graph runtime：可观察的 intent、plan、approval、tool、reflect、report 节点。
-- Provider Router：DeepSeek 默认，OpenAI/Codex/OpenRouter/Qwen chat 扩展位，CLI/API/前端可切换。
-- Tool Call：行情、RAG、Memory、策略、回测、paper、live intent、Testnet execute。
-- RAG：PostgreSQL/pgvector 兼容字段，citation-ready 命中。
-- Memory：去重、tags、importance、confidence、usage audit；策略实验会沉淀 `strategy_knowledge` 记忆卡，并可聚合为策略库视图。
-- 交易边界：Mainnet 执行阻断；OKX Testnet 可在审批和风控后 signed order。
-- 策略工作流：研究、多版本回测证据、critique、下一实验建议、策略知识沉淀。
-- BitPro MCP：健康检查、K 线直连、策略生成/创建/更新、BitPro 回测 job/result/artifact、模拟盘生命周期、监控快照和实盘持仓只读诊断入口。
-- 可观测：`/harness`、CLI slash commands、deterministic eval suite。
+---
 
-## 技术栈
+## HyperTrade 是什么？
 
-- Agent：LangGraph 思路的 AgentGraph/AgentKernel，显式 ToolRegistry、Trace、Memory、RAG。
-- Backend：FastAPI、SQLAlchemy 2、Alembic、uv、pytest、ruff、mypy。
-- Storage：PostgreSQL + pgvector。
-- RAG：Qwen `text-embedding-v4` 配置位，V1 本地测试使用确定性 embedding fallback。
-- LLM：默认 DeepSeek 官方 API；也可通过 Responses API Provider 选择 Codex。
-- Frontend：React、Vite、TypeScript、Tailwind、shadcn 风格组件、lucide-react。
-- Deploy：Docker Compose、宿主机 Nginx、GitHub Actions self-hosted runner。
+HyperTrade 是一个生产级的 Agent 运行时，专为加密货币交易研究和执行设计。它为市场研究、策略开发、模拟盘交易和受控的 Testnet 执行提供统一环境。
 
-## CLI 常用命令
+**核心能力**：
+- 🤖 自然语言交互，自动工具选择
+- 📊 实时 OKX 市场数据和技术分析
+- 🧪 证据驱动的策略回测和实验
+- 🎮 模拟盘交易，支持完整生命周期控制
+- ⚡ 需批准的 Testnet 执行（V1 阻止主网）
+- 🔗 通过 MCP 适配器集成 BitPro
+- 💾 RAG 知识检索和审计的 Memory 系统
 
-交互式 CLI 中，`/help` 会展示每条斜杠命令的用途，`/tools` 会展示每个 Agent 工具的分类、审批标记和功能说明。普通 Agent 提问在规划或工具执行期间会显示 `Thought` / `Thinking` 动态状态块；报告里的 Markdown 会渲染成更易读的标题、列表和表格。脚本需要原始 Markdown 时可设置 `HYPERTRADE_RENDERER=plain`。
+---
 
-```text
-/status
-/tools
-/model deepseek
-/model codex
-/rag 风控
-/memory search 风控
-/strategy library momentum_breakout_v1
-/experiment 研究ETH趋势突破
-/live intents
-/live execute loi_...
-/evals
-```
+## 快速开始
 
-## 文档地图
-
-如果要了解项目状态，请从 `docs/README.md` 开始。实际操作和验证 Agent 能力时，读 `docs/knowledge/tool-usage-guide.md`；它按 Agent graph、Tool Call、Provider、RAG、Memory、策略知识、BitPro MCP、风控、Testnet 执行、CLI、前端、测试和部署 smoke 组织入口。
-
-## 本地启动
+### 安装
 
 ```bash
+git clone git@github.com:Shadowell/HyperTrade.git
+cd HyperTrade
 cp .env.example .env
-uv run pytest -q
+# 编辑 .env 文件，填入你的 API 密钥
+
+export DATABASE_URL="sqlite:///$(pwd)/.local/hypertrade.db"
+export DEEPSEEK_API_KEY="your-key"
+```
+
+### 运行
+
+**后端**：
+```bash
+uv run uvicorn hypertrade.main:app --app-dir backend/src --port 3334
+```
+
+**前端**：
+```bash
 npm exec --yes pnpm@10 -- -C frontend install
 npm exec --yes pnpm@10 -- -C frontend dev
-uv run uvicorn hypertrade.main:app --app-dir backend/src --host 0.0.0.0 --port 3334
 ```
 
-前端默认访问 `http://localhost:3333`，后端默认 `http://localhost:3334`。
+**命令行**：
+```bash
+uv run ht --local
+```
 
-## 统一检查
+**访问**：
+- Web 控制台：http://localhost:3333/harness
+- API 文档：http://localhost:3334/docs
+
+---
+
+## 使用示例
+
+### 市场研究
+```bash
+# 自然语言
+uv run hypertrade --local ask "看下目前市场的热度怎么样"
+
+# 确定性命令
+/price ETH
+/candles BTC 1H 120
+/compare ETH SOL BTC
+```
+
+### 策略研究
+```bash
+/research 研究ETH趋势突破策略
+/backtest
+/experiment 实验ETH动量突破策略的不同参数
+/strategy library momentum_breakout_v1
+```
+
+### 模拟盘交易
+```bash
+/paper              # 查看状态
+/paper pause BTC    # 暂停 BTC 交易
+/paper close        # 平掉所有仓位
+```
+
+### 实盘订单（Testnet）
+```bash
+/live intent ETH buy 0.01 reason="测试"
+/live approve loi_abc123
+/live execute loi_abc123
+```
+
+---
+
+## 架构
+
+```
+客户端层 (CLI, Web, API)
+    ↓
+Agent 运行时 (Kernel, Planner, Tool Executor)
+    ↓
+治理层 (ToolRegistry, Risk Policy, Trace)
+    ↓
+服务层 (Market, RAG, Memory, Strategy, Backtest)
+    ↓
+数据层 (PostgreSQL/SQLite, OKX, BitPro)
+```
+
+**技术栈**：
+- 后端：Python 3.12+, FastAPI, SQLAlchemy, Backtrader
+- 前端：React 18, TypeScript, Vite, TailwindCSS
+- 数据库：PostgreSQL 14+ with pgvector（或 SQLite）
+- 基础设施：Docker Compose, Nginx, GitHub Actions
+
+---
+
+## 文档
+
+| 文档 | 链接 |
+|------|------|
+| **完整 README** | [README.md](README.md) |
+| **API 参考** | [docs/api-reference.zh-CN.md](docs/api-reference.zh-CN.md) |
+| **用户手册** | [docs/user-manual.zh-CN.md](docs/user-manual.zh-CN.md) |
+| **开发者指南** | [docs/developer-guide.zh-CN.md](docs/developer-guide.zh-CN.md) |
+| **文档中心** | [docs/documentation-index.md](docs/documentation-index.md) |
+| **架构文档** | [docs/architecture/](docs/architecture/) |
+| **产品规格** | [docs/spec.md](docs/spec.md) |
+
+英文版本：[English Documentation](docs/documentation-index.md)
+
+---
+
+## 测试
 
 ```bash
+# 完整测试套件
 ./scripts/check.sh
+
+# 特定测试
+uv run pytest tests/test_api.py -v
+npm exec --yes pnpm@10 -- -C frontend test
+
+# 评估状态
+uv run ht --local /evals
 ```
 
-## 目录
+---
 
-- `backend/`：FastAPI、Agent、Tool、RAG、Memory、行情采集。
-- `frontend/`：React/Vite `/harness` 和行情摘要工作台。
-- `docs/architecture/`：每个模块的中英双语架构说明。
-- `docs/contracts/`：Sprint 合同。
-- `deploy/`：Nginx 和服务器部署脚本。
+## 部署
+
+**自动部署**（通过 GitHub Actions）：
+```bash
+git push origin main
+# 自动部署到生产环境
+```
+
+**手动部署**：
+```bash
+ssh hypertrade-server
+cd /opt/hypertrade
+sudo -u hypertrade ./deploy/deploy.sh
+```
+
+---
+
+## 贡献
+
+1. 查看 `docs/contracts/` 了解当前冲刺范围
+2. 行为变更时更新文档
+3. 提交前运行 `./scripts/check.sh`
+4. 提交到 `main` 分支
+5. 推送触发自动部署
+
+详见[开发者指南](docs/developer-guide.zh-CN.md)。
+
+---
+
+## 许可证
+
+**私有仓库** - 保留所有权利。
+
+仅供研究使用。不构成投资建议。
+
+---
+
+## 联系方式
+
+- **文档**：[docs/documentation-index.md](docs/documentation-index.md)
+- **问题**：通过仓库 Issue 追踪器提交
+
+---
+
+<div align="center">
+
+**为系统化加密货币交易研究而构建**
+
+[完整 README](README.md) • [文档中心](docs/documentation-index.md) • [用户手册](docs/user-manual.zh-CN.md)
+
+</div>

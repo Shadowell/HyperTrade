@@ -4,6 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
+- Architecture diagram: Updated to include World Model (Layer 5), Monitoring (Layer 7), renumbered layers, and full Mermaid+SVG coverage.
 - Last verified state: World-model Agent evaluation completed on 2026-06-25
   with verdict `PASS WITH KNOWN GAPS`; focused tests, full `./scripts/check.sh`
   (`pytest` 254 passed), production API smoke, and production Agent prompt
@@ -18,6 +19,9 @@
 
 ## Current In-Progress Work
 
+- Architecture diagram refresh: Added World Model (Layer 5), Monitoring & Alerts
+  (Layer 7), renumbered to 10-layer model, and updated SVG + Mermaid to reflect
+  the complete Sprint 1-74 capability surface.
 - World-model Agent evaluation is complete. The Agent is production-safe for
   read-only operator review, scenario comparison, defensive-review preparation,
   and portfolio scheduling recommendations, but follow-up work should tighten

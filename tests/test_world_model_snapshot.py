@@ -78,8 +78,15 @@ def test_world_model_snapshot_reports_global_state_and_missing_cross_asset_sourc
         "stress",
         "unknown",
     }
-    assert snapshot["global_market"]["cross_asset_signal"] == "unknown"
-    assert "global_market.us_equities_unavailable" in snapshot["missing_data"]
+    # Sprint 75: Now returns real global market data via yfinance
+    assert snapshot["global_market"]["cross_asset_signal"] in {
+        "supportive",
+        "conflicting",
+        "hostile",
+        "unknown",
+    }
+    # Sprint 75: With real data, missing_data may be empty or contain failed tickers
+    # Just verify crypto and other sections work
     assert snapshot["crypto_market"]["ticker_count"] == 2
     assert snapshot["strategy"]["status"] in {"unknown", "healthy", "degraded", "failing"}
     assert snapshot["execution"]["status"] in {"healthy", "watch", "degraded", "critical"}
@@ -123,7 +130,9 @@ def test_api_exposes_read_only_world_model_snapshot() -> None:
         "decision",
         "source_refs",
     }
-    assert "global_market.us_equities_unavailable" in body["missing_data"]
+    # Sprint 75: Global market data now comes from yfinance, not fixture
+    # Missing data may be empty if yfinance succeeds
+    assert "strategy.strategy_knowledge_unavailable" in body["missing_data"]
     assert all(action["level"] in {"L0", "L1"} for action in body["candidate_actions"])
 
 
@@ -174,7 +183,10 @@ def test_agent_can_call_world_model_snapshot_without_write_tools(monkeypatch) ->
         if event["tool_name"] == "world_model_snapshot"
     )
     assert world_event["output_json"]["status"] == "completed"
-    assert "global_market.us_equities_unavailable" in world_event["output_json"]["missing_data"]
+    # Sprint 75: Global market data now comes from yfinance, not fixture
+    # Verify global_market section exists with regime data
+    assert "global_market" in world_event["output_json"]
+    assert "risk_regime" in world_event["output_json"]["global_market"]
     assert world_event["output_json"]["decision"]["selected_action_id"]
     assert "全局世界模型" in body["report_markdown"]
     assert "场景决策" in body["report_markdown"]

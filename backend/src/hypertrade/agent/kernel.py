@@ -183,10 +183,7 @@ class AgentKernel:
             "trigger": "user_request",
             "planner": llm.name,
             "model": llm.model,
-            "tool_calls": [
-                {"tool": r.tool_name, "input": r.input_json}
-                for r in result.tool_calls
-            ],
+            "tool_calls": [{"tool": r.tool_name, "input": r.input_json} for r in result.tool_calls],
             "citations": _citations_from_tool_calls(result.tool_calls),
             "graph": self._get_run_state(run_id).get("graph", []),
             "disclaimer": "Research output only. Not investment advice.",
@@ -225,12 +222,7 @@ class AgentKernel:
             run_id,
             "reflect",
             {"tool_count": 0},
-            {
-                "summary": (
-                    "chat provider unavailable; no natural-language tool route "
-                    "was guessed"
-                )
-            },
+            {"summary": ("chat provider unavailable; no natural-language tool route was guessed")},
             event_sink=event_sink,
         )
         report_markdown = (
@@ -379,6 +371,13 @@ class AgentKernel:
             elif tool_name == "world_model_snapshot":
                 settings = self._settings if self._settings is not None else get_settings()
                 result = WorldModelService(self.db, settings=settings).snapshot()
+
+            elif tool_name == "global_market_snapshot":
+                from hypertrade.global_market.service import GlobalMarketService
+
+                snapshot = GlobalMarketService().get_snapshot()
+                result = snapshot.model_dump()
+
             elif tool_name == "rag_search":
                 self.rag.scan_once()
                 query = str(args.get("query", "market risk"))
@@ -534,8 +533,10 @@ class AgentKernel:
                 self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_strategy_update":
                 raw_symbols = args.get("symbols")
-                update_symbols = raw_symbols if isinstance(raw_symbols, list) else (
-                    [raw_symbols] if raw_symbols is not None else None
+                update_symbols = (
+                    raw_symbols
+                    if isinstance(raw_symbols, list)
+                    else ([raw_symbols] if raw_symbols is not None else None)
                 )
                 raw_config = args.get("config")
                 result = self._bitpro_adapter().strategy_update(
@@ -571,16 +572,12 @@ class AgentKernel:
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_backtest_get_job":
-                result = self._bitpro_adapter().backtest_get_job(
-                    job_id=str(args.get("job_id", ""))
-                )
+                result = self._bitpro_adapter().backtest_get_job(job_id=str(args.get("job_id", "")))
                 self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_backtest_list_results":
                 min_return = args.get("min_total_return_pct")
                 result = self._bitpro_adapter().backtest_list_results(
-                    min_total_return_pct=(
-                        float(min_return) if min_return is not None else None
-                    ),
+                    min_total_return_pct=(float(min_return) if min_return is not None else None),
                     status=str(args.get("status", "completed")),
                     sort_by=str(args.get("sort_by", "return")),
                     sort_order=str(args.get("sort_order", "desc")),
@@ -1183,9 +1180,7 @@ class AgentKernel:
                 decliners_pct=heat.get("decliners_pct", "0.000000"),
                 average_change_pct=heat.get("average_change_pct", "0.000000"),
             ),
-            (
-                "- 最强/最弱: {top_gainer} / {top_loser}"
-            ).format(
+            ("- 最强/最弱: {top_gainer} / {top_loser}").format(
                 top_gainer=heat.get("top_gainer", "n/a"),
                 top_loser=heat.get("top_loser", "n/a"),
             ),
@@ -1322,9 +1317,7 @@ class AgentKernel:
                     continue
                 metrics = item.get("metrics")
                 metrics = metrics if isinstance(metrics, dict) else {}
-                metric_text = ", ".join(
-                    f"{key}={value}" for key, value in metrics.items()
-                ) or "n/a"
+                metric_text = ", ".join(f"{key}={value}" for key, value in metrics.items()) or "n/a"
                 missing = item.get("missing_fields")
                 missing = missing if isinstance(missing, list) else []
                 sample = item.get("sample")
@@ -1333,9 +1326,7 @@ class AgentKernel:
                     [
                         f"- 来源: {item.get('source', 'unknown')}",
                         f"- source_path: {item.get('source_path', 'unknown')}",
-                        (
-                            "- as_of: {as_of}, freshness_seconds={freshness}"
-                        ).format(
+                        ("- as_of: {as_of}, freshness_seconds={freshness}").format(
                             as_of=item.get("as_of", "n/a"),
                             freshness=item.get("freshness_seconds", "n/a"),
                         ),
@@ -1378,15 +1369,12 @@ class AgentKernel:
                 [
                     f"- schema_version: {payload.get('schema_version', 'unknown')}",
                     f"- 生成时间: {payload.get('generated_at', 'n/a')}",
-                    (
-                        "- 全局风险状态: {risk}, cross_asset_signal={cross_asset}"
-                    ).format(
+                    ("- 全局风险状态: {risk}, cross_asset_signal={cross_asset}").format(
                         risk=global_market.get("risk_regime", "unknown"),
                         cross_asset=global_market.get("cross_asset_signal", "unknown"),
                     ),
                     (
-                        "- 加密市场: status={status}, tickers={tickers}, "
-                        "avg_change_utc0={avg}%"
+                        "- 加密市场: status={status}, tickers={tickers}, avg_change_utc0={avg}%"
                     ).format(
                         status=crypto_market.get("status", "unknown"),
                         tickers=crypto_market.get("ticker_count", "n/a"),
@@ -1402,7 +1390,7 @@ class AgentKernel:
                         api_health=deployment.get("api_health", "unknown"),
                     ),
                 ]
-                    )
+            )
             if missing:
                 world_model_lines.append(
                     "- missing_data: " + ", ".join(str(item) for item in missing[:12])
@@ -1418,7 +1406,7 @@ class AgentKernel:
                         policy_status=decision.get("policy_status", "unknown"),
                         review_after=decision.get("review_after", "n/a"),
                     )
-                    )
+                )
             if scenarios:
                 world_model_lines.append("- action_scenarios:")
                 for scenario in scenarios[:6]:
@@ -1434,8 +1422,8 @@ class AgentKernel:
                             score=scenario.get("score", "n/a"),
                             policy_status=scenario.get("policy_status", "unknown"),
                             confidence=scenario.get("confidence", "n/a"),
+                        )
                     )
-                )
             if portfolio:
                 portfolio_state = _dict_or_empty(portfolio.get("portfolio_state"))
                 portfolio_decision = _dict_or_empty(portfolio.get("decision"))
@@ -1454,9 +1442,7 @@ class AgentKernel:
                     )
                 )
                 missing_evidence = portfolio.get("missing_evidence")
-                missing_evidence = (
-                    missing_evidence if isinstance(missing_evidence, list) else []
-                )
+                missing_evidence = missing_evidence if isinstance(missing_evidence, list) else []
                 if missing_evidence:
                     world_model_lines.append(
                         "- portfolio_missing_evidence: "
@@ -1516,9 +1502,7 @@ class AgentKernel:
                 if not isinstance(item, dict):
                     continue
                 strategy_library_lines.append(
-                    (
-                        "- {strategy} | 证据: {evidence} 条，pass={passed}，fail={failed}"
-                    ).format(
+                    ("- {strategy} | 证据: {evidence} 条，pass={passed}，fail={failed}").format(
                         strategy=item.get("strategy_key", "unknown"),
                         evidence=item.get("evidence_count", 0),
                         passed=item.get("passed_count", 0),
@@ -1658,13 +1642,8 @@ class AgentKernel:
             progress = job.get("percent", job.get("progress", "n/a"))
             bitpro_backtest_lines.extend(
                 [
-                    (
-                        "- 口径: total_return_pct，实际回测总收益；"
-                        "与 BitPro 回测结果页面同源"
-                    ),
-                    (
-                        "- 回测任务: job={job_id}, status={status}, progress={progress}%"
-                    ).format(
+                    ("- 口径: total_return_pct，实际回测总收益；与 BitPro 回测结果页面同源"),
+                    ("- 回测任务: job={job_id}, status={status}, progress={progress}%").format(
                         job_id=job.get("job_id", job.get("id", "n/a")),
                         status=job.get("status", "n/a"),
                         progress=progress,
@@ -1712,9 +1691,7 @@ class AgentKernel:
                     continue
                 state = "可用" if info.get("available") else "不可用"
                 bitpro_backtest_lines.append(
-                    (
-                        "- {label}: {state}，{count} 条，展示 {sample_count} 条样本"
-                    ).format(
+                    ("- {label}: {state}，{count} 条，展示 {sample_count} 条样本").format(
                         label=label,
                         state=state,
                         count=info.get("count", 0),
@@ -1773,9 +1750,7 @@ class AgentKernel:
                 info = info if isinstance(info, dict) else {}
                 state = "可用" if info.get("available") else "不可用"
                 bitpro_backtest_detail_lines.append(
-                    (
-                        "- {label}: {state}，{count} 条，展示 {sample_count} 条样本"
-                    ).format(
+                    ("- {label}: {state}，{count} 条，展示 {sample_count} 条样本").format(
                         label=label,
                         state=state,
                         count=info.get("count", 0),
@@ -1845,8 +1820,7 @@ class AgentKernel:
                 if isinstance(running_total, int) and running_total > len(running_items):
                     state = "truncated"
                 bitpro_paper_lines.append(
-                    f"- 运行策略覆盖: listed={len(running_items)}, "
-                    f"total={running_total}, {state}"
+                    f"- 运行策略覆盖: listed={len(running_items)}, total={running_total}, {state}"
                 )
             if monitor:
                 inventory = monitor.get("running_inventory")
@@ -1948,8 +1922,7 @@ class AgentKernel:
             bitpro_paper_lines.extend(
                 [
                     (
-                        "- 监控快照: {snapshot_id}, strategy_id={strategy_id}, "
-                        "previous={previous}"
+                        "- 监控快照: {snapshot_id}, strategy_id={strategy_id}, previous={previous}"
                     ).format(
                         snapshot_id=payload.get("snapshot_id", "n/a"),
                         strategy_id=_paper_strategy_id(payload),
@@ -2070,9 +2043,7 @@ class AgentKernel:
                 bitpro_live_strategy_lines.append("")
                 continue
             top = strategies[0] if isinstance(strategies[0], dict) else {}
-            bitpro_live_strategy_lines.append(
-                "- 最高策略: " + _format_live_strategy_top_line(top)
-            )
+            bitpro_live_strategy_lines.append("- 最高策略: " + _format_live_strategy_top_line(top))
             for index, strategy in enumerate(strategies[:5], start=1):
                 if not isinstance(strategy, dict):
                     continue
@@ -2105,25 +2076,19 @@ class AgentKernel:
             if payload.get("status") == "denied":
                 missing_fields = payload.get("missing_fields")
                 missing_fields = missing_fields if isinstance(missing_fields, list) else []
-                line = (
-                    "- {tool}: denied, reason={reason}"
-                ).format(
+                line = ("- {tool}: denied, reason={reason}").format(
                     tool=tool_name,
                     reason=payload.get("denial_reason", "unknown"),
                 )
                 if missing_fields:
-                    line += ", missing_fields=" + ", ".join(
-                        str(field) for field in missing_fields
-                    )
+                    line += ", missing_fields=" + ", ".join(str(field) for field in missing_fields)
                 governance_lines.append(line)
                 continue
             nested_tools = _nested_bitpro_tools(payload)
             line = f"- {tool_name}: {payload.get('status', 'unknown')}"
             strategy = payload.get("strategy")
             if isinstance(strategy, dict):
-                line += (
-                    f", strategy={strategy.get('id', strategy.get('name', 'n/a'))}"
-                )
+                line += f", strategy={strategy.get('id', strategy.get('name', 'n/a'))}"
             job = payload.get("job")
             if isinstance(job, dict):
                 line += f", job={job.get('job_id', job.get('id', 'n/a'))}"
@@ -2131,9 +2096,7 @@ class AgentKernel:
                     line += f", job_status={job.get('status')}"
             paper = payload.get("paper")
             if isinstance(paper, dict):
-                line += (
-                    f", paper={paper.get('instance_id', paper.get('id', 'n/a'))}"
-                )
+                line += f", paper={paper.get('instance_id', paper.get('id', 'n/a'))}"
                 if paper.get("status"):
                     line += f", paper_status={paper.get('status')}"
             if nested_tools:
@@ -2156,8 +2119,7 @@ class AgentKernel:
             unavailable_lines.append(
                 "- {tool}: 数据暂不可用，原因 {reason}，来源 {source}".format(
                     tool=getattr(record, "tool_name", "unknown"),
-                    reason=error.get("message")
-                    or payload.get("unavailable_reason", "unknown"),
+                    reason=error.get("message") or payload.get("unavailable_reason", "unknown"),
                     source=policy.get("source_of_truth", "unknown"),
                 )
             )
@@ -2390,9 +2352,9 @@ def _citations_from_tool_calls(tool_calls: list[Any]) -> list[dict[str, Any]]:
                     "title": str(hit.get("title", "")),
                     "chunk_index": chunk_index,
                     "score": hit.get("score", 0),
-                    "content_preview": str(
-                        hit.get("content", hit.get("content_preview", ""))
-                    )[:240],
+                    "content_preview": str(hit.get("content", hit.get("content_preview", "")))[
+                        :240
+                    ],
                 }
             )
     return citations[:5]
@@ -2431,9 +2393,7 @@ def _nested_bitpro_tools(payload: dict[str, Any]) -> list[str]:
     if not isinstance(calls, list):
         return []
     return [
-        str(call.get("tool", ""))
-        for call in calls
-        if isinstance(call, dict) and call.get("tool")
+        str(call.get("tool", "")) for call in calls if isinstance(call, dict) and call.get("tool")
     ]
 
 
@@ -2554,9 +2514,7 @@ def _market_summary_report_lines(payload: dict[str, Any]) -> list[str]:
             decliners_pct=heat.get("decliners_pct", "0.000000"),
             average_change_pct=heat.get("average_change_pct", "0.000000"),
         ),
-        (
-            "- 最强/最弱: {top_gainer} / {top_loser}"
-        ).format(
+        ("- 最强/最弱: {top_gainer} / {top_loser}").format(
             top_gainer=heat.get("top_gainer", "n/a"),
             top_loser=heat.get("top_loser", "n/a"),
         ),

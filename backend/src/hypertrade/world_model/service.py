@@ -30,9 +30,8 @@ from hypertrade.db import (
 )
 from hypertrade.market.repository import MarketRepository
 from hypertrade.world_model.actions import candidate_actions
-from hypertrade.world_model.collectors import GLOBAL_MARKET_MISSING_DATA
+from hypertrade.world_model.collectors import collect_global_market
 from hypertrade.world_model.defensive_actions import DefensiveActionEngine
-from hypertrade.world_model.evaluators import risk_regime_from_crypto
 from hypertrade.world_model.portfolio import PortfolioScheduler
 from hypertrade.world_model.records import build_decision_record
 from hypertrade.world_model.scenarios import ScenarioSimulator
@@ -48,9 +47,9 @@ class WorldModelService:
 
     def snapshot(self) -> WorldStatePayload:
         generated_at = utc_now().isoformat()
-        missing_data: list[str] = list(GLOBAL_MARKET_MISSING_DATA)
+        missing_data: list[str] = []
         crypto_market = self._crypto_market(missing_data)
-        global_market = self._global_market(crypto_market=crypto_market)
+        global_market = self._global_market(crypto_market=crypto_market, missing_data=missing_data)
         strategy = self._strategy_state(missing_data)
         execution = self._execution_state(missing_data)
         tool_health = self._tool_health_state(missing_data)
@@ -128,24 +127,34 @@ class WorldModelService:
             ],
         }
 
-    def _global_market(self, *, crypto_market: dict[str, Any]) -> dict[str, Any]:
+    def _global_market(
+        self,
+        *,
+        crypto_market: dict[str, Any],
+        missing_data: list[str],
+    ) -> dict[str, Any]:
+        """Collect live global market state via GlobalMarketService.
+
+        Replaces Sprint 71 fixture data with real yfinance data.
+        """
+        global_data = collect_global_market()
+
+        # Add missing data markers
+        if global_data.get("missing_data"):
+            for symbol in global_data["missing_data"]:
+                missing_data.append(f"global_market.{symbol}_unavailable")
+
+        # Extract regime classifications
         return {
-            "status": "partial",
-            "risk_regime": risk_regime_from_crypto(crypto_market),
-            "cross_asset_signal": "unknown",
-            "coverage": {
-                "crypto": crypto_market.get("status", "unknown"),
-                "us_equities": "missing",
-                "volatility": "missing",
-                "rates": "missing",
-                "fx": "missing",
-                "commodities": "missing",
-                "asia_risk_assets": "missing",
-            },
-            "notes": [
-                "Crypto market evidence is available from OKX snapshots.",
-                "Cross-asset global-market feeds are not wired in Sprint 71.",
-            ],
+            "status": "healthy" if global_data.get("risk_regime") != "unknown" else "watch",
+            "risk_regime": global_data.get("risk_regime", "unknown"),
+            "volatility_regime": global_data.get("volatility_regime", "unknown"),
+            "dollar_pressure": global_data.get("dollar_pressure", "unknown"),
+            "rates_pressure": global_data.get("rates_pressure", "unknown"),
+            "cross_asset_signal": global_data.get("cross_asset_signal", "unknown"),
+            "tickers": global_data.get("tickers", []),
+            "source_id": "global_market:yfinance",
+            "as_of": global_data.get("as_of"),
         }
 
     def _strategy_state(self, missing_data: list[str]) -> dict[str, Any]:

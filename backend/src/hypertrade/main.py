@@ -44,6 +44,7 @@ from hypertrade.db import (
     utc_now,
 )
 from hypertrade.evals.service import AgentEvalSuite
+from hypertrade.global_market.service import GlobalMarketService
 from hypertrade.live.service import LiveOrderIntentService
 from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
@@ -454,6 +455,19 @@ def create_app(
             {},
         )
         return portfolio if isinstance(portfolio, dict) else {}
+
+    @app.get("/api/global-market/snapshot")
+    def global_market_snapshot() -> dict[str, Any]:
+        """Get current global market state snapshot with regime classifications."""
+        service = GlobalMarketService()
+        snapshot = service.get_snapshot()
+        return snapshot.model_dump()
+
+    @app.get("/api/global-market/tickers")
+    def global_market_tickers() -> dict[str, Any]:
+        """Get list of supported global market tickers."""
+        service = GlobalMarketService()
+        return {"tickers": service.get_supported_tickers()}
 
     @app.get("/api/world-model/defensive-actions")
     def world_model_defensive_actions(_: AdminUser) -> dict[str, Any]:

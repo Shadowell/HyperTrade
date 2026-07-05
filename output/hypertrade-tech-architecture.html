@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HyperTrade 技术架构图</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #1e3c72;
+            font-size: 32px;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            font-size: 16px;
+            margin-bottom: 40px;
+        }
+
+        .architecture {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .layer {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            background: linear-gradient(to right, #f8f9fa, #ffffff);
+            transition: all 0.3s ease;
+        }
+
+        .layer:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateX(5px);
+        }
+
+        .layer-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .layer-number {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            font-size: 18px;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+
+        .layer-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .layer-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 15px;
+        }
+
+        .component {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 15px;
+            transition: all 0.2s ease;
+        }
+
+        .component:hover {
+            border-color: #3498db;
+            box-shadow: 0 2px 8px rgba(52,152,219,0.2);
+        }
+
+        .component-name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            font-size: 15px;
+        }
+
+        .component-desc {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .tech-stack {
+            display: inline-block;
+            background: #ecf0f1;
+            color: #2c3e50;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-top: 8px;
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Layer colors */
+        .layer-1 .layer-number { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .layer-2 .layer-number { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .layer-3 .layer-number { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .layer-4 .layer-number { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+        .layer-5 .layer-number { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+        .layer-6 .layer-number { background: linear-gradient(135deg, #30cfd0 0%, #330867 100%); }
+        .layer-7 .layer-number { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); }
+        .layer-8 .layer-number { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); }
+        .layer-9 .layer-number { background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); }
+        .layer-10 .layer-number { background: linear-gradient(135deg, #ff6e7f 0%, #bfe9ff 100%); }
+
+        .legend {
+            margin-top: 40px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .legend-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+
+        .legend-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: start;
+            gap: 10px;
+        }
+
+        .legend-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .legend-text {
+            font-size: 14px;
+            color: #555;
+            line-height: 1.6;
+        }
+
+        .legend-label {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 3px;
+        }
+
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                box-shadow: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>HyperTrade 技术架构图</h1>
+        <p class="subtitle">Agent 驱动的加密货币交易研究与执行框架 | V1 Production Architecture</p>
+
+        <div class="architecture">
+            <!-- Layer 1: Client Access -->
+            <div class="layer layer-1">
+                <div class="layer-header">
+                    <div class="layer-number">1</div>
+                    <div class="layer-title">Agent / Client Access Layer 客户端访问层</div>
+                </div>
+                <div class="layer-content">
+                    <div class="component">
+                        <div class="component-name">CLI Interface</div>
+                        <div class="component-desc">命令行接口，支持本地和远程模式</div>
+                        <div class="tech-stack">hypertrade / ht</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Web Console</div>
+                        <div class="component-desc">操作员控制台，实时监控和报告查看</div>
+                        <div class="tech-stack">/harness</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">REST/SSE API</div>
+                        <div class="component-desc">RESTful API 和服务器推送事件流</div>
+                        <div class="tech-stack">FastAPI</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">External Agents</div>
+                        <div class="component-desc">Codex 和其他外部 Agent 集成</div>
+                        <div class="tech-stack">MCP Protocol</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 2: Data Inputs -->
+            <div class="layer layer-2">
+                <div class="layer-header">
+                    <div class="layer-number">2</div>
+                    <div class="layer-title">Data and Inputs Layer 数据输入层</div>
+                </div>
+                <div class="layer-content">
+                    <div class="component">
+                        <div class="component-name">OKX Market Data</div>
+                        <div class="component-desc">行情数据：ticker、K线、资金费率、持仓量</div>
+                        <div class="tech-stack">WebSocket + REST</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">BitPro MCP/API</div>
+                        <div class="component-desc">策略生命周期、回测、模拟盘数据</div>
+                        <div class="tech-stack">MCP Adapter</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">RAG / Knowledge Base</div>
+                        <div class="component-desc">知识库语义检索，支持引用溯源</div>
+                        <div class="tech-stack">pgvector</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Audited Memory</div>
+                        <div class="component-desc">策略证据、运行结论的审计记忆</div>
+                        <div class="tech-stack">PostgreSQL</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 3: Governance Gateway -->
+            <div class="layer layer-3">
+                <div class="layer-header">
+                    <div class="layer-number">3</div>
+                    <div class="layer-title">Governance Gateway Layer 治理网关层</div>
+                </div>
+                <div class="layer-content">
+                    <div class="component">
+                        <div class="component-name">Provider Router</div>
+                        <div class="component-desc">LLM 提供商路由：DeepSeek / OpenAI / Codex</div>
+                        <div class="tech-stack">Multi-Provider</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Tool Registry</div>
+                        <div class="component-desc">工具注册表：schema、scope、approval、idempotency</div>
+                        <div class="tech-stack">ToolRegistry</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Risk Governance</div>
+                        <div class="component-desc">风控策略：审批门禁、实盘阻断</div>
+                        <div class="tech-stack">RiskGovernancePolicy</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Trace & Audit</div>
+                        <div class="component-desc">图节点、工具调用、策略决策的完整追踪</div>
+                        <div class="tech-stack">Graph Events</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 4: Agent Engine -->
+            <div class="layer layer-4">
+                <div class="layer-header">
+                    <div class="layer-number">4</div>
+                    <div class="layer-title">Agent Engine Layer Agent 引擎层</div>
+                </div>
+                <div class="layer-content">
+                    <div class="component">
+                        <div class="component-name">AgentKernel Graph Runtime</div>
+                        <div class="component-desc">图运行时：intent → plan → approve → execute → reflect → report</div>
+                        <div class="tech-stack">LangGraph-style</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">AgentPlanner</div>
+                        <div class="component-desc">LLM 驱动的工具调用规划器</div>
+                        <div class="tech-stack">Function Calling</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Market Intelligence</div>
+                        <div class="component-desc">资金费率、持仓量、市场宽度、相对强弱</div>
+                        <div class="tech-stack">OKX Analytics</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Strategy Research Loop</div>
+                        <div class="component-desc">证据驱动的策略迭代：研究 → 实验 → 库 → 迭代</div>
+                        <div class="tech-stack">Evidence-Based</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 5: World Model -->
+            <div class="layer layer-5">
+                <div class="layer-header">
+                    <div class="layer-number">5</div>
+                    <div class="layer-title">World Model Layer 世界模型层 (Sprint 71-74)</div>
+                </div>
+                <div class="layer-content">
+                    <div class="component">
+                        <div class="component-name">WorldState Snapshot</div>
+                        <div class="component-desc">只读全局状态快照：全球市场 + 加密市场</div>
+                        <div class="tech-stack">Sprint 71</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Scenario Decision</div>
+                        <div class="component-desc">场景模拟与行动评分</div>
+                        <div class="tech-stack">Sprint 72</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Defensive Automation</div>
+                        <div class="component-desc">防御性自动化：白名单门控</div>
+                        <div class="tech-stack">Sprint 73</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Portfolio Scheduler</div>
+                        <div class="component-desc">组合调度器：策略配置审查</div>
+                        <div class="tech-stack">Sprint 74</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 6: Execution & Output -->
+            <div class="layer layer-6">
+                <div class="layer-header">
+                    <div class="layer-number">6</div>
+                    <div class="layer-title">Execution and Output Layer 执行与输出层</div>
+                </div>
+                <div class="layer-content">
+                    <div class="component">
+                        <div class="component-name">Operator Reports</div>
+                        <div class="component-desc">结构化报告：Markdown + JSON</div>
+                        <div class="tech-stack">Rich Renderer</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">BitPro Strategy Lifecycle</div>
+                        <div class="component-desc">策略生命周期：创建、验证、回测</div>
+                        <div class="tech-stack">MCP Tools</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Paper Trading Runtime</div>
+                        <div class="component-desc">模拟盘运行时：会话、仓位、成交</div>
+                        <div class="tech-stack">Backtrader</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Risk-Gated Execution</div>
+                        <div class="component-desc">风控门控执行：仅 OKX Testnet（V1 无实盘）</div>
+                        <div class="tech-stack">Approval Required</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 7: Monitoring & Alerts -->
+            <div class="layer layer-7">
+                <div class="layer-header">
+                    <div class="layer-number">7</div>
+                    <div class="layer-title">Monitoring and Alerts Layer 监控与告警层</div>
+                </div>
+                <div class="layer-content">
+                    <div class="component">
+                        <div class="component-name">Monitor Definitions</div>
+                        <div class="component-desc">监控定义：模拟盘、策略库、连接器健康</div>
+                        <div class="tech-stack">Scheduled Tasks</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Alert Events</div>
+                        <div class="component-desc">告警事件持久化与查询</div>
+                        <div class="tech-stack">Event Store</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Scheduler Worker</div>
+                        <div class="component-desc">调度工作进程（只读，无写操作）</div>
+                        <div class="tech-stack">Sprint 60</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Drift Detection</div>
+                        <div class="component-desc">状态漂移检测与快照对比</div>
+                        <div class="tech-stack">Snapshot Diff</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 8: Foundation / Infrastructure -->
+            <div class="layer layer-8">
+                <div class="layer-header">
+                    <div class="layer-number">8</div>
+                    <div class="layer-title">Foundation / Infrastructure Layer 基础设施层</div>
+                </div>
+                <div class="layer-content">
+                    <div class="component">
+                        <div class="component-name">LLM Providers</div>
+                        <div class="component-desc">DeepSeek、OpenAI、Codex、Qwen</div>
+                        <div class="tech-stack">Multi-Model</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">PostgreSQL + pgvector</div>
+                        <div class="component-desc">主数据库 + 向量检索</div>
+                        <div class="tech-stack">SQLAlchemy + Alembic</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Async Workers</div>
+                        <div class="component-desc">市场采集、RAG 扫描、模拟盘循环</div>
+                        <div class="tech-stack">Python Async</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Connector Framework</div>
+                        <div class="component-desc">连接器能力发现与注册</div>
+                        <div class="tech-stack">Sprint 54</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">CI/CD Pipeline</div>
+                        <div class="component-desc">GitHub Actions 自动部署</div>
+                        <div class="tech-stack">Docker Compose + Nginx</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Agent Evals</div>
+                        <div class="component-desc">确定性评估套件</div>
+                        <div class="tech-stack">Pytest + Fixtures</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 9: Safety & Compliance -->
+            <div class="layer layer-9">
+                <div class="layer-header">
+                    <div class="layer-number">9</div>
+                    <div class="layer-title">Safety and Compliance Layer 安全与合规层</div>
+                </div>
+                <div class="layer-content">
+                    <div class="component">
+                        <div class="component-name">Audited Runs</div>
+                        <div class="component-desc">所有运行均可审计追溯</div>
+                        <div class="tech-stack">Full Trace</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Scoped Tools</div>
+                        <div class="component-desc">工具作用域分类：read / paper-write / testnet-write</div>
+                        <div class="tech-stack">Scope Classes</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">RBAC & Approval</div>
+                        <div class="component-desc">基于角色的访问控制与审批流程</div>
+                        <div class="tech-stack">Admin Session</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Idempotency Gates</div>
+                        <div class="component-desc">幂等性检查，防止重复执行</div>
+                        <div class="tech-stack">Idempotency Keys</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Paper-First Validation</div>
+                        <div class="component-desc">策略必须先通过模拟盘验证</div>
+                        <div class="tech-stack">Gate Results</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Mainnet Blocked (V1)</div>
+                        <div class="component-desc">V1 版本阻断实盘执行</div>
+                        <div class="tech-stack">Hard Block</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 10: Closed-Loop Workflow -->
+            <div class="layer layer-10">
+                <div class="layer-header">
+                    <div class="layer-number">10</div>
+                    <div class="layer-title">Closed-Loop Workflow Layer 闭环工作流层</div>
+                </div>
+                <div class="layer-content">
+                    <div class="component">
+                        <div class="component-name">Market Research</div>
+                        <div class="component-desc">市场研究：行情、资金费率、持仓量分析</div>
+                        <div class="tech-stack">Step 1</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Strategy Code Generation</div>
+                        <div class="component-desc">策略代码生成与验证</div>
+                        <div class="tech-stack">Step 2</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">BitPro Backtest</div>
+                        <div class="component-desc">BitPro 回测执行与结果分析</div>
+                        <div class="tech-stack">Step 3</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Paper Monitoring</div>
+                        <div class="component-desc">模拟盘监控与漂移检测</div>
+                        <div class="tech-stack">Step 4</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Memory Feedback</div>
+                        <div class="component-desc">策略证据沉淀与记忆反馈</div>
+                        <div class="tech-stack">Step 5</div>
+                    </div>
+                    <div class="component">
+                        <div class="component-name">Next Iteration</div>
+                        <div class="component-desc">基于证据规划下一轮实验</div>
+                        <div class="tech-stack">Step 6</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend">
+            <div class="legend-title">🔑 关键设计原则</div>
+            <div class="legend-grid">
+                <div class="legend-item">
+                    <div class="legend-icon" style="background: #3498db;"></div>
+                    <div class="legend-text">
+                        <div class="legend-label">BitPro 边界隔离</div>
+                        HyperTrade 只通过稳定的 MCP/API 工具调用 BitPro，不直接访问 BitPro 数据库或复制业务逻辑
+                    </div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-icon" style="background: #e74c3c;"></div>
+                    <div class="legend-text">
+                        <div class="legend-label">实盘安全阻断</div>
+                        V1 版本硬阻断主网实盘执行，所有执行仅限 OKX Testnet，且需要审批和风控检查
+                    </div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-icon" style="background: #2ecc71;"></div>
+                    <div class="legend-text">
+                        <div class="legend-label">证据溯源</div>
+                        所有策略决策基于可审计的证据，报告必须标注数据来源、时间戳和缺失字段
+                    </div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-icon" style="background: #f39c12;"></div>
+                    <div class="legend-text">
+                        <div class="legend-label">确定性评估</div>
+                        254+ 测试用例覆盖工具选择、RAG、Memory、风控、BitPro 集成和报告质量
+                    </div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-icon" style="background: #9b59b6;"></div>
+                    <div class="legend-text">
+                        <div class="legend-label">LLM 规划器</div>
+                        自然语言提示由 LLM Planner 语义选择工具，无 provider 时返回 unavailable 而非猜测
+                    </div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-icon" style="background: #1abc9c;"></div>
+                    <div class="legend-text">
+                        <div class="legend-label">闭环迭代</div>
+                        策略从研究到回测到模拟盘监控到证据反馈，形成完整的证据驱动闭环
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 30px; text-align: center; color: #999; font-size: 13px;">
+            <p>HyperTrade V1 Production Architecture | Sprint 1-74 完成</p>
+            <p>仅用于研究输出，不构成投资建议 | Research Output Only</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -115,6 +115,14 @@ class ToolRegistry:
                     "world_model",
                 ),
                 ToolDefinition(
+                    "global_market.snapshot",
+                    (
+                        "Read current global market regime state across equities, "
+                        "volatility, FX, commodities, and rates."
+                    ),
+                    "global_market",
+                ),
+                ToolDefinition(
                     "market.tickers",
                     "Read latest OKX SWAP ticker snapshots.",
                     "market",

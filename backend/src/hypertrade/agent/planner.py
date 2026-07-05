@@ -148,6 +148,19 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "global_market_snapshot",
+            "description": (
+                "Read current global market regime classifications across equities, "
+                "volatility, FX, commodities, and rates. Returns risk_regime, "
+                "volatility_regime, dollar_pressure, rates_pressure, cross_asset_signal, "
+                "and ticker data for S&P 500, Nasdaq, VIX, DXY, Gold, Oil, Treasuries."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "rag_search",
             "description": "Search the project knowledge base for relevant trading context.",
             "parameters": {
@@ -830,8 +843,7 @@ for schema in TOOL_SCHEMAS:
         {
             "type": "string",
             "description": (
-                "Unique key for this requested write action, for example "
-                "run id + tool purpose."
+                "Unique key for this requested write action, for example run id + tool purpose."
             ),
         },
     )
@@ -854,8 +866,20 @@ context beyond price/K-line data. Treat this as context, not buy/sell advice.
 Use world_model_snapshot when the user asks about the global operator state,
 全局状态, 世界模型, 全局市场感受, cross-asset regime, what the Agent currently sees
 across market, strategy, execution, tools, and deployment.
+
+Use global_market_snapshot when the user specifically asks about:
+- Current global market conditions, regime, or risk environment
+- Cross-asset market state (equities, volatility, FX, commodities, rates)
+- Market risk-on/risk-off conditions, risk appetite
+- VIX, volatility levels, or market fear gauge
+- Dollar strength, DXY, or FX conditions
+- Interest rate conditions, Treasury yields, rates pressure
+- Whether it's a good time to trade based on macro conditions
+- Global macro environment affecting crypto trading
+
 Do not use market_summary as a substitute for global WorldState; market_summary
 only covers OKX crypto-market heat and cannot represent global operator/cross-asset state.
+
 Use world_model_snapshot when the user asks about portfolio, strategy allocation,
 策略权重, 组合调度, allocation review, which strategies to reduce, pause, observe,
 or backtest next. Portfolio answers must cite WorldState portfolio evidence and

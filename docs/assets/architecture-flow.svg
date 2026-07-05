@@ -1,0 +1,154 @@
+<svg width="1200" height="800" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="layer1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="layer2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f093fb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f5576c;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="layer3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#4facfe;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00f2fe;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="layer4" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#43e97b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#38f9d7;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="layer5" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#fa709a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#fee140;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="layer6" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#30cfd0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#330867;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Arrow marker -->
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#64748b" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="600" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#1e293b" text-anchor="middle">
+    HyperTrade Architecture
+  </text>
+
+  <!-- Layer 1: Client Access -->
+  <rect x="50" y="80" width="1100" height="100" fill="url(#layer1)" rx="10" opacity="0.9"/>
+  <text x="100" y="115" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">Client Layer</text>
+
+  <rect x="100" y="130" width="200" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="200" y="155" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">CLI (hypertrade/ht)</text>
+
+  <rect x="350" y="130" width="200" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="450" y="155" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">Web Console (/harness)</text>
+
+  <rect x="600" y="130" width="200" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="700" y="155" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">REST/SSE API</text>
+
+  <rect x="850" y="130" width="200" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="950" y="155" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">External Agents</text>
+
+  <!-- Arrow 1 to 2 -->
+  <line x1="600" y1="180" x2="600" y2="210" stroke="#64748b" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Layer 2: Agent Runtime -->
+  <rect x="50" y="210" width="1100" height="100" fill="url(#layer2)" rx="10" opacity="0.9"/>
+  <text x="100" y="245" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">Agent Runtime</text>
+
+  <rect x="150" y="260" width="280" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="290" y="285" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">AgentKernel (LangGraph-style)</text>
+
+  <rect x="480" y="260" width="200" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="580" y="285" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">Provider Router</text>
+
+  <rect x="730" y="260" width="200" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="830" y="285" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">Tool Executor</text>
+
+  <!-- Arrow 2 to 3 -->
+  <line x1="600" y1="310" x2="600" y2="340" stroke="#64748b" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Layer 3: Governance -->
+  <rect x="50" y="340" width="1100" height="100" fill="url(#layer3)" rx="10" opacity="0.9"/>
+  <text x="100" y="375" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">Governance Layer</text>
+
+  <rect x="100" y="390" width="180" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="190" y="415" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">ToolRegistry</text>
+
+  <rect x="330" y="390" width="180" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="420" y="415" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">Risk Policy</text>
+
+  <rect x="560" y="390" width="180" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="650" y="415" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">Approval Gates</text>
+
+  <rect x="790" y="390" width="180" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="880" y="415" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">Trace & Audit</text>
+
+  <!-- Arrow 3 to 4 -->
+  <line x1="600" y1="440" x2="600" y2="470" stroke="#64748b" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Layer 4: Services -->
+  <rect x="50" y="470" width="1100" height="120" fill="url(#layer4)" rx="10" opacity="0.9"/>
+  <text x="100" y="505" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">Service Layer</text>
+
+  <rect x="100" y="520" width="140" height="35" fill="white" rx="5" opacity="0.95"/>
+  <text x="170" y="542" font-family="Arial, sans-serif" font-size="13" fill="#1e293b" text-anchor="middle">Market</text>
+
+  <rect x="260" y="520" width="140" height="35" fill="white" rx="5" opacity="0.95"/>
+  <text x="330" y="542" font-family="Arial, sans-serif" font-size="13" fill="#1e293b" text-anchor="middle">RAG</text>
+
+  <rect x="420" y="520" width="140" height="35" fill="white" rx="5" opacity="0.95"/>
+  <text x="490" y="542" font-family="Arial, sans-serif" font-size="13" fill="#1e293b" text-anchor="middle">Memory</text>
+
+  <rect x="580" y="520" width="140" height="35" fill="white" rx="5" opacity="0.95"/>
+  <text x="650" y="542" font-family="Arial, sans-serif" font-size="13" fill="#1e293b" text-anchor="middle">Strategy</text>
+
+  <rect x="740" y="520" width="140" height="35" fill="white" rx="5" opacity="0.95"/>
+  <text x="810" y="542" font-family="Arial, sans-serif" font-size="13" fill="#1e293b" text-anchor="middle">Backtest</text>
+
+  <rect x="900" y="520" width="140" height="35" fill="white" rx="5" opacity="0.95"/>
+  <text x="970" y="542" font-family="Arial, sans-serif" font-size="13" fill="#1e293b" text-anchor="middle">Monitor</text>
+
+  <!-- Arrow 4 to 5 -->
+  <line x1="600" y1="590" x2="600" y2="620" stroke="#64748b" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Layer 5: Execution -->
+  <rect x="50" y="620" width="1100" height="100" fill="url(#layer5)" rx="10" opacity="0.9"/>
+  <text x="100" y="655" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">Execution Layer</text>
+
+  <rect x="150" y="670" width="200" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="250" y="695" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">Reports & Evidence</text>
+
+  <rect x="400" y="670" width="200" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="500" y="695" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">Paper Trading</text>
+
+  <rect x="650" y="670" width="200" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="750" y="695" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">Testnet Orders</text>
+
+  <rect x="900" y="670" width="150" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="975" y="695" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">Alerts</text>
+
+  <!-- Arrow 5 to 6 -->
+  <line x1="600" y1="720" x2="600" y2="750" stroke="#64748b" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Layer 6: Data -->
+  <rect x="50" y="750" width="1100" height="100" fill="url(#layer6)" rx="10" opacity="0.9"/>
+  <text x="100" y="785" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">Data Layer</text>
+
+  <rect x="200" y="800" width="250" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="325" y="825" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">PostgreSQL + pgvector</text>
+
+  <rect x="500" y="800" width="200" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="600" y="825" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">OKX API</text>
+
+  <rect x="750" y="800" width="200" height="40" fill="white" rx="5" opacity="0.95"/>
+  <text x="850" y="825" font-family="Arial, sans-serif" font-size="14" fill="#1e293b" text-anchor="middle">BitPro MCP</text>
+
+  <!-- Legend -->
+  <text x="50" y="890" font-family="Arial, sans-serif" font-size="12" fill="#64748b" font-style="italic">
+    Data flows top-down through governance and service layers to execution and storage
+  </text>
+</svg>

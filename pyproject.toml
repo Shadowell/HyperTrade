@@ -18,6 +18,7 @@ dependencies = [
   "sqlalchemy>=2.0.36",
   "uvicorn[standard]>=0.34.0",
   "websockets>=15.0.0",
+  "yfinance>=0.2.48",
 ]
 
 [project.scripts]
@@ -54,3 +55,7 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 mypy_path = ["backend/src"]
+
+[[tool.mypy.overrides]]
+module = "yfinance"
+ignore_missing_imports = true
