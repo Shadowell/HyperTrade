@@ -232,8 +232,10 @@ class TestGlobalMarketService:
 
         tickers = service.get_supported_tickers()
 
-        assert len(tickers) == 9
+        assert len(tickers) == 20  # Sprint 76: Expanded from 9 to 20
         assert any(t["symbol"] == "^GSPC" for t in tickers)
         assert any(t["symbol"] == "^VIX" for t in tickers)
+        assert any(t["symbol"] == "^HSI" for t in tickers)  # Asia
+        assert any(t["symbol"] == "^STOXX50E" for t in tickers)  # Europe
         assert any(t["asset_class"] == "equity" for t in tickers)
         assert any(t["asset_class"] == "volatility" for t in tickers)
