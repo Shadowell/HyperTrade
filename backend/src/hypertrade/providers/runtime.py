@@ -100,6 +100,14 @@ class ProviderRuntime:
                 bool(self.settings.openrouter_api_key and self.settings.openrouter_model),
                 selected_name == "openrouter",
             ),
+            ProviderDefinition(
+                "vide_coding",
+                "Vide Coding",
+                self.settings.vide_coding_base_url,
+                self.settings.vide_coding_model,
+                bool(self.settings.vide_coding_api_key),
+                selected_name == "vide_coding",
+            ),
             ProviderDefinition("ollama", "Ollama", "http://localhost:11434", "", False),
         ]
         return [
@@ -170,6 +178,13 @@ class ProviderRuntime:
                 api_key=self.settings.qwen_api_key,
                 base_url=self.settings.qwen_embedding_base_url,
                 model=self.settings.qwen_chat_model,
+            )
+        if name == "vide_coding" and self.settings.vide_coding_api_key:
+            return OpenAICompatibleChatProvider(
+                name="vide_coding",
+                api_key=self.settings.vide_coding_api_key,
+                base_url=self.settings.vide_coding_base_url,
+                default_model=model_override or self.settings.vide_coding_model,
             )
         return None
 

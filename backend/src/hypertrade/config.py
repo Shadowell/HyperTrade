@@ -121,6 +121,12 @@ class Settings(BaseSettings):
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
     openrouter_model: str = Field(default="", alias="OPENROUTER_MODEL")
     qwen_chat_model: str = Field(default="qwen-plus", alias="QWEN_CHAT_MODEL")
+    vide_coding_base_url: str = Field(
+        default="https://api.vide.ai/v1",
+        alias="VIDE_CODING_BASE_URL",
+    )
+    vide_coding_api_key: str = Field(default="", alias="VIDE_CODING_API_KEY")
+    vide_coding_model: str = Field(default="opus-4.6", alias="VIDE_CODING_MODEL")
     risk_max_order_notional_usdt: str = Field(
         default="100",
         alias="RISK_MAX_ORDER_NOTIONAL_USDT",

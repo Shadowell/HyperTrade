@@ -174,7 +174,8 @@ ToolDefinition(
 #### ProviderRuntime (`backend/src/hypertrade/providers/runtime.py`)
 
 Manages chat provider selection and model routing:
-- DeepSeek (default)
+- Vide Coding (opus-4.6)
+- DeepSeek
 - OpenAI-compatible
 - Codex
 - OpenRouter

@@ -174,7 +174,8 @@ ToolDefinition(
 #### ProviderRuntime (`backend/src/hypertrade/providers/runtime.py`)
 
 管理聊天提供者选择和模型路由：
-- DeepSeek（默认）
+- Vide Coding（opus-4.6）
+- DeepSeek
 - OpenAI 兼容
 - Codex
 - OpenRouter
