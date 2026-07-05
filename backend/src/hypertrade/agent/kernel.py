@@ -10,6 +10,7 @@ the frontend harness and CLI can show what the Agent is doing.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from hypertrade.agent.formatters import AgentOutputFormatter
 from hypertrade.agent.planner import AgentPlanner, PlannerResult, ToolExecutor
 from hypertrade.backtest.service import BacktestService
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
@@ -372,11 +374,25 @@ class AgentKernel:
                 settings = self._settings if self._settings is not None else get_settings()
                 result = WorldModelService(self.db, settings=settings).snapshot()
 
+                # Format output for better readability
+                formatted_output = AgentOutputFormatter.format_tool_result(
+                    tool_name,
+                    result
+                )
+                logger.info(f"Formatted world_model_snapshot output:\n{formatted_output}")
+
             elif tool_name == "global_market_snapshot":
                 from hypertrade.global_market.service import GlobalMarketService
 
                 snapshot = GlobalMarketService().get_snapshot()
                 result = snapshot.model_dump()
+
+                # Format output for better readability
+                formatted_output = AgentOutputFormatter.format_tool_result(
+                    tool_name,
+                    result
+                )
+                logger.info(f"Formatted global_market_snapshot output:\n{formatted_output}")
 
             elif tool_name == "rag_search":
                 self.rag.scan_once()
