@@ -184,7 +184,7 @@ class ProviderRuntime:
                 name="vide_coding",
                 api_key=self.settings.vide_coding_api_key,
                 base_url=self.settings.vide_coding_base_url,
-                default_model=model_override or self.settings.vide_coding_model,
+                model=model_override or self.settings.vide_coding_model,
             )
         return None
 
