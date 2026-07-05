@@ -101,6 +101,50 @@ SUPPORTED_TICKERS: list[TickerConfig] = [
         yfinance_supported=True,
         alpha_vantage_supported=True,
     ),
+    # Asia Equities
+    TickerConfig(
+        symbol="^HSI",
+        asset_class="equity",
+        description="Hang Seng Index",
+        yfinance_supported=True,
+        alpha_vantage_supported=False,
+    ),
+    TickerConfig(
+        symbol="^N225",
+        asset_class="equity",
+        description="Nikkei 225",
+        yfinance_supported=True,
+        alpha_vantage_supported=False,
+    ),
+    TickerConfig(
+        symbol="000001.SS",
+        asset_class="equity",
+        description="Shanghai Composite",
+        yfinance_supported=True,
+        alpha_vantage_supported=False,
+    ),
+    TickerConfig(
+        symbol="^KS11",
+        asset_class="equity",
+        description="Korea KOSPI",
+        yfinance_supported=True,
+        alpha_vantage_supported=False,
+    ),
+    # Europe Equities
+    TickerConfig(
+        symbol="^STOXX50E",
+        asset_class="equity",
+        description="Euro Stoxx 50",
+        yfinance_supported=True,
+        alpha_vantage_supported=False,
+    ),
+    TickerConfig(
+        symbol="^FTSE",
+        asset_class="equity",
+        description="FTSE 100",
+        yfinance_supported=True,
+        alpha_vantage_supported=False,
+    ),
     # Volatility
     TickerConfig(
         symbol="^VIX",
@@ -109,13 +153,34 @@ SUPPORTED_TICKERS: list[TickerConfig] = [
         yfinance_supported=True,
         alpha_vantage_supported=True,
     ),
-    # FX
+    # FX - Major Pairs
     TickerConfig(
         symbol="DX-Y.NYB",
         asset_class="fx",
         description="US Dollar Index",
         yfinance_supported=True,
         alpha_vantage_supported=False,
+    ),
+    TickerConfig(
+        symbol="EURUSD=X",
+        asset_class="fx",
+        description="EUR/USD",
+        yfinance_supported=True,
+        alpha_vantage_supported=True,
+    ),
+    TickerConfig(
+        symbol="USDJPY=X",
+        asset_class="fx",
+        description="USD/JPY (Safe Haven)",
+        yfinance_supported=True,
+        alpha_vantage_supported=True,
+    ),
+    TickerConfig(
+        symbol="AUDUSD=X",
+        asset_class="fx",
+        description="AUD/USD (Risk Currency)",
+        yfinance_supported=True,
+        alpha_vantage_supported=True,
     ),
     # Commodities
     TickerConfig(
@@ -129,6 +194,20 @@ SUPPORTED_TICKERS: list[TickerConfig] = [
         symbol="CL=F",
         asset_class="commodity",
         description="Crude Oil Futures",
+        yfinance_supported=True,
+        alpha_vantage_supported=True,
+    ),
+    TickerConfig(
+        symbol="HG=F",
+        asset_class="commodity",
+        description="Copper Futures",
+        yfinance_supported=True,
+        alpha_vantage_supported=False,
+    ),
+    TickerConfig(
+        symbol="SI=F",
+        asset_class="commodity",
+        description="Silver Futures",
         yfinance_supported=True,
         alpha_vantage_supported=True,
     ),
