@@ -1,350 +1,289 @@
 # HyperTrade
 
-**Agent-First Crypto Trading Research & Execution Framework**
+<p align="center">
+  <strong>Production-Grade Agent Runtime for Crypto Trading Research & Execution</strong>
+</p>
 
-[![License](https://img.shields.io/badge/license-Private-red.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18+-61DAFB.svg)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6.svg)](https://www.typescriptlang.org/)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Private-red.svg" alt="License" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/FastAPI-0.104+-009688.svg" alt="FastAPI" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/React-18+-61DAFB.svg" alt="React" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.0+-3178C6.svg" alt="TypeScript" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14+-4169E1.svg" alt="PostgreSQL" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/status-active-success.svg" alt="Status" /></a>
+</p>
 
-[中文简版](README.zh-CN.md) | [English Summary](README.en.md) | [📚 Documentation](docs/documentation-index.md)
-
----
-
-## 🎯 Overview
-
-HyperTrade is a production-grade Agent runtime for crypto trading research and execution. It provides operators, engineers, and external Agents with a unified, governed environment for:
-
-- 📊 **Market Intelligence**: Real-time OKX SWAP data, multi-source analysis, technical indicators
-- 🧪 **Strategy Research**: Evidence-driven backtesting, multi-variant experiments, knowledge management
-- 🎮 **Paper Trading**: Risk-free simulation environment with full lifecycle controls
-- ⚡ **Testnet Execution**: Gated OKX Testnet order execution with approval workflow (V1 blocks mainnet)
-- 🔗 **BitPro Integration**: MCP-based adapter for strategy lifecycle, backtest diagnostics, and monitoring
-- 🤖 **Intelligent Agent**: Natural language interaction with automatic tool selection and traceability
-- 💾 **Knowledge Systems**: RAG document retrieval and audited Memory persistence
-
-> **Research Only**: Nothing in this repository constitutes investment advice. Mainnet live order execution is blocked in V1.
+<p align="center">
+  <a href="README.zh-CN.md">中文文档</a> ·
+  <a href="README.en.md">English Summary</a> ·
+  <a href="docs/documentation-index.md">Documentation</a> ·
+  <a href="docs/api-reference.md">API</a> ·
+  <a href="docs/user-manual.md">User Manual</a> ·
+  <a href="docs/developer-guide.md">Developer Guide</a>
+</p>
 
 ---
 
-## ✨ Key Features
+## Overview
 
-### 🏗️ Production-Ready Architecture
+HyperTrade is a self-hosted Agent runtime that connects LLM-powered reasoning with governed access to crypto market data, strategy backtesting, paper trading, and risk-gated Testnet execution. It provides a unified environment for systematic trading research — from natural language exploration to evidence-backed strategy iteration.
 
 ![HyperTrade Architecture](docs/assets/hypertrade-architecture.svg)
 
-**Architecture Layers**:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Client Layer                                                │
-│  CLI • Web Console • REST/SSE API • External Agents         │
-├─────────────────────────────────────────────────────────────┤
-│  Agent Runtime                                               │
-│  LangGraph-style Kernel • Provider Router • Tool Executor   │
-├─────────────────────────────────────────────────────────────┤
-│  Governance Layer                                            │
-│  ToolRegistry • Risk Policy • Approval Gates • Trace        │
-├─────────────────────────────────────────────────────────────┤
-│  Service Layer                                               │
-│  Market • RAG • Memory • Strategy • Backtest • Monitor      │
-├─────────────────────────────────────────────────────────────┤
-│  Data Layer                                                  │
-│  PostgreSQL/pgvector • OKX API • BitPro MCP                 │
-└─────────────────────────────────────────────────────────────┘
-```
-
 > 📖 [Detailed Architecture Documentation](docs/architecture/19-hypertrade-architecture-diagram.md)
 
-### 🎨 Operator Surfaces
+### Core Capabilities
 
-- **CLI**: `hypertrade` / `ht` - Feature-rich terminal interface with history, colors, and remote mode
-- **Web Console**: React + Vite workbench at `/harness` - runs, reports, trace, market snapshot, controls
-- **REST API**: FastAPI with streaming SSE, OpenAPI docs at `/docs`
+| Domain | Capability |
+|--------|-----------|
+| **Market Intelligence** | Real-time OKX SWAP data, multi-source indicators, global market regime classification |
+| **Strategy Research** | Backtrader backtests, multi-variant experiments, evidence library with automatic gating |
+| **Paper Trading** | Full lifecycle simulation with pause/resume/close/reset controls |
+| **Testnet Execution** | Approval-gated OKX Testnet orders with risk checks (mainnet blocked in V1) |
+| **BitPro Integration** | MCP adapter for strategy lifecycle, backtest diagnostics, and paper monitoring |
+| **Knowledge Systems** | RAG retrieval over `docs/knowledge` with pgvector, audited Memory persistence |
+| **Governance** | Policy-enforced tool registry, approval gates, idempotency, deterministic evals |
 
-### 🔧 Agent Capabilities
-
-| Capability | Implementation | Status |
-|------------|----------------|--------|
-| **Natural Language** | Free-form prompts → tool selection via LLM planner | ✅ Production |
-| **Tool Calling** | Registry-based with policy enforcement (scope, approval, idempotency) | ✅ Production |
-| **Market Intelligence** | OKX SWAP tickers, candles, funding, OI, relative strength | ✅ Production |
-| **RAG** | pgvector-backed citation search over `docs/knowledge` | ✅ Production |
-| **Memory** | Audited observations and strategy knowledge with tags, confidence, importance | ✅ Production |
-| **Strategy Research** | Backtrader backtests, multi-variant experiments, evidence library | ✅ Production |
-| **BitPro Integration** | MCP adapter for strategy lifecycle, backtest diagnostics, paper monitoring | ✅ Production |
-| **Paper Trading** | Simulated execution with pause/resume/close/reset controls | ✅ Production |
-| **Testnet Execution** | Approval-gated OKX Testnet orders with risk checks | ✅ Production |
-| **Monitoring & Alerts** | Read-only monitors for paper strategies, connector health, library freshness | ✅ Production |
-| **Evaluation Suite** | Deterministic evals for tool choice, RAG, Memory, risk, report quality | ✅ Production |
-| **World Model** | Portfolio state tracking and defensive action scheduling | 🧪 Experimental |
-
-### 🛡️ Governance & Safety
-
-- **Risk Engine**: Enforces tool policies (scope, approval, idempotency) before execution
-- **Approval Gates**: Human-in-the-loop for Testnet orders, paper resets, defensive actions
-- **Idempotency**: Write operations require idempotency keys for audit and replay protection
-- **Trace**: Every tool call persisted with payload, timestamp, and provenance
-- **BitPro Boundary**: Only accesses BitPro through stable MCP/API contracts, never bypasses risk boundaries
-- **Evidence Over Inference**: Reports missing data as unavailable, never smooths over gaps
-
-### 📈 Strategy Development Workflow
-
-1. **Research** → `/research <prompt>` - Create research record with initial analysis
-2. **Backtest** → `/backtest` - Run Backtrader backtest with OKX/BitPro/sample data
-3. **Experiment** → `/experiment <prompt>` - Compare baseline/fast/conservative variants
-4. **Gate** → Automatic winner selection through explicit gate conditions
-5. **Memory** → Strategy knowledge card with parameters, metrics, gates, next-experiment guidance
-6. **Library** → `/strategy library <name>` - Retrieve aggregated evidence for iteration planning
+> **Disclaimer**: Nothing in this repository constitutes investment advice. Mainnet live order execution is blocked in V1.
 
 ---
 
-## 🚀 Quick Start
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Client Layer                                                        │
+│  CLI (ht) · Web Console (/harness) · REST/SSE API · External Agents │
+├─────────────────────────────────────────────────────────────────────┤
+│  Agent Runtime                                                       │
+│  Graph Kernel · Provider Router · Tool Executor                      │
+├─────────────────────────────────────────────────────────────────────┤
+│  Governance Layer                                                    │
+│  ToolRegistry · Risk Policy · Approval Gates · Audit Trace          │
+├─────────────────────────────────────────────────────────────────────┤
+│  Service Layer                                                       │
+│  Market · RAG · Memory · Strategy · Backtest · World Model          │
+├─────────────────────────────────────────────────────────────────────┤
+│  Data Layer                                                          │
+│  PostgreSQL/pgvector · OKX API · BitPro MCP · Alpha Vantage         │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Technology Stack
+
+| Layer | Technologies |
+|-------|-------------|
+| **Runtime** | Python 3.12+, FastAPI, SQLAlchemy, Alembic |
+| **Agent Engine** | Graph-based kernel, provider routing, policy-enforced tool execution |
+| **Frontend** | React 18, TypeScript 5, Vite, TanStack Query, Recharts |
+| **Database** | PostgreSQL 14+ with pgvector (or SQLite for development) |
+| **LLM Providers** | Vide Coding (opus-4.6), DeepSeek, OpenAI, Codex, OpenRouter, Qwen |
+| **Backtesting** | Backtrader |
+| **Infrastructure** | Docker Compose, Nginx, GitHub Actions CI/CD |
+
+### Agent Capabilities
+
+| Capability | Description | Status |
+|-----------|-------------|--------|
+| Natural Language | Free-form prompts routed to LLM planner with automatic tool selection | Production |
+| Tool Calling | Registry-based execution with scope, approval, and idempotency enforcement | Production |
+| Market Intelligence | OKX SWAP tickers, candles, funding, OI, relative strength indicators | Production |
+| Global Market | Cross-asset regime classification (equities, volatility, FX, rates) | Production |
+| RAG | pgvector-backed citation search over knowledge documents | Production |
+| Memory | Audited observations with tags, confidence scoring, and importance weighting | Production |
+| Strategy Research | Backtrader backtests, multi-variant experiments, evidence library | Production |
+| BitPro Integration | MCP adapter for strategy lifecycle, backtest diagnostics, paper monitoring | Production |
+| Paper Trading | Simulated execution with full lifecycle controls | Production |
+| Testnet Execution | Approval-gated OKX Testnet orders with risk validation | Production |
+| Monitoring & Alerts | Read-only monitors for paper strategies, connector health, library freshness | Production |
+| Evaluation Suite | Deterministic evals for tool choice, RAG, Memory, risk, report quality | Production |
+| World Model | Portfolio state tracking and defensive action scheduling | Experimental |
+
+---
+
+## Quick Start
 
 ### Prerequisites
 
-- Python 3.12+
-- `uv` package manager
-- Node.js 18+ and `pnpm`
-- Optional: Docker & Docker Compose for PostgreSQL/pgvector
-- Chat provider API key (e.g., DeepSeek, OpenAI, Codex)
+- **Python 3.12+** with [`uv`](https://github.com/astral-sh/uv) package manager
+- **Node.js 18+** with `pnpm`
+- **API key** for at least one chat provider (Vide Coding, DeepSeek, OpenAI, etc.)
+- **PostgreSQL 14+** with pgvector (recommended) or SQLite for development
 
-### Installation
+### Setup
 
 ```bash
-# Clone repository
 git clone git@github.com:Shadowell/HyperTrade.git
 cd HyperTrade
-
-# Configure environment
 cp .env.example .env
 # Edit .env with your API keys
-
-# Minimal local setup (SQLite)
-mkdir -p .local
-export DATABASE_URL="sqlite:///$(pwd)/.local/hypertrade.db"
-export KNOWLEDGE_DIR="docs/knowledge"
-export DEEPSEEK_API_KEY="your-api-key"
 ```
 
-### Run Locally
+### Launch
 
-**Terminal 1 - Backend**:
+**Backend** (API server):
 ```bash
 uv run uvicorn hypertrade.main:app --app-dir backend/src --host 0.0.0.0 --port 3334
 ```
 
-**Terminal 2 - Frontend**:
+**Frontend** (Web console):
 ```bash
 npm exec --yes pnpm@10 -- -C frontend install
 npm exec --yes pnpm@10 -- -C frontend dev
 ```
 
-**Terminal 3 - CLI**:
+**CLI** (command-line interface):
 ```bash
 uv run ht --local
 ```
 
-### Access
+### Access Points
 
-- **Web Console**: http://localhost:3333/harness
-- **API Docs**: http://localhost:3334/docs
-- **Health Check**: http://localhost:3334/api/health
+| Service | URL |
+|---------|-----|
+| Web Console | http://localhost:3333/harness |
+| API Docs (Swagger) | http://localhost:3334/docs |
+| Health Check | http://localhost:3334/api/health |
 
----
+### Docker (PostgreSQL + pgvector)
 
-## 📖 Documentation
-
-Comprehensive documentation available in English and Chinese:
-
-| Document | English | 中文 |
-|----------|---------|------|
-| **API Reference** | [api-reference.md](docs/api-reference.md) | [api-reference.zh-CN.md](docs/api-reference.zh-CN.md) |
-| **User Manual** | [user-manual.md](docs/user-manual.md) | [user-manual.zh-CN.md](docs/user-manual.zh-CN.md) |
-| **Developer Guide** | [developer-guide.md](docs/developer-guide.md) | [developer-guide.zh-CN.md](docs/developer-guide.zh-CN.md) |
-| **Documentation Index** | [documentation-index.md](docs/documentation-index.md) | - |
-
-### Additional Resources
-
-- **Product Spec**: [docs/spec.md](docs/spec.md) - Product vision and roadmap
-- **Architecture**: [docs/architecture/](docs/architecture/) - System design and module documentation
-- **Knowledge Base**: [docs/knowledge/](docs/knowledge/) - Operator guides and best practices
-- **Runbooks**: [docs/runbooks/](docs/runbooks/) - Deployment, monitoring, incident response
-- **Contracts**: [docs/contracts/](docs/contracts/) - Sprint contracts and delivery scopes
-- **Progress Log**: [docs/progress.md](docs/progress.md) - Development history and deployment record
+```bash
+docker compose up -d postgres
+export DATABASE_URL="postgresql://hypertrade:hypertrade@localhost:5432/hypertrade"
+uv run alembic upgrade head
+```
 
 ---
 
-## 💡 Usage Examples
+## Usage
 
 ### Market Research
 
 ```bash
-# CLI - Natural language
+# Natural language queries
 uv run hypertrade --local ask "看下目前市场的热度怎么样"
 
-# CLI - Deterministic shortcuts
-uv run ht --local
-> /price ETH
-> /candles BTC 1H 120
-> /compare ETH SOL BTC
-
-# API - Streaming
-curl -N -X POST http://localhost:3334/api/agent/runs/stream \
-  -H "Content-Type: application/json" \
-  -d '{"prompt":"请做行情归纳"}'
+# Structured commands
+/price ETH
+/candles BTC 1H 120
+/compare ETH SOL BTC
+/global-market          # Cross-asset regime snapshot
 ```
 
-### Strategy Research & Backtest
+### Strategy Research
 
 ```bash
-# Create research record
-/research 研究ETH趋势突破策略
-
-# Run backtest with OKX data
-/backtest
-
-# Run multi-variant experiment
-/experiment 实验ETH动量突破策略的不同参数
-
-# Query strategy library
-/strategy library momentum_breakout_v1
+/research 研究ETH趋势突破策略     # Create research record
+/backtest                         # Run Backtrader backtest
+/experiment 不同参数动量策略       # Multi-variant experiment
+/strategy library momentum_v1     # Query aggregated evidence
 ```
 
 ### BitPro Integration
 
 ```bash
-# Query BitPro backtests
+# Query backtest performance
 查看 BitPro 回测收益大于100%的策略有哪些
 
-# Get backtest details
+# Inspect backtest details
 查看 BitPro 回测 result 196 的权益曲线和交易证据
 
-# Monitor paper strategies
+# Monitor live paper strategies
 监控 BitPro 所有运行中的模拟盘策略，列出异常和数据缺口
-
-# Check live performance
-看下实盘收益最高的策略
 ```
 
 ### Paper Trading
 
 ```bash
-# Check status
-/paper
-
-# Control operations
-/paper pause BTC
-/paper resume
-/paper close
-/paper reset
+/paper                   # Status overview
+/paper pause BTC         # Pause a strategy
+/paper resume            # Resume all
+/paper close             # Close positions
+/paper reset             # Reset simulation
 ```
 
-### Live Order Intents (Testnet)
+### Testnet Execution (Approval-Gated)
 
 ```bash
-# Create intent
 /live intent ETH buy 0.01 reason="API smoke test"
-
-# List intents
-/live intents
-
-# Approve and execute
-/live approve loi_abc123
-/live execute loi_abc123
+/live intents            # List pending intents
+/live approve loi_abc123 # Approve for execution
+/live execute loi_abc123 # Submit to OKX Testnet
 ```
 
 ### RAG & Memory
 
 ```bash
-# Search knowledge docs
-/rag 风控
+/rag 风控                # Semantic search over knowledge base
+/memory search tag:strategy  # Query audited memory
+```
 
-# Search memory
-/memory search tag:strategy
+### API Access
 
-# Query via API
+```bash
+# Streaming agent run
+curl -N -X POST http://localhost:3334/api/agent/runs/stream \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"请做行情归纳"}'
+
+# RAG search
 curl "http://localhost:3334/api/rag/search?query=风控&limit=5"
+
+# Memory query
 curl "http://localhost:3334/api/memory?query=市场&limit=10"
+
+# Market snapshot
+curl http://localhost:3334/api/global-market/snapshot
 ```
 
 ---
 
-## 🏗️ Architecture Highlights
+## Documentation
 
-### Component Layers
+| Document | Description |
+|----------|-------------|
+| [API Reference](docs/api-reference.md) | Complete REST/SSE API documentation |
+| [User Manual](docs/user-manual.md) | Operator guide for all surfaces (CLI, Web, API) |
+| [Developer Guide](docs/developer-guide.md) | Extending HyperTrade with tools, providers, connectors |
+| [Documentation Index](docs/documentation-index.md) | Full documentation map |
+| [Architecture Docs](docs/architecture/) | System design and module documentation (20+ docs) |
+| [Product Spec](docs/spec.md) | Vision, scope, and roadmap |
+| [Knowledge Base](docs/knowledge/) | Operator guides and best practices |
+| [Runbooks](docs/runbooks/) | Deployment, monitoring, incident response |
 
-| Layer | Responsibility | Key Files |
-|-------|----------------|-----------|
-| **Client Access** | CLI, `/harness`, REST/SSE API, future external Agents | `backend/src/hypertrade/cli.py`, `frontend/` |
-| **Data Inputs** | OKX market data, BitPro MCP/API, knowledge docs, audited Memory | `backend/src/hypertrade/market/`, `backend/src/hypertrade/bitpro/` |
-| **Governance Gateway** | Provider runtime, ToolRegistry, risk policy, trace, connector metadata | `backend/src/hypertrade/providers/`, `backend/src/hypertrade/tools/` |
-| **Agent Engine** | Planner, graph runtime, tool execution, report rendering, eval guardrails | `backend/src/hypertrade/agent/` |
-| **Execution/Output** | Reports, strategy flow, paper/Testnet lifecycle, alerts | `backend/src/hypertrade/strategy/`, `backend/src/hypertrade/monitoring.py` |
-| **Infrastructure** | FastAPI, PostgreSQL/pgvector, worker loops, Docker Compose, Nginx | `deploy/`, `.github/workflows/deploy.yml` |
-
-### Technology Stack
-
-**Backend**:
-- Python 3.12+ with `uv` package management
-- FastAPI for REST/SSE API
-- SQLAlchemy + Alembic for database
-- PostgreSQL 14+ with pgvector extension (or SQLite for development)
-- Backtrader for backtesting
-- httpx for external API calls
-
-**Frontend**:
-- React 18 + TypeScript 5
-- Vite for build tooling
-- TanStack Query for data fetching
-- Recharts for visualization
-- Tailwind CSS for styling
-
-**Infrastructure**:
-- Docker Compose for local/production services
-- Nginx for reverse proxy and static serving
-- GitHub Actions for CI/CD
-- Self-hosted runner for production deployment
-
-**Integrations**:
-- OKX REST/WebSocket for market data
-- BitPro MCP for strategy lifecycle
-- DeepSeek/OpenAI/Codex for LLM providers
-- Qwen for embeddings
+Chinese translations available for all primary documents.
 
 ---
 
-## 🧪 Testing & Quality
+## Development
 
-### Test Coverage
+### Quality Gates
 
 ```bash
-# Full verification suite
-./scripts/check.sh
+./scripts/check.sh       # Full suite: tests, lint, type-check
+uv run pytest tests/ -v  # Run specific tests
+```
 
-# Run specific tests
-uv run pytest tests/test_api.py -v
-uv run pytest tests/test_agent_eval_suite.py -v
+### Code Standards
 
-# Frontend tests
-npm exec --yes pnpm@10 -- -C frontend test
+**Python**:
+```bash
+uv run ruff format .     # Auto-format
+uv run ruff check .      # Lint
+uv run mypy backend/src  # Type-check
+```
+
+**Frontend**:
+```bash
+npm exec --yes pnpm@10 -- -C frontend lint
+npm exec --yes pnpm@10 -- -C frontend format
 ```
 
 ### Evaluation Suite
 
-Deterministic evals guard against regressions:
+Deterministic evals guard against regressions across tool choice, RAG citations, Memory behavior, risk refusal, BitPro source-of-truth usage, and report quality.
 
-- ✅ Tool choice (market summary, ticker, candles, compare)
-- ✅ RAG citations (source paths, missing field disclosure)
-- ✅ Memory behavior (tagging, confidence, deduplication)
-- ✅ Risk refusal (live write tools blocked in V1)
-- ✅ BitPro source-of-truth use (backtest metrics, page parity)
-- ✅ Paper monitor read-only boundary
-- ✅ Report quality (compact, structured, no noise)
-- ✅ Live routing (order history, strategy performance)
-
-Check eval status:
 ```bash
 uv run ht --local /evals
 curl http://localhost:3334/api/evals/status
@@ -352,230 +291,78 @@ curl http://localhost:3334/api/evals/status
 
 ---
 
-## 🚢 Deployment
+## Deployment
 
-### Production Deployment
+Automated deployment via GitHub Actions to a self-hosted runner on push to `main`.
 
-HyperTrade deploys automatically via GitHub Actions to a self-hosted runner:
-
-1. Push to `main` branch
-2. GitHub Actions triggers `.github/workflows/deploy.yml`
-3. Self-hosted runner (`hypertrade-production`) pulls code, builds images, restarts services
-4. Deployment SHA recorded in `/opt/hypertrade/deploy/last_deployed_sha`
-
-**Manual Deployment**:
 ```bash
+# Manual deployment
 ssh hypertrade-server
-cd /opt/hypertrade
-sudo -u hypertrade ./deploy/deploy.sh
-```
+sudo -u hypertrade /opt/hypertrade/deploy/deploy.sh
 
-**Post-Deploy Verification**:
-```bash
+# Post-deploy verification
 curl -fsS http://localhost:3334/api/health
-curl -fsS http://localhost:3333/api/health  # via Nginx
 hypertrade ask "看下ETH行情"
 ```
 
-### Configuration
-
-Key environment variables:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL or SQLite connection string | - |
-| `DEEPSEEK_API_KEY` | DeepSeek API key for chat provider | - |
-| `OKX_API_KEY` | OKX API credentials for market data | - |
-| `BITPRO_MCP_API_BASE` | BitPro MCP base URL | - |
-| `BITPRO_MCP_API_TOKEN` | BitPro MCP authentication token | - |
-| `KNOWLEDGE_DIR` | Path to knowledge documents | `docs/knowledge` |
-| `PAPER_ENABLED` | Enable paper trading | `true` |
-| `MONITOR_SCHEDULER_ENABLED` | Enable automatic monitor runs | `false` |
-
-See `.env.example` for full configuration options.
+See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures.
 
 ---
 
-## 🔒 Security & Compliance
+## Security
 
-### Access Control
-
-- **Public Read**: Market data, RAG, Memory search, run history, trace events
-- **Admin Auth**: Paper controls, live order approvals, provider selection, monitor triggers
-- **Session Cookie**: HttpOnly, SameSite=Lax, secure in production
-
-### Data Protection
-
-- **Secrets**: Never commit API keys, tokens, or production `.env` files
-- **BitPro Boundary**: Only access through MCP/API contracts, never bypass
-- **Audit Trail**: Every tool execution logged with timestamp, payload, provenance
+- **Secrets**: API keys, tokens, and credentials managed via environment variables; never committed
+- **BitPro Boundary**: All BitPro access through stable MCP/API contracts only
+- **Audit Trail**: Every tool execution logged with timestamp, payload, and provenance
 - **Idempotency**: Write operations require idempotency keys
-
-### Compliance
-
-- **Research Only**: No investment advice, educational purposes only
-- **Testnet First**: V1 blocks mainnet live order execution
-- **Human Approval**: Testnet orders require explicit approval before execution
-- **Risk Gates**: Orders rejected if exceed notional limits or open intent count
+- **Approval Gates**: Human-in-the-loop for Testnet orders and destructive operations
+- **Testnet First**: Mainnet live execution blocked in V1
 
 ---
 
-## 📊 Performance & Scalability
+## Roadmap
 
-### Current Capacity
+### Current (V2)
 
-- **Agent Runs**: ~5-10 concurrent runs (provider rate limits apply)
-- **Market Data**: 100+ OKX SWAP tickers, real-time WebSocket + REST fallback
-- **RAG**: 1000+ document chunks, sub-second search with pgvector
-- **Memory**: Unlimited items, indexed by type, tags, confidence, importance
-- **Trace**: Retention policy TBD (currently unlimited)
-
-### Optimization Strategies
-
-- **Caching**: Market ticker snapshots, provider responses (planned)
-- **Pagination**: API endpoints support limit/offset for large result sets
-- **Streaming**: SSE for long-running Agent tasks
-- **Worker Offload**: Market ingestion, RAG scanning, monitor runs in background
-- **Database**: PostgreSQL with indexes on common query patterns
-
----
-
-## 🤝 Contributing
-
-### Development Workflow
-
-1. **Read Contracts**: Check `docs/contracts/` for active sprint scope
-2. **Stay in Scope**: Keep changes within current sprint contract unless explicitly expanded
-3. **Update Docs**: Update architecture/knowledge docs when behavior, API, or operational expectations change
-4. **Run Tests**: Execute `./scripts/check.sh` before committing
-5. **Commit**: Commit to `main` branch (no feature branches in current workflow)
-6. **Deploy**: Push triggers automatic deployment via GitHub Actions
-7. **Verify**: Smoke test production health after deployment
-
-### Code Style
-
-**Python**:
-```bash
-uv run ruff format .
-uv run ruff check .
-uv run mypy backend/src
-```
-
-**TypeScript/React**:
-```bash
-npm exec --yes pnpm@10 -- -C frontend lint
-npm exec --yes pnpm@10 -- -C frontend format
-```
-
-### Adding New Components
-
-- **Tools**: See [Developer Guide - Adding New Tools](docs/developer-guide.md#adding-new-tools)
-- **Providers**: See [Developer Guide - Adding New Providers](docs/developer-guide.md#adding-new-providers)
-- **Connectors**: See [Developer Guide - Adding Connectors](docs/developer-guide.md#adding-connectors)
-
----
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-| Symptom | Likely Cause | Solution |
-|---------|--------------|----------|
-| Free-form prompt returns `provider_unavailable` | No chat provider key configured | Check `DEEPSEEK_API_KEY`, run `/model` |
-| BitPro tools return 502 | BitPro MCP connection issue | Check `BITPRO_MCP_API_BASE`, `BITPRO_MCP_API_TOKEN` |
-| Market data empty | Worker not running or OKX unavailable | Check worker logs, `OKX_REST_URL` |
-| RAG search no results | Knowledge dir not scanned | Check `KNOWLEDGE_DIR`, RAG scan logs |
-| Testnet order fails | Missing OKX Testnet credentials or risk gate denial | Check `OKX_TESTNET`, API keys, risk payload |
-| Web UI slow | Large data volume or SQLite performance | Use PostgreSQL, clean old runs/trace |
-
-See [User Manual - Common Issues](docs/user-manual.md#common-issues) for detailed troubleshooting.
-
----
-
-## 📜 License
-
-**Private Repository** - All rights reserved.
-
-This is a private research project. Unauthorized copying, distribution, or use is prohibited.
-
-**Security Notice**:
-- Keep secrets, provider keys, OKX credentials, BitPro tokens out of version control
-- Never commit database files or production `.env` files
-- Use environment variables or secure secret management for production
-
----
-
-## 🙏 Acknowledgments
-
-- **OKX**: Market data provider via public REST/WebSocket API
-- **BitPro**: Trading system integration via MCP adapter
-- **DeepSeek**: Default LLM provider for Agent planning
-- **LangGraph**: Inspiration for graph-style Agent runtime
-- **Backtrader**: Python backtesting framework
-- **FastAPI**: Modern Python web framework
-- **React + Vite**: Frontend stack
-
----
-
-## 📞 Contact & Support
-
-- **Documentation**: [docs/documentation-index.md](docs/documentation-index.md)
-- **Architecture**: [docs/architecture/](docs/architecture/)
-- **Runbooks**: [docs/runbooks/](docs/runbooks/)
-- **Issues**: Submit via repository issue tracker
-- **Email**: Contact repository owner for access requests
-
----
-
-## 🗺️ Roadmap
-
-### Completed (V1)
-
-- ✅ Agent runtime with LangGraph-style kernel
-- ✅ Provider router (DeepSeek, OpenAI, Codex, OpenRouter)
-- ✅ Tool registry with policy enforcement
-- ✅ Market intelligence (OKX SWAP data, technical indicators)
-- ✅ RAG with pgvector citation search
-- ✅ Memory with tags, confidence, importance
-- ✅ Strategy research and Backtrader backtests
-- ✅ Multi-variant experiments with automatic winner selection
-- ✅ Strategy library aggregation from memory
-- ✅ BitPro MCP adapter for lifecycle operations
-- ✅ Paper trading with full lifecycle controls
-- ✅ Testnet order execution with approval gates
-- ✅ Monitoring & alerts (paper, connector, library)
-- ✅ Risk governance policy enforcement
-- ✅ Deterministic evaluation suite
-- ✅ CLI with history, colors, remote mode
-- ✅ Web console at `/harness`
-- ✅ REST/SSE API with OpenAPI docs
-- ✅ Docker Compose deployment
-- ✅ GitHub Actions CI/CD
-
-### In Progress (V2)
-
-- 🚧 World model with portfolio state tracking
-- 🚧 Defensive action engine with scheduling
-- 🚧 Enhanced connector framework
-- 🚧 Advanced monitoring with anomaly detection
+| Initiative | Status |
+|-----------|--------|
+| World Model — portfolio state and defensive actions | In Progress |
+| Global Market — cross-asset regime classification | Production |
+| Vide Coding (opus-4.6) provider | Production |
+| Enhanced output formatting | Complete |
 
 ### Planned (V3+)
 
-- 📋 Multi-Agent collaboration patterns
-- 📋 Custom strategy DSL and code generation
-- 📋 Real-time portfolio rebalancing
-- 📋 Advanced risk modeling (VaR, CVaR)
-- 📋 Multi-exchange support (Binance, Bybit)
-- 📋 Options and derivatives support
-- 📋 Mobile companion app
-- 📋 Mainnet execution (pending governance framework)
+- Multi-Agent collaboration patterns
+- Custom strategy DSL
+- Multi-exchange support (Binance, Bybit)
+- Advanced risk modeling (VaR, CVaR)
+- Mainnet execution framework (pending governance)
+
+---
+
+## Contributing
+
+1. Review active sprint scope in `docs/contracts/`
+2. Keep changes within contract scope
+3. Run `./scripts/check.sh` before committing
+4. Commit to `main` (no feature branches in current workflow)
+5. Push triggers automatic CI/CD deployment
+
+See [Developer Guide](docs/developer-guide.md) for detailed contribution guidelines.
+
+---
+
+## Acknowledgments
+
+Built with these excellent projects and services:
+
+[OKX API](https://www.okx.com/docs-v5/) · [Backtrader](https://www.backtrader.com/) · [FastAPI](https://fastapi.tiangolo.com/) · [LangGraph](https://langchain-ai.github.io/langgraph/) · [React](https://reactjs.org/) · [Vite](https://vitejs.dev/) · [pgvector](https://github.com/pgvector/pgvector) · [Alembic](https://alembic.sqlalchemy.org/)
 
 ---
 
 <div align="center">
 
-**Built with ❤️ for systematic crypto trading research**
-
-[Documentation](docs/documentation-index.md) • [User Manual](docs/user-manual.md) • [Developer Guide](docs/developer-guide.md) • [API Reference](docs/api-reference.md)
+**[Documentation](docs/documentation-index.md)** · **[User Manual](docs/user-manual.md)** · **[Developer Guide](docs/developer-guide.md)** · **[API Reference](docs/api-reference.md)**
 
 </div>
