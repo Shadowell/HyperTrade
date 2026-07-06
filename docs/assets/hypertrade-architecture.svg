@@ -1,200 +1,291 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1150" viewBox="0 0 1800 1150" role="img" aria-labelledby="title desc">
-  <title id="title">HyperTrade 架构图</title>
-  <desc id="desc">HyperTrade 完整分层架构：客户端接入、数据输入、治理网关、Agent 引擎、世界模型、执行输出、监控告警、基础设施、闭环策略研发流程与安全治理。</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1400" viewBox="0 0 2000 1400" role="img" aria-labelledby="title desc">
+  <title id="title">HyperTrade Architecture</title>
+  <desc id="desc">HyperTrade layered architecture with clear visual hierarchy and spacing</desc>
+
   <defs>
     <style>
-      .bg{fill:#f8fbff}.title{font:800 56px Inter,Arial,sans-serif;fill:#0f172a}.accent{fill:#1d73f8}.sub{font:600 20px Inter,Arial,sans-serif;fill:#475569}.panel-title{font:800 19px Inter,Arial,sans-serif;fill:#0f172a}.card-title{font:700 14px Inter,Arial,sans-serif;fill:#0f172a}.body{font:500 12px Inter,Arial,sans-serif;fill:#475569}.small{font:600 10px Inter,Arial,sans-serif;fill:#64748b}.num{font:800 17px Inter,Arial,sans-serif;fill:#fff}.blue{fill:#eff6ff;stroke:#2563eb}.green{fill:#f0fdf4;stroke:#16a34a}.purple{fill:#faf5ff;stroke:#7c3aed}.teal{fill:#f0fdfa;stroke:#0d9488}.red{fill:#fff1f2;stroke:#e11d48}.amber{fill:#fffbeb;stroke:#d97706}.slate{fill:#f8fafc;stroke:#94a3b8}.card{fill:#fff;stroke-width:1.4}.panel{stroke-width:2}.arrow{stroke:#1d73f8;stroke-width:3.5;fill:none;marker-end:url(#arrow)}.dash{stroke:#94a3b8;stroke-width:2.5;fill:none;stroke-dasharray:7 7;marker-end:url(#arrowMuted)}
+      .bg{fill:#fafbfc}
+      .title{font:bold 72px system-ui,sans-serif;fill:#1a202c}
+      .subtitle{font:500 24px system-ui,sans-serif;fill:#4a5568}
+      .layer-title{font:bold 28px system-ui,sans-serif;fill:#2d3748}
+      .card-title{font:600 18px system-ui,sans-serif;fill:#1a202c}
+      .card-text{font:400 14px system-ui,sans-serif;fill:#4a5568}
+      .label-text{font:500 16px system-ui,sans-serif;fill:#2d3748}
+
+      .layer-client{fill:#ebf4ff;stroke:#3182ce;stroke-width:3}
+      .layer-data{fill:#f0fff4;stroke:#38a169;stroke-width:3}
+      .layer-governance{fill:#faf5ff;stroke:#805ad5;stroke-width:3}
+      .layer-engine{fill:#e6fffa;stroke:#319795;stroke-width:3}
+      .layer-world{fill:#fffaf0;stroke:#dd6b20;stroke-width:3}
+      .layer-output{fill:#fff5f5;stroke:#e53e3e;stroke-width:3}
+
+      .card{fill:#ffffff;stroke:#cbd5e0;stroke-width:2;rx:8}
+      .card-client{fill:#ffffff;stroke:#3182ce;stroke-width:2}
+      .card-data{fill:#ffffff;stroke:#38a169;stroke-width:2}
+      .card-governance{fill:#ffffff;stroke:#805ad5;stroke-width:2}
+      .card-engine{fill:#ffffff;stroke:#319795;stroke-width:2}
+      .card-world{fill:#ffffff;stroke:#dd6b20;stroke-width:2}
+      .card-output{fill:#ffffff;stroke:#e53e3e;stroke-width:2}
+
+      .arrow{stroke:#3182ce;stroke-width:4;fill:none;marker-end:url(#arrowhead)}
+      .arrow-feedback{stroke:#805ad5;stroke-width:3;fill:none;stroke-dasharray:8 8;marker-end:url(#arrowhead-purple)}
+
+      .shadow{filter:url(#shadow)}
     </style>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 10 5 0 10z" fill="#1d73f8"/></marker>
-    <marker id="arrowMuted" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#94a3b8"/></marker>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0f172a" flood-opacity=".08"/></filter>
+
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.12"/>
+    </filter>
+
+    <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3182ce"/>
+    </marker>
+
+    <marker id="arrowhead-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#805ad5"/>
+    </marker>
   </defs>
 
-  <rect class="bg" width="1800" height="1150"/>
-  <text x="655" y="70" class="title">Hyper<tspan class="accent">Trade</tspan></text>
-  <text x="490" y="104" class="sub">AI-Native Crypto Trading Agent — Research, Strategy, Risk-Gated Execution</text>
+  <!-- Background -->
+  <rect class="bg" width="2000" height="1400"/>
 
-  <!-- ===== 1 CLIENT ACCESS ===== -->
-  <g transform="translate(50 130)">
-    <circle cx="0" cy="0" r="16" fill="#1d73f8"/><text x="-4" y="6" class="num">1</text>
-    <text x="32" y="6" class="panel-title" fill="#1d73f8">Client / Agent Access</text>
-  </g>
-  <g filter="url(#shadow)">
-    <rect x="310" y="115" width="155" height="54" rx="7" class="card blue"/>
-    <rect x="485" y="115" width="155" height="54" rx="7" class="card blue"/>
-    <rect x="660" y="115" width="155" height="54" rx="7" class="card blue"/>
-    <rect x="835" y="115" width="170" height="54" rx="7" class="card blue"/>
-    <rect x="1025" y="115" width="155" height="54" rx="7" class="card blue"/>
-    <rect x="1200" y="115" width="155" height="54" rx="7" class="card blue" stroke-dasharray="5 5"/>
-  </g>
-  <text x="355" y="146" class="card-title">CLI / ht</text>
-  <text x="530" y="146" class="card-title">/harness</text>
-  <text x="700" y="146" class="card-title">REST / SSE</text>
-  <text x="878" y="146" class="card-title">Codex / External Agent</text>
-  <text x="1068" y="146" class="card-title">Custom Agent</text>
-  <text x="1250" y="142" class="card-title">Future MCP</text>
-  <text x="1255" y="158" class="small">Clients</text>
-  <path d="M387 169v22M562 169v22M737 169v22M920 169v22M1102 169v22M1277 169v22" stroke="#2563eb" stroke-width="2"/>
-  <rect x="310" y="191" width="1130" height="32" rx="7" class="panel blue"/>
-  <text x="720" y="213" class="card-title" fill="#1d73f8">FastAPI Boundary: Agent Runs / Streaming / Admin-Gated Mutations</text>
+  <!-- Title -->
+  <text x="1000" y="80" class="title" text-anchor="middle">HyperTrade Architecture</text>
+  <text x="1000" y="120" class="subtitle" text-anchor="middle">AI-Native Crypto Trading Agent — Research, Strategy, Risk-Gated Execution</text>
 
-  <!-- ===== ARROWS: Client -> Data+Gateway ===== -->
-  <path class="arrow" d="M480 233v30"/>
+  <!-- ========== LAYER 1: CLIENT ACCESS ========== -->
+  <g id="layer-client">
+    <rect x="100" y="180" width="1800" height="140" rx="12" class="layer-client shadow"/>
+    <text x="120" y="215" class="layer-title" fill="#2c5282">1. Client / Agent Access</text>
 
-  <!-- ===== MAIN AREA: 3 COLUMNS ===== -->
+    <!-- Client Cards -->
+    <g transform="translate(120, 240)">
+      <rect x="0" y="0" width="270" height="60" class="card-client shadow"/>
+      <text x="135" y="28" class="card-title" text-anchor="middle">CLI / ht</text>
+      <text x="135" y="48" class="card-text" text-anchor="middle">Terminal Interface</text>
+    </g>
 
-  <!-- ===== 2 DATA INPUTS (LEFT COLUMN TOP) ===== -->
-  <g transform="translate(50 275)">
-    <rect width="560" height="210" rx="8" class="panel green"/>
-    <circle cx="28" cy="24" r="16" fill="#16a34a"/><text x="24" y="31" class="num">2</text>
-    <text x="62" y="30" class="panel-title" fill="#15803d">Data &amp; Inputs</text>
-    <g transform="translate(15 60)">
-      <rect x="0" y="0" width="245" height="60" rx="7" class="card green"/><text x="18" y="28" class="card-title">OKX 行情数据</text><text x="18" y="47" class="body">SWAP tickers / candles / funding / OI</text>
-      <rect x="265" y="0" width="265" height="60" rx="7" class="card green"/><text x="283" y="28" class="card-title">BitPro MCP / API</text><text x="283" y="47" class="body">K线 / 策略 / 回测 / 模拟盘 / 实盘诊断</text>
-      <rect x="0" y="75" width="245" height="60" rx="7" class="card green"/><text x="18" y="103" class="card-title">RAG / Knowledge</text><text x="18" y="122" class="body">docs/knowledge + pgvector 语义检索</text>
-      <rect x="265" y="75" width="265" height="60" rx="7" class="card green"/><text x="283" y="103" class="card-title">Audited Memory</text><text x="283" y="122" class="body">策略证据 / 运行结论 / 失败原因沉淀</text>
+    <g transform="translate(420, 240)">
+      <rect x="0" y="0" width="270" height="60" class="card-client shadow"/>
+      <text x="135" y="28" class="card-title" text-anchor="middle">/harness</text>
+      <text x="135" y="48" class="card-text" text-anchor="middle">Web Console</text>
+    </g>
+
+    <g transform="translate(720, 240)">
+      <rect x="0" y="0" width="270" height="60" class="card-client shadow"/>
+      <text x="135" y="28" class="card-title" text-anchor="middle">REST / SSE API</text>
+      <text x="135" y="48" class="card-text" text-anchor="middle">HTTP Endpoints</text>
+    </g>
+
+    <g transform="translate(1020, 240)">
+      <rect x="0" y="0" width="270" height="60" class="card-client shadow"/>
+      <text x="135" y="28" class="card-title" text-anchor="middle">Codex Agent</text>
+      <text x="135" y="48" class="card-text" text-anchor="middle">External Integration</text>
+    </g>
+
+    <g transform="translate(1320, 240)">
+      <rect x="0" y="0" width="270" height="60" class="card-client shadow"/>
+      <text x="135" y="28" class="card-title" text-anchor="middle">Custom MCP Clients</text>
+      <text x="135" y="48" class="card-text" text-anchor="middle">Future Extensibility</text>
     </g>
   </g>
 
-  <!-- ===== 3 GOVERNANCE GATEWAY (LEFT COLUMN BOTTOM) ===== -->
-  <g transform="translate(50 505)">
-    <rect width="560" height="175" rx="8" class="panel purple"/>
-    <circle cx="28" cy="24" r="16" fill="#7c3aed"/><text x="24" y="31" class="num">3</text>
-    <text x="62" y="30" class="panel-title" fill="#6d28d9">Governance Gateway</text>
-    <g transform="translate(15 58)">
-      <rect x="0" y="0" width="245" height="48" rx="7" class="card purple"/><text x="18" y="22" class="card-title">Provider Router</text><text x="18" y="40" class="body">DeepSeek / OpenAI / Codex / Qwen</text>
-      <rect x="265" y="0" width="265" height="48" rx="7" class="card purple"/><text x="283" y="22" class="card-title">ToolRegistry</text><text x="283" y="40" class="body">schema / scope / approval / idempotency / source</text>
-      <rect x="0" y="62" width="245" height="48" rx="7" class="card purple"/><text x="18" y="84" class="card-title">Risk Governance</text><text x="18" y="102" class="body">approval gates / idempotency / live block</text>
-      <rect x="265" y="62" width="265" height="48" rx="7" class="card purple"/><text x="283" y="84" class="card-title">Trace &amp; Audit</text><text x="283" y="102" class="body">graph nodes / tool calls / policy decisions</text>
+  <!-- Arrow: Client -> Data/Governance -->
+  <path class="arrow" d="M 1000 320 L 1000 380"/>
+
+  <!-- ========== LAYER 2: DATA & INPUTS (LEFT) ========== -->
+  <g id="layer-data">
+    <rect x="100" y="400" width="580" height="280" rx="12" class="layer-data shadow"/>
+    <text x="120" y="435" class="layer-title" fill="#22543d">2. Data & Inputs</text>
+
+    <g transform="translate(120, 460)">
+      <rect x="0" y="0" width="260" height="100" class="card-data shadow"/>
+      <text x="130" y="30" class="card-title" text-anchor="middle">OKX Market Data</text>
+      <text x="130" y="55" class="card-text" text-anchor="middle">Tickers / Candles</text>
+      <text x="130" y="75" class="card-text" text-anchor="middle">Funding / OI</text>
+    </g>
+
+    <g transform="translate(400, 460)">
+      <rect x="0" y="0" width="260" height="100" class="card-data shadow"/>
+      <text x="130" y="30" class="card-title" text-anchor="middle">BitPro MCP/API</text>
+      <text x="130" y="55" class="card-text" text-anchor="middle">Strategy Lifecycle</text>
+      <text x="130" y="75" class="card-text" text-anchor="middle">Backtest / Paper</text>
+    </g>
+
+    <g transform="translate(120, 580)">
+      <rect x="0" y="0" width="260" height="80" class="card-data shadow"/>
+      <text x="130" y="30" class="card-title" text-anchor="middle">RAG / Knowledge</text>
+      <text x="130" y="55" class="card-text" text-anchor="middle">pgvector Search</text>
+    </g>
+
+    <g transform="translate(400, 580)">
+      <rect x="0" y="0" width="260" height="80" class="card-data shadow"/>
+      <text x="130" y="30" class="card-title" text-anchor="middle">Audited Memory</text>
+      <text x="130" y="55" class="card-text" text-anchor="middle">Strategy Evidence</text>
     </g>
   </g>
 
-  <!-- ===== ARROW: Data -> Gateway ===== -->
-  <path class="arrow" d="M330 485v18"/>
+  <!-- ========== LAYER 3: GOVERNANCE (RIGHT OF DATA) ========== -->
+  <g id="layer-governance">
+    <rect x="720" y="400" width="580" height="280" rx="12" class="layer-governance shadow"/>
+    <text x="740" y="435" class="layer-title" fill="#44337a">3. Governance Gateway</text>
 
-  <!-- ===== ARROW: Gateway -> Engine ===== -->
-  <path class="arrow" d="M620 592h28"/>
+    <g transform="translate(740, 460)">
+      <rect x="0" y="0" width="260" height="100" class="card-governance shadow"/>
+      <text x="130" y="30" class="card-title" text-anchor="middle">Provider Router</text>
+      <text x="130" y="55" class="card-text" text-anchor="middle">Vide Coding / DeepSeek</text>
+      <text x="130" y="75" class="card-text" text-anchor="middle">OpenAI / Codex / Qwen</text>
+    </g>
 
-  <!-- ===== 4 AGENT ENGINE (MIDDLE COLUMN TOP) ===== -->
-  <g transform="translate(660 275)">
-    <rect width="550" height="245" rx="8" class="panel blue"/>
-    <circle cx="28" cy="24" r="16" fill="#1d73f8"/><text x="24" y="31" class="num">4</text>
-    <text x="190" y="30" class="panel-title" fill="#1d73f8">Agent Engine</text>
-    <g transform="translate(15 55)">
-      <rect x="0" y="0" width="508" height="42" rx="7" class="card blue"/><text x="18" y="28" class="card-title">AgentKernel Graph Runtime</text><text x="195" y="28" class="body">intent → plan → approve → execute → reflect → report</text>
-      <rect x="0" y="54" width="508" height="42" rx="7" class="card green"/><text x="18" y="82" class="card-title">Planner + Tool Calling</text><text x="175" y="82" class="body">market / RAG / Memory / BitPro MCP / live intents</text>
-      <rect x="0" y="108" width="508" height="42" rx="7" class="card teal"/><text x="18" y="136" class="card-title">Market Intelligence</text><text x="195" y="136" class="body">funding / OI / breadth / relative strength</text>
-      <rect x="0" y="162" width="508" height="42" rx="7" class="card purple"/><text x="18" y="190" class="card-title">Strategy Research Loop</text><text x="195" y="190" class="body">evidence → experiment → library → iteration</text>
+    <g transform="translate(1020, 460)">
+      <rect x="0" y="0" width="260" height="100" class="card-governance shadow"/>
+      <text x="130" y="30" class="card-title" text-anchor="middle">Tool Registry</text>
+      <text x="130" y="55" class="card-text" text-anchor="middle">Schema / Scope</text>
+      <text x="130" y="75" class="card-text" text-anchor="middle">Approval / Idempotency</text>
+    </g>
+
+    <g transform="translate(740, 580)">
+      <rect x="0" y="0" width="260" height="80" class="card-governance shadow"/>
+      <text x="130" y="30" class="card-title" text-anchor="middle">Risk Policy</text>
+      <text x="130" y="55" class="card-text" text-anchor="middle">Approval Gates</text>
+    </g>
+
+    <g transform="translate(1020, 580)">
+      <rect x="0" y="0" width="260" height="80" class="card-governance shadow"/>
+      <text x="130" y="30" class="card-title" text-anchor="middle">Trace & Audit</text>
+      <text x="130" y="55" class="card-text" text-anchor="middle">Execution Log</text>
     </g>
   </g>
 
-  <!-- ===== 5 WORLD MODEL (MIDDLE COLUMN BOTTOM) ===== -->
-  <g transform="translate(660 535)">
-    <rect width="550" height="145" rx="8" class="panel amber"/>
-    <circle cx="28" cy="24" r="16" fill="#d97706"/><text x="24" y="31" class="num" fill="#fff">5</text>
-    <text x="170" y="30" class="panel-title" fill="#b45309">World Model (Sprint 71-74)</text>
-    <g transform="translate(15 48)">
-      <rect x="0" y="0" width="245" height="42" rx="7" class="card amber"/><text x="18" y="28" class="card-title">WorldState Snapshot</text><text x="175" y="28" class="body">global + crypto state</text>
-      <rect x="263" y="0" width="245" height="42" rx="7" class="card amber"/><text x="281" y="28" class="card-title">Scenario Decision</text><text x="438" y="28" class="body">action scoring</text>
-      <rect x="0" y="54" width="245" height="42" rx="7" class="card amber"/><text x="18" y="82" class="card-title">Defensive Automation</text><text x="228" y="82" class="body">allowlist gate</text>
-      <rect x="263" y="54" width="245" height="42" rx="7" class="card amber"/><text x="281" y="82" class="card-title">Portfolio Scheduler</text><text x="465" y="82" class="body">allocation review</text>
+  <!-- Arrow: Data/Governance -> Engine -->
+  <path class="arrow" d="M 390 680 L 390 730"/>
+  <path class="arrow" d="M 1010 680 L 1010 730"/>
+
+  <!-- ========== LAYER 4: AGENT ENGINE ========== -->
+  <g id="layer-engine">
+    <rect x="100" y="750" width="900" height="280" rx="12" class="layer-engine shadow"/>
+    <text x="120" y="785" class="layer-title" fill="#234e52">4. Agent Engine</text>
+
+    <g transform="translate(120, 810)">
+      <rect x="0" y="0" width="860" height="70" class="card-engine shadow"/>
+      <text x="430" y="30" class="card-title" text-anchor="middle">AgentKernel Graph Runtime</text>
+      <text x="430" y="52" class="card-text" text-anchor="middle">intent → plan → approve → execute → reflect → report</text>
+    </g>
+
+    <g transform="translate(120, 900)">
+      <rect x="0" y="0" width="410" height="60" class="card-engine shadow"/>
+      <text x="205" y="28" class="card-title" text-anchor="middle">Planner + Tool Calling</text>
+      <text x="205" y="48" class="card-text" text-anchor="middle">Market / RAG / Memory / BitPro</text>
+    </g>
+
+    <g transform="translate(570, 900)">
+      <rect x="0" y="0" width="410" height="60" class="card-engine shadow"/>
+      <text x="205" y="28" class="card-title" text-anchor="middle">Market Intelligence</text>
+      <text x="205" y="48" class="card-text" text-anchor="middle">Funding / OI / Indicators</text>
+    </g>
+
+    <g transform="translate(120, 980)">
+      <rect x="0" y="0" width="860" height="60" class="card-engine shadow"/>
+      <text x="430" y="28" class="card-title" text-anchor="middle">Strategy Research Loop</text>
+      <text x="430" y="48" class="card-text" text-anchor="middle">evidence → experiment → library → iteration</text>
     </g>
   </g>
 
-  <!-- ===== ARROW: Engine -> World Model ===== -->
-  <path class="arrow" d="M935 520v14"/>
+  <!-- ========== LAYER 5: WORLD MODEL ========== -->
+  <g id="layer-world">
+    <rect x="1040" y="750" width="560" height="140" rx="12" class="layer-world shadow"/>
+    <text x="1060" y="785" class="layer-title" fill="#7c2d12">5. World Model</text>
 
-  <!-- ===== ARROW: World Model -> Output ===== -->
-  <path class="arrow" d="M1220 600h16"/>
+    <g transform="translate(1060, 810)">
+      <rect x="0" y="0" width="250" height="60" class="card-world shadow"/>
+      <text x="125" y="28" class="card-title" text-anchor="middle">WorldState Snapshot</text>
+      <text x="125" y="48" class="card-text" text-anchor="middle">Global + Crypto State</text>
+    </g>
 
-  <!-- ===== 6 EXECUTION & OUTPUT (RIGHT COLUMN TOP) ===== -->
-  <g transform="translate(1230 275)">
-    <rect width="520" height="185" rx="8" class="panel teal"/>
-    <circle cx="28" cy="24" r="16" fill="#0d9488"/><text x="24" y="31" class="num">6</text>
-    <text x="62" y="24" class="panel-title" fill="#0f766e">Execution &amp; Output</text>
-    <text x="62" y="48" class="body">Risk-gated, paper-first, no mainnet in V1</text>
-    <g transform="translate(15 62)">
-      <rect x="0" y="0" width="478" height="34" rx="7" class="card teal"/><text x="18" y="23" class="card-title">Operator Reports</text><text x="175" y="23" class="body">CLI / Web / API — structured Markdown + JSON</text>
-      <rect x="0" y="44" width="234" height="34" rx="7" class="card teal"/><text x="18" y="67" class="card-title">BitPro Strategy Lifecycle</text>
-      <rect x="244" y="44" width="234" height="34" rx="7" class="card teal"/><text x="262" y="67" class="card-title">Paper Trading Runtime</text>
-      <rect x="0" y="88" width="478" height="34" rx="7" class="card teal"/><text x="18" y="111" class="card-title">Risk-Gated Execution</text><text x="210" y="111" class="body">OKX Testnet only — Mainnet blocked</text>
+    <g transform="translate(1330, 810)">
+      <rect x="0" y="0" width="250" height="60" class="card-world shadow"/>
+      <text x="125" y="28" class="card-title" text-anchor="middle">Scenario Decision</text>
+      <text x="125" y="48" class="card-text" text-anchor="middle">Action Scoring</text>
     </g>
   </g>
 
-  <!-- ===== 7 MONITORING (RIGHT COLUMN MIDDLE) ===== -->
-  <g transform="translate(1230 478)">
-    <rect width="520" height="96" rx="8" class="panel blue"/>
-    <circle cx="28" cy="22" r="16" fill="#1d73f8"/><text x="24" y="29" class="num">7</text>
-    <text x="62" y="28" class="panel-title" fill="#1d73f8">Monitoring &amp; Alerts</text>
-    <g transform="translate(15 42)">
-      <rect x="0" y="0" width="152" height="34" rx="7" class="card blue"/><text x="18" y="23" class="card-title">Monitors</text>
-      <rect x="164" y="0" width="152" height="34" rx="7" class="card blue"/><text x="182" y="23" class="card-title">Alert Events</text>
-      <rect x="326" y="0" width="152" height="34" rx="7" class="card blue"/><text x="344" y="23" class="card-title">Scheduler Worker</text>
+  <!-- ========== LAYER 6: EXECUTION & OUTPUT ========== -->
+  <g id="layer-output">
+    <rect x="1040" y="920" width="560" height="280" rx="12" class="layer-output shadow"/>
+    <text x="1060" y="955" class="layer-title" fill="#742a2a">6. Execution & Output</text>
+
+    <g transform="translate(1060, 980)">
+      <rect x="0" y="0" width="520" height="60" class="card-output shadow"/>
+      <text x="260" y="28" class="card-title" text-anchor="middle">Operator Reports</text>
+      <text x="260" y="48" class="card-text" text-anchor="middle">CLI / Web / API — Markdown + JSON</text>
+    </g>
+
+    <g transform="translate(1060, 1060)">
+      <rect x="0" y="0" width="250" height="60" class="card-output shadow"/>
+      <text x="125" y="28" class="card-title" text-anchor="middle">BitPro Lifecycle</text>
+      <text x="125" y="48" class="card-text" text-anchor="middle">Create / Backtest</text>
+    </g>
+
+    <g transform="translate(1330, 1060)">
+      <rect x="0" y="0" width="250" height="60" class="card-output shadow"/>
+      <text x="125" y="28" class="card-title" text-anchor="middle">Paper Trading</text>
+      <text x="125" y="48" class="card-text" text-anchor="middle">Simulation Runtime</text>
+    </g>
+
+    <g transform="translate(1060, 1140)">
+      <rect x="0" y="0" width="520" height="60" class="card-output shadow"/>
+      <text x="260" y="28" class="card-title" text-anchor="middle">Risk-Gated Execution</text>
+      <text x="260" y="48" class="card-text" text-anchor="middle">OKX Testnet Only — Mainnet Blocked</text>
     </g>
   </g>
 
-  <!-- ===== 9 SAFETY (RIGHT COLUMN BOTTOM) ===== -->
-  <g transform="translate(1230 590)">
-    <rect width="520" height="90" rx="8" class="panel red"/>
-    <circle cx="28" cy="22" r="16" fill="#e11d48"/><text x="24" y="29" class="num">9</text>
-    <text x="62" y="28" class="panel-title" fill="#be123c">Safety &amp; Compliance</text>
-    <text x="90" y="52" class="body">scoped tools · RBAC · idempotency · paper-first · audit trail</text>
-    <text x="90" y="72" class="body">live write explicit opt-in · no mainnet in V1</text>
-  </g>
+  <!-- Main flow arrows -->
+  <path class="arrow" d="M 550 1030 L 1040 1100"/>
+  <path class="arrow" d="M 1320 890 L 1320 920"/>
 
-  <!-- ===== VERTICAL FLOW ARROWS W/IN LEFT COL ===== -->
-  <path class="arrow" d="M330 485v18"/>
+  <!-- Feedback loop -->
+  <path class="arrow-feedback" d="M 530 650 L 530 730"/>
+  <text x="550" y="700" class="card-text" fill="#805ad5">Memory</text>
+  <text x="550" y="720" class="card-text" fill="#805ad5">Feedback</text>
 
-  <!-- ===== HORIZONTAL FLOW: Left -> Middle -> Right ===== -->
-  <path class="arrow" d="M610 407h38"/>
-  <path class="arrow" d="M1210 387h18"/>
-  <path class="dash" d="M1210 510h18"/>
+  <!-- ========== LAYER 7: INFRASTRUCTURE ========== -->
+  <g id="layer-infra">
+    <rect x="100" y="1240" width="1800" height="120" rx="12" class="layer-client shadow"/>
+    <text x="120" y="1275" class="layer-title" fill="#2c5282">7. Foundation & Infrastructure</text>
 
-  <!-- ===== 8 INFRASTRUCTURE ===== -->
-  <g transform="translate(50 710)">
-    <rect width="1700" height="150" rx="8" class="panel blue"/>
-    <circle cx="28" cy="22" r="16" fill="#1d73f8"/><text x="24" y="29" class="num">8</text>
-    <text x="62" y="29" class="panel-title" fill="#1d73f8">Foundation / Infrastructure</text>
-    <g transform="translate(22 52)">
-      <rect x="0" y="0" width="175" height="48" rx="7" class="card blue"/><text x="18" y="22" class="card-title">LLM Providers</text><text x="18" y="40" class="small">DeepSeek / OpenAI / Codex / Qwen</text>
-      <rect x="195" y="0" width="175" height="48" rx="7" class="card blue"/><text x="213" y="22" class="card-title">PostgreSQL + pgvector</text><text x="213" y="40" class="small">runs / memory / embeddings</text>
-      <rect x="390" y="0" width="175" height="48" rx="7" class="card blue"/><text x="408" y="22" class="card-title">Async Workers</text><text x="408" y="40" class="small">market / paper / monitor / RAG</text>
-      <rect x="585" y="0" width="175" height="48" rx="7" class="card blue"/><text x="603" y="22" class="card-title">Connector Framework</text><text x="603" y="40" class="small">BitPro / OKX / Fixtures</text>
-      <rect x="780" y="0" width="175" height="48" rx="7" class="card blue"/><text x="798" y="22" class="card-title">Alembic Migrations</text><text x="798" y="40" class="small">7 schema versions</text>
-      <rect x="975" y="0" width="175" height="48" rx="7" class="card blue"/><text x="993" y="22" class="card-title">Server Secrets</text><text x="993" y="40" class="small">OKX / BitPro / provider keys</text>
-      <rect x="1170" y="0" width="175" height="48" rx="7" class="card blue"/><text x="1188" y="22" class="card-title">CI / CD</text><text x="1188" y="40" class="small">GitHub Actions + Docker Compose</text>
-      <rect x="1365" y="0" width="175" height="48" rx="7" class="card blue"/><text x="1383" y="22" class="card-title">Agent Evals</text><text x="1383" y="40" class="small">deterministic guardrails</text>
-      <rect x="1560" y="0" width="110" height="48" rx="7" class="card blue"/><text x="1575" y="22" class="card-title">Monitor</text><text x="1575" y="40" class="small">loop / alerts</text>
+    <g transform="translate(120, 1290)">
+      <rect x="0" y="0" width="220" height="50" class="card shadow"/>
+      <text x="110" y="32" class="card-text" text-anchor="middle">PostgreSQL + pgvector</text>
     </g>
-    <text x="180" y="132" class="body">Python-native</text>
-    <text x="430" y="132" class="body">Source-backed</text>
-    <text x="680" y="132" class="body">Self-hosted</text>
-    <text x="930" y="132" class="body">Risk-gated</text>
-    <text x="1180" y="132" class="body">Audit-first</text>
-    <text x="1440" y="132" class="body">Extensible</text>
-  </g>
 
-  <!-- ===== 10 CLOSED-LOOP WORKFLOW ===== -->
-  <g transform="translate(50 885)">
-    <rect width="1700" height="82" rx="8" class="panel blue"/>
-    <circle cx="28" cy="22" r="16" fill="#1d73f8"/><text x="24" y="29" class="num">10</text>
-    <text x="62" y="29" class="panel-title" fill="#1d73f8">Closed-Loop AI Trading Workflow</text>
-    <g transform="translate(60 50)">
-      <text x="0" y="14" class="card-title">Agent</text>
-      <path class="arrow" d="M55 8h55"/>
-      <text x="128" y="14" class="card-title">Market Research</text>
-      <path class="arrow" d="M270 8h55"/>
-      <text x="343" y="14" class="card-title">Strategy Code</text>
-      <path class="arrow" d="M475 8h55"/>
-      <text x="548" y="14" class="card-title">Validate</text>
-      <path class="arrow" d="M640 8h55"/>
-      <text x="713" y="14" class="card-title">Backtest</text>
-      <path class="arrow" d="M800 8h55"/>
-      <text x="873" y="14" class="card-title">Paper / Monitor</text>
-      <path class="arrow" d="M1015 8h55"/>
-      <text x="1088" y="14" class="card-title">Memory Feedback</text>
+    <g transform="translate(360, 1290)">
+      <rect x="0" y="0" width="220" height="50" class="card shadow"/>
+      <text x="110" y="32" class="card-text" text-anchor="middle">Async Workers</text>
+    </g>
+
+    <g transform="translate(600, 1290)">
+      <rect x="0" y="0" width="220" height="50" class="card shadow"/>
+      <text x="110" y="32" class="card-text" text-anchor="middle">Connector Framework</text>
+    </g>
+
+    <g transform="translate(840, 1290)">
+      <rect x="0" y="0" width="220" height="50" class="card shadow"/>
+      <text x="110" y="32" class="card-text" text-anchor="middle">Alembic Migrations</text>
+    </g>
+
+    <g transform="translate(1080, 1290)">
+      <rect x="0" y="0" width="220" height="50" class="card shadow"/>
+      <text x="110" y="32" class="card-text" text-anchor="middle">CI / CD Pipeline</text>
+    </g>
+
+    <g transform="translate(1320, 1290)">
+      <rect x="0" y="0" width="220" height="50" class="card shadow"/>
+      <text x="110" y="32" class="card-text" text-anchor="middle">Agent Evaluations</text>
+    </g>
+
+    <g transform="translate(1560, 1290)">
+      <rect x="0" y="0" width="220" height="50" class="card shadow"/>
+      <text x="110" y="32" class="card-text" text-anchor="middle">Monitor Loop</text>
     </g>
   </g>
-  <text x="490" y="1005" class="sub">Research → Strategy code → Validate → BitPro backtest → Paper monitoring → Evidence feedback</text>
-  <text x="530" y="1035" class="sub" fill="#64748b">Operator / Agent → Provider planning → Governance → Tool execution → Report → Memory → Next iteration</text>
 </svg>
