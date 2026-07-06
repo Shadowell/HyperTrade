@@ -32,6 +32,10 @@ HyperTrade is a production-grade Agent runtime for crypto trading research and e
 
 ### 🏗️ Production-Ready Architecture
 
+![HyperTrade Architecture](docs/assets/hypertrade-architecture.svg)
+
+**Architecture Layers**:
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Client Layer                                                │
@@ -50,6 +54,8 @@ HyperTrade is a production-grade Agent runtime for crypto trading research and e
 │  PostgreSQL/pgvector • OKX API • BitPro MCP                 │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+> 📖 [Detailed Architecture Documentation](docs/architecture/19-hypertrade-architecture-diagram.md)
 
 ### 🎨 Operator Surfaces
 

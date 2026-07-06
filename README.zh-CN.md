@@ -14,6 +14,8 @@
 
 HyperTrade 是一个生产级的 Agent 运行时，专为加密货币交易研究和执行设计。它为市场研究、策略开发、模拟盘交易和受控的 Testnet 执行提供统一环境。
 
+![HyperTrade 架构](docs/assets/hypertrade-architecture.svg)
+
 **核心能力**：
 - 🤖 自然语言交互，自动工具选择
 - 📊 实时 OKX 市场数据和技术分析
@@ -22,6 +24,8 @@ HyperTrade 是一个生产级的 Agent 运行时，专为加密货币交易研�
 - ⚡ 需批准的 Testnet 执行（V1 阻止主网）
 - 🔗 通过 MCP 适配器集成 BitPro
 - 💾 RAG 知识检索和审计的 Memory 系统
+
+> 📖 [详细架构文档](docs/architecture/19-hypertrade-architecture-diagram.md)
 
 ---
 
