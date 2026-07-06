@@ -109,6 +109,79 @@
 
 ## 架构深度剖析
 
+### 系统架构图
+
+```mermaid
+graph TB
+    subgraph 客户端层
+        CLI[CLI 命令行]
+        Web[Web 界面]
+        API[REST API]
+    end
+    
+    subgraph Agent运行时
+        Kernel[Agent Kernel<br/>核心编排器]
+        Planner[Agent Planner<br/>任务规划]
+        Executor[Tool Executor<br/>工具执行器]
+    end
+    
+    subgraph 治理层
+        Registry[Tool Registry<br/>工具注册表]
+        Risk[Risk Governance<br/>风险治理]
+        Policy[Policy Engine<br/>策略引擎]
+    end
+    
+    subgraph 服务层
+        Market[Market Service<br/>市场数据]
+        RAG[RAG Service<br/>知识检索]
+        Memory[Memory Service<br/>记忆管理]
+        Strategy[Strategy Service<br/>策略研究]
+        Backtest[Backtest Service<br/>回测服务]
+        WorldModel[World Model<br/>世界模型]
+    end
+    
+    subgraph 数据层
+        DB[(PostgreSQL<br/>主数据库)]
+        Vector[(pgvector<br/>向量数据库)]
+        OKX[OKX API<br/>市场数据]
+        BitPro[BitPro MCP<br/>交易执行]
+        AlphaVantage[Alpha Vantage<br/>传统市场]
+    end
+    
+    CLI --> Kernel
+    Web --> Kernel
+    API --> Kernel
+    
+    Kernel --> Planner
+    Kernel --> Executor
+    
+    Executor --> Registry
+    Executor --> Risk
+    Risk --> Policy
+    
+    Executor --> Market
+    Executor --> RAG
+    Executor --> Memory
+    Executor --> Strategy
+    Executor --> Backtest
+    Executor --> WorldModel
+    
+    Market --> OKX
+    Market --> AlphaVantage
+    Market --> DB
+    RAG --> Vector
+    Memory --> DB
+    Strategy --> DB
+    Backtest --> DB
+    WorldModel --> DB
+    Executor --> BitPro
+    
+    style Kernel fill:#4A90E2
+    style Registry fill:#F5A623
+    style Risk fill:#D0021B
+    style BitPro fill:#7ED321
+```
+
 ### 组件层次
 
 ```

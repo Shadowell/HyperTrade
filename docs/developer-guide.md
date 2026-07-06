@@ -109,6 +109,79 @@ This guide is for engineers extending HyperTrade with new tools, providers, conn
 
 ## Architecture Deep Dive
 
+### System Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph Client Layer
+        CLI[CLI Interface]
+        Web[Web Interface]
+        API[REST API]
+    end
+    
+    subgraph Agent Runtime
+        Kernel[Agent Kernel<br/>Core Orchestrator]
+        Planner[Agent Planner<br/>Task Planning]
+        Executor[Tool Executor<br/>Execution Engine]
+    end
+    
+    subgraph Governance Layer
+        Registry[Tool Registry<br/>Tool Catalog]
+        Risk[Risk Governance<br/>Policy Engine]
+        Policy[Policy Enforcer<br/>Access Control]
+    end
+    
+    subgraph Service Layer
+        Market[Market Service<br/>Market Data]
+        RAG[RAG Service<br/>Knowledge Retrieval]
+        Memory[Memory Service<br/>Context Management]
+        Strategy[Strategy Service<br/>Research & Analysis]
+        Backtest[Backtest Service<br/>Backtesting Engine]
+        WorldModel[World Model<br/>Global State]
+    end
+    
+    subgraph Data Layer
+        DB[(PostgreSQL<br/>Main Database)]
+        Vector[(pgvector<br/>Vector Store)]
+        OKX[OKX API<br/>Crypto Market]
+        BitPro[BitPro MCP<br/>Trade Execution]
+        AlphaVantage[Alpha Vantage<br/>Traditional Markets]
+    end
+    
+    CLI --> Kernel
+    Web --> Kernel
+    API --> Kernel
+    
+    Kernel --> Planner
+    Kernel --> Executor
+    
+    Executor --> Registry
+    Executor --> Risk
+    Risk --> Policy
+    
+    Executor --> Market
+    Executor --> RAG
+    Executor --> Memory
+    Executor --> Strategy
+    Executor --> Backtest
+    Executor --> WorldModel
+    
+    Market --> OKX
+    Market --> AlphaVantage
+    Market --> DB
+    RAG --> Vector
+    Memory --> DB
+    Strategy --> DB
+    Backtest --> DB
+    WorldModel --> DB
+    Executor --> BitPro
+    
+    style Kernel fill:#4A90E2
+    style Registry fill:#F5A623
+    style Risk fill:#D0021B
+    style BitPro fill:#7ED321
+```
+
 ### Component Layers
 
 ```
