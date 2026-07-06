@@ -28,7 +28,6 @@ def render_agent_output(
     final_answer = run.get("final_answer", "")
     status = run.get("status", "unknown")
     tool_calls = run.get("tool_calls", [])
-    trace_events = run.get("trace_events", [])
 
     # Render header
     formatter.banner(
@@ -38,9 +37,9 @@ def render_agent_output(
 
     # Status
     if status == "completed":
-        formatter.success(f"✓ 任务完成")
+        formatter.success("✓ 任务完成")
     elif status == "failed":
-        formatter.error(f"✗ 任务失败")
+        formatter.error("✗ 任务失败")
     else:
         formatter.info(f"状态: {status}")
 
@@ -89,7 +88,6 @@ def _render_markdown_enhanced(
     lines = markdown.split("\n")
 
     in_code_block = False
-    in_table = False
 
     for line in lines:
         # Code blocks
@@ -164,7 +162,7 @@ def _render_markdown_enhanced(
                         return color.bearish(value)
                     else:
                         return color.neutral(value)
-                except:
+                except (ValueError, TypeError):
                     return value
 
             line = re.sub(r'[+-]?\d+\.?\d*%', colorize_pct, line)

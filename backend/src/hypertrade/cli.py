@@ -2666,6 +2666,17 @@ def render_backtests(items: list[dict[str, Any]], *, output: TextIO) -> None:
 
 def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
     output = output or sys.stdout
+
+    # Try enhanced CLI renderer first
+    renderer = os.getenv("HYPERTRADE_RENDERER", "auto").strip().lower()
+    if renderer in {"auto", "enhanced"}:
+        try:
+            from hypertrade.ui.cli_renderer import render_agent_output
+            render_agent_output(run, output=output)
+            return
+        except ImportError:
+            pass  # Fall back to other renderers
+
     if _should_render_rich(output) and _render_rich_run(run, output=output):
         return
     trace_events = run.get("trace_events", [])
