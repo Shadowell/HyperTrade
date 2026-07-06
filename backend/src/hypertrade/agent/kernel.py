@@ -44,6 +44,8 @@ from hypertrade.strategy.service import StrategyResearchService
 from hypertrade.tools.registry import ToolPolicy, ToolRegistry
 from hypertrade.world_model.service import WorldModelService
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class CompletedAgentRun:
@@ -370,6 +372,10 @@ class AgentKernel:
                     symbol=str(args.get("symbol", "")),
                     include_curated=bool(args.get("include_curated", True)),
                 )
+
+                # Format output for better readability
+                formatted_output = AgentOutputFormatter.format_tool_result(tool_name, result)
+                logger.info(f"Formatted {tool_name} output:\n{formatted_output}")
             elif tool_name == "world_model_snapshot":
                 settings = self._settings if self._settings is not None else get_settings()
                 result = WorldModelService(self.db, settings=settings).snapshot()
@@ -411,6 +417,10 @@ class AgentKernel:
                         for h in hits
                     ]
                 }
+
+                # Format output for better readability
+                formatted_output = AgentOutputFormatter.format_tool_result(tool_name, result)
+                logger.info(f"Formatted {tool_name} output:\n{formatted_output}")
             elif tool_name == "memory_write":
                 content = str(args.get("content", ""))
                 kind = str(args.get("kind", "agent_note"))
@@ -435,12 +445,20 @@ class AgentKernel:
                         for m in items[-10:]
                     ]
                 }
+
+                # Format output for better readability
+                formatted_output = AgentOutputFormatter.format_tool_result(tool_name, result)
+                logger.info(f"Formatted {tool_name} output:\n{formatted_output}")
             elif tool_name == "strategy_library_search":
                 result = StrategyLibraryService(self.db).search(
                     query=str(args.get("query", "")),
                     strategy_key=str(args.get("strategy_key", "")),
                     limit=int(args.get("limit", 10)),
                 )
+
+                # Format output for better readability
+                formatted_output = AgentOutputFormatter.format_tool_result(tool_name, result)
+                logger.info(f"Formatted {tool_name} output:\n{formatted_output}")
             elif tool_name == "strategy_experiment_plan":
                 result = StrategyIterationService(self.db).plan(
                     str(args.get("prompt", "")),
