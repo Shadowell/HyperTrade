@@ -342,10 +342,7 @@ def _supports_color(output: TextIO) -> bool:
 
     # Check TERM environment variable
     term = os.getenv("TERM", "")
-    if term == "dumb":
-        return False
-
-    return True
+    return term != "dumb"
 
 
 def get_theme(name: str = "default", *, output: TextIO | None = None) -> ColorTheme:

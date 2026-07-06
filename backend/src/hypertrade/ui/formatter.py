@@ -115,7 +115,7 @@ class EnhancedFormatter:
 
         # Print header
         header_cells = []
-        for i, (header, width) in enumerate(zip(headers, widths)):
+        for i, (header, width) in enumerate(zip(headers, widths, strict=True)):
             if alignments[i] == "right":
                 cell = header.rjust(width)
             elif alignments[i] == "center":
@@ -130,7 +130,7 @@ class EnhancedFormatter:
         # Print rows
         for row in rows:
             row_cells = []
-            for i, (cell, width) in enumerate(zip(row, widths)):
+            for i, (cell, width) in enumerate(zip(row, widths, strict=True)):
                 cell_str = str(cell)
                 if alignments[i] == "right":
                     formatted = cell_str.rjust(width)

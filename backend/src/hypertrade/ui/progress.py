@@ -182,7 +182,7 @@ class MultiSpinner:
         # Clear lines
         for _ in self.spinners:
             print("\r" + " " * 80, file=self.output)
-        print(f"\r", end="", file=self.output, flush=True)
+        print("\r", end="", file=self.output, flush=True)
 
     def _spin_all(self) -> None:
         """Spin animation loop for all tasks."""

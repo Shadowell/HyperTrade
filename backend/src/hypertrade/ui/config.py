@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any, TextIO
 
-from hypertrade.ui.colors import Color, ColorTheme, get_theme
+from hypertrade.ui.colors import Color, get_theme
 from hypertrade.ui.formatter import EnhancedFormatter
 
 
