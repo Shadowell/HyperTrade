@@ -48,20 +48,36 @@ def render_agent_output(
     # Tool calls summary
     if tool_calls:
         formatter.section("工具调用")
+
+        success_count = 0
+        denied_count = 0
+        failed_count = 0
+
         for i, tool_call in enumerate(tool_calls, 1):
             tool_name = tool_call.get("tool_name", "unknown")
             tool_status = tool_call.get("status", "unknown")
 
             if tool_status == "success":
                 status_icon = color.success("✓")
+                success_count += 1
             elif tool_status == "denied":
                 status_icon = color.warning("⚠")
+                denied_count += 1
             else:
                 status_icon = color.error("✗")
+                failed_count += 1
 
             print(f"  {i}. {status_icon} {tool_name} - {tool_status}", file=output)
 
         print("", file=output)
+
+        # Summary
+        if denied_count > 0:
+            formatter.warning(f"⚠ {denied_count} 个工具调用被拒绝 - 可能是权限限制")
+            print("", file=output)
+        if failed_count > 0:
+            formatter.error(f"✗ {failed_count} 个工具调用失败")
+            print("", file=output)
 
     # Final answer
     if final_answer:
@@ -70,6 +86,26 @@ def render_agent_output(
 
         # Parse and render the answer
         _render_markdown_enhanced(final_answer, formatter=formatter, color=color, output=output)
+    else:
+        # No final answer - show helpful message
+        if tool_calls and any(tc.get("status") == "denied" for tc in tool_calls):
+            formatter.section("说明")
+            print("", file=output)
+            formatter.box(
+                "由于工具调用被拒绝，Agent 无法获取数据进行分析。\n\n"
+                "可能的原因：\n"
+                "• 权限不足 - 需要管理员授权\n"
+                "• 风险策略限制 - 当前处于只读模式\n"
+                "• 配置问题 - 检查工具权限设置\n\n"
+                "建议：\n"
+                "1. 检查用户权限配置\n"
+                "2. 联系管理员授予工具访问权限\n"
+                "3. 查看风险策略设置\n"
+                "4. 运行演示脚本查看完整效果：\n"
+                "   uv run python scripts/demo_agent_task_complete.py",
+                title="⚠️  工具访问受限",
+            )
+            print("", file=output)
 
     # Footer
     formatter.divider()
