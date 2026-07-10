@@ -10,7 +10,10 @@
   Memory ledger in `HYPERTRADE_TRACE=summary|full`, `enhanced` maps to the
   standard Rich renderer, and `/run <run_id>` reopens historical local or remote
   runs. Focused CLI tests passed (`72 passed`) and `./scripts/check.sh` passed
-  (`pytest` 298 passed). Production deployment is pending.
+  (`pytest` 298 passed). Deployment run `29066526591` succeeded for SHA
+  `fedfe22`; production CLI smoke `run_7ad26af4667d41559afc` completed with
+  30,408 reported Tokens and passed both summary and historical full-trace
+  replay checks.
 - Last verified state: Sprint 76 Agent Flight Recorder completed locally on
   2026-07-10. Provider usage normalization, run observability API, Memory trace
   correlation, and the responsive operator UI passed focused tests and full
@@ -26,14 +29,12 @@
 ## Active Contract
 
 - Sprint 77 CLI Flight Recorder is implementation-complete under
-  `docs/contracts/sprint-77-cli-flight-recorder.md`; deployment verification is
-  pending.
+  `docs/contracts/sprint-77-cli-flight-recorder.md`, with deployment verified.
 
 ## Current In-Progress Work
 
-- Sprint 77 deployment verification: run a production DeepSeek request through
-  the remote CLI with `HYPERTRADE_TRACE=summary`, then reopen the result through
-  `/run <run_id>` and verify the full redacted trace view.
+- No active Sprint 77 implementation work remains. A future terminal UX sprint
+  can add a full-screen TUI only on top of the established redacted run contract.
 - Production DeepSeek configuration is healthy after server-side credential
   rotation. The validation run reported 30,839 Tokens across two model calls;
   no credential was stored in the repository.
@@ -82,7 +83,9 @@
   `HYPERTRADE_RENDERER=enhanced` now uses the standard Rich run envelope, and
   `/run <run_id>` loads local or remote historical runs through the same
   renderer. Focused CLI tests passed (`72 passed`) and full `./scripts/check.sh`
-  passed (`pytest` 298 passed); deployment verification is pending.
+  passed (`pytest` 298 passed). Deployment run `29066526591` succeeded for SHA
+  `fedfe22`; production DeepSeek smoke `run_7ad26af4667d41559afc` completed
+  with 30,408 reported Tokens, and `/run` replayed its full redacted trace.
 - Implemented Sprint 76 Agent Flight Recorder: OpenAI-compatible Chat
   Completions and Codex Responses normalize provider-reported input, output,
   cached-input, reasoning, and total Token usage; `AgentPlanner` records one

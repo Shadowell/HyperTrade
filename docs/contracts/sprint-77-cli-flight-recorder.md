@@ -73,4 +73,8 @@ HYPERTRADE_TRACE=full uv run ht --remote http://47.79.36.92:3333
 - Focused CLI regression suite passed with `72 passed`.
 - `./scripts/check.sh` passed with frontend lint/test/build, Ruff, Mypy, and
   `pytest` (`298 passed`).
-- Production deployment and remote CLI smoke are the next release-gate steps.
+- Deployment run `29066526591` succeeded for SHA `fedfe22`.
+- Production CLI smoke run `run_7ad26af4667d41559afc` completed through
+  DeepSeek with 30,408 reported Tokens over two model calls. Its
+  `HYPERTRADE_TRACE=summary` ledger and `/run <run_id>` full trace replay both
+  showed the same redacted runtime, Token, tool, and Memory evidence.
