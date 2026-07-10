@@ -2667,9 +2667,11 @@ def render_backtests(items: list[dict[str, Any]], *, output: TextIO) -> None:
 def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
     output = output or sys.stdout
 
-    # Try enhanced CLI renderer first
+    # The enhanced renderer uses a separate demo-oriented payload envelope.
+    # Keep it explicitly opt-in until it supports the standard run/report/trace
+    # contract; auto mode must preserve the production report renderers below.
     renderer = os.getenv("HYPERTRADE_RENDERER", "auto").strip().lower()
-    if renderer in {"auto", "enhanced"}:
+    if renderer == "enhanced":
         try:
             from hypertrade.ui.cli_renderer import render_agent_output
             render_agent_output(run, output=output)
