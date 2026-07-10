@@ -35,7 +35,9 @@ explicitly asks for tool/audit output.
 ## Verification
 
 ```bash
-uv run pytest tests/test_cli.py tests/test_agent_kernel.py tests/test_agent_planner.py -q
+uv run pytest tests/test_cli.py tests/test_market_candles_tool.py \
+  tests/test_agent_planner.py tests/test_agent_acceptance.py \
+  tests/test_report_blocks.py -q
 ./scripts/check.sh
 ```
 
@@ -52,3 +54,15 @@ report, and raw BitPro monitor blocks are absent from default output.
 
 - A future terminal-TUI sprint can add interactive drill-down panes for the
   same structured evidence without changing the concise default.
+
+## Completion Evidence
+
+- Focused renderer, planner, paper-report, acceptance, and report-block tests
+  passed (`141 passed`).
+- `./scripts/check.sh` passed with frontend lint/test/build, Ruff, Mypy, and
+  Python tests.
+- Initial production smoke `run_ef3acad3a6a447d6af75` confirmed the Planner can
+  request multiple paper curves and backtest results for a comparison; the
+  follow-up renderer compacts that compound evidence into one paper comparison
+  summary and suppresses unrelated historical-backtest rows. Deployment and
+  final production smoke are pending.

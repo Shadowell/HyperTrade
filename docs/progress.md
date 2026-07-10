@@ -10,8 +10,9 @@
   answer when report blocks exist, while `HYPERTRADE_REPORT_SOURCE=tools|audit`
   retains structured evidence. Paper-strategy comparison answers cannot invent
   an all-strategy ranking when BitPro omits per-strategy PnL/drawdown. Focused
-  tests passed (`121 passed`) and `./scripts/check.sh` passed; production
-  deployment verification is pending.
+  tests passed (`141 passed`) and `./scripts/check.sh` passed. Production smoke
+  `run_ef3acad3a6a447d6af75` exposed a compound-evidence verbosity gap; its
+  follow-up compaction is locally verified and awaiting deployment.
 - Last verified state: Sprint 78 CLI market-answer quality completed and
   production-smoked on 2026-07-10. Generic market prompts now guide the planner
   to `market_summary`; `global_market_snapshot` has a known read-only policy;
@@ -100,8 +101,12 @@
   prompt now requires a conclusion/comparison/risk/next-step structure and
   forbids inferred returns; the deterministic paper report reports a full
   ranking as unavailable when BitPro's running inventory lacks per-strategy
-  PnL/drawdown. Focused tests passed (`121 passed`) and full
-  `./scripts/check.sh` passed; deployment verification is pending.
+  PnL/drawdown. Production smoke `run_ef3acad3a6a447d6af75` exposed a compound
+  evidence path where the Planner read multiple curves and backtest rows; the
+  follow-up suppresses repeated per-tool curve lines and unrelated historical
+  backtest rows, retaining one evidence-bound paper comparison summary. Focused
+  tests passed (`141 passed`) and full `./scripts/check.sh` passed; deployment
+  verification is pending.
 - Implemented Sprint 78 CLI market-answer quality: `global_market_snapshot`
   now maps to a known read-only `global_market.snapshot` policy, preventing the
   governance false denial. Planner guidance keeps generic current-market

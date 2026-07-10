@@ -937,6 +937,8 @@ If the running-strategy inventory lacks per-strategy PnL/drawdown, explicitly
 say that the full ranking is unavailable, identify the current-dashboard
 strategy separately, and never invent, estimate, or infer returns for the
 other strategies from names, capital size, or incomplete inventory data.
+Do not substitute BitPro backtest rankings for current simulated-strategy
+performance: their time ranges and execution conditions are different.
 Use bitpro_backtest_list_results when the user asks about BitPro backtest
 performance, rankings, winners, or thresholds such as 回测收益大于100%. Report the
 actual total_return_pct metric from BitPro backtest results; do not substitute

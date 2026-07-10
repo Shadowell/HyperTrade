@@ -1346,6 +1346,7 @@ class AgentKernel:
         citation_lines: list[str] = []
         unavailable_lines: list[str] = []
         governance_lines: list[str] = []
+        paper_strategy_comparison = _is_paper_strategy_comparison(final_message)
         for record in tool_calls:
             if getattr(record, "tool_name", "") not in {"market_summary", "market.summary"}:
                 continue
@@ -1814,12 +1815,16 @@ class AgentKernel:
             summary = _paper_monitor_conclusion(final_message, tool_calls)
             if summary:
                 bitpro_paper_lines.extend([f"- 结论: {summary}", ""])
+        rendered_paper_dashboard = False
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "bitpro_paper_dashboard":
+                continue
+            if paper_strategy_comparison and rendered_paper_dashboard:
                 continue
             payload = getattr(record, "output_json", {})
             if not isinstance(payload, dict) or payload.get("status") != "ok":
                 continue
+            rendered_paper_dashboard = True
             dashboard = payload.get("dashboard")
             dashboard = dashboard if isinstance(dashboard, dict) else {}
             system = dashboard.get("system")
@@ -1928,33 +1933,53 @@ class AgentKernel:
                 )
                 break
             bitpro_paper_lines.append("")
-        for record in tool_calls:
-            if getattr(record, "tool_name", "") != "bitpro_paper_equity_curve":
-                continue
-            payload = getattr(record, "output_json", {})
-            if not isinstance(payload, dict) or payload.get("status") != "ok":
-                continue
-            summary = payload.get("equity_summary")
-            summary = summary if isinstance(summary, dict) else {}
-            points = payload.get("equity_curve")
-            points = points if isinstance(points, list) else []
+        paper_equity_payloads = [
+            getattr(record, "output_json", {})
+            for record in tool_calls
+            if getattr(record, "tool_name", "") == "bitpro_paper_equity_curve"
+            and isinstance(getattr(record, "output_json", {}), dict)
+            and getattr(record, "output_json", {}).get("status") == "ok"
+        ]
+        if paper_strategy_comparison and paper_equity_payloads:
+            strategy_ids = sorted(
+                str(_paper_strategy_id(payload)) for payload in paper_equity_payloads
+            )
             bitpro_paper_lines.extend(
                 [
-                    (
-                        "- 权益曲线: strategy_id={strategy_id}, points={count}, "
-                        "latest_at={latest_at}, latest_equity={latest}, "
-                        "latest_drawdown={latest_dd}%, max_drawdown={max_dd}%"
-                    ).format(
-                        strategy_id=_paper_strategy_id(payload),
-                        count=summary.get("count", len(points)),
-                        latest_at=summary.get("latest_at", "n/a"),
-                        latest=summary.get("latest_equity", "n/a"),
-                        latest_dd=summary.get("latest_drawdown_pct", "n/a"),
-                        max_dd=summary.get("max_drawdown_pct", "n/a"),
+                    "- 比较数据: 已读取 {count} 条逐策略权益曲线（策略 {strategy_ids}）。".format(
+                        count=len(paper_equity_payloads),
+                        strategy_ids=", ".join(strategy_ids),
                     ),
+                    (
+                        "- 排名状态: 不展示逐工具原始曲线；在 BitPro 提供可比的逐策略收益/回撤前，"
+                        "不生成全量收益排行。"
+                    ),
+                    "",
                 ]
             )
-            bitpro_paper_lines.append("")
+        else:
+            for payload in paper_equity_payloads:
+                summary = payload.get("equity_summary")
+                summary = summary if isinstance(summary, dict) else {}
+                points = payload.get("equity_curve")
+                points = points if isinstance(points, list) else []
+                bitpro_paper_lines.extend(
+                    [
+                        (
+                            "- 权益曲线: strategy_id={strategy_id}, points={count}, "
+                            "latest_at={latest_at}, latest_equity={latest}, "
+                            "latest_drawdown={latest_dd}%, max_drawdown={max_dd}%"
+                        ).format(
+                            strategy_id=_paper_strategy_id(payload),
+                            count=summary.get("count", len(points)),
+                            latest_at=summary.get("latest_at", "n/a"),
+                            latest=summary.get("latest_equity", "n/a"),
+                            latest_dd=summary.get("latest_drawdown_pct", "n/a"),
+                            max_dd=summary.get("max_drawdown_pct", "n/a"),
+                        ),
+                    ]
+                )
+                bitpro_paper_lines.append("")
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "bitpro_paper_monitor_snapshot":
                 continue
@@ -2171,6 +2196,11 @@ class AgentKernel:
             )
         if unavailable_lines:
             unavailable_lines.append("")
+        if paper_strategy_comparison:
+            # Paper performance must not be drowned out by unrelated historical
+            # backtest rows. The tool evidence remains persisted for audit.
+            bitpro_backtest_lines.clear()
+            bitpro_backtest_detail_lines.clear()
         sections: list[str] = []
         if unavailable_lines:
             sections.extend(["## 数据暂不可用", "", *unavailable_lines])
@@ -2283,9 +2313,7 @@ def _compact_final_message(value: object, *, max_chars: int = 240) -> str:
 
 def _paper_monitor_conclusion(final_message: object, tool_calls: list[Any]) -> str:
     """Keep a paper-ranking answer evidence-bound when BitPro omits its metrics."""
-    final_text = str(final_message or "")
-    ranking_markers = ("排名", "排行", "哪个", "最好", "最优", "收益比较", "收益对比")
-    if not any(marker in final_text for marker in ranking_markers):
+    if not _is_paper_strategy_comparison(final_message):
         return _compact_final_message(final_message)
     for record in tool_calls:
         if getattr(record, "tool_name", "") != "bitpro_paper_dashboard":
@@ -2307,6 +2335,12 @@ def _paper_monitor_conclusion(final_message: object, tool_calls: list[Any]) -> s
                 "策略的绩效，运行策略清单不含逐策略收益或回撤。"
             )
     return _compact_final_message(final_message)
+
+
+def _is_paper_strategy_comparison(final_message: object) -> bool:
+    final_text = str(final_message or "")
+    ranking_markers = ("排名", "排行", "哪个", "最好", "最优", "收益比较", "收益对比")
+    return any(marker in final_text for marker in ranking_markers)
 
 
 def _compact_long_final_message(lines: list[str], *, max_chars: int) -> str:

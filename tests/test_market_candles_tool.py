@@ -360,6 +360,68 @@ def test_planner_report_skips_table_like_bitpro_paper_final_message() -> None:
     assert "2026-06-23T08:00:00Z" not in report
 
 
+def test_planner_report_compacts_paper_strategy_comparison_evidence() -> None:
+    report = AgentKernel._render_planner_report(
+        "我的哪个模拟盘策略收益比较好？请给出排名。",
+        [
+            ToolCallRecord(
+                tool_name="bitpro_paper_dashboard",
+                input_json={},
+                output_json={
+                    "status": "ok",
+                    "dashboard": {
+                        "system": {"strategy_id": 105, "state": "running", "mode": "paper"},
+                        "equity": {"current": "104.5"},
+                        "performance": {"total_pnl_pct": "4.5", "max_drawdown": "5.1"},
+                    },
+                    "paper_scope": {"dashboard_scope": "current_instance"},
+                    "monitor_summary": {
+                        "data_gaps": ["per-strategy PnL/drawdown unavailable"],
+                    },
+                },
+            ),
+            ToolCallRecord(
+                tool_name="bitpro_paper_dashboard",
+                input_json={"strategy_id": 107},
+                output_json={
+                    "status": "ok",
+                    "dashboard": {"system": {"strategy_id": 107, "state": "running"}},
+                    "paper_scope": {"dashboard_scope": "filtered_strategy"},
+                },
+            ),
+            ToolCallRecord(
+                tool_name="bitpro_paper_equity_curve",
+                input_json={"strategy_id": 105},
+                output_json={
+                    "status": "ok",
+                    "strategy_id": 105,
+                    "equity_summary": {"count": 400, "latest_equity": "104.7"},
+                },
+            ),
+            ToolCallRecord(
+                tool_name="bitpro_paper_equity_curve",
+                input_json={"strategy_id": 107},
+                output_json={
+                    "status": "ok",
+                    "strategy_id": 107,
+                    "equity_summary": {"count": 400, "latest_equity": "104.7"},
+                },
+            ),
+            ToolCallRecord(
+                tool_name="bitpro_backtest_list_results",
+                input_json={},
+                output_json={"status": "ok", "result_count": 1, "results": []},
+            ),
+        ],
+    )
+
+    assert "结论: 暂无法比较全部运行策略的收益" in report
+    assert report.count("Dashboard 范围:") == 1
+    assert "比较数据: 已读取 2 条逐策略权益曲线（策略 105, 107）。" in report
+    assert "权益曲线: strategy_id=" not in report
+    assert "## BitPro 回测结果" not in report
+
+
 def test_planner_report_renders_bitpro_live_order_history_latest_order() -> None:
     report = AgentKernel._render_planner_report(
         "已读取最近一笔实盘订单。",
