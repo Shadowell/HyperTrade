@@ -10,9 +10,10 @@
   answer when report blocks exist, while `HYPERTRADE_REPORT_SOURCE=tools|audit`
   retains structured evidence. Paper-strategy comparison answers cannot invent
   an all-strategy ranking when BitPro omits per-strategy PnL/drawdown. Focused
-  tests passed (`141 passed`) and `./scripts/check.sh` passed. Production smoke
-  `run_ef3acad3a6a447d6af75` exposed a compound-evidence verbosity gap; its
-  follow-up compaction is locally verified and awaiting deployment.
+  tests passed (`141 passed`) and `./scripts/check.sh` passed. Deployment run
+  `29075436585` succeeded for SHA `f6cbaa5`; production smoke
+  `run_b5ccda159bb341bb80bb` condensed nine curve reads into one comparison
+  status and excluded raw monitor blocks and unrelated backtest rows.
 - Last verified state: Sprint 78 CLI market-answer quality completed and
   production-smoked on 2026-07-10. Generic market prompts now guide the planner
   to `market_summary`; `global_market_snapshot` has a known read-only policy;
@@ -45,16 +46,11 @@
 
 ## Active Contract
 
-- Sprint 79 CLI unified report rendering is implementation-complete under
-  `docs/contracts/sprint-79-cli-unified-report-rendering.md`; deployment
-  verification is pending.
+- Sprint 79 CLI unified report rendering is complete and deployment-verified
+  under `docs/contracts/sprint-79-cli-unified-report-rendering.md`.
 
 ## Current In-Progress Work
 
-- Sprint 79 deployment verification: issue
-  `hypertrade ask "我的哪个模拟盘策略收益比较好，分析下"` from the host terminal
-  and confirm the default report is concise, formatted, and evidence-bound;
-  audit blocks must remain hidden unless explicitly requested.
 - Production DeepSeek configuration is healthy after server-side credential
   rotation. The validation run reported 30,839 Tokens across two model calls;
   no credential was stored in the repository.
@@ -105,8 +101,11 @@
   evidence path where the Planner read multiple curves and backtest rows; the
   follow-up suppresses repeated per-tool curve lines and unrelated historical
   backtest rows, retaining one evidence-bound paper comparison summary. Focused
-  tests passed (`141 passed`) and full `./scripts/check.sh` passed; deployment
-  verification is pending.
+  tests passed (`141 passed`) and full `./scripts/check.sh` passed. Deployment
+  run `29075436585` succeeded for SHA `f6cbaa5`; production smoke
+  `run_b5ccda159bb341bb80bb` reduced nine curve reads to a single comparison
+  status, with no repeated raw curves, raw monitor blocks, or historical
+  backtest rows in default output.
 - Implemented Sprint 78 CLI market-answer quality: `global_market_snapshot`
   now maps to a known read-only `global_market.snapshot` policy, preventing the
   governance false denial. Planner guidance keeps generic current-market

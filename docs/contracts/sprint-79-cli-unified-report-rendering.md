@@ -64,5 +64,9 @@ report, and raw BitPro monitor blocks are absent from default output.
 - Initial production smoke `run_ef3acad3a6a447d6af75` confirmed the Planner can
   request multiple paper curves and backtest results for a comparison; the
   follow-up renderer compacts that compound evidence into one paper comparison
-  summary and suppresses unrelated historical-backtest rows. Deployment and
-  final production smoke are pending.
+  summary and suppresses unrelated historical-backtest rows.
+- Deployment run `29075436585` succeeded for SHA `f6cbaa5`.
+- Production smoke `run_b5ccda159bb341bb80bb` kept one current-dashboard
+  performance summary, one data-quality caveat, and one comparison-status line
+  for nine curve reads; it did not print repeated curve records, raw monitor
+  blocks, or historical-backtest rankings.
