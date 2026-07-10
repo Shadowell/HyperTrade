@@ -111,6 +111,13 @@ def test_codex_provider_posts_responses_payload_and_parses_tool_call() -> None:
         return httpx.Response(
             200,
             json={
+                "usage": {
+                    "input_tokens": 120,
+                    "output_tokens": 15,
+                    "total_tokens": 135,
+                    "input_tokens_details": {"cached_tokens": 40},
+                    "output_tokens_details": {"reasoning_tokens": 7},
+                },
                 "output": [
                     {
                         "type": "function_call",
@@ -167,6 +174,14 @@ def test_codex_provider_posts_responses_payload_and_parses_tool_call() -> None:
     assert response.tool_calls[0].id == "call_market"
     assert response.tool_calls[0].name == "market_summary"
     assert response.tool_calls[0].arguments == {}
+    assert response.usage.to_dict() == {
+        "input_tokens": 120,
+        "output_tokens": 15,
+        "cached_input_tokens": 40,
+        "reasoning_tokens": 7,
+        "total_tokens": 135,
+        "reported": True,
+    }
 
 
 def test_codex_provider_maps_tool_outputs_back_to_responses_input() -> None:

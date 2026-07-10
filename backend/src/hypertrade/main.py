@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 
 from hypertrade.agent.kernel import AgentKernel, CompletedAgentRun
+from hypertrade.agent.observability import AgentObservabilityService
 from hypertrade.backtest.service import BacktestService
 from hypertrade.bitpro.mcp import (
     BitProMcpClient,
@@ -342,6 +343,7 @@ def create_app(
             }
             for row in MarketRepository(database).top_movers(limit=8)
         ]
+        observability_summary = AgentObservabilityService(database).recent_summary()
 
         with database.session() as session:
             latest_market_at = session.scalar(select(func.max(MarketTicker.updated_at)))
@@ -385,6 +387,7 @@ def create_app(
                     "total_count": _count_rows(session, TraceEvent),
                     "recent_events": [_trace_to_dict(event) for event in trace_events],
                 },
+                "observability": observability_summary,
                 "paper": PaperTradingService(database, settings=app_settings).status(),
                 "strategy_lab": {
                     "latest_research": StrategyResearchService(database).latest(),
@@ -555,6 +558,13 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Run not found") from exc
         return _run_to_dict(run)
+
+    @app.get("/api/agent/runs/{run_id}/observability")
+    def get_run_observability(run_id: str) -> dict[str, Any]:
+        try:
+            return AgentObservabilityService(database).get(run_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Run not found") from exc
 
     @app.post("/api/agent/runs/{run_id}/cancel")
     def cancel_run(run_id: str, _: AdminUser) -> dict[str, Any]:

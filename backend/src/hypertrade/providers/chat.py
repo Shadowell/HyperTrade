@@ -23,11 +23,35 @@ class ToolCallRequest:
     arguments: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class TokenUsage:
+    """Provider-reported usage normalized without inventing missing counts."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_input_tokens: int = 0
+    reasoning_tokens: int = 0
+    total_tokens: int = 0
+    reported: bool = False
+
+    def to_dict(self) -> dict[str, int | bool]:
+        total = self.total_tokens or self.input_tokens + self.output_tokens
+        return {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cached_input_tokens": self.cached_input_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
+            "total_tokens": total,
+            "reported": self.reported,
+        }
+
+
 @dataclass
 class ChatResponse:
     content: str
     reasoning_content: str = ""
     tool_calls: list[ToolCallRequest] = field(default_factory=list)
+    usage: TokenUsage = field(default_factory=TokenUsage)
 
 
 class ChatProvider(Protocol):
@@ -82,4 +106,43 @@ class OpenAICompatibleChatProvider:
             content=message.content or "",
             reasoning_content=reasoning_content,
             tool_calls=tool_calls,
+            usage=_openai_token_usage(getattr(response, "usage", None)),
         )
+
+
+def _openai_token_usage(value: Any) -> TokenUsage:
+    """Normalize Chat Completions usage objects from OpenAI-compatible SDKs."""
+
+    if value is None:
+        return TokenUsage()
+    prompt_details = _usage_value(value, "prompt_tokens_details")
+    completion_details = _usage_value(value, "completion_tokens_details")
+    input_tokens = _usage_int(value, "prompt_tokens", "input_tokens")
+    output_tokens = _usage_int(value, "completion_tokens", "output_tokens")
+    return TokenUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cached_input_tokens=_usage_int(prompt_details, "cached_tokens")
+        or _usage_int(value, "prompt_cache_hit_tokens", "cache_read_input_tokens"),
+        reasoning_tokens=_usage_int(completion_details, "reasoning_tokens"),
+        total_tokens=_usage_int(value, "total_tokens") or input_tokens + output_tokens,
+        reported=True,
+    )
+
+
+def _usage_value(value: Any, key: str) -> Any:
+    if isinstance(value, dict):
+        return value.get(key)
+    return getattr(value, key, None)
+
+
+def _usage_int(value: Any, *keys: str) -> int:
+    for key in keys:
+        raw = _usage_value(value, key)
+        if raw is None:
+            continue
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            continue
+    return 0

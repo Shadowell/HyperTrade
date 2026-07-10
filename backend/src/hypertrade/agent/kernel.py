@@ -21,12 +21,18 @@ from typing import Any
 from sqlalchemy import select
 
 from hypertrade.agent.formatters import AgentOutputFormatter
-from hypertrade.agent.planner import AgentPlanner, PlannerResult, ToolExecutor
+from hypertrade.agent.planner import (
+    AgentPlanner,
+    ModelCallRecord,
+    PlannerResult,
+    ToolCallRecord,
+    ToolExecutor,
+)
 from hypertrade.backtest.service import BacktestService
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.bitpro.paper_monitor import BitProPaperMonitorService
 from hypertrade.config import Settings, get_settings
-from hypertrade.db import AgentRun, Database, TraceEvent
+from hypertrade.db import AgentRun, Database, TraceEvent, utc_now
 from hypertrade.live.service import LiveOrderIntentService
 from hypertrade.market.analysis import summarize_candles
 from hypertrade.market.client import OkxRestClient
@@ -91,6 +97,7 @@ class AgentKernel:
         event_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> CompletedAgentRun:
         settings = self._settings if self._settings is not None else get_settings()
+        started_at = time.monotonic()
         run_id = self._create_run(prompt)
         _emit(event_sink, {"event": "run_started", "run_id": run_id, "status": "running"})
         try:
@@ -135,11 +142,19 @@ class AgentKernel:
                 self._complete_provider_unavailable(run_id, prompt, event_sink=event_sink)
         except Exception as exc:
             self._fail_run(run_id, str(exc))
+            self._finalize_run_observability(
+                run_id,
+                duration_ms=round((time.monotonic() - started_at) * 1000, 3),
+            )
             _emit(
                 event_sink,
                 {"event": "run_failed", "run_id": run_id, "status": "failed", "error": str(exc)},
             )
             raise
+        self._finalize_run_observability(
+            run_id,
+            duration_ms=round((time.monotonic() - started_at) * 1000, 3),
+        )
         run = self.get_run(run_id)
         _emit(
             event_sink,
@@ -164,15 +179,20 @@ class AgentKernel:
         if llm is None:
             self._complete_provider_unavailable(run_id, prompt, event_sink=event_sink)
             return
-        planner = AgentPlanner(llm)
+        planner = AgentPlanner(
+            llm,
+            model_call_sink=lambda record: self._record_model_call(
+                run_id,
+                record,
+                event_sink=event_sink,
+            ),
+            tool_call_sink=lambda record: self._record_tool_call(run_id, record),
+        )
         executor = self._build_executor(run_id, event_sink=event_sink)
         result: PlannerResult = planner.run(prompt, executor)
 
-        # Planner tool records are written as business traces after the graph
-        # node traces. Keeping both lets operators inspect graph state and actual
-        # tool payloads separately.
-        for record in result.tool_calls:
-            self._trace(run_id, record.tool_name, record.input_json, record.output_json)
+        observability = _planner_observability(result, provider=llm.name, model=llm.model)
+        self._set_run_observability(run_id, observability)
 
         self._graph_node(
             run_id,
@@ -190,6 +210,7 @@ class AgentKernel:
             "tool_calls": [{"tool": r.tool_name, "input": r.input_json} for r in result.tool_calls],
             "citations": _citations_from_tool_calls(result.tool_calls),
             "graph": self._get_run_state(run_id).get("graph", []),
+            "observability": observability,
             "disclaimer": "Research output only. Not investment advice.",
         }
         for record in result.tool_calls:
@@ -265,6 +286,38 @@ class AgentKernel:
                 selected_model=self.provider_model,
             )
         return runtime.get_chat_provider(selected=self.provider_name)
+
+    def _record_model_call(
+        self,
+        run_id: str,
+        record: ModelCallRecord,
+        *,
+        event_sink: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
+        # Store operational metadata only. Prompts, credentials, and private
+        # reasoning text never enter the Flight Recorder event stream.
+        self._graph_node(
+            run_id,
+            "model_call",
+            {
+                "iteration": record.iteration,
+                "provider": record.provider,
+                "model": record.model,
+            },
+            {
+                "duration_ms": record.duration_ms,
+                "tool_call_count": record.tool_call_count,
+                "response_type": record.response_type,
+                "usage": record.usage.to_dict(),
+                "private_reasoning_stored": False,
+            },
+            event_sink=event_sink,
+        )
+
+    def _record_tool_call(self, run_id: str, record: ToolCallRecord) -> None:
+        # Persist at execution time so iterative model/tool turns keep their
+        # true order instead of being appended after planning completes.
+        self._trace(run_id, record.tool_name, record.input_json, record.output_json)
 
     def _build_executor(
         self,
@@ -919,6 +972,43 @@ class AgentKernel:
             if run is not None:
                 run.status = "failed"
                 run.error = error
+
+    def _set_run_observability(
+        self,
+        run_id: str,
+        observability: dict[str, Any],
+    ) -> None:
+        with self.db.session() as session:
+            run = session.get(AgentRun, run_id)
+            if run is None:
+                raise KeyError(run_id)
+            state = dict(run.run_state_json or {})
+            state["observability"] = observability
+            run.run_state_json = state
+
+    def _finalize_run_observability(self, run_id: str, *, duration_ms: float) -> None:
+        with self.db.session() as session:
+            run = session.get(AgentRun, run_id)
+            if run is None:
+                return
+            state = dict(run.run_state_json or {})
+            raw = state.get("observability")
+            observability = dict(raw) if isinstance(raw, dict) else _empty_observability()
+            observability.update(
+                {
+                    "schema_version": "agent-observability-v1",
+                    "status": run.status,
+                    "duration_ms": duration_ms,
+                    "started_at": run.created_at.isoformat(),
+                    "completed_at": utc_now().isoformat(),
+                    "private_reasoning_stored": False,
+                }
+            )
+            state["observability"] = observability
+            run.run_state_json = state
+            report = dict(run.report_json or {})
+            report["observability"] = observability
+            run.report_json = report
 
     def _trace(
         self,
@@ -2350,6 +2440,133 @@ def _order_value(order: dict[str, Any], *keys: str) -> str:
         if value is not None and str(value) != "":
             return str(value)
     return "n/a"
+
+
+def _planner_observability(
+    result: PlannerResult,
+    *,
+    provider: str,
+    model: str,
+) -> dict[str, Any]:
+    usage = _empty_usage()
+    for call in result.model_calls:
+        call_usage = call.usage.to_dict()
+        for key in (
+            "input_tokens",
+            "output_tokens",
+            "cached_input_tokens",
+            "reasoning_tokens",
+            "total_tokens",
+        ):
+            usage[key] = int(usage[key]) + int(call_usage[key])
+        if call.usage.reported:
+            usage["reported_requests"] = int(usage["reported_requests"]) + 1
+    usage["request_count"] = len(result.model_calls)
+    usage["unreported_requests"] = len(result.model_calls) - int(
+        usage["reported_requests"]
+    )
+    usage["reported"] = bool(usage["reported_requests"])
+
+    tool_calls: list[dict[str, Any]] = []
+    error_count = 0
+    total_execution_ms = 0.0
+    slowest: dict[str, Any] | None = None
+    memory_reads: list[str] = []
+    memory_writes: list[str] = []
+    for record in result.tool_calls:
+        output = record.output_json if isinstance(record.output_json, dict) else {}
+        execution_ms = _safe_float(output.get("execution_ms"))
+        execution_status = str(output.get("execution_status", "completed"))
+        total_execution_ms += execution_ms
+        if execution_status in {"error", "timeout", "denied", "unavailable"}:
+            error_count += 1
+        entry = {
+            "tool_name": record.tool_name,
+            "execution_status": execution_status,
+            "execution_ms": execution_ms,
+        }
+        tool_calls.append(entry)
+        if slowest is None or execution_ms > float(slowest["execution_ms"]):
+            slowest = entry
+        if record.tool_name == "memory_write":
+            memory_id = output.get("memory_id")
+            if isinstance(memory_id, str) and memory_id:
+                memory_writes.append(memory_id)
+        elif record.tool_name == "memory_search":
+            raw_items = output.get("items")
+            if isinstance(raw_items, list):
+                memory_reads.extend(
+                    str(item.get("id"))
+                    for item in raw_items
+                    if isinstance(item, dict) and item.get("id")
+                )
+
+    return {
+        "schema_version": "agent-observability-v1",
+        "provider": provider,
+        "model": model,
+        "model_calls": [call.to_dict() for call in result.model_calls],
+        "usage": usage,
+        "tools": {
+            "call_count": len(tool_calls),
+            "error_count": error_count,
+            "total_execution_ms": round(total_execution_ms, 3),
+            "slowest": slowest,
+            "calls": tool_calls,
+        },
+        "memory": {
+            "read_ids": list(dict.fromkeys(memory_reads)),
+            "write_ids": list(dict.fromkeys(memory_writes)),
+            "read_count": len(memory_reads),
+            "write_count": len(memory_writes),
+        },
+        "private_reasoning_stored": False,
+    }
+
+
+def _empty_observability() -> dict[str, Any]:
+    return {
+        "schema_version": "agent-observability-v1",
+        "provider": "provider_unavailable",
+        "model": "",
+        "model_calls": [],
+        "usage": _empty_usage(),
+        "tools": {
+            "call_count": 0,
+            "error_count": 0,
+            "total_execution_ms": 0.0,
+            "slowest": None,
+            "calls": [],
+        },
+        "memory": {
+            "read_ids": [],
+            "write_ids": [],
+            "read_count": 0,
+            "write_count": 0,
+        },
+        "private_reasoning_stored": False,
+    }
+
+
+def _empty_usage() -> dict[str, int | bool]:
+    return {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_input_tokens": 0,
+        "reasoning_tokens": 0,
+        "total_tokens": 0,
+        "request_count": 0,
+        "reported_requests": 0,
+        "unreported_requests": 0,
+        "reported": False,
+    }
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _reflection_summary(result: PlannerResult) -> str:

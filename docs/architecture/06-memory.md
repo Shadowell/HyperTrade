@@ -62,6 +62,14 @@ first and falls back to the legacy text-card parser when older production
 memories do not contain the schema. Missing structured fields surface as `n/a`,
 empty strings, empty lists, or empty maps rather than invented values.
 
+## Sprint 76 Update
+
+The Agent Flight Recorder correlates explicit `memory_search` and
+`memory_write` tool results with the current run timeline. It exposes Memory ids
+and bounded content previews from the existing audited Memory rows; it does not
+create a second Memory store or copy private reasoning into Memory. Historical
+items read by a run retain their original `source_run_id` and `source_tool`.
+
 ## 中文
 
 Memory 自动写入，但必须可审计。每条 memory 记录 kind、content、source run id、source tool、时间戳和 disabled 状态。
@@ -113,3 +121,10 @@ failure reasons、source data、下一轮实验建议、边界和 pass/fail 状�
 `StrategyLibraryService` 会优先解析这个 payload；旧生产 memory 没有 schema
 时继续走 legacy 文本卡解析。缺失字段显示为 `n/a`、空字符串、空列表或空
 map，不会编造数值。
+
+## Sprint 76 更新
+
+Agent Flight Recorder 会把显式 `memory_search` / `memory_write` 工具结果与
+当前 run 时间线关联，展示现有审计 Memory 行的 id 与有限内容预览；它不会
+新增第二套 Memory 存储，也不会把私有推理写入 Memory。某次 run 读取历史
+Memory 时，原条目的 `source_run_id` 与 `source_tool` 保持不变。

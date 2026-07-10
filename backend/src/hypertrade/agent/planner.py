@@ -8,12 +8,12 @@ execution. This split makes provider output easy to test and safe to inspect.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from hypertrade.providers.chat import ChatProvider
-from hypertrade.providers.deepseek import ChatResponse
+from hypertrade.providers.chat import ChatProvider, ChatResponse, TokenUsage
 
 ToolExecutor = Callable[[str, dict[str, Any]], dict[str, Any]]
 
@@ -954,17 +954,48 @@ class ToolCallRecord:
     output_json: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class ModelCallRecord:
+    iteration: int
+    provider: str
+    model: str
+    duration_ms: float
+    tool_call_count: int
+    response_type: str
+    usage: TokenUsage
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "iteration": self.iteration,
+            "provider": self.provider,
+            "model": self.model,
+            "duration_ms": self.duration_ms,
+            "tool_call_count": self.tool_call_count,
+            "response_type": self.response_type,
+            "usage": self.usage.to_dict(),
+        }
+
+
 @dataclass
 class PlannerResult:
     final_message: str
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
+    model_calls: list[ModelCallRecord] = field(default_factory=list)
 
 
 class AgentPlanner:
     MAX_ITERATIONS = 8
 
-    def __init__(self, llm: ChatProvider) -> None:
+    def __init__(
+        self,
+        llm: ChatProvider,
+        *,
+        model_call_sink: Callable[[ModelCallRecord], None] | None = None,
+        tool_call_sink: Callable[[ToolCallRecord], None] | None = None,
+    ) -> None:
         self._llm = llm
+        self._model_call_sink = model_call_sink
+        self._tool_call_sink = tool_call_sink
 
     def run(self, prompt: str, executor: ToolExecutor) -> PlannerResult:
         messages: list[dict[str, Any]] = [
@@ -972,12 +1003,30 @@ class AgentPlanner:
             {"role": "user", "content": prompt},
         ]
         tool_calls: list[ToolCallRecord] = []
+        model_calls: list[ModelCallRecord] = []
 
-        for _ in range(self.MAX_ITERATIONS):
+        for iteration in range(1, self.MAX_ITERATIONS + 1):
+            started_at = time.monotonic()
             response: ChatResponse = self._llm.chat(messages, tools=TOOL_SCHEMAS)
+            model_call = ModelCallRecord(
+                iteration=iteration,
+                provider=_provider_label(self._llm, "name"),
+                model=_provider_label(self._llm, "model"),
+                duration_ms=round((time.monotonic() - started_at) * 1000, 3),
+                tool_call_count=len(response.tool_calls),
+                response_type="tool_calls" if response.tool_calls else "final",
+                usage=response.usage,
+            )
+            model_calls.append(model_call)
+            if self._model_call_sink is not None:
+                self._model_call_sink(model_call)
 
             if not response.tool_calls:
-                return PlannerResult(final_message=response.content, tool_calls=tool_calls)
+                return PlannerResult(
+                    final_message=response.content,
+                    tool_calls=tool_calls,
+                    model_calls=model_calls,
+                )
 
             assistant_msg: dict[str, Any] = {
                 "role": "assistant",
@@ -1003,7 +1052,10 @@ class AgentPlanner:
                     result = executor(tc.name, tc.arguments)
                 except Exception as exc:  # noqa: BLE001 - preserve run traceability
                     result = _executor_error_payload(tc.name, exc)
-                tool_calls.append(ToolCallRecord(tc.name, tc.arguments, result))
+                tool_call = ToolCallRecord(tc.name, tc.arguments, result)
+                tool_calls.append(tool_call)
+                if self._tool_call_sink is not None:
+                    self._tool_call_sink(tool_call)
                 messages.append(
                     {
                         "role": "tool",
@@ -1015,7 +1067,13 @@ class AgentPlanner:
         return PlannerResult(
             final_message="Planning loop reached max iterations.",
             tool_calls=tool_calls,
+            model_calls=model_calls,
         )
+
+
+def _provider_label(provider: Any, field_name: str) -> str:
+    value = getattr(provider, field_name, "")
+    return value if isinstance(value, str) else ""
 
 
 def _executor_error_payload(tool_name: str, exc: Exception) -> dict[str, Any]:

@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from hypertrade.providers.chat import ChatResponse, ToolCallRequest
+from hypertrade.providers.chat import ChatResponse, TokenUsage, ToolCallRequest
 
 
 def resolve_codex_access_token(*, api_key: str = "", auth_json: Path | None = None) -> str:
@@ -232,7 +232,37 @@ def _parse_responses_payload(payload: dict[str, Any]) -> ChatResponse:
         content="\n".join(part for part in content_parts if part),
         reasoning_content="\n".join(reasoning_parts),
         tool_calls=tool_calls,
+        usage=_responses_token_usage(payload.get("usage")),
     )
+
+
+def _responses_token_usage(value: Any) -> TokenUsage:
+    """Normalize the Responses API usage shape while preserving unknown usage."""
+
+    if not isinstance(value, dict):
+        return TokenUsage()
+    input_tokens = _non_negative_int(value.get("input_tokens"))
+    output_tokens = _non_negative_int(value.get("output_tokens"))
+    input_details = value.get("input_tokens_details")
+    output_details = value.get("output_tokens_details")
+    input_details = input_details if isinstance(input_details, dict) else {}
+    output_details = output_details if isinstance(output_details, dict) else {}
+    return TokenUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cached_input_tokens=_non_negative_int(input_details.get("cached_tokens")),
+        reasoning_tokens=_non_negative_int(output_details.get("reasoning_tokens")),
+        total_tokens=_non_negative_int(value.get("total_tokens"))
+        or input_tokens + output_tokens,
+        reported=True,
+    )
+
+
+def _non_negative_int(value: Any) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _parse_function_call_item(item: dict[str, Any], *, index: int) -> ToolCallRequest | None:

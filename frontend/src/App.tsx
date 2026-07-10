@@ -26,6 +26,10 @@ import {
   useMemo,
   useState
 } from "react";
+import {
+  AgentFlightRecorder,
+  RunObservability
+} from "./components/observability/AgentFlightRecorder";
 
 type Language = "zh" | "en";
 type NavSection = "harness" | "strategy" | "alerts" | "runs" | "memory" | "rag";
@@ -276,6 +280,17 @@ type HarnessOverview = {
     total_count: number;
     recent_events: TraceEvent[];
   };
+  observability?: {
+    window_size: number;
+    completed_runs: number;
+    success_rate: number;
+    model_requests: number;
+    total_tokens: number;
+    usage_reported_runs: number;
+    p50_duration_ms: number;
+    p95_duration_ms: number;
+    private_reasoning_stored: boolean;
+  };
   paper: {
     session: {
       id: string;
@@ -505,7 +520,8 @@ const copy = {
     passFail: "通过 / 失败",
     variants: "变体",
     score: "评分",
-    noSourceIds: "暂无来源 ID"
+    noSourceIds: "暂无来源 ID",
+    tokenUsage: "Token 使用量"
   },
   en: {
     product: "HyperTrade",
@@ -671,7 +687,8 @@ const copy = {
     passFail: "Pass / Fail",
     variants: "Variants",
     score: "Score",
-    noSourceIds: "No source ids"
+    noSourceIds: "No source ids",
+    tokenUsage: "Token usage"
   }
 } satisfies Record<Language, Record<string, string>>;
 
@@ -867,6 +884,8 @@ function App() {
   const [strategyQuery, setStrategyQuery] = useState("");
   const [monitorAlerts, setMonitorAlerts] = useState<MonitorAlert[]>([]);
   const [evidenceSelection, setEvidenceSelection] = useState<EvidenceSelection | null>(null);
+  const [runObservability, setRunObservability] = useState<RunObservability | null>(null);
+  const [observabilityLoading, setObservabilityLoading] = useState(false);
   const t = copy[language];
   const activeOverview = overview ?? previewOverview;
   const reportBlocks = useMemo(() => reportBlocksFromRun(run), [run]);
@@ -907,6 +926,12 @@ function App() {
         value: formatMetricNumber(activeOverview.memory.active_count),
         icon: MemoryStick,
         tone: "signal"
+      },
+      {
+        label: t.tokenUsage,
+        value: formatMetricNumber(activeOverview.observability?.total_tokens ?? 0),
+        icon: Activity,
+        tone: "brass"
       }
     ],
     [activeOverview, t]
@@ -963,6 +988,23 @@ function App() {
     }
   }, [refreshMemoryItems, refreshMonitorAlerts, refreshStrategyLibrary]);
 
+  const loadRunObservability = useCallback(async (runId: string) => {
+    setObservabilityLoading(true);
+    try {
+      const response = await fetch(
+        `/api/agent/runs/${encodeURIComponent(runId)}/observability`,
+        { credentials: "include" }
+      );
+      if (response.ok) {
+        setRunObservability((await response.json()) as RunObservability);
+        return;
+      }
+      setRunObservability(null);
+    } finally {
+      setObservabilityLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshOverview();
@@ -991,6 +1033,7 @@ function App() {
   async function handleRun() {
     setBusy(true);
     setAgentProgress([]);
+    setRunObservability(null);
     try {
       const response = await fetch("/api/agent/runs/stream", {
         method: "POST",
@@ -1004,12 +1047,15 @@ function App() {
         );
         if (finalRun) {
           setRun(finalRun);
+          await loadRunObservability(finalRun.id);
         }
         await refreshOverview();
         return;
       }
       if (response.ok) {
-        setRun((await response.json()) as AgentRun);
+        const completedRun = (await response.json()) as AgentRun;
+        setRun(completedRun);
+        await loadRunObservability(completedRun.id);
         await refreshOverview();
       }
     } finally {
@@ -1041,6 +1087,7 @@ function App() {
     });
     if (response.ok) {
       setRun((await response.json()) as AgentRun);
+      await loadRunObservability(runId);
     }
   }
 
@@ -1364,6 +1411,12 @@ function App() {
               ) : null}
             </div>
           </section>
+
+          <AgentFlightRecorder
+            data={runObservability}
+            language={language}
+            loading={busy || observabilityLoading}
+          />
 
           <section className="mt-5 grid grid-cols-[1.1fr_0.9fr] gap-5 max-xl:grid-cols-1" id="strategy">
             <div className="panel">

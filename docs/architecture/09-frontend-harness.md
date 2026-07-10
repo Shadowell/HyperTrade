@@ -14,6 +14,12 @@ Sprint 52 expands the console with source-backed operator review surfaces:
 - Monitor alerts read the Sprint 51-style `/api/alerts` path when available; empty alert lists render an explicit operational empty state.
 - Approval/risk status is read-only in the console and surfaces pending live/testnet intents and risk status without adding live execution controls.
 
+Sprint 76 adds the componentized `AgentFlightRecorder`. It reads
+`GET /api/agent/runs/{run_id}/observability` and renders an ordered Graph /
+Model / Tool / Policy / Memory tape, provider-reported Token composition,
+per-call and tool latency, linked Memory ids, and an explicit redaction boundary.
+Unknown provider usage is displayed as unavailable rather than estimated.
+
 Design direction:
 
 - dense trading-desk layout
@@ -35,6 +41,12 @@ Sprint 52 增加面向操作员的证据审阅能力：
 - 最近运行可以读取 `GET /api/agent/runs/{run_id}`，让操作员不用切 CLI 就能查看报告和 trace 详情。
 - 监控告警读取 Sprint 51 风格的 `/api/alerts` 路径；当告警列表为空时，页面展示明确空状态，而不是报错。
 - 审批/风控区域保持只读，只展示待审批 live/testnet intent 与 risk status，不扩展实盘执行 UI。
+
+Sprint 76 新增组件化 `AgentFlightRecorder`。它读取
+`GET /api/agent/runs/{run_id}/observability`，按顺序显示 Graph / Model /
+Tool / Policy / Memory 时间带、Provider 返回的 Token 构成、模型与工具延迟、
+关联 Memory id 和明确的脱敏边界。Provider 没返回 usage 时显示不可用，
+不会用字符数估算冒充精确 Token。
 
 设计方向：
 

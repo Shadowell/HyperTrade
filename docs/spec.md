@@ -18,7 +18,7 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 
 ## Core User Journeys
 
-1. Operator opens `/harness` and reviews the core workbench: Agent run creation, report reading, recent runs, trace, RAG, Memory, and OKX market snapshot without a login wall.
+1. Operator opens `/harness` and reviews the core workbench: Agent run creation, report reading, recent runs, Flight Recorder trace/Token/Memory telemetry, RAG, Memory, and OKX market snapshot without a login wall.
 2. Worker continuously ingests OKX SWAP ticker snapshots.
 3. User asks for a market summary in free-form chat.
 4. Agent calls market, RAG, and memory tools, then stores trace and report.
@@ -195,6 +195,13 @@ its own Agent capabilities:
   missing-evidence markers. The scheduler recommends review, observation,
   targeted backtests/experiments, or defensive requests; it does not perform
   live allocation changes or offensive strategy promotion.
+- Sprint 76 Agent Flight Recorder: provider-reported input/output/cached/reasoning
+  Token usage is normalized across OpenAI-compatible Chat Completions and Codex
+  Responses. Each planner model call records trace-safe iteration, route,
+  latency, tool-call count, and usage without storing private reasoning text.
+  `GET /api/agent/runs/{run_id}/observability` projects an ordered graph/model/
+  tool/policy/Memory timeline, `/api/harness/overview.observability` aggregates
+  recent-run telemetry, and `/harness` renders the componentized Flight Recorder.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -212,11 +219,16 @@ its own Agent capabilities:
 
 - `./scripts/check.sh` passes.
 - `GET /api/health` returns OK.
-- `/harness` loads a simplified core workbench without rendering a login form: Agent run creation, report reading, recent runs, trace events, RAG search, Memory search/detail, OKX top movers, and core telemetry.
+- `/harness` loads a simplified core workbench without rendering a login form: Agent run creation, report reading, recent runs, trace events, Flight Recorder Token/latency/Memory telemetry, RAG search, Memory search/detail, OKX top movers, and core telemetry.
 - Advanced provider switching, paper lifecycle controls, live approval/execution, strategy lab/backtest forms, eval panels, Feishu send, and Memory disable are not first-class `/harness` UI controls.
 - Privileged mutations such as provider selection, paper lifecycle control, live order approval/execution, Memory disable, and Feishu send still require admin session auth.
 - `/api/harness/tools` shows live order approval gating.
 - User can create an Agent market-summary run and inspect trace events.
+- User can open `GET /api/agent/runs/{run_id}/observability` or the `/harness`
+  Flight Recorder to inspect ordered graph/model/tool/policy/Memory events,
+  provider-reported Token usage, tool latency, and linked Memory ids. Missing
+  provider usage is marked unavailable rather than estimated, and prompts,
+  secrets, and private reasoning text are not copied into the projection.
 - User can call `GET /api/world-model/snapshot` or ask `现在全局状态怎么样`;
   the Agent uses `world_model_snapshot`, reports source refs and missing
   cross-asset data, and does not call paper, BitPro lifecycle, Testnet, or live
