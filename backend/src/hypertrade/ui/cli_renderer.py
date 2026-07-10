@@ -121,6 +121,8 @@ def _render_markdown_enhanced(
     output: TextIO,
 ) -> None:
     """Render markdown with enhanced formatting."""
+    import re
+
     lines = markdown.split("\n")
 
     in_code_block = False
@@ -135,81 +137,187 @@ def _render_markdown_enhanced(
             print(color.paint(line, "muted"), file=output)
             continue
 
-        # Headers
+        # Horizontal rule (---, ***, ___)
+        if _is_horizontal_rule(line):
+            formatter.divider()
+            continue
+
+        # Headers — use slice to avoid greedy replace of # characters
         if line.startswith("###"):
-            text = line.replace("###", "").strip()
+            text = line[3:].strip()
             formatter.subsection(text)
             continue
         elif line.startswith("##"):
-            text = line.replace("##", "").strip()
+            text = line[2:].strip()
             formatter.section(text)
             continue
         elif line.startswith("#"):
-            text = line.replace("#", "").strip()
+            text = line[1:].strip()
             print("", file=output)
             print(color.bold(text), file=output)
             print("", file=output)
             continue
 
-        # Lists
-        if line.strip().startswith("-") or line.strip().startswith("*"):
+        # Bullet list items (- or * followed by a space, but not **bold** markers)
+        if _is_bullet_list_item(line):
             text = line.strip()[1:].strip()
-            # Check for status indicators
-            if "✓" in text or "成功" in text:
-                print(f"  • {color.success(text)}", file=output)
-            elif "✗" in text or "失败" in text or "错误" in text:
-                print(f"  • {color.error(text)}", file=output)
-            elif "⚠" in text or "警告" in text or "注意" in text:
-                print(f"  • {color.warning(text)}", file=output)
+            text = _apply_inline_formatting(text, color)
+            _print_status_list_item(text, color=color, output=output)
+            continue
+
+        # Ordered list items (1., 2., ...)
+        if _is_ordered_list_item(line):
+            m = re.match(r"^(\d+)\.[ \t]+", line.strip())
+            if m:
+                num_str = m.group(1) + "."
+                text = line.strip()[m.end():].strip()
             else:
-                print(f"  • {text}", file=output)
+                num_str = "•"
+                text = line.strip()
+            text = _apply_inline_formatting(text, color)
+            _print_status_list_item(text, color=color, output=output, bullet=num_str)
             continue
 
-        # Tables
-        if "|" in line and "---" not in line:
-            # Simple table row rendering
-            print(color.paint(line, "value"), file=output)
+        # Pipe-delimited table rows — render with full column alignment
+        if _is_table_row(line):
+            print(_apply_inline_formatting(line.strip(), color), file=output)
             continue
 
-        # Bold text
-        if "**" in line:
-            # Highlight bold text
-            parts = line.split("**")
-            result = []
-            for i, part in enumerate(parts):
-                if i % 2 == 1:  # Bold part
-                    result.append(color.bold(part))
-                else:
-                    result.append(part)
-            print("".join(result), file=output)
+        # Table separator line (skip, but print a thin divider for visual separation)
+        if _is_table_separator(line):
+            print(color.paint("  " + "─" * (formatter.width - 4), "border"), file=output)
             continue
 
-        # Percentage changes
-        if "%" in line and ("+" in line or "-" in line):
-            # Color percentage changes
-            import re
-            def colorize_pct(match):
-                value = match.group(0)
-                try:
-                    num = float(value.replace("%", "").replace("+", ""))
-                    if num > 0:
-                        return color.bullish(value)
-                    elif num < 0:
-                        return color.bearish(value)
-                    else:
-                        return color.neutral(value)
-                except (ValueError, TypeError):
-                    return value
-
-            line = re.sub(r'[+-]?\d+\.?\d*%', colorize_pct, line)
-            print(line, file=output)
-            continue
-
-        # Regular line
-        if line.strip():
-            print(line, file=output)
+        # Regular line — apply inline formatting (bold + percentage color)
+        line_stripped = line.strip()
+        if line_stripped:
+            print(_apply_inline_formatting(line_stripped, color), file=output)
         else:
             print("", file=output)
+
+
+def _is_horizontal_rule(line: str) -> bool:
+    """Check if a line is a markdown horizontal rule (---, ***, ___).
+
+    Matches 3+ consecutive identical characters from the set -*_,
+    optionally with up to 2 spaces between characters.
+    """
+    stripped = line.strip()
+    if len(stripped) < 3:
+        return False
+    # All same char from the hr set
+    if all(c == stripped[0] for c in stripped) and stripped[0] in "-*_":
+        return True
+    # Spaced variant: "- - -"
+    return bool(
+        len(stripped) >= 5
+        and stripped[0] in "-*_"
+        and all(c == stripped[0] or c == " " for c in stripped)
+        and sum(1 for c in stripped if c == stripped[0]) >= 3
+    )
+
+
+def _is_bullet_list_item(line: str) -> bool:
+    """Check if line is a bullet list item (- or * followed by a space).
+
+    Excludes **bold** text, horizontal rules, and *** separators.
+    """
+    stripped = line.strip()
+    if _is_horizontal_rule(line):
+        return False
+    if not (stripped.startswith("- ") or stripped.startswith("* ")):
+        return False
+    # Exclude **bold text** which also starts with *
+    return not (stripped.startswith("**") and stripped.count("**") >= 2)
+
+
+def _is_ordered_list_item(line: str) -> bool:
+    """Check if a line is an ordered list item (e.g. '1. text', '10. text')."""
+    import re
+
+    return bool(re.match(r"^\d+\.[ \t]", line.strip()))
+
+
+def _is_table_row(line: str) -> bool:
+    """Check if a line is a markdown table data/header row (contains | but not --- separator)."""
+    stripped = line.strip()
+    return "|" in stripped and not _is_table_separator(line)
+
+
+def _is_table_separator(line: str) -> bool:
+    """Check if a line is a markdown table separator (e.g. |---|---|).
+
+    We've already excluded horizontal rules at this point, so
+    anything containing | that reduces to only dashes is a table separator.
+    """
+    stripped = line.strip()
+    if "|" not in stripped:
+        return False
+    # Remove pipes, whitespace, and colons — what remains should be only dashes
+    cleaned = (
+        stripped.replace("|", "")
+        .replace(" ", "")
+        .replace("\t", "")
+        .replace(":", "")
+    )
+    return len(cleaned) >= 3 and all(c == "-" for c in cleaned)
+
+
+def _apply_inline_formatting(line: str, color: Color) -> str:
+    """Apply bold and percentage colorization to a line in one pass.
+
+    Bold markers (**) are processed first; percentage values inside
+    both bold and non-bold spans are colorized (green/red/yellow).
+    """
+    if "**" in line:
+        parts = line.split("**")
+        result = []
+        for i, part in enumerate(parts):
+            if i % 2 == 1:  # Bold span
+                result.append(color.bold(_colorize_percentages(part, color)))
+            else:
+                result.append(_colorize_percentages(part, color))
+        return "".join(result)
+    else:
+        return _colorize_percentages(line, color)
+
+
+def _colorize_percentages(text: str, color: Color) -> str:
+    """Colorize signed percentage values with bullish/bearish/neutral colors."""
+    import re
+
+    def _replace(match: re.Match[str]) -> str:
+        value = match.group(0)
+        try:
+            num = float(value.replace("%", "").replace("+", ""))
+            if num > 0:
+                return color.bullish(value)
+            elif num < 0:
+                return color.bearish(value)
+            else:
+                return color.neutral(value)
+        except (ValueError, TypeError):
+            return value
+
+    return re.sub(r"[+-]?\d+\.?\d*%", _replace, text)
+
+
+def _print_status_list_item(
+    text: str,
+    *,
+    color: Color,
+    output: TextIO,
+    bullet: str = "•",
+) -> None:
+    """Print a list item, colorizing the entire line based on status indicators."""
+    if "✓" in text or "成功" in text:
+        print(f"  {bullet} {color.success(text)}", file=output)
+    elif "✗" in text or "失败" in text or "错误" in text:
+        print(f"  {bullet} {color.error(text)}", file=output)
+    elif "⚠" in text or "警告" in text or "注意" in text:
+        print(f"  {bullet} {color.warning(text)}", file=output)
+    else:
+        print(f"  {bullet} {text}", file=output)
 
 
 def render_world_state_summary(
