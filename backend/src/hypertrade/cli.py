@@ -57,6 +57,8 @@ class AgentClient(Protocol):
 
     def list_runs(self) -> list[dict[str, Any]]: ...
 
+    def get_run(self, run_id: str) -> dict[str, Any]: ...
+
     def list_memory(self) -> list[dict[str, Any]]: ...
 
     def search_memory(self, query: str) -> list[dict[str, Any]]: ...
@@ -166,6 +168,7 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("/tools", "List registered Agent tools with category, approval gate, and purpose."),
     ("/connectors", "List external connector capabilities and secret-redacted auth status."),
     ("/runs", "List recent Agent runs."),
+    ("/run <run_id>", "Open one persisted run with the active report and trace renderer."),
     ("/memory", "List active audited memory."),
     ("/memory search <query>", "Search audited memory by text."),
     ("/memory disable <mem_id>", "Disable one memory item without deleting audit history."),
@@ -540,6 +543,9 @@ class AgentApiClient:
     def list_runs(self) -> list[dict[str, Any]]:
         return self._get_list("/api/agent/runs", "runs")
 
+    def get_run(self, run_id: str) -> dict[str, Any]:
+        return self._get_object(f"/api/agent/runs/{quote(run_id, safe='')}")
+
     def list_memory(self) -> list[dict[str, Any]]:
         return self._get_list("/api/memory", "items")
 
@@ -813,6 +819,16 @@ class LocalAgentClient:
                 }
                 for run in runs
             ]
+
+    def get_run(self, run_id: str) -> dict[str, Any]:
+        run = AgentKernel(
+            self.db,
+            knowledge_dir=str(self.settings.knowledge_dir),
+            settings=self.settings,
+            provider_name=self.selected_provider,
+            provider_model=self.selected_provider_model or None,
+        ).get_run(run_id)
+        return _completed_run_to_dict(run)
 
     def list_memory(self) -> list[dict[str, Any]]:
         return [
@@ -1327,6 +1343,8 @@ def handle_slash_command(
         render_connectors(client.list_connectors(), output=output)
     elif name == "/runs":
         render_runs(client.list_runs(), output=output)
+    elif name == "/run":
+        handle_run_command(command, client=client, output=output)
     elif name == "/memory":
         handle_memory_command(command, client=client, output=output)
     elif name == "/rag":
@@ -2429,6 +2447,30 @@ def render_runs(items: list[dict[str, Any]], *, output: TextIO) -> None:
         )
 
 
+def handle_run_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    """Load one historical run through the same renderer as a live completion.
+
+    The run payload contains the persisted report and trace evidence, but never
+    needs to expose credentials or private model reasoning to the terminal.
+    """
+    parts = command.split(maxsplit=1)
+    if len(parts) != 2 or not parts[1].strip():
+        print("Usage: /run <run_id>  (find ids with /runs)", file=output)
+        return
+    run_id = parts[1].strip()
+    try:
+        run = client.get_run(run_id)
+    except KeyError:
+        print(f"Run not found: {run_id}", file=output)
+        return
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            print(f"Run not found: {run_id}", file=output)
+            return
+        raise
+    render_run(run, output=output)
+
+
 def render_memory(items: list[dict[str, Any]], *, output: TextIO) -> None:
     print("Memory:", file=output)
     if not items:
@@ -2667,31 +2709,21 @@ def render_backtests(items: list[dict[str, Any]], *, output: TextIO) -> None:
 def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
     output = output or sys.stdout
 
-    # The enhanced renderer uses a separate demo-oriented payload envelope.
-    # Keep it explicitly opt-in until it supports the standard run/report/trace
-    # contract; auto mode must preserve the production report renderers below.
-    renderer = os.getenv("HYPERTRADE_RENDERER", "auto").strip().lower()
-    if renderer == "enhanced":
-        try:
-            from hypertrade.ui.cli_renderer import render_agent_output
-            render_agent_output(run, output=output)
-            return
-        except ImportError:
-            pass  # Fall back to other renderers
-
     if _should_render_rich(output) and _render_rich_run(run, output=output):
         return
     trace_events = run.get("trace_events", [])
     if _show_trace_output():
         print(f"Run: {run.get('id', 'unknown')}", file=output)
         print(f"Status: {run.get('status', 'unknown')}", file=output)
+        _render_observability_plain(run, output=output)
     if _show_trace_output() and isinstance(trace_events, list) and trace_events:
         print("Tools:", file=output)
         for event in trace_events:
             if not isinstance(event, dict):
                 continue
             print(
-                f"- {event.get('tool_name', 'unknown')}: {event.get('status', 'unknown')}",
+                f"- {event.get('tool_name', 'unknown')}: {event.get('status', 'unknown')}"
+                f"{_trace_duration_label(event)}",
                 file=output,
             )
         print("", file=output)
@@ -2704,11 +2736,123 @@ def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
     )
 
 
+def _run_observability(run: dict[str, Any]) -> dict[str, Any]:
+    """Read the additive, trace-safe observability projection from a run."""
+    state = run.get("run_state_json")
+    if isinstance(state, dict):
+        observability = state.get("observability")
+        if isinstance(observability, dict):
+            return observability
+    report = run.get("report_json")
+    if isinstance(report, dict):
+        observability = report.get("observability")
+        if isinstance(observability, dict):
+            return observability
+    return {}
+
+
+def _render_observability_plain(run: dict[str, Any], *, output: TextIO) -> None:
+    """Render a compact terminal Flight Recorder without raw trace payloads."""
+    observability = _run_observability(run)
+    if not observability:
+        print("Flight Recorder: unavailable for this run", file=output)
+        return
+
+    usage = observability.get("usage")
+    usage = usage if isinstance(usage, dict) else {}
+    tools = observability.get("tools")
+    tools = tools if isinstance(tools, dict) else {}
+    memory = observability.get("memory")
+    memory = memory if isinstance(memory, dict) else {}
+
+    provider = str(observability.get("provider") or "unavailable")
+    model = str(observability.get("model") or "unavailable")
+    duration = _format_duration_ms(observability.get("duration_ms"))
+    print("Flight Recorder:", file=output)
+    print(f"- runtime: {provider} / {model} · duration={duration}", file=output)
+    print(f"- tokens: {_token_usage_label(usage)}", file=output)
+    print(
+        "- tools: "
+        f"calls={_integer_value(tools.get('call_count'))} "
+        f"errors={_integer_value(tools.get('error_count'))} "
+        f"execution={_format_duration_ms(tools.get('total_execution_ms'))}"
+        f"{_slowest_tool_label(tools.get('slowest'))}",
+        file=output,
+    )
+    print(
+        "- memory: "
+        f"read={_integer_value(memory.get('read_count'))} "
+        f"written={_integer_value(memory.get('write_count'))}",
+        file=output,
+    )
+    print("- safety: prompts, credentials, and private reasoning are not displayed", file=output)
+
+
+def _token_usage_label(usage: dict[str, Any]) -> str:
+    requests = _integer_value(usage.get("request_count"))
+    if not bool(usage.get("reported")):
+        return f"unavailable · model_calls={requests}"
+    return (
+        f"total={_integer_value(usage.get('total_tokens'))} "
+        f"input={_integer_value(usage.get('input_tokens'))} "
+        f"output={_integer_value(usage.get('output_tokens'))} "
+        f"cached={_integer_value(usage.get('cached_input_tokens'))} "
+        f"reasoning={_integer_value(usage.get('reasoning_tokens'))} "
+        f"model_calls={requests}"
+    )
+
+
+def _slowest_tool_label(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    tool_name = str(value.get("tool_name") or "")
+    if not tool_name:
+        return ""
+    return f" · slowest={tool_name} ({_format_duration_ms(value.get('execution_ms'))})"
+
+
+def _integer_value(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        with suppress(ValueError):
+            return int(float(value))
+    return 0
+
+
+def _format_duration_ms(value: object) -> str:
+    if isinstance(value, bool):
+        return "n/a"
+    if not isinstance(value, int | float | str):
+        return "n/a"
+    try:
+        duration_ms = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    if duration_ms < 1000:
+        return f"{duration_ms:.0f}ms"
+    return f"{duration_ms / 1000:.2f}s"
+
+
+def _trace_duration_label(event: dict[str, Any]) -> str:
+    payload = event.get("output_json")
+    if not isinstance(payload, dict):
+        return ""
+    value = payload.get("duration_ms", payload.get("execution_ms"))
+    if value is None:
+        return ""
+    return f" · {_format_duration_ms(value)}"
+
+
 def _should_render_rich(output: TextIO) -> bool:
     renderer = os.getenv("HYPERTRADE_RENDERER", "auto").strip().lower()
     if renderer in {"plain", "text"}:
         return False
-    if renderer == "rich":
+    if renderer in {"enhanced", "rich"}:
         return True
     return bool(getattr(output, "isatty", lambda: False)())
 
@@ -2758,6 +2902,7 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
             Text(str(run.get("status", "unknown")), style="green"),
         )
         console.print(Panel(header, title="HyperTrade Run", border_style="cyan"))
+        _render_rich_observability(run, console=console)
 
     if _show_trace_output() and isinstance(trace_events, list) and trace_events:
         _render_rich_trace_summary(trace_events, console=console)
@@ -2812,8 +2957,13 @@ def _render_rich_trace_summary(trace_events: list[Any], *, console: Any) -> None
         for row in _aggregate_trace_events(visible_events):
             tools.add_row(row["tool"], row["status"], str(row["count"]))
     else:
+        tools.add_column("Duration", justify="right")
         for event in visible_events:
-            tools.add_row(str(event.get("tool_name", "unknown")), str(event.get("status", "n/a")))
+            tools.add_row(
+                str(event.get("tool_name", "unknown")),
+                str(event.get("status", "n/a")),
+                _trace_duration_label(event).removeprefix(" · ") or "n/a",
+            )
     console.print(tools)
     if folded_events:
         console.print(
@@ -2825,6 +2975,49 @@ def _render_rich_trace_summary(trace_events: list[Any], *, console: Any) -> None
                 style="dim",
             )
         )
+
+
+def _render_rich_observability(run: dict[str, Any], *, console: Any) -> None:
+    """Render the redacted Flight Recorder ledger above the optional trace table."""
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+
+    observability = _run_observability(run)
+    if not observability:
+        console.print(Text("Flight Recorder unavailable for this run", style="dim"))
+        return
+    usage = observability.get("usage")
+    usage = usage if isinstance(usage, dict) else {}
+    tools = observability.get("tools")
+    tools = tools if isinstance(tools, dict) else {}
+    memory = observability.get("memory")
+    memory = memory if isinstance(memory, dict) else {}
+
+    ledger = Table.grid(expand=True, padding=(0, 1))
+    ledger.add_column(style="cyan", no_wrap=True)
+    ledger.add_column()
+    ledger.add_row(
+        "Runtime",
+        f"{observability.get('provider') or 'unavailable'} / "
+        f"{observability.get('model') or 'unavailable'} · "
+        f"{_format_duration_ms(observability.get('duration_ms'))}",
+    )
+    ledger.add_row("Tokens", _token_usage_label(usage))
+    ledger.add_row(
+        "Tools",
+        f"calls={_integer_value(tools.get('call_count'))} · "
+        f"errors={_integer_value(tools.get('error_count'))} · "
+        f"execution={_format_duration_ms(tools.get('total_execution_ms'))}"
+        f"{_slowest_tool_label(tools.get('slowest'))}",
+    )
+    ledger.add_row(
+        "Memory",
+        f"read={_integer_value(memory.get('read_count'))} · "
+        f"written={_integer_value(memory.get('write_count'))}",
+    )
+    ledger.add_row("Safety", "Prompts, credentials, and private reasoning are redacted")
+    console.print(Panel(ledger, title="Flight Recorder", border_style="blue"))
 
 
 def _show_full_trace() -> bool:

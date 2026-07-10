@@ -5,6 +5,12 @@
 - Branch: `main`
 - Harness status: active
 - Architecture diagram: Updated to include World Model (Layer 5), Monitoring (Layer 7), renumbered layers, and full Mermaid+SVG coverage.
+- Last verified state: Sprint 77 CLI Flight Recorder implementation completed
+  locally on 2026-07-10. The terminal now renders a redacted Token/latency/tool/
+  Memory ledger in `HYPERTRADE_TRACE=summary|full`, `enhanced` maps to the
+  standard Rich renderer, and `/run <run_id>` reopens historical local or remote
+  runs. Focused CLI tests passed (`72 passed`) and `./scripts/check.sh` passed
+  (`pytest` 298 passed). Production deployment is pending.
 - Last verified state: Sprint 76 Agent Flight Recorder completed locally on
   2026-07-10. Provider usage normalization, run observability API, Memory trace
   correlation, and the responsive operator UI passed focused tests and full
@@ -13,21 +19,24 @@
   browser console errors. Deployment run `29064831516` succeeded for SHA
   `e7096c6`; production health, overview observability, and historical Run
   projection smokes passed. A new provider-backed smoke was audited as failed
-  because the configured DeepSeek credential returns `401 invalid api key`;
-  rotating that server-side secret remains an operator configuration task.
+  because the configured DeepSeek credential returned `401 invalid api key`.
+  The server-side secret was subsequently rotated and a real DeepSeek run
+  `run_05e9ae44916f494798f8` completed with 30,839 provider-reported Tokens.
 
 ## Active Contract
 
-- No active implementation contract after Sprint 76. Select the next contract
-  under `docs/contracts/` before expanding scope.
+- Sprint 77 CLI Flight Recorder is implementation-complete under
+  `docs/contracts/sprint-77-cli-flight-recorder.md`; deployment verification is
+  pending.
 
 ## Current In-Progress Work
 
-- Production provider configuration gap: the default DeepSeek route is marked
-  configured but currently returns `401 invalid api key`; no alternative chat
-  provider is configured. Server-side credential rotation is required before a
-  production model call can report non-zero Token usage. Failure trace,
-  duration, redaction, and missing-usage behavior are working as designed.
+- Sprint 77 deployment verification: run a production DeepSeek request through
+  the remote CLI with `HYPERTRADE_TRACE=summary`, then reopen the result through
+  `/run <run_id>` and verify the full redacted trace view.
+- Production DeepSeek configuration is healthy after server-side credential
+  rotation. The validation run reported 30,839 Tokens across two model calls;
+  no credential was stored in the repository.
 - Architecture diagram refresh: Added World Model (Layer 5), Monitoring & Alerts
   (Layer 7), renumbered to 10-layer model, and updated SVG + Mermaid to reflect
   the complete Sprint 1-74 capability surface.
@@ -64,6 +73,16 @@
 
 ## Latest Completed Work
 
+- Implemented Sprint 77 CLI Flight Recorder: `HYPERTRADE_TRACE=summary|full`
+  now renders a trace-safe terminal ledger from the persisted observability
+  projection (provider/model, exact reported Tokens or explicit unavailable,
+  duration, tool aggregate, Memory read/write counts) before the folded or full
+  trace. Full trace rows include only tool name, status, and duration; prompts,
+  credentials, raw tool payloads, and private reasoning remain hidden.
+  `HYPERTRADE_RENDERER=enhanced` now uses the standard Rich run envelope, and
+  `/run <run_id>` loads local or remote historical runs through the same
+  renderer. Focused CLI tests passed (`72 passed`) and full `./scripts/check.sh`
+  passed (`pytest` 298 passed); deployment verification is pending.
 - Implemented Sprint 76 Agent Flight Recorder: OpenAI-compatible Chat
   Completions and Codex Responses normalize provider-reported input, output,
   cached-input, reasoning, and total Token usage; `AgentPlanner` records one

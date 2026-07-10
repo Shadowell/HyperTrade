@@ -101,6 +101,7 @@ class FakeAgentClient:
         self.selected_model = "deepseek"
         self.selected_provider_model = "deepseek-v4-flash"
         self.disabled_memory_ids: list[str] = []
+        self.requested_run_ids: list[str] = []
 
     def login(self) -> None:
         self.logged_in = True
@@ -179,6 +180,17 @@ class FakeAgentClient:
 
     def list_runs(self) -> list[dict[str, Any]]:
         return [{"id": "run_recent", "status": "completed", "prompt": "请做行情归纳"}]
+
+    def get_run(self, run_id: str) -> dict[str, Any]:
+        self.requested_run_ids.append(run_id)
+        if run_id != "run_recent":
+            raise KeyError(run_id)
+        return {
+            "id": run_id,
+            "status": "completed",
+            "report_markdown": "# Historical Report\n\nRecovered through /run.",
+            "trace_events": [],
+        }
 
     def list_memory(self) -> list[dict[str, Any]]:
         return [
@@ -1702,6 +1714,134 @@ def test_rich_run_can_show_full_trace(monkeypatch) -> None:
     assert "Trace folded" not in rendered
 
 
+def test_trace_summary_renders_redacted_flight_recorder(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "plain")
+    monkeypatch.setenv("HYPERTRADE_TRACE", "summary")
+    output = StringIO()
+
+    render_run(
+        {
+            "id": "run_observed",
+            "status": "completed",
+            "report_markdown": "# Report\n\nVisible answer only.",
+            "run_state_json": {
+                "observability": {
+                    "provider": "deepseek",
+                    "model": "deepseek-v4-flash",
+                    "duration_ms": 14131.983,
+                    "usage": {
+                        "input_tokens": 30184,
+                        "output_tokens": 655,
+                        "cached_input_tokens": 6272,
+                        "reasoning_tokens": 251,
+                        "total_tokens": 30839,
+                        "request_count": 2,
+                        "reported": True,
+                    },
+                    "tools": {
+                        "call_count": 2,
+                        "error_count": 0,
+                        "total_execution_ms": 5035.876,
+                        "slowest": {"tool_name": "world_model_snapshot", "execution_ms": 5010.712},
+                    },
+                    "memory": {"read_count": 1, "write_count": 1},
+                }
+            },
+            "trace_events": [
+                {
+                    "tool_name": "graph.model_call",
+                    "status": "completed",
+                    "output_json": {"duration_ms": 120, "secret": "must-not-render"},
+                }
+            ],
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "Flight Recorder:" in rendered
+    assert "deepseek / deepseek-v4-flash · duration=14.13s" in rendered
+    assert "total=30839 input=30184 output=655 cached=6272 reasoning=251 model_calls=2" in rendered
+    assert "slowest=world_model_snapshot (5.01s)" in rendered
+    assert "memory: read=1 written=1" in rendered
+    assert "graph.model_call: completed · 120ms" in rendered
+    assert "must-not-render" not in rendered
+
+
+def test_trace_summary_marks_unreported_usage_unavailable(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "plain")
+    monkeypatch.setenv("HYPERTRADE_TRACE", "summary")
+    output = StringIO()
+
+    render_run(
+        {
+            "id": "run_usage_missing",
+            "status": "completed",
+            "report_markdown": "ok",
+            "report_json": {
+                "observability": {
+                    "provider": "provider_unavailable",
+                    "usage": {"request_count": 1, "reported": False},
+                    "tools": {},
+                    "memory": {},
+                }
+            },
+            "trace_events": [],
+        },
+        output=output,
+    )
+
+    assert "tokens: unavailable · model_calls=1" in output.getvalue()
+
+
+def test_enhanced_renderer_supports_standard_run_envelope(monkeypatch) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "enhanced")
+    monkeypatch.setenv("HYPERTRADE_TRACE", "summary")
+    output = StringIO()
+
+    render_run(
+        {
+            "id": "run_enhanced",
+            "status": "completed",
+            "report_markdown": "# Structured Answer\n\n- ✓ completed safely",
+            "run_state_json": {
+                "observability": {
+                    "provider": "deepseek",
+                    "model": "deepseek-v4-flash",
+                    "duration_ms": 250,
+                    "usage": {"request_count": 1, "reported": False},
+                    "tools": {},
+                    "memory": {},
+                }
+            },
+            "trace_events": [{"tool_name": "graph.final_report", "status": "completed"}],
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "HyperTrade Run" in rendered
+    assert "Flight Recorder" in rendered
+    assert "Structured Answer" in rendered
+    assert "completed safely" in rendered
+    assert "Trace folded" in rendered
+
+
+def test_slash_run_renders_persisted_run_and_explains_missing_id() -> None:
+    client = FakeAgentClient()
+    output = StringIO()
+
+    handle_slash_command("/run run_recent", client=client, output=output)
+    handle_slash_command("/run", client=client, output=output)
+    handle_slash_command("/run run_missing", client=client, output=output)
+
+    rendered = output.getvalue()
+    assert client.requested_run_ids == ["run_recent", "run_missing"]
+    assert "Historical Report" in rendered
+    assert "Usage: /run <run_id>" in rendered
+    assert "Run not found: run_missing" in rendered
+
+
 def test_render_run_uses_rich_markdown_for_unknown_report(monkeypatch) -> None:
     monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
     output = StringIO()
@@ -2520,6 +2660,10 @@ def test_local_agent_client_runs_kernel(tmp_path) -> None:
     assert run["report_json"]["tool_calls"] == []
     assert run["run_state_json"]["current_node"] == "final_report"
 
+    restored = client.get_run(str(run["id"]))
+    assert restored["id"] == run["id"]
+    assert restored["report_markdown"] == run["report_markdown"]
+
 
 def test_api_client_logs_in_and_posts_agent_run() -> None:
     seen: list[tuple[str, str, dict[str, Any]]] = []
@@ -2560,6 +2704,28 @@ def test_api_client_logs_in_and_posts_agent_run() -> None:
         ("POST", "/api/auth/login", {"username": "admin", "password": "secret"}),
         ("POST", "/api/agent/runs", {"prompt": "hello"}),
     ]
+
+
+def test_api_client_loads_one_persisted_run() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/api/agent/runs/run_saved"
+        return httpx.Response(
+            200,
+            json={
+                "id": "run_saved",
+                "status": "completed",
+                "report_markdown": "# Persisted",
+                "trace_events": [],
+            },
+        )
+
+    client = AgentApiClient(
+        CliConfig(api_url="http://example.test/", username="admin", password="secret"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert client.get_run("run_saved")["id"] == "run_saved"
 
 
 def test_api_client_stream_keeps_read_open_for_long_tools() -> None:

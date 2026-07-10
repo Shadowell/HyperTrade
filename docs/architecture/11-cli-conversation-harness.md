@@ -43,11 +43,11 @@ still uses the standard readline input boundary here, so live per-keystroke drop
 navigation is a future TUI enhancement rather than part of the current CLI loop.
 
 - `/help`, `/status`, `/model`, `/providers`
-- `/tools`, `/runs`, `/memory`
+- `/tools`, `/runs`, `/run <run_id>`, `/memory`
 - `/strategy`, `/backtests`
 - `/research <prompt>`, `/backtest`, `/backtest latest`
 
-Local mode reads these from `ToolRegistry`, `AgentRun`, `MemoryService`, `StrategyResearchService`, and `BacktestService`. Remote mode calls the matching FastAPI list endpoints and `/api/harness/overview` for status/model summaries.
+Local mode reads these from `ToolRegistry`, `AgentRun`, `MemoryService`, `StrategyResearchService`, and `BacktestService`. `/run <run_id>` reloads the full persisted report and trace through the same renderer as a live completion. Remote mode calls the matching FastAPI list endpoints and `/api/harness/overview` for status/model summaries.
 
 Workflow shortcuts call `StrategyResearchService.create()` and `BacktestService.run()` locally, or `POST /api/strategy/research` and `POST /api/backtests` remotely.
 
@@ -84,8 +84,8 @@ of printing raw Markdown source. `HYPERTRADE_RENDERER=plain` keeps the raw Markd
 automation.
 Default run output is report-focused: run metadata, tool trace tables, and wrapper report
 panels are hidden so routine answers stay compact. Operators can set
-`HYPERTRADE_TRACE=summary` to print a compact folded trace, or
-`HYPERTRADE_TRACE=full` to print the complete trace table during audits or debugging.
+`HYPERTRADE_TRACE=summary` to print a compact Flight Recorder plus folded trace, or
+`HYPERTRADE_TRACE=full` to print its ordered graph/model/tool/Memory trace during audits or debugging. The Flight Recorder uses only the persisted redacted projection: provider/model, exact provider-reported Token ledger (or explicit unavailable state), duration, tool aggregate, and Memory read/write counts. It never prints prompts, credentials, raw tool payloads, or private reasoning. `HYPERTRADE_RENDERER=enhanced` is a compatibility alias for the production Rich renderer, so it reads the standard run envelope rather than a demo-only payload.
 Streaming progress is also folded by default into `Agent: running` and `Agent: completed`.
 `HYPERTRADE_PROGRESS=full` restores per-tool start/completion lines. For BitPro paper
 monitoring, equity, and event runs, the default renderer prefers the final concise report and
@@ -135,11 +135,11 @@ registry 描述：
 当前 CLI loop 的职责。
 
 - `/help`、`/status`、`/model`、`/providers`
-- `/tools`、`/runs`、`/memory`
+- `/tools`、`/runs`、`/run <run_id>`、`/memory`
 - `/strategy`、`/backtests`
 - `/research <prompt>`、`/backtest`、`/backtest latest`
 
-本地模式从 `ToolRegistry`、`AgentRun`、`MemoryService`、`StrategyResearchService` 和 `BacktestService` 读取；远程模式调用对应的 FastAPI 列表接口，并通过 `/api/harness/overview` 汇总状态与模型信息。
+本地模式从 `ToolRegistry`、`AgentRun`、`MemoryService`、`StrategyResearchService` 和 `BacktestService` 读取；`/run <run_id>` 会重新加载一条已持久化 Run 的完整报告和 Trace，并交给与实时完成相同的渲染器。远程模式调用对应的 FastAPI 列表接口，并通过 `/api/harness/overview` 汇总状态与模型信息。
 
 工作流快捷命令在本地直接调用 `StrategyResearchService.create()` 与 `BacktestService.run()`，远程则调用 `POST /api/strategy/research` 与 `POST /api/backtests`。
 
@@ -169,8 +169,8 @@ CLI 会先把这些事件渲染成进度行，再打印最终落库的 run 报�
 渲染成标题、列表、强调和表格，而不是直接打印 Markdown 源码。`HYPERTRADE_RENDERER=plain`
 保留原始 Markdown fallback，供自动化脚本使用。
 默认 run 输出只聚焦报告正文：run metadata、tool trace 表和外层 report 面板都会隐藏，让日常回答更紧凑。
-需要排障时，可设置 `HYPERTRADE_TRACE=summary` 打印折叠后的简表，或设置
-`HYPERTRADE_TRACE=full` 打印完整 trace 表。
+需要排障时，可设置 `HYPERTRADE_TRACE=summary` 打印终端 Flight Recorder 和折叠后的简表，或设置
+`HYPERTRADE_TRACE=full` 打印有序的 graph/model/tool/Memory trace。Flight Recorder 只读取已持久化的脱敏投影：Provider/Model、Provider 实际上报的 Token 账本（未上报时明确显示 unavailable）、耗时、工具聚合及 Memory 读写次数；它绝不会打印 prompt、凭据、原始工具 payload 或 private reasoning。`HYPERTRADE_RENDERER=enhanced` 作为生产 Rich 渲染器的兼容别名，读取标准 Run envelope，而非 demo 专用 payload。
 流式进度默认也会折叠成 `Agent: running` / `Agent: completed` 两行；
 `HYPERTRADE_PROGRESS=full` 可恢复每个工具的开始/完成日志。BitPro 模拟盘监控、权益曲线和事件报告默认显示
 最终简洁报告；如果历史 run 保存了噪声样本行，CLI 会回退成紧凑模拟盘摘要。只有设置

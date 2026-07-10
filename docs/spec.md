@@ -74,6 +74,9 @@ its own Agent capabilities:
 - Sprint 15 deterministic CLI market shortcuts and clearer Agent run status display.
 - Sprint 16 structured CLI report rendering that prefers JSON/trace payloads over raw Markdown when possible.
 - Sprint 17 Rich CLI renderer for terminal panels/tables with plain text fallback.
+- Sprint 77 CLI Flight Recorder: `HYPERTRADE_TRACE=summary|full` renders
+  redacted provider/model, Token, latency, tool, Memory, and trace evidence;
+  `/run <run_id>` reopens a persisted local or remote Agent run.
 - Sprint 18 paper-trading CLI controls for status, pause, and resume.
 - Sprint 19 BitPro archived SQLite K-line source for Backtrader backtests.
 - Sprint 20 paper close/reset lifecycle controls.
