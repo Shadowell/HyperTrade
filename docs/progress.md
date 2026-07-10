@@ -5,12 +5,15 @@
 - Branch: `main`
 - Harness status: active
 - Architecture diagram: Updated to include World Model (Layer 5), Monitoring (Layer 7), renumbered layers, and full Mermaid+SVG coverage.
-- Last verified state: Sprint 78 CLI market-answer quality completed locally on
-  2026-07-10. Generic market prompts now guide the planner to `market_summary`;
-  `global_market_snapshot` has a known read-only policy; WorldState reports
-  lead with a compact conclusion; and the interactive host wrapper defaults to
-  Rich. Focused verification passed (`114 passed`) and `./scripts/check.sh`
-  passed (`pytest` 305 passed). Production deployment is pending.
+- Last verified state: Sprint 78 CLI market-answer quality completed and
+  production-smoked on 2026-07-10. Generic market prompts now guide the planner
+  to `market_summary`; `global_market_snapshot` has a known read-only policy;
+  WorldState reports lead with a compact conclusion; and the interactive host
+  wrapper defaults to Rich. Focused verification passed (`114 passed`) and
+  `./scripts/check.sh` passed (`pytest` 305 passed). Deployment run
+  `29073733483` succeeded for SHA `982f2d5`; host CLI smoke
+  `run_7219679fc9a649df8456` rendered the concise market conclusion, market
+  panel, and movers table without a global-market policy denial.
 - Last verified state: Sprint 77 CLI Flight Recorder implementation completed
   locally on 2026-07-10. The terminal now renders a redacted Token/latency/tool/
   Memory ledger in `HYPERTRADE_TRACE=summary|full`, `enhanced` maps to the
@@ -34,15 +37,11 @@
 
 ## Active Contract
 
-- Sprint 78 CLI market-answer quality is implementation-complete under
-  `docs/contracts/sprint-78-cli-market-answer-quality.md`; deployment
-  verification is pending.
+- Sprint 78 CLI market-answer quality is complete and deployment-verified under
+  `docs/contracts/sprint-78-cli-market-answer-quality.md`.
 
 ## Current In-Progress Work
 
-- Sprint 78 deployment verification: issue `hypertrade ask "现在市场是什么情况"`
-  from the host terminal and confirm the conclusion and market panel appear
-  before any optional audit details, with no global-market policy denial.
 - Production DeepSeek configuration is healthy after server-side credential
   rotation. The validation run reported 30,839 Tokens across two model calls;
   no credential was stored in the repository.
@@ -91,7 +90,9 @@
   blocks/Trace. The host CLI wrapper detects an interactive terminal and sets
   Rich rendering unless an operator explicitly selects a renderer. Focused
   tests passed (`114 passed`) and full `./scripts/check.sh` passed (`pytest`
-  305 passed); deployment verification is pending.
+  305 passed). Deployment run `29073733483` succeeded for SHA `982f2d5`; host
+  CLI smoke `run_7219679fc9a649df8456` selected `market_summary`, rendered the
+  conclusion and market panels/tables in Rich, and showed no policy denial.
 - Implemented Sprint 77 CLI Flight Recorder: `HYPERTRADE_TRACE=summary|full`
   now renders a trace-safe terminal ledger from the persisted observability
   projection (provider/model, exact reported Tokens or explicit unavailable,

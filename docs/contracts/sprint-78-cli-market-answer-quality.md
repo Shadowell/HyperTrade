@@ -67,4 +67,8 @@ explicitly requested.
   passed (`114 passed`), with shell syntax validation for the host wrapper.
 - `./scripts/check.sh` passed with frontend lint/test/build, Ruff, Mypy, and
   `pytest` (`305 passed`).
-- Production deployment and generic-market CLI smoke are pending.
+- Deployment run `29073733483` succeeded for SHA `982f2d5`.
+- Host-terminal smoke `hypertrade ask "现在市场是什么情况"` produced run
+  `run_7219679fc9a649df8456`: the planner selected `market_summary`, Rich
+  rendered the market conclusion/panel/movers table, and no global-market
+  policy denial was reported.
