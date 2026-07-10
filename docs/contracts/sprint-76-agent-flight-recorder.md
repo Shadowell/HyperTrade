@@ -86,3 +86,19 @@ Manual browser checks:
 - Add reviewed foreign keys and query indexes in an isolated migration sprint.
 - Add specialist financial analyst/risk/portfolio Agents only after each role
   has a source contract, permission budget, evaluation set, and visible trace.
+
+## Completion Evidence
+
+- `./scripts/check.sh` passed with frontend lint/test/build, Ruff, Mypy, and
+  `pytest` 293 passed.
+- Focused observability/provider tests passed (37); CLI/report regressions
+  passed (70); frontend component tests passed (6).
+- Playwright desktop and 430px viewport checks found no horizontal overflow and
+  no browser console errors.
+- Deployment run `29064831516` succeeded for SHA `e7096c6`.
+- Production health, overview observability, and historical Run projection
+  smokes passed. A new provider-backed smoke was recorded as failed because the
+  server-side DeepSeek credential returns `401 invalid api key`; the Flight
+  Recorder correctly preserved failure duration and unavailable usage without
+  exposing the credential. Secret rotation is an operator handoff, not a code
+  or repository change.

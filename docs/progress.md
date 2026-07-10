@@ -10,23 +10,24 @@
   correlation, and the responsive operator UI passed focused tests and full
   `./scripts/check.sh` (frontend lint/test/build, Ruff, Mypy, and `pytest` 293
   passed). Playwright desktop/mobile validation found no horizontal overflow or
-  browser console errors. Production deployment will be triggered by the
-  required push to `origin/main` for this change.
+  browser console errors. Deployment run `29064831516` succeeded for SHA
+  `e7096c6`; production health, overview observability, and historical Run
+  projection smokes passed. A new provider-backed smoke was audited as failed
+  because the configured DeepSeek credential returns `401 invalid api key`;
+  rotating that server-side secret remains an operator configuration task.
 
 ## Active Contract
 
-- Sprint 76 Agent Flight Recorder is the active contract. Implementation and
-  local verification are complete; commit, push, and production deployment
-  verification remain.
+- No active implementation contract after Sprint 76. Select the next contract
+  under `docs/contracts/` before expanding scope.
 
 ## Current In-Progress Work
 
-- Sprint 76 implementation is complete locally: model usage is normalized,
-  planner iterations emit trace-safe model events, run observability projects
-  Graph/Model/Tool/Policy/Memory timelines, and `/harness` includes the
-  componentized Flight Recorder with Token and Memory inspection. The five
-  optimization proposals have a corrected dependency and safety review under
-  `docs/optimization/README.md`.
+- Production provider configuration gap: the default DeepSeek route is marked
+  configured but currently returns `401 invalid api key`; no alternative chat
+  provider is configured. Server-side credential rotation is required before a
+  production model call can report non-zero Token usage. Failure trace,
+  duration, redaction, and missing-usage behavior are working as designed.
 - Architecture diagram refresh: Added World Model (Layer 5), Monitoring & Alerts
   (Layer 7), renumbered to 10-layer model, and updated SVG + Mermaid to reflect
   the complete Sprint 1-74 capability surface.
@@ -74,7 +75,9 @@
   Token ledger, latency tape, category lanes, Memory drilldown, and explicit
   redaction states. Focused backend tests passed (37), CLI/report regressions
   passed (70), frontend tests passed (6), browser desktop/mobile checks passed,
-  and full `./scripts/check.sh` passed with `pytest` 293 tests.
+  and full `./scripts/check.sh` passed with `pytest` 293 tests. Deployment run
+  `29064831516` succeeded for SHA `e7096c6`; production `/api/health`, overview
+  observability, and historical Run observability smokes passed.
 - Completed world-model Agent evaluation across Sprints 71-74 and added
   `docs/qa/world-model-agent-evaluation-2026-06-25.md`. Local focused
   verification passed with world-model/eval tests (`23 passed`) and
