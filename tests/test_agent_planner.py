@@ -202,6 +202,14 @@ def test_planner_prompt_keeps_generic_market_questions_on_market_summary() -> No
     assert "Do not substitute" in prompt
 
 
+def test_planner_prompt_requires_evidence_bound_paper_strategy_rankings() -> None:
+    prompt = planner_module._SYSTEM_PROMPT
+
+    assert "## 策略比较" in prompt
+    assert "Only rank strategies when BitPro supplies a per-strategy return or PnL metric" in prompt
+    assert "never invent, estimate, or infer returns" in prompt
+
+
 def test_planner_prompt_guides_funding_open_interest_questions_to_intelligence_tool() -> None:
     prompt = planner_module._SYSTEM_PROMPT
 

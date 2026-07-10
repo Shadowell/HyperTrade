@@ -2727,7 +2727,7 @@ def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
                 file=output,
             )
         print("", file=output)
-    if _prefer_final_world_model_report(run):
+    if _prefer_final_agent_report(run):
         _render_markdown_report(
             str(run.get("report_markdown", "")),
             output=output,
@@ -2914,9 +2914,11 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     if _show_trace_output() and isinstance(trace_events, list) and trace_events:
         _render_rich_trace_summary(trace_events, console=console)
 
-    if _prefer_final_world_model_report(run):
+    if _prefer_final_agent_report(run):
         console.print(Markdown(raw_markdown))
         return True
+    # Report blocks preserve structured tool evidence for audit and UI consumers.
+    # They are not the default operator answer when the Agent already produced one.
     if has_report_blocks:
         report_block_items = cast(list[ReportBlock | dict[str, Any]], report_blocks)
         console.print(render_report_blocks(report_block_items, audit=_show_report_block_audit()))
@@ -3802,6 +3804,8 @@ def _rich_drawdown_style(value: object) -> str:
 
 
 def _render_structured_report(run: dict[str, Any], *, output: TextIO) -> bool:
+    if _prefer_final_agent_report(run):
+        return False
     report = run.get("report_json", {})
     if isinstance(report, dict):
         report_blocks = report.get("report_blocks")
@@ -3833,11 +3837,23 @@ def _prefer_final_report(run: dict[str, Any]) -> bool:
     if _report_source_forces_tool_output():
         return False
     markdown = str(run.get("report_markdown", "")).strip()
-    if not markdown:
-        return False
-    if _is_noisy_paper_markdown(markdown):
+    if not markdown or _is_noisy_paper_markdown(markdown):
         return False
     return bool(_paper_tool_outputs_by_tool(run))
+
+
+def _prefer_final_agent_report(run: dict[str, Any]) -> bool:
+    """Use the completed Agent answer by default; audit modes opt into tool blocks."""
+    if _report_source_forces_tool_output():
+        return False
+    markdown = str(run.get("report_markdown", "")).strip()
+    if not markdown or _is_noisy_paper_markdown(markdown):
+        return False
+    if _prefer_final_world_model_report(run) or _prefer_final_report(run):
+        return True
+    report = run.get("report_json")
+    report_blocks = report.get("report_blocks") if isinstance(report, dict) else None
+    return isinstance(report_blocks, list) and bool(report_blocks)
 
 
 def _prefer_final_world_model_report(run: dict[str, Any]) -> bool:

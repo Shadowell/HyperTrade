@@ -189,8 +189,8 @@ def test_cli_report_blocks_default_and_audit_modes(monkeypatch) -> None:
     default_output = StringIO()
     render_run(run, output=default_output)
     rendered_default = default_output.getvalue()
-    assert "BitPro Paper Monitor" in rendered_default
-    assert "fallback should not render" not in rendered_default
+    assert "fallback should not render" in rendered_default
+    assert "BitPro Paper Monitor" not in rendered_default
     assert "strategy:105" not in rendered_default
 
     monkeypatch.setenv("HYPERTRADE_REPORT_SOURCE", "audit")

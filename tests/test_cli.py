@@ -1342,6 +1342,100 @@ def test_rich_render_run_prefers_final_paper_summary_by_default(monkeypatch, cap
     assert "2026-06-23T08:00:00Z" not in output
 
 
+def test_render_run_prefers_final_strategy_comparison_over_report_blocks(capsys) -> None:
+    render_run(
+        {
+            "id": "run_paper_comparison",
+            "status": "completed",
+            "report_markdown": (
+                "## 结论\n\n"
+                "- 当前无法对全部模拟盘策略按收益排名。\n\n"
+                "## 策略比较\n\n"
+                "| 策略 | 已确认收益 | 状态 |\n"
+                "| --- | ---: | --- |\n"
+                "| SOL EMA 5/20 | +4.55% | 当前 dashboard |\n"
+                "| 其余 7 个策略 | 数据未提供 | 运行中 |\n\n"
+                "## 下一步\n\n"
+                "- 补齐逐策略 PnL/回撤后再做全量排名。"
+            ),
+            "report_json": {
+                "report_blocks": [
+                    {
+                        "block_type": "metric_table",
+                        "title": "BitPro Paper Monitor",
+                        "metrics": {"equity": "104.55", "total_pnl_pct": "4.55"},
+                    },
+                    {
+                        "block_type": "missing_data",
+                        "title": "BitPro Paper Missing Data",
+                        "missing": ["per-strategy PnL unavailable"],
+                    },
+                ]
+            },
+            "trace_events": [],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "当前无法对全部模拟盘策略按收益排名" in output
+    assert "SOL EMA 5/20" in output
+    assert "BitPro Paper Monitor:" not in output
+    assert "BitPro Paper Missing Data:" not in output
+
+
+def test_rich_render_run_prefers_final_strategy_comparison_over_report_blocks(
+    monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+    render_run(
+        {
+            "id": "run_rich_paper_comparison",
+            "status": "completed",
+            "report_markdown": "## 结论\n\n- 当前无法对全部模拟盘策略按收益排名。",
+            "report_json": {
+                "report_blocks": [
+                    {
+                        "block_type": "metric_table",
+                        "title": "BitPro Paper Monitor",
+                        "metrics": {"equity": "104.55"},
+                    }
+                ]
+            },
+            "trace_events": [],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "当前无法对全部模拟盘策略按收益排名" in output
+    assert "BitPro Paper Monitor" not in output
+
+
+def test_render_run_can_request_report_blocks_for_strategy_comparison(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("HYPERTRADE_REPORT_SOURCE", "audit")
+    render_run(
+        {
+            "id": "run_paper_comparison_audit",
+            "status": "completed",
+            "report_markdown": "## 结论\n\n- 当前无法对全部模拟盘策略按收益排名。",
+            "report_json": {
+                "report_blocks": [
+                    {
+                        "block_type": "missing_data",
+                        "title": "BitPro Paper Missing Data",
+                        "missing": ["per-strategy PnL unavailable"],
+                    }
+                ]
+            },
+            "trace_events": [],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "BitPro Paper Missing Data:" in output
+    assert "per-strategy PnL unavailable" in output
+    assert "当前无法对全部模拟盘策略按收益排名" not in output
+
+
 def test_render_run_compacts_paper_tools_without_final_report(capsys) -> None:
     render_run(
         {

@@ -1811,7 +1811,7 @@ class AgentKernel:
             "bitpro_paper_monitor_snapshot",
         }
         if any(str(getattr(record, "tool_name", "")) in paper_tool_names for record in tool_calls):
-            summary = _compact_final_message(final_message)
+            summary = _paper_monitor_conclusion(final_message, tool_calls)
             if summary:
                 bitpro_paper_lines.extend([f"- 结论: {summary}", ""])
         for record in tool_calls:
@@ -2279,6 +2279,34 @@ def _compact_final_message(value: object, *, max_chars: int = 240) -> str:
     if len(summary) <= max_chars:
         return summary
     return summary[: max_chars - 1].rstrip() + "..."
+
+
+def _paper_monitor_conclusion(final_message: object, tool_calls: list[Any]) -> str:
+    """Keep a paper-ranking answer evidence-bound when BitPro omits its metrics."""
+    final_text = str(final_message or "")
+    ranking_markers = ("排名", "排行", "哪个", "最好", "最优", "收益比较", "收益对比")
+    if not any(marker in final_text for marker in ranking_markers):
+        return _compact_final_message(final_message)
+    for record in tool_calls:
+        if getattr(record, "tool_name", "") != "bitpro_paper_dashboard":
+            continue
+        payload = getattr(record, "output_json", {})
+        if not isinstance(payload, dict):
+            continue
+        monitor = payload.get("monitor_summary")
+        monitor = monitor if isinstance(monitor, dict) else {}
+        data_gaps = monitor.get("data_gaps")
+        data_gaps = data_gaps if isinstance(data_gaps, list) else []
+        if any(
+            "per-strategy" in str(gap).lower()
+            and ("pnl" in str(gap).lower() or "drawdown" in str(gap).lower())
+            for gap in data_gaps
+        ):
+            return (
+                "暂无法比较全部运行策略的收益：BitPro 当前只提供当前 dashboard "
+                "策略的绩效，运行策略清单不含逐策略收益或回撤。"
+            )
+    return _compact_final_message(final_message)
 
 
 def _compact_long_final_message(lines: list[str], *, max_chars: int) -> str:

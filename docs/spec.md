@@ -81,6 +81,10 @@ its own Agent capabilities:
   `market_summary`, known read-only global-market calls are not policy-denied,
   interactive CLI output prioritizes the Agent conclusion, and WorldState audit
   blocks remain opt-in.
+- Sprint 79 CLI unified report rendering: completed Agent answers take
+  precedence over report-block/audit dumps in default output, while explicit
+  tool/audit modes preserve the structured evidence. Simulated-strategy
+  rankings must disclose when BitPro lacks per-strategy PnL/drawdown evidence.
 - Sprint 18 paper-trading CLI controls for status, pause, and resume.
 - Sprint 19 BitPro archived SQLite K-line source for Backtrader backtests.
 - Sprint 20 paper close/reset lifecycle controls.

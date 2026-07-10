@@ -5,6 +5,13 @@
 - Branch: `main`
 - Harness status: active
 - Architecture diagram: Updated to include World Model (Layer 5), Monitoring (Layer 7), renumbered layers, and full Mermaid+SVG coverage.
+- Last verified state: Sprint 79 unified CLI report rendering completed locally
+  on 2026-07-10. Default plain and Rich output now prefers the completed Agent
+  answer when report blocks exist, while `HYPERTRADE_REPORT_SOURCE=tools|audit`
+  retains structured evidence. Paper-strategy comparison answers cannot invent
+  an all-strategy ranking when BitPro omits per-strategy PnL/drawdown. Focused
+  tests passed (`121 passed`) and `./scripts/check.sh` passed; production
+  deployment verification is pending.
 - Last verified state: Sprint 78 CLI market-answer quality completed and
   production-smoked on 2026-07-10. Generic market prompts now guide the planner
   to `market_summary`; `global_market_snapshot` has a known read-only policy;
@@ -37,11 +44,16 @@
 
 ## Active Contract
 
-- Sprint 78 CLI market-answer quality is complete and deployment-verified under
-  `docs/contracts/sprint-78-cli-market-answer-quality.md`.
+- Sprint 79 CLI unified report rendering is implementation-complete under
+  `docs/contracts/sprint-79-cli-unified-report-rendering.md`; deployment
+  verification is pending.
 
 ## Current In-Progress Work
 
+- Sprint 79 deployment verification: issue
+  `hypertrade ask "我的哪个模拟盘策略收益比较好，分析下"` from the host terminal
+  and confirm the default report is concise, formatted, and evidence-bound;
+  audit blocks must remain hidden unless explicitly requested.
 - Production DeepSeek configuration is healthy after server-side credential
   rotation. The validation run reported 30,839 Tokens across two model calls;
   no credential was stored in the repository.
@@ -81,6 +93,15 @@
 
 ## Latest Completed Work
 
+- Implemented Sprint 79 CLI unified report rendering: default plain and Rich
+  output now shows a completed Agent report before `report_blocks`, which stay
+  available through `HYPERTRADE_REPORT_SOURCE=tools|audit`. Existing structured
+  market and BitPro backtest renderers remain unchanged. The paper-ranking
+  prompt now requires a conclusion/comparison/risk/next-step structure and
+  forbids inferred returns; the deterministic paper report reports a full
+  ranking as unavailable when BitPro's running inventory lacks per-strategy
+  PnL/drawdown. Focused tests passed (`121 passed`) and full
+  `./scripts/check.sh` passed; deployment verification is pending.
 - Implemented Sprint 78 CLI market-answer quality: `global_market_snapshot`
   now maps to a known read-only `global_market.snapshot` policy, preventing the
   governance false denial. Planner guidance keeps generic current-market
