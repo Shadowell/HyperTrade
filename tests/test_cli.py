@@ -1013,6 +1013,63 @@ def test_render_run_prefers_final_market_summary_over_detail_tables(capsys) -> N
     assert "Research output only. Not investment advice." not in output
 
 
+def test_render_run_prefers_final_market_answer_over_world_model_audit_blocks(capsys) -> None:
+    render_run(
+        {
+            "id": "run_world_model_market",
+            "status": "completed",
+            "report_markdown": "## 市场总结\n\n当前市场温热，涨跌家数偏多，但宏观信号仍混合。",
+            "report_json": {
+                "tool_calls": [{"tool": "world_model_snapshot", "input": {}}],
+                "report_blocks": [
+                    {
+                        "block_type": "summary",
+                        "title": "Global WorldState",
+                        "notes": ["raw WorldState audit detail"],
+                    },
+                    {
+                        "block_type": "scenario_comparison",
+                        "title": "Global WorldState Scenario Comparison",
+                        "rows": [{"action_id": "run_monitor", "score": 56.4}],
+                    },
+                ],
+            },
+            "trace_events": [{"tool_name": "world_model_snapshot", "status": "completed"}],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "当前市场温热" in output
+    assert "Global WorldState" not in output
+    assert "raw WorldState audit detail" not in output
+
+
+def test_render_run_can_force_world_model_audit_blocks(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("HYPERTRADE_REPORT_SOURCE", "audit")
+    render_run(
+        {
+            "id": "run_world_model_audit",
+            "status": "completed",
+            "report_markdown": "## 市场总结\n\n当前市场温热。",
+            "report_json": {
+                "tool_calls": [{"tool": "world_model_snapshot", "input": {}}],
+                "report_blocks": [
+                    {
+                        "block_type": "summary",
+                        "title": "Global WorldState",
+                        "notes": ["audit detail"],
+                    }
+                ],
+            },
+            "trace_events": [{"tool_name": "world_model_snapshot", "status": "completed"}],
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "Global WorldState" in output
+    assert "当前市场温热" not in output
+
+
 def test_render_run_can_force_structured_market_tool_outputs(monkeypatch, capsys) -> None:
     monkeypatch.setenv("HYPERTRADE_REPORT_SOURCE", "tools")
     render_run(

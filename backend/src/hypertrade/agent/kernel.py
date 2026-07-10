@@ -1480,15 +1480,7 @@ class AgentKernel:
             deployment = _dict_or_empty(payload.get("deployment"))
             missing = payload.get("missing_data")
             missing = missing if isinstance(missing, list) else []
-            actions = payload.get("candidate_actions")
-            actions = actions if isinstance(actions, list) else []
-            scenarios = payload.get("action_scenarios")
-            scenarios = scenarios if isinstance(scenarios, list) else []
             decision = _dict_or_empty(payload.get("decision"))
-            defensive = _dict_or_empty(payload.get("defensive_automation"))
-            portfolio = _dict_or_empty(payload.get("portfolio"))
-            sources = payload.get("source_refs")
-            sources = sources if isinstance(sources, list) else []
             world_model_lines.extend(
                 [
                     f"- schema_version: {payload.get('schema_version', 'unknown')}",
@@ -1531,80 +1523,10 @@ class AgentKernel:
                         review_after=decision.get("review_after", "n/a"),
                     )
                 )
-            if scenarios:
-                world_model_lines.append("- action_scenarios:")
-                for scenario in scenarios[:6]:
-                    if not isinstance(scenario, dict):
-                        continue
-                    world_model_lines.append(
-                        (
-                            "  - rank={rank}, action={action}, score={score}, "
-                            "policy_status={policy_status}, confidence={confidence}"
-                        ).format(
-                            rank=scenario.get("rank", "n/a"),
-                            action=scenario.get("action_id", "unknown"),
-                            score=scenario.get("score", "n/a"),
-                            policy_status=scenario.get("policy_status", "unknown"),
-                            confidence=scenario.get("confidence", "n/a"),
-                        )
-                    )
-            if portfolio:
-                portfolio_state = _dict_or_empty(portfolio.get("portfolio_state"))
-                portfolio_decision = _dict_or_empty(portfolio.get("decision"))
-                world_model_lines.append(
-                    (
-                        "- portfolio: strategies={count}, recommendation_type={rec}, "
-                        "policy_status={policy}, allocation_change_allowed={allowed}"
-                    ).format(
-                        count=portfolio_state.get("strategy_count", "n/a"),
-                        rec=portfolio_decision.get("recommendation_type", "unknown"),
-                        policy=portfolio_decision.get("policy_status", "unknown"),
-                        allowed=portfolio_decision.get(
-                            "allocation_change_allowed",
-                            False,
-                        ),
-                    )
-                )
-                missing_evidence = portfolio.get("missing_evidence")
-                missing_evidence = missing_evidence if isinstance(missing_evidence, list) else []
-                if missing_evidence:
-                    world_model_lines.append(
-                        "- portfolio_missing_evidence: "
-                        + ", ".join(str(item) for item in missing_evidence[:8])
-                    )
-            if defensive:
-                allowlist = defensive.get("allowlist")
-                allowlist = allowlist if isinstance(allowlist, list) else []
-                world_model_lines.append(
-                    (
-                        "- 防御自动化: enabled={enabled}, allowlist={allowlist}, "
-                        "recent_attempt_count={count}"
-                    ).format(
-                        enabled=defensive.get("enabled", False),
-                        allowlist=",".join(str(item) for item in allowlist) or "empty",
-                        count=defensive.get("recent_attempt_count", 0),
-                    )
-                )
-            if actions:
-                world_model_lines.append("- 候选动作:")
-                for action in actions[:6]:
-                    if not isinstance(action, dict):
-                        continue
-                    world_model_lines.append(
-                        "  - {level}/{action_id}: {reason}".format(
-                            level=action.get("level", "L0"),
-                            action_id=action.get("action_id", "unknown"),
-                            reason=action.get("reason", "n/a"),
-                        )
-                    )
-            if sources:
-                source_ids = [
-                    str(source.get("source_id", "unknown"))
-                    for source in sources[:8]
-                    if isinstance(source, dict)
-                ]
-                if source_ids:
-                    world_model_lines.append("- source_refs: " + ", ".join(source_ids))
+            # Candidate actions, scenarios, portfolio recommendations, and
+            # source references remain in the persisted report blocks/trace for
+            # audit. The default Agent answer must foreground the market
+            # conclusion rather than dumping operator internals into chat.
             world_model_lines.append("")
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "strategy_library_search":
@@ -2258,7 +2180,12 @@ class AgentKernel:
             market_summary_lines or ticker_lines or candle_lines or compare_lines
         )
         final_summary = _compact_final_message(final_message)
-        if market_tool_sections and final_summary:
+        if world_model_lines and not final_summary:
+            final_summary = _summary_from_markdown_table(
+                [line.strip() for line in str(final_message or "").splitlines() if line.strip()],
+                max_chars=240,
+            )
+        if (market_tool_sections or world_model_lines) and final_summary:
             sections.extend(["## 总结", "", f"- {final_summary}", ""])
         if market_summary_lines:
             sections.extend(["## 市场热度总结", "", *market_summary_lines])
@@ -2316,6 +2243,7 @@ class AgentKernel:
             or bitpro_backtest_detail_lines
             or bitpro_paper_lines
             or bitpro_live_order_lines
+            or world_model_lines
         ):
             return "\n".join(sections)
         return "\n".join([*sections, final_message])
@@ -2374,6 +2302,36 @@ def _compact_long_final_message(lines: list[str], *, max_chars: int) -> str:
             return line
         return line[: max_chars - 1].rstrip() + "..."
     return ""
+
+
+def _summary_from_markdown_table(lines: list[str], *, max_chars: int) -> str:
+    """Turn a small Markdown metric table into one operator-facing sentence."""
+    pairs: list[str] = []
+    for raw_line in lines:
+        line = raw_line.strip()
+        if "|" not in line:
+            continue
+        cells = [_clean_markdown_cell(cell) for cell in line.strip("|").split("|")]
+        if len(cells) < 2 or all(not cell for cell in cells):
+            continue
+        if all(set(cell) <= {"-", ":", " "} for cell in cells):
+            continue
+        key, value = cells[0], cells[1]
+        if key.lower() in {"指标", "item", "metric", "名称", "币种"}:
+            continue
+        if not key or not value:
+            continue
+        pairs.append(f"{key}：{value}")
+        if len(pairs) >= 4:
+            break
+    summary = "；".join(pairs)
+    if len(summary) <= max_chars:
+        return summary
+    return summary[: max_chars - 1].rstrip() + "…"
+
+
+def _clean_markdown_cell(value: str) -> str:
+    return value.replace("**", "").replace("`", "").strip()
 
 
 def _paper_strategy_id(payload: dict[str, Any]) -> object:

@@ -77,6 +77,10 @@ its own Agent capabilities:
 - Sprint 77 CLI Flight Recorder: `HYPERTRADE_TRACE=summary|full` renders
   redacted provider/model, Token, latency, tool, Memory, and trace evidence;
   `/run <run_id>` reopens a persisted local or remote Agent run.
+- Sprint 78 CLI market-answer quality: generic market prompts prefer
+  `market_summary`, known read-only global-market calls are not policy-denied,
+  interactive CLI output prioritizes the Agent conclusion, and WorldState audit
+  blocks remain opt-in.
 - Sprint 18 paper-trading CLI controls for status, pause, and resume.
 - Sprint 19 BitPro archived SQLite K-line source for Backtrader backtests.
 - Sprint 20 paper close/reset lifecycle controls.

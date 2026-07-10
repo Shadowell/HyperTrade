@@ -194,6 +194,14 @@ def test_planner_prompt_guides_global_operator_prompts_to_world_model() -> None:
     assert "全局状态" in prompt
 
 
+def test_planner_prompt_keeps_generic_market_questions_on_market_summary() -> None:
+    prompt = planner_module._SYSTEM_PROMPT
+
+    assert "现在市场是什么情况" in prompt
+    assert "call market_summary first" in prompt
+    assert "Do not substitute" in prompt
+
+
 def test_planner_prompt_guides_funding_open_interest_questions_to_intelligence_tool() -> None:
     prompt = planner_module._SYSTEM_PROMPT
 

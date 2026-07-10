@@ -22,6 +22,14 @@ do
   fi
 done
 
+# docker compose run does not reliably preserve the host TTY state inside the
+# short-lived client container. An interactive operator should still receive
+# the professional Rich report by default; scripts can explicitly request the
+# stable plain renderer.
+if [ -t 1 ] && [ "${HYPERTRADE_RENDERER+x}" != "x" ]; then
+  env_args+=("-e" "HYPERTRADE_RENDERER=rich")
+fi
+
 # Run the CLI in a short-lived client container instead of exec'ing into the
 # long-running API service. Deploys can replace hypertrade-api without killing
 # this terminal session.

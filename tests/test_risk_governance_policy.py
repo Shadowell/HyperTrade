@@ -15,6 +15,17 @@ def test_governance_policy_allows_read_tools_without_idempotency() -> None:
     assert decision.as_trace_payload()["denial_reason"] == ""
 
 
+def test_governance_policy_allows_global_market_snapshot() -> None:
+    policy = RiskGovernancePolicy(ToolRegistry.default())
+
+    decision = policy.evaluate("global_market_snapshot", {})
+
+    assert decision.allowed is True
+    assert decision.status == "allowed"
+    assert decision.registry_tool_name == "global_market.snapshot"
+    assert decision.policy.scope == "read"
+
+
 def test_governance_policy_denies_paper_write_without_idempotency_key() -> None:
     policy = RiskGovernancePolicy(ToolRegistry.default())
 

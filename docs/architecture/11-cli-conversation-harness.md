@@ -25,7 +25,10 @@ short-lived client container with `HYPERTRADE_API_URL=http://api:3334` by
 default. This avoids attaching the operator's terminal to the long-running
 `hypertrade-api` service container. During a deployment, the API container can
 still restart and interrupt the current API request, but the terminal CLI
-process is not killed by `docker compose up -d api worker`.
+process is not killed by `docker compose up -d api worker`. When the host
+terminal is interactive and no renderer is explicitly selected, the wrapper
+sets `HYPERTRADE_RENDERER=rich`; this avoids losing terminal formatting at the
+Docker client boundary while retaining `plain` mode for scripts.
 
 Interactive chat also supports slash commands for harness inspection without starting a new Agent run.
 `/help` renders every command with a short purpose statement, and `/tools` renders each
@@ -94,6 +97,11 @@ evidence tables require `HYPERTRADE_REPORT_SOURCE=tools`.
 For market detail tool runs, the default renderer prefers the final Agent summary so broad
 market-heat prompts do not collapse into standalone ticker tables. Operators can still set
 `HYPERTRADE_REPORT_SOURCE=tools` to inspect raw ticker, candle, or comparison blocks.
+The same answer-first rule applies to WorldState: when the planner supplies a
+final operator-facing conclusion, default terminal output renders that conclusion
+before the persisted WorldState blocks. `HYPERTRADE_REPORT_SOURCE=tools|audit`
+keeps the detailed scenario, portfolio, source, and policy evidence available
+for operators who explicitly need it.
 
 This keeps Provider configuration, Tool Call policy, RAG, Memory, approval gates, and trace persistence in one runtime boundary. The terminal becomes another harness surface alongside `/harness`.
 
@@ -121,7 +129,9 @@ CLI 在选择本地/远程运行模式前会读取保存的本机配置；显式
 容器，并默认设置 `HYPERTRADE_API_URL=http://api:3334`。它不再 attach 到长期运行的
 `hypertrade-api` 服务容器，所以部署执行 `docker compose up -d api worker` 替换 API
 容器时，不会直接杀掉操作员终端里的 CLI 进程。部署期间当前 API 请求仍可能中断，但交互式
-CLI 会显示可重试的远程 API 连接提示。
+CLI 会显示可重试的远程 API 连接提示。当宿主机终端是交互式且用户没有显式选择 renderer 时，
+wrapper 会设置 `HYPERTRADE_RENDERER=rich`；这样 Docker client 边界不会丢失终端格式化，
+而脚本仍可显式使用 `plain` 模式。
 
 交互式 chat 还支持斜杠命令，用于查看 Harness 状态而无需发起新的 Agent run。`/help`
 会为每条命令显示用途说明，`/tools` 会为每个 Agent 工具显示 category、approval 标记和
@@ -177,5 +187,8 @@ CLI 会先把这些事件渲染成进度行，再打印最终落库的 run 报�
 `HYPERTRADE_REPORT_SOURCE=tools` 时才展示原始工具证据表。
 市场明细工具 run 默认优先显示最终 Agent 总结，因此市场热度类问题不会退化成孤立 ticker
 表格；需要排查时仍可设置 `HYPERTRADE_REPORT_SOURCE=tools` 查看原始 ticker、K线或强弱比较块。
+同样地，WorldState Run 在默认终端输出中优先显示 Agent 面向操作员的最终结论，而不是用持久化
+WorldState blocks 覆盖结论。设置 `HYPERTRADE_REPORT_SOURCE=tools|audit` 后，场景、组合、
+来源与策略证据仍可完整检查。
 
 这样 Provider 配置、Tool Call 策略、RAG、Memory、审批门和 trace 持久化仍保持在同一个运行边界内。终端只是 `/harness` 之外的另一个 Harness 入口。

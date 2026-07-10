@@ -2727,6 +2727,13 @@ def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
                 file=output,
             )
         print("", file=output)
+    if _prefer_final_world_model_report(run):
+        _render_markdown_report(
+            str(run.get("report_markdown", "")),
+            output=output,
+            title="Agent Report",
+        )
+        return
     if _render_structured_report(run, output=output):
         return
     _render_markdown_report(
@@ -2907,6 +2914,9 @@ def _render_rich_run(run: dict[str, Any], *, output: TextIO) -> bool:
     if _show_trace_output() and isinstance(trace_events, list) and trace_events:
         _render_rich_trace_summary(trace_events, console=console)
 
+    if _prefer_final_world_model_report(run):
+        console.print(Markdown(raw_markdown))
+        return True
     if has_report_blocks:
         report_block_items = cast(list[ReportBlock | dict[str, Any]], report_blocks)
         console.print(render_report_blocks(report_block_items, audit=_show_report_block_audit()))
@@ -3828,6 +3838,33 @@ def _prefer_final_report(run: dict[str, Any]) -> bool:
     if _is_noisy_paper_markdown(markdown):
         return False
     return bool(_paper_tool_outputs_by_tool(run))
+
+
+def _prefer_final_world_model_report(run: dict[str, Any]) -> bool:
+    """Keep the operator-facing conclusion ahead of WorldState audit blocks.
+
+    WorldState blocks remain persisted for the web console and explicit audit
+    views. In a terminal's default answer mode, the planner's final response is
+    the concise interpretation the operator actually requested.
+    """
+    if _report_source_forces_tool_output():
+        return False
+    markdown = str(run.get("report_markdown", "")).strip()
+    if not markdown:
+        return False
+    report = run.get("report_json")
+    if isinstance(report, dict):
+        calls = report.get("tool_calls")
+        if isinstance(calls, list) and any(
+            isinstance(call, dict) and call.get("tool") == "world_model_snapshot"
+            for call in calls
+        ):
+            return True
+    trace_events = run.get("trace_events")
+    return isinstance(trace_events, list) and any(
+        isinstance(event, dict) and event.get("tool_name") == "world_model_snapshot"
+        for event in trace_events
+    )
 
 
 def _prefer_compact_paper_report(run: dict[str, Any]) -> bool:

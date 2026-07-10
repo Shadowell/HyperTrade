@@ -4,6 +4,8 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi.testclient import TestClient
+from hypertrade.agent.kernel import AgentKernel
+from hypertrade.agent.planner import ToolCallRecord
 from hypertrade.config import Settings
 from hypertrade.db import Database
 from hypertrade.main import create_app
@@ -190,3 +192,47 @@ def test_agent_can_call_world_model_snapshot_without_write_tools(monkeypatch) ->
     assert world_event["output_json"]["decision"]["selected_action_id"]
     assert "全局世界模型" in body["report_markdown"]
     assert "场景决策" in body["report_markdown"]
+    assert body["report_markdown"].index("## 总结") < body["report_markdown"].index(
+        "## 全局世界模型"
+    )
+    assert "候选动作" not in body["report_markdown"]
+
+
+def test_world_model_report_summarizes_a_final_market_metric_table() -> None:
+    report = AgentKernel._render_planner_report(
+        "\n".join(
+            [
+                "## 市场概览",
+                "| 指标 | 数值 |",
+                "| --- | --- |",
+                "| 样本量 | 250个币种 |",
+                "| 上涨/下跌 | 154涨 / 94跌 |",
+                "| 平均涨幅 | +0.45% |",
+                "| 市场热度 | 温热 |",
+            ]
+        ),
+        [
+            ToolCallRecord(
+                tool_name="world_model_snapshot",
+                input_json={},
+                output_json={
+                    "schema_version": "world_state.v1",
+                    "global_market": {"risk_regime": "mixed", "cross_asset_signal": "supportive"},
+                    "crypto_market": {"status": "available", "ticker_count": 250},
+                    "strategy": {"status": "healthy"},
+                    "execution": {"status": "healthy"},
+                    "tool_health": {"status": "healthy"},
+                    "deployment": {"api_health": "ok"},
+                    "decision": {
+                        "selected_action_id": "observe_more",
+                        "policy_status": "allowed_read_only",
+                    },
+                },
+            )
+        ],
+    )
+
+    assert "## 总结" in report
+    assert "样本量：250个币种；上涨/下跌：154涨 / 94跌；平均涨幅：+0.45%；市场热度：温热" in report
+    assert "## 全局世界模型" in report
+    assert "候选动作" not in report

@@ -58,3 +58,14 @@ def test_tool_registry_attaches_policy_metadata_to_every_tool():
     assert registry.get("live.order_intent").policy.scope == "testnet_write"
     assert registry.get("live.order_intent").policy.approval == "required"
     assert registry.get("live.order_intent").policy.idempotency == "required"
+
+
+def test_global_market_runtime_name_uses_the_read_only_registry_policy():
+    registry = ToolRegistry.default()
+
+    tool = registry.get_for_runtime_name("global_market_snapshot")
+
+    assert tool.name == "global_market.snapshot"
+    assert tool.policy.scope == "read"
+    assert tool.policy.approval == "none"
+    assert tool.policy.source_of_truth == "yfinance+alpha_vantage"
