@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from hypertrade.agent.kernel import AgentKernel
 from hypertrade.bitpro.mcp import BitProMcpError
 from hypertrade.config import Settings
-from hypertrade.db import AgentRun, Database
+from hypertrade.db import AgentRun, Database, ResearchExperimentEvidence, ResearchMandate
 from hypertrade.main import create_app
 from hypertrade.market.repository import MarketRepository
 from hypertrade.providers.deepseek import ChatResponse, ToolCallRequest
@@ -750,3 +750,68 @@ class FailingBitProAdapter:
 
     def live_positions(self, *, exchange: str = "okx", symbol: str | None = None):
         raise BitProMcpError("BitPro MCP unavailable")
+
+
+def test_api_lists_and_requests_paper_promotion_without_starting_paper(tmp_path) -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    with db.session() as session:
+        mandate = ResearchMandate(
+            name="api paper mandate",
+            status="active",
+            market_type="SWAP",
+            symbols_json=["BTC"],
+            timeframes_json=["1H"],
+            strategy_categories_json=["TREND"],
+            budget_json={},
+            validation_json={},
+            paper_promotion_mode="manual_approval",
+            live_mode="disabled",
+            audit_json=[],
+        )
+        session.add(mandate)
+        session.flush()
+        evidence = ResearchExperimentEvidence(
+            job_id="rjob_api_001",
+            mandate_id=mandate.id,
+            variant_id="baseline",
+            status="evidence_recorded",
+            strategy_key="btc_trend",
+            bitpro_strategy_id="42",
+            result_refs_json={},
+            windows_json={},
+            parameters_json={},
+            metrics_json={},
+            gate_results_json={"real_data": True, "locked": True},
+            rejection_reasons_json=[],
+            tool_calls_json=[],
+        )
+        session.add(evidence)
+        session.flush()
+        evidence_id = evidence.id
+
+    app = create_app(
+        settings=Settings(
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            KNOWLEDGE_DIR=tmp_path,
+            DEEPSEEK_API_KEY="",
+        ),
+        db=db,
+    )
+    client = TestClient(app)
+
+    assert client.get("/api/research/paper-promotions").status_code == 401
+    assert client.post(
+        "/api/auth/login", json={"username": "admin", "password": "secret"}
+    ).status_code == 200
+    requested = client.post(
+        "/api/research/paper-promotions",
+        json={"evidence_id": evidence_id, "reason": "operator requests paper evidence"},
+    )
+
+    assert requested.status_code == 200
+    assert requested.json()["status"] == "pending_paper_approval"
+    listed = client.get("/api/research/paper-promotions")
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["id"] == requested.json()["id"]

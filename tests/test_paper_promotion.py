@@ -1,0 +1,199 @@
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+from hypertrade.db import Database, ResearchExperimentEvidence, ResearchMandate
+from hypertrade.research.paper_promotion import PaperPromotionService
+
+
+class PaperFixtureAdapter:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.missing_metrics = False
+
+    def paper_configure(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append("paper_configure")
+        assert kwargs["idempotency_key"]
+        return {"paper": {"instance_id": 901}, "tool_calls": []}
+
+    def paper_start(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append("paper_start")
+        assert kwargs["strategy_id"] == 901
+        assert kwargs["idempotency_key"]
+        return {"paper": {"status": "running"}, "tool_calls": []}
+
+    def paper_dashboard(self, *, strategy_id: int | None = None) -> dict[str, Any]:
+        self.calls.append("paper_dashboard")
+        current_dashboard = {
+            "strategy_id": strategy_id,
+            "state": "running",
+            "mode": "paper",
+            "equity": 10010,
+            "total_pnl_pct": 0.1,
+            "max_drawdown_pct": 1,
+        }
+        if self.missing_metrics:
+            current_dashboard.pop("total_pnl_pct")
+        return {
+            "monitor_summary": {
+                "current_dashboard": current_dashboard
+            },
+            "dashboard": {},
+            "tool_calls": [],
+        }
+
+    def paper_events(self, *, strategy_id: int | None = None, limit: int = 50) -> dict[str, Any]:
+        self.calls.append("paper_events")
+        return {"event_summary": {"count": 0, "error_count": 0}, "tool_calls": []}
+
+    def paper_equity_curve(
+        self, *, strategy_id: int | None = None, sample_limit: int = 50
+    ) -> dict[str, Any]:
+        self.calls.append("paper_equity_curve")
+        return {
+            "equity_summary": {"count": 1, "latest_equity": 10010, "max_drawdown_pct": 1},
+            "tool_calls": [],
+        }
+
+    def paper_strategy_performance(self, *, limit: int = 20) -> dict[str, Any]:
+        self.calls.append("paper_strategy_performance")
+        return {
+            "strategies": [
+                {"strategy_id": 42, "strategy_name": "btc_trend", "return_pct": "0.1"}
+            ],
+            "unavailable_strategies": [],
+            "tool_calls": [],
+        }
+
+
+def _passing_evidence(db: Database) -> str:
+    with db.session() as session:
+        mandate = ResearchMandate(
+            name="paper mandate",
+            status="active",
+            market_type="SWAP",
+            symbols_json=["BTC"],
+            timeframes_json=["1H"],
+            strategy_categories_json=["TREND"],
+            budget_json={},
+            validation_json={},
+            paper_promotion_mode="manual_approval",
+            live_mode="disabled",
+            audit_json=[],
+        )
+        session.add(mandate)
+        session.flush()
+        evidence = ResearchExperimentEvidence(
+            job_id="rjob_001",
+            mandate_id=mandate.id,
+            variant_id="baseline",
+            status="evidence_recorded",
+            strategy_key="btc_trend",
+            bitpro_strategy_id="42",
+            result_refs_json={},
+            windows_json={},
+            parameters_json={},
+            metrics_json={},
+            gate_results_json={"real_data": True, "locked": True},
+            rejection_reasons_json=[],
+            tool_calls_json=[],
+        )
+        session.add(evidence)
+        session.flush()
+        return evidence.id
+
+
+def test_paper_promotion_requires_passing_evidence_and_human_approval() -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    evidence_id = _passing_evidence(db)
+    adapter = PaperFixtureAdapter()
+    service = PaperPromotionService(db, bitpro_adapter=adapter)
+
+    pending = service.request(evidence_id=evidence_id, reason="operator wants paper evidence")
+    assert pending["status"] == "pending_paper_approval"
+    assert adapter.calls == []
+    with pytest.raises(ValueError, match="reason and idempotency"):
+        service.approve(
+            promotion_id=pending["id"], reason="", idempotency_key="", approved_by="admin"
+        )
+    assert adapter.calls == []
+
+    observing = service.approve(
+        promotion_id=pending["id"],
+        reason="approved",
+        idempotency_key="paper-key-0001",
+        approved_by="admin",
+    )
+    assert observing["status"] == "paper_observing"
+    assert adapter.calls == ["paper_configure", "paper_start"]
+    assert (
+        service.approve(
+            promotion_id=pending["id"],
+            reason="ignored",
+            idempotency_key="paper-key-0001",
+            approved_by="admin",
+        )["id"]
+        == pending["id"]
+    )
+
+
+def test_paper_observation_is_read_only_and_keeps_data_gaps_visible() -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    evidence_id = _passing_evidence(db)
+    adapter = PaperFixtureAdapter()
+    service = PaperPromotionService(db, bitpro_adapter=adapter)
+    pending = service.request(evidence_id=evidence_id, reason="paper review")
+    service.approve(
+        promotion_id=pending["id"],
+        reason="approved",
+        idempotency_key="paper-key-0002",
+        approved_by="admin",
+    )
+
+    observed = service.observe(pending["id"])
+
+    assert observed["status"] == "paper_observing"
+    assert observed["observation"]["snapshot_id"].startswith("bpms_")
+    assert (
+        observed["observation"]["history"][-1]["snapshot_id"]
+        == observed["observation"]["snapshot_id"]
+    )
+    assert adapter.calls[-4:] == [
+        "paper_dashboard",
+        "paper_events",
+        "paper_equity_curve",
+        "paper_strategy_performance",
+    ]
+    assert "paper_pause" not in adapter.calls
+
+
+def test_paper_observation_marks_data_gaps_degraded_without_lifecycle_write() -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    adapter = PaperFixtureAdapter()
+    service = PaperPromotionService(db, bitpro_adapter=adapter)
+    pending = service.request(evidence_id=_passing_evidence(db), reason="paper review")
+    service.approve(
+        promotion_id=pending["id"],
+        reason="approved",
+        idempotency_key="paper-key-0003",
+        approved_by="admin",
+    )
+    adapter.missing_metrics = True
+
+    observed = service.observe(pending["id"])
+
+    assert observed["status"] == "paper_degraded"
+    assert observed["observation"]["recommended_next_action"] == "operator_review"
+    assert "missing total_pnl_pct" in observed["observation"]["drift"]["data_gaps"]
+    assert adapter.calls == [
+        "paper_configure",
+        "paper_start",
+        "paper_dashboard",
+        "paper_events",
+        "paper_equity_curve",
+        "paper_strategy_performance",
+    ]

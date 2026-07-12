@@ -344,9 +344,12 @@ def _default_policy_for(
             "paper_resume",
             "paper_stop",
         }:
+            # Paper lifecycle writes are deliberately not Agent-executable. Sprint 83
+            # routes configure/start through an explicit administrator approval record;
+            # observation remains available through the read-only paper tools.
             return ToolPolicy(
                 scope="paper_write",
-                approval="none",
+                approval="blocked",
                 idempotency="required",
                 source_of_truth="bitpro_mcp",
                 timeout_class="long",
@@ -590,6 +593,7 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
     "bitpro.backtest_get_result": _policy(source="bitpro_mcp", timeout="standard", sample=20),
     "bitpro.paper_configure": _policy(
         scope="paper_write",
+        approval="blocked",
         idempotency="required",
         source="bitpro_mcp",
         timeout="long",
@@ -597,6 +601,7 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
     ),
     "bitpro.paper_start": _policy(
         scope="paper_write",
+        approval="blocked",
         idempotency="required",
         source="bitpro_mcp",
         timeout="long",
@@ -604,6 +609,7 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
     ),
     "bitpro.paper_pause": _policy(
         scope="paper_write",
+        approval="blocked",
         idempotency="required",
         source="bitpro_mcp",
         timeout="long",
@@ -611,6 +617,7 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
     ),
     "bitpro.paper_resume": _policy(
         scope="paper_write",
+        approval="blocked",
         idempotency="required",
         source="bitpro_mcp",
         timeout="long",
@@ -618,6 +625,7 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
     ),
     "bitpro.paper_stop": _policy(
         scope="paper_write",
+        approval="blocked",
         idempotency="required",
         source="bitpro_mcp",
         timeout="long",

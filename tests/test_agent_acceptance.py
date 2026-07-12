@@ -1356,7 +1356,7 @@ def test_agent_acceptance_bitpro_paper_monitor_snapshot_reports_drift(
     _assert_research_quality(run.report_markdown)
 
 
-def test_agent_acceptance_governance_denies_write_without_idempotency(
+def test_agent_acceptance_governance_blocks_paper_start_even_with_idempotency(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -1370,11 +1370,14 @@ def test_agent_acceptance_governance_denies_write_without_idempotency(
                     ToolCallRequest(
                         id="call_paper_start",
                         name="bitpro_paper_start",
-                        arguments={"strategy_id": 7},
+                        arguments={
+                            "strategy_id": 7,
+                            "idempotency_key": "agent_paper_start_7",
+                        },
                     )
                 ],
             ),
-            ChatResponse(content="模拟盘启动未执行，因为治理策略拒绝了请求。", tool_calls=[]),
+            ChatResponse(content="模拟盘启动未执行，需要管理员审批记录。", tool_calls=[]),
         ],
     )
 
@@ -1390,17 +1393,15 @@ def test_agent_acceptance_governance_denies_write_without_idempotency(
     policy_event = _business_events(run)[0]
     assert policy_event.output_json["status"] == "denied"
     assert policy_event.output_json["policy"]["scope"] == "paper_write"
-    assert policy_event.output_json["missing_fields"] == ["idempotency_key"]
-    assert policy_event.output_json["denial_reason"] == (
-        "missing required field: idempotency_key"
-    )
+    assert policy_event.output_json["missing_fields"] == []
+    assert policy_event.output_json["denial_reason"] == "tool scope is blocked by governance policy"
     assert "bitpro.paper_start" not in names
     assert "## 风控治理" in run.report_markdown
     assert "bitpro_paper_start: denied" in run.report_markdown
-    assert "missing required field: idempotency_key" in run.report_markdown
+    assert "tool scope is blocked by governance policy" in run.report_markdown
 
 
-def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
+def test_agent_acceptance_bitpro_strategy_lifecycle_blocks_automatic_paper_start(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -1536,8 +1537,18 @@ def test_agent_acceptance_bitpro_strategy_lifecycle_is_audited(
     assert "bitpro.backtest_start_job" in names
     assert "bitpro.strategy_update" in names
     assert "bitpro.backtest_get_job" in names
-    assert "bitpro.paper_configure" in names
-    assert "bitpro.paper_start" in names
+    assert "bitpro.paper_configure" not in names
+    assert "bitpro.paper_start" not in names
+    paper_events = [
+        event
+        for event in _business_events(run)
+        if event.tool_name in {"bitpro_paper_configure", "bitpro_paper_start"}
+    ]
+    assert [event.output_json["status"] for event in paper_events] == ["denied", "denied"]
+    assert all(
+        event.output_json["denial_reason"] == "tool scope is blocked by governance policy"
+        for event in paper_events
+    )
     create_event = next(
         event for event in _business_events(run) if event.tool_name == "bitpro_strategy_create"
     )

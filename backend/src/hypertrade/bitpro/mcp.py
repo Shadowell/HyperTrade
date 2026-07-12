@@ -767,6 +767,7 @@ class BitProToolAdapter:
         initial_equity: float = 10000.0,
         exchange: str = "okx",
         loop_interval_sec: int = 60,
+        idempotency_key: str = "",
     ) -> dict[str, Any]:
         self.last_tool_calls = []
         capabilities, health = self._preflight()
@@ -777,6 +778,7 @@ class BitProToolAdapter:
                 "initial_equity": float(initial_equity),
                 "exchange": exchange,
                 "loop_interval_sec": int(loop_interval_sec),
+                "idempotency_key": idempotency_key,
             },
         )
         return {
@@ -787,8 +789,10 @@ class BitProToolAdapter:
             "tool_calls": self.last_tool_calls,
         }
 
-    def paper_start(self, *, strategy_id: int) -> dict[str, Any]:
-        return self._paper_lifecycle("paper_start", strategy_id=strategy_id)
+    def paper_start(self, *, strategy_id: int, idempotency_key: str = "") -> dict[str, Any]:
+        return self._paper_lifecycle(
+            "paper_start", strategy_id=strategy_id, idempotency_key=idempotency_key
+        )
 
     def paper_pause(self, *, strategy_id: int) -> dict[str, Any]:
         return self._paper_lifecycle("paper_pause", strategy_id=strategy_id)
@@ -1178,7 +1182,7 @@ def _post_payload(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
                 "config": params.get("config") or {},
                 "exchange": params.get("exchange", "okx"),
                 "symbols": list(params.get("symbols") or []),
-                "idempotency_key": params.get("idempotency_key"),
+                "idempotency_key": params.get("idempotency_key") or None,
             }
         )
     if tool_name == "strategy_update":
@@ -1190,7 +1194,7 @@ def _post_payload(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
                 "config": params.get("config"),
                 "exchange": params.get("exchange"),
                 "symbols": list(params["symbols"]) if params.get("symbols") is not None else None,
-                "idempotency_key": params.get("idempotency_key"),
+                "idempotency_key": params.get("idempotency_key") or None,
             }
         )
     if tool_name == "strategy_generate":
@@ -1218,15 +1222,23 @@ def _post_payload(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
             }
         )
     if tool_name == "paper_configure":
-        return {
-            "strategy_type": str(params["strategy_id"]),
-            "exchange": str(params.get("exchange", "okx")),
-            "initial_equity": float(params.get("initial_equity", 10000.0)),
-            "dry_run": True,
-            "loop_interval": int(params.get("loop_interval_sec", 60)),
-        }
+        return _compact(
+            {
+                "strategy_type": str(params["strategy_id"]),
+                "exchange": str(params.get("exchange", "okx")),
+                "initial_equity": float(params.get("initial_equity", 10000.0)),
+                "dry_run": True,
+                "loop_interval": int(params.get("loop_interval_sec", 60)),
+                "idempotency_key": params.get("idempotency_key") or None,
+            }
+        )
     if tool_name in {"paper_start", "paper_pause", "paper_resume"}:
-        return {"instance_id": int(params["strategy_id"])}
+        return _compact(
+            {
+                "instance_id": int(params["strategy_id"]),
+                "idempotency_key": params.get("idempotency_key") or None,
+            }
+        )
     if tool_name == "paper_stop":
         return {
             "instance_id": int(params["strategy_id"]),

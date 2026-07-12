@@ -1,6 +1,7 @@
 """Durable, operator-governed strategy research program services."""
 
 from hypertrade.research.orchestrator import ResearchOrchestrator
+from hypertrade.research.paper_promotion import PaperPromotionService
 from hypertrade.research.service import ResearchProgramService
 
-__all__ = ["ResearchOrchestrator", "ResearchProgramService"]
+__all__ = ["PaperPromotionService", "ResearchOrchestrator", "ResearchProgramService"]

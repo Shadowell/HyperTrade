@@ -36,6 +36,7 @@ from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.memory.service import MemoryService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.reporting.blocks import ReportBlock, render_report_blocks
+from hypertrade.research.paper_promotion import PaperPromotionService
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
 from hypertrade.strategy.experiment import StrategyExperimentService
@@ -110,6 +111,16 @@ class AgentClient(Protocol):
     def run_research_job(self, job_id: str) -> dict[str, Any]: ...
 
     def research_job_report(self, job_id: str) -> dict[str, Any]: ...
+
+    def list_paper_promotions(self) -> list[dict[str, Any]]: ...
+
+    def request_paper_promotion(self, evidence_id: str, reason: str) -> dict[str, Any]: ...
+
+    def approve_paper_promotion(
+        self, promotion_id: str, reason: str, idempotency_key: str
+    ) -> dict[str, Any]: ...
+
+    def observe_paper_promotion(self, promotion_id: str) -> dict[str, Any]: ...
 
     def run_backtest(
         self,
@@ -232,13 +243,26 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("/research-program jobs [rman_id]", "List durable research jobs."),
     (
         "/research-program queue <rman_id> <idempotency_key> <prompt>",
-        "Queue validated research work; no execution occurs in Sprint 81.",
+        "Queue a bounded research run with a unique idempotency key.",
     ),
     (
         "/research-program run <rjob_id>",
         "Run the bounded BitPro backtest matrix; never starts paper or live trading.",
     ),
     ("/research-program report <rjob_id>", "Read persisted BitPro result references and gates."),
+    ("/research-program promotions", "List paper-promotion approvals and observation state."),
+    (
+        "/research-program promote <rexp_id> <reason>",
+        "Request paper promotion from passing validation evidence; does not start paper.",
+    ),
+    (
+        "/research-program approve-paper <ppr_id> <idempotency_key> <reason>",
+        "Administrator-only BitPro paper configure/start approval.",
+    ),
+    (
+        "/research-program observe-paper <ppr_id>",
+        "Capture read-only BitPro paper observation evidence.",
+    ),
     ("/experiment <prompt>", "Run research, backtest, critique, and revision workflow."),
     ("/backtest", "Run a backtest from the latest research record."),
     ("/backtest list", "List recent backtests."),
@@ -265,6 +289,10 @@ SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
         "queue",
         "run",
         "report",
+        "promotions",
+        "promote",
+        "approve-paper",
+        "observe-paper",
         "cancel",
     ),
     "/backtest": ("list", "latest", "--live", "--source bitpro_mcp"),
@@ -684,6 +712,27 @@ class AgentApiClient:
     def research_job_report(self, job_id: str) -> dict[str, Any]:
         return self._get_object(f"/api/research/jobs/{quote(job_id, safe='')}/report")
 
+    def list_paper_promotions(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/research/paper-promotions", "items")
+
+    def request_paper_promotion(self, evidence_id: str, reason: str) -> dict[str, Any]:
+        return self._post_object(
+            "/api/research/paper-promotions", {"evidence_id": evidence_id, "reason": reason}
+        )
+
+    def approve_paper_promotion(
+        self, promotion_id: str, reason: str, idempotency_key: str
+    ) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/research/paper-promotions/{quote(promotion_id, safe='')}/approve",
+            {"reason": reason, "idempotency_key": idempotency_key},
+        )
+
+    def observe_paper_promotion(self, promotion_id: str) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/research/paper-promotions/{quote(promotion_id, safe='')}/observe", {}
+        )
+
     def run_backtest(
         self,
         *,
@@ -1045,6 +1094,33 @@ class LocalAgentClient:
 
     def research_job_report(self, job_id: str) -> dict[str, Any]:
         return ResearchProgramService(self.db).report(job_id)
+
+    def list_paper_promotions(self) -> list[dict[str, Any]]:
+        return PaperPromotionService(self.db).list()
+
+    def request_paper_promotion(self, evidence_id: str, reason: str) -> dict[str, Any]:
+        return PaperPromotionService(self.db).request(evidence_id=evidence_id, reason=reason)
+
+    def approve_paper_promotion(
+        self, promotion_id: str, reason: str, idempotency_key: str
+    ) -> dict[str, Any]:
+        from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
+
+        return PaperPromotionService(
+            self.db, bitpro_adapter=BitProToolAdapter(BitProMcpClient(settings=self.settings))
+        ).approve(
+            promotion_id=promotion_id,
+            reason=reason,
+            idempotency_key=idempotency_key,
+            approved_by="local_operator",
+        )
+
+    def observe_paper_promotion(self, promotion_id: str) -> dict[str, Any]:
+        from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
+
+        return PaperPromotionService(
+            self.db, bitpro_adapter=BitProToolAdapter(BitProMcpClient(settings=self.settings))
+        ).observe(promotion_id)
 
     def run_backtest(
         self,
@@ -1681,7 +1757,7 @@ def _selectable_slash_command(command: str) -> str:
 
 
 def handle_research_program_command(command: str, *, client: AgentClient, output: TextIO) -> None:
-    """Operate the Sprint 81 control plane; it never starts BitPro work."""
+    """Operate research control-plane actions with explicit paper approval only."""
     parts = shlex.split(command)
     subcommand = parts[1].lower() if len(parts) > 1 else "list"
     try:
@@ -1757,6 +1833,34 @@ def handle_research_program_command(command: str, *, client: AgentClient, output
             )
             print(json.dumps(result, ensure_ascii=False, indent=2), file=output)
             return
+        if subcommand in {"promotions", "promotion"}:
+            print(
+                json.dumps(client.list_paper_promotions(), ensure_ascii=False, indent=2),
+                file=output,
+            )
+            return
+        if subcommand == "promote":
+            if len(parts) < 4:
+                raise ValueError("Usage: /research-program promote <rexp_id> <reason>")
+            result = client.request_paper_promotion(parts[2], " ".join(parts[3:]))
+            print(json.dumps(result, ensure_ascii=False, indent=2), file=output)
+            return
+        if subcommand == "approve-paper":
+            if len(parts) < 5:
+                raise ValueError(
+                    "Usage: /research-program approve-paper <ppr_id> <idempotency_key> <reason>"
+                )
+            result = client.approve_paper_promotion(parts[2], " ".join(parts[4:]), parts[3])
+            print(json.dumps(result, ensure_ascii=False, indent=2), file=output)
+            return
+        if subcommand == "observe-paper":
+            if len(parts) != 3:
+                raise ValueError("Usage: /research-program observe-paper <ppr_id>")
+            print(
+                json.dumps(client.observe_paper_promotion(parts[2]), ensure_ascii=False, indent=2),
+                file=output,
+            )
+            return
         if subcommand == "cancel":
             if len(parts) < 3:
                 raise ValueError("Usage: /research-program cancel <rjob_id> [reason]")
@@ -1772,7 +1876,8 @@ def handle_research_program_command(command: str, *, client: AgentClient, output
             )
             return
         raise ValueError(
-            "Usage: /research-program list|create|pause|resume|draft|jobs|queue|run|report|cancel"
+            "Usage: /research-program list|create|pause|resume|draft|jobs|queue|run|report|"
+            "promotions|promote|approve-paper|observe-paper|cancel"
         )
     except (ValueError, KeyError, json.JSONDecodeError) as exc:
         print(str(exc), file=output)

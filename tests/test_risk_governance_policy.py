@@ -26,18 +26,21 @@ def test_governance_policy_allows_global_market_snapshot() -> None:
     assert decision.policy.scope == "read"
 
 
-def test_governance_policy_denies_paper_write_without_idempotency_key() -> None:
+def test_governance_policy_blocks_agent_paper_lifecycle_even_with_idempotency_key() -> None:
     policy = RiskGovernancePolicy(ToolRegistry.default())
 
-    decision = policy.evaluate("bitpro_paper_start", {"strategy_id": 7})
+    decision = policy.evaluate(
+        "bitpro_paper_start",
+        {"strategy_id": 7, "idempotency_key": "agent_paper_start_7"},
+    )
 
     assert decision.allowed is False
     assert decision.status == "denied"
     assert decision.registry_tool_name == "bitpro.paper_start"
     assert decision.policy.scope == "paper_write"
     assert decision.requires_idempotency is True
-    assert decision.missing_fields == ["idempotency_key"]
-    assert decision.denial_reason == "missing required field: idempotency_key"
+    assert decision.missing_fields == []
+    assert decision.denial_reason == "tool scope is blocked by governance policy"
 
 
 def test_governance_policy_marks_live_order_intent_approval_required() -> None:

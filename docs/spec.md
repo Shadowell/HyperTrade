@@ -117,6 +117,15 @@ BitPro business logic to HyperTrade.
   dynamic DB strategy code, then records a bounded in-sample/validation/locked
   out-of-sample matrix. Missing results or metrics fail closed; passing evidence
   remains `evidence_recorded` and cannot configure or start paper/live trading.
+- Sprint 83 paper promotion and observation: one passing
+  `ResearchExperimentEvidence` can create a `pending_paper_approval` record.
+  Only an authenticated administrator providing a reason and unique idempotency
+  key may configure/start its linked BitPro strategy. The resulting paper
+  session is observed through dashboard, events, equity, monitor snapshots,
+  and identity-scoped performance evidence. Data gaps become
+  `paper_degraded`; alerts become `paper_review_required`; neither condition
+  auto-pauses, retires, or reaches a live path. Agent-originated paper
+  lifecycle writes are blocked by governance.
 - Sprint 79 CLI unified report rendering: completed Agent answers take
   precedence over report-block/audit dumps in default output, while explicit
   tool/audit modes preserve the structured evidence. Simulated-strategy

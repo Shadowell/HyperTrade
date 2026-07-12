@@ -54,6 +54,7 @@ from hypertrade.paper.service import PaperTradingService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagHit, RagService
 from hypertrade.research.orchestrator import BitProResearchAdapter, ResearchOrchestrator
+from hypertrade.research.paper_promotion import PaperPromotionAdapter, PaperPromotionService
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
 from hypertrade.strategy.experiment import StrategyExperimentService
@@ -155,6 +156,16 @@ class StrategyResearchPayload(BaseModel):
 
 class ResearchJobCancelPayload(BaseModel):
     reason: str = "operator_canceled"
+
+
+class PaperPromotionRequestPayload(BaseModel):
+    evidence_id: str
+    reason: str
+
+
+class PaperPromotionApprovalPayload(BaseModel):
+    reason: str
+    idempotency_key: str
 
 
 class BacktestPayload(BaseModel):
@@ -816,6 +827,59 @@ def create_app(
                 database,
                 bitpro_adapter=cast(BitProResearchAdapter, get_bitpro_adapter()),
             ).run(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/research/paper-promotions")
+    def request_paper_promotion(
+        payload: PaperPromotionRequestPayload, _: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return PaperPromotionService(database).request(
+                evidence_id=payload.evidence_id, reason=payload.reason
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/research/paper-promotions")
+    def list_paper_promotions(_: AdminUser, status: str = "") -> dict[str, list[dict[str, Any]]]:
+        return {"items": PaperPromotionService(database).list(status=status)}
+
+    @app.get("/api/research/paper-promotions/{promotion_id}")
+    def get_paper_promotion(promotion_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return PaperPromotionService(database).get(promotion_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/research/paper-promotions/{promotion_id}/approve")
+    def approve_paper_promotion(
+        promotion_id: str, payload: PaperPromotionApprovalPayload, approved_by: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return PaperPromotionService(
+                database, bitpro_adapter=cast(PaperPromotionAdapter, get_bitpro_adapter())
+            ).approve(
+                promotion_id=promotion_id,
+                reason=payload.reason,
+                idempotency_key=payload.idempotency_key,
+                approved_by=approved_by,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/research/paper-promotions/{promotion_id}/observe")
+    def observe_paper_promotion(promotion_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return PaperPromotionService(
+                database, bitpro_adapter=cast(PaperPromotionAdapter, get_bitpro_adapter())
+            ).observe(promotion_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:

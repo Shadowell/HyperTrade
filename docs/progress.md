@@ -5,6 +5,19 @@
 - Branch: `main`
 - Harness status: active
 - Architecture diagram: Updated to include World Model (Layer 5), Monitoring (Layer 7), renumbered layers, and full Mermaid+SVG coverage.
+- Last verified state: Sprint 83 paper promotion and observation implemented
+  locally on 2026-07-12. Passing `ResearchExperimentEvidence` creates only a
+  `pending_paper_approval` record. An administrator must provide a reason and
+  unique idempotency key before the approval service invokes the linked
+  BitPro `paper_configure` and `paper_start` calls. The persisted promotion
+  retains returned session references, dashboard/event/equity monitor
+  snapshots, candidate-scoped performance evidence, transitions, data gaps,
+  and recommended next action. Observation stays read-only: gaps become
+  `paper_degraded`, alerts become `paper_review_required`, and no path can
+  auto-pause, retire, or promote live. Agent-originated paper lifecycle writes
+  are governance-blocked. Focused contract tests passed (`137 passed`);
+  `./scripts/check.sh` passed (frontend lint/test/build, Ruff, Mypy, and full
+  pytest). Deployment verification is pending the implementation push.
 - Last verified state: Sprint 82 BitPro backtest matrix and validation gates
   implemented locally on 2026-07-12. A bounded, resumable research worker
   preflights BitPro, rejects missing real-data coverage or code validation,
@@ -77,8 +90,8 @@
 
 ## Active Contract
 
-- Sprint 82 BitPro backtest matrix and validation gates is active under
-  `docs/contracts/sprint-82-bitpro-backtest-matrix-and-gates.md`.
+- Sprint 83 paper promotion and observation is active under
+  `docs/contracts/sprint-83-paper-promotion-and-observation.md`.
 
 ## Approved Follow-On Design
 
@@ -138,6 +151,17 @@
 
 ## Latest Completed Work
 
+- Implemented Sprint 83 paper promotion and observation. `PaperPromotion`
+  links passing S82 evidence to the mandate, job, strategy reference,
+  administrator reason, approval idempotency key, BitPro paper instance, and
+  bounded source evidence. Only the explicit administrator service path can
+  configure/start BitPro paper; Agent paper lifecycle writes are blocked by the
+  governance registry even when an Agent supplies an idempotency key. The
+  read-only observation join captures `paper_dashboard`, events, equity curve,
+  monitor drift, and candidate performance evidence. Missing data becomes
+  `paper_degraded`, alerts become `paper_review_required`; neither makes a
+  lifecycle write or changes a backtest conclusion. Admin API and local/remote
+  `/research-program` CLI expose request, inspect, approve, and observe flows.
 - Implemented Sprint 82 BitPro backtest matrix and validation gates. The
   `ResearchOrchestrator` only runs an operator-triggered, mandate-bounded
   matrix after BitPro capabilities/health, real K-line coverage, and code

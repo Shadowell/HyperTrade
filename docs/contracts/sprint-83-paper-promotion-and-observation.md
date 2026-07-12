@@ -6,11 +6,11 @@ Connect a validated Sprint 82 candidate to BitPro paper simulation through an ex
 
 ## In Scope
 
-- Add a `PaperPromotion` record linked to one mandate, `ResearchJob`, `StrategyCard`, and validation report.
+- Add a `PaperPromotion` record linked to one mandate, `ResearchJob`, passing `ExperimentEvidence`, and candidate strategy reference (a future `StrategyCard` may consume it).
 - Create promotion requests only when the associated `ValidationGate` report passed and the mandate permits manual paper approval.
 - Add an admin-protected approval action requiring a reason and unique idempotency key before `paper_configure` or `paper_start` can be called.
 - Use BitPro MCP only to configure/start approved paper strategies and persist the returned strategy/session references.
-- Associate existing `paper_dashboard`, `paper_events`, `paper_equity_curve`, monitor snapshots, and paper-performance matrix reads with the promoted candidate.
+- Associate existing `paper_dashboard`, `paper_events`, `paper_equity_curve`, monitor snapshots, and identity-scoped paper-performance matrix reads with the promoted candidate.
 - Define observation states: `paper_observing`, `paper_degraded`, `paper_review_required`, `paper_retired`; preserve source evidence for every transition.
 - Add operator API/CLI surfaces to inspect pending approvals, the paper observation summary, data gaps, and recommended next action.
 - Keep paper monitoring read-only after start; recommendations to pause or retire require a separate operator action.
@@ -37,6 +37,7 @@ Connect a validated Sprint 82 candidate to BitPro paper simulation through an ex
 - An approval without a reason or idempotency key does not call BitPro.
 - A valid approval configures and starts only the linked BitPro dynamic strategy, then persists the correlation ids and audit record.
 - Dashboard identity mismatches, incomplete per-strategy coverage, and missing paper artifacts remain explicit data gaps.
+- Agent-originated `paper_configure`, `paper_start`, pause, resume, and stop requests are governance-blocked; administrator API/CLI approval is the only configure/start route.
 - No Trace contains a live-write tool, live promotion, or automatic paper lifecycle mutation.
 
 ## Verification

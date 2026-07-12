@@ -109,7 +109,11 @@ LLM 只能调用其阶段允许的工具。`ResearchOrchestrator` 和 `Validatio
 
 ### PaperPromotion
 
-`PaperPromotion` 只在所有验证门禁通过后创建，状态为 `pending_approval`。操作员批准时必须产生独立的审批记录和幂等键，随后才允许调用 `paper_configure` 与 `paper_start`。它永远不能转化为实盘晋级动作。
+`PaperPromotion` 只在所有验证门禁通过后创建，关联一个
+`ResearchMandate`、`ResearchJob`、`ExperimentEvidence` 与候选策略引用，初始状态为
+`pending_paper_approval`。操作员批准时必须产生独立的审批记录、原因和幂等键，随后才允许调用
+`paper_configure` 与 `paper_start`。返回的 BitPro strategy/instance 引用、每次监控快照和候选
+performance 行都会保留在该记录中；它永远不能转化为实盘晋级动作。
 
 ## 生命周期状态机
 
@@ -121,13 +125,17 @@ ResearchMandate: draft -> active <-> paused -> archived
 ResearchJob: queued -> planning -> data_preflight -> strategy_validation
   -> backtesting -> validation -> rejected | evidence_recorded
 
-StrategyCard: evidence_recorded -> pending_paper_approval -> paper_observing
-  -> qualified | degraded | retired
+PaperPromotion: pending_paper_approval -> approving -> paper_observing
+  -> paper_degraded | paper_review_required
+
+PaperPromotion: paper_observing | paper_degraded | paper_review_required
+  -> paper_retired (仅单独的明确操作员动作；本阶段不自动调用暂停/停止)
 ```
 
 - 任何数据覆盖不足、BitPro 不健康、策略代码校验失败、MCP 超时或指标缺失都进入 `rejected`、`failed` 或 `needs_data`，并保留结构化原因。
 - `validation` 只在固定的输入和已保存的 BitPro artifacts 上运行；它不能以模型解释覆盖缺失指标。
 - `paper_observing` 的表现不会改写历史回测结论。回测、模拟盘和未来实盘状态必须在报告中分层显示。
+- Agent 不能直接执行任一 BitPro 模拟盘生命周期写调用；只有管理员 API/CLI 的审批记录服务可以执行配置和启动。监控只读，数据缺口进入 `paper_degraded`，告警进入 `paper_review_required`，均只给出人工复核建议。
 
 ## BitPro MCP 调用合同
 

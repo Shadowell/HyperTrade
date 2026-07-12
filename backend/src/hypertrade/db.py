@@ -377,6 +377,29 @@ class ResearchExperimentEvidence(Base, TimestampMixin):
     tool_calls_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
 
 
+class PaperPromotion(Base, TimestampMixin):
+    """Human-approved bridge from validated research evidence to BitPro paper only."""
+
+    __tablename__ = "paper_promotions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ppr"))
+    mandate_id: Mapped[str] = mapped_column(String(32), index=True)
+    job_id: Mapped[str] = mapped_column(String(32), index=True)
+    evidence_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    strategy_key: Mapped[str] = mapped_column(String(128), index=True)
+    bitpro_strategy_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending_paper_approval", index=True)
+    request_reason: Mapped[str] = mapped_column(Text, default="")
+    approval_reason: Mapped[str] = mapped_column(Text, default="")
+    approval_idempotency_key: Mapped[str | None] = mapped_column(
+        String(128), unique=True, nullable=True
+    )
+    approved_by: Mapped[str] = mapped_column(String(128), default="")
+    paper_refs_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    transition_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+
+
 class Database:
     def __init__(self, url: str, *, echo: bool = False) -> None:
         connect_args: dict[str, Any] = {}
