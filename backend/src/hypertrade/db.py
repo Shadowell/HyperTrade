@@ -193,9 +193,7 @@ class BitProPaperMonitorSnapshot(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("bpms"))
     scope_key: Mapped[str] = mapped_column(String(64), default="all", index=True)
     strategy_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    previous_snapshot_id: Mapped[str | None] = mapped_column(
-        String(32), nullable=True, index=True
-    )
+    previous_snapshot_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), default="completed", index=True)
     dashboard_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     running_strategies_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
@@ -354,7 +352,29 @@ class ResearchJob(Base, TimestampMixin):
     source_run_id: Mapped[str] = mapped_column(String(32), default="", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     transition_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    external_refs_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     last_error: Mapped[str] = mapped_column(Text, default="")
+
+
+class ResearchExperimentEvidence(Base, TimestampMixin):
+    """Bounded HyperTrade ledger references for BitPro-owned research artifacts."""
+
+    __tablename__ = "research_experiment_evidence"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("rexp"))
+    job_id: Mapped[str] = mapped_column(String(32), index=True)
+    mandate_id: Mapped[str] = mapped_column(String(32), index=True)
+    variant_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    strategy_key: Mapped[str] = mapped_column(String(128), index=True)
+    bitpro_strategy_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    result_refs_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    windows_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    parameters_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    metrics_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    gate_results_json: Mapped[dict[str, bool]] = mapped_column(JSON, default=dict)
+    rejection_reasons_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    tool_calls_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
 
 
 class Database:

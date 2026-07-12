@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from queue import Queue
 from threading import Thread
-from typing import Annotated, Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol, cast
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket
@@ -53,6 +53,7 @@ from hypertrade.monitoring import MonitorService
 from hypertrade.paper.service import PaperTradingService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagHit, RagService
+from hypertrade.research.orchestrator import BitProResearchAdapter, ResearchOrchestrator
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
 from hypertrade.strategy.experiment import StrategyExperimentService
@@ -799,6 +800,26 @@ def create_app(
             return ResearchProgramService(database).get_job(job_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/research/jobs/{job_id}/report")
+    def research_job_report(job_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return ResearchProgramService(database).report(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/research/jobs/{job_id}/run")
+    def run_research_job(job_id: str, _: AdminUser) -> dict[str, Any]:
+        """Run the bounded BitPro research worker; it cannot configure paper or live."""
+        try:
+            return ResearchOrchestrator(
+                database,
+                bitpro_adapter=cast(BitProResearchAdapter, get_bitpro_adapter()),
+            ).run(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/api/research/jobs/{job_id}/cancel")
     def cancel_research_job(

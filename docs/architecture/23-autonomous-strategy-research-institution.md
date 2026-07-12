@@ -180,7 +180,7 @@ StrategyCard: evidence_recorded -> pending_paper_approval -> paper_observing
 | Sprint | 交付 | 依赖 | 自动化边界 |
 | --- | --- | --- | --- |
 | 81 | 研究章程、持久化研究任务和候选收件箱 API/CLI | 现有 Agent/治理/数据库 | 不调用 BitPro 写工具 |
-| 82 | BitPro 回测矩阵编排和确定性验证报告 | Sprint 81、BitPro MCP | 自动回测；不进入模拟盘 |
+| 82 | BitPro 回测矩阵编排和确定性验证报告 | Sprint 81、BitPro MCP | 固定样本内/验证/锁定样本外窗口；缺指标失败关闭；自动回测但不进入模拟盘 |
 | 83 | 模拟盘晋级审批、观察期和证据关联 | Sprint 82、已有 Paper Monitor | 人工批准后才写模拟盘；无实盘 |
 | 84 | 市场状态感知的策略卡与组合研究审阅 | Sprint 83、WorldState/Portfolio | 只读建议，不修改风险预算或实盘 |
 

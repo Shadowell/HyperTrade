@@ -107,6 +107,10 @@ class AgentClient(Protocol):
         self, job_id: str, reason: str = "operator_canceled"
     ) -> dict[str, Any]: ...
 
+    def run_research_job(self, job_id: str) -> dict[str, Any]: ...
+
+    def research_job_report(self, job_id: str) -> dict[str, Any]: ...
+
     def run_backtest(
         self,
         *,
@@ -230,6 +234,11 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
         "/research-program queue <rman_id> <idempotency_key> <prompt>",
         "Queue validated research work; no execution occurs in Sprint 81.",
     ),
+    (
+        "/research-program run <rjob_id>",
+        "Run the bounded BitPro backtest matrix; never starts paper or live trading.",
+    ),
+    ("/research-program report <rjob_id>", "Read persisted BitPro result references and gates."),
     ("/experiment <prompt>", "Run research, backtest, critique, and revision workflow."),
     ("/backtest", "Run a backtest from the latest research record."),
     ("/backtest list", "List recent backtests."),
@@ -246,7 +255,18 @@ SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
     "/memory": ("search", "disable"),
     "/monitor": ("run",),
     "/strategy": ("library",),
-    "/research-program": ("list", "create", "pause", "resume", "draft", "jobs", "queue", "cancel"),
+    "/research-program": (
+        "list",
+        "create",
+        "pause",
+        "resume",
+        "draft",
+        "jobs",
+        "queue",
+        "run",
+        "report",
+        "cancel",
+    ),
     "/backtest": ("list", "latest", "--live", "--source bitpro_mcp"),
     "/paper": ("status", "pause", "resume", "close", "reset"),
     "/live": ("intents", "intent", "approve", "reject", "execute"),
@@ -658,6 +678,12 @@ class AgentApiClient:
             f"/api/research/jobs/{quote(job_id, safe='')}/cancel", {"reason": reason}
         )
 
+    def run_research_job(self, job_id: str) -> dict[str, Any]:
+        return self._post_object(f"/api/research/jobs/{quote(job_id, safe='')}/run", {})
+
+    def research_job_report(self, job_id: str) -> dict[str, Any]:
+        return self._get_object(f"/api/research/jobs/{quote(job_id, safe='')}/report")
+
     def run_backtest(
         self,
         *,
@@ -1007,6 +1033,18 @@ class LocalAgentClient:
 
     def cancel_research_job(self, job_id: str, reason: str = "operator_canceled") -> dict[str, Any]:
         return ResearchProgramService(self.db).cancel_job(job_id, reason=reason)
+
+    def run_research_job(self, job_id: str) -> dict[str, Any]:
+        from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
+        from hypertrade.research.orchestrator import ResearchOrchestrator
+
+        return ResearchOrchestrator(
+            self.db,
+            bitpro_adapter=BitProToolAdapter(BitProMcpClient(settings=self.settings)),
+        ).run(job_id)
+
+    def research_job_report(self, job_id: str) -> dict[str, Any]:
+        return ResearchProgramService(self.db).report(job_id)
 
     def run_backtest(
         self,
@@ -1709,6 +1747,16 @@ def handle_research_program_command(command: str, *, client: AgentClient, output
                 file=output,
             )
             return
+        if subcommand in {"run", "report"}:
+            if len(parts) != 3:
+                raise ValueError(f"Usage: /research-program {subcommand} <rjob_id>")
+            result = (
+                client.run_research_job(parts[2])
+                if subcommand == "run"
+                else client.research_job_report(parts[2])
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2), file=output)
+            return
         if subcommand == "cancel":
             if len(parts) < 3:
                 raise ValueError("Usage: /research-program cancel <rjob_id> [reason]")
@@ -1724,7 +1772,7 @@ def handle_research_program_command(command: str, *, client: AgentClient, output
             )
             return
         raise ValueError(
-            "Usage: /research-program list|create|pause|resume|draft|jobs|queue|cancel"
+            "Usage: /research-program list|create|pause|resume|draft|jobs|queue|run|report|cancel"
         )
     except (ValueError, KeyError, json.JSONDecodeError) as exc:
         print(str(exc), file=output)

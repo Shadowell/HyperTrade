@@ -521,6 +521,8 @@ class AgentKernel:
                 result = ResearchProgramService(self.db).draft_strategy_spec(
                     str(args.get("mandate_id", "")), str(args.get("prompt", ""))
                 )
+            elif tool_name == "research_job_report":
+                result = ResearchProgramService(self.db).report(str(args.get("job_id", "")))
             elif tool_name == "strategy_draft":
                 research_prompt = str(args.get("prompt", ""))
                 result = StrategyResearchService(self.db).create(research_prompt)

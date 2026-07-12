@@ -396,6 +396,7 @@ class BitProToolAdapter:
         config: dict[str, Any] | None = None,
         exchange: str = "okx",
         symbols: list[str] | None = None,
+        idempotency_key: str = "",
     ) -> dict[str, Any]:
         self.last_tool_calls = []
         capabilities, health = self._preflight()
@@ -408,6 +409,7 @@ class BitProToolAdapter:
                 "config": config or {},
                 "exchange": exchange,
                 "symbols": [_normalize_bitpro_spot_symbol(symbol) for symbol in symbols or []],
+                "idempotency_key": idempotency_key,
             },
         )
         return {
@@ -428,6 +430,7 @@ class BitProToolAdapter:
         config: dict[str, Any] | None = None,
         exchange: str | None = None,
         symbols: list[str] | None = None,
+        idempotency_key: str = "",
     ) -> dict[str, Any]:
         self.last_tool_calls = []
         capabilities, health = self._preflight()
@@ -446,6 +449,8 @@ class BitProToolAdapter:
             # Updates preserve caller-provided symbol semantics. Contract rows
             # commonly use BASE/USDT:USDT, while spot rows use BASE/USDT.
             params["symbols"] = [str(symbol) for symbol in symbols]
+        if idempotency_key:
+            params["idempotency_key"] = idempotency_key
         strategy = self._call("strategy_update", params)
         return {
             "status": "ok",
@@ -468,6 +473,10 @@ class BitProToolAdapter:
         wait_for_result: bool = False,
         poll_interval_sec: float = 2.0,
         timeout_sec: float = 90.0,
+        maker_fee_bps: float | None = None,
+        taker_fee_bps: float | None = None,
+        slippage_bps: float | None = None,
+        idempotency_key: str = "",
     ) -> dict[str, Any]:
         self.last_tool_calls = []
         capabilities, health = self._preflight()
@@ -482,6 +491,10 @@ class BitProToolAdapter:
                     "exchange": exchange,
                     "symbol": _normalize_bitpro_spot_symbol(symbol) if symbol else None,
                     "timeframe": _normalize_bitpro_timeframe(timeframe) if timeframe else None,
+                    "maker_fee_bps": maker_fee_bps,
+                    "taker_fee_bps": taker_fee_bps,
+                    "slippage_bps": slippage_bps,
+                    "idempotency_key": idempotency_key,
                 },
             )
         )
@@ -506,6 +519,27 @@ class BitProToolAdapter:
                     self._attach_backtest_result_from_job(payload, polled_job)
                     payload["tool_calls"] = self.last_tool_calls
         return payload
+
+    def strategy_validate_code(
+        self,
+        *,
+        script_content: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Call BitPro's validator; API-only deployments fail closed if it is local-only."""
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        validation = self._call(
+            "strategy_validate_code",
+            {"script_content": script_content, "idempotency_key": idempotency_key},
+        )
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "validation": validation,
+            "tool_calls": self.last_tool_calls,
+        }
 
     def backtest_get_job(self, *, job_id: str) -> dict[str, Any]:
         self.last_tool_calls = []
@@ -1144,6 +1178,7 @@ def _post_payload(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
                 "config": params.get("config") or {},
                 "exchange": params.get("exchange", "okx"),
                 "symbols": list(params.get("symbols") or []),
+                "idempotency_key": params.get("idempotency_key"),
             }
         )
     if tool_name == "strategy_update":
@@ -1155,6 +1190,7 @@ def _post_payload(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
                 "config": params.get("config"),
                 "exchange": params.get("exchange"),
                 "symbols": list(params["symbols"]) if params.get("symbols") is not None else None,
+                "idempotency_key": params.get("idempotency_key"),
             }
         )
     if tool_name == "strategy_generate":
@@ -1178,6 +1214,7 @@ def _post_payload(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
                 "maker_fee_bps": params.get("maker_fee_bps"),
                 "taker_fee_bps": params.get("taker_fee_bps"),
                 "slippage_bps": params.get("slippage_bps"),
+                "idempotency_key": params.get("idempotency_key"),
             }
         )
     if tool_name == "paper_configure":

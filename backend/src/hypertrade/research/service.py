@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from sqlalchemy import desc, select
 
-from hypertrade.db import Database, ResearchJob, ResearchMandate
+from hypertrade.db import Database, ResearchExperimentEvidence, ResearchJob, ResearchMandate
 from hypertrade.research.schemas import (
     ResearchJobCreate,
     ResearchMandateCreate,
@@ -15,13 +15,16 @@ from hypertrade.research.schemas import (
     strategy_key_from_prompt,
 )
 
-_TERMINAL_JOB_STATES = {"canceled", "completed", "failed", "rejected"}
 _JOB_TRANSITIONS: dict[str, set[str]] = {
     "queued": {"planning", "canceled"},
-    "planning": {"completed", "failed", "rejected", "canceled"},
-    "failed": {"queued", "canceled"},
+    "planning": {"data_preflight", "failed", "rejected", "canceled"},
+    "data_preflight": {"strategy_validation", "failed", "rejected", "canceled"},
+    "strategy_validation": {"backtesting", "failed", "rejected", "canceled"},
+    "backtesting": {"validation", "failed", "rejected", "canceled"},
+    "validation": {"evidence_recorded", "failed", "rejected", "canceled"},
+    "failed": {"planning", "canceled"},
     "rejected": set(),
-    "completed": set(),
+    "evidence_recorded": set(),
     "canceled": set(),
 }
 
@@ -196,6 +199,38 @@ class ResearchProgramService:
     def cancel_job(self, job_id: str, *, reason: str = "operator_canceled") -> dict[str, Any]:
         return self.transition_job(job_id, target="canceled", reason=reason)
 
+    def update_job_external_refs(self, job_id: str, *, updates: dict[str, Any]) -> dict[str, Any]:
+        """Persist bounded external references without storing BitPro artifacts locally."""
+        with self.db.session() as session:
+            job = _get_job(session, job_id)
+            job.external_refs_json = {**dict(job.external_refs_json), **updates}
+            session.flush()
+            return _job_to_dict(job)
+
+    def list_evidence(self, job_id: str) -> list[dict[str, Any]]:
+        with self.db.session() as session:
+            rows = session.scalars(
+                select(ResearchExperimentEvidence)
+                .where(ResearchExperimentEvidence.job_id == job_id)
+                .order_by(ResearchExperimentEvidence.created_at)
+            ).all()
+            return [_evidence_to_dict(row) for row in rows]
+
+    def report(self, job_id: str) -> dict[str, Any]:
+        job = self.get_job(job_id)
+        evidence = self.list_evidence(job_id)
+        passing = [row for row in evidence if row["status"] == "evidence_recorded"]
+        return {
+            "job": job,
+            "evidence": evidence,
+            "outcome": {
+                "status": job["status"],
+                "passing_candidate_count": len(passing),
+                "paper_promotion": "not_available_in_sprint_82",
+                "live_mode": "disabled",
+            },
+        }
+
     def transition_job(
         self,
         job_id: str,
@@ -248,12 +283,10 @@ def _draft_spec(mandate: ResearchMandate, *, prompt: str) -> StrategySpecDraft:
         timeframes=list(mandate.timeframes_json),
         strategy_category=category,
         entry_logic=(
-            "Define an entry condition from the approved strategy category and real "
-            "OHLCV only."
+            "Define an entry condition from the approved strategy category and real OHLCV only."
         ),
         exit_logic=(
-            "Define deterministic exit, stop, and invalidation conditions before "
-            "backtesting."
+            "Define deterministic exit, stop, and invalidation conditions before backtesting."
         ),
         risk_conditions=[
             "Respect the research mandate drawdown and data-coverage gates.",
@@ -343,9 +376,30 @@ def _job_to_dict(job: ResearchJob) -> dict[str, Any]:
         "source_run_id": job.source_run_id,
         "attempts": job.attempts,
         "transitions": list(job.transition_json),
+        "external_refs": dict(job.external_refs_json),
         "last_error": job.last_error,
         "created_at": job.created_at.isoformat(),
         "updated_at": job.updated_at.isoformat(),
+    }
+
+
+def _evidence_to_dict(evidence: ResearchExperimentEvidence) -> dict[str, Any]:
+    return {
+        "id": evidence.id,
+        "job_id": evidence.job_id,
+        "mandate_id": evidence.mandate_id,
+        "variant_id": evidence.variant_id,
+        "status": evidence.status,
+        "strategy_key": evidence.strategy_key,
+        "bitpro_strategy_id": evidence.bitpro_strategy_id,
+        "result_refs": dict(evidence.result_refs_json),
+        "windows": dict(evidence.windows_json),
+        "parameters": dict(evidence.parameters_json),
+        "metrics": dict(evidence.metrics_json),
+        "gate_results": dict(evidence.gate_results_json),
+        "rejection_reasons": list(evidence.rejection_reasons_json),
+        "tool_calls": list(evidence.tool_calls_json),
+        "created_at": evidence.created_at.isoformat(),
     }
 
 

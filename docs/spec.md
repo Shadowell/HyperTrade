@@ -112,6 +112,11 @@ BitPro business logic to HyperTrade.
   mode. The Agent can read a mandate and generate only a schema-valid draft;
   durable idempotent jobs have auditable transitions but no scheduler, BitPro
   write, paper action, or live action.
+- Sprint 82 BitPro backtest matrix: an admin-triggered, resumable worker
+  preflights BitPro, requires real chronological K-line coverage and validated
+  dynamic DB strategy code, then records a bounded in-sample/validation/locked
+  out-of-sample matrix. Missing results or metrics fail closed; passing evidence
+  remains `evidence_recorded` and cannot configure or start paper/live trading.
 - Sprint 79 CLI unified report rendering: completed Agent answers take
   precedence over report-block/audit dumps in default output, while explicit
   tool/audit modes preserve the structured evidence. Simulated-strategy

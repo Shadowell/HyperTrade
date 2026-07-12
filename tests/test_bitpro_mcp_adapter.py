@@ -360,6 +360,42 @@ def test_bitpro_mcp_client_allows_research_backtest_and_paper_writes() -> None:
     ]
 
 
+def test_bitpro_adapter_forwards_research_idempotency_keys() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append({"path": request.url.path, "json": json_loads(request.content)})
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/strategies":
+            return httpx.Response(200, json={"success": True, "data": {"id": 42}})
+        if request.url.path == "/api/v2/backtest/run_job":
+            return httpx.Response(200, json={"success": True, "data": {"job_id": "job_42"}})
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+    adapter.strategy_create(
+        name="[合约][1H][CTA] BTC · Research · 10000U",
+        script_content="class Research(BaseStrategy): pass",
+        idempotency_key="rjob_123:strategy-create",
+    )
+    adapter.backtest_start_job(
+        strategy_id=42,
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        idempotency_key="rjob_123:baseline-in-sample",
+    )
+
+    writes = [row["json"] for row in seen if row["json"]]
+    assert writes[0]["idempotency_key"] == "rjob_123:strategy-create"
+    assert writes[1]["idempotency_key"] == "rjob_123:baseline-in-sample"
+
+
 def test_bitpro_backtest_get_job_normalizes_completed_result() -> None:
     seen: list[dict[str, Any]] = []
 

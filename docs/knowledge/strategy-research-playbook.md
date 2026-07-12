@@ -13,7 +13,7 @@ Strategy experiments should move through the same evidence loop:
 
 Current implementation:
 
-- Sprint 81 control plane: `/research-program list|create|pause|resume|draft|jobs|queue|cancel`
+- Sprint 82 control plane: `/research-program list|create|pause|resume|draft|jobs|queue|run|report|cancel`
 - API: `POST/GET /api/research/mandates`, `POST /api/research/mandates/{id}/strategy-specs/draft`,
   and `POST/GET /api/research/.../jobs`
 - Agent tools: `research_mandate_read`, `research_strategy_spec_draft`
@@ -48,16 +48,24 @@ Recommended research loop:
    It must retain `paper_promotion_mode=manual_approval` and `live_mode=disabled`.
 2. Use `/research-program draft <rman_id> <prompt>` to create a bounded
    StrategySpec; it is not a backtest or execution request.
-3. Queue a validated draft with a stable idempotency key. Sprint 81 persists
-   this job only; it does not start a worker or call BitPro.
-4. Search `/strategy library <strategy or symbol>` before creating a new idea.
-5. Treat failed evidence as useful constraints, especially `failure_reasons`.
-6. Use `/experiment iterate <prompt>` when continuing or optimizing an existing
+3. Queue a validated draft with a stable idempotency key, then explicitly run
+   `/research-program run <rjob_id>`. The worker performs BitPro preflight,
+   code validation, one dynamic DB strategy creation, and a bounded matrix.
+4. The matrix uses real BitPro OHLCV and fixed chronological in-sample,
+   validation, and locked out-of-sample windows. Any insufficient coverage,
+   unavailable result, or missing trade/drawdown/return metric is a rejection.
+5. `evidence_recorded` means only that deterministic research gates passed; it
+   never configures or starts a BitPro paper instance and never implies stable
+   profitability. Use `/research-program report <rjob_id>` to inspect result ids,
+   windows, metrics, and rejection reasons.
+6. Search `/strategy library <strategy or symbol>` before creating a new idea.
+7. Treat failed evidence as useful constraints, especially `failure_reasons`.
+8. Use `/experiment iterate <prompt>` when continuing or optimizing an existing
    strategy. The workflow reads strategy-library evidence first, plans at most a
    bounded set of adjacent variants, and records why each variant exists.
-7. Only run `/experiment` when the next test is grounded in prior evidence or
+9. Only run `/experiment` when the next test is grounded in prior evidence or
    clearly explores a new hypothesis.
-8. After the experiment completes, re-run `/strategy library` to confirm the
+10. After the experiment completes, re-run `/strategy library` to confirm the
    new memory card is visible in the grouped strategy view.
 
 Improvement claims:
@@ -74,7 +82,7 @@ Boundaries:
 - Reports are research artifacts only and must not be treated as investment advice.
 - Local strategy experiments do not mutate BitPro strategy code, start paper
   simulation, or generate Testnet/live orders.
-- Sprint 81 research jobs do not have an execution worker and never invoke
-  BitPro; only a later approved sprint may add the bounded backtest handoff.
+- Sprint 82 research work can only perform the bounded BitPro backtest handoff.
+  It never configures/starts paper, changes a portfolio, or invokes a live tool.
 - BitPro strategy creation/backtest/paper workflows must go through BitPro MCP
   tools and their own gates.

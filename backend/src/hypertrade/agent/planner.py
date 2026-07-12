@@ -303,6 +303,21 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "research_job_report",
+            "description": (
+                "Read a persisted Sprint 82 research job report, including BitPro "
+                "references and deterministic gate outcomes. This is read-only."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"job_id": {"type": "string", "description": "Research job id."}},
+                "required": ["job_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "strategy_draft",
             "description": "Create a strategy research record from a hypothesis or question.",
             "parameters": {
@@ -960,6 +975,9 @@ Use research_mandate_read before research_strategy_spec_draft when the operator
 asks to inspect a named research mandate or draft a StrategySpec under one.
 Research StrategySpec drafts are schema-only proposals: they do not queue jobs,
 run backtests, change paper state, or call BitPro write tools.
+Use research_job_report when the operator asks for a completed research job's
+validation conclusion, BitPro result references, missing metrics, or gate outcomes.
+Do not claim that evidence_recorded means paper promotion or stable profitability.
 Use bitpro_capabilities and bitpro_health before BitPro-specific read tools.
 Do not infer BitPro live runtime status from bitpro_capabilities.live_trading_enabled;
 that flag is the HyperTrade MCP live write/order gate. Use bitpro_paper_dashboard

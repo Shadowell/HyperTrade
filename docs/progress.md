@@ -5,6 +5,14 @@
 - Branch: `main`
 - Harness status: active
 - Architecture diagram: Updated to include World Model (Layer 5), Monitoring (Layer 7), renumbered layers, and full Mermaid+SVG coverage.
+- Last verified state: Sprint 82 BitPro backtest matrix and validation gates
+  implemented locally on 2026-07-12. A bounded, resumable research worker
+  preflights BitPro, rejects missing real-data coverage or code validation,
+  runs fixed chronological in-sample/validation/locked-out-of-sample windows,
+  persists BitPro job/result references and deterministic gates, and records
+  compatible strategy-library evidence. An `evidence_recorded` outcome does
+  not configure/start paper or invoke live actions. Focused tests passed
+  (`151 passed`); full verification and deployment evidence follow this change.
 - Last verified state: Sprint 81 research mandates and durable jobs implemented
   locally on 2026-07-12. The operator control plane persists versioned research
   mandates, schema-valid draft-only StrategySpecs, and idempotent job records
@@ -66,8 +74,8 @@
 
 ## Active Contract
 
-- Sprint 81 research mandates and durable jobs is active under
-  `docs/contracts/sprint-81-research-mandates-and-jobs.md`.
+- Sprint 82 BitPro backtest matrix and validation gates is active under
+  `docs/contracts/sprint-82-bitpro-backtest-matrix-and-gates.md`.
 
 ## Approved Follow-On Design
 
@@ -127,6 +135,14 @@
 
 ## Latest Completed Work
 
+- Implemented Sprint 82 BitPro backtest matrix and validation gates. The
+  `ResearchOrchestrator` only runs an operator-triggered, mandate-bounded
+  matrix after BitPro capabilities/health, real K-line coverage, and code
+  validation checks. It stores limited result references and deterministic
+  metrics/gates in `ResearchExperimentEvidence`; unavailable data, upstream
+  failure, or missing locked-sample metrics cannot become a passing result.
+  Dynamic DB strategy writes and every backtest carry an idempotency key.
+  No paper-control or live method exists in this worker.
 - Implemented Sprint 81 research mandates and durable jobs. `ResearchMandate`
   persists allowed symbols, timeframes, strategy categories, research budgets,
   chronological validation windows, and immutable `manual_approval`/`disabled`
