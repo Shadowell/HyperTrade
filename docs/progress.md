@@ -11,8 +11,10 @@
   with audit/transition traces. Admin API and local/remote CLI operations can
   create, list, pause, resume, draft, queue, and cancel without invoking any
   BitPro write tool; paper remains manual approval and live remains disabled.
-  Focused tests passed (`124 passed`). Full verification and production deploy
-  evidence are recorded with the implementation commit.
+  Focused tests passed (`124 passed`); `./scripts/check.sh` passed (frontend
+  lint/test/build, Ruff, Mypy, and `pytest` 320 passed). Deployment run
+  `29186877172` succeeded for SHA `be3712a`; production health returned
+  `{"status":"ok","service":"hypertrade-api"}`.
 - Last verified state: Sprint 80 paper-strategy performance matrix implemented
   locally on 2026-07-12. A dedicated read-only Agent tool now inventories
   running BitPro simulations, performs bounded strategy-scoped dashboard reads,
