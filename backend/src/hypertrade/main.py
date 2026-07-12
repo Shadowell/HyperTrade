@@ -57,6 +57,7 @@ from hypertrade.research.orchestrator import BitProResearchAdapter, ResearchOrch
 from hypertrade.research.paper_promotion import PaperPromotionAdapter, PaperPromotionService
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
+from hypertrade.research.strategy_cards import StrategyCardService
 from hypertrade.strategy.experiment import StrategyExperimentService
 from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.sdk import Candle
@@ -478,6 +479,10 @@ def create_app(
             )
         )
         return portfolio if isinstance(portfolio, dict) else {}
+
+    @app.get("/api/research/strategy-cards")
+    def list_strategy_cards(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+        return {"items": StrategyCardService(database).list()}
 
     @app.get("/api/global-market/snapshot")
     def global_market_snapshot() -> dict[str, Any]:

@@ -89,7 +89,7 @@ class WorldModelService:
             self.db,
             settings=self.settings,
         ).status()
-        snapshot["portfolio"] = PortfolioScheduler().build(snapshot)
+        snapshot["portfolio"] = PortfolioScheduler(self.db).build(snapshot)
         return snapshot
 
     def _crypto_market(self, missing_data: list[str]) -> dict[str, Any]:

@@ -126,6 +126,11 @@ BitPro business logic to HyperTrade.
   `paper_degraded`; alerts become `paper_review_required`; neither condition
   auto-pauses, retires, or reaches a live path. Agent-originated paper
   lifecycle writes are blocked by governance.
+- Sprint 84 regime-aware portfolio review: a read-only `StrategyCard` projection
+  joins mandate, validation, paper-promotion, and monitor evidence into the
+  WorldState portfolio view. It returns only source-bound review actions and
+  explicit unknown/data-gap states; it never mutates paper sessions, risk
+  budgets, allocations, or live execution.
 - Sprint 79 CLI unified report rendering: completed Agent answers take
   precedence over report-block/audit dumps in default output, while explicit
   tool/audit modes preserve the structured evidence. Simulated-strategy

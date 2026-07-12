@@ -5,6 +5,13 @@
 - Branch: `main`
 - Harness status: active
 - Architecture diagram: Updated to include World Model (Layer 5), Monitoring (Layer 7), renumbered layers, and full Mermaid+SVG coverage.
+- Last verified state: Sprint 84 regime-aware StrategyCard portfolio review
+  implemented locally on 2026-07-12. A read-only projection joins research
+  mandate, passing validation evidence, paper-promotion state, and latest
+  monitor evidence into WorldState portfolio cards. Lifecycle/data-gap states
+  become deterministic operator review actions only; portfolio actions cannot
+  mutate paper, allocation, risk budget, or live execution. Deployment
+  verification is pending the implementation push.
 - Last verified state: Sprint 83 paper promotion and observation implemented
   locally on 2026-07-12. Passing `ResearchExperimentEvidence` creates only a
   `pending_paper_approval` record. An administrator must provide a reason and
@@ -91,8 +98,8 @@
 
 ## Active Contract
 
-- Sprint 83 paper promotion and observation is active under
-  `docs/contracts/sprint-83-paper-promotion-and-observation.md`.
+- Sprint 84 regime-aware strategy portfolio review is active under
+  `docs/contracts/sprint-84-regime-aware-strategy-portfolio-review.md`.
 
 ## Approved Follow-On Design
 
@@ -152,6 +159,11 @@
 
 ## Latest Completed Work
 
+- Implemented Sprint 84 StrategyCard portfolio review. The WorldState portfolio
+  view consumes a source-bound, read-only card projection from S81–83 evidence,
+  exposes declared regime fit, lifecycle status, freshness, drawdown/coverage
+  flags, and transparent shared-exposure proxies. It returns review actions,
+  never allocation instructions or a paper/live write.
 - Implemented Sprint 83 paper promotion and observation. `PaperPromotion`
   links passing S82 evidence to the mandate, job, strategy reference,
   administrator reason, approval idempotency key, BitPro paper instance, and

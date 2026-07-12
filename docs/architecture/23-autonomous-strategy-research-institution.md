@@ -101,6 +101,11 @@ LLM 只能调用其阶段允许的工具。`ResearchOrchestrator` 和 `Validatio
 - 最新验证报告、最新模拟盘证据、状态和退役原因。
 - 关联的 `ResearchMandate`、实验和 BitPro result id。
 
+Sprint 84 将其实现为只读投影：从 `ExperimentEvidence`、`PaperPromotion` 与最新
+Paper Monitor 快照连接策略状态，而不复制 BitPro 数据。组合审阅只能返回 `observe`、
+`run_targeted_research`、`request_paper_review`、`request_pause_review` 或
+`retire_candidate_review`；任何相关性不足必须标记为 unknown，绝不改变预算或调用纸面/实盘写工具。
+
 ### ResearchJob 与 ExperimentEvidence
 
 `ResearchJob` 是可恢复的持久化任务，保存输入、当前阶段、尝试次数、幂等键、关联 MCP job id 和结构化错误。它不把任务进度只留在 Agent 对话历史中。

@@ -5,16 +5,23 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from hypertrade.db import Database
+from hypertrade.research.strategy_cards import StrategyCardService
+
 PORTFOLIO_SCHEMA_VERSION = "portfolio_state.v1"
 
 
 class PortfolioScheduler:
     """Build portfolio-level recommendations without allocation mutation."""
 
+    def __init__(self, db: Database | None = None) -> None:
+        self.db = db
+
     def build(self, world_state: dict[str, Any]) -> dict[str, Any]:
         source_refs = _list_value(world_state.get("source_refs"))
         missing_evidence: list[str] = []
-        strategies = _strategy_rows(world_state, missing_evidence)
+        cards = StrategyCardService(self.db).list() if self.db is not None else []
+        strategies = _strategy_rows(world_state, missing_evidence, cards=cards)
         portfolio_state = _portfolio_state(
             world_state,
             strategies=strategies,
@@ -38,9 +45,7 @@ class PortfolioScheduler:
                 "recommendation_id": decision.get("recommendation_id", "portfolio_rec_observe"),
                 "score": decision.get("score", 0),
                 "policy_status": decision.get("policy_status", "allowed_read_only"),
-                "allocation_change_allowed": bool(
-                    decision.get("allocation_change_allowed", False)
-                ),
+                "allocation_change_allowed": bool(decision.get("allocation_change_allowed", False)),
                 "review_after": decision.get("review_after", "PT30M"),
                 "expected_follow_up_evidence": decision.get(
                     "expected_follow_up_evidence",
@@ -93,12 +98,17 @@ def _portfolio_state(
 def _strategy_rows(
     world_state: dict[str, Any],
     missing_evidence: list[str],
+    *,
+    cards: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    if cards:
+        for card in cards:
+            for flag in card.get("coverage_flags", []):
+                missing_evidence.append(f"strategy_card.{card['card_id']}.{flag}")
+        return cards
     strategy_state = _dict_value(world_state.get("strategy"))
     recent_items = [
-        item
-        for item in _list_value(strategy_state.get("recent_items"))
-        if isinstance(item, dict)
+        item for item in _list_value(strategy_state.get("recent_items")) if isinstance(item, dict)
     ]
     rows: list[dict[str, Any]] = []
     for item in recent_items:
@@ -139,8 +149,7 @@ def _recommendations(
             "increase_observation_frequency",
             score=76 if missing_count else 54,
             rationale=(
-                "Increase review cadence while cross-asset or strategy evidence "
-                "is incomplete."
+                "Increase review cadence while cross-asset or strategy evidence is incomplete."
             ),
             missing_count=missing_count,
         ),
@@ -167,6 +176,34 @@ def _recommendations(
             review_after="PT30M",
         ),
     ]
+    for strategy in _list_value(portfolio_state.get("strategies")):
+        if not isinstance(strategy, dict) or "card_id" not in strategy:
+            continue
+        paper_status = str(strategy.get("paper_status", "unknown"))
+        flags = _list_value(strategy.get("coverage_flags"))
+        if paper_status == "paper_observing" and not flags:
+            action = "observe"
+        elif paper_status == "paper_review_required":
+            action = "request_pause_review"
+        elif paper_status in {"paper_degraded", "paper_retired"}:
+            action = "retire_candidate_review"
+        else:
+            action = "run_targeted_research"
+        recommendations.append(
+            _recommendation(
+                action,
+                score=74 if action == "request_pause_review" else 66,
+                rationale=(
+                    f"StrategyCard {strategy['card_id']} requires {action} "
+                    "based on lifecycle evidence."
+                ),
+                missing_count=len(flags),
+                requires_confirmation=action in {"request_pause_review", "retire_candidate_review"},
+                policy_status="requires_human_confirmation"
+                if action != "observe"
+                else "allowed_read_only",
+            )
+        )
     if risk_regime in {"risk_off", "stress"} or warnings:
         recommendations.extend(
             [
@@ -174,8 +211,7 @@ def _recommendations(
                     "reduce_strategy_risk_budget_request",
                     score=52,
                     rationale=(
-                        "Request a defensive risk-budget review; do not execute "
-                        "allocation changes."
+                        "Request a defensive risk-budget review; do not execute allocation changes."
                     ),
                     missing_count=missing_count,
                     requires_confirmation=True,

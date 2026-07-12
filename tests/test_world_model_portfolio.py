@@ -5,7 +5,13 @@ from decimal import Decimal
 from fastapi.testclient import TestClient
 from hypertrade.agent.planner import _SYSTEM_PROMPT, TOOL_SCHEMAS, ToolCallRecord
 from hypertrade.config import Settings
-from hypertrade.db import Database, MemoryItem
+from hypertrade.db import (
+    Database,
+    MemoryItem,
+    PaperPromotion,
+    ResearchExperimentEvidence,
+    ResearchMandate,
+)
 from hypertrade.main import create_app
 from hypertrade.market.repository import MarketRepository
 from hypertrade.reporting.blocks import build_report_blocks_from_tool_calls, render_report_blocks
@@ -131,10 +137,72 @@ def test_portfolio_endpoint_and_report_blocks_explain_source_bound_recommendatio
 
 def test_planner_guides_portfolio_prompts_to_world_model() -> None:
     schema = next(
-        item
-        for item in TOOL_SCHEMAS
-        if item["function"]["name"] == "world_model_snapshot"
+        item for item in TOOL_SCHEMAS if item["function"]["name"] == "world_model_snapshot"
     )
     assert "portfolio" in schema["function"]["description"]
     assert "策略权重" in _SYSTEM_PROMPT
     assert "portfolio" in _SYSTEM_PROMPT
+
+
+def test_portfolio_uses_strategy_card_and_requests_review_without_writes() -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    _seed_market(db)
+    with db.session() as session:
+        mandate = ResearchMandate(
+            name="portfolio",
+            status="active",
+            market_type="SWAP",
+            symbols_json=["BTC"],
+            timeframes_json=["1H"],
+            strategy_categories_json=["TREND"],
+            budget_json={},
+            validation_json={},
+            paper_promotion_mode="manual_approval",
+            live_mode="disabled",
+            audit_json=[],
+        )
+        session.add(mandate)
+        session.flush()
+        evidence = ResearchExperimentEvidence(
+            job_id="rjob_portfolio",
+            mandate_id=mandate.id,
+            variant_id="base",
+            status="evidence_recorded",
+            strategy_key="btc",
+            bitpro_strategy_id="42",
+            result_refs_json={},
+            windows_json={},
+            parameters_json={},
+            metrics_json={},
+            gate_results_json={"oos": True},
+            rejection_reasons_json=[],
+            tool_calls_json=[],
+        )
+        session.add(evidence)
+        session.flush()
+        session.add(
+            PaperPromotion(
+                mandate_id=mandate.id,
+                job_id=evidence.job_id,
+                evidence_id=evidence.id,
+                strategy_key="btc",
+                bitpro_strategy_id="42",
+                status="paper_review_required",
+                request_reason="review",
+                approval_reason="approved",
+                approval_idempotency_key="portfolio-key",
+                approved_by="admin",
+                paper_refs_json={},
+                observation_json={"drift": {"data_gaps": [], "alerts": [{"code": "equity_drop"}]}},
+                transition_json=[],
+            )
+        )
+
+    portfolio = WorldModelService(db, settings=_settings()).snapshot()["portfolio"]
+
+    assert portfolio["portfolio_state"]["strategies"][0]["card_id"].startswith("scard_")
+    assert any(
+        row["recommendation_type"] == "request_pause_review" for row in portfolio["recommendations"]
+    )
+    assert all(row["allocation_change_allowed"] is False for row in portfolio["recommendations"])
