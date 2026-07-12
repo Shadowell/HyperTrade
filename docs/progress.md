@@ -17,7 +17,8 @@
   auto-pause, retire, or promote live. Agent-originated paper lifecycle writes
   are governance-blocked. Focused contract tests passed (`137 passed`);
   `./scripts/check.sh` passed (frontend lint/test/build, Ruff, Mypy, and full
-  pytest). Deployment verification is pending the implementation push.
+  pytest). Deployment run `29197766014` succeeded for SHA `7a29744`; external
+  health returned `{"status":"ok","service":"hypertrade-api"}`.
 - Last verified state: Sprint 82 BitPro backtest matrix and validation gates
   implemented locally on 2026-07-12. A bounded, resumable research worker
   preflights BitPro, rejects missing real-data coverage or code validation,
