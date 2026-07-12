@@ -12,7 +12,10 @@
   persists BitPro job/result references and deterministic gates, and records
   compatible strategy-library evidence. An `evidence_recorded` outcome does
   not configure/start paper or invoke live actions. Focused tests passed
-  (`151 passed`); full verification and deployment evidence follow this change.
+  (`151 passed`); `./scripts/check.sh` passed (frontend lint/test/build, Ruff,
+  Mypy, and `pytest` 328 passed). Deployment run `29197099342` succeeded for
+  SHA `1f32510`; production health returned
+  `{"status":"ok","service":"hypertrade-api"}`.
 - Last verified state: Sprint 81 research mandates and durable jobs implemented
   locally on 2026-07-12. The operator control plane persists versioned research
   mandates, schema-valid draft-only StrategySpecs, and idempotent job records
