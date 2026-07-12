@@ -413,8 +413,7 @@ def _slash_argument_candidates(
     matches = [
         candidate
         for candidate in candidates
-        if candidate.lower().startswith(normalized_rest)
-        and candidate.lower() != normalized_rest
+        if candidate.lower().startswith(normalized_rest) and candidate.lower() != normalized_rest
     ]
     if limit is None:
         return matches
@@ -955,11 +954,7 @@ class LocalAgentClient:
             selected_models=selected_models,
         )
         provider = next(
-            (
-                item
-                for item in providers
-                if item.get("name") == self.selected_provider
-            ),
+            (item for item in providers if item.get("name") == self.selected_provider),
             providers[0],
         )
         return {
@@ -1157,9 +1152,7 @@ def run_chat(
     output = output or sys.stdout
     client.login()
     render_welcome_banner(client=client, output=output)
-    history = configure_interactive_history(
-        enabled=input_fn is input and sys.stdin.isatty()
-    )
+    history = configure_interactive_history(enabled=input_fn is input and sys.stdin.isatty())
     while True:
         try:
             prompt = input_fn("hypertrade> ").strip()
@@ -2279,11 +2272,7 @@ def _prompt_provider_model(
     input_fn: Callable[[str], str],
     output: TextIO,
 ) -> str | None:
-    model_options = [
-        str(option)
-        for option in provider.get("model_options", [])
-        if str(option)
-    ]
+    model_options = [str(option) for option in provider.get("model_options", []) if str(option)]
     if len(model_options) <= 1:
         return model_options[0] if model_options else ""
     display_name = str(provider.get("display_name") or provider.get("name") or "Provider")
@@ -2411,9 +2400,7 @@ def render_connectors(payload: dict[str, Any], *, output: TextIO) -> None:
         health_payload = health if isinstance(health, dict) else {}
         tools = capability.get("tools", [])
         tool_payloads = (
-            [tool for tool in tools if isinstance(tool, dict)]
-            if isinstance(tools, list)
-            else []
+            [tool for tool in tools if isinstance(tool, dict)] if isinstance(tools, list) else []
         )
         scopes = capability.get("supported_scopes", [])
         scope_text = ",".join(str(scope) for scope in scopes) if isinstance(scopes, list) else "n/a"
@@ -3142,8 +3129,7 @@ def _rich_color_system() -> Literal["standard"] | None:
 
 def _strip_report_icons(markdown: str) -> str:
     lines = [
-        "".join(ch for ch in line if not _is_report_icon_char(ch))
-        for line in markdown.splitlines()
+        "".join(ch for ch in line if not _is_report_icon_char(ch)) for line in markdown.splitlines()
     ]
     normalized = "\n".join(_normalize_markdown_line_spacing(line) for line in lines)
     return _compact_markdown_report(_remove_non_core_report_sections(normalized))
@@ -3260,9 +3246,7 @@ def _render_rich_market_summary(report: dict[str, Any], *, console: Any) -> None
                     decliners_pct=heat.get("decliners_pct", "0.000000"),
                     average_change_pct=heat.get("average_change_pct", "0.000000"),
                 ),
-                (
-                    "最强/最弱: {top_gainer} / {top_loser}"
-                ).format(
+                ("最强/最弱: {top_gainer} / {top_loser}").format(
                     top_gainer=heat.get("top_gainer", "n/a"),
                     top_loser=heat.get("top_loser", "n/a"),
                 ),
@@ -3314,6 +3298,8 @@ def _render_rich_tool_report(
             _render_rich_bitpro_backtest_detail(payload, console=console)
         elif tool_name == "bitpro_paper_dashboard":
             _render_rich_bitpro_paper_dashboard(payload, console=console)
+        elif tool_name == "bitpro_paper_strategy_performance":
+            _render_rich_bitpro_paper_strategy_performance(payload, console=console)
         elif tool_name == "bitpro_paper_events":
             _render_rich_bitpro_paper_events(payload, console=console)
         elif tool_name == "bitpro_paper_equity_curve":
@@ -3428,9 +3414,7 @@ def _render_rich_bitpro_paper_dashboard(payload: dict[str, Any], *, console: Any
                 mode=system.get("mode", "n/a"),
                 uptime=system.get("uptime", "n/a"),
             ),
-            (
-                "绩效: equity={equity}, pnl={pnl}, sharpe={sharpe}, drawdown={drawdown}"
-            ).format(
+            ("绩效: equity={equity}, pnl={pnl}, sharpe={sharpe}, drawdown={drawdown}").format(
                 equity=_format_number(equity.get("current")),
                 pnl=_format_percent(performance.get("total_pnl_pct")),
                 sharpe=_format_number(performance.get("sharpe_ratio"), digits=4),
@@ -3479,9 +3463,7 @@ def _render_rich_bitpro_paper_events(payload: dict[str, Any], *, console: Any) -
     summary_text = "\n".join(
         [
             f"策略: {payload.get('strategy_id', 'all')}",
-            (
-                "事件: count={count}, sample={sample}, errors={errors}, latest={latest}"
-            ).format(
+            ("事件: count={count}, sample={sample}, errors={errors}, latest={latest}").format(
                 count=summary.get("count", len(events)),
                 sample=summary.get("sample_count", len(events)),
                 errors=summary.get("error_count", 0),
@@ -3572,16 +3554,12 @@ def _render_rich_bitpro_paper_monitor_snapshot(payload: dict[str, Any], *, conso
 
     summary_text = "\n".join(
         [
-            (
-                "快照: {snapshot}, strategy={strategy}, previous={previous}"
-            ).format(
+            ("快照: {snapshot}, strategy={strategy}, previous={previous}").format(
                 snapshot=payload.get("snapshot_id", "n/a"),
                 strategy=payload.get("strategy_id", "all"),
                 previous=payload.get("previous_snapshot_id") or "none",
             ),
-            (
-                "指标: equity={equity}, pnl={pnl}, drawdown={drawdown}, errors={errors}"
-            ).format(
+            ("指标: equity={equity}, pnl={pnl}, drawdown={drawdown}, errors={errors}").format(
                 equity=_format_number(metrics.get("latest_equity")),
                 pnl=_format_percent(metrics.get("total_pnl_pct")),
                 drawdown=_format_percent(metrics.get("max_drawdown_pct")),
@@ -3628,9 +3606,7 @@ def _render_rich_bitpro_backtest_results(payload: dict[str, Any], *, console: An
     metric = str(result_filter.get("metric", "total_return_pct"))
     min_return = result_filter.get("min_total_return_pct")
     filter_text = (
-        f"{metric} > {_format_percent(min_return)}"
-        if min_return is not None
-        else "未设置收益阈值"
+        f"{metric} > {_format_percent(min_return)}" if min_return is not None else "未设置收益阈值"
     )
     results = payload.get("results")
     results = results if isinstance(results, list) else []
@@ -3691,6 +3667,37 @@ def _render_rich_bitpro_backtest_results(payload: dict[str, Any], *, console: An
                 f"交易 {row.get('trade_count', 'n/a')}"
             ),
             _format_period(row.get("start_date"), row.get("end_date")),
+        )
+    console.print(table)
+
+
+def _render_rich_bitpro_paper_strategy_performance(
+    payload: dict[str, Any], *, console: Any
+) -> None:
+    from rich.table import Table
+
+    summary = payload.get("performance_summary")
+    summary = summary if isinstance(summary, dict) else {}
+    table = Table(
+        title=("模拟盘策略绩效 · {comparable}/{total} 可比 · {status}").format(
+            comparable=summary.get("comparable_count", 0),
+            total=summary.get("reported_total", 0),
+            status=summary.get("ranking_status", "partial"),
+        )
+    )
+    for column in ("排名", "策略", "收益", "回撤", "Sharpe"):
+        table.add_column(column)
+    strategies = payload.get("strategies")
+    strategies = strategies if isinstance(strategies, list) else []
+    for strategy in strategies:
+        if not isinstance(strategy, dict):
+            continue
+        table.add_row(
+            str(strategy.get("rank", "-")),
+            f"#{strategy.get('strategy_id', 'n/a')} {strategy.get('strategy_name', 'n/a')}",
+            _format_percent(strategy.get("return_pct")),
+            _format_percent(strategy.get("max_drawdown_pct")),
+            _format_number(strategy.get("sharpe_ratio")),
         )
     console.print(table)
 
@@ -3872,8 +3879,7 @@ def _prefer_final_world_model_report(run: dict[str, Any]) -> bool:
     if isinstance(report, dict):
         calls = report.get("tool_calls")
         if isinstance(calls, list) and any(
-            isinstance(call, dict) and call.get("tool") == "world_model_snapshot"
-            for call in calls
+            isinstance(call, dict) and call.get("tool") == "world_model_snapshot" for call in calls
         ):
             return True
     trace_events = run.get("trace_events")
@@ -3964,6 +3970,7 @@ def _is_noisy_paper_markdown(markdown: str) -> bool:
 
 _FINAL_REPORT_FIRST_TOOLS = {
     "bitpro_paper_dashboard",
+    "bitpro_paper_strategy_performance",
     "bitpro_paper_events",
     "bitpro_paper_equity_curve",
     "bitpro_paper_monitor_snapshot",
@@ -3988,6 +3995,34 @@ def _render_rich_compact_bitpro_paper_report(run: dict[str, Any], *, console: An
 def _compact_bitpro_paper_lines(run: dict[str, Any]) -> list[str]:
     payloads = _paper_tool_outputs_by_tool(run)
     lines: list[str] = []
+
+    matrix = payloads.get("bitpro_paper_strategy_performance")
+    if matrix:
+        summary = matrix.get("performance_summary")
+        summary = summary if isinstance(summary, dict) else {}
+        strategies = matrix.get("strategies")
+        strategies = strategies if isinstance(strategies, list) else []
+        lines.append(
+            "绩效排名: comparable={comparable}/{total}, status={status}".format(
+                comparable=summary.get("comparable_count", len(strategies)),
+                total=summary.get("reported_total", len(strategies)),
+                status=summary.get("ranking_status", "partial"),
+            )
+        )
+        for strategy in strategies[:5]:
+            if not isinstance(strategy, dict):
+                continue
+            lines.append(
+                "#{rank} strategy={strategy_id} {name}, return={return_pct}, "
+                "drawdown={drawdown}, sharpe={sharpe}".format(
+                    rank=strategy.get("rank", "-"),
+                    strategy_id=strategy.get("strategy_id", "n/a"),
+                    name=strategy.get("strategy_name", "n/a"),
+                    return_pct=_format_percent(strategy.get("return_pct")),
+                    drawdown=_format_percent(strategy.get("max_drawdown_pct")),
+                    sharpe=_format_number(strategy.get("sharpe_ratio")),
+                )
+            )
 
     dashboard = payloads.get("bitpro_paper_dashboard")
     if dashboard:
@@ -4188,6 +4223,7 @@ def _has_structured_market_tool_output(trace_events: list[Any]) -> bool:
         "bitpro_backtest_list_results",
         "bitpro_backtest_get_result",
         "bitpro_paper_dashboard",
+        "bitpro_paper_strategy_performance",
         "bitpro_paper_events",
         "bitpro_paper_equity_curve",
         "bitpro_paper_monitor_snapshot",
@@ -4225,12 +4261,15 @@ def _render_structured_tool_report(
             _render_tool_bitpro_backtest_detail_block(payload, output=output)
         elif tool_name == "bitpro_paper_dashboard":
             _render_tool_bitpro_paper_block(payload, output=output)
+        elif tool_name == "bitpro_paper_strategy_performance":
+            _render_tool_bitpro_paper_strategy_performance_block(payload, output=output)
         elif tool_name == "bitpro_paper_events":
             _render_tool_bitpro_paper_events_block(payload, output=output)
         elif tool_name == "bitpro_paper_equity_curve":
             _render_tool_bitpro_paper_equity_block(payload, output=output)
         elif tool_name == "bitpro_paper_monitor_snapshot":
             _render_tool_bitpro_paper_monitor_snapshot_block(payload, output=output)
+
 
 def _render_tool_ticker_block(payload: dict[str, Any], *, output: TextIO) -> None:
     print("", file=output)
@@ -4271,8 +4310,8 @@ def _render_tool_compare_block(payload: dict[str, Any], *, output: TextIO) -> No
                     return_pct=row.get("return_pct", "n/a"),
                     bias=row.get("trend_bias", "unknown"),
                 ),
-            file=output,
-        )
+                file=output,
+            )
 
 
 def _render_tool_bitpro_paper_block(payload: dict[str, Any], *, output: TextIO) -> None:
@@ -4359,6 +4398,39 @@ def _render_tool_bitpro_paper_block(payload: dict[str, Any], *, output: TextIO) 
                         ),
                         file=output,
                     )
+
+
+def _render_tool_bitpro_paper_strategy_performance_block(
+    payload: dict[str, Any], *, output: TextIO
+) -> None:
+    summary = payload.get("performance_summary")
+    summary = summary if isinstance(summary, dict) else {}
+    print("BitPro Paper Strategy Performance:", file=output)
+    print(
+        "- coverage={comparable}/{total}, ranking_status={status}".format(
+            comparable=summary.get("comparable_count", 0),
+            total=summary.get("reported_total", 0),
+            status=summary.get("ranking_status", "partial"),
+        ),
+        file=output,
+    )
+    strategies = payload.get("strategies")
+    strategies = strategies if isinstance(strategies, list) else []
+    for strategy in strategies[:10]:
+        if not isinstance(strategy, dict):
+            continue
+        print(
+            "- #{rank} strategy_id={strategy_id}, return={return_pct}, "
+            "drawdown={drawdown}, sharpe={sharpe}".format(
+                rank=strategy.get("rank", "-"),
+                strategy_id=strategy.get("strategy_id", "n/a"),
+                return_pct=_format_percent(strategy.get("return_pct")),
+                drawdown=_format_percent(strategy.get("max_drawdown_pct")),
+                sharpe=_format_number(strategy.get("sharpe_ratio")),
+            ),
+            file=output,
+        )
+    print("", file=output)
 
 
 def _render_tool_bitpro_paper_events_block(payload: dict[str, Any], *, output: TextIO) -> None:

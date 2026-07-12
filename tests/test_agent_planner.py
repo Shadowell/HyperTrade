@@ -28,9 +28,7 @@ def _static_executor(results: dict[str, Any]) -> Any:
 
 class TestAgentPlannerSingleToolThenFinalAnswer:
     def test_calls_tool_and_returns_final_message(self) -> None:
-        tool_call = ToolCallRequest(
-            id="call_1", name="market_summary", arguments={}
-        )
+        tool_call = ToolCallRequest(id="call_1", name="market_summary", arguments={})
         first_response = ChatResponse(content="", tool_calls=[tool_call])
         final_response = ChatResponse(
             content="# Market Summary\n\nResearch output only. Not investment advice.",
@@ -418,6 +416,7 @@ def test_planner_exposes_bitpro_read_tool_schemas() -> None:
         "bitpro_health",
         "bitpro_market_klines",
         "bitpro_paper_dashboard",
+        "bitpro_paper_strategy_performance",
         "bitpro_paper_events",
         "bitpro_paper_equity_curve",
         "bitpro_paper_monitor_snapshot",
@@ -478,6 +477,11 @@ def test_bitpro_paper_dashboard_schema_discourages_accidental_single_strategy_fi
 
 
 def test_bitpro_paper_evidence_tool_schemas_are_read_only() -> None:
+    performance_schema = next(
+        item
+        for item in TOOL_SCHEMAS
+        if item["function"]["name"] == "bitpro_paper_strategy_performance"
+    )
     events_schema = next(
         item for item in TOOL_SCHEMAS if item["function"]["name"] == "bitpro_paper_events"
     )
@@ -485,6 +489,8 @@ def test_bitpro_paper_evidence_tool_schemas_are_read_only() -> None:
         item for item in TOOL_SCHEMAS if item["function"]["name"] == "bitpro_paper_equity_curve"
     )
 
+    assert "Read-only" in performance_schema["function"]["description"]
+    assert "strategy id" in performance_schema["function"]["description"]
     assert "Read-only" in events_schema["function"]["description"]
     assert "event stream" in events_schema["function"]["description"]
     assert events_schema["function"]["parameters"]["properties"]["strategy_id"]["type"] == "integer"
@@ -494,16 +500,13 @@ def test_bitpro_paper_evidence_tool_schemas_are_read_only() -> None:
     assert "equity curve" in equity_schema["function"]["description"]
     assert equity_schema["function"]["parameters"]["properties"]["strategy_id"]["type"] == "integer"
     assert (
-        equity_schema["function"]["parameters"]["properties"]["sample_limit"]["type"]
-        == "integer"
+        equity_schema["function"]["parameters"]["properties"]["sample_limit"]["type"] == "integer"
     )
 
 
 def test_bitpro_paper_monitor_snapshot_schema_exposes_drift_capture() -> None:
     schema = next(
-        item
-        for item in TOOL_SCHEMAS
-        if item["function"]["name"] == "bitpro_paper_monitor_snapshot"
+        item for item in TOOL_SCHEMAS if item["function"]["name"] == "bitpro_paper_monitor_snapshot"
     )
 
     description = schema["function"]["description"]

@@ -78,9 +78,14 @@ its own Agent capabilities:
   redacted provider/model, Token, latency, tool, Memory, and trace evidence;
   `/run <run_id>` reopens a persisted local or remote Agent run.
 - Sprint 78 CLI market-answer quality: generic market prompts prefer
-  `market_summary`, known read-only global-market calls are not policy-denied,
-  interactive CLI output prioritizes the Agent conclusion, and WorldState audit
-  blocks remain opt-in.
+  `market_summary`, WorldState defaults to a compact conclusion, and the host
+  wrapper selects Rich output for interactive terminals. Known read-only
+  global-market calls are not policy-denied, interactive CLI output prioritizes
+  the Agent conclusion, and WorldState audit blocks remain opt-in.
+- Sprint 80 paper strategy performance matrix: simulated-strategy ranking uses
+  one bounded read-only tool, accepts only strategy-id-matched dashboard
+  evidence, ranks reported paper returns, and exposes complete/partial coverage
+  instead of inferring a winner from incomplete data.
 - Sprint 79 CLI unified report rendering: completed Agent answers take
   precedence over report-block/audit dumps in default output, while explicit
   tool/audit modes preserve the structured evidence. Simulated-strategy

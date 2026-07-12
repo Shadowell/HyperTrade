@@ -59,6 +59,15 @@ Operational data-access steps are documented in `docs/runbooks/bitpro-mcp-data-a
 
 The BitPro `/live/dashboard` response is treated as a current paper engine/dashboard view, not proof that only one strategy is running. When HyperTrade calls `bitpro_paper_dashboard` without a `strategy_id`, the adapter also reads `strategy_search(status=running)` with safe pagination and returns `paper_scope` plus `running_strategies`. Reports must distinguish the current dashboard strategy from the complete running strategy inventory exposed by BitPro.
 
+Paper-strategy comparisons use the composite read-only Agent tool
+`bitpro_paper_strategy_performance`. It fetches the running inventory, performs
+bounded strategy-scoped dashboard reads, and accepts a row only when the
+dashboard's returned strategy id matches the requested id and a paper return
+metric is present. Ranking coverage is explicit; identity mismatches, read
+failures, missing metrics, and truncated inventories cannot support a full-best
+claim. Historical backtest results are never substituted for current paper
+performance.
+
 Paper monitoring is deterministic and read-only. The adapter derives
 `monitor_summary` from the current dashboard metrics plus the running strategy
 inventory: equity, total PnL, Sharpe, drawdown, inventory coverage, alerts, data

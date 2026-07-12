@@ -228,6 +228,11 @@ class ToolRegistry:
                     "bitpro",
                 ),
                 ToolDefinition(
+                    "bitpro.paper_strategy_performance",
+                    "Read validated BitPro paper strategy performance ranking.",
+                    "bitpro",
+                ),
+                ToolDefinition(
                     "bitpro.paper_events",
                     "Read BitPro paper/simulation events and errors.",
                     "bitpro",
@@ -419,6 +424,7 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "bitpro_paper_resume": "bitpro.paper_resume",
     "bitpro_paper_stop": "bitpro.paper_stop",
     "bitpro_paper_dashboard": "bitpro.paper_dashboard",
+    "bitpro_paper_strategy_performance": "bitpro.paper_strategy_performance",
     "bitpro_paper_events": "bitpro.paper_events",
     "bitpro_paper_equity_curve": "bitpro.paper_equity_curve",
     "bitpro_paper_monitor_snapshot": "bitpro.paper_monitor_snapshot",
@@ -594,6 +600,9 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
         sample=1,
     ),
     "bitpro.paper_dashboard": _policy(source="bitpro_mcp", timeout="standard", sample=20),
+    "bitpro.paper_strategy_performance": _policy(
+        source="bitpro_mcp", timeout="long", sample=50, failure="return_unavailable"
+    ),
     "bitpro.paper_events": _policy(source="bitpro_mcp", timeout="standard", sample=50),
     "bitpro.paper_equity_curve": _policy(source="bitpro_mcp", timeout="standard", sample=50),
     "bitpro.paper_monitor_snapshot": _policy(

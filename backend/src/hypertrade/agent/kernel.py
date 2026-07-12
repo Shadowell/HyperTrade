@@ -434,10 +434,7 @@ class AgentKernel:
                 result = WorldModelService(self.db, settings=settings).snapshot()
 
                 # Format output for better readability
-                formatted_output = AgentOutputFormatter.format_tool_result(
-                    tool_name,
-                    result
-                )
+                formatted_output = AgentOutputFormatter.format_tool_result(tool_name, result)
                 logger.info(f"Formatted world_model_snapshot output:\n{formatted_output}")
 
             elif tool_name == "global_market_snapshot":
@@ -447,10 +444,7 @@ class AgentKernel:
                 result = snapshot.model_dump()
 
                 # Format output for better readability
-                formatted_output = AgentOutputFormatter.format_tool_result(
-                    tool_name,
-                    result
-                )
+                formatted_output = AgentOutputFormatter.format_tool_result(tool_name, result)
                 logger.info(f"Formatted global_market_snapshot output:\n{formatted_output}")
 
             elif tool_name == "rag_search":
@@ -544,6 +538,11 @@ class AgentKernel:
                 strategy_id = args.get("strategy_id")
                 result = self._bitpro_adapter().paper_dashboard(
                     strategy_id=int(strategy_id) if strategy_id is not None else None,
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_paper_strategy_performance":
+                result = self._bitpro_adapter().paper_strategy_performance(
+                    limit=int(args.get("limit", 20)),
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_paper_events":
@@ -1807,6 +1806,7 @@ class AgentKernel:
             bitpro_backtest_detail_lines.append("")
         paper_tool_names = {
             "bitpro_paper_dashboard",
+            "bitpro_paper_strategy_performance",
             "bitpro_paper_events",
             "bitpro_paper_equity_curve",
             "bitpro_paper_monitor_snapshot",
@@ -1816,6 +1816,47 @@ class AgentKernel:
             if summary:
                 bitpro_paper_lines.extend([f"- 结论: {summary}", ""])
         rendered_paper_dashboard = False
+        for record in tool_calls:
+            if getattr(record, "tool_name", "") != "bitpro_paper_strategy_performance":
+                continue
+            payload = getattr(record, "output_json", {})
+            if not isinstance(payload, dict) or payload.get("status") != "ok":
+                continue
+            strategies = payload.get("strategies")
+            strategies = strategies if isinstance(strategies, list) else []
+            unavailable = payload.get("unavailable_strategies")
+            unavailable = unavailable if isinstance(unavailable, list) else []
+            summary = payload.get("performance_summary")
+            summary = summary if isinstance(summary, dict) else {}
+            bitpro_paper_lines.append(
+                "- 绩效覆盖: comparable={comparable}/{total}, ranking={status}".format(
+                    comparable=summary.get("comparable_count", len(strategies)),
+                    total=summary.get("reported_total", len(strategies) + len(unavailable)),
+                    status=summary.get("ranking_status", "partial"),
+                )
+            )
+            for strategy in strategies[:5]:
+                if not isinstance(strategy, dict):
+                    continue
+                bitpro_paper_lines.append(
+                    "- {rank}. #{strategy_id} {name}: return={return_pct}%, "
+                    "drawdown={drawdown}%, sharpe={sharpe}".format(
+                        rank=strategy.get("rank", "-"),
+                        strategy_id=strategy.get("strategy_id", "n/a"),
+                        name=strategy.get("strategy_name", "n/a"),
+                        return_pct=strategy.get("return_pct", "n/a"),
+                        drawdown=strategy.get("max_drawdown_pct", "n/a"),
+                        sharpe=strategy.get("sharpe_ratio", "n/a"),
+                    )
+                )
+            if unavailable:
+                missing_ids = [
+                    str(item.get("strategy_id", "n/a"))
+                    for item in unavailable
+                    if isinstance(item, dict)
+                ]
+                bitpro_paper_lines.append("- 不可比策略: " + ", ".join(missing_ids[:12]))
+            bitpro_paper_lines.append("")
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "bitpro_paper_dashboard":
                 continue
@@ -2482,9 +2523,7 @@ def _planner_observability(
         if call.usage.reported:
             usage["reported_requests"] = int(usage["reported_requests"]) + 1
     usage["request_count"] = len(result.model_calls)
-    usage["unreported_requests"] = len(result.model_calls) - int(
-        usage["reported_requests"]
-    )
+    usage["unreported_requests"] = len(result.model_calls) - int(usage["reported_requests"])
     usage["reported"] = bool(usage["reported_requests"])
 
     tool_calls: list[dict[str, Any]] = []

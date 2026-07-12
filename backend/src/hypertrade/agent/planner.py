@@ -373,6 +373,28 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "bitpro_paper_strategy_performance",
+            "description": (
+                "Read and rank running BitPro paper/simulation strategy performance. "
+                "Read-only. Use this for best/highest-return paper strategy questions. "
+                "The tool rejects dashboard evidence whose returned strategy id does not "
+                "match the requested strategy and reports comparison coverage explicitly."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum running strategies to validate, default 20.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "bitpro_paper_events",
             "description": (
                 "Read BitPro paper/simulation event stream. Read-only. Use this "
@@ -914,7 +936,12 @@ Use bitpro_live_strategy_performance when the user asks about live/real-account
 strategy returns, 实盘收益最高, 实盘策略收益, 实盘盈利, live strategy PnL,
 highest/best live strategy, or return_pct ranking.
 Do not use market_summary for live strategy performance questions.
-Use bitpro_paper_dashboard without strategy_id when the user asks about all/全部/
+Use bitpro_paper_strategy_performance when the user asks which paper/simulated
+strategy has the best/highest return, asks for a paper strategy ranking, or asks
+to compare simulated strategy performance. Prefer this single validated matrix
+tool over multiple paper_dashboard or paper_equity_curve calls. A partial ranking
+is not proof of the best strategy across the full running inventory.
+Use bitpro_paper_dashboard without strategy_id when the user asks only about all/全部/
 哪些/几个 running paper or 模拟盘 strategies. Treat paper_scope.dashboard_scope=
 current_instance as only the current BitPro dashboard view; use
 running_strategies to list running strategies and never claim there is only one

@@ -880,6 +880,80 @@ def test_bitpro_paper_dashboard_explicit_strategy_keeps_filtered_scope() -> None
     ]
 
 
+def test_paper_strategy_performance_rejects_mismatched_dashboard_identity() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/strategies":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "items": [
+                            {"id": 105, "name": "SOL paper", "status": "running"},
+                            {"id": 293, "name": "ETH paper", "status": "running"},
+                        ],
+                        "total": 2,
+                    },
+                },
+            )
+        if request.url.path == "/api/v2/live/dashboard":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "system": {"strategy_id": 105, "strategy": "SOL paper", "state": "running"},
+                        "equity": {"current": 104.5},
+                        "performance": {
+                            "total_pnl_pct": 4.5,
+                            "max_drawdown_pct": 5.1,
+                            "sharpe_ratio": 1.2,
+                        },
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+
+    result = adapter.paper_strategy_performance()
+
+    assert result["performance_summary"] == {
+        "reported_total": 2,
+        "requested_count": 2,
+        "comparable_count": 1,
+        "unavailable_count": 1,
+        "coverage_complete": False,
+        "ranking_status": "partial",
+        "top_strategy_id": 105,
+        "top_strategy_name": "SOL paper",
+        "top_return_pct": "4.5",
+    }
+    assert result["strategies"][0]["rank"] == 1
+    assert result["unavailable_strategies"] == [
+        {
+            "strategy_id": 293,
+            "strategy_name": "ETH paper",
+            "reason": "dashboard_strategy_id_mismatch",
+            "returned_strategy_id": 105,
+        }
+    ]
+    assert [call["tool"] for call in result["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "strategy_search",
+        "paper_dashboard",
+        "paper_dashboard",
+    ]
+
+
 def test_bitpro_paper_events_reads_bounded_event_stream() -> None:
     seen: list[dict[str, Any]] = []
 
@@ -1274,9 +1348,7 @@ def test_bitpro_backtest_get_result_normalizes_artifacts() -> None:
 
     assert result["status"] == "ok"
     assert result["result"]["id"] == 196
-    assert result["result"]["strategy_name"] == (
-        "[合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U"
-    )
+    assert result["result"]["strategy_name"] == ("[合约][1H][CTA] ETH · Agent EMA ATR 回撤 · 100U")
     assert result["result"]["metrics"]["total_return_pct"] == "4.044128"
     assert result["artifact_summary"] == {
         "equity_curve": {"available": True, "count": 3, "sample_count": 2},

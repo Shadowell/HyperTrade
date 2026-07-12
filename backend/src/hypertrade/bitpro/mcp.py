@@ -471,18 +471,20 @@ class BitProToolAdapter:
     ) -> dict[str, Any]:
         self.last_tool_calls = []
         capabilities, health = self._preflight()
-        raw_job = _ensure_dict(self._call(
-            "backtest_start_job",
-            {
-                "strategy_id": int(strategy_id),
-                "start_date": start_date,
-                "end_date": end_date,
-                "initial_capital": float(initial_capital),
-                "exchange": exchange,
-                "symbol": _normalize_bitpro_spot_symbol(symbol) if symbol else None,
-                "timeframe": _normalize_bitpro_timeframe(timeframe) if timeframe else None,
-            },
-        ))
+        raw_job = _ensure_dict(
+            self._call(
+                "backtest_start_job",
+                {
+                    "strategy_id": int(strategy_id),
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "initial_capital": float(initial_capital),
+                    "exchange": exchange,
+                    "symbol": _normalize_bitpro_spot_symbol(symbol) if symbol else None,
+                    "timeframe": _normalize_bitpro_timeframe(timeframe) if timeframe else None,
+                },
+            )
+        )
         payload: dict[str, Any] = {
             "status": "ok",
             "contract_version": str(capabilities.get("contract_version", "")),
@@ -867,6 +869,86 @@ class BitProToolAdapter:
             "tool_calls": self.last_tool_calls,
         }
 
+    def paper_strategy_performance(self, *, limit: int = 20) -> dict[str, Any]:
+        """Build a paper-performance matrix from identity-validated dashboard reads."""
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        safe_limit = _bounded_int(limit, default=20, minimum=1, maximum=50)
+        raw, inventory = self._fetch_strategy_inventory(
+            status="running",
+            per_page=min(safe_limit, 50),
+            max_pages=5,
+        )
+        reported_total = _strategy_total(raw, default=len(inventory))
+        selected = inventory[:safe_limit]
+        comparable: list[dict[str, Any]] = []
+        unavailable: list[dict[str, Any]] = []
+        for strategy in selected:
+            strategy_id = strategy.get("id")
+            if strategy_id is None:
+                unavailable.append(
+                    _paper_performance_gap(strategy, reason="inventory_missing_strategy_id")
+                )
+                continue
+            try:
+                dashboard = self._call("paper_dashboard", {"strategy_id": int(strategy_id)})
+            except Exception as exc:
+                unavailable.append(
+                    _paper_performance_gap(
+                        strategy,
+                        reason="dashboard_read_failed",
+                        detail=str(exc)[:200],
+                    )
+                )
+                continue
+            row, reason = _paper_strategy_performance_row(strategy, dashboard)
+            if reason:
+                unavailable.append(
+                    _paper_performance_gap(strategy, reason=reason, dashboard=dashboard)
+                )
+                continue
+            comparable.append(row)
+
+        comparable.sort(
+            key=lambda row: _decimal_or_none(row.get("return_pct")) or Decimal("-Infinity"),
+            reverse=True,
+        )
+        for rank, row in enumerate(comparable, start=1):
+            row["rank"] = rank
+        selected_count = len(selected)
+        coverage_complete = (
+            reported_total == selected_count
+            and len(comparable) == selected_count
+            and not unavailable
+        )
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "mode": "read_only",
+            "rank_basis": "return_pct",
+            "strategies": comparable,
+            "unavailable_strategies": unavailable,
+            "performance_summary": _compact(
+                {
+                    "reported_total": reported_total,
+                    "requested_count": selected_count,
+                    "comparable_count": len(comparable),
+                    "unavailable_count": len(unavailable),
+                    "coverage_complete": coverage_complete,
+                    "ranking_status": "complete" if coverage_complete else "partial",
+                    "top_strategy_id": comparable[0].get("strategy_id") if comparable else None,
+                    "top_strategy_name": comparable[0].get("strategy_name") if comparable else None,
+                    "top_return_pct": comparable[0].get("return_pct") if comparable else None,
+                }
+            ),
+            "risk_boundary": (
+                "read-only BitPro paper evidence; dashboard rows are accepted only when "
+                "the returned strategy id matches the requested strategy id"
+            ),
+            "tool_calls": self.last_tool_calls,
+        }
+
     def _fetch_strategy_inventory(
         self,
         *,
@@ -1203,6 +1285,16 @@ def _strategy_item(row: dict[str, Any]) -> dict[str, Any]:
             "symbols": row.get("symbols"),
             "timeframe": row.get("timeframe"),
             "strategy_source": row.get("strategy_source"),
+            "initial_equity": _first_present(row.get("initial_equity"), row.get("initial_capital")),
+            "equity": _first_present(row.get("equity"), row.get("current_equity")),
+            "total_pnl": _first_present(row.get("total_pnl"), row.get("pnl")),
+            "return_pct": _first_present(
+                row.get("return_pct"), row.get("total_pnl_pct"), row.get("pnl_pct")
+            ),
+            "max_drawdown_pct": _first_present(
+                row.get("max_drawdown_pct"), row.get("max_drawdown")
+            ),
+            "sharpe_ratio": _first_present(row.get("sharpe_ratio"), row.get("sharpe")),
         }
     )
 
@@ -1647,6 +1739,113 @@ def _paper_dashboard_scope(
             "running_strategy_count": running_count,
             "running_strategy_total": running_total,
             "coverage_note": coverage_note,
+        }
+    )
+
+
+def _paper_strategy_performance_row(
+    strategy: dict[str, Any],
+    dashboard: Any,
+) -> tuple[dict[str, Any], str | None]:
+    dashboard_dict = _ensure_dict(dashboard)
+    system = dashboard_dict.get("system")
+    system = system if isinstance(system, dict) else {}
+    requested_id = strategy.get("id")
+    returned_id = _first_present(system.get("strategy_id"), system.get("strategyId"))
+    if returned_id is None:
+        return {}, "dashboard_missing_strategy_identity"
+    if str(returned_id) != str(requested_id):
+        return {}, "dashboard_strategy_id_mismatch"
+    equity = dashboard_dict.get("equity")
+    equity = equity if isinstance(equity, dict) else {}
+    performance = dashboard_dict.get("performance")
+    performance = performance if isinstance(performance, dict) else {}
+    return_pct = _first_present(
+        performance.get("total_pnl_pct"),
+        performance.get("total_return_pct"),
+        performance.get("return_pct"),
+        performance.get("pnl_pct"),
+        strategy.get("return_pct"),
+    )
+    if _decimal_or_none(return_pct) is None:
+        return {}, "paper_return_metric_unavailable"
+    symbols = strategy.get("symbols")
+    if isinstance(symbols, str):
+        symbols = [symbols]
+    return (
+        _compact(
+            {
+                "strategy_id": requested_id,
+                "strategy_name": _first_present(system.get("strategy"), strategy.get("name")),
+                "status": _first_present(system.get("state"), strategy.get("status")),
+                "mode": system.get("mode"),
+                "exchange": strategy.get("exchange"),
+                "symbols": symbols,
+                "timeframe": strategy.get("timeframe"),
+                "initial_equity": _decimal_text(
+                    _first_present(
+                        equity.get("initial"),
+                        equity.get("initial_equity"),
+                        strategy.get("initial_equity"),
+                    )
+                ),
+                "equity": _decimal_text(
+                    _first_present(
+                        equity.get("current"),
+                        equity.get("current_equity"),
+                        strategy.get("equity"),
+                    )
+                ),
+                "total_pnl": _decimal_text(
+                    _first_present(
+                        performance.get("total_pnl"),
+                        performance.get("pnl"),
+                        strategy.get("total_pnl"),
+                    )
+                ),
+                "return_pct": _decimal_text(return_pct),
+                "max_drawdown_pct": _decimal_text(
+                    _first_present(
+                        performance.get("max_drawdown_pct"),
+                        performance.get("max_drawdown"),
+                        strategy.get("max_drawdown_pct"),
+                    )
+                ),
+                "sharpe_ratio": _decimal_text(
+                    _first_present(
+                        performance.get("sharpe_ratio"),
+                        performance.get("sharpe"),
+                        strategy.get("sharpe_ratio"),
+                    )
+                ),
+                "uptime": system.get("uptime"),
+                "evidence_source": "paper_dashboard",
+                "evidence_strategy_id": returned_id,
+            }
+        ),
+        None,
+    )
+
+
+def _paper_performance_gap(
+    strategy: dict[str, Any],
+    *,
+    reason: str,
+    detail: str | None = None,
+    dashboard: Any = None,
+) -> dict[str, Any]:
+    dashboard_dict = dashboard if isinstance(dashboard, dict) else {}
+    system = dashboard_dict.get("system")
+    system = system if isinstance(system, dict) else {}
+    return _compact(
+        {
+            "strategy_id": strategy.get("id"),
+            "strategy_name": strategy.get("name"),
+            "reason": reason,
+            "returned_strategy_id": _first_present(
+                system.get("strategy_id"), system.get("strategyId")
+            ),
+            "detail": detail,
         }
     )
 
@@ -2115,9 +2314,7 @@ def _paper_equity_summary(
 ) -> dict[str, Any]:
     latest = rows[-1] if rows else {}
     drawdowns = [
-        value
-        for row in rows
-        if (value := _decimal_or_none(row.get("drawdown_pct"))) is not None
+        value for row in rows if (value := _decimal_or_none(row.get("drawdown_pct"))) is not None
     ]
     max_drawdown = max(drawdowns) if drawdowns else None
     return _compact(

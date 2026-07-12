@@ -12,6 +12,7 @@ def test_tool_registry_exposes_sprint_one_tools_and_live_gate():
         "bitpro.health",
         "bitpro.market_klines",
         "bitpro.paper_dashboard",
+        "bitpro.paper_strategy_performance",
         "bitpro.paper_events",
         "bitpro.paper_equity_curve",
         "bitpro.paper_monitor_snapshot",
@@ -51,6 +52,7 @@ def test_tool_registry_attaches_policy_metadata_to_every_tool():
     assert registry.get("market.summary").policy.approval == "none"
     assert registry.get("bitpro.paper_start").policy.scope == "paper_write"
     assert registry.get("bitpro.paper_start").policy.idempotency == "required"
+    assert registry.get("bitpro.paper_strategy_performance").policy.scope == "read"
     assert registry.get("bitpro.live_order_history").policy.scope == "live_diagnostic_read"
     assert registry.get("bitpro.live_order_history").policy.idempotency == "not_required"
     assert registry.get("bitpro.live_strategy_performance").policy.scope == "live_diagnostic_read"

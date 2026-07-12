@@ -5,6 +5,14 @@
 - Branch: `main`
 - Harness status: active
 - Architecture diagram: Updated to include World Model (Layer 5), Monitoring (Layer 7), renumbered layers, and full Mermaid+SVG coverage.
+- Last verified state: Sprint 80 paper-strategy performance matrix implemented
+  locally on 2026-07-12. A dedicated read-only Agent tool now inventories
+  running BitPro simulations, performs bounded strategy-scoped dashboard reads,
+  rejects returned strategy identities that do not match the request, and ranks
+  only rows with reported paper return metrics. Agent, plain CLI, Rich CLI, and
+  structured audit renderers expose comparison coverage and partial-ranking
+  status. Focused tests passed (`161 passed`) and `./scripts/check.sh` passed
+  (`312 passed`). Production deployment evidence is pending.
 - Last verified state: Sprint 79 unified CLI report rendering completed locally
   on 2026-07-10. Default plain and Rich output now prefers the completed Agent
   answer when report blocks exist, while `HYPERTRADE_REPORT_SOURCE=tools|audit`
@@ -46,8 +54,8 @@
 
 ## Active Contract
 
-- Sprint 79 CLI unified report rendering is complete and deployment-verified
-  under `docs/contracts/sprint-79-cli-unified-report-rendering.md`.
+- Sprint 80 paper strategy performance matrix is active under
+  `docs/contracts/sprint-80-paper-strategy-performance-matrix.md`.
 
 ## Current In-Progress Work
 
@@ -90,6 +98,15 @@
 
 ## Latest Completed Work
 
+- Implemented the Sprint 80 paper-strategy performance evidence path. The new
+  `bitpro_paper_strategy_performance` tool validates every dashboard response
+  against the requested strategy id, sorts only comparable rows by reported
+  `return_pct`, and returns explicit total/comparable/unavailable coverage.
+  Mismatched current-dashboard responses and missing return metrics remain
+  visible data gaps and cannot become ranking rows. Planner guidance now routes
+  simulated-strategy winner/comparison questions to this bounded tool instead
+  of repeated curves or historical backtests. Focused tests passed (`161
+  passed`) and full `./scripts/check.sh` passed (`312 passed`).
 - Implemented Sprint 79 CLI unified report rendering: default plain and Rich
   output now shows a completed Agent report before `report_blocks`, which stay
   available through `HYPERTRADE_REPORT_SOURCE=tools|audit`. Existing structured
