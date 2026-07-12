@@ -265,6 +265,44 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "research_mandate_read",
+            "description": (
+                "Read an operator-approved research mandate before drafting a "
+                "research StrategySpec."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mandate_id": {"type": "string", "description": "Research mandate id."}
+                },
+                "required": ["mandate_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "research_strategy_spec_draft",
+            "description": (
+                "Draft a schema-valid StrategySpec within an active research mandate. "
+                "This tool cannot queue jobs, run backtests, or write to BitPro."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mandate_id": {"type": "string", "description": "Active research mandate id."},
+                    "prompt": {
+                        "type": "string",
+                        "description": "Bounded research hypothesis or strategy question.",
+                    },
+                },
+                "required": ["mandate_id", "prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "strategy_draft",
             "description": "Create a strategy research record from a hypothesis or question.",
             "parameters": {
@@ -918,6 +956,10 @@ memory, not as unsourced model recall.
 Use strategy_experiment_plan after strategy_library_search when the user asks
 to continue, iterate, optimize, or plan a next strategy experiment from prior
 evidence. Keep variants bounded and source them to strategy-library evidence.
+Use research_mandate_read before research_strategy_spec_draft when the operator
+asks to inspect a named research mandate or draft a StrategySpec under one.
+Research StrategySpec drafts are schema-only proposals: they do not queue jobs,
+run backtests, change paper state, or call BitPro write tools.
 Use bitpro_capabilities and bitpro_health before BitPro-specific read tools.
 Do not infer BitPro live runtime status from bitpro_capabilities.live_trading_enabled;
 that flag is the HyperTrade MCP live write/order gate. Use bitpro_paper_dashboard

@@ -141,6 +141,19 @@ class ToolRegistry:
                     "Plan bounded strategy experiment variants from prior evidence.",
                     "strategy",
                 ),
+                ToolDefinition(
+                    "research.mandate_read",
+                    "Read an operator-approved research mandate and its immutable safety bounds.",
+                    "research",
+                ),
+                ToolDefinition(
+                    "research.strategy_spec_draft",
+                    (
+                        "Draft a schema-valid StrategySpec within an active research "
+                        "mandate; never queues work or writes to BitPro."
+                    ),
+                    "research",
+                ),
                 ToolDefinition("backtest.run", "Run Backtrader strategy backtests.", "backtest"),
                 ToolDefinition(
                     "bitpro.capabilities",
@@ -406,6 +419,8 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "strategy_draft": "strategy.draft",
     "strategy_library_search": "strategy.library_search",
     "strategy_experiment_plan": "strategy.experiment_plan",
+    "research_mandate_read": "research.mandate_read",
+    "research_strategy_spec_draft": "research.strategy_spec_draft",
     "backtest_run": "backtest.run",
     "bitpro_capabilities": "bitpro.capabilities",
     "bitpro_health": "bitpro.health",
@@ -523,6 +538,8 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
         timeout="standard",
         sample=3,
     ),
+    "research.mandate_read": _policy(source="hypertrade_db", timeout="quick", sample=1),
+    "research.strategy_spec_draft": _policy(source="hypertrade_db", timeout="quick", sample=1),
     "backtest.run": _policy(
         scope="research_write",
         source="hypertrade_db",

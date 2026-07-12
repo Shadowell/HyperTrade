@@ -43,6 +43,7 @@ from hypertrade.memory.service import MemoryService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagService
 from hypertrade.reporting.blocks import build_report_blocks_from_tool_calls
+from hypertrade.research.service import ResearchProgramService
 from hypertrade.risk.governance import GovernanceDecision, RiskGovernancePolicy
 from hypertrade.strategy.iteration import StrategyIterationService
 from hypertrade.strategy.library import StrategyLibraryService
@@ -511,6 +512,14 @@ class AgentKernel:
                     str(args.get("prompt", "")),
                     strategy_key=str(args.get("strategy_key", "momentum_breakout_v1")),
                     max_variants=int(args.get("max_variants", 3)),
+                )
+            elif tool_name == "research_mandate_read":
+                result = ResearchProgramService(self.db).get_mandate(
+                    str(args.get("mandate_id", ""))
+                )
+            elif tool_name == "research_strategy_spec_draft":
+                result = ResearchProgramService(self.db).draft_strategy_spec(
+                    str(args.get("mandate_id", "")), str(args.get("prompt", ""))
                 )
             elif tool_name == "strategy_draft":
                 research_prompt = str(args.get("prompt", ""))

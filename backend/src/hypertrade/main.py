@@ -53,6 +53,8 @@ from hypertrade.monitoring import MonitorService
 from hypertrade.paper.service import PaperTradingService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagHit, RagService
+from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
+from hypertrade.research.service import ResearchProgramService
 from hypertrade.strategy.experiment import StrategyExperimentService
 from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.sdk import Candle
@@ -150,6 +152,10 @@ class StrategyResearchPayload(BaseModel):
     prompt: str
 
 
+class ResearchJobCancelPayload(BaseModel):
+    reason: str = "operator_canceled"
+
+
 class BacktestPayload(BaseModel):
     research_id: str = ""
     strategy_key: str = "momentum_breakout_v1"
@@ -238,9 +244,7 @@ def create_app(
 
     def get_bitpro_adapter() -> BitProApiAdapter:
         if app.state.bitpro_adapter is None:
-            app.state.bitpro_adapter = BitProToolAdapter(
-                BitProMcpClient(settings=app_settings)
-            )
+            app.state.bitpro_adapter = BitProToolAdapter(BitProMcpClient(settings=app_settings))
         adapter: BitProApiAdapter = app.state.bitpro_adapter
         return adapter
 
@@ -453,9 +457,13 @@ def create_app(
 
     @app.get("/api/world-model/portfolio")
     def world_model_portfolio() -> dict[str, Any]:
-        portfolio = WorldModelService(database, settings=app_settings).snapshot().get(
-            "portfolio",
-            {},
+        portfolio = (
+            WorldModelService(database, settings=app_settings)
+            .snapshot()
+            .get(
+                "portfolio",
+                {},
+            )
         )
         return portfolio if isinstance(portfolio, dict) else {}
 
@@ -492,10 +500,13 @@ def create_app(
         payload: DefensiveActionPayload,
         _: AdminUser,
     ) -> dict[str, Any]:
-        world_state = payload.world_state or WorldModelService(
-            database,
-            settings=app_settings,
-        ).snapshot()
+        world_state = (
+            payload.world_state
+            or WorldModelService(
+                database,
+                settings=app_settings,
+            ).snapshot()
+        )
         return DefensiveActionEngine(database, settings=app_settings).execute(
             action_id=payload.action_id,
             idempotency_key=payload.idempotency_key,
@@ -720,6 +731,85 @@ def create_app(
     @app.get("/api/strategy/research")
     def list_strategy_research() -> dict[str, list[dict[str, Any]]]:
         return {"items": StrategyResearchService(database).list_recent()}
+
+    @app.post("/api/research/mandates")
+    def create_research_mandate(payload: ResearchMandateCreate, _: AdminUser) -> dict[str, Any]:
+        return ResearchProgramService(database).create_mandate(payload)
+
+    @app.get("/api/research/mandates")
+    def list_research_mandates(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+        return {"items": ResearchProgramService(database).list_mandates()}
+
+    @app.get("/api/research/mandates/{mandate_id}")
+    def get_research_mandate(mandate_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return ResearchProgramService(database).get_mandate(mandate_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/research/mandates/{mandate_id}/pause")
+    def pause_research_mandate(mandate_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return ResearchProgramService(database).pause_mandate(mandate_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/research/mandates/{mandate_id}/resume")
+    def resume_research_mandate(mandate_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return ResearchProgramService(database).resume_mandate(mandate_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/research/mandates/{mandate_id}/strategy-specs/draft")
+    def draft_research_strategy_spec(
+        mandate_id: str, payload: StrategyResearchPayload, _: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return ResearchProgramService(database).draft_strategy_spec(mandate_id, payload.prompt)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/research/mandates/{mandate_id}/jobs")
+    def queue_research_job(
+        mandate_id: str, payload: ResearchJobCreate, _: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return ResearchProgramService(database).queue_job(mandate_id, payload)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/research/jobs")
+    def list_research_jobs(
+        _: AdminUser, mandate_id: str = "", status: str = ""
+    ) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "items": ResearchProgramService(database).list_jobs(
+                mandate_id=mandate_id, status=status
+            )
+        }
+
+    @app.get("/api/research/jobs/{job_id}")
+    def get_research_job(job_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return ResearchProgramService(database).get_job(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/research/jobs/{job_id}/cancel")
+    def cancel_research_job(
+        job_id: str, payload: ResearchJobCancelPayload, _: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return ResearchProgramService(database).cancel_job(job_id, reason=payload.reason)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/api/strategy/experiments")
     def create_strategy_experiment(

@@ -318,6 +318,45 @@ class StrategyExperiment(Base, TimestampMixin):
     report_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class ResearchMandate(Base, TimestampMixin):
+    """Operator-owned policy boundary for one autonomous research program."""
+
+    __tablename__ = "research_mandates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("rman"))
+    name: Mapped[str] = mapped_column(String(160), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    market_type: Mapped[str] = mapped_column(String(32), default="SWAP", index=True)
+    symbols_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    timeframes_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    strategy_categories_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    budget_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    validation_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    paper_promotion_mode: Mapped[str] = mapped_column(
+        String(32), default="manual_approval", index=True
+    )
+    live_mode: Mapped[str] = mapped_column(String(32), default="disabled", index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    audit_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+
+
+class ResearchJob(Base, TimestampMixin):
+    """Durable research-work record; later sprints add BitPro execution stages."""
+
+    __tablename__ = "research_jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("rjob"))
+    mandate_id: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    prompt: Mapped[str] = mapped_column(Text)
+    strategy_spec_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    source_run_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    transition_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+
+
 class Database:
     def __init__(self, url: str, *, echo: bool = False) -> None:
         connect_args: dict[str, Any] = {}

@@ -107,6 +107,11 @@ BitPro business logic to HyperTrade.
   one bounded read-only tool, accepts only strategy-id-matched dashboard
   evidence, ranks reported paper returns, and exposes complete/partial coverage
   instead of inferring a winner from incomplete data.
+- Sprint 81 research control plane: operator-authenticated mandates persist
+  scope, budgets, validation windows, manual paper promotion, and disabled live
+  mode. The Agent can read a mandate and generate only a schema-valid draft;
+  durable idempotent jobs have auditable transitions but no scheduler, BitPro
+  write, paper action, or live action.
 - Sprint 79 CLI unified report rendering: completed Agent answers take
   precedence over report-block/audit dumps in default output, while explicit
   tool/audit modes preserve the structured evidence. Simulated-strategy

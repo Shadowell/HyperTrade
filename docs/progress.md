@@ -5,6 +5,14 @@
 - Branch: `main`
 - Harness status: active
 - Architecture diagram: Updated to include World Model (Layer 5), Monitoring (Layer 7), renumbered layers, and full Mermaid+SVG coverage.
+- Last verified state: Sprint 81 research mandates and durable jobs implemented
+  locally on 2026-07-12. The operator control plane persists versioned research
+  mandates, schema-valid draft-only StrategySpecs, and idempotent job records
+  with audit/transition traces. Admin API and local/remote CLI operations can
+  create, list, pause, resume, draft, queue, and cancel without invoking any
+  BitPro write tool; paper remains manual approval and live remains disabled.
+  Focused tests passed (`124 passed`). Full verification and production deploy
+  evidence are recorded with the implementation commit.
 - Last verified state: Sprint 80 paper-strategy performance matrix implemented
   locally on 2026-07-12. A dedicated read-only Agent tool now inventories
   running BitPro simulations, performs bounded strategy-scoped dashboard reads,
@@ -56,8 +64,8 @@
 
 ## Active Contract
 
-- Sprint 80 paper strategy performance matrix is active under
-  `docs/contracts/sprint-80-paper-strategy-performance-matrix.md`.
+- Sprint 81 research mandates and durable jobs is active under
+  `docs/contracts/sprint-81-research-mandates-and-jobs.md`.
 
 ## Approved Follow-On Design
 
@@ -117,6 +125,14 @@
 
 ## Latest Completed Work
 
+- Implemented Sprint 81 research mandates and durable jobs. `ResearchMandate`
+  persists allowed symbols, timeframes, strategy categories, research budgets,
+  chronological validation windows, and immutable `manual_approval`/`disabled`
+  promotion boundaries. `ResearchJob` enforces an idempotency key and exposes a
+  trace-backed lifecycle (`queued`, `planning`, terminal states); it has no
+  worker, scheduler, backtest, paper, or BitPro mutation path. Admin API,
+  `/research-program` CLI, and Agent read/draft tools keep the same bounded
+  draft-only contract.
 - Implemented the Sprint 80 paper-strategy performance evidence path. The new
   `bitpro_paper_strategy_performance` tool validates every dashboard response
   against the requested strategy id, sorts only comparable rows by reported

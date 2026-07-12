@@ -36,6 +36,8 @@ from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.memory.service import MemoryService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.reporting.blocks import ReportBlock, render_report_blocks
+from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
+from hypertrade.research.service import ResearchProgramService
 from hypertrade.strategy.experiment import StrategyExperimentService
 from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.service import StrategyResearchService
@@ -86,6 +88,24 @@ class AgentClient(Protocol):
     def create_strategy_experiment(self, prompt: str) -> dict[str, Any]: ...
 
     def create_strategy_iteration(self, prompt: str) -> dict[str, Any]: ...
+
+    def list_research_mandates(self) -> list[dict[str, Any]]: ...
+
+    def create_research_mandate(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+    def pause_research_mandate(self, mandate_id: str) -> dict[str, Any]: ...
+
+    def resume_research_mandate(self, mandate_id: str) -> dict[str, Any]: ...
+
+    def draft_research_strategy_spec(self, mandate_id: str, prompt: str) -> dict[str, Any]: ...
+
+    def list_research_jobs(self, mandate_id: str = "") -> list[dict[str, Any]]: ...
+
+    def queue_research_job(self, mandate_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+    def cancel_research_job(
+        self, job_id: str, reason: str = "operator_canceled"
+    ) -> dict[str, Any]: ...
 
     def run_backtest(
         self,
@@ -196,6 +216,20 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("/live reject loi_* [--reason text]", "Reject a pending order intent."),
     ("/live execute loi_*", "Execute an approved Testnet intent through the configured adapter."),
     ("/research <prompt>", "Create strategy research from a prompt."),
+    ("/research-program list", "List operator-controlled research mandates."),
+    (
+        "/research-program create '<json>'",
+        "Create a manual-approval, live-disabled research mandate.",
+    ),
+    (
+        "/research-program draft <rman_id> <prompt>",
+        "Produce a bounded StrategySpec draft only.",
+    ),
+    ("/research-program jobs [rman_id]", "List durable research jobs."),
+    (
+        "/research-program queue <rman_id> <idempotency_key> <prompt>",
+        "Queue validated research work; no execution occurs in Sprint 81.",
+    ),
     ("/experiment <prompt>", "Run research, backtest, critique, and revision workflow."),
     ("/backtest", "Run a backtest from the latest research record."),
     ("/backtest list", "List recent backtests."),
@@ -212,6 +246,7 @@ SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
     "/memory": ("search", "disable"),
     "/monitor": ("run",),
     "/strategy": ("library",),
+    "/research-program": ("list", "create", "pause", "resume", "draft", "jobs", "queue", "cancel"),
     "/backtest": ("list", "latest", "--live", "--source bitpro_mcp"),
     "/paper": ("status", "pause", "resume", "close", "reset"),
     "/live": ("intents", "intent", "approve", "reject", "execute"),
@@ -591,6 +626,38 @@ class AgentApiClient:
     def create_strategy_iteration(self, prompt: str) -> dict[str, Any]:
         return self._post_object("/api/strategy/experiments/iterate", {"prompt": prompt})
 
+    def list_research_mandates(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/research/mandates", "items")
+
+    def create_research_mandate(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._post_object("/api/research/mandates", payload)
+
+    def pause_research_mandate(self, mandate_id: str) -> dict[str, Any]:
+        return self._post_object(f"/api/research/mandates/{quote(mandate_id, safe='')}/pause", {})
+
+    def resume_research_mandate(self, mandate_id: str) -> dict[str, Any]:
+        return self._post_object(f"/api/research/mandates/{quote(mandate_id, safe='')}/resume", {})
+
+    def draft_research_strategy_spec(self, mandate_id: str, prompt: str) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/research/mandates/{quote(mandate_id, safe='')}/strategy-specs/draft",
+            {"prompt": prompt},
+        )
+
+    def list_research_jobs(self, mandate_id: str = "") -> list[dict[str, Any]]:
+        suffix = f"?mandate_id={quote(mandate_id)}" if mandate_id else ""
+        return self._get_list(f"/api/research/jobs{suffix}", "items")
+
+    def queue_research_job(self, mandate_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/research/mandates/{quote(mandate_id, safe='')}/jobs", payload
+        )
+
+    def cancel_research_job(self, job_id: str, reason: str = "operator_canceled") -> dict[str, Any]:
+        return self._post_object(
+            f"/api/research/jobs/{quote(job_id, safe='')}/cancel", {"reason": reason}
+        )
+
     def run_backtest(
         self,
         *,
@@ -912,6 +979,34 @@ class LocalAgentClient:
 
     def create_strategy_iteration(self, prompt: str) -> dict[str, Any]:
         return StrategyExperimentService(self.db).create_iteration(prompt)
+
+    def list_research_mandates(self) -> list[dict[str, Any]]:
+        return ResearchProgramService(self.db).list_mandates()
+
+    def create_research_mandate(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return ResearchProgramService(self.db).create_mandate(
+            ResearchMandateCreate.model_validate(payload)
+        )
+
+    def pause_research_mandate(self, mandate_id: str) -> dict[str, Any]:
+        return ResearchProgramService(self.db).pause_mandate(mandate_id)
+
+    def resume_research_mandate(self, mandate_id: str) -> dict[str, Any]:
+        return ResearchProgramService(self.db).resume_mandate(mandate_id)
+
+    def draft_research_strategy_spec(self, mandate_id: str, prompt: str) -> dict[str, Any]:
+        return ResearchProgramService(self.db).draft_strategy_spec(mandate_id, prompt)
+
+    def list_research_jobs(self, mandate_id: str = "") -> list[dict[str, Any]]:
+        return ResearchProgramService(self.db).list_jobs(mandate_id=mandate_id)
+
+    def queue_research_job(self, mandate_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return ResearchProgramService(self.db).queue_job(
+            mandate_id, ResearchJobCreate.model_validate(payload)
+        )
+
+    def cancel_research_job(self, job_id: str, reason: str = "operator_canceled") -> dict[str, Any]:
+        return ResearchProgramService(self.db).cancel_job(job_id, reason=reason)
 
     def run_backtest(
         self,
@@ -1358,6 +1453,8 @@ def handle_slash_command(
         handle_backtest_command(command, client=client, output=output)
     elif name in {"/research", "/sr"}:
         handle_research_command(command, client=client, output=output)
+    elif name in {"/research-program", "/rp"}:
+        handle_research_program_command(command, client=client, output=output)
     elif name in {"/experiment", "/exp"}:
         handle_experiment_command(command, client=client, output=output)
     elif name in {"/price", "/ticker"}:
@@ -1543,6 +1640,96 @@ def _selectable_slash_command(command: str) -> str:
             break
         selected.append(part)
     return " ".join(selected) if selected else parts[0]
+
+
+def handle_research_program_command(command: str, *, client: AgentClient, output: TextIO) -> None:
+    """Operate the Sprint 81 control plane; it never starts BitPro work."""
+    parts = shlex.split(command)
+    subcommand = parts[1].lower() if len(parts) > 1 else "list"
+    try:
+        if subcommand in {"list", "ls"}:
+            print(
+                json.dumps(client.list_research_mandates(), ensure_ascii=False, indent=2),
+                file=output,
+            )
+            return
+        if subcommand == "create":
+            if len(parts) != 3:
+                raise ValueError("Usage: /research-program create '<json>'")
+            print(
+                json.dumps(
+                    client.create_research_mandate(json.loads(parts[2])),
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                file=output,
+            )
+            return
+        if subcommand in {"pause", "resume"}:
+            if len(parts) != 3:
+                raise ValueError(f"Usage: /research-program {subcommand} <rman_id>")
+            action = (
+                client.pause_research_mandate
+                if subcommand == "pause"
+                else client.resume_research_mandate
+            )
+            print(json.dumps(action(parts[2]), ensure_ascii=False, indent=2), file=output)
+            return
+        if subcommand == "draft":
+            if len(parts) < 4:
+                raise ValueError("Usage: /research-program draft <rman_id> <prompt>")
+            print(
+                json.dumps(
+                    client.draft_research_strategy_spec(parts[2], " ".join(parts[3:])),
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                file=output,
+            )
+            return
+        if subcommand in {"jobs", "job"}:
+            mandate_id = parts[2] if len(parts) == 3 else ""
+            if len(parts) > 3:
+                raise ValueError("Usage: /research-program jobs [rman_id]")
+            print(
+                json.dumps(client.list_research_jobs(mandate_id), ensure_ascii=False, indent=2),
+                file=output,
+            )
+            return
+        if subcommand == "queue":
+            if len(parts) < 5:
+                raise ValueError(
+                    "Usage: /research-program queue <rman_id> <idempotency_key> <prompt>"
+                )
+            payload = {"idempotency_key": parts[3], "prompt": " ".join(parts[4:])}
+            print(
+                json.dumps(
+                    client.queue_research_job(parts[2], payload), ensure_ascii=False, indent=2
+                ),
+                file=output,
+            )
+            return
+        if subcommand == "cancel":
+            if len(parts) < 3:
+                raise ValueError("Usage: /research-program cancel <rjob_id> [reason]")
+            print(
+                json.dumps(
+                    client.cancel_research_job(
+                        parts[2], " ".join(parts[3:]) or "operator_canceled"
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                file=output,
+            )
+            return
+        raise ValueError(
+            "Usage: /research-program list|create|pause|resume|draft|jobs|queue|cancel"
+        )
+    except (ValueError, KeyError, json.JSONDecodeError) as exc:
+        print(str(exc), file=output)
+    except Exception as exc:  # noqa: BLE001 - print CLI-safe API/service errors
+        print(f"Research program command failed: {exc}", file=output)
 
 
 def handle_research_command(command: str, *, client: AgentClient, output: TextIO) -> None:
