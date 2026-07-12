@@ -1338,6 +1338,7 @@ class AgentKernel:
         bitpro_backtest_lines: list[str] = []
         bitpro_backtest_detail_lines: list[str] = []
         bitpro_paper_lines: list[str] = []
+        paper_performance_lines: list[str] = []
         bitpro_live_order_lines: list[str] = []
         bitpro_live_strategy_lines: list[str] = []
         bitpro_lifecycle_lines: list[str] = []
@@ -1811,7 +1812,13 @@ class AgentKernel:
             "bitpro_paper_equity_curve",
             "bitpro_paper_monitor_snapshot",
         }
-        if any(str(getattr(record, "tool_name", "")) in paper_tool_names for record in tool_calls):
+        has_paper_performance_matrix = any(
+            str(getattr(record, "tool_name", "")) == "bitpro_paper_strategy_performance"
+            for record in tool_calls
+        )
+        if not has_paper_performance_matrix and any(
+            str(getattr(record, "tool_name", "")) in paper_tool_names for record in tool_calls
+        ):
             summary = _paper_monitor_conclusion(final_message, tool_calls)
             if summary:
                 bitpro_paper_lines.extend([f"- 结论: {summary}", ""])
@@ -1828,19 +1835,49 @@ class AgentKernel:
             unavailable = unavailable if isinstance(unavailable, list) else []
             summary = payload.get("performance_summary")
             summary = summary if isinstance(summary, dict) else {}
-            bitpro_paper_lines.append(
-                "- 绩效覆盖: comparable={comparable}/{total}, ranking={status}".format(
-                    comparable=summary.get("comparable_count", len(strategies)),
-                    total=summary.get("reported_total", len(strategies) + len(unavailable)),
-                    status=summary.get("ranking_status", "partial"),
+            comparable_count = summary.get("comparable_count", len(strategies))
+            reported_total = summary.get("reported_total", len(strategies) + len(unavailable))
+            ranking_status = summary.get("ranking_status", "partial")
+            top = strategies[0] if strategies and isinstance(strategies[0], dict) else {}
+            if ranking_status == "complete" and top:
+                conclusion = (
+                    "已完成全部 {total} 个运行策略的同口径比较，#{strategy_id} "
+                    "{name} 以 {return_pct}% 暂列第一。"
+                ).format(
+                    total=reported_total,
+                    strategy_id=top.get("strategy_id", "n/a"),
+                    name=top.get("strategy_name", "n/a"),
+                    return_pct=top.get("return_pct", "n/a"),
                 )
+            elif top:
+                conclusion = (
+                    "目前仅 {comparable}/{total} 个运行策略具备身份匹配的模拟盘收益证据；"
+                    "#{strategy_id} 在可比样本中暂列第一，但不能断言它是全量最优。"
+                ).format(
+                    comparable=comparable_count,
+                    total=reported_total,
+                    strategy_id=top.get("strategy_id", "n/a"),
+                )
+            else:
+                conclusion = "当前没有策略具备身份匹配且含收益指标的模拟盘证据，无法生成排名。"
+            paper_performance_lines.extend(
+                [
+                    "## 结论",
+                    "",
+                    conclusion,
+                    "",
+                    "## 策略比较",
+                    "",
+                    "| 排名 | 策略 | 收益率 | 最大回撤 | Sharpe |",
+                    "|---:|---|---:|---:|---:|",
+                ]
             )
-            for strategy in strategies[:5]:
+            for strategy in strategies[:10]:
                 if not isinstance(strategy, dict):
                     continue
-                bitpro_paper_lines.append(
-                    "- {rank}. #{strategy_id} {name}: return={return_pct}%, "
-                    "drawdown={drawdown}%, sharpe={sharpe}".format(
+                paper_performance_lines.append(
+                    "| {rank} | #{strategy_id} {name} | {return_pct}% | "
+                    "{drawdown}% | {sharpe} |".format(
                         rank=strategy.get("rank", "-"),
                         strategy_id=strategy.get("strategy_id", "n/a"),
                         name=strategy.get("strategy_name", "n/a"),
@@ -1849,16 +1886,45 @@ class AgentKernel:
                         sharpe=strategy.get("sharpe_ratio", "n/a"),
                     )
                 )
+            if not strategies:
+                paper_performance_lines.append("| - | 暂无可比策略 | - | - | - |")
+            paper_performance_lines.extend(
+                [
+                    "",
+                    "## 风险与数据缺口",
+                    "",
+                    f"- 证据覆盖：{comparable_count}/{reported_total}，"
+                    f"排名状态：{ranking_status}。",
+                ]
+            )
             if unavailable:
                 missing_ids = [
                     str(item.get("strategy_id", "n/a"))
                     for item in unavailable
                     if isinstance(item, dict)
                 ]
-                bitpro_paper_lines.append("- 不可比策略: " + ", ".join(missing_ids[:12]))
-            bitpro_paper_lines.append("")
+                paper_performance_lines.append(
+                    "- 暂不可比策略：" + "、".join(missing_ids[:12]) + "。"
+                )
+            paper_performance_lines.extend(
+                [
+                    "- 仅采用 requested/returned strategy_id 一致的当前模拟盘证据；"
+                    "回测结果不参与本排名。",
+                    "",
+                    "## 下一步",
+                    "",
+                    (
+                        "- 补齐不可比策略的独立 dashboard/绩效接口后重新运行全量排名。"
+                        if ranking_status != "complete"
+                        else "- 继续按相同口径定期复查收益、回撤和 Sharpe 的变化。"
+                    ),
+                    "",
+                ]
+            )
         for record in tool_calls:
             if getattr(record, "tool_name", "") != "bitpro_paper_dashboard":
+                continue
+            if has_paper_performance_matrix:
                 continue
             if paper_strategy_comparison and rendered_paper_dashboard:
                 continue
@@ -2280,6 +2346,8 @@ class AgentKernel:
             sections.extend(["## BitPro 回测详情", "", *bitpro_backtest_detail_lines])
         if bitpro_paper_lines:
             sections.extend(["## BitPro 模拟盘状态", "", *bitpro_paper_lines])
+        if paper_performance_lines:
+            sections.extend(paper_performance_lines)
         if bitpro_live_order_lines:
             sections.extend(["## BitPro 实盘订单", "", *bitpro_live_order_lines])
         if bitpro_live_strategy_lines:
@@ -2290,6 +2358,7 @@ class AgentKernel:
             bitpro_backtest_lines
             or bitpro_backtest_detail_lines
             or bitpro_paper_lines
+            or paper_performance_lines
             or bitpro_live_order_lines
             or bitpro_live_strategy_lines
         )
@@ -2313,6 +2382,7 @@ class AgentKernel:
             bitpro_backtest_lines
             or bitpro_backtest_detail_lines
             or bitpro_paper_lines
+            or paper_performance_lines
             or bitpro_live_order_lines
             or world_model_lines
         ):
