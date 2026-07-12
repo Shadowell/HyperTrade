@@ -59,6 +59,23 @@
 - Sprint 80 paper strategy performance matrix is active under
   `docs/contracts/sprint-80-paper-strategy-performance-matrix.md`.
 
+## Approved Follow-On Design
+
+- Added the approved planning design for an autonomous, BitPro-integrated
+  strategy research institution in
+  `docs/architecture/23-autonomous-strategy-research-institution.md`.
+  The design keeps BitPro as the sole data/backtest/paper platform and assigns
+  HyperTrade the research mandate, durable orchestration, validation evidence,
+  approval, monitoring, and read-only portfolio-review responsibilities.
+- Added four dependency-ordered implementation contracts:
+  - Sprint 81: research mandates and durable jobs;
+  - Sprint 82: BitPro backtest matrix and validation gates;
+  - Sprint 83: human-approved paper promotion and observation;
+  - Sprint 84: regime-aware strategy portfolio review.
+- This is an architecture and planning change only. No research scheduler,
+  BitPro mutation, automatic paper action, or live-trading capability was
+  implemented or enabled by this documentation change.
+
 ## Current In-Progress Work
 
 - Production DeepSeek configuration is healthy after server-side credential

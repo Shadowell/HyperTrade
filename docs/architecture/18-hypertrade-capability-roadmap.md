@@ -221,3 +221,21 @@ Do not mark a sprint complete if:
 - missing data is silently omitted from conclusions
 - a frontend view hides the source ids needed for audit
 
+## Post-Sprint-80 Research Institution Sequence
+
+The capability roadmap above established the reusable Agent, evidence,
+governance, monitoring, connector, and WorldState foundations. The next
+sequence applies those foundations to a durable BitPro strategy-research
+institution. The governing design is
+`docs/architecture/23-autonomous-strategy-research-institution.md`.
+
+| Sprint | Contract | Outcome | Depends On |
+| --- | --- | --- | --- |
+| 81 | `sprint-81-research-mandates-and-jobs.md` | Operator research mandates and durable job state | Agent policy, database, Trace |
+| 82 | `sprint-82-bitpro-backtest-matrix-and-gates.md` | Bounded BitPro research execution and validation evidence | Sprint 81, BitPro MCP |
+| 83 | `sprint-83-paper-promotion-and-observation.md` | Human-approved paper promotion and lifecycle evidence | Sprint 82, Paper Monitor |
+| 84 | `sprint-84-regime-aware-strategy-portfolio-review.md` | StrategyCard-aware WorldState portfolio review | Sprint 83, Sprints 71–74 |
+
+Sprints 81–84 remain research/paper-only. They must preserve the existing
+BitPro MCP boundary and do not authorize direct BitPro database access,
+automatic paper mutations, or any live-write tool.

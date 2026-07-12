@@ -46,6 +46,27 @@ its own Agent capabilities:
 - Agent evaluation suite
 - connector framework
 
+## Approved Post-Sprint-80 Research Institution Roadmap
+
+The next proposed strategy-research phase is governed by
+`docs/architecture/23-autonomous-strategy-research-institution.md` and the
+Sprint 81–84 contracts. It develops an operator-controlled, evidence-bound
+research institution on top of the existing BitPro lifecycle integration:
+
+- Sprint 81: research mandates and durable jobs define what an Agent may
+  research and keep work state outside chat history.
+- Sprint 82: a bounded BitPro backtest matrix validates dynamic DB strategies
+  against real data and locked out-of-sample windows.
+- Sprint 83: passing candidates require a human-approved, idempotent BitPro
+  paper-promotion action and remain under read-only observation.
+- Sprint 84: WorldState/portfolio review combines strategy lifecycle evidence
+  with market-state and monitoring evidence to recommend research or review
+  actions.
+
+This roadmap does not promise stable profitability and does not add automatic
+live trading, automatic live promotion, direct BitPro database access, or
+BitPro business logic to HyperTrade.
+
 ## V1 In Scope
 
 - FastAPI backend with public workbench observability/read endpoints and admin session auth for privileged mutations.

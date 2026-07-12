@@ -40,6 +40,7 @@
 - [Agent Graph Runtime](architecture/12-agent-graph-langgraph-runtime.md)
 - [Risk Engine](architecture/14-risk-engine.md)
 - [Connector Framework](architecture/20-connector-framework.md)
+- [Autonomous Strategy Research Institution](architecture/23-autonomous-strategy-research-institution.md)
 
 ### 知识库
 操作指南和最佳实践：
@@ -58,6 +59,7 @@
 冲刺合约和功能范围：
 - [Contracts](contracts/) - 合约目录
 - 各冲刺的详细交付范围和技术规格
+- [Sprint 81–84 Research Institution Plan](architecture/23-autonomous-strategy-research-institution.md#分期实施)
 
 ---
 
