@@ -1894,7 +1894,7 @@ class AgentKernel:
                     "## 风险与数据缺口",
                     "",
                     f"- 证据覆盖：{comparable_count}/{reported_total}，"
-                    f"排名状态：{ranking_status}。",
+                    f"排名状态：{'完整' if ranking_status == 'complete' else '部分覆盖'}。",
                 ]
             )
             if unavailable:
@@ -2308,6 +2308,10 @@ class AgentKernel:
             # backtest rows. The tool evidence remains persisted for audit.
             bitpro_backtest_lines.clear()
             bitpro_backtest_detail_lines.clear()
+        if has_paper_performance_matrix:
+            # Inventory/tool-preflight calls remain in Trace, but they are not
+            # a user-facing lifecycle result for a read-only comparison.
+            bitpro_lifecycle_lines.clear()
         sections: list[str] = []
         if unavailable_lines:
             sections.extend(["## 数据暂不可用", "", *unavailable_lines])

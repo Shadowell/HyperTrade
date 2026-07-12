@@ -62,4 +62,7 @@ coverage is stated explicitly.
   suite passed (`161 passed`).
 - `./scripts/check.sh` passed: frontend lint/test/build, Ruff, Mypy, and Python
   tests (`312 passed`).
-- Production deployment and smoke evidence are pending the pushed commit.
+- Deployment runs `29182653442` and `29182809298` succeeded. Production smoke
+  `run_7d8f9340f6f2485bb4ee` rendered one conclusion, one performance table,
+  explicit 1/9 coverage, risk/data gaps, and a next step. The final renderer
+  follow-up keeps auxiliary inventory reads in Trace instead of the answer.

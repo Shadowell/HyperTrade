@@ -571,17 +571,23 @@ def test_planner_report_renders_validated_paper_strategy_performance_coverage() 
                         "ranking_status": "partial",
                     },
                 },
-            )
+            ),
+            ToolCallRecord(
+                tool_name="bitpro_strategy_search",
+                input_json={"status": "running"},
+                output_json={"status": "ok", "strategies": [{"id": 105}]},
+            ),
         ],
     )
 
     assert "## 结论" in report
     assert "仅 1/2 个运行策略" in report
     assert "| 1 | #105 SOL paper | 4.5% | 5.1% | 1.2 |" in report
-    assert "证据覆盖：1/2，排名状态：partial" in report
+    assert "证据覆盖：1/2，排名状态：部分覆盖" in report
     assert "暂不可比策略：293" in report
     assert "## 下一步" in report
     assert "全量最优" in report
+    assert "BitPro 策略生命周期" not in report
 
 
 def test_planner_report_renders_bitpro_paper_snapshot_drift() -> None:

@@ -12,7 +12,9 @@
   only rows with reported paper return metrics. Agent, plain CLI, Rich CLI, and
   structured audit renderers expose comparison coverage and partial-ranking
   status. Focused tests passed (`161 passed`) and `./scripts/check.sh` passed
-  (`312 passed`). Production deployment evidence is pending.
+  (`312 passed`). Deployment runs `29182653442` and `29182809298` succeeded;
+  production smoke `run_7d8f9340f6f2485bb4ee` rendered the professional
+  conclusion/comparison/risk/next-step structure with 1/9 evidence coverage.
 - Last verified state: Sprint 79 unified CLI report rendering completed locally
   on 2026-07-10. Default plain and Rich output now prefers the completed Agent
   answer when report blocks exist, while `HYPERTRADE_REPORT_SOURCE=tools|audit`
@@ -106,7 +108,10 @@
   visible data gaps and cannot become ranking rows. Planner guidance now routes
   simulated-strategy winner/comparison questions to this bounded tool instead
   of repeated curves or historical backtests. Focused tests passed (`161
-  passed`) and full `./scripts/check.sh` passed (`312 passed`).
+  passed`) and full `./scripts/check.sh` passed (`312 passed`). Production smoke
+  confirmed that only strategy #105 had identity-matched evidence and that the
+  other eight strategy ids were explicitly marked unavailable; auxiliary
+  inventory calls remain available in Trace rather than the final answer.
 - Implemented Sprint 79 CLI unified report rendering: default plain and Rich
   output now shows a completed Agent report before `report_blocks`, which stay
   available through `HYPERTRADE_REPORT_SOURCE=tools|audit`. Existing structured
