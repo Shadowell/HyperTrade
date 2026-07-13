@@ -13,7 +13,9 @@
   changed. Frontend lint/test/build and full `./scripts/check.sh` passed.
   Browser validation with production-read strategy evidence confirmed desktop
   and 390px layouts, intact single-line metric values, and no horizontal
-  overflow. Deployment verification is pending.
+  overflow. Deployment run `29254785293` succeeded for SHA `9f94a62`; the
+  production host health endpoint returned
+  `{"status":"ok","service":"hypertrade-api"}`.
 - Last verified state: Sprint 90 unified operator cards completed locally on
   2026-07-13. Strategy evidence, monitor alerts, approval intents, Memory
   entries, and RAG hits now share one compact dark operator-card treatment with
