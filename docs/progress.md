@@ -12,8 +12,10 @@
   leaves Agent, BitPro MCP, research, approval, paper, and live behavior
   unchanged. Frontend lint/test/build and full `./scripts/check.sh` passed;
   browser checks confirmed the root workbench and direct strategy route render
-  in dark mode without desktop horizontal overflow. Deployment verification is
-  pending.
+  in dark mode without desktop horizontal overflow. Deployment run
+  `29220341881` succeeded for SHA `ac74728`; the production host runs the new
+  API/worker containers and its local health endpoint returned
+  `{"status":"ok","service":"hypertrade-api"}`.
 - Last verified state: Harness sidebar navigation now uses independent,
   refreshable paths for workbench, strategy library, alerts, runs, memory, and
   RAG. Each path renders only its corresponding operator page while retaining
