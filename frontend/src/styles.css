@@ -242,6 +242,310 @@ body {
     @apply border-brass/50 bg-night shadow-[0_8px_20px_rgba(214,162,74,0.12)];
   }
 
+  .memory-observatory {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid rgba(90, 214, 196, 0.24);
+    border-radius: 0.55rem;
+    background:
+      linear-gradient(rgba(110, 165, 150, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(110, 165, 150, 0.035) 1px, transparent 1px),
+      #0b1714;
+    background-size: 24px 24px;
+    box-shadow: 0 20px 54px rgba(0, 0, 0, 0.2);
+  }
+
+  .memory-observatory::before {
+    position: absolute;
+    top: -5rem;
+    right: 8%;
+    width: 20rem;
+    height: 12rem;
+    background: radial-gradient(circle, rgba(90, 214, 196, 0.1), transparent 68%);
+    content: "";
+    pointer-events: none;
+  }
+
+  .memory-observatory-head,
+  .memory-observatory-body {
+    position: relative;
+    min-width: 0;
+  }
+
+  .memory-observatory-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.05rem 1.2rem 0.95rem;
+    border-bottom: 1px solid rgba(232, 238, 233, 0.1);
+  }
+
+  .memory-observatory-kicker,
+  .memory-observatory-total span,
+  .memory-visual-heading span,
+  .memory-quality-grid dt {
+    font-family: "SFMono-Regular", Menlo, monospace;
+    font-size: 0.64rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(232, 238, 233, 0.46);
+  }
+
+  .memory-observatory-head h2 {
+    margin: 0.26rem 0 0;
+    font-size: 1.06rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+  }
+
+  .memory-observatory-head p {
+    max-width: 42rem;
+    margin: 0.3rem 0 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: rgba(232, 238, 233, 0.52);
+  }
+
+  .memory-observatory-total {
+    display: grid;
+    justify-items: end;
+    gap: 0.26rem;
+    padding-top: 0.08rem;
+    text-align: right;
+  }
+
+  .memory-observatory-total strong {
+    font-family: "SFMono-Regular", Menlo, monospace;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #e8eee9;
+  }
+
+  .memory-observatory-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(20rem, 0.9fr);
+  }
+
+  .memory-capacity-section,
+  .memory-observatory-side {
+    min-width: 0;
+    padding: 1rem 1.2rem 1.15rem;
+  }
+
+  .memory-observatory-side {
+    border-left: 1px solid rgba(232, 238, 233, 0.1);
+    background: rgba(4, 12, 9, 0.18);
+  }
+
+  .memory-visual-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .memory-visual-heading strong {
+    display: block;
+    margin-top: 0.24rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: rgba(232, 238, 233, 0.86);
+  }
+
+  .memory-capacity-rail {
+    display: flex;
+    height: 0.48rem;
+    margin-top: 1rem;
+    overflow: hidden;
+    border: 1px solid rgba(232, 238, 233, 0.07);
+    border-radius: 999px;
+    background: rgba(232, 238, 233, 0.06);
+  }
+
+  .memory-capacity-rail span {
+    min-width: 0.18rem;
+    transition: flex-grow 360ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .memory-kind-list {
+    display: grid;
+    gap: 0.52rem;
+    margin-top: 0.9rem;
+  }
+
+  .memory-kind-row {
+    display: grid;
+    grid-template-columns: minmax(7.5rem, 0.7fr) minmax(5rem, 1fr) auto;
+    align-items: center;
+    gap: 0.65rem;
+  }
+
+  .memory-kind-label {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .memory-kind-label > span {
+    width: 0.42rem;
+    height: 0.42rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    box-shadow: 0 0 0 3px rgba(232, 238, 233, 0.03);
+  }
+
+  .memory-kind-label strong {
+    overflow: hidden;
+    font-family: "SFMono-Regular", Menlo, monospace;
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .memory-kind-track {
+    height: 0.24rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(232, 238, 233, 0.08);
+  }
+
+  .memory-kind-track span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    transition: width 360ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .memory-kind-value {
+    min-width: 3.75rem;
+    font-family: "SFMono-Regular", Menlo, monospace;
+    font-size: 0.7rem;
+    text-align: right;
+    color: rgba(232, 238, 233, 0.86);
+  }
+
+  .memory-kind-value small {
+    margin-left: 0.22rem;
+    color: rgba(232, 238, 233, 0.42);
+  }
+
+  .memory-visual-note {
+    margin: 0.95rem 0 0;
+    font-size: 0.68rem;
+    line-height: 1.45;
+    color: rgba(232, 238, 233, 0.42);
+  }
+
+  .memory-activity-section {
+    min-height: 10.4rem;
+  }
+
+  .memory-activity-bars {
+    display: grid;
+    height: 7.2rem;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    align-items: end;
+    gap: 0.45rem;
+    margin-top: 0.9rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid rgba(232, 238, 233, 0.1);
+  }
+
+  .memory-activity-column {
+    position: relative;
+    display: flex;
+    height: 100%;
+    min-width: 0;
+    flex-direction: column;
+    justify-content: end;
+    align-items: center;
+  }
+
+  .memory-activity-bar {
+    width: min(1.35rem, 100%);
+    min-height: 0.16rem;
+    border-radius: 0.2rem 0.2rem 0.04rem 0.04rem;
+    background: linear-gradient(180deg, #5ad6c4 0%, rgba(90, 214, 196, 0.28) 100%);
+    box-shadow: 0 -5px 16px rgba(90, 214, 196, 0.08);
+    transition: height 360ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .memory-activity-column strong {
+    position: absolute;
+    top: -0.05rem;
+    font-family: "SFMono-Regular", Menlo, monospace;
+    font-size: 0.64rem;
+    font-weight: 500;
+    color: rgba(232, 238, 233, 0.76);
+  }
+
+  .memory-activity-column small {
+    position: absolute;
+    bottom: -1.06rem;
+    font-family: "SFMono-Regular", Menlo, monospace;
+    font-size: 0.58rem;
+    color: rgba(232, 238, 233, 0.4);
+    white-space: nowrap;
+  }
+
+  .memory-activity-empty,
+  .memory-observatory-empty {
+    display: grid;
+    min-height: 7rem;
+    place-items: center;
+    border: 1px dashed rgba(232, 238, 233, 0.16);
+    color: rgba(232, 238, 233, 0.44);
+    font-size: 0.75rem;
+  }
+
+  .memory-activity-empty {
+    min-height: 7.2rem;
+    margin-top: 0.9rem;
+  }
+
+  .memory-observatory-empty {
+    margin: 1rem 1.2rem 1.2rem;
+  }
+
+  .memory-quality-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    margin: 1rem -1.2rem -1.15rem;
+    border-top: 1px solid rgba(232, 238, 233, 0.1);
+  }
+
+  .memory-quality-grid div {
+    min-width: 0;
+    padding: 0.8rem 0.72rem;
+    border-left: 1px solid rgba(232, 238, 233, 0.08);
+  }
+
+  .memory-quality-grid div:first-child {
+    border-left: 0;
+  }
+
+  .memory-quality-grid dt {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .memory-quality-grid dd {
+    margin: 0.25rem 0 0;
+    overflow: hidden;
+    font-family: "SFMono-Regular", Menlo, monospace;
+    font-size: 0.82rem;
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .markdown-report {
     @apply mt-4 max-h-[28rem] overflow-auto rounded-md border border-ink/10 bg-night px-5 py-4 text-sm leading-7 text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.04)];
   }
@@ -318,6 +622,49 @@ body {
 
   .skeleton-pulse {
     animation: status-breathe 1.4s ease-in-out infinite;
+  }
+}
+
+@media (max-width: 980px) {
+  .memory-observatory-body {
+    grid-template-columns: 1fr;
+  }
+
+  .memory-observatory-side {
+    border-top: 1px solid rgba(232, 238, 233, 0.1);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .memory-observatory-head {
+    display: grid;
+  }
+
+  .memory-observatory-total {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .memory-kind-row {
+    grid-template-columns: minmax(6rem, 0.8fr) minmax(3.5rem, 1fr) auto;
+    gap: 0.45rem;
+  }
+
+  .memory-kind-value {
+    min-width: 3.1rem;
+  }
+
+  .memory-quality-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .memory-quality-grid div:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .memory-quality-grid div:nth-child(n + 3) {
+    border-top: 1px solid rgba(232, 238, 233, 0.08);
   }
 }
 

@@ -77,6 +77,11 @@ BitPro business logic to HyperTrade.
   console with green-black surfaces, restrained grid texture, cyan runtime
   state, amber audit emphasis, and red risk state. This is display-only and
   does not alter research, approval, paper, or live-execution behavior.
+- Harness Memory observability: `/harness/memory` aggregates existing audited
+  active Memory items client-side into explicitly labeled composition, creation
+  cadence, importance, confidence, and reuse visualizations. It is read-only;
+  it does not introduce a storage quota, a second Memory store, or a mutation
+  path.
 
 - FastAPI backend with public workbench observability/read endpoints and admin session auth for privileged mutations.
 - LangGraph-style AgentKernel with explicit traceable tool calls.

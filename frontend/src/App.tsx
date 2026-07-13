@@ -2,6 +2,7 @@ import {
   Activity,
   AlertTriangle,
   Archive,
+  BarChart3,
   Bot,
   Brain,
   Cable,
@@ -169,6 +170,7 @@ type MemoryItem = {
   usage_count?: number;
   importance?: string;
   confidence?: string;
+  last_used_at?: string | null;
   created_at: string;
 };
 
@@ -441,6 +443,20 @@ const copy = {
     disable: "禁用",
     noMemoryItems: "暂无记忆",
     selectedMemory: "选中记忆",
+    memoryObservatory: "记忆态势",
+    memoryObservatoryHint: "审计活跃条目的构成、写入节奏与可用信号。",
+    memoryLoaded: "已加载 / 活跃",
+    memoryCapacity: "容量构成",
+    memoryCapacityHint: "以当前加载的活跃条目为 100%，不代表存储配额。",
+    memoryActivity: "写入节奏",
+    memoryActivityHint: "按最近有写入的日期聚合。",
+    memoryConfidence: "平均可信度",
+    memoryImportance: "平均重要性",
+    memoryReuse: "累计复用",
+    memorySources: "来源工具",
+    memoryKinds: "记忆类型",
+    memoryEntries: "条",
+    memoryNoActivity: "暂无可用创建日期",
     initialCash: "初始资金",
     candleSource: "数据源",
     strategyKey: "策略",
@@ -606,6 +622,20 @@ const copy = {
     disable: "Disable",
     noMemoryItems: "No memory items",
     selectedMemory: "Selected Memory",
+    memoryObservatory: "Memory observatory",
+    memoryObservatoryHint: "Audit active-item composition, creation cadence, and reuse signals.",
+    memoryLoaded: "Loaded / active",
+    memoryCapacity: "Capacity composition",
+    memoryCapacityHint: "100% represents loaded active items, not a storage quota.",
+    memoryActivity: "Creation cadence",
+    memoryActivityHint: "Grouped by the latest dates with recorded writes.",
+    memoryConfidence: "Mean confidence",
+    memoryImportance: "Mean importance",
+    memoryReuse: "Total reuse",
+    memorySources: "Source tools",
+    memoryKinds: "Memory kinds",
+    memoryEntries: "items",
+    memoryNoActivity: "No usable creation dates",
     initialCash: "Initial Cash",
     candleSource: "Source",
     strategyKey: "Strategy",
@@ -871,6 +901,7 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [agentProgress, setAgentProgress] = useState<string[]>([]);
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
+  const [memoryInventoryItems, setMemoryInventoryItems] = useState<MemoryItem[]>([]);
   const [selectedMemoryId, setSelectedMemoryId] = useState("");
   const [memoryQuery, setMemoryQuery] = useState("");
   const [ragQuery, setRagQuery] = useState("risk");
@@ -943,6 +974,13 @@ function App() {
     if (response.ok) {
       const payload = (await response.json()) as { items: MemoryItem[] };
       setMemoryItems(payload.items);
+      if (query) {
+        setMemoryInventoryItems((current) =>
+          current.map((item) => payload.items.find((candidate) => candidate.id === item.id) ?? item)
+        );
+      } else {
+        setMemoryInventoryItems(payload.items);
+      }
       setSelectedMemoryId((current) => current || payload.items[0]?.id || "");
     }
   }, []);
@@ -1597,8 +1635,14 @@ function App() {
             </div>
           </section>
 
-          <section className={`mt-5 grid grid-cols-[0.9fr_1.1fr] gap-5 max-xl:grid-cols-1 ${activeSection === "memory" || activeSection === "rag" ? "" : "hidden"}`}>
-            <div className={`panel ${activeSection === "memory" ? "" : "hidden"}`}>
+          <section className={`mt-5 ${activeSection === "memory" || activeSection === "rag" ? "" : "hidden"}`}>
+            <div className={`min-w-0 space-y-5 ${activeSection === "memory" ? "" : "hidden"}`}>
+              <MemoryObservatory
+                activeCount={activeOverview.memory.active_count}
+                items={memoryInventoryItems}
+                t={t}
+              />
+              <div className="panel">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="section-title">{t.memoryManager}</h2>
@@ -1633,13 +1677,13 @@ function App() {
                       onClick={() => setSelectedMemoryId(item.id)}
                       type="button"
                     >
-                      <span className="font-mono text-xs text-ink/45">{item.id}</span>
-                      <span className="min-w-0 truncate text-left text-sm">{item.content}</span>
-                      <span className="rounded border border-ink/10 px-2 py-1 text-xs">
+                      <span className="min-w-0 shrink truncate font-mono text-xs text-ink/45">{item.id}</span>
+                      <span className="min-w-0 flex-1 truncate text-left text-sm">{item.content}</span>
+                      <span className="shrink-0 rounded border border-ink/10 px-2 py-1 text-xs">
                         {item.kind}
                       </span>
                       {item.usage_count ? (
-                        <span className="rounded border border-brass/25 px-2 py-1 text-xs text-brass">
+                        <span className="shrink-0 rounded border border-brass/25 px-2 py-1 text-xs text-brass">
                           {item.usage_count}
                         </span>
                       ) : null}
@@ -1679,6 +1723,7 @@ function App() {
                 ) : (
                   <div className="empty-row mt-4">{t.noMemoryItems}</div>
                 )}
+              </div>
               </div>
             </div>
 
@@ -1857,6 +1902,245 @@ function StatusDot({ enabled }: { enabled: boolean }) {
       aria-label={enabled ? "已配置" : "未配置"}
     />
   );
+}
+
+type MemoryKindInsight = {
+  kind: string;
+  count: number;
+  share: number;
+  color: string;
+};
+
+type MemoryActivityInsight = {
+  key: string;
+  label: string;
+  count: number;
+};
+
+function MemoryObservatory({
+  items,
+  activeCount,
+  t
+}: {
+  items: MemoryItem[];
+  activeCount: number;
+  t: Record<string, string>;
+}) {
+  const insights = useMemo(() => memoryInsights(items), [items]);
+  const activityPeak = Math.max(1, ...insights.activity.map((entry) => entry.count));
+  const activeLabel = activeCount > 0 ? `${items.length} / ${activeCount}` : formatMetricNumber(items.length);
+
+  return (
+    <section className="memory-observatory" aria-labelledby="memory-observatory-title">
+      <div className="memory-observatory-head">
+        <div>
+          <div className="memory-observatory-kicker">Memory telemetry</div>
+          <h2 id="memory-observatory-title">{t.memoryObservatory}</h2>
+          <p>{t.memoryObservatoryHint}</p>
+        </div>
+        <div className="memory-observatory-total">
+          <span>{t.memoryLoaded}</span>
+          <strong>{activeLabel}</strong>
+        </div>
+      </div>
+
+      {insights.total === 0 ? (
+        <div className="memory-observatory-empty">{t.noMemoryItems}</div>
+      ) : (
+        <div className="memory-observatory-body">
+          <div className="memory-capacity-section">
+            <div className="memory-visual-heading">
+              <div>
+                <span>{t.memoryCapacity}</span>
+                <strong>
+                  {insights.kinds.length} {t.memoryKinds}
+                </strong>
+              </div>
+              <BarChart3 aria-hidden="true" className="text-signal" size={17} />
+            </div>
+
+            <div
+              className="memory-capacity-rail"
+              aria-label={`${t.memoryCapacity}: ${insights.kinds
+                .map((item) => `${item.kind} ${item.count}`)
+                .join("，")}`}
+              role="img"
+            >
+              {insights.kinds.map((item) => (
+                <span
+                  key={item.kind}
+                  style={{ backgroundColor: item.color, flexGrow: item.count }}
+                  title={`${item.kind}: ${item.count} ${t.memoryEntries}`}
+                />
+              ))}
+            </div>
+
+            <div className="memory-kind-list">
+              {insights.kinds.map((item) => (
+                <div className="memory-kind-row" key={item.kind}>
+                  <div className="memory-kind-label">
+                    <span aria-hidden="true" style={{ backgroundColor: item.color }} />
+                    <strong>{item.kind}</strong>
+                  </div>
+                  <div aria-hidden="true" className="memory-kind-track">
+                    <span style={{ backgroundColor: item.color, width: `${item.share}%` }} />
+                  </div>
+                  <span className="memory-kind-value">
+                    {item.count} <small>{Math.round(item.share)}%</small>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="memory-visual-note">{t.memoryCapacityHint}</p>
+          </div>
+
+          <div className="memory-observatory-side">
+            <div className="memory-activity-section">
+              <div className="memory-visual-heading">
+                <div>
+                  <span>{t.memoryActivity}</span>
+                  <strong>{t.memoryActivityHint}</strong>
+                </div>
+                <Activity aria-hidden="true" className="text-brass" size={17} />
+              </div>
+              {insights.activity.length === 0 ? (
+                <div className="memory-activity-empty">{t.memoryNoActivity}</div>
+              ) : (
+                <div
+                  className="memory-activity-bars"
+                  aria-label={`${t.memoryActivity}: ${insights.activity
+                    .map((item) => `${item.label} ${item.count}`)
+                    .join("，")}`}
+                  role="img"
+                >
+                  {insights.activity.map((item) => (
+                    <div className="memory-activity-column" key={item.key}>
+                      <span
+                        aria-hidden="true"
+                        className="memory-activity-bar"
+                        style={{ height: `${Math.max(2, (item.count / activityPeak) * 100)}%` }}
+                        title={`${item.label}: ${item.count} ${t.memoryEntries}`}
+                      />
+                      <strong>{item.count}</strong>
+                      <small>{item.label}</small>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <dl className="memory-quality-grid">
+              <div>
+                <dt>{t.memoryConfidence}</dt>
+                <dd>{formatMemoryRatio(insights.confidence)}</dd>
+              </div>
+              <div>
+                <dt>{t.memoryImportance}</dt>
+                <dd>{formatMemoryRatio(insights.importance)}</dd>
+              </div>
+              <div>
+                <dt>{t.memoryReuse}</dt>
+                <dd>{formatMetricNumber(insights.usage)}</dd>
+              </div>
+              <div>
+                <dt>{t.memorySources}</dt>
+                <dd>{formatMetricNumber(insights.sourceCount)}</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function memoryInsights(items: MemoryItem[]): {
+  total: number;
+  kinds: MemoryKindInsight[];
+  activity: MemoryActivityInsight[];
+  confidence: number | null;
+  importance: number | null;
+  usage: number;
+  sourceCount: number;
+} {
+  const kinds = new Map<string, number>();
+  const activity = new Map<string, number>();
+  const confidence: number[] = [];
+  const importance: number[] = [];
+  const sources = new Set<string>();
+  let usage = 0;
+
+  for (const item of items) {
+    kinds.set(item.kind || "unknown", (kinds.get(item.kind || "unknown") ?? 0) + 1);
+    const createdAt = new Date(item.created_at);
+    if (!Number.isNaN(createdAt.getTime())) {
+      const key = createdAt.toISOString().slice(0, 10);
+      activity.set(key, (activity.get(key) ?? 0) + 1);
+    }
+    const confidenceValue = memoryRatioValue(item.confidence);
+    const importanceValue = memoryRatioValue(item.importance);
+    if (confidenceValue !== null) {
+      confidence.push(confidenceValue);
+    }
+    if (importanceValue !== null) {
+      importance.push(importanceValue);
+    }
+    usage += item.usage_count ?? 0;
+    if (item.source_tool) {
+      sources.add(item.source_tool);
+    }
+  }
+
+  const sortedKinds = [...kinds.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([kind, count], index) => ({
+      kind,
+      count,
+      share: items.length ? (count / items.length) * 100 : 0,
+      color: memoryChartColor(index)
+    }));
+  const activityItems = [...activity.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .slice(-7)
+    .map(([key, count]) => ({ key, count, label: memoryActivityLabel(key) }));
+
+  return {
+    total: items.length,
+    kinds: sortedKinds,
+    activity: activityItems,
+    confidence: averageMemoryRatio(confidence),
+    importance: averageMemoryRatio(importance),
+    usage,
+    sourceCount: sources.size
+  };
+}
+
+function memoryRatioValue(value: string | undefined): number | null {
+  const parsed = Number.parseFloat(value ?? "");
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.max(0, Math.min(1, parsed));
+}
+
+function averageMemoryRatio(values: number[]): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function formatMemoryRatio(value: number | null): string {
+  return value === null ? "n/a" : `${Math.round(value * 100)}%`;
+}
+
+function memoryActivityLabel(key: string): string {
+  const [, month, day] = key.split("-");
+  return month && day ? `${Number(month)}/${Number(day)}` : key;
+}
+
+function memoryChartColor(index: number): string {
+  return ["#5ad6c4", "#d6a24a", "#9d87e8", "#73a7d8", "#e36b4f"][index % 5];
 }
 
 function cascadeStyle(index: number): CSSProperties & Record<"--index", number> {

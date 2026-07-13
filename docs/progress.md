@@ -4,6 +4,16 @@
 
 - Branch: `main`
 - Harness status: active
+- Last verified state: Sprint 88 Memory observability dashboard completed
+  locally on 2026-07-13. The routed Memory page now aggregates only existing
+  audited `GET /api/memory` items into active-item composition/capacity rails,
+  creation-cadence bars, and importance, confidence, reuse, and source-tool
+  signals. Search keeps the full inventory for charts while filtering the
+  operator list; capacity is explicitly item composition rather than a storage
+  quota. Frontend lint/test/build and full `./scripts/check.sh` passed. Browser
+  validation against real production Memory data confirmed desktop rendering
+  and no horizontal overflow at a 390px viewport. Deployment verification is
+  pending.
 - Last verified state: Sprint 87 Harness dark observability theme completed
   locally on 2026-07-13. Shared Tailwind tokens and component styles now give
   every routed Harness surface the Flight Recorder's green-black console
@@ -125,8 +135,8 @@
 
 ## Active Contract
 
-- Sprint 87 Harness dark observability theme is active under
-  `docs/contracts/sprint-87-harness-dark-observability-theme.md`.
+- Sprint 88 Memory observability dashboard is active under
+  `docs/contracts/sprint-88-memory-observability-dashboard.md`.
 
 ## Approved Follow-On Design
 

@@ -20,6 +20,13 @@ Model / Tool / Policy / Memory tape, provider-reported Token composition,
 per-call and tool latency, linked Memory ids, and an explicit redaction boundary.
 Unknown provider usage is displayed as unavailable rather than estimated.
 
+Sprint 88 expands the routed Memory page into a read-only Memory observability
+dashboard. It uses the existing `GET /api/memory` payload only: active-item
+composition by `kind`, creation-date activity, and the audited importance,
+confidence, and reuse fields. “Capacity” means the proportion of active loaded
+items, not a fabricated storage quota. Search retains a full inventory snapshot
+for the dashboard while rendering filtered rows for the operator.
+
 Design direction:
 
 - dense dark observability console with deep green-black surfaces and a restrained grid texture
@@ -47,6 +54,12 @@ Sprint 76 新增组件化 `AgentFlightRecorder`。它读取
 Tool / Policy / Memory 时间带、Provider 返回的 Token 构成、模型与工具延迟、
 关联 Memory id 和明确的脱敏边界。Provider 没返回 usage 时显示不可用，
 不会用字符数估算冒充精确 Token。
+
+Sprint 88 将独立的 Memory 路由扩展为只读可观测面板。它只使用既有
+`GET /api/memory` 返回的 active 条目：按 `kind` 的构成、按创建日期的写入
+节奏，以及已审计的 importance、confidence、usage_count 字段。界面中的“容量”
+指已加载活跃条目的构成比例，不代表虚构的存储配额。搜索结果只过滤操作员列表，
+面板仍保留完整库存快照。
 
 设计方向：
 

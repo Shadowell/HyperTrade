@@ -244,6 +244,7 @@ const overview = {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  window.history.replaceState({}, "", "/harness");
 });
 
 test("renders harness observability from live overview", async () => {
@@ -419,6 +420,100 @@ test("loads a recent run and renders structured report blocks with audit sources
   expect(screen.getAllByText("source: tool:bitpro_paper_dashboard").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("missing: per_strategy_drawdown")).toBeInTheDocument();
   expect(screen.getByText("Markdown fallback paragraph")).toBeInTheDocument();
+});
+
+test("renders memory composition, creation cadence, and governance signals from audited items", async () => {
+  window.history.replaceState({}, "", "/harness/memory");
+  const memoryOverview = {
+    ...overview,
+    memory: {
+      active_count: 4,
+      total_count: 4,
+      latest_created_at: "2026-05-27T00:00:00+08:00"
+    }
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/harness/overview")) {
+        return jsonResponse(memoryOverview);
+      }
+      if (url.endsWith("/api/memory")) {
+        return jsonResponse({
+          items: [
+            {
+              id: "mem_strategy_a",
+              kind: "strategy_knowledge",
+              content: "strategy evidence A",
+              source_run_id: "run_strategy",
+              source_tool: "strategy.experiment",
+              tags: ["strategy_knowledge"],
+              importance: "0.9000",
+              confidence: "0.8000",
+              usage_count: 5,
+              created_at: "2026-05-25T08:00:00Z"
+            },
+            {
+              id: "mem_strategy_b",
+              kind: "strategy_knowledge",
+              content: "strategy evidence B",
+              source_run_id: "run_strategy",
+              source_tool: "strategy.experiment",
+              tags: ["strategy_knowledge"],
+              importance: "0.7000",
+              confidence: "0.9000",
+              usage_count: 2,
+              created_at: "2026-05-26T08:00:00Z"
+            },
+            {
+              id: "mem_risk",
+              kind: "risk_note",
+              content: "risk evidence",
+              source_run_id: "run_risk",
+              source_tool: "risk.check",
+              tags: ["risk_note"],
+              importance: "0.6000",
+              confidence: "0.7000",
+              usage_count: 1,
+              created_at: "2026-05-26T12:00:00Z"
+            },
+            {
+              id: "mem_market",
+              kind: "market_observation",
+              content: "market evidence",
+              source_run_id: "run_market",
+              source_tool: "market.summary",
+              tags: ["market_observation"],
+              importance: "0.4000",
+              confidence: "0.6000",
+              usage_count: 3,
+              created_at: "2026-05-27T08:00:00Z"
+            }
+          ]
+        });
+      }
+      if (url.endsWith("/api/strategy/library")) {
+        return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
+      }
+      if (url.endsWith("/api/alerts")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({}, 404);
+    })
+  );
+
+  render(<App />);
+
+  expect(await screen.findByText("记忆态势")).toBeInTheDocument();
+  expect(screen.getByText("容量构成")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: /容量构成/ })).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: /写入节奏/ })).toBeInTheDocument();
+  expect(screen.getAllByText("strategy_knowledge").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("risk_note").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("平均可信度")).toBeInTheDocument();
+  expect(screen.getByText("累计复用")).toBeInTheDocument();
+  expect(screen.getByText("5/26")).toBeInTheDocument();
 });
 
 test("sidebar navigation keeps the clicked section active", async () => {
