@@ -1098,25 +1098,25 @@ function App() {
 
   return (
     <div className="min-h-[100dvh] bg-paper text-ink">
-      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_20%_10%,rgba(184,137,59,0.10),transparent_28%),linear-gradient(rgba(17,21,19,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(17,21,19,0.035)_1px,transparent_1px)] bg-[size:auto,28px_28px,28px_28px]" />
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_82%_0%,rgba(90,214,196,0.10),transparent_28%),radial-gradient(circle_at_20%_10%,rgba(214,162,74,0.06),transparent_24%),linear-gradient(rgba(110,165,150,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(110,165,150,0.035)_1px,transparent_1px)] bg-[size:auto,auto,28px_28px,28px_28px]" />
       <div className="relative grid min-h-[100dvh] grid-cols-[260px_1fr] max-lg:grid-cols-1">
-        <aside className="border-r border-ink/15 bg-ink px-5 py-6 text-paper shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)]">
+        <aside className="border-r border-ink/15 bg-night px-5 py-6 text-ink shadow-[inset_-1px_0_0_rgba(90,214,196,0.05)]">
           <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-md border border-paper/20 bg-paper text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+            <div className="grid h-10 w-10 place-items-center rounded-md border border-signal/35 bg-signal/10 text-signal shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
               <Activity size={19} />
             </div>
             <div>
               <div className="text-base font-semibold tracking-normal">{t.product}</div>
-              <div className="text-xs text-paper/55">生产级交易智能体</div>
+              <div className="text-xs text-ink/55">生产级交易智能体</div>
             </div>
           </div>
 
-          <div className="mt-7 rounded-md border border-paper/10 bg-paper/[0.04] px-3 py-3">
-            <div className="flex items-center justify-between text-xs text-paper/55">
+          <div className="mt-7 rounded-md border border-ink/10 bg-ink/[0.03] px-3 py-3">
+            <div className="flex items-center justify-between text-xs text-ink/55">
               <span>{t.providerMesh}</span>
               <StatusDot enabled={Boolean(defaultProvider?.enabled)} />
             </div>
-            <div className="mt-2 truncate font-mono text-xs text-paper/85">
+            <div className="mt-2 truncate font-mono text-xs text-ink/85">
               {providerLabel(defaultProvider, t)}
             </div>
           </div>
@@ -1173,7 +1173,7 @@ function App() {
           </nav>
 
           <button
-            className="mt-8 flex w-full items-center justify-center gap-2 rounded-md border border-paper/15 px-3 py-2 text-sm text-paper/80"
+            className="mt-8 flex w-full items-center justify-center gap-2 rounded-md border border-ink/15 px-3 py-2 text-sm text-ink/80 transition hover:border-signal/35 hover:text-signal"
             onClick={() => setLanguage(language === "zh" ? "en" : "zh")}
             type="button"
           >

@@ -22,8 +22,8 @@ Unknown provider usage is displayed as unavailable rather than estimated.
 
 Design direction:
 
-- dense trading-desk layout
-- restrained paper/ink/brass palette
+- dense dark observability console with deep green-black surfaces and a restrained grid texture
+- light operational text, cyan runtime state, amber audit emphasis, and red risk state
 - 8px-or-less radius
 - lucide icons for controls and state
 - Chinese UI by default, English toggle available

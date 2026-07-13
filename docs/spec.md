@@ -73,6 +73,10 @@ BitPro business logic to HyperTrade.
   (`/harness`, `/harness/strategy`, `/harness/alerts`, `/harness/runs`,
   `/harness/memory`, `/harness/rag`) rather than hash-scroll targets in one
   long workbench view.
+- Harness visual system: every routed workbench page uses a dark observability
+  console with green-black surfaces, restrained grid texture, cyan runtime
+  state, amber audit emphasis, and red risk state. This is display-only and
+  does not alter research, approval, paper, or live-execution behavior.
 
 - FastAPI backend with public workbench observability/read endpoints and admin session auth for privileged mutations.
 - LangGraph-style AgentKernel with explicit traceable tool calls.

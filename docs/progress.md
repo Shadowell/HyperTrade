@@ -4,6 +4,16 @@
 
 - Branch: `main`
 - Harness status: active
+- Last verified state: Sprint 87 Harness dark observability theme completed
+  locally on 2026-07-13. Shared Tailwind tokens and component styles now give
+  every routed Harness surface the Flight Recorder's green-black console
+  language: restrained grid texture, cyan runtime state, amber audit emphasis,
+  red risk state, and low-contrast panel borders. This display-only change
+  leaves Agent, BitPro MCP, research, approval, paper, and live behavior
+  unchanged. Frontend lint/test/build and full `./scripts/check.sh` passed;
+  browser checks confirmed the root workbench and direct strategy route render
+  in dark mode without desktop horizontal overflow. Deployment verification is
+  pending.
 - Last verified state: Harness sidebar navigation now uses independent,
   refreshable paths for workbench, strategy library, alerts, runs, memory, and
   RAG. Each path renders only its corresponding operator page while retaining
@@ -113,8 +123,8 @@
 
 ## Active Contract
 
-- Sprint 86 paper observation and review queue is active under
-  `docs/contracts/sprint-86-paper-observation-review-queue.md`.
+- Sprint 87 Harness dark observability theme is active under
+  `docs/contracts/sprint-87-harness-dark-observability-theme.md`.
 
 ## Approved Follow-On Design
 

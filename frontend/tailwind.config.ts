@@ -5,12 +5,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: "#111513",
-        paper: "#f5f3ee",
-        brass: "#b8893b",
-        signal: "#16a085",
-        danger: "#c74732",
-        night: "#202738"
+        ink: "#e8eee9",
+        paper: "#07110f",
+        brass: "#d6a24a",
+        signal: "#5ad6c4",
+        danger: "#e36b4f",
+        night: "#0d1714"
       },
       fontFamily: {
         sans: ["Avenir Next", "ui-sans-serif", "system-ui"],
@@ -20,4 +20,3 @@ export default {
   },
   plugins: []
 } satisfies Config;
-

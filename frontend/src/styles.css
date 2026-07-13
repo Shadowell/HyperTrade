@@ -3,8 +3,10 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-family: "Geist", "Avenir Next", ui-sans-serif, system-ui, sans-serif;
+  background: #07110f;
+  color: #e8eee9;
 }
 
 * {
@@ -13,23 +15,25 @@
 
 body {
   margin: 0;
+  min-width: 320px;
+  background: #07110f;
 }
 
 @layer components {
   .nav-item {
-    @apply flex items-center gap-3 rounded-md px-3 py-2 text-paper/70 transition duration-300 ease-out hover:bg-paper/10 hover:text-paper active:translate-y-px;
+    @apply flex items-center gap-3 rounded-md px-3 py-2 text-ink/70 transition duration-300 ease-out hover:bg-ink/[0.06] hover:text-ink active:translate-y-px;
   }
 
   .nav-item-active {
-    @apply bg-paper text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] hover:bg-paper hover:text-ink;
+    @apply border border-signal/30 bg-signal/10 text-signal shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-signal/[0.14] hover:text-signal;
   }
 
   .panel {
-    @apply rounded-md border border-ink/15 bg-white/90 p-5 shadow-[0_18px_48px_rgba(17,21,19,0.08)];
+    @apply rounded-md border border-ink/15 bg-night/95 p-5 shadow-[0_18px_48px_rgba(0,0,0,0.20)];
   }
 
   .panel-command {
-    @apply shadow-[0_18px_52px_rgba(32,39,56,0.10)];
+    @apply shadow-[0_18px_52px_rgba(0,0,0,0.24)];
   }
 
   .section-title {
@@ -41,7 +45,7 @@ body {
   }
 
   .telemetry-cell {
-    @apply rounded-md border border-ink/15 bg-white/90 px-4 py-4 shadow-[0_10px_28px_rgba(17,21,19,0.055)] transition duration-300 ease-out hover:-translate-y-0.5 hover:border-ink/25;
+    @apply rounded-md border border-ink/15 bg-night/90 px-4 py-4 shadow-[0_10px_28px_rgba(0,0,0,0.16)] transition duration-300 ease-out hover:-translate-y-0.5 hover:border-signal/35;
     animation: rise-in 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
     animation-delay: calc(var(--index) * 55ms);
   }
@@ -64,7 +68,7 @@ body {
   }
 
   .mini-block {
-    @apply rounded-md border border-ink/10 bg-paper px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)];
+    @apply rounded-md border border-ink/10 bg-paper px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)];
   }
 
   .mini-block span,
@@ -78,7 +82,7 @@ body {
   }
 
   .wide-strip {
-    @apply grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 rounded-md border border-ink/15 bg-white/90 px-4 py-4 transition duration-300 ease-out hover:-translate-y-0.5;
+    @apply grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 rounded-md border border-ink/15 bg-night/90 px-4 py-4 transition duration-300 ease-out hover:-translate-y-0.5 hover:border-signal/35;
   }
 
   .wide-strip strong {
@@ -90,27 +94,27 @@ body {
   }
 
   .field-group-dark span {
-    @apply text-[11px] uppercase tracking-normal text-paper/45;
+    @apply text-[11px] uppercase tracking-normal text-ink/45;
   }
 
   .field-dark {
-    @apply w-full rounded-md border border-paper/15 bg-paper/10 px-3 py-2 text-sm text-paper outline-none transition duration-300 placeholder:text-paper/35 focus:border-brass focus:bg-paper/[0.14];
+    @apply w-full rounded-md border border-ink/15 bg-paper px-3 py-2 text-sm text-ink outline-none transition duration-300 placeholder:text-ink/35 focus:border-brass focus:bg-paper/[0.72];
   }
 
   .field-light {
-    @apply w-full rounded-md border border-ink/15 bg-paper/70 px-3 py-2 text-sm text-ink outline-none transition duration-300 placeholder:text-ink/35 focus:border-brass focus:bg-white;
+    @apply w-full rounded-md border border-ink/15 bg-paper/70 px-3 py-2 text-sm text-ink outline-none transition duration-300 placeholder:text-ink/35 focus:border-brass focus:bg-night;
   }
 
   .button-dark {
-    @apply flex w-full items-center justify-center gap-2 rounded-md bg-paper px-3 py-2 text-sm font-semibold text-ink transition duration-300 hover:bg-white active:translate-y-px;
+    @apply flex w-full items-center justify-center gap-2 rounded-md bg-paper px-3 py-2 text-sm font-semibold text-ink transition duration-300 hover:bg-night active:translate-y-px;
   }
 
   .button-primary {
-    @apply inline-flex items-center gap-2 rounded-md bg-ink px-3 py-2 text-sm font-semibold text-paper transition duration-300 hover:bg-night active:translate-y-px disabled:opacity-60;
+    @apply inline-flex items-center gap-2 rounded-md bg-signal px-3 py-2 text-sm font-semibold text-[#07110f] transition duration-300 hover:bg-signal/85 active:translate-y-px disabled:opacity-60;
   }
 
   .button-secondary {
-    @apply inline-flex items-center gap-2 rounded-md border border-ink/15 bg-white px-3 py-2 text-sm font-semibold text-ink transition duration-300 hover:border-ink/30 active:translate-y-px;
+    @apply inline-flex items-center gap-2 rounded-md border border-ink/15 bg-night px-3 py-2 text-sm font-semibold text-ink transition duration-300 hover:border-signal/35 active:translate-y-px;
   }
 
   .button-secondary:disabled {
@@ -122,11 +126,11 @@ body {
   }
 
   .prompt-box {
-    @apply mt-5 min-h-24 w-full resize-none rounded-md border border-ink/15 bg-paper/70 p-3 text-sm outline-none transition duration-300 focus:border-brass focus:bg-white;
+    @apply mt-5 min-h-24 w-full resize-none rounded-md border border-ink/15 bg-paper/70 p-3 text-sm outline-none transition duration-300 focus:border-brass focus:bg-night;
   }
 
   .report-block {
-    @apply mt-4 max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-ink/10 bg-ink p-4 font-mono text-xs leading-6 text-paper shadow-[inset_0_1px_0_rgba(255,255,255,0.08)];
+    @apply mt-4 max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-ink/10 bg-[#081310] p-4 font-mono text-xs leading-6 text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.04)];
   }
 
   .status-row {
@@ -144,11 +148,11 @@ body {
   }
 
   .paper-row {
-    @apply grid grid-cols-[1fr_0.35fr_0.55fr] items-center gap-3 border-t border-ink/10 px-1 py-2.5 text-sm first:border-t-0 hover:bg-white/55;
+    @apply grid grid-cols-[1fr_0.35fr_0.55fr] items-center gap-3 border-t border-ink/10 px-1 py-2.5 text-sm first:border-t-0 hover:bg-night/70;
   }
 
   .strategy-card {
-    @apply grid w-full gap-2 rounded-md border border-ink/10 bg-paper/70 p-3 transition duration-300 ease-out hover:border-ink/25 hover:bg-white;
+    @apply grid w-full gap-2 rounded-md border border-ink/10 bg-paper/70 p-3 transition duration-300 ease-out hover:border-signal/35 hover:bg-night;
     animation: fade-slide-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
     animation-delay: calc(var(--index) * 45ms);
   }
@@ -167,7 +171,7 @@ body {
 
   .evidence-grid div,
   .report-metric-list div {
-    @apply min-w-0 rounded-md border border-ink/10 bg-white/70 px-3 py-2;
+    @apply min-w-0 rounded-md border border-ink/10 bg-night/70 px-3 py-2;
   }
 
   .evidence-grid span,
@@ -191,11 +195,11 @@ body {
   }
 
   .evidence-chip {
-    @apply max-w-full break-all rounded border border-ink/10 bg-white/80 px-2 py-1 font-mono text-xs text-ink/65;
+    @apply max-w-full break-all rounded border border-ink/10 bg-night/80 px-2 py-1 font-mono text-xs text-ink/65;
   }
 
   .evidence-note {
-    @apply rounded-md border border-ink/10 bg-white/60 px-3 py-2;
+    @apply rounded-md border border-ink/10 bg-night/60 px-3 py-2;
   }
 
   .evidence-detail-row {
@@ -203,7 +207,7 @@ body {
   }
 
   .structured-report {
-    @apply mt-4 rounded-md border border-ink/10 bg-white px-5 py-4 text-sm leading-7 text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.65)];
+    @apply mt-4 rounded-md border border-ink/10 bg-night px-5 py-4 text-sm leading-7 text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.04)];
   }
 
   .structured-report h4 {
@@ -219,7 +223,7 @@ body {
   }
 
   .report-note-list li {
-    @apply rounded-md border border-ink/10 bg-white/75 px-3 py-2 text-ink/75;
+    @apply rounded-md border border-ink/10 bg-night/75 px-3 py-2 text-ink/75;
   }
 
   .report-metric-list {
@@ -227,19 +231,19 @@ body {
   }
 
   .alert-row {
-    @apply grid grid-cols-[0.35fr_1fr_auto] items-center gap-3 rounded-md border border-ink/10 bg-paper/70 px-3 py-2 text-sm transition duration-300 hover:bg-white max-sm:grid-cols-1;
+    @apply grid grid-cols-[0.35fr_1fr_auto] items-center gap-3 rounded-md border border-ink/10 bg-paper/70 px-3 py-2 text-sm transition duration-300 hover:bg-night max-sm:grid-cols-1;
   }
 
   .memory-row {
-    @apply flex w-full items-center gap-3 rounded-md border border-ink/10 bg-paper/70 px-3 py-2 text-sm transition duration-300 hover:border-ink/25 hover:bg-white;
+    @apply flex w-full items-center gap-3 rounded-md border border-ink/10 bg-paper/70 px-3 py-2 text-sm transition duration-300 hover:border-signal/35 hover:bg-night;
   }
 
   .memory-row-active {
-    @apply border-brass/40 bg-white shadow-[0_8px_20px_rgba(184,137,59,0.10)];
+    @apply border-brass/50 bg-night shadow-[0_8px_20px_rgba(214,162,74,0.12)];
   }
 
   .markdown-report {
-    @apply mt-4 max-h-[28rem] overflow-auto rounded-md border border-ink/10 bg-white px-5 py-4 text-sm leading-7 text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.65)];
+    @apply mt-4 max-h-[28rem] overflow-auto rounded-md border border-ink/10 bg-night px-5 py-4 text-sm leading-7 text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.04)];
   }
 
   .markdown-report h1 {
@@ -271,11 +275,11 @@ body {
   }
 
   .empty-row {
-    @apply rounded-md border border-dashed border-ink/20 bg-white/55 px-3 py-6 text-center text-sm text-ink/45;
+    @apply rounded-md border border-dashed border-ink/20 bg-night/55 px-3 py-6 text-center text-sm text-ink/45;
   }
 
   .runtime-pill {
-    @apply flex min-w-52 items-center justify-between gap-4 rounded-md border border-ink/15 bg-white/90 px-4 py-3 shadow-[0_12px_28px_rgba(17,21,19,0.06)];
+    @apply flex min-w-52 items-center justify-between gap-4 rounded-md border border-ink/15 bg-night/90 px-4 py-3 shadow-[0_12px_28px_rgba(0,0,0,0.18)];
   }
 
   .runtime-pill span {
