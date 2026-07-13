@@ -456,9 +456,11 @@ test("sidebar navigation keeps the clicked section active", async () => {
 
   expect(strategyLink).toHaveClass("nav-item-active");
   expect(harnessLink).not.toHaveClass("nav-item-active");
+  expect(window.location.pathname).toBe("/harness/strategy");
   fireEvent.click(runsLink);
   expect(runsLink).toHaveClass("nav-item-active");
   expect(strategyLink).not.toHaveClass("nav-item-active");
+  expect(window.location.pathname).toBe("/harness/runs");
   expect(await screen.findByText("344")).toBeInTheDocument();
 });
 

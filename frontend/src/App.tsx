@@ -862,7 +862,7 @@ const previewOverview: HarnessOverview = {
 
 function App() {
   const [language, setLanguage] = useState<Language>("zh");
-  const [activeSection, setActiveSection] = useState<NavSection>(() => activeSectionFromHash());
+  const [activeSection, setActiveSection] = useState<NavSection>(() => activeSectionFromPath());
   const [prompt, setPrompt] = useState(copy.zh.prompt);
   const [run, setRun] = useState<AgentRun>(seedRun);
   const [overview, setOverview] = useState<HarnessOverview | null>(null);
@@ -1014,20 +1014,17 @@ function App() {
 
   useEffect(() => {
     function syncActiveSection() {
-      setActiveSection(activeSectionFromHash());
+      setActiveSection(activeSectionFromPath());
     }
 
-    window.addEventListener("hashchange", syncActiveSection);
-    return () => window.removeEventListener("hashchange", syncActiveSection);
+    window.addEventListener("popstate", syncActiveSection);
+    return () => window.removeEventListener("popstate", syncActiveSection);
   }, []);
 
   function handleNavClick(section: NavSection, event: MouseEvent<HTMLAnchorElement>) {
     event.preventDefault();
+    window.history.pushState({}, "", sectionPath(section));
     setActiveSection(section);
-    const target = document.getElementById(section);
-    if (target) {
-      target.scrollIntoView?.({ behavior: "smooth", block: "start" });
-    }
   }
 
   async function handleRun() {
@@ -1127,7 +1124,7 @@ function App() {
           <nav className="mt-8 space-y-2 text-sm">
             <a
               className={navItemClass("harness")}
-              href="#harness"
+              href={sectionPath("harness")}
               onClick={(event) => handleNavClick("harness", event)}
             >
               <TerminalSquare size={16} />
@@ -1135,7 +1132,7 @@ function App() {
             </a>
             <a
               className={navItemClass("strategy")}
-              href="#strategy"
+              href={sectionPath("strategy")}
               onClick={(event) => handleNavClick("strategy", event)}
             >
               <Archive size={16} />
@@ -1143,7 +1140,7 @@ function App() {
             </a>
             <a
               className={navItemClass("alerts")}
-              href="#alerts"
+              href={sectionPath("alerts")}
               onClick={(event) => handleNavClick("alerts", event)}
             >
               <AlertTriangle size={16} />
@@ -1151,7 +1148,7 @@ function App() {
             </a>
             <a
               className={navItemClass("runs")}
-              href="#runs"
+              href={sectionPath("runs")}
               onClick={(event) => handleNavClick("runs", event)}
             >
               <Layers3 size={16} />
@@ -1159,7 +1156,7 @@ function App() {
             </a>
             <a
               className={navItemClass("memory")}
-              href="#memory"
+              href={sectionPath("memory")}
               onClick={(event) => handleNavClick("memory", event)}
             >
               <MemoryStick size={16} />
@@ -1167,7 +1164,7 @@ function App() {
             </a>
             <a
               className={navItemClass("rag")}
-              href="#rag"
+              href={sectionPath("rag")}
               onClick={(event) => handleNavClick("rag", event)}
             >
               <Brain size={16} />
@@ -1186,6 +1183,7 @@ function App() {
         </aside>
 
         <main className="mx-auto w-full max-w-[1480px] px-8 py-7 max-lg:px-4">
+          <div className={activeSection === "harness" ? "" : "hidden"}>
           <header
             className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-ink/15 pb-5 max-md:grid-cols-1"
             id="harness"
@@ -1417,8 +1415,9 @@ function App() {
             language={language}
             loading={busy || observabilityLoading}
           />
+          </div>
 
-          <section className="mt-5 grid grid-cols-[1.1fr_0.9fr] gap-5 max-xl:grid-cols-1" id="strategy">
+          <section className={`mt-5 grid grid-cols-[1.1fr_0.9fr] gap-5 max-xl:grid-cols-1 ${activeSection === "strategy" ? "" : "hidden"}`}>
             <div className="panel">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1530,7 +1529,7 @@ function App() {
             </div>
           </section>
 
-          <section className="mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1" id="alerts">
+          <section className={`mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1 ${activeSection === "alerts" ? "" : "hidden"}`}>
             <div className="panel">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1598,8 +1597,8 @@ function App() {
             </div>
           </section>
 
-          <section className="mt-5 grid grid-cols-[0.9fr_1.1fr] gap-5 max-xl:grid-cols-1">
-            <div className="panel" id="memory">
+          <section className={`mt-5 grid grid-cols-[0.9fr_1.1fr] gap-5 max-xl:grid-cols-1 ${activeSection === "memory" || activeSection === "rag" ? "" : "hidden"}`}>
+            <div className={`panel ${activeSection === "memory" ? "" : "hidden"}`}>
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="section-title">{t.memoryManager}</h2>
@@ -1683,7 +1682,7 @@ function App() {
               </div>
             </div>
 
-            <div className="panel" id="rag">
+            <div className={`panel ${activeSection === "rag" ? "" : "hidden"}`}>
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h2 className="section-title">{t.rag}</h2>
@@ -1730,7 +1729,7 @@ function App() {
             </div>
           </section>
 
-          <section className="mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1" id="runs">
+          <section className={`mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1 ${activeSection === "runs" ? "" : "hidden"}`}>
             <div className="panel">
               <div className="flex items-center justify-between gap-4">
                 <h2 className="section-title">{t.topMovers}</h2>
@@ -1830,11 +1829,11 @@ function statusLabel(status: string | undefined): string {
   return labels[normalized] ?? status ?? "未知";
 }
 
-function activeSectionFromHash(): NavSection {
+function activeSectionFromPath(): NavSection {
   if (typeof window === "undefined") {
     return "harness";
   }
-  const section = window.location.hash.replace("#", "");
+  const section = window.location.pathname.split("/").filter(Boolean).at(-1) ?? "harness";
   if (
     section === "strategy" ||
     section === "alerts" ||
@@ -1845,6 +1844,10 @@ function activeSectionFromHash(): NavSection {
     return section;
   }
   return "harness";
+}
+
+function sectionPath(section: NavSection): string {
+  return section === "harness" ? "/harness" : `/harness/${section}`;
 }
 
 function StatusDot({ enabled }: { enabled: boolean }) {

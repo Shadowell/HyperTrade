@@ -4,6 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
+- Last verified state: Harness sidebar navigation now uses independent,
+  refreshable paths for workbench, strategy library, alerts, runs, memory, and
+  RAG. Each path renders only its corresponding operator page while retaining
+  shared API state and the common sidebar. Frontend tests and build passed;
+  deployment verification is pending.
 - Architecture diagram: Updated to include World Model (Layer 5), Monitoring (Layer 7), renumbered layers, and full Mermaid+SVG coverage.
 - Last verified state: Sprint 86 paper observation and review queue implemented
   locally on 2026-07-13. Read-only paper snapshot sampling creates durable,

@@ -69,6 +69,11 @@ BitPro business logic to HyperTrade.
 
 ## V1 In Scope
 
+- Harness routing: sidebar destinations are independent, refreshable SPA paths
+  (`/harness`, `/harness/strategy`, `/harness/alerts`, `/harness/runs`,
+  `/harness/memory`, `/harness/rag`) rather than hash-scroll targets in one
+  long workbench view.
+
 - FastAPI backend with public workbench observability/read endpoints and admin session auth for privileged mutations.
 - LangGraph-style AgentKernel with explicit traceable tool calls.
 - DeepSeek default provider configuration.
