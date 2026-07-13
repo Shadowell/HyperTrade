@@ -36,6 +36,60 @@ body {
     @apply shadow-[0_18px_52px_rgba(0,0,0,0.24)];
   }
 
+  .operator-card {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0.82rem 0.9rem 0.82rem 1.08rem;
+    border: 1px solid rgba(232, 238, 233, 0.12);
+    border-radius: 0.5rem;
+    background: linear-gradient(135deg, rgba(232, 238, 233, 0.035), transparent 72%), rgba(13, 23, 20, 0.72);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+    transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  }
+
+  .operator-card::before {
+    position: absolute;
+    top: 0.74rem;
+    bottom: 0.74rem;
+    left: 0.56rem;
+    width: 2px;
+    border-radius: 999px;
+    background: #5ad6c4;
+    box-shadow: 0 0 10px rgba(90, 214, 196, 0.18);
+    content: "";
+  }
+
+  .operator-card[data-tone="brass"]::before {
+    background: #d6a24a;
+    box-shadow: 0 0 10px rgba(214, 162, 74, 0.18);
+  }
+
+  .operator-card[data-tone="violet"]::before {
+    background: #9d87e8;
+    box-shadow: 0 0 10px rgba(157, 135, 232, 0.16);
+  }
+
+  .operator-card[data-tone="danger"]::before {
+    background: #e36b4f;
+    box-shadow: 0 0 10px rgba(227, 107, 79, 0.18);
+  }
+
+  .operator-card:hover {
+    border-color: rgba(90, 214, 196, 0.35);
+    background: linear-gradient(135deg, rgba(90, 214, 196, 0.06), transparent 72%), rgba(13, 23, 20, 0.9);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2);
+  }
+
+  .operator-card[data-tone="danger"]:hover {
+    border-color: rgba(227, 107, 79, 0.42);
+  }
+
+  button.operator-card:focus-visible {
+    outline: 2px solid rgba(90, 214, 196, 0.76);
+    outline-offset: 2px;
+  }
+
   .section-title {
     @apply text-base font-semibold tracking-tight;
   }
@@ -57,8 +111,7 @@ body {
   }
 
   button.trace-row,
-  button.run-row,
-  button.strategy-card {
+  button.run-row {
     @apply cursor-pointer border-x-0 border-b-0 bg-transparent text-inherit;
     font: inherit;
   }
@@ -134,7 +187,7 @@ body {
   }
 
   .status-row {
-    @apply flex items-center justify-between gap-3 rounded-md border border-ink/10 px-3 py-2 text-sm transition duration-300 hover:bg-paper/70;
+    @apply flex items-center justify-between gap-3 text-sm;
   }
 
   .ticker-row {
@@ -152,7 +205,7 @@ body {
   }
 
   .strategy-card {
-    @apply grid w-full gap-2 rounded-md border border-ink/10 bg-paper/70 p-3 transition duration-300 ease-out hover:border-signal/35 hover:bg-night;
+    @apply grid w-full gap-3;
     animation: fade-slide-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
     animation-delay: calc(var(--index) * 45ms);
   }
@@ -231,11 +284,11 @@ body {
   }
 
   .alert-row {
-    @apply grid grid-cols-[0.35fr_1fr_auto] items-center gap-3 rounded-md border border-ink/10 bg-paper/70 px-3 py-2 text-sm transition duration-300 hover:bg-night max-sm:grid-cols-1;
+    @apply grid grid-cols-[0.35fr_1fr_auto] items-center gap-3 text-sm max-sm:grid-cols-1;
   }
 
   .memory-row {
-    @apply flex w-full items-center gap-3 rounded-md border border-ink/10 bg-paper/70 px-3 py-2 text-sm transition duration-300 hover:border-signal/35 hover:bg-night;
+    @apply flex w-full items-center gap-3 text-sm;
   }
 
   .memory-row-active {

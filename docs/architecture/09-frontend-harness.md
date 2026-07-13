@@ -34,6 +34,12 @@ project monitor and approval state; runs project run/trace/provider counts;
 Memory projects its active inventory; and RAG projects document/chunk/search
 counts. No route creates a new API request just for visual statistics.
 
+Sprint 90 gives the operator's evidence and state rows a shared card system.
+Strategy evidence, monitor alerts, approval intents, Memory rows, and RAG hits
+all use one compact dark container and an explicit semantic rail. The rail is
+a presentation of the source state (signal, brass, violet, or danger), never a
+new risk calculation or permission decision.
+
 Design direction:
 
 - dense dark observability console with deep green-black surfaces and a restrained grid texture
@@ -72,6 +78,10 @@ Sprint 89 增加共享的路由上下文指标条。它不是第二套数据面�
 已经加载且有来源的数据。工作台使用全局遥测；策略页投影证据总数；告警页投影
 监控与审批状态；运行页投影运行/Trace/Provider 请求数；Memory 页投影活跃库存；
 RAG 页投影文档、分片和检索命中数。不会为了视觉统计新增 API 请求。
+
+Sprint 90 为操作员的证据和状态行提供共享的卡片系统。策略证据、监控告警、审批
+意图、Memory 条目和 RAG 命中都使用同一个紧凑的深色容器与显式状态轨。状态轨只
+展示来源状态（signal、brass、violet、danger），绝不构成新的风险计算或权限决策。
 
 设计方向：
 

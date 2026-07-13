@@ -346,7 +346,11 @@ test("renders strategy library evidence and source drilldown ids", async () => {
   expect(screen.getByText(/bt_winning/)).toBeInTheDocument();
   expect(screen.getAllByText("bitpro_result: 196").length).toBeGreaterThanOrEqual(1);
 
-  fireEvent.click(screen.getByRole("button", { name: /momentum_breakout_v1/ }));
+  const strategyCard = screen.getByRole("button", { name: /momentum_breakout_v1/ });
+  expect(strategyCard).toHaveClass("operator-card");
+  expect(strategyCard).toHaveAttribute("data-tone", "brass");
+
+  fireEvent.click(strategyCard);
 
   expect(screen.getByText("证据详情")).toBeInTheDocument();
   expect(screen.getAllByText("memory: mem_winning").length).toBeGreaterThanOrEqual(1);
@@ -384,6 +388,9 @@ test("renders monitor empty states and readonly approval risk status", async () 
   expect(screen.getByText("待审批")).toBeInTheDocument();
   expect(await screen.findByText("loi_live")).toBeInTheDocument();
   expect(screen.getByText("allowed")).toBeInTheDocument();
+  const intentCard = screen.getByText("loi_live").closest(".status-row");
+  expect(intentCard).toHaveClass("operator-card");
+  expect(intentCard).toHaveAttribute("data-tone", "brass");
   expect(screen.queryByText("API 404")).not.toBeInTheDocument();
 });
 
@@ -567,6 +574,9 @@ test("renders scoped metric strips for every routed operator page", async () => 
   metricStrip = screen.getByRole("region", { name: "页面指标" });
   expect(within(metricStrip).getByText("当前告警")).toBeInTheDocument();
   expect(within(metricStrip).getByText("高优先级")).toBeInTheDocument();
+  const highRiskAlert = screen.getByText("Evidence freshness").closest(".alert-row");
+  expect(highRiskAlert).toHaveClass("operator-card");
+  expect(highRiskAlert).toHaveAttribute("data-tone", "danger");
 
   fireEvent.click(screen.getByRole("link", { name: "记忆检索" }));
   metricStrip = screen.getByRole("region", { name: "页面指标" });

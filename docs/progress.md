@@ -4,6 +4,15 @@
 
 - Branch: `main`
 - Harness status: active
+- Last verified state: Sprint 90 unified operator cards completed locally on
+  2026-07-13. Strategy evidence, monitor alerts, approval intents, Memory
+  entries, and RAG hits now share one compact dark operator-card treatment with
+  a source-state rail. The rail distinguishes normal/passing, evidence or
+  pending review, contextual inventory, and final high-risk/failed state
+  without creating a new risk decision. Frontend lint/test/build and full
+  `./scripts/check.sh` passed. Browser checks against production-read strategy
+  and alert data confirmed the shared treatment at desktop and 390px with no
+  page-level horizontal overflow. Deployment verification is pending.
 - Last verified state: Sprint 89 route context metrics completed locally on
   2026-07-13. The workbench retains its five global telemetry cards; strategy,
   alerts, runs, Memory, and RAG each now render a compact, route-scoped strip
@@ -148,8 +157,8 @@
 
 ## Active Contract
 
-- Sprint 89 route context metrics is active under
-  `docs/contracts/sprint-89-route-context-metrics.md`.
+- Sprint 90 unified operator cards is active under
+  `docs/contracts/sprint-90-unified-operator-cards.md`.
 
 ## Approved Follow-On Design
 

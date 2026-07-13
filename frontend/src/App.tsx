@@ -1611,7 +1611,8 @@ function App() {
                 ) : (
                   strategyLibrary.items.map((item, index) => (
                     <button
-                      className="strategy-card text-left"
+                      className="operator-card strategy-card text-left"
+                      data-tone={strategyCardTone(item)}
                       key={item.strategy_key}
                       onClick={() => handleSelectStrategyEvidence(item)}
                       style={cascadeStyle(index)}
@@ -1699,7 +1700,11 @@ function App() {
                   <div className="empty-row">{t.noMonitorAlerts}</div>
                 ) : (
                   monitorAlerts.map((alert, index) => (
-                    <div className="alert-row" key={alert.id ?? `${alert.code}-${index}`}>
+                    <div
+                      className="operator-card alert-row"
+                      data-tone={monitorAlertTone(alert)}
+                      key={alert.id ?? `${alert.code}-${index}`}
+                    >
                       <span className="font-mono text-xs text-ink/45">
                         {alert.severity ?? "info"}
                       </span>
@@ -1738,7 +1743,7 @@ function App() {
                   <div className="empty-row">{t.noIntents}</div>
                 ) : (
                   activeOverview.live_orders.recent.slice(0, 5).map((intent) => (
-                    <div className="status-row" key={intent.id}>
+                    <div className="operator-card status-row" data-tone={intentCardTone(intent)} key={intent.id}>
                       <span className="font-mono text-xs text-ink/55">{intent.id}</span>
                       <span className="min-w-0 truncate text-sm">
                         {intent.inst_id} / {intent.side} / {intent.size}
@@ -1790,7 +1795,7 @@ function App() {
                 ) : (
                   memoryItems.slice(0, 8).map((item) => (
                     <button
-                      className={`memory-row ${
+                      className={`operator-card memory-row ${
                         selectedMemory?.id === item.id ? "memory-row-active" : ""
                       }`}
                       key={item.id}
@@ -1876,7 +1881,11 @@ function App() {
                   <div className="empty-row">{t.rag}</div>
                 ) : (
                   ragHits.slice(0, 8).map((hit) => (
-                    <div className="status-row items-start" key={`${hit.source_path}-${hit.chunk_index}`}>
+                    <div
+                      className="operator-card status-row items-start"
+                      data-tone="violet"
+                      key={`${hit.source_path}-${hit.chunk_index}`}
+                    >
                       <div className="min-w-0">
                         <div className="font-semibold">{hit.title}</div>
                         <div className="truncate font-mono text-xs text-ink/45">
@@ -2041,6 +2050,42 @@ function RouteMetricStrip({ metrics, label }: { metrics: RouteMetric[]; label: s
       ))}
     </section>
   );
+}
+
+function strategyCardTone(item: StrategyLibraryItem): RouteMetric["tone"] {
+  if (item.failed_count > 0 && item.passed_count > 0) {
+    return "brass";
+  }
+  if (item.failed_count > 0) {
+    return "danger";
+  }
+  if (item.passed_count > 0) {
+    return "signal";
+  }
+  return "brass";
+}
+
+function monitorAlertTone(alert: MonitorAlert): RouteMetric["tone"] {
+  const severity = (alert.severity ?? "").toLowerCase();
+  if (["critical", "high", "severe", "error"].includes(severity)) {
+    return "danger";
+  }
+  if (["warning", "warn", "medium"].includes(severity)) {
+    return "brass";
+  }
+  return "signal";
+}
+
+function intentCardTone(intent: LiveOrderIntent): RouteMetric["tone"] {
+  const risk = (intent.risk_status ?? "").toLowerCase();
+  const status = intent.status.toLowerCase();
+  if (status.includes("pending")) {
+    return "brass";
+  }
+  if (["rejected", "failed", "error", "blocked"].includes(risk) || ["rejected", "failed", "error"].includes(status)) {
+    return "danger";
+  }
+  return "signal";
 }
 
 type MemoryKindInsight = {

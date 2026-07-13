@@ -86,6 +86,11 @@ BitPro business logic to HyperTrade.
   metric-card strip derived from the data already loaded for that surface. The
   workbench retains global telemetry; strategy, alerts, runs, Memory, and RAG
   show their own scoped evidence, state, or inventory counts.
+- Harness operator cards: strategy evidence, monitor alerts, approval intents,
+  Memory entries, and RAG hits use one shared dark card treatment with explicit
+  semantic rails. Passing/normal state is signal, evidence or pending review is
+  brass, and high-risk or final failed state is danger; the UI does not infer a
+  new risk decision from the visual tone.
 
 - FastAPI backend with public workbench observability/read endpoints and admin session auth for privileged mutations.
 - LangGraph-style AgentKernel with explicit traceable tool calls.
