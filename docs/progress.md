@@ -12,7 +12,9 @@
   without creating a new risk decision. Frontend lint/test/build and full
   `./scripts/check.sh` passed. Browser checks against production-read strategy
   and alert data confirmed the shared treatment at desktop and 390px with no
-  page-level horizontal overflow. Deployment verification is pending.
+  page-level horizontal overflow. Deployment run `29222773538` succeeded for
+  SHA `2ff5936`; the production host health endpoint returned
+  `{"status":"ok","service":"hypertrade-api"}`.
 - Last verified state: Sprint 89 route context metrics completed locally on
   2026-07-13. The workbench retains its five global telemetry cards; strategy,
   alerts, runs, Memory, and RAG each now render a compact, route-scoped strip
