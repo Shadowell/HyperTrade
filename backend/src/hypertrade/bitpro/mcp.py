@@ -39,6 +39,7 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "paper_dashboard": {"method": "GET", "path": "/live/dashboard"},
     "paper_events": {"method": "GET", "path": "/live/events"},
     "paper_equity_curve": {"method": "GET", "path": "/live/equity_curve"},
+    "paper_snapshot": {"method": "GET", "path": "/live/paper_snapshot"},
     "live_strategies": {"method": "GET", "path": "/live/strategies"},
     "live_preflight": {"method": "POST", "path": "/live/promote/preflight"},
     "trading_balance": {"method": "GET", "path": "/trading/accounts/balance"},
@@ -904,6 +905,26 @@ class BitProToolAdapter:
             "sample_limit": safe_limit,
             "equity_curve": points,
             "equity_summary": _paper_equity_summary(rows, points),
+            "tool_calls": self.last_tool_calls,
+        }
+
+    def paper_snapshot(
+        self, *, strategy_id: int | None = None, instance_id: str | None = None
+    ) -> dict[str, Any]:
+        """Read one immutable BitPro paper-evidence snapshot."""
+        if strategy_id is None and not instance_id:
+            raise ValueError("paper_snapshot requires strategy_id or instance_id")
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        snapshot = self._call(
+            "paper_snapshot",
+            _compact({"strategy_id": strategy_id, "instance_id": instance_id}),
+        )
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "snapshot": snapshot,
             "tool_calls": self.last_tool_calls,
         }
 

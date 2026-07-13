@@ -7,7 +7,6 @@ from typing import Any, Protocol, cast
 
 from sqlalchemy import desc, select
 
-from hypertrade.bitpro.paper_monitor import BitProPaperMonitorService
 from hypertrade.db import Database, PaperPromotion, ResearchExperimentEvidence, ResearchMandate
 
 PAPER_PROMOTION_STATES = frozenset(
@@ -20,9 +19,7 @@ PAPER_PROMOTION_STATES = frozenset(
         "paper_retired",
     }
 )
-OBSERVABLE_PAPER_STATES = frozenset(
-    {"paper_observing", "paper_degraded", "paper_review_required"}
-)
+OBSERVABLE_PAPER_STATES = frozenset({"paper_observing", "paper_degraded", "paper_review_required"})
 
 
 class PaperPromotionAdapter(Protocol):
@@ -38,17 +35,9 @@ class PaperPromotionAdapter(Protocol):
 
     def paper_start(self, *, strategy_id: int, idempotency_key: str) -> dict[str, Any]: ...
 
-    def paper_dashboard(self, *, strategy_id: int | None = None) -> dict[str, Any]: ...
-
-    def paper_events(
-        self, *, strategy_id: int | None = None, limit: int = 50
+    def paper_snapshot(
+        self, *, strategy_id: int | None = None, instance_id: str | None = None
     ) -> dict[str, Any]: ...
-
-    def paper_equity_curve(
-        self, *, strategy_id: int | None = None, sample_limit: int = 50
-    ) -> dict[str, Any]: ...
-
-    def paper_strategy_performance(self, *, limit: int = 20) -> dict[str, Any]: ...
 
 
 class PaperPromotionService:
@@ -160,34 +149,22 @@ class PaperPromotionService:
             if row.status not in OBSERVABLE_PAPER_STATES:
                 raise ValueError(f"paper promotion cannot be observed from {row.status}")
             strategy_id = int(row.bitpro_strategy_id)
-        snapshot = BitProPaperMonitorService(self.db, bitpro_adapter=self.bitpro_adapter).capture(
-            strategy_id=strategy_id
-        )
-        gaps = list((snapshot.get("drift") or {}).get("data_gaps", []))
-        alerts = list((snapshot.get("drift") or {}).get("alerts", []))
-        performance = self.bitpro_adapter.paper_strategy_performance(limit=20)
-        candidate_performance, performance_gap = _candidate_performance(
-            performance, strategy_id=strategy_id
-        )
-        if performance_gap:
-            gaps.append(performance_gap)
-        drift = {**_dict(snapshot.get("drift")), "data_gaps": gaps}
+        paper = self.bitpro_adapter.paper_snapshot(strategy_id=strategy_id)
+        snapshot = _dict(paper.get("snapshot"))
+        gaps, alerts = _snapshot_health(snapshot)
+        drift = {"mode": "bitpro_paper_snapshot", "data_gaps": gaps, "alerts": alerts}
         next_status = (
-            "paper_review_required"
-            if alerts
-            else "paper_degraded"
-            if gaps
-            else "paper_observing"
+            "paper_review_required" if alerts else "paper_degraded" if gaps else "paper_observing"
         )
         with self.db.session() as session:
             row = _promotion(session, promotion_id)
             previous = row.status
             row.status = next_status
             observation = {
-                "snapshot_id": snapshot.get("snapshot_id"),
-                "metrics": snapshot.get("metrics", {}),
+                "snapshot_id": str(snapshot.get("instance_id", "")),
+                "metrics": _snapshot_metrics(snapshot),
                 "drift": drift,
-                "performance": candidate_performance,
+                "paper_snapshot": snapshot,
                 "recommended_next_action": "operator_review"
                 if next_status != "paper_observing"
                 else "continue_read_only_observation",
@@ -293,13 +270,34 @@ def _tool_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
     )
 
 
-def _candidate_performance(
-    performance: dict[str, Any], *, strategy_id: int
-) -> tuple[dict[str, Any], str]:
-    for row in performance.get("strategies", []):
-        if isinstance(row, dict) and str(row.get("strategy_id")) == str(strategy_id):
-            return dict(row), ""
-    for row in performance.get("unavailable_strategies", []):
-        if isinstance(row, dict) and str(row.get("strategy_id")) == str(strategy_id):
-            return dict(row), "performance evidence unavailable for candidate"
-    return {}, "performance evidence missing for candidate"
+def _snapshot_health(snapshot: dict[str, Any]) -> tuple[list[str], list[dict[str, str]]]:
+    gaps = [
+        f"missing {field}"
+        for field in ("instance_id", "strategy_version", "config_version", "generated_at")
+        if not snapshot.get(field)
+    ]
+    coverage = _dict(snapshot.get("data_coverage"))
+    if not coverage.get("equity_sample_count"):
+        gaps.append("missing equity sample coverage")
+    alerts: list[dict[str, str]] = []
+    if str(snapshot.get("status", "")) != "running":
+        alerts.append({"level": "warning", "code": "paper_not_running"})
+    if int(snapshot.get("error_count", 0) or 0) > 0:
+        alerts.append({"level": "warning", "code": "paper_errors"})
+    return gaps, alerts
+
+
+def _snapshot_metrics(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: snapshot.get(key)
+        for key in (
+            "equity",
+            "pnl",
+            "cumulative_return_pct",
+            "max_drawdown_pct",
+            "sharpe_ratio",
+            "trade_count",
+            "error_count",
+        )
+        if snapshot.get(key) is not None
+    }

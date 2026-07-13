@@ -5,6 +5,11 @@
 - Branch: `main`
 - Harness status: active
 - Architecture diagram: Updated to include World Model (Layer 5), Monitoring (Layer 7), renumbered layers, and full Mermaid+SVG coverage.
+- Last verified state: Sprint 85 BitPro paper snapshot integration implemented
+  locally on 2026-07-13. Promotion observation now reads the immutable,
+  strategy-scoped BitPro snapshot and persists its identity, versions, metrics,
+  coverage, and source payload without dashboard/event/equity aggregation.
+  Focused regression passed (`128 passed`); deployment verification is pending.
 - Last verified state: Sprint 84 regime-aware StrategyCard portfolio review
   implemented locally on 2026-07-12. A read-only projection joins research
   mandate, passing validation evidence, paper-promotion state, and latest
@@ -98,8 +103,8 @@
 
 ## Active Contract
 
-- Sprint 84 regime-aware strategy portfolio review is active under
-  `docs/contracts/sprint-84-regime-aware-strategy-portfolio-review.md`.
+- Sprint 85 BitPro paper snapshot integration is active under
+  `docs/contracts/sprint-85-bitpro-paper-snapshot.md`.
 
 ## Approved Follow-On Design
 

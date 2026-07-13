@@ -246,6 +246,11 @@ class ToolRegistry:
                     "bitpro",
                 ),
                 ToolDefinition(
+                    "bitpro.paper_snapshot",
+                    "Read one immutable, strategy-scoped BitPro paper evidence snapshot.",
+                    "bitpro",
+                ),
+                ToolDefinition(
                     "bitpro.paper_strategy_performance",
                     "Read validated BitPro paper strategy performance ranking.",
                     "bitpro",
@@ -448,6 +453,7 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "bitpro_paper_resume": "bitpro.paper_resume",
     "bitpro_paper_stop": "bitpro.paper_stop",
     "bitpro_paper_dashboard": "bitpro.paper_dashboard",
+    "bitpro_paper_snapshot": "bitpro.paper_snapshot",
     "bitpro_paper_strategy_performance": "bitpro.paper_strategy_performance",
     "bitpro_paper_events": "bitpro.paper_events",
     "bitpro_paper_equity_curve": "bitpro.paper_equity_curve",

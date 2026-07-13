@@ -82,6 +82,12 @@ class BitProApiAdapter(Protocol):
         """Read BitPro paper/simulation dashboard state."""
         ...
 
+    def paper_snapshot(
+        self, *, strategy_id: int | None = None, instance_id: str | None = None
+    ) -> dict[str, Any]:
+        """Read one immutable BitPro paper evidence snapshot."""
+        ...
+
     def paper_events(
         self,
         *,
@@ -681,6 +687,16 @@ def create_app(
     def bitpro_paper_dashboard(_: AdminUser) -> dict[str, Any]:
         adapter = get_bitpro_adapter()
         return _bitpro_read_or_502(adapter, adapter.paper_dashboard)
+
+    @app.get("/api/bitpro/paper/snapshot")
+    def bitpro_paper_snapshot(
+        _: AdminUser, strategy_id: int | None = None, instance_id: str | None = None
+    ) -> dict[str, Any]:
+        adapter = get_bitpro_adapter()
+        return _bitpro_read_or_502(
+            adapter,
+            lambda: adapter.paper_snapshot(strategy_id=strategy_id, instance_id=instance_id),
+        )
 
     @app.get("/api/monitors")
     def list_monitors() -> dict[str, list[dict[str, Any]]]:

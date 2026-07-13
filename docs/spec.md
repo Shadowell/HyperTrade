@@ -131,6 +131,9 @@ BitPro business logic to HyperTrade.
   WorldState portfolio view. It returns only source-bound review actions and
   explicit unknown/data-gap states; it never mutates paper sessions, risk
   budgets, allocations, or live execution.
+- Sprint 85 uses BitPro's immutable read-only `paper_snapshot` as the primary
+  strategy-scoped paper-evidence source; no Agent or portfolio path may turn
+  that evidence into a lifecycle write.
 - Sprint 79 CLI unified report rendering: completed Agent answers take
   precedence over report-block/audit dumps in default output, while explicit
   tool/audit modes preserve the structured evidence. Simulated-strategy

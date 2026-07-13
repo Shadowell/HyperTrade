@@ -23,46 +23,28 @@ class PaperFixtureAdapter:
         assert kwargs["idempotency_key"]
         return {"paper": {"status": "running"}, "tool_calls": []}
 
-    def paper_dashboard(self, *, strategy_id: int | None = None) -> dict[str, Any]:
-        self.calls.append("paper_dashboard")
-        current_dashboard = {
-            "strategy_id": strategy_id,
-            "state": "running",
-            "mode": "paper",
+    def paper_snapshot(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append("paper_snapshot")
+        snapshot = {
+            "instance_id": "paper_901",
+            "strategy_id": 42,
+            "strategy_version": "script-sha",
+            "config_version": "config-v1",
+            "status": "running",
             "equity": 10010,
-            "total_pnl_pct": 0.1,
+            "pnl": 10,
+            "cumulative_return_pct": 0.1,
             "max_drawdown_pct": 1,
+            "sharpe_ratio": 1.2,
+            "trade_count": 1,
+            "error_count": 0,
+            "generated_at": "2026-07-13T00:00:00Z",
+            "data_coverage": {"equity_sample_count": 2},
         }
         if self.missing_metrics:
-            current_dashboard.pop("total_pnl_pct")
+            snapshot["data_coverage"] = {"equity_sample_count": 0}
         return {
-            "monitor_summary": {
-                "current_dashboard": current_dashboard
-            },
-            "dashboard": {},
-            "tool_calls": [],
-        }
-
-    def paper_events(self, *, strategy_id: int | None = None, limit: int = 50) -> dict[str, Any]:
-        self.calls.append("paper_events")
-        return {"event_summary": {"count": 0, "error_count": 0}, "tool_calls": []}
-
-    def paper_equity_curve(
-        self, *, strategy_id: int | None = None, sample_limit: int = 50
-    ) -> dict[str, Any]:
-        self.calls.append("paper_equity_curve")
-        return {
-            "equity_summary": {"count": 1, "latest_equity": 10010, "max_drawdown_pct": 1},
-            "tool_calls": [],
-        }
-
-    def paper_strategy_performance(self, *, limit: int = 20) -> dict[str, Any]:
-        self.calls.append("paper_strategy_performance")
-        return {
-            "strategies": [
-                {"strategy_id": 42, "strategy_name": "btc_trend", "return_pct": "0.1"}
-            ],
-            "unavailable_strategies": [],
+            "snapshot": snapshot,
             "tool_calls": [],
         }
 
@@ -156,17 +138,12 @@ def test_paper_observation_is_read_only_and_keeps_data_gaps_visible() -> None:
     observed = service.observe(pending["id"])
 
     assert observed["status"] == "paper_observing"
-    assert observed["observation"]["snapshot_id"].startswith("bpms_")
+    assert observed["observation"]["snapshot_id"] == "paper_901"
     assert (
         observed["observation"]["history"][-1]["snapshot_id"]
         == observed["observation"]["snapshot_id"]
     )
-    assert adapter.calls[-4:] == [
-        "paper_dashboard",
-        "paper_events",
-        "paper_equity_curve",
-        "paper_strategy_performance",
-    ]
+    assert adapter.calls[-1:] == ["paper_snapshot"]
     assert "paper_pause" not in adapter.calls
 
 
@@ -188,12 +165,9 @@ def test_paper_observation_marks_data_gaps_degraded_without_lifecycle_write() ->
 
     assert observed["status"] == "paper_degraded"
     assert observed["observation"]["recommended_next_action"] == "operator_review"
-    assert "missing total_pnl_pct" in observed["observation"]["drift"]["data_gaps"]
+    assert "missing equity sample coverage" in observed["observation"]["drift"]["data_gaps"]
     assert adapter.calls == [
         "paper_configure",
         "paper_start",
-        "paper_dashboard",
-        "paper_events",
-        "paper_equity_curve",
-        "paper_strategy_performance",
+        "paper_snapshot",
     ]

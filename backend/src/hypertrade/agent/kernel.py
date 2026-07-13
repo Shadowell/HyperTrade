@@ -551,6 +551,13 @@ class AgentKernel:
                     strategy_id=int(strategy_id) if strategy_id is not None else None,
                 )
                 self._trace_bitpro_tool_calls(run_id, result)
+            elif tool_name == "bitpro_paper_snapshot":
+                strategy_id = args.get("strategy_id")
+                result = self._bitpro_adapter().paper_snapshot(
+                    strategy_id=int(strategy_id) if strategy_id is not None else None,
+                    instance_id=str(args["instance_id"]) if args.get("instance_id") else None,
+                )
+                self._trace_bitpro_tool_calls(run_id, result)
             elif tool_name == "bitpro_paper_strategy_performance":
                 result = self._bitpro_adapter().paper_strategy_performance(
                     limit=int(args.get("limit", 20)),

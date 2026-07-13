@@ -401,6 +401,24 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "bitpro_paper_snapshot",
+            "description": (
+                "Read one immutable BitPro paper evidence snapshot by strategy "
+                "or instance id. Read-only."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer"},
+                    "instance_id": {"type": "string"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "bitpro_paper_dashboard",
             "description": (
                 "Read BitPro paper/simulation dashboard state. Read-only. "
