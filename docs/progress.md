@@ -12,8 +12,9 @@
   operator list; capacity is explicitly item composition rather than a storage
   quota. Frontend lint/test/build and full `./scripts/check.sh` passed. Browser
   validation against real production Memory data confirmed desktop rendering
-  and no horizontal overflow at a 390px viewport. Deployment verification is
-  pending.
+  and no horizontal overflow at a 390px viewport. Deployment run
+  `29221155886` succeeded for SHA `3931da0`; the production host health endpoint
+  returned `{"status":"ok","service":"hypertrade-api"}`.
 - Last verified state: Sprint 87 Harness dark observability theme completed
   locally on 2026-07-13. Shared Tailwind tokens and component styles now give
   every routed Harness surface the Flight Recorder's green-black console
