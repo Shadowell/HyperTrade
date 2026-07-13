@@ -244,6 +244,12 @@ type EvidenceSelection = {
   rows: Array<{ label: string; value: string }>;
 };
 
+type RouteMetric = {
+  label: string;
+  value: string;
+  tone: "signal" | "brass" | "violet" | "danger";
+};
+
 type ReportBlock = {
   block_type?: string;
   title?: string;
@@ -434,6 +440,7 @@ const copy = {
     side: "方向",
     reason: "理由",
     pending: "待审批",
+    approvalQueue: "审批待办",
     noIntents: "暂无订单意图",
     agentProgress: "智能体进度",
     reportReader: "报告阅读",
@@ -453,6 +460,7 @@ const copy = {
     memoryConfidence: "平均可信度",
     memoryImportance: "平均重要性",
     memoryReuse: "累计复用",
+    memoryReuseCount: "复用次数",
     memorySources: "来源工具",
     memoryKinds: "记忆类型",
     memoryEntries: "条",
@@ -533,6 +541,23 @@ const copy = {
     sourceRefs: "来源",
     missingData: "缺失数据",
     evidenceCount: "证据数",
+    pageMetrics: "页面指标",
+    strategyCount: "策略条目",
+    evidenceTotal: "累计证据",
+    passedEvidence: "通过证据",
+    failedEvidence: "失败证据",
+    currentAlerts: "当前告警",
+    highPriority: "高优先级",
+    runTotal: "运行总数",
+    recentCompleted: "最近完成",
+    traceTotal: "Trace 事件",
+    modelRequests: "模型请求",
+    activeMemory: "活跃记忆",
+    loadedMemory: "已加载记忆",
+    ragDocuments: "知识文档",
+    ragChunks: "知识分片",
+    ragMatches: "命中结果",
+    ragSearchTerm: "检索词",
     passFail: "通过 / 失败",
     variants: "变体",
     score: "评分",
@@ -613,6 +638,7 @@ const copy = {
     side: "Side",
     reason: "Reason",
     pending: "Pending",
+    approvalQueue: "Approvals queued",
     noIntents: "No order intents",
     agentProgress: "Agent Progress",
     reportReader: "Report Reader",
@@ -632,6 +658,7 @@ const copy = {
     memoryConfidence: "Mean confidence",
     memoryImportance: "Mean importance",
     memoryReuse: "Total reuse",
+    memoryReuseCount: "Reuse count",
     memorySources: "Source tools",
     memoryKinds: "Memory kinds",
     memoryEntries: "items",
@@ -714,6 +741,23 @@ const copy = {
     sourceRefs: "Sources",
     missingData: "Missing Data",
     evidenceCount: "Evidence",
+    pageMetrics: "Page metrics",
+    strategyCount: "Strategies",
+    evidenceTotal: "Evidence total",
+    passedEvidence: "Passed evidence",
+    failedEvidence: "Failed evidence",
+    currentAlerts: "Current alerts",
+    highPriority: "High priority",
+    runTotal: "Runs total",
+    recentCompleted: "Recently completed",
+    traceTotal: "Trace events",
+    modelRequests: "Model requests",
+    activeMemory: "Active memories",
+    loadedMemory: "Loaded memories",
+    ragDocuments: "Knowledge documents",
+    ragChunks: "Knowledge chunks",
+    ragMatches: "Matched results",
+    ragSearchTerm: "Search term",
     passFail: "Pass / Fail",
     variants: "Variants",
     score: "Score",
@@ -968,6 +1012,75 @@ function App() {
     [activeOverview, t]
   );
 
+  const strategyRouteMetrics = useMemo<RouteMetric[]>(() => {
+    const evidence = strategyLibrary.items.reduce((total, item) => total + item.evidence_count, 0);
+    const passed = strategyLibrary.items.reduce((total, item) => total + item.passed_count, 0);
+    const failed = strategyLibrary.items.reduce((total, item) => total + item.failed_count, 0);
+    return [
+      { label: t.strategyCount, value: formatMetricNumber(strategyLibrary.items.length), tone: "signal" },
+      { label: t.evidenceTotal, value: formatMetricNumber(evidence), tone: "brass" },
+      { label: t.passedEvidence, value: formatMetricNumber(passed), tone: "signal" },
+      { label: t.failedEvidence, value: formatMetricNumber(failed), tone: "danger" }
+    ];
+  }, [strategyLibrary, t]);
+
+  const alertRouteMetrics = useMemo<RouteMetric[]>(() => {
+    const priorityAlerts = monitorAlerts.filter((alert) =>
+      ["critical", "high", "severe"].includes((alert.severity ?? "").toLowerCase())
+    ).length;
+    return [
+      { label: t.currentAlerts, value: formatMetricNumber(monitorAlerts.length), tone: "danger" },
+      { label: t.highPriority, value: formatMetricNumber(priorityAlerts), tone: "brass" },
+      {
+        label: t.approvalQueue,
+        value: formatMetricNumber(activeOverview.live_orders.pending_approval_count),
+        tone: "brass"
+      },
+      {
+        label: t.orderIntent,
+        value: formatMetricNumber(activeOverview.live_orders.total_count),
+        tone: "signal"
+      }
+    ];
+  }, [activeOverview.live_orders, monitorAlerts, t]);
+
+  const runRouteMetrics = useMemo<RouteMetric[]>(() => {
+    const completed = activeOverview.agent_runs.recent.filter((item) =>
+      ["completed", "success"].includes(item.status.toLowerCase())
+    ).length;
+    return [
+      { label: t.runTotal, value: formatMetricNumber(activeOverview.agent_runs.total_count), tone: "signal" },
+      { label: t.recentCompleted, value: formatMetricNumber(completed), tone: "signal" },
+      { label: t.traceTotal, value: formatMetricNumber(activeOverview.trace.total_count), tone: "brass" },
+      {
+        label: t.modelRequests,
+        value: formatMetricNumber(activeOverview.observability?.model_requests ?? 0),
+        tone: "violet"
+      }
+    ];
+  }, [activeOverview.agent_runs, activeOverview.observability, activeOverview.trace, t]);
+
+  const memoryRouteMetrics = useMemo<RouteMetric[]>(() => {
+    const kinds = new Set(memoryInventoryItems.map((item) => item.kind).filter(Boolean)).size;
+    const usage = memoryInventoryItems.reduce((total, item) => total + (item.usage_count ?? 0), 0);
+    return [
+      { label: t.activeMemory, value: formatMetricNumber(activeOverview.memory.active_count), tone: "signal" },
+      { label: t.loadedMemory, value: formatMetricNumber(memoryInventoryItems.length), tone: "violet" },
+      { label: t.memoryKinds, value: formatMetricNumber(kinds), tone: "brass" },
+      { label: t.memoryReuseCount, value: formatMetricNumber(usage), tone: "signal" }
+    ];
+  }, [activeOverview.memory.active_count, memoryInventoryItems, t]);
+
+  const ragRouteMetrics = useMemo<RouteMetric[]>(
+    () => [
+      { label: t.ragDocuments, value: formatMetricNumber(activeOverview.rag.document_count), tone: "signal" },
+      { label: t.ragChunks, value: formatMetricNumber(activeOverview.rag.chunk_count), tone: "violet" },
+      { label: t.ragMatches, value: formatMetricNumber(ragHits.length), tone: "brass" },
+      { label: t.ragSearchTerm, value: ragQuery || "—", tone: "signal" }
+    ],
+    [activeOverview.rag, ragHits.length, ragQuery, t]
+  );
+
   const refreshMemoryItems = useCallback(async (query = "") => {
     const path = query ? `/api/memory?query=${encodeURIComponent(query)}` : "/api/memory";
     const response = await fetch(path, { credentials: "include" });
@@ -1220,7 +1333,7 @@ function App() {
           </button>
         </aside>
 
-        <main className="mx-auto w-full max-w-[1480px] px-8 py-7 max-lg:px-4">
+        <main className="mx-auto min-w-0 w-full max-w-[1480px] px-8 py-7 max-lg:px-4">
           <div className={activeSection === "harness" ? "" : "hidden"}>
           <header
             className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-ink/15 pb-5 max-md:grid-cols-1"
@@ -1455,7 +1568,9 @@ function App() {
           />
           </div>
 
-          <section className={`mt-5 grid grid-cols-[1.1fr_0.9fr] gap-5 max-xl:grid-cols-1 ${activeSection === "strategy" ? "" : "hidden"}`}>
+          <section className="mt-5" hidden={activeSection !== "strategy"}>
+            <RouteMetricStrip label={t.pageMetrics} metrics={strategyRouteMetrics} />
+            <div className="mt-3 grid grid-cols-[1.1fr_0.9fr] gap-5 max-xl:grid-cols-1">
             <div className="panel">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1565,9 +1680,12 @@ function App() {
                 <div className="empty-row mt-4">{t.selectEvidence}</div>
               )}
             </div>
+            </div>
           </section>
 
-          <section className={`mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1 ${activeSection === "alerts" ? "" : "hidden"}`}>
+          <section className="mt-5" hidden={activeSection !== "alerts"}>
+            <RouteMetricStrip label={t.pageMetrics} metrics={alertRouteMetrics} />
+            <div className="mt-3 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1">
             <div className="panel">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1633,10 +1751,12 @@ function App() {
                 )}
               </div>
             </div>
+            </div>
           </section>
 
-          <section className={`mt-5 ${activeSection === "memory" || activeSection === "rag" ? "" : "hidden"}`}>
-            <div className={`min-w-0 space-y-5 ${activeSection === "memory" ? "" : "hidden"}`}>
+          <section className="mt-5" hidden={activeSection !== "memory" && activeSection !== "rag"}>
+            <div className="min-w-0 space-y-5" hidden={activeSection !== "memory"}>
+              <RouteMetricStrip label={t.pageMetrics} metrics={memoryRouteMetrics} />
               <MemoryObservatory
                 activeCount={activeOverview.memory.active_count}
                 items={memoryInventoryItems}
@@ -1727,7 +1847,9 @@ function App() {
               </div>
             </div>
 
-            <div className={`panel ${activeSection === "rag" ? "" : "hidden"}`}>
+            <div className="space-y-3" hidden={activeSection !== "rag"}>
+              <RouteMetricStrip label={t.pageMetrics} metrics={ragRouteMetrics} />
+              <div className="panel">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h2 className="section-title">{t.rag}</h2>
@@ -1771,10 +1893,13 @@ function App() {
                   ))
                 )}
               </div>
+              </div>
             </div>
           </section>
 
-          <section className={`mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1 ${activeSection === "runs" ? "" : "hidden"}`}>
+          <section className="mt-5" hidden={activeSection !== "runs"}>
+            <RouteMetricStrip label={t.pageMetrics} metrics={runRouteMetrics} />
+            <div className="mt-3 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1">
             <div className="panel">
               <div className="flex items-center justify-between gap-4">
                 <h2 className="section-title">{t.topMovers}</h2>
@@ -1826,6 +1951,7 @@ function App() {
                   ))
                 )}
               </div>
+            </div>
             </div>
           </section>
           {harnessError ? <div className="mt-3 text-sm text-danger">API {harnessError}</div> : null}
@@ -1901,6 +2027,19 @@ function StatusDot({ enabled }: { enabled: boolean }) {
       className={`status-dot ${enabled ? "status-dot-on" : "status-dot-off"}`}
       aria-label={enabled ? "已配置" : "未配置"}
     />
+  );
+}
+
+function RouteMetricStrip({ metrics, label }: { metrics: RouteMetric[]; label: string }) {
+  return (
+    <section aria-label={label} className="route-metric-strip">
+      {metrics.map((metric) => (
+        <div className="route-metric-card" data-tone={metric.tone} key={metric.label}>
+          <span>{metric.label}</span>
+          <strong>{metric.value}</strong>
+        </div>
+      ))}
+    </section>
   );
 }
 

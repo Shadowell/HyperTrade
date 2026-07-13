@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import App from "./App";
@@ -312,6 +312,7 @@ test("renders harness observability from live overview", async () => {
 });
 
 test("renders strategy library evidence and source drilldown ids", async () => {
+  window.history.replaceState({}, "", "/harness/strategy");
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith("/api/harness/overview")) {
@@ -355,6 +356,7 @@ test("renders strategy library evidence and source drilldown ids", async () => {
 });
 
 test("renders monitor empty states and readonly approval risk status", async () => {
+  window.history.replaceState({}, "", "/harness/alerts");
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
@@ -378,7 +380,6 @@ test("renders monitor empty states and readonly approval risk status", async () 
   render(<App />);
 
   expect(await screen.findByText("监控告警")).toBeInTheDocument();
-  expect(screen.getByText("暂无策略证据")).toBeInTheDocument();
   expect(screen.getByText("暂无监控告警")).toBeInTheDocument();
   expect(screen.getByText("待审批")).toBeInTheDocument();
   expect(await screen.findByText("loi_live")).toBeInTheDocument();
@@ -387,6 +388,7 @@ test("renders monitor empty states and readonly approval risk status", async () 
 });
 
 test("loads a recent run and renders structured report blocks with audit sources", async () => {
+  window.history.replaceState({}, "", "/harness/runs");
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith("/api/harness/overview")) {
@@ -514,6 +516,72 @@ test("renders memory composition, creation cadence, and governance signals from 
   expect(screen.getByText("平均可信度")).toBeInTheDocument();
   expect(screen.getByText("累计复用")).toBeInTheDocument();
   expect(screen.getByText("5/26")).toBeInTheDocument();
+});
+
+test("renders scoped metric strips for every routed operator page", async () => {
+  window.history.replaceState({}, "", "/harness/strategy");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/harness/overview")) {
+        return jsonResponse(overview);
+      }
+      if (url.endsWith("/api/memory")) {
+        return jsonResponse({
+          items: [
+            {
+              id: "mem_metrics",
+              kind: "agent_note",
+              content: "metric fixture",
+              source_run_id: "run_live",
+              source_tool: "memory.write",
+              usage_count: 3,
+              created_at: "2026-05-27T00:00:00+08:00"
+            }
+          ]
+        });
+      }
+      if (url.endsWith("/api/strategy/library")) {
+        return jsonResponse(strategyLibrary);
+      }
+      if (url.endsWith("/api/alerts")) {
+        return jsonResponse({
+          items: [
+            { id: "alert_metrics", severity: "high", title: "Evidence freshness" }
+          ]
+        });
+      }
+      return jsonResponse({}, 404);
+    })
+  );
+
+  render(<App />);
+
+  expect(await screen.findByText("策略条目")).toBeInTheDocument();
+  let metricStrip = screen.getByRole("region", { name: "页面指标" });
+  expect(within(metricStrip).getByText("累计证据")).toBeInTheDocument();
+  expect(within(metricStrip).getByText("通过证据")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("link", { name: "监控告警" }));
+  metricStrip = screen.getByRole("region", { name: "页面指标" });
+  expect(within(metricStrip).getByText("当前告警")).toBeInTheDocument();
+  expect(within(metricStrip).getByText("高优先级")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("link", { name: "记忆检索" }));
+  metricStrip = screen.getByRole("region", { name: "页面指标" });
+  expect(within(metricStrip).getByText("活跃记忆")).toBeInTheDocument();
+  expect(within(metricStrip).getByText("已加载记忆")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("link", { name: "知识库" }));
+  metricStrip = screen.getByRole("region", { name: "页面指标" });
+  expect(within(metricStrip).getByText("知识文档")).toBeInTheDocument();
+  expect(within(metricStrip).getByText("知识分片")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("link", { name: "最近运行" }));
+  metricStrip = screen.getByRole("region", { name: "页面指标" });
+  expect(within(metricStrip).getByText("运行总数")).toBeInTheDocument();
+  expect(within(metricStrip).getByText("Trace 事件")).toBeInTheDocument();
 });
 
 test("sidebar navigation keeps the clicked section active", async () => {

@@ -27,6 +27,13 @@ confidence, and reuse fields. “Capacity” means the proportion of active load
 items, not a fabricated storage quota. Search retains a full inventory snapshot
 for the dashboard while rendering filtered rows for the operator.
 
+Sprint 89 adds a shared route-context metric strip. It is not a second data
+dashboard: each page projects only already loaded, source-bound state. The
+workbench uses global telemetry; strategy projects evidence totals; alerts
+project monitor and approval state; runs project run/trace/provider counts;
+Memory projects its active inventory; and RAG projects document/chunk/search
+counts. No route creates a new API request just for visual statistics.
+
 Design direction:
 
 - dense dark observability console with deep green-black surfaces and a restrained grid texture
@@ -60,6 +67,11 @@ Sprint 88 将独立的 Memory 路由扩展为只读可观测面板。它只使�
 节奏，以及已审计的 importance、confidence、usage_count 字段。界面中的“容量”
 指已加载活跃条目的构成比例，不代表虚构的存储配额。搜索结果只过滤操作员列表，
 面板仍保留完整库存快照。
+
+Sprint 89 增加共享的路由上下文指标条。它不是第二套数据面板：每个页面只投影
+已经加载且有来源的数据。工作台使用全局遥测；策略页投影证据总数；告警页投影
+监控与审批状态；运行页投影运行/Trace/Provider 请求数；Memory 页投影活跃库存；
+RAG 页投影文档、分片和检索命中数。不会为了视觉统计新增 API 请求。
 
 设计方向：
 

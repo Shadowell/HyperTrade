@@ -242,6 +242,80 @@ body {
     @apply border-brass/50 bg-night shadow-[0_8px_20px_rgba(214,162,74,0.12)];
   }
 
+  .route-metric-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    overflow: hidden;
+    border: 1px solid rgba(232, 238, 233, 0.12);
+    border-radius: 0.5rem;
+    background: rgba(13, 23, 20, 0.72);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
+  }
+
+  .route-metric-card {
+    position: relative;
+    min-width: 0;
+    padding: 0.78rem 0.95rem 0.76rem 1.08rem;
+    border-left: 1px solid rgba(232, 238, 233, 0.08);
+    background: linear-gradient(135deg, rgba(232, 238, 233, 0.025), transparent 72%);
+  }
+
+  .route-metric-card:first-child {
+    border-left: 0;
+  }
+
+  .route-metric-card::before {
+    position: absolute;
+    top: 0.84rem;
+    bottom: 0.84rem;
+    left: 0.58rem;
+    width: 2px;
+    border-radius: 999px;
+    background: #5ad6c4;
+    box-shadow: 0 0 10px rgba(90, 214, 196, 0.2);
+    content: "";
+  }
+
+  .route-metric-card[data-tone="brass"]::before {
+    background: #d6a24a;
+    box-shadow: 0 0 10px rgba(214, 162, 74, 0.18);
+  }
+
+  .route-metric-card[data-tone="violet"]::before {
+    background: #9d87e8;
+    box-shadow: 0 0 10px rgba(157, 135, 232, 0.16);
+  }
+
+  .route-metric-card[data-tone="danger"]::before {
+    background: #e36b4f;
+    box-shadow: 0 0 10px rgba(227, 107, 79, 0.18);
+  }
+
+  .route-metric-card span {
+    display: block;
+    overflow: hidden;
+    font-family: "SFMono-Regular", Menlo, monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: rgba(232, 238, 233, 0.45);
+  }
+
+  .route-metric-card strong {
+    display: block;
+    min-width: 0;
+    margin-top: 0.28rem;
+    overflow: hidden;
+    font-family: "SFMono-Regular", Menlo, monospace;
+    font-size: 1rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #e8eee9;
+  }
+
   .memory-observatory {
     position: relative;
     width: 100%;
@@ -626,6 +700,18 @@ body {
 }
 
 @media (max-width: 980px) {
+  .route-metric-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .route-metric-card:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .route-metric-card:nth-child(n + 3) {
+    border-top: 1px solid rgba(232, 238, 233, 0.08);
+  }
+
   .memory-observatory-body {
     grid-template-columns: 1fr;
   }

@@ -4,6 +4,16 @@
 
 - Branch: `main`
 - Harness status: active
+- Last verified state: Sprint 89 route context metrics completed locally on
+  2026-07-13. The workbench retains its five global telemetry cards; strategy,
+  alerts, runs, Memory, and RAG each now render a compact, route-scoped strip
+  from already loaded read data. Inactive route DOM is semantically hidden,
+  and the shared main grid can shrink around long Memory audit data instead of
+  causing page-level overflow. No API, polling, Agent, BitPro, paper, or live
+  behavior changed. Frontend lint/test/build and full `./scripts/check.sh`
+  passed. Browser validation against production-read data confirmed all six
+  paths expose the expected metric surface, and desktop plus 390px checks had
+  no horizontal overflow. Deployment verification is pending.
 - Last verified state: Sprint 88 Memory observability dashboard completed
   locally on 2026-07-13. The routed Memory page now aggregates only existing
   audited `GET /api/memory` items into active-item composition/capacity rails,
@@ -136,8 +146,8 @@
 
 ## Active Contract
 
-- Sprint 88 Memory observability dashboard is active under
-  `docs/contracts/sprint-88-memory-observability-dashboard.md`.
+- Sprint 89 route context metrics is active under
+  `docs/contracts/sprint-89-route-context-metrics.md`.
 
 ## Approved Follow-On Design
 

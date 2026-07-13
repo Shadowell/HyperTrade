@@ -82,6 +82,10 @@ BitPro business logic to HyperTrade.
   cadence, importance, confidence, and reuse visualizations. It is read-only;
   it does not introduce a storage quota, a second Memory store, or a mutation
   path.
+- Harness route context metrics: every routed page shows a compact, read-only
+  metric-card strip derived from the data already loaded for that surface. The
+  workbench retains global telemetry; strategy, alerts, runs, Memory, and RAG
+  show their own scoped evidence, state, or inventory counts.
 
 - FastAPI backend with public workbench observability/read endpoints and admin session auth for privileged mutations.
 - LangGraph-style AgentKernel with explicit traceable tool calls.
