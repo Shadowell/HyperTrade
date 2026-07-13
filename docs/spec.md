@@ -91,6 +91,11 @@ BitPro business logic to HyperTrade.
   semantic rails. Passing/normal state is signal, evidence or pending review is
   brass, and high-risk or final failed state is danger; the UI does not infer a
   new risk decision from the visual tone.
+- Harness strategy card hierarchy: strategy summary, performance metrics,
+  provenance references, failure reasons, next-experiment guidance, and evidence
+  drilldown rows all use the compact operator-card variant. Nested cards remain
+  visually quieter than their selected evidence card, with source-bound tone
+  only and no backend or validation behavior change.
 
 - FastAPI backend with public workbench observability/read endpoints and admin session auth for privileged mutations.
 - LangGraph-style AgentKernel with explicit traceable tool calls.

@@ -40,6 +40,12 @@ all use one compact dark container and an explicit semantic rail. The rail is
 a presentation of the source state (signal, brass, violet, or danger), never a
 new risk calculation or permission decision.
 
+Sprint 91 completes the strategy evidence hierarchy. Summary, performance,
+provenance, guidance, and drilldown blocks reuse a lower-contrast compact card
+variant inside the selected strategy card. This preserves a visual distinction
+between the primary evidence selection and its audited subfacts while keeping
+one consistent source-state language.
+
 Design direction:
 
 - dense dark observability console with deep green-black surfaces and a restrained grid texture
@@ -82,6 +88,10 @@ RAG 页投影文档、分片和检索命中数。不会为了视觉统计新增 
 Sprint 90 为操作员的证据和状态行提供共享的卡片系统。策略证据、监控告警、审批
 意图、Memory 条目和 RAG 命中都使用同一个紧凑的深色容器与显式状态轨。状态轨只
 展示来源状态（signal、brass、violet、danger），绝不构成新的风险计算或权限决策。
+
+Sprint 91 完成策略证据的卡片层级。摘要、表现指标、来源引用、实验建议和详情行在
+选中的策略证据卡内部复用低对比度的紧凑卡片变体。它保留主证据选择与审计子事实的
+层级差异，同时维持同一套来源状态语言。
 
 设计方向：
 

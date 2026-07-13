@@ -4,6 +4,16 @@
 
 - Branch: `main`
 - Harness status: active
+- Last verified state: Sprint 91 strategy card hierarchy completed locally on
+  2026-07-13. Strategy summary, evidence metrics, audited source references,
+  next-experiment guidance, and evidence detail rows now use the compact
+  operator-card variant inside the selected strategy card. Nested cards retain
+  the same source-state rails while staying visually quieter than the parent
+  selection. No strategy data, API, validation, paper, or live behavior
+  changed. Frontend lint/test/build and full `./scripts/check.sh` passed.
+  Browser validation with production-read strategy evidence confirmed desktop
+  and 390px layouts, intact single-line metric values, and no horizontal
+  overflow. Deployment verification is pending.
 - Last verified state: Sprint 90 unified operator cards completed locally on
   2026-07-13. Strategy evidence, monitor alerts, approval intents, Memory
   entries, and RAG hits now share one compact dark operator-card treatment with
@@ -159,8 +169,8 @@
 
 ## Active Contract
 
-- Sprint 90 unified operator cards is active under
-  `docs/contracts/sprint-90-unified-operator-cards.md`.
+- Sprint 91 strategy card hierarchy is active under
+  `docs/contracts/sprint-91-strategy-card-hierarchy.md`.
 
 ## Approved Follow-On Design
 

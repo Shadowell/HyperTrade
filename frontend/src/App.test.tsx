@@ -335,12 +335,23 @@ test("renders strategy library evidence and source drilldown ids", async () => {
 
   expect(await screen.findByText("策略库")).toBeInTheDocument();
   expect(screen.getByText("memory.strategy_knowledge")).toBeInTheDocument();
+  const strategySourceCard = screen.getByText("memory.strategy_knowledge").closest(".strategy-summary-card");
+  expect(strategySourceCard).toHaveClass("operator-card", "operator-card-compact");
+  expect(strategySourceCard).toHaveAttribute("data-tone", "violet");
   expect((await screen.findAllByText("momentum_breakout_v1")).length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("momentum_breakout_v1").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("fast")).toBeInTheDocument();
+  const bestEvidenceMetric = screen.getByText("fast").closest(".evidence-metric");
+  expect(bestEvidenceMetric).toHaveClass("operator-card", "operator-card-compact");
+  expect(bestEvidenceMetric).toHaveAttribute("data-tone", "brass");
   expect(screen.getByText("12.5%")).toBeInTheDocument();
+  expect(screen.getByText("12.5%").closest(".evidence-metric")).toHaveAttribute("data-tone", "signal");
   expect(screen.getByText("require_non_negative_return")).toBeInTheDocument();
   expect(screen.getByText("Test adjacent SMA windows around 3 on BitPro MCP candles.")).toBeInTheDocument();
+  expect(screen.getByText("Test adjacent SMA windows around 3 on BitPro MCP candles.").closest(".evidence-note")).toHaveClass(
+    "operator-card",
+    "operator-card-compact"
+  );
   expect(screen.getAllByText(/mem_winning/).length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText(/exp_winning/)).toBeInTheDocument();
   expect(screen.getByText(/bt_winning/)).toBeInTheDocument();

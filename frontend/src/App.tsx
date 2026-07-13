@@ -1592,15 +1592,15 @@ function App() {
                 </button>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-3 max-md:grid-cols-1">
-                <div className="mini-block">
+                <div className="operator-card operator-card-compact strategy-summary-card" data-tone="violet">
                   <span>{t.source}</span>
                   <strong className="truncate font-mono">{strategyLibrary.source}</strong>
                 </div>
-                <div className="mini-block">
+                <div className="operator-card operator-card-compact strategy-summary-card" data-tone="brass">
                   <span>{t.evidenceCount}</span>
                   <strong className="font-mono">{strategyLibrary.memory_count}</strong>
                 </div>
-                <div className="mini-block">
+                <div className="operator-card operator-card-compact strategy-summary-card" data-tone="signal">
                   <span>{t.latestResult}</span>
                   <strong className="font-mono">{strategyLibrary.items[0]?.strategy_key ?? "n/a"}</strong>
                 </div>
@@ -1630,26 +1630,32 @@ function App() {
                         </span>
                       </div>
                       <div className="evidence-grid">
-                        <EvidenceMetric label={t.bestEvidence} value={item.best?.variant_id ?? "n/a"} />
+                        <EvidenceMetric label={t.bestEvidence} tone="brass" value={item.best?.variant_id ?? "n/a"} />
                         <EvidenceMetric
                           label={t.returnPct}
+                          tone={metricTone(item.best?.total_return_pct)}
                           value={formatPercentValue(item.best?.total_return_pct)}
                         />
                         <EvidenceMetric
                           label={t.maxDrawdown}
+                          tone="brass"
                           value={formatPercentValue(item.best?.max_drawdown_pct)}
                         />
-                        <EvidenceMetric label={t.trades} value={String(item.best?.trade_count ?? "n/a")} />
+                        <EvidenceMetric label={t.trades} tone="violet" value={String(item.best?.trade_count ?? "n/a")} />
                       </div>
-                      <SourceIdStrip evidence={item.best} sourceMemoryIds={item.source_memory_ids ?? []} />
+                      <SourceIdStrip
+                        evidence={item.best}
+                        label={t.source}
+                        sourceMemoryIds={item.source_memory_ids ?? []}
+                      />
                       {item.failure_reasons?.length ? (
-                        <div className="evidence-note">
+                        <div className="operator-card operator-card-compact evidence-note" data-tone="danger">
                           <span>{t.failureReasons}</span>
                           <strong>{item.failure_reasons.join(", ")}</strong>
                         </div>
                       ) : null}
                       {item.next_experiments?.length ? (
-                        <div className="evidence-note">
+                        <div className="operator-card operator-card-compact evidence-note" data-tone="brass">
                           <span>{t.nextExperiment}</span>
                           <strong>{item.next_experiments[0]}</strong>
                         </div>
@@ -1669,7 +1675,11 @@ function App() {
                 <div className="mt-4 grid gap-2">
                   <div className="text-sm font-semibold">{evidenceSelection.title}</div>
                   {evidenceSelection.rows.map((row) => (
-                    <div className="evidence-detail-row" key={`${row.label}-${row.value}`}>
+                    <div
+                      className="operator-card operator-card-compact evidence-detail-row"
+                      data-tone="violet"
+                      key={`${row.label}-${row.value}`}
+                    >
                       <span>{row.label}</span>
                       <strong>
                         {row.label}: {row.value}
@@ -2358,9 +2368,25 @@ function formatPercentValue(value: string | undefined): string {
   return value.endsWith("%") ? value : `${value}%`;
 }
 
-function EvidenceMetric({ label, value }: { label: string; value: string }) {
+function metricTone(value: string | undefined): RouteMetric["tone"] {
+  const numericValue = Number(value?.replace("%", ""));
+  if (Number.isFinite(numericValue) && numericValue < 0) {
+    return "danger";
+  }
+  return "signal";
+}
+
+function EvidenceMetric({
+  label,
+  tone,
+  value
+}: {
+  label: string;
+  tone: RouteMetric["tone"];
+  value: string;
+}) {
   return (
-    <div>
+    <div className="operator-card operator-card-compact evidence-metric" data-tone={tone}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
@@ -2369,9 +2395,11 @@ function EvidenceMetric({ label, value }: { label: string; value: string }) {
 
 function SourceIdStrip({
   evidence,
+  label,
   sourceMemoryIds
 }: {
   evidence: StrategyEvidence | undefined;
+  label: string;
   sourceMemoryIds: string[];
 }) {
   const ids = [
@@ -2385,16 +2413,19 @@ function SourceIdStrip({
       .map((id) => `memory: ${id}`)
   ].filter(Boolean);
   return (
-    <div className="evidence-id-strip">
-      {ids.length === 0 ? (
-        <span>n/a</span>
-      ) : (
-        ids.map((id) => (
-          <span className="evidence-chip" key={id}>
-            {id}
-          </span>
-        ))
-      )}
+    <div className="operator-card operator-card-compact evidence-source-card" data-tone="violet">
+      <span className="evidence-source-label">{label}</span>
+      <div className="evidence-id-strip">
+        {ids.length === 0 ? (
+          <span>n/a</span>
+        ) : (
+          ids.map((id) => (
+            <span className="evidence-chip" key={id}>
+              {id}
+            </span>
+          ))
+        )}
+      </div>
     </div>
   );
 }
