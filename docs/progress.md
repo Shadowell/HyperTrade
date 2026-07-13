@@ -13,7 +13,9 @@
   behavior changed. Frontend lint/test/build and full `./scripts/check.sh`
   passed. Browser validation against production-read data confirmed all six
   paths expose the expected metric surface, and desktop plus 390px checks had
-  no horizontal overflow. Deployment verification is pending.
+  no horizontal overflow. Deployment run `29222207009` succeeded for SHA
+  `24308ae`; the production host health endpoint returned
+  `{"status":"ok","service":"hypertrade-api"}`.
 - Last verified state: Sprint 88 Memory observability dashboard completed
   locally on 2026-07-13. The routed Memory page now aggregates only existing
   audited `GET /api/memory` items into active-item composition/capacity rails,
