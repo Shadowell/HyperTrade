@@ -400,6 +400,19 @@ class PaperPromotion(Base, TimestampMixin):
     transition_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
 
 
+class PaperReviewRequest(Base, TimestampMixin):
+    """Operator queue item derived from read-only paper observation evidence."""
+
+    __tablename__ = "paper_review_requests"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("prr"))
+    promotion_id: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="open", index=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    evidence_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class Database:
     def __init__(self, url: str, *, echo: bool = False) -> None:
         connect_args: dict[str, Any] = {}

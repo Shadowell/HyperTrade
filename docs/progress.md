@@ -5,6 +5,11 @@
 - Branch: `main`
 - Harness status: active
 - Architecture diagram: Updated to include World Model (Layer 5), Monitoring (Layer 7), renumbered layers, and full Mermaid+SVG coverage.
+- Last verified state: Sprint 86 paper observation and review queue implemented
+  locally on 2026-07-13. Read-only paper snapshot sampling creates durable,
+  deduplicated operator review requests for degraded evidence only; it never
+  invokes a paper or live lifecycle write. Focused checks passed; deployment
+  verification is pending.
 - Last verified state: Sprint 85 BitPro paper snapshot integration implemented
   locally on 2026-07-13. Promotion observation now reads the immutable,
   strategy-scoped BitPro snapshot and persists its identity, versions, metrics,
@@ -103,8 +108,8 @@
 
 ## Active Contract
 
-- Sprint 85 BitPro paper snapshot integration is active under
-  `docs/contracts/sprint-85-bitpro-paper-snapshot.md`.
+- Sprint 86 paper observation and review queue is active under
+  `docs/contracts/sprint-86-paper-observation-review-queue.md`.
 
 ## Approved Follow-On Design
 

@@ -54,6 +54,7 @@ from hypertrade.paper.service import PaperTradingService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagHit, RagService
 from hypertrade.research.orchestrator import BitProResearchAdapter, ResearchOrchestrator
+from hypertrade.research.paper_observation import PaperObservationService
 from hypertrade.research.paper_promotion import PaperPromotionAdapter, PaperPromotionService
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
@@ -905,6 +906,23 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/research/paper-observations/sample")
+    def sample_paper_observations(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+        service = PaperObservationService(
+            database, bitpro_adapter=cast(PaperPromotionAdapter, get_bitpro_adapter())
+        )
+        return {"items": service.sample_all()}
+
+    @app.get("/api/research/paper-review-requests")
+    def list_paper_review_requests(
+        _: AdminUser, status: str = "open"
+    ) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "items": PaperObservationService(
+                database, bitpro_adapter=cast(PaperPromotionAdapter, get_bitpro_adapter())
+            ).list_requests(status=status)
+        }
 
     @app.post("/api/research/jobs/{job_id}/cancel")
     def cancel_research_job(
