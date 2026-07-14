@@ -135,12 +135,16 @@ baselines expose the generic Agent's low Research Graph alignment without hiding
 All optional evaluation dependencies execute in a separate locked Docker target and
 final artifacts contain no prompts, reports, tool arguments, raw outputs or credentials.
 
-Sprint 102 entered implementation on 2026-07-15. It adds an optional Textual TUI
+Sprint 102 completed implementation and production acceptance on 2026-07-15. It adds an optional Textual TUI
 that projects the durable Session/Task/Event/Evidence/Experiment/Validation contracts
 and reconnects from a cursor after SSE loss. The client contains no trading, approval,
 budget or state-transition business logic: every mutation remains an authenticated API
 request with reason and idempotency, and dangerous actions require an explicit modal.
 The existing chat CLI, plain renderer and Web Harness remain supported.
+Textual is pinned at 8.2.8 in a separate optional/client image. REST-first snapshots,
+cursor SSE replay/deduplication, gap-triggered reconciliation, responsive 80/120/160
+column layouts and reason-required control modals are covered by headless and client
+tests. Production API/Worker images do not contain the UI dependency.
 
 ## V1 In Scope
 

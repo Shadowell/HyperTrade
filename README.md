@@ -364,9 +364,20 @@ self-hosted Langfuse tracing, and limits the six-case Promptfoo suite and two-ru
 Ragas Research OS baseline to isolated, read-only evaluation runs. Their scores are
 diagnostic evidence and never authorize paper or live trading.
 
-Sprint 102 is adding an optional Textual research workbench (`uv sync --extra tui`,
-then `ht tui`) over the same durable Session/Task/Event APIs. The TUI is an operator
-surface only; server-side auth, state machines, budgets and risk gates remain authoritative.
+The optional Textual research workbench runs over the same durable
+Session/Task/Event APIs:
+
+```bash
+uv sync --extra tui
+uv run ht --remote http://127.0.0.1:3334 tui
+# On the deployed host, the wrapper selects the short-lived TUI image:
+hypertrade tui
+```
+
+Use `--session ses_*` for an initial session filter. `Ctrl+N` focuses the multiline
+task input; `Ctrl+P`, `Ctrl+R`, and `Ctrl+C` request pause, resume/retry, and cancel
+through reason-required modals. The TUI is an operator surface only; server-side auth,
+idempotency, state machines, budgets and risk gates remain authoritative.
 
 ---
 

@@ -1,6 +1,6 @@
 # Sprint 102 - TUI Research Workbench
 
-> 状态：Active；Sprint 96–101 已完成验收，2026-07-15 开始实施。
+> 状态：Completed；2026-07-15 已通过本地、部署和生产 TTY 验收。
 
 ## Goal
 
@@ -73,3 +73,22 @@ Manual/QA：
 ## Handoff
 
 - 下一步：Sprint 103 让后台触发的 bounded Task 出现在同一 TUI/API 工作流。
+
+## Implementation Record
+
+- `tui` extra 固定 Textual `8.2.8`；dev group 同版本执行 headless tests，生产
+  API/Worker 镜像不安装该依赖。
+- `WorkbenchStore` 与 `TaskEventCursor` 独立于 UI，维护 REST snapshot、SSE
+  high-water cursor、replay dedupe、gap detection 和断线对账。
+- `AgentClient` 本地/远程实现补齐 Session/Task create、Event list/stream；远程
+  stream 同时发送 `after` 和 `Last-Event-ID`。
+- 工作台包含 5 个指标卡、Task 列表、Graph/Timeline、Evidence/Gaps、Task/
+  Experiment/Validation/Approval tabs、多行任务输入和 80/120/160 列布局。
+- pause/resume/retry/cancel 必须通过 modal 填写 reason，客户端不决定合法状态，
+  API 继续生成/校验 idempotency、认证并执行服务端状态机。
+- Docker `tui` target 和 Compose `cli` profile 生成短生命周期
+  `hypertrade-tui:latest`；宿主 `hypertrade tui` 自动使用该镜像，其他命令仍用 API
+  runtime image。
+- focused 91 tests 与完整 `./scripts/check.sh` 通过（435 Python tests）；部署
+  workflow `29359569036` 成功。生产 80 列 SSH TTY 读取真实 Research Graph/
+  checkpoint/metrics 并正常退出；API health 正常且 API image 无 Textual。

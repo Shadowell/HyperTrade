@@ -734,6 +734,19 @@ ht tui [--remote URL] [--session SESSION_ID]
 `Ctrl+C` 请求 cancel，`g` 打开 graph，`e` evidence，`a` approval，`?` help。
 危险动作必须弹出 reason/idempotency 确认框，不能使用单键直接执行。
 
+### 11.3 实施与生产验收记录
+
+- Textual `8.2.8` 通过 `tui` extra 和独立 Docker target 固定；基础 CLI、API、
+  Worker 不依赖 Textual。
+- UI-independent `WorkbenchStore`/`TaskEventCursor` 负责 snapshot、cursor、去重、
+  gap 和 reconcile；Textual app 只负责渲染与提交 API request。
+- REST/SSE 客户端补齐 Session/Task/Event 合同，同时发送 query cursor 与
+  `Last-Event-ID`，断线后从 high-water mark 对账并重读最终 Task snapshot。
+- 160 列展示三栏，120 列隐藏 Evidence 侧栏，80 列隐藏左右栏并保留中心/
+  detail/prompt；headless tests 覆盖全部宽度和无鼠标控制路径。
+- 生产 80 列 TTY 成功读取真实 Research Graph、checkpoint、Evidence 与预算卡；
+  API image 验证 `textual=None`，TUI image 为 8.2.8。
+
 ### 11.3 状态同步
 
 - 初次加载 REST snapshot，再以 `last_event_sequence` 启动 SSE。

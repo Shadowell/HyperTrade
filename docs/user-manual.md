@@ -155,6 +155,30 @@ uv run hypertrade --local ask "看下目前市场的热度怎么样"
 会显示为可重试 Task 错误，而不是丢失运行上下文。后台 queued Task 由 worker 领取，
 CLI/API 断线后仍可通过 Task id 和事件游标恢复查看。
 
+### TUI 研究工作台
+
+本地安装可选依赖后启动：
+
+```bash
+uv sync --extra tui
+uv run ht --remote http://127.0.0.1:3334 tui
+uv run ht --remote http://127.0.0.1:3334 tui --session ses_abc
+```
+
+部署服务器直接运行 `hypertrade tui`，wrapper 会使用短生命周期 TUI 镜像。页面左侧
+是 Session/Task，中间是 Graph/Timeline，右侧是 Evidence；下方 tabs 显示 Task、
+Experiment、Validation 和 Approval。80 列自动进入 compact 模式。
+
+- `Ctrl+N`：聚焦多行新任务输入。
+- `Ctrl+P`：请求暂停。
+- `Ctrl+R`：根据服务端状态请求 resume 或 retry。
+- `Ctrl+C`：请求取消任务，不是直接退出。
+- `R`：重读 REST snapshot；`G/E/A`：切换图、证据和审批；`?`：帮助；`Q`：退出。
+
+所有控制弹窗必须填写 reason。TUI 只提交 API 请求，不会绕过管理员认证、idempotency、
+任务状态机、预算或风险门禁。SSE 断线时会从最后 sequence 对账；发现 sequence gap
+会强制重读 Task snapshot。
+
 #### 市场数据
 
 ```bash

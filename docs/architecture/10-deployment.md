@@ -16,6 +16,11 @@ Secrets stay in `/opt/hypertrade/.env`. PostgreSQL port is not public. BitPro MC
 tokens, provider keys, OKX credentials, and admin credentials must never be
 committed.
 
+The optional `cli` Compose profile builds `hypertrade-tui:latest` from the Docker
+`tui` target. It never runs as a daemon. The host wrapper selects that service only
+for `hypertrade tui`; API and worker keep using the dependency-minimal production
+target, so deploy replacement cannot kill the operator TUI process.
+
 ## Isolated Evaluation Deployment
 
 The server-side evaluation target is a separate Compose project, not a
@@ -52,6 +57,11 @@ separate VM/server is required when physical isolation is required.
 
 密钥只放 `/opt/hypertrade/.env`。PostgreSQL 端口不对公网暴露。BitPro MCP
 token、provider key、OKX 凭证和 admin 凭证不能提交到仓库。
+
+可选 `cli` Compose profile 从 Docker `tui` target 构建
+`hypertrade-tui:latest`，但不常驻运行。宿主 wrapper 仅在执行
+`hypertrade tui` 时选择该 service；API/Worker 继续使用不含 Textual 的生产 target，
+部署替换 API 容器不会终止操作员的 TUI 进程。
 
 ## 独立评测部署
 
