@@ -220,14 +220,35 @@ class RoleExecutor:
             )
             usage = _sum_usage(plan_result.usage, tool_usage, synth_result.usage)
             self._enforce_role_usage(role, usage)
-            evidence_ids, strategy_spec = self._persist_output(
-                synth_result.value,
-                role=role,
-                task_id=task_id,
-                node_run_id=start.node.id,
-                mandate=mandate,
-                observations=observations,
-            )
+            try:
+                evidence_ids, strategy_spec = self._persist_output(
+                    synth_result.value,
+                    role=role,
+                    task_id=task_id,
+                    node_run_id=start.node.id,
+                    mandate=mandate,
+                    observations=observations,
+                )
+            except RoleSchemaError as exc:
+                evidence_ids = [
+                    self._record_semantic_gap(
+                        role,
+                        task_id=task_id,
+                        node_run_id=start.node.id,
+                        mandate=mandate,
+                    )
+                ]
+                strategy_spec = None
+                TaskEventService(self.db).append(
+                    task_id,
+                    "research_role_semantic_output_rejected",
+                    actor=f"role:{role.key}",
+                    payload={
+                        "node_run_id": start.node.id,
+                        "error_type": type(exc).__name__,
+                        "fallback": "evidence_v2_data_gap",
+                    },
+                )
             automatic_gap_ids = self._record_unavailable_gaps(
                 role,
                 task_id=task_id,
@@ -483,6 +504,33 @@ class RoleExecutor:
             )
             ids.append(str(stored["id"]))
         return ids
+
+    def _record_semantic_gap(
+        self,
+        role: RoleDefinition,
+        *,
+        task_id: str,
+        node_run_id: str,
+        mandate: dict[str, Any],
+    ) -> str:
+        stored = self.evidence.append(
+            DataGapEvidenceInput(
+                claim=f"{role.key} provider output failed evidence semantic validation",
+                scope=_scope(mandate),
+                confidence=Decimal("0"),
+                as_of=utc_now(),
+                task_id=task_id,
+                node_run_id=node_run_id,
+                role_key=role.key,
+                expected_sources=["tool"],
+                remediation=(
+                    "Inspect source/evidence ownership and role output constraints, then "
+                    f"rerun only the {role.key} node."
+                ),
+            ),
+            actor=f"role_executor:{role.key}",
+        )
+        return str(stored["id"])
 
     def _complete_disabled(
         self,

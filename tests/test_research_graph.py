@@ -25,6 +25,7 @@ from hypertrade.research.role_provider import (
 from hypertrade.research.roles.definitions import RoleDefinition
 from hypertrade.research.roles.schemas import (
     DataGapDraft,
+    FactDraft,
     RoleOutput,
     RoleToolCall,
     RoleToolPlan,
@@ -279,6 +280,44 @@ def test_role_budget_failure_does_not_persist_partial_role_evidence(tmp_path) ->
     assert {row["role_key"] for row in projection["evidence"]} == {
         "research_graph_runtime"
     }
+
+
+class SemanticInvalidProvider(DeterministicGapRoleProvider):
+    def synthesize(self, role, context, observations):
+        del role, context, observations
+        return ProviderResult(
+            RoleOutput(
+                summary="schema-valid but source ownership is invalid",
+                evidence=[
+                    FactDraft(
+                        claim="This fact cites a source that was never observed.",
+                        confidence=0.5,
+                        source_ids=["invented_source"],
+                    )
+                ],
+            ),
+            RoleUsage(),
+        )
+
+
+def test_semantic_invalid_role_output_fails_closed_to_data_gap(tmp_path) -> None:
+    db = _db(tmp_path)
+    mandate = _mandate(db)
+    task_id = _graph_task(db, str(mandate["id"]), key="graph-semantic-gap-001")
+    runtime = ResearchGraphRuntime(
+        db,
+        provider=SemanticInvalidProvider(),
+        tool_runner=BuiltinResearchToolRunner(db),
+    )
+
+    completed = runtime.run(task_id)
+
+    assert completed["task"]["status"] == "completed"
+    assert all(row["evidence_type"] == "data_gap" for row in completed["evidence"])
+    assert any(
+        row["claim"] == "preflight provider output failed evidence semantic validation"
+        for row in completed["evidence"]
+    )
 
 
 class PauseOnceProvider(DeterministicGapRoleProvider):
