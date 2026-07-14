@@ -1,7 +1,17 @@
 import asyncio
 import logging
+import os
+import socket
+from threading import Event, Thread
 from typing import Any
 
+from hypertrade.agent.kernel import AgentKernel
+from hypertrade.agent.task_executor import (
+    AgentTaskExecutor,
+    TaskControlInterrupted,
+    TaskExecutionError,
+)
+from hypertrade.agent.tasks import AgentTaskService
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import Database
@@ -87,6 +97,95 @@ async def monitor_scheduler_loop(db: Database) -> None:
         await asyncio.sleep(settings.monitor_loop_interval_seconds)
 
 
+def agent_task_worker_once(
+    db: Database,
+    *,
+    settings: Settings | None = None,
+    worker_id: str | None = None,
+) -> dict[str, Any]:
+    active_settings = settings or get_settings()
+    if not active_settings.agent_task_worker_enabled:
+        return {"status": "disabled", "task_id": None}
+    owner = worker_id or f"{socket.gethostname()}:{os.getpid()}"
+    task_service = AgentTaskService(db)
+    task = task_service.claim_next(
+        owner,
+        lease_seconds=active_settings.agent_task_lease_seconds,
+    )
+    if task is None:
+        return {"status": "idle", "task_id": None}
+    if task.kind != "chat_run":
+        error = {
+            "code": "unsupported_task_kind",
+            "category": "task_dispatch",
+            "retryable": False,
+            "kind": task.kind,
+        }
+        task_service.transition(
+            task.id,
+            "failed",
+            actor=f"worker:{owner}",
+            reason="unsupported_task_kind",
+            error=error,
+        )
+        return {"status": "failed", "task_id": task.id, "error": error}
+
+    stop_heartbeat = Event()
+
+    def heartbeat() -> None:
+        interval = max(5.0, active_settings.agent_task_lease_seconds / 3)
+        while not stop_heartbeat.wait(interval):
+            try:
+                task_service.heartbeat(
+                    task.id,
+                    owner,
+                    lease_seconds=active_settings.agent_task_lease_seconds,
+                )
+            except (KeyError, PermissionError):
+                return
+
+    heartbeat_thread = Thread(target=heartbeat, daemon=True)
+    heartbeat_thread.start()
+    try:
+        kernel = AgentKernel(
+            db,
+            knowledge_dir=str(active_settings.knowledge_dir),
+            settings=active_settings,
+            provider_name=active_settings.active_chat_provider,
+        )
+        run = AgentTaskExecutor(db).execute_chat(task.id, kernel, task.objective)
+        return {"status": "completed", "task_id": task.id, "run_id": run.id}
+    except TaskControlInterrupted:
+        current = task_service.get(task.id)
+        return {"status": current.status, "task_id": task.id}
+    except TaskExecutionError as exc:
+        current = task_service.get(task.id)
+        return {
+            "status": current.status,
+            "task_id": task.id,
+            "error": exc.error,
+        }
+    finally:
+        stop_heartbeat.set()
+        heartbeat_thread.join(timeout=1)
+
+
+async def agent_task_worker_loop(db: Database) -> None:
+    settings = get_settings()
+    while True:
+        try:
+            result = await asyncio.to_thread(agent_task_worker_once, db, settings=settings)
+            if result.get("status") != "idle":
+                logger.info(
+                    "agent_task_worker status=%s task_id=%s",
+                    result.get("status"),
+                    result.get("task_id"),
+                )
+        except Exception:
+            logger.exception("agent_task_worker failed")
+        await asyncio.sleep(max(0.25, settings.agent_task_poll_interval_seconds))
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     settings = get_settings()
@@ -100,6 +199,8 @@ async def main() -> None:
         tasks.append(paper_trading_loop(db))
     if settings.monitor_scheduler_enabled:
         tasks.append(monitor_scheduler_loop(db))
+    if settings.agent_task_worker_enabled:
+        tasks.append(agent_task_worker_loop(db))
     await asyncio.gather(*tasks)
 
 

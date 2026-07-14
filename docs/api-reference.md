@@ -192,11 +192,56 @@ List all registered Agent tools with their policies.
 
 ---
 
+## Agent Sessions and Tasks
+
+`AgentTask` is the durable control record. `AgentRun` is one immutable execution
+attempt linked through `resource_type=agent_run` and `resource_id`.
+
+### POST /agent/sessions
+
+Create a durable operator Session. **Authentication required.** Provider config
+must contain names/models only; credentials are discarded.
+
+### GET /agent/sessions
+
+List durable Sessions. `GET /agent/sessions/{session_id}` reads one Session.
+
+### POST /agent/sessions/{session_id}/tasks
+
+Create a queued Task. **Authentication required.** The request includes
+`objective`, a unique `idempotency_key`, optional `kind`, parent/resource refs,
+and bounded budget fields.
+
+### GET /agent/tasks
+
+List Tasks, optionally filtered by `session_id` or `status`.
+`GET /agent/tasks/{task_id}` includes the latest checkpoint projection.
+
+### POST /agent/tasks/{task_id}/{action}
+
+Supported actions are `pause`, `resume`, `cancel`, `retry`, and `branch`.
+**Authentication required.** Every request requires `reason` and
+`idempotency_key`; `actor` defaults to `operator`.
+
+### GET /agent/tasks/{task_id}/events
+
+Read append-only safe events with `after=<sequence>` and bounded `limit`.
+
+### GET /agent/tasks/{task_id}/stream
+
+Stream events using SSE. Resume with `after=<sequence>` or `Last-Event-ID`.
+Each committed event includes an SSE `id` equal to its Task sequence.
+
+---
+
 ## Agent Runs
 
 ### POST /agent/runs
 
 Create a new Agent run with a free-form prompt.
+
+New runs are automatically wrapped in an inline-reserved Session/Task. Clients
+may send `Idempotency-Key`; a completed duplicate returns the linked Run.
 
 **Request Body**:
 ```json

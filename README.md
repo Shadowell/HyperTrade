@@ -98,6 +98,7 @@ HyperTrade is a self-hosted Agent runtime that connects LLM-powered reasoning wi
 | Testnet Execution | Approval-gated OKX Testnet orders with risk validation | Production |
 | Monitoring & Alerts | Read-only monitors for paper strategies, connector health, library freshness | Production |
 | Evaluation Suite | Deterministic evals for tool choice, RAG, Memory, risk, report quality | Production |
+| Agent Task OS | Durable sessions, tasks, checkpoints, cursor events, controls, leases, and recovery | Production |
 | World Model | Portfolio state tracking and defensive action scheduling | Experimental |
 
 ---
@@ -237,6 +238,26 @@ curl "http://localhost:3334/api/memory?query=市场&limit=10"
 curl http://localhost:3334/api/global-market/snapshot
 ```
 
+### Durable Agent Sessions and Tasks
+
+Every new local or API Agent run is backed by a durable Session and Task. `AgentRun`
+remains the immutable execution attempt, while Task owns pause, resume, cancel,
+retry, branch, budget, checkpoint, lease, and recovery state.
+
+```bash
+/sessions
+/tasks
+/task task_abc123
+/task task_abc123 pause "operator review"
+/task task_abc123 resume "review completed"
+```
+
+Task events are cursor-addressable through
+`GET /api/agent/tasks/{task_id}/events?after=<sequence>` or SSE at
+`GET /api/agent/tasks/{task_id}/stream`. Control APIs require an authenticated
+administrator, a reason, and an idempotency key. Provider timeouts become
+structured retryable Task errors instead of uncaught HTTP 500 responses.
+
 ---
 
 ## Documentation
@@ -336,6 +357,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Global Market — cross-asset regime classification | Production |
 | Vide Coding (opus-4.6) provider | Production |
 | Enhanced output formatting | Complete |
+| Agent Session and Task OS | Production |
 
 ### Planned (V3+)
 

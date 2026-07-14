@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     feishu_webhook_url: str = Field(default="", alias="FEISHU_WEBHOOK_URL")
     monitor_scheduler_enabled: bool = Field(default=True, alias="MONITOR_SCHEDULER_ENABLED")
     monitor_loop_interval_seconds: int = Field(default=60, alias="MONITOR_LOOP_INTERVAL_SECONDS")
+    agent_task_worker_enabled: bool = Field(default=True, alias="AGENT_TASK_WORKER_ENABLED")
+    agent_task_poll_interval_seconds: float = Field(
+        default=2.0,
+        alias="AGENT_TASK_POLL_INTERVAL_SECONDS",
+    )
+    agent_task_lease_seconds: int = Field(default=60, alias="AGENT_TASK_LEASE_SECONDS")
     rag_scan_interval_seconds: int = Field(default=600, alias="RAG_SCAN_INTERVAL_SECONDS")
     knowledge_dir: Path = Field(default=Path("docs/knowledge"), alias="KNOWLEDGE_DIR")
     raw_market_retention_days: int = Field(default=7, alias="RAW_MARKET_RETENTION_DAYS")

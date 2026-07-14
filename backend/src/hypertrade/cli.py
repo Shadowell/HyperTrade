@@ -28,10 +28,18 @@ import httpx
 from sqlalchemy import desc, select
 
 from hypertrade.agent.kernel import AgentKernel, CompletedAgentRun
+from hypertrade.agent.sessions import AgentSessionCreate, AgentSessionService, session_to_dict
+from hypertrade.agent.task_executor import AgentTaskExecutor
+from hypertrade.agent.tasks import (
+    AgentTaskCreate,
+    AgentTaskService,
+    TaskControl,
+    task_to_dict,
+)
 from hypertrade.backtest.service import BacktestService
 from hypertrade.config import Settings, get_settings
 from hypertrade.connectors.registry import ConnectorRegistry
-from hypertrade.db import AgentRun, Database, TraceEvent
+from hypertrade.db import AgentRun, Database, TraceEvent, new_id
 from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.memory.service import MemoryService
 from hypertrade.providers.runtime import ProviderRuntime
@@ -61,6 +69,20 @@ class AgentClient(Protocol):
     def list_runs(self) -> list[dict[str, Any]]: ...
 
     def get_run(self, run_id: str) -> dict[str, Any]: ...
+
+    def list_agent_sessions(self) -> list[dict[str, Any]]: ...
+
+    def list_agent_tasks(self) -> list[dict[str, Any]]: ...
+
+    def get_agent_task(self, task_id: str) -> dict[str, Any]: ...
+
+    def control_agent_task(
+        self,
+        task_id: str,
+        action: str,
+        *,
+        reason: str,
+    ) -> dict[str, Any]: ...
 
     def list_memory(self) -> list[dict[str, Any]]: ...
 
@@ -204,6 +226,13 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("/connectors", "List external connector capabilities and secret-redacted auth status."),
     ("/runs", "List recent Agent runs."),
     ("/run <run_id>", "Open one persisted run with the active report and trace renderer."),
+    ("/sessions", "List durable Agent sessions."),
+    ("/tasks", "List durable Agent tasks and control state."),
+    ("/task <task_id>", "Inspect one task and its latest checkpoint."),
+    (
+        "/task <task_id> pause|resume|cancel|retry|branch [reason]",
+        "Apply an idempotent operator control action.",
+    ),
     ("/memory", "List active audited memory."),
     ("/memory search <query>", "Search audited memory by text."),
     ("/memory disable <mem_id>", "Disable one memory item without deleting audit history."),
@@ -628,6 +657,31 @@ class AgentApiClient:
     def get_run(self, run_id: str) -> dict[str, Any]:
         return self._get_object(f"/api/agent/runs/{quote(run_id, safe='')}")
 
+    def list_agent_sessions(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/agent/sessions", "sessions")
+
+    def list_agent_tasks(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/agent/tasks", "tasks")
+
+    def get_agent_task(self, task_id: str) -> dict[str, Any]:
+        return self._get_object(f"/api/agent/tasks/{quote(task_id, safe='')}")
+
+    def control_agent_task(
+        self,
+        task_id: str,
+        action: str,
+        *,
+        reason: str,
+    ) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/agent/tasks/{quote(task_id, safe='')}/{quote(action, safe='')}",
+            {
+                "reason": reason,
+                "idempotency_key": new_id("cli"),
+                "actor": "cli_operator",
+            },
+        )
+
     def list_memory(self) -> list[dict[str, Any]]:
         return self._get_list("/api/memory", "items")
 
@@ -921,26 +975,35 @@ class LocalAgentClient:
         return None
 
     def run_agent(self, prompt: str) -> dict[str, Any]:
-        run = AgentKernel(
+        kernel = AgentKernel(
             self.db,
             knowledge_dir=str(self.settings.knowledge_dir),
             settings=self.settings,
             provider_name=self.selected_provider,
             provider_model=self.selected_provider_model or None,
-        ).run_chat(prompt)
+        )
+        task = self._create_agent_task(prompt)
+        run = AgentTaskExecutor(self.db).execute_chat(task.id, kernel, prompt)
         return _completed_run_to_dict(run)
 
     def run_agent_events(self, prompt: str) -> Iterator[dict[str, Any]]:
         events: list[dict[str, Any]] = []
-        run = AgentKernel(
+        kernel = AgentKernel(
             self.db,
             knowledge_dir=str(self.settings.knowledge_dir),
             settings=self.settings,
             provider_name=self.selected_provider,
             provider_model=self.selected_provider_model or None,
-        ).run_chat_with_events(prompt, event_sink=events.append)
+        )
+        task = self._create_agent_task(prompt)
+        run = AgentTaskExecutor(self.db).execute_chat(
+            task.id,
+            kernel,
+            prompt,
+            external_event_sink=events.append,
+        )
         yield from events
-        yield {"event": "final", "run": _completed_run_to_dict(run)}
+        yield {"event": "final", "task_id": task.id, "run": _completed_run_to_dict(run)}
 
     def list_tools(self) -> list[dict[str, Any]]:
         return [_tool_to_dict(tool) for tool in ToolRegistry.default().list_tools()]
@@ -970,6 +1033,59 @@ class LocalAgentClient:
             provider_model=self.selected_provider_model or None,
         ).get_run(run_id)
         return _completed_run_to_dict(run)
+
+    def list_agent_sessions(self) -> list[dict[str, Any]]:
+        return [session_to_dict(row) for row in AgentSessionService(self.db).list(limit=50)]
+
+    def list_agent_tasks(self) -> list[dict[str, Any]]:
+        return [task_to_dict(row) for row in AgentTaskService(self.db).list_tasks(limit=100)]
+
+    def get_agent_task(self, task_id: str) -> dict[str, Any]:
+        return task_to_dict(AgentTaskService(self.db).get(task_id))
+
+    def control_agent_task(
+        self,
+        task_id: str,
+        action: str,
+        *,
+        reason: str,
+    ) -> dict[str, Any]:
+        service = AgentTaskService(self.db)
+        if action not in {"pause", "resume", "cancel", "retry", "branch"}:
+            raise ValueError(f"unknown task control action: {action}")
+        row = getattr(service, action)(
+            task_id,
+            TaskControl(
+                reason=reason,
+                idempotency_key=new_id("cli"),
+                actor="cli_operator",
+            ),
+        )
+        return task_to_dict(row)
+
+    def _create_agent_task(self, prompt: str) -> Any:
+        agent_session = AgentSessionService(self.db).create(
+            AgentSessionCreate(
+                title=prompt.strip()[:200] or "CLI Agent Session",
+                surface="cli",
+                provider_config={
+                    "provider": self.selected_provider,
+                    "model": self.selected_provider_model,
+                },
+                context_policy={"legacy_adapter": True, "max_history_turns": 1},
+                created_by="local_cli",
+            )
+        )
+        return AgentTaskService(self.db).create(
+            AgentTaskCreate(
+                session_id=agent_session.id,
+                kind="chat_run",
+                objective=prompt,
+                idempotency_key=new_id("cli_task"),
+            ),
+            actor="local_cli",
+            start_immediately=True,
+        )
 
     def list_memory(self) -> list[dict[str, Any]]:
         return [
@@ -1547,6 +1663,12 @@ def handle_slash_command(
         render_runs(client.list_runs(), output=output)
     elif name == "/run":
         handle_run_command(command, client=client, output=output)
+    elif name == "/sessions":
+        render_agent_sessions(client.list_agent_sessions(), output=output)
+    elif name == "/tasks":
+        render_agent_tasks(client.list_agent_tasks(), output=output)
+    elif name == "/task":
+        handle_agent_task_command(command, client=client, output=output)
     elif name == "/memory":
         handle_memory_command(command, client=client, output=output)
     elif name == "/rag":
@@ -2772,6 +2894,83 @@ def render_runs(items: list[dict[str, Any]], *, output: TextIO) -> None:
             f"{str(item.get('prompt', ''))[:80]}",
             file=output,
         )
+
+
+def render_agent_sessions(items: list[dict[str, Any]], *, output: TextIO) -> None:
+    print("Agent sessions:", file=output)
+    if not items:
+        print("- none", file=output)
+        return
+    for item in items[:20]:
+        print(
+            f"- {item.get('id', 'unknown')} [{item.get('status', 'unknown')}] "
+            f"{item.get('surface', 'unknown')}: {str(item.get('title', ''))[:80]}",
+            file=output,
+        )
+
+
+def render_agent_tasks(items: list[dict[str, Any]], *, output: TextIO) -> None:
+    print("Agent tasks:", file=output)
+    if not items:
+        print("- none", file=output)
+        return
+    for item in items[:20]:
+        resource = ""
+        if item.get("resource_id"):
+            resource = f" -> {item.get('resource_type')}:{item.get('resource_id')}"
+        print(
+            f"- {item.get('id', 'unknown')} [{item.get('status', 'unknown')}] "
+            f"{item.get('kind', 'unknown')}{resource}: "
+            f"{str(item.get('objective', ''))[:80]}",
+            file=output,
+        )
+
+
+def handle_agent_task_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split(maxsplit=3)
+    if len(parts) < 2:
+        print(
+            "Usage: /task <task_id> [pause|resume|cancel|retry|branch] [reason]",
+            file=output,
+        )
+        return
+    task_id = parts[1].strip()
+    try:
+        if len(parts) == 2:
+            item = client.get_agent_task(task_id)
+        else:
+            action = parts[2].strip().lower()
+            if action not in {"pause", "resume", "cancel", "retry", "branch"}:
+                print(f"Unknown task action: {action}", file=output)
+                return
+            reason = parts[3].strip() if len(parts) == 4 else f"cli_{action}"
+            item = client.control_agent_task(task_id, action, reason=reason)
+    except KeyError:
+        print(f"Task not found: {task_id}", file=output)
+        return
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            print(f"Task not found: {task_id}", file=output)
+            return
+        if exc.response.status_code == 409:
+            print(f"Task control rejected: {exc.response.text}", file=output)
+            return
+        raise
+    print(
+        f"Task {item.get('id', task_id)} [{item.get('status', 'unknown')}]",
+        file=output,
+    )
+    print(f"- objective: {item.get('objective', '')}", file=output)
+    print(f"- session: {item.get('session_id') or 'background'}", file=output)
+    print(f"- events: {item.get('last_event_sequence', 0)}", file=output)
+    print(f"- checkpoint: {item.get('last_checkpoint_id') or 'none'}", file=output)
+    if item.get("error"):
+        print(f"- error: {json.dumps(item['error'], ensure_ascii=False)}", file=output)
 
 
 def handle_run_command(command: str, *, client: AgentClient, output: TextIO) -> None:
@@ -5354,7 +5553,7 @@ def _default_client_factory(config: CliConfig, local: bool) -> AgentClient:
 
 
 def _completed_run_to_dict(run: CompletedAgentRun) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "id": run.id,
         "status": run.status,
         "report_markdown": run.report_markdown,
@@ -5362,6 +5561,12 @@ def _completed_run_to_dict(run: CompletedAgentRun) -> dict[str, Any]:
         "run_state_json": run.run_state_json,
         "trace_events": [_trace_to_dict(event) for event in run.trace_events],
     }
+    task_meta = run.report_json.get("task")
+    payload["legacy_run"] = not isinstance(task_meta, dict)
+    if isinstance(task_meta, dict):
+        payload["task_id"] = task_meta.get("task_id")
+        payload["session_id"] = task_meta.get("session_id")
+    return payload
 
 
 def _tool_to_dict(tool: ToolDefinition) -> dict[str, Any]:

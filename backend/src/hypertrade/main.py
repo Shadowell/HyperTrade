@@ -6,6 +6,7 @@ HTTP input, call the Agent/tool service, and return redacted runtime state.
 """
 
 import json
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -22,8 +23,23 @@ from itsdangerous import BadSignature, URLSafeSerializer
 from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 
+from hypertrade.agent.checkpoints import TaskCheckpointService, checkpoint_to_dict
 from hypertrade.agent.kernel import AgentKernel, CompletedAgentRun
 from hypertrade.agent.observability import AgentObservabilityService
+from hypertrade.agent.sessions import AgentSessionCreate, AgentSessionService, session_to_dict
+from hypertrade.agent.task_events import TaskEventService, task_event_to_dict
+from hypertrade.agent.task_executor import (
+    AgentTaskExecutor,
+    TaskControlInterrupted,
+    TaskExecutionError,
+)
+from hypertrade.agent.tasks import (
+    AgentTaskCreate,
+    AgentTaskService,
+    InvalidTaskTransition,
+    TaskControl,
+    task_to_dict,
+)
 from hypertrade.backtest.service import BacktestService
 from hypertrade.bitpro.mcp import (
     BitProMcpClient,
@@ -42,6 +58,7 @@ from hypertrade.db import (
     RagChunk,
     RagDocument,
     TraceEvent,
+    new_id,
     utc_now,
 )
 from hypertrade.evals.service import AgentEvalSuite
@@ -539,7 +556,7 @@ def create_app(
         )
 
     @app.post("/api/agent/runs")
-    def create_run(payload: AgentRunPayload) -> dict[str, Any]:
+    def create_run(payload: AgentRunPayload, request: Request) -> dict[str, Any]:
         kernel = AgentKernel(
             database,
             knowledge_dir=str(app_settings.knowledge_dir),
@@ -548,20 +565,157 @@ def create_app(
             provider_model=str(app.state.active_chat_model or "") or None,
             evaluation_mode=payload.evaluation_mode,
         )
-        run = kernel.run_chat(payload.prompt)
+        task = _prepare_agent_task(
+            database,
+            prompt=payload.prompt,
+            surface="api",
+            provider_name=str(app.state.active_chat_provider),
+            provider_model=str(app.state.active_chat_model or ""),
+            idempotency_key=request.headers.get("Idempotency-Key") or new_id("agentreq"),
+        )
+        try:
+            run = AgentTaskExecutor(database).execute_chat(task.id, kernel, payload.prompt)
+        except TaskExecutionError as exc:
+            raise HTTPException(
+                status_code=503 if exc.error.get("retryable") else 500,
+                detail={"task_id": exc.task_id, "error": exc.error},
+            ) from exc
+        except TaskControlInterrupted as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"task_id": exc.task_id, "status": exc.status},
+            ) from exc
         return _run_to_dict(run)
 
     @app.post("/api/agent/runs/stream")
-    def stream_run(payload: AgentRunPayload) -> StreamingResponse:
+    def stream_run(payload: AgentRunPayload, request: Request) -> StreamingResponse:
+        task = _prepare_agent_task(
+            database,
+            prompt=payload.prompt,
+            surface="api",
+            provider_name=str(app.state.active_chat_provider),
+            provider_model=str(app.state.active_chat_model or ""),
+            idempotency_key=request.headers.get("Idempotency-Key") or new_id("agentreq"),
+        )
         return StreamingResponse(
             _agent_run_sse(
                 database,
                 app_settings,
                 payload.prompt,
+                task_id=task.id,
                 provider_name=str(app.state.active_chat_provider),
                 provider_model=str(app.state.active_chat_model or "") or None,
                 evaluation_mode=payload.evaluation_mode,
             ),
+            media_type="text/event-stream",
+        )
+
+    @app.post("/api/agent/sessions")
+    def create_agent_session(payload: AgentSessionCreate, _: AdminUser) -> dict[str, Any]:
+        return session_to_dict(AgentSessionService(database).create(payload))
+
+    @app.get("/api/agent/sessions")
+    def list_agent_sessions(limit: int = 50) -> dict[str, Any]:
+        return {
+            "sessions": [
+                session_to_dict(row) for row in AgentSessionService(database).list(limit=limit)
+            ]
+        }
+
+    @app.get("/api/agent/sessions/{session_id}")
+    def get_agent_session(session_id: str) -> dict[str, Any]:
+        try:
+            row = AgentSessionService(database).get(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+        return session_to_dict(row)
+
+    @app.post("/api/agent/sessions/{session_id}/tasks")
+    def create_agent_task(
+        session_id: str,
+        payload: AgentTaskCreate,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            row = AgentTaskService(database).create(
+                payload.model_copy(update={"session_id": session_id}),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session or parent task not found") from exc
+        return task_to_dict(row)
+
+    @app.get("/api/agent/tasks")
+    def list_agent_tasks(
+        session_id: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        rows = AgentTaskService(database).list_tasks(
+            session_id=session_id,
+            status=status,
+            limit=limit,
+        )
+        return {"tasks": [task_to_dict(row) for row in rows]}
+
+    @app.get("/api/agent/tasks/{task_id}")
+    def get_agent_task(task_id: str) -> dict[str, Any]:
+        try:
+            row = AgentTaskService(database).get(task_id)
+            checkpoint = TaskCheckpointService(database).latest(task_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Task not found") from exc
+        payload = task_to_dict(row)
+        payload["latest_checkpoint"] = checkpoint_to_dict(checkpoint) if checkpoint else None
+        return payload
+
+    @app.post("/api/agent/tasks/{task_id}/pause")
+    def pause_agent_task(task_id: str, payload: TaskControl, _: AdminUser) -> dict[str, Any]:
+        return _task_control_or_http_error(database, task_id, "pause", payload)
+
+    @app.post("/api/agent/tasks/{task_id}/resume")
+    def resume_agent_task(task_id: str, payload: TaskControl, _: AdminUser) -> dict[str, Any]:
+        return _task_control_or_http_error(database, task_id, "resume", payload)
+
+    @app.post("/api/agent/tasks/{task_id}/cancel")
+    def cancel_agent_task(task_id: str, payload: TaskControl, _: AdminUser) -> dict[str, Any]:
+        return _task_control_or_http_error(database, task_id, "cancel", payload)
+
+    @app.post("/api/agent/tasks/{task_id}/retry")
+    def retry_agent_task(task_id: str, payload: TaskControl, _: AdminUser) -> dict[str, Any]:
+        return _task_control_or_http_error(database, task_id, "retry", payload)
+
+    @app.post("/api/agent/tasks/{task_id}/branch")
+    def branch_agent_task(task_id: str, payload: TaskControl, _: AdminUser) -> dict[str, Any]:
+        return _task_control_or_http_error(database, task_id, "branch", payload)
+
+    @app.get("/api/agent/tasks/{task_id}/events")
+    def get_agent_task_events(task_id: str, after: int = 0, limit: int = 500) -> dict[str, Any]:
+        try:
+            rows = TaskEventService(database).list(task_id, after=after, limit=limit)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Task not found") from exc
+        return {
+            "task_id": task_id,
+            "after": max(after, 0),
+            "events": [task_event_to_dict(row) for row in rows],
+        }
+
+    @app.get("/api/agent/tasks/{task_id}/stream")
+    def stream_agent_task_events(
+        task_id: str, request: Request, after: int = 0
+    ) -> StreamingResponse:
+        raw_last_event = request.headers.get("Last-Event-ID", "").strip()
+        if raw_last_event:
+            try:
+                after = max(after, int(raw_last_event))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="Invalid Last-Event-ID") from exc
+        try:
+            AgentTaskService(database).get(task_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Task not found") from exc
+        return StreamingResponse(
+            _task_event_sse(database, task_id, after=after),
             media_type="text/event-stream",
         )
 
@@ -1114,6 +1268,7 @@ def _agent_run_sse(
     database: Database,
     settings: Settings,
     prompt: str,
+    task_id: str,
     provider_name: str | None = None,
     provider_model: str | None = None,
     evaluation_mode: bool = False,
@@ -1130,10 +1285,42 @@ def _agent_run_sse(
                 provider_model=provider_model,
                 evaluation_mode=evaluation_mode,
             )
-            run = kernel.run_chat_with_events(prompt, event_sink=events.put)
-            events.put({"event": "final", "run": _run_to_dict(run)})
-        except Exception as exc:  # noqa: BLE001 - stream API errors to client
-            events.put({"event": "error", "error": str(exc)})
+            run = AgentTaskExecutor(database).execute_chat(
+                task_id,
+                kernel,
+                prompt,
+                external_event_sink=events.put,
+            )
+            events.put({"event": "final", "task_id": task_id, "run": _run_to_dict(run)})
+        except TaskExecutionError as exc:
+            events.put(
+                {
+                    "event": "error",
+                    "task_id": exc.task_id,
+                    "error": exc.error,
+                }
+            )
+        except TaskControlInterrupted as exc:
+            events.put(
+                {
+                    "event": "task_controlled",
+                    "task_id": exc.task_id,
+                    "status": exc.status,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 - preserve a typed stream boundary
+            events.put(
+                {
+                    "event": "error",
+                    "task_id": task_id,
+                    "error": {
+                        "code": "stream_runtime_error",
+                        "category": "stream",
+                        "retryable": False,
+                        "source": exc.__class__.__name__,
+                    },
+                }
+            )
         finally:
             events.put(None)
 
@@ -1143,6 +1330,86 @@ def _agent_run_sse(
         if event is None:
             break
         yield _format_sse(event)
+
+
+def _prepare_agent_task(
+    database: Database,
+    *,
+    prompt: str,
+    surface: Literal["cli", "tui", "web", "api", "background"],
+    provider_name: str,
+    provider_model: str,
+    idempotency_key: str,
+) -> Any:
+    task_service = AgentTaskService(database)
+    existing = task_service.get_by_idempotency(idempotency_key)
+    if existing is not None:
+        return existing
+    agent_session = AgentSessionService(database).create(
+        AgentSessionCreate(
+            title=prompt.strip()[:200] or "Agent Session",
+            surface=surface,
+            provider_config={"provider": provider_name, "model": provider_model},
+            context_policy={"legacy_adapter": True, "max_history_turns": 1},
+            created_by="legacy_agent_api",
+        )
+    )
+    return task_service.create(
+        AgentTaskCreate(
+            session_id=agent_session.id,
+            kind="chat_run",
+            objective=prompt,
+            idempotency_key=idempotency_key,
+        ),
+        actor="legacy_agent_api",
+        start_immediately=True,
+    )
+
+
+def _task_control_or_http_error(
+    database: Database,
+    task_id: str,
+    action: Literal["pause", "resume", "cancel", "retry", "branch"],
+    payload: TaskControl,
+) -> dict[str, Any]:
+    service = AgentTaskService(database)
+    try:
+        row = getattr(service, action)(task_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Task not found") from exc
+    except InvalidTaskTransition as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "invalid_task_transition",
+                "task_id": exc.task_id,
+                "current": exc.current,
+                "target": exc.target,
+            },
+        ) from exc
+    return task_to_dict(row)
+
+
+def _task_event_sse(database: Database, task_id: str, *, after: int = 0) -> Any:
+    cursor = max(after, 0)
+    while True:
+        rows = TaskEventService(database).list(task_id, after=cursor, limit=500)
+        for row in rows:
+            event = task_event_to_dict(row)
+            cursor = row.sequence
+            yield (
+                f"id: {row.sequence}\n"
+                f"event: {row.event}\n"
+                f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            )
+        task = AgentTaskService(database).get(task_id)
+        if task.status in {"completed", "failed", "canceled", "paused", "retry_wait"}:
+            break
+        if not rows:
+            yield (
+                f"event: heartbeat\ndata: {json.dumps({'task_id': task_id, 'after': cursor})}\n\n"
+            )
+            time.sleep(1.0)
 
 
 def _format_sse(event: dict[str, Any]) -> str:
@@ -1164,7 +1431,7 @@ def _tool_to_dict(tool: ToolDefinition) -> dict[str, object]:
 
 
 def _run_to_dict(run: CompletedAgentRun) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "id": run.id,
         "status": run.status,
         "report_markdown": run.report_markdown,
@@ -1172,6 +1439,12 @@ def _run_to_dict(run: CompletedAgentRun) -> dict[str, Any]:
         "run_state_json": run.run_state_json,
         "trace_events": [_trace_to_dict(event) for event in run.trace_events],
     }
+    task_meta = run.report_json.get("task")
+    payload["legacy_run"] = not isinstance(task_meta, dict)
+    if isinstance(task_meta, dict):
+        payload["task_id"] = task_meta.get("task_id")
+        payload["session_id"] = task_meta.get("session_id")
+    return payload
 
 
 def _trace_to_dict(event: TraceEvent) -> dict[str, Any]:

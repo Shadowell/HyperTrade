@@ -4,6 +4,15 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 96 implementation state: local implementation and QA completed on
+  2026-07-14; production deployment verification is pending. Durable
+  AgentSession/AgentTask/TaskNodeRun/TaskCheckpoint/TaskEvent persistence,
+  deterministic controls, budgets, PostgreSQL lease/heartbeat recovery,
+  cursor-based Event REST/SSE, legacy AgentRun adapter, CLI commands, worker
+  dispatch, and structured Provider timeout handling are implemented. Focused
+  Agent Task/API/CLI/worker regressions passed, the new `0012` migration passed
+  upgrade/downgrade/upgrade, and the full repository quality gate passed with
+  `350 passed` Python tests.
 - Planning state: approved Sprint 96–105 Agent Research OS roadmap entered
   implementation with Sprint 96 on 2026-07-14. The roadmap selectively adopts durable
   Session/Task/TUI/Skill capabilities associated with mature Agent runtimes and

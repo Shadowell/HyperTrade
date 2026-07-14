@@ -13,6 +13,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     create_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -71,6 +72,103 @@ class TraceEvent(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(32), default="completed")
     input_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     output_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class AgentSession(Base, TimestampMixin):
+    """Durable operator context; secrets and private reasoning never belong here."""
+
+    __tablename__ = "agent_sessions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ses"))
+    title: Mapped[str] = mapped_column(String(200), default="Agent Session")
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    surface: Mapped[str] = mapped_column(String(32), default="api", index=True)
+    provider_config_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    context_policy_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    summary_markdown: Mapped[str] = mapped_column(Text, default="")
+    last_event_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str] = mapped_column(String(128), default="operator", index=True)
+
+
+class AgentTask(Base, TimestampMixin):
+    """Canonical durable state for one bounded Agent task."""
+
+    __tablename__ = "agent_tasks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("task"))
+    session_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    parent_task_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(64), default="chat_run", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    objective: Mapped[str] = mapped_column(Text)
+    resource_type: Mapped[str] = mapped_column(String(64), default="", index=True)
+    resource_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    budget_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    usage_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    control_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_checkpoint_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    error_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    last_event_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class TaskNodeRun(Base, TimestampMixin):
+    """One auditable attempt of a task graph node."""
+
+    __tablename__ = "task_node_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("tnode"))
+    task_id: Mapped[str] = mapped_column(String(32), index=True)
+    node_key: Mapped[str] = mapped_column(String(96), index=True)
+    role_key: Mapped[str] = mapped_column(String(96), default="", index=True)
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    depends_on_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    input_ref_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    output_ref_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    tool_policy_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    usage_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class TaskCheckpoint(Base, TimestampMixin):
+    """Minimal resumable state; external artifacts remain referenced, not copied."""
+
+    __tablename__ = "task_checkpoints"
+    __table_args__ = (UniqueConstraint("task_id", "sequence", name="uq_checkpoint_sequence"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("tcp"))
+    task_id: Mapped[str] = mapped_column(String(32), index=True)
+    node_run_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    state_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    state_hash: Mapped[str] = mapped_column(String(64), index=True)
+    schema_version: Mapped[int] = mapped_column(Integer, default=1)
+    resume_token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    reconciliation_required: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+
+class TaskEvent(Base, TimestampMixin):
+    """Append-only, cursor-addressable task event safe for operator surfaces."""
+
+    __tablename__ = "task_events"
+    __table_args__ = (UniqueConstraint("task_id", "sequence", name="uq_task_event_sequence"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("tevt"))
+    task_id: Mapped[str] = mapped_column(String(32), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    event: Mapped[str] = mapped_column(String(96), index=True)
+    actor: Mapped[str] = mapped_column(String(128), default="system", index=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    redaction_version: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class RagDocument(Base, TimestampMixin):

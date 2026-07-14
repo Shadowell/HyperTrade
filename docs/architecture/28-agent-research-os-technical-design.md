@@ -278,6 +278,47 @@ BitPro 的同步调用不能声称已取消上游，只能停止后续节点并�
 - pause/cancel 在模型前、工具前、工具后各安全点测试。
 - 现有 CLI/API snapshot 和 Agent run 测试必须保持通过。
 
+### 5.6 Sprint 96 实际实现记录（2026-07-14）
+
+Sprint 96 已按“Task 是控制事实源、Run 是单次执行 attempt”的边界实现：
+
+- SQLAlchemy 模型：`AgentSession`、`AgentTask`、`TaskNodeRun`、
+  `TaskCheckpoint`、`TaskEvent`；Alembic revision 为
+  `0012_agent_sessions_tasks`。
+- 服务模块：`agent/sessions.py`、`agent/tasks.py`、`agent/task_events.py`、
+  `agent/checkpoints.py`、`agent/task_executor.py`。
+- `AgentTaskService` 持有唯一状态转换表、控制请求审计、数据库唯一键幂等、
+  PostgreSQL `FOR UPDATE SKIP LOCKED` lease、heartbeat 和过期 lease 恢复。
+- `TaskEventService` 在 Task 行锁下分配单调 sequence，递归移除 token、cookie、
+  authorization、password、secret 和 private reasoning 字段；Session 同步维护
+  聚合事件游标。
+- `TaskCheckpointService` 对 canonical JSON 计算 SHA-256，保存 schema version、
+  resume token 和外部写 reconciliation 标志，不复制 credential、完整行情或
+  BitPro artifacts。
+- `AgentTaskExecutor` 将既有 `AgentKernel` 作为一次 attempt 执行。新 Run 在
+  `report_json.task` 中关联 Task/Session；历史 Run 返回 `legacy_run=true`，不伪造
+  Session 历史。
+- API 新增 Session/Task 查询、创建、pause/resume/cancel/retry/branch、Event cursor
+  和 SSE。控制 API 继续使用管理员会话，并要求 reason/idempotency key。
+- `ht ask`、`ht chat` 和远程 `/api/agent/runs` 使用 inline-reserved Task，避免与
+  worker 竞争；显式 queued Task 由 worker lease 领取。
+- CLI 新增 `/sessions`、`/tasks` 和 `/task <id> [action] [reason]`，本地与远程模式
+  读取同一 Task 投影。
+- worker 新增可配置 Agent Task loop，通过 `asyncio.to_thread` 隔离同步 Agent
+  执行，并用独立 heartbeat 线程续租，避免阻塞行情/RAG/monitor asyncio loops。
+- 新配置：`AGENT_TASK_WORKER_ENABLED`、`AGENT_TASK_POLL_INTERVAL_SECONDS`、
+  `AGENT_TASK_LEASE_SECONDS`。
+- Sprint 95 暴露的 `httpx.TimeoutException` 被映射为 `provider_timeout`、
+  `retryable=true` 和 `retry_wait`，同步 API 返回结构化 503，SSE 返回结构化 error
+  event，不再暴露裸异常 500。
+- Budget 当前在 one-shot attempt 完成时执行确定性 usage gate；Sprint 98 的节点级
+  图执行会在模型、工具和回测 dispatch 前复用同一 budget schema 做预授权。
+
+恢复语义：有成功 checkpoint 的过期 lease 经过 `running -> retry_wait -> queued`
+恢复；无 checkpoint 的任务停在 `retry_wait` 并标记 `checkpoint_missing` 和
+`reconciliation_required`，禁止猜测外部写是否发生。SQLite 仅承诺单 worker；生产
+多 worker 互斥由 PostgreSQL row lock 保证。
+
 ## 6. Sprint 97：Research Evidence Contract
 
 ### 6.1 使用技术

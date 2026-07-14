@@ -129,7 +129,27 @@ uv run hypertrade --local ask "看下目前市场的热度怎么样"
 /tools          # 列出所有可用工具
 /evals          # 查看评估套件状态
 /connectors     # 查看连接器状态
+/sessions       # 查看持久 Agent 会话
+/tasks          # 查看后台和前台 Agent 任务
+/task task_*    # 查看任务、预算、事件游标和 checkpoint
 ```
+
+### Agent 任务控制
+
+每次新的本地或远程 Agent 请求都会创建持久 Task。Run 代表一次执行尝试，Task 负责
+暂停、恢复、取消、重试、分支和故障恢复：
+
+```bash
+/task task_abc pause "等待人工复核"
+/task task_abc resume "复核完成"
+/task task_abc cancel "研究目标已撤销"
+/task task_abc retry "上游 Provider 已恢复"
+/task task_abc branch "保留原任务并测试相邻假设"
+```
+
+控制操作需要管理员登录。相同 idempotency key 不会重复执行状态变更；Provider 超时
+会显示为可重试 Task 错误，而不是丢失运行上下文。后台 queued Task 由 worker 领取，
+CLI/API 断线后仍可通过 Task id 和事件游标恢复查看。
 
 #### 市场数据
 

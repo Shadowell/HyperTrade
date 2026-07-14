@@ -339,6 +339,13 @@ Agent code execution, or any bypass of BitPro MCP and existing approval gates.
   claim comparable trading performance or authorize live trading.
   It is logical isolation on the current host; a separate VM is required for
   physical isolation.
+- Sprint 96 Agent Session and Task OS: every new local/API Agent run is backed
+  by a durable Session/Task, while `AgentRun` remains one immutable execution
+  attempt. PostgreSQL leases, heartbeat, checkpoints, cursor events, bounded
+  budgets, idempotent controls, worker recovery, REST/SSE, and CLI inspection
+  form one canonical control plane. Provider timeouts become structured
+  retryable Task errors; they do not escape as an uncaught HTTP 500. Existing
+  paper/live approval and BitPro MCP boundaries are unchanged.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
