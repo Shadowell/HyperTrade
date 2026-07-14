@@ -12,6 +12,16 @@
   backtest/artifact source and the Sprint 99 immutable experiment ledger. Bayesian or
   genetic optimization, unbounded grids, raw-result storage, automatic ranking,
   automatic paper/live promotion and capital decisions remain out of scope.
+  The first production run exposed two pre-existing BitPro boundary defects before
+  any strategy/backtest write: HyperTrade rejected the MCP-only validator, while the
+  BitPro mounted Streamable HTTP app had no running session-manager lifespan. BitPro
+  PR `#570` fixed and deployed the authenticated transport in workflow `29351668545`;
+  production MCP initialize and a generated-candidate sandbox validation now pass.
+  HyperTrade now uses the official MCP Python client for local-only tools, maps the
+  validator's real `code` schema, and emits a valid asynchronous dynamic BaseStrategy
+  instead of the historical no-op/incompatible class. Full `./scripts/check.sh`
+  passed with `402 passed`; HyperTrade deployment and the original ResearchJob rerun
+  remain pending before Sprint 100 can close.
 - Sprint 99 implementation state: completed and production-verified on 2026-07-14.
   `ExperimentManifestV1` canonicalizes StrategySpec, code/data/cost/window and version
   hashes into a stable SHA-256 fingerprint. PostgreSQL stores immutable manifests,

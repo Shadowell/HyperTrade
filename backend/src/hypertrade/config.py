@@ -97,6 +97,7 @@ class Settings(BaseSettings):
         alias="BITPRO_MCP_API_BASE",
     )
     bitpro_mcp_api_token: str = Field(default="", alias="BITPRO_MCP_API_TOKEN")
+    bitpro_remote_mcp_url: str = Field(default="", alias="BITPRO_REMOTE_MCP_URL")
     bitpro_mcp_auth_header: str = Field(
         default="X-BitPro-MCP-Token",
         alias="BITPRO_MCP_AUTH_HEADER",

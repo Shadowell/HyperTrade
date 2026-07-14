@@ -55,8 +55,12 @@ class FixtureBitProAdapter:
             "tool_calls": [],
         }
 
-    def strategy_validate_code(self, **_: Any) -> dict[str, Any]:
+    def strategy_validate_code(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append("strategy_validate_code")
+        assert "from app.core.execution.base_strategy import BaseStrategy" in kwargs[
+            "script_content"
+        ]
+        assert "async def on_bar(self, bar):" in kwargs["script_content"]
         return {"validation": {"valid": True}, "tool_calls": []}
 
     def strategy_create(self, **kwargs: Any) -> dict[str, Any]:

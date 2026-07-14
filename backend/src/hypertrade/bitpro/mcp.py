@@ -8,7 +8,11 @@ write tools are blocked here.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import time
+from collections.abc import Callable, Coroutine
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -191,6 +195,7 @@ class BitProMcpClient:
         *,
         settings: Settings | None = None,
         http_client: httpx.Client | None = None,
+        remote_tool_caller: Callable[[str, dict[str, Any]], Any] | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.base_url = (self.settings.bitpro_mcp_api_base or DEFAULT_API_BASE).rstrip("/")
@@ -199,6 +204,7 @@ class BitProMcpClient:
         self.http_client = http_client or httpx.Client(
             timeout=self.settings.bitpro_mcp_timeout_seconds
         )
+        self.remote_tool_caller = remote_tool_caller
 
     def call_tool(
         self,
@@ -211,10 +217,12 @@ class BitProMcpClient:
         if tool_name in LIVE_MUTATION_TOOLS:
             raise PermissionError(f"BitPro live write tool is blocked: {tool_name}")
         if tool_name in LOCAL_ONLY_TOOLS:
-            raise BitProMcpError(
-                f"BitPro tool requires MCP local execution and is not available through "
-                f"the API path adapter: {tool_name}"
+            caller = self.remote_tool_caller or (
+                lambda name, arguments: _run_async(
+                    _call_remote_mcp_tool(self.settings, name, arguments)
+                )
             )
+            return caller(tool_name, params)
         endpoints = {**READ_TOOL_ENDPOINTS, **RESEARCH_MUTATION_TOOL_ENDPOINTS}
         if tool_name not in endpoints:
             raise KeyError(f"Unknown BitPro MCP tool: {tool_name}")
@@ -275,6 +283,63 @@ class BitProMcpClient:
         if not self.auth_token:
             return None
         return {self.auth_header: self.auth_token}
+
+
+async def _call_remote_mcp_tool(
+    settings: Settings, tool_name: str, parameters: dict[str, Any]
+) -> Any:
+    """Use the real Streamable HTTP transport for tools without a REST equivalent."""
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+
+    remote_url = settings.bitpro_remote_mcp_url.strip() or (
+        f"{settings.bitpro_mcp_api_base.rstrip('/')}/mcp/"
+    )
+    headers: dict[str, str] = {}
+    if settings.bitpro_mcp_api_token:
+        headers[settings.bitpro_mcp_auth_header] = settings.bitpro_mcp_api_token
+    timeout = httpx.Timeout(settings.bitpro_mcp_timeout_seconds)
+    async with (
+        httpx.AsyncClient(headers=headers, timeout=timeout) as client,
+        streamable_http_client(remote_url, http_client=client) as (
+            read_stream,
+            write_stream,
+            _,
+        ),
+        ClientSession(read_stream, write_stream) as session,
+    ):
+        await session.initialize()
+        result = await session.call_tool(tool_name, arguments=parameters)
+    if result.isError:
+        detail = " ".join(
+            str(getattr(item, "text", ""))[:500]
+            for item in result.content
+            if getattr(item, "text", "")
+        )
+        raise BitProMcpError(f"BitPro remote MCP tool failed: {tool_name}: {detail}")
+    if result.structuredContent is not None:
+        payload = dict(result.structuredContent)
+        return payload.get("result") if set(payload) == {"result"} else payload
+    for item in result.content:
+        text = str(getattr(item, "text", ""))
+        if not text:
+            continue
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            continue
+    raise BitProMcpError(f"BitPro remote MCP tool returned no structured result: {tool_name}")
+
+
+def _run_async(awaitable: Coroutine[Any, Any, Any]) -> Any:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+    # Synchronous Agent surfaces may be called from an async host. Isolate the MCP
+    # lifecycle rather than nesting event loops or leaking a session across requests.
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="bitpro-mcp") as pool:
+        return pool.submit(asyncio.run, awaitable).result()
 
 
 class BitProToolAdapter:
@@ -527,18 +592,19 @@ class BitProToolAdapter:
         script_content: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
-        """Call BitPro's validator; API-only deployments fail closed if it is local-only."""
+        """Call BitPro's validator while retaining HyperTrade's local audit key."""
         self.last_tool_calls = []
         capabilities, health = self._preflight()
         validation = self._call(
             "strategy_validate_code",
-            {"script_content": script_content, "idempotency_key": idempotency_key},
+            {"code": script_content},
         )
         return {
             "status": "ok",
             "contract_version": str(capabilities.get("contract_version", "")),
             "health": health,
             "validation": validation,
+            "idempotency_key": idempotency_key,
             "tool_calls": self.last_tool_calls,
         }
 

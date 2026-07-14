@@ -915,11 +915,41 @@ def _compile_strategy(strategy_key: str) -> str:
     class_name = "Research" + "".join(part.capitalize() for part in strategy_key.split("_"))[:80]
     return "\n".join(
         [
-            "from app.strategies.base_strategy import BaseStrategy",
+            "from app.core.execution.base_strategy import BaseStrategy",
             "",
             f"class {class_name}(BaseStrategy):",
-            '    """Bounded dynamic DB research candidate."""',
-            "    def on_bar(self, context):",
+            '    """Bounded dynamic DB moving-average research candidate."""',
+            "",
+            "    def __init__(self, config=None):",
+            "        super().__init__(config or {})",
+            '        params = self.config.get("research_parameters", {})',
+            '        self.fast_window = max(2, int(params.get("fast_window", 8)))',
+            (
+                "        self.slow_window = max("
+                'self.fast_window + 1, int(params.get("slow_window", 32)))'
+            ),
+            (
+                "        self.trade_notional_usdt = float("
+                'self.config.get("trade_notional_usdt", 1000.0))'
+            ),
+            "",
+            "    async def on_bar(self, bar):",
+            '        symbol = bar.symbol or self.config.get("symbol")',
+            "        close = float(bar.close or 0)",
+            "        if not symbol or close <= 0:",
+            "            return None",
+            "        history = self.get_recent_bars(symbol, limit=self.slow_window)",
+            "        if len(history) < self.slow_window:",
+            "            return None",
+            "        closes = [float(item.close or 0) for item in history]",
+            "        fast_ma = sum(closes[-self.fast_window:]) / self.fast_window",
+            "        slow_ma = sum(closes[-self.slow_window:]) / self.slow_window",
+            "        position = self.get_position(symbol)",
+            "        quantity = float(position.quantity or 0) if position else 0.0",
+            "        if fast_ma > slow_ma and quantity <= 0:",
+            "            return self.buy(symbol=symbol, amount=self.trade_notional_usdt / close)",
+            "        if fast_ma < slow_ma and quantity > 0:",
+            "            return self.sell(symbol=symbol, amount=quantity)",
             "        return None",
             "",
         ]

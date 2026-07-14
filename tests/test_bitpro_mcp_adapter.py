@@ -88,6 +88,46 @@ def test_bitpro_mcp_client_rejects_live_write_tools_before_http() -> None:
         client.call_tool("trading_futures_order", {"symbol": "ETH/USDT:USDT"})
 
 
+def test_strategy_validation_uses_remote_mcp_after_health_preflight() -> None:
+    remote_calls: list[tuple[str, dict[str, Any]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v2/system/health"
+        return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+
+    client = BitProMcpClient(
+        settings=Settings(
+            BITPRO_MCP_API_BASE="http://bitpro.local/api/v2",
+            BITPRO_MCP_API_TOKEN="test-token",
+        ),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        remote_tool_caller=lambda name, arguments: (
+            remote_calls.append((name, arguments)) or {"valid": True, "class_name": "Research"}
+        ),
+    )
+
+    result = BitProToolAdapter(client).strategy_validate_code(
+        script_content="class Research(BaseStrategy):\n    pass\n",
+        idempotency_key="validate-remote-001",
+    )
+
+    assert result["validation"]["valid"] is True
+    assert remote_calls == [
+        (
+            "strategy_validate_code",
+            {
+                "code": "class Research(BaseStrategy):\n    pass\n",
+            },
+        )
+    ]
+    assert result["idempotency_key"] == "validate-remote-001"
+    assert [call["tool"] for call in result["tool_calls"]] == [
+        "bitpro_capabilities",
+        "bitpro_health",
+        "strategy_validate_code",
+    ]
+
+
 def test_bitpro_adapter_reads_live_order_history_after_preflight() -> None:
     seen: list[dict[str, Any]] = []
 
