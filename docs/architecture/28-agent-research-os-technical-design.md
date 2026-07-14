@@ -30,7 +30,7 @@ ResearchMandate、BitPro Orchestrator、PaperPromotion、WorldState、ToolRegist
 | Experiment | BitPro MCP + immutable manifest | BitPro 保持交易事实源，HyperTrade 只保存有界 manifest 和引用 |
 | TUI | Textual + Rich + httpx | 复用 Python/Rich 能力，支持异步输入、面板、快捷键和 SSE |
 | 评测 | pytest + Hypothesis + 现有 AgentEvalSuite/Promptfoo/Ragas/Langfuse | 同时覆盖状态机、恢复、安全、轨迹和运行可观测性 |
-| 调度 | PostgreSQL schedule/trigger 表 + worker polling；可选 `croniter` | 多实例一致、重启不丢；避免依赖单进程内存 scheduler |
+| 调度 | PostgreSQL trigger/fire/control 表 + UTC next-run + worker polling | 多实例一致、重启不丢；避免依赖单进程内存 scheduler |
 | Memory/Skill | 版本化 SQL 记录 + Pydantic schema + isolated eval | 提案、diff、审批、发布和回滚均可审计 |
 | 指标计算 | Python `decimal`/`statistics` + BitPro 指标 | 首版避免引入另一套量化引擎；缺少序列时明确 unknown |
 
@@ -766,10 +766,11 @@ ht tui [--remote URL] [--session SESSION_ID]
 
 ### 12.1 使用技术
 
-- PostgreSQL `research_triggers`、`trigger_fires`、Task idempotency。
+- PostgreSQL `research_triggers`、`research_trigger_fires`、
+  `research_trigger_control`、Task idempotency。
 - 现有 asyncio worker 增加 `research_trigger_loop`。
 - SQLAlchemy due query + lease；生产 PostgreSQL 使用 row lock/skip locked。
-- 间隔调度由 UTC `next_run_at` 实现；cron 表达式可使用固定版本 `croniter`。
+- 间隔与 `daily_utc` 调度由 UTC `next_run_at` 实现；不引入进程内 cron 状态。
 - 事件触发读取已有 MonitorRun、WorldState、Paper Snapshot 和 connector health。
 
 ### 12.2 Trigger 类型
@@ -799,6 +800,33 @@ last fire、next run、dedupe window。事件 fingerprint + time bucket 生成 i
 - 两个 worker 不能重复 fire 同一事件。
 - trigger disable/kill switch 立即阻止新 Task，但不删除审计历史。
 - 所有触发路径不能直接到达 write-like adapter。
+
+### 12.5 实际实现记录（2026-07-15）
+
+触发配置由严格 Pydantic schema 限定为 `schedule`、`regime_change`、
+`strategy_drift`、`data_quality` 和 `evaluation_regression`。Condition 只支持固定
+比较运算，event projection 最多 32 个 metrics 与 32 个 source refs；不执行表达式、
+脚本或 webhook。`CommittedTriggerEventAdapter` 仅规范化已经提交的 `MonitorRun`、
+WorldState projection、`BitProPaperMonitorSnapshot` 与 eval status，不调用其上游系统。
+
+触发事务按以下顺序执行：锁定 Trigger（PostgreSQL）、计算 source/time-bucket SHA-256
+fingerprint、复用已有 fire、重新检查 feature flag/global kill switch/trigger enabled/
+event type/active mandate/TaskBudget/cooldown/daily quota/condition、先 flush 唯一 fire，
+再在同一事务写入 background Session、`triggered_research` Task 和 TaskEvent。唯一约束
+处理并发竞态；Task idempotency key 为 `trigger:<fingerprint>`。Task 固定
+`max_backtests=0`，context/control 都标记 `read_only=true`，worker 使用 AgentKernel
+`evaluation_mode` 再次阻断 write-like tools。触发模块不导入 BitPro、paper、live 或
+approval adapter。
+
+schedule worker 使用 due query、lease owner/expiry，PostgreSQL 增加
+`FOR UPDATE SKIP LOCKED`。成功或被治理规则跳过后推进下一个 UTC 运行时间并释放 lease；
+异常时 lease 到期后可重新领取。API 提供 create/list/detail/fire history、enable/disable、
+run-now 与 global kill switch；CLI `/triggers` 和 TUI Triggers tab 复用同一 API/service。
+后台 Task 继续使用既有 Task API/SSE，因此 pause/cancel/audit 无第二套状态机。
+
+部署默认值在 Settings、`.env.example`、isolated eval Compose 与 eval env template 中均为
+false。生产 workflow `29361442025` 将 PostgreSQL 升级到 `0016_research_triggers`，
+但没有创建 Trigger 或 Task；API 和 worker probe 均确认 feature disabled。
 
 ## 13. Sprint 104：Governed Memory 与 Skill Lifecycle
 

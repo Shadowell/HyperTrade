@@ -146,12 +146,16 @@ cursor SSE replay/deduplication, gap-triggered reconciliation, responsive 80/120
 column layouts and reason-required control modals are covered by headless and client
 tests. Production API/Worker images do not contain the UI dependency.
 
-Sprint 103 entered implementation on 2026-07-15. It adds persistent background
+Sprint 103 completed implementation and production acceptance on 2026-07-15. It adds persistent background
 research triggers for bounded schedules and already-committed regime, drift, data
 quality and evaluation facts. Production and isolated runtimes remain disabled by
 default. A trigger can create only a budgeted `triggered_research` Task after feature
 flag, kill switch, mandate, lease, fingerprint dedupe, cooldown and quota checks; it
-cannot call any BitPro, paper, order, approval or capital-allocation adapter.
+cannot call any BitPro, paper, order, approval or capital-allocation adapter. Trigger
+decisions are immutable, event projections are schema-bounded, scheduled claims use
+PostgreSQL row locks/leases, and API/CLI/TUI controls require administrator authority
+and operator reasons. Production migration `0016_research_triggers` is active while
+the worker feature remains explicitly disabled.
 
 ## V1 In Scope
 

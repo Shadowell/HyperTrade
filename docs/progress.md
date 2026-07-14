@@ -4,8 +4,8 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 103 implementation state: local implementation and QA complete on 2026-07-15;
-  production deployment acceptance is pending. The bounded slice adds
+- Sprint 103 implementation state: completed and production-verified on 2026-07-15.
+  The bounded slice adds
   disabled-by-default durable research triggers,
   fire audit, lease/cooldown/quota/dedupe/kill-switch enforcement and Task-only
   dispatch. Trigger code may read committed Monitor/World/Paper/Eval facts but cannot
@@ -16,7 +16,11 @@
   controls and read-only `triggered_research` dispatch are implemented. Concurrency,
   restart, trigger-storm, quota, cooldown, kill-switch, budget-revalidation, API auth,
   TUI and deployment-boundary tests pass; full `./scripts/check.sh` passes with 449
-  Python tests. Production remains disabled until explicit operator configuration.
+  Python tests. Commit `afbed93` deployed successfully in workflow `29361442025`;
+  PostgreSQL migrated to `0016_research_triggers`, authenticated trigger projection
+  returned no rules/fires, worker probe returned `disabled`, and API/worker health
+  remained normal. Production remains disabled until explicit operator configuration.
+  Sprint 104 Governed Memory and Skill Lifecycle is next.
 - Sprint 102 implementation state: completed and production-verified on 2026-07-15
   after Sprint 101 isolated
   acceptance. The bounded slice adds an optional Textual terminal workbench over

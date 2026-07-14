@@ -129,6 +129,8 @@ flowchart TB
 | 104 | Governed Memory & Skill Lifecycle | 声明级 Memory、冲突/过期、Skill proposal/test/approve/rollback | Agent 不能直接发布 Skill 或静默改写 Memory |
 | 105 | Portfolio Strategy Lifecycle | 相关性、状态适配、容量、风险贡献、衰减、退役审阅 | 只给出研究/复核建议；不自动改资金或实盘 |
 
+截至 2026-07-15，Sprint 96–103 已完成并通过生产验收；当前进入 Sprint 104。
+
 ## 7. 阶段验收门
 
 ### Gate A：Agent OS Foundation（Sprint 96–97）

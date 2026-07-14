@@ -99,6 +99,7 @@ HyperTrade is a self-hosted Agent runtime that connects LLM-powered reasoning wi
 | Monitoring & Alerts | Read-only monitors for paper strategies, connector health, library freshness | Production |
 | Evaluation Suite | Deterministic evals for tool choice, RAG, Memory, risk, report quality | Production |
 | Agent Task OS | Durable sessions, tasks, checkpoints, cursor events, controls, leases, and recovery | Production |
+| Research Triggers | Durable schedule/regime/drift/data/eval triggers with quotas, dedupe, and kill switch | Production (disabled by default) |
 | World Model | Portfolio state tracking and defensive action scheduling | Experimental |
 
 ---
@@ -379,9 +380,22 @@ task input; `Ctrl+P`, `Ctrl+R`, and `Ctrl+C` request pause, resume/retry, and ca
 through reason-required modals. The TUI is an operator surface only; server-side auth,
 idempotency, state machines, budgets and risk gates remain authoritative.
 
-Sprint 103 is implementing disabled-by-default background research triggers. They
-create only bounded, auditable Tasks from committed schedule/market/data/eval facts;
-they have no direct BitPro, paper, testnet, live, approval or capital path.
+Sprint 103 provides disabled-by-default background research triggers. They create only
+bounded, auditable Tasks from committed schedule/market/data/eval facts; they have no
+direct BitPro, paper, testnet, live, approval or capital path. Operators can inspect and
+control them through the API, `/triggers` CLI command, or the TUI Triggers tab:
+
+```bash
+hypertrade --remote http://127.0.0.1:3334 chat
+# /triggers list
+# /triggers fires [rtrg_*]
+# /triggers enable|disable rtrg_* <reason>
+# /triggers run rtrg_* <reason>
+# /triggers kill on|off <reason>
+```
+
+Production stays inert until `RESEARCH_TRIGGERS_ENABLED=true` is deliberately set.
+Every fire still revalidates the active mandate and bounded zero-backtest budget.
 
 ---
 

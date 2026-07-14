@@ -1,6 +1,6 @@
 # Sprint 103 - Background Research Triggers
 
-> 状态：Active；Sprint 96、98、101–102 已完成验收，2026-07-15 开始实施。
+> 状态：Completed；2026-07-15 本地、部署与生产 PostgreSQL 验收通过。
 
 ## Goal
 
@@ -66,4 +66,8 @@ uv run pytest tests/test_deployment_config.py tests/test_eval_deployment_config.
 
 ## Handoff
 
+- 完成提交：`afbed93`；部署 workflow `29361442025`。
+- 本地全仓门禁：449 Python tests，加前端 lint/test/build、Ruff、mypy。
+- 生产：Alembic `0016_research_triggers`，API 投影 200，规则/触发记录为空，
+  `RESEARCH_TRIGGERS_ENABLED=false`，worker probe 为 `disabled`。
 - 下一步：Sprint 104 为长期自动运行增加 Memory/Skill 写入治理。
