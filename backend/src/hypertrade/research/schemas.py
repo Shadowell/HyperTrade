@@ -12,7 +12,7 @@ class ResearchBudget(BaseModel):
     max_candidates_per_day: int = Field(default=3, ge=1, le=50)
     max_variants_per_candidate: int = Field(default=3, ge=1, le=10)
     max_concurrent_backtests: int = Field(default=1, ge=1, le=5)
-    max_total_backtests_per_day: int = Field(default=9, ge=1, le=100)
+    max_total_backtests_per_day: int = Field(default=39, ge=1, le=100)
 
     @model_validator(mode="after")
     def validate_total_backtests(self) -> ResearchBudget:

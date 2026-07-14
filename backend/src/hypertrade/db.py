@@ -583,6 +583,52 @@ class ExperimentEvidenceLink(Base, TimestampMixin):
     created_by: Mapped[str] = mapped_column(String(128), default="experiment_ledger", index=True)
 
 
+class RobustnessValidationRun(Base, TimestampMixin):
+    """Versioned fail-closed validation over one immutable experiment execution."""
+
+    __tablename__ = "robustness_validation_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("rvld"))
+    experiment_execution_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    policy_version: Mapped[str] = mapped_column(String(64), index=True)
+    policy_hash: Mapped[str] = mapped_column(String(64), index=True)
+    policy_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    plan_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(32), default="completed", index=True)
+    final_status: Mapped[str] = mapped_column(String(32), index=True)
+    gate_results_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    summary_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    unknowns_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_by: Mapped[str] = mapped_column(
+        String(128), default="robustness_validation", index=True
+    )
+
+
+class RobustnessScenarioResult(Base, TimestampMixin):
+    """Bounded BitPro result projection for one robustness scenario."""
+
+    __tablename__ = "robustness_scenario_results"
+    __table_args__ = (
+        UniqueConstraint("validation_run_id", "scenario_id", name="uq_robustness_scenario"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("rscn"))
+    validation_run_id: Mapped[str] = mapped_column(String(32), index=True)
+    scenario_id: Mapped[str] = mapped_column(String(96), index=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    required: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    window_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    parameters_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    costs_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    regime: Mapped[str] = mapped_column(String(64), default="", index=True)
+    result_ref_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    metrics_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    gate_results_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    error_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class PaperPromotion(Base, TimestampMixin):
     """Human-approved bridge from validated research evidence to BitPro paper only."""
 

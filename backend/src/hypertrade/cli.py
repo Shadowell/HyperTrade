@@ -48,6 +48,7 @@ from hypertrade.research.experiment_ledger import ExperimentLedgerService
 from hypertrade.research.graph import ResearchGraphRuntime, graph_topology_projection
 from hypertrade.research.graph_tools import BuiltinResearchToolRunner
 from hypertrade.research.paper_promotion import PaperPromotionService
+from hypertrade.research.robustness import RobustnessValidationService
 from hypertrade.research.role_provider import DeterministicGapRoleProvider
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
@@ -93,6 +94,10 @@ class AgentClient(Protocol):
     def diff_experiment_manifests(
         self, left_fingerprint: str, right_fingerprint: str
     ) -> dict[str, Any]: ...
+
+    def list_robustness_validations(self) -> list[dict[str, Any]]: ...
+
+    def get_robustness_validation(self, validation_id: str) -> dict[str, Any]: ...
 
     def control_agent_task(
         self,
@@ -259,6 +264,10 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
         "/ledger list|show <fingerprint>|diff <left> <right>",
         "Inspect immutable experiment manifests, executions, and semantic differences.",
     ),
+    (
+        "/validations list|show <validation_id>",
+        "Inspect locked-OOS, walk-forward, sensitivity, and stress gates.",
+    ),
     ("/memory", "List active audited memory."),
     ("/memory search <query>", "Search audited memory by text."),
     ("/memory disable <mem_id>", "Disable one memory item without deleting audit history."),
@@ -352,6 +361,7 @@ SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
     ),
     "/research-graph": ("topology", "list", "show"),
     "/ledger": ("list", "show", "diff"),
+    "/validations": ("list", "show"),
     "/backtest": ("list", "latest", "--live", "--source bitpro_mcp"),
     "/paper": ("status", "pause", "resume", "close", "reset"),
     "/live": ("intents", "intent", "approve", "reject", "execute"),
@@ -717,6 +727,14 @@ class AgentApiClient:
         return self._get_object(
             f"/api/research/experiments/{quote(left_fingerprint, safe='')}"
             f"/diff/{quote(right_fingerprint, safe='')}"
+        )
+
+    def list_robustness_validations(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/research/validations", "items")
+
+    def get_robustness_validation(self, validation_id: str) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/research/validations/{quote(validation_id, safe='')}"
         )
 
     def control_agent_task(
@@ -1126,6 +1144,12 @@ class LocalAgentClient:
         return ExperimentLedgerService(self.db).diff(
             left_fingerprint, right_fingerprint
         )
+
+    def list_robustness_validations(self) -> list[dict[str, Any]]:
+        return RobustnessValidationService(self.db).list(limit=100)
+
+    def get_robustness_validation(self, validation_id: str) -> dict[str, Any]:
+        return RobustnessValidationService(self.db).get(validation_id)
 
     def control_agent_task(
         self,
@@ -1757,6 +1781,8 @@ def handle_slash_command(
         handle_research_graph_command(command, client=client, output=output)
     elif name == "/ledger":
         handle_experiment_ledger_command(command, client=client, output=output)
+    elif name == "/validations":
+        handle_robustness_validation_command(command, client=client, output=output)
     elif name == "/memory":
         handle_memory_command(command, client=client, output=output)
     elif name == "/rag":
@@ -3167,6 +3193,43 @@ def handle_experiment_ledger_command(
             )
         return
     print("Usage: /ledger list|show <fingerprint>|diff <left> <right>", file=output)
+
+
+def handle_robustness_validation_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split()
+    action = parts[1].lower() if len(parts) > 1 else "list"
+    if action == "list":
+        rows = client.list_robustness_validations()
+        print("Robustness validations:", file=output)
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:20]:
+            print(
+                f"- {row.get('id')} [{row.get('final_status')}] "
+                f"fingerprint={str(row.get('fingerprint', ''))[:16]}",
+                file=output,
+            )
+        return
+    if action == "show" and len(parts) == 3:
+        row = client.get_robustness_validation(parts[2])
+        summary = dict(row.get("summary", {}))
+        print(
+            f"Validation {row.get('id')} [{row.get('final_status')}] "
+            f"scenarios={summary.get('scenario_count', 0)}",
+            file=output,
+        )
+        for name, gate in sorted(dict(row.get("gates", {})).items()):
+            print(
+                f"- {name}: {gate.get('outcome')} required={gate.get('required')}",
+                file=output,
+            )
+        return
+    print("Usage: /validations list|show <validation_id>", file=output)
 
 
 def handle_run_command(command: str, *, client: AgentClient, output: TextIO) -> None:

@@ -3,7 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from hypertrade.db import Database, ResearchExperimentEvidence, ResearchMandate
+from hypertrade.db import (
+    Database,
+    ExperimentEvidenceLink,
+    ResearchExperimentEvidence,
+    ResearchMandate,
+    RobustnessValidationRun,
+)
 from hypertrade.research.paper_promotion import PaperPromotionService
 
 
@@ -119,6 +125,49 @@ def test_paper_promotion_requires_passing_evidence_and_human_approval() -> None:
         )["id"]
         == pending["id"]
     )
+
+
+def test_ledger_evidence_requires_validated_robustness_before_paper_queue() -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    evidence_id = _passing_evidence(db)
+    with db.session() as session:
+        session.add(
+            ExperimentEvidenceLink(
+                execution_id="exex_robustness_test",
+                evidence_id=evidence_id,
+                evidence_kind="legacy_experiment",
+                created_by="test",
+            )
+        )
+        session.add(
+            RobustnessValidationRun(
+                experiment_execution_id="exex_robustness_test",
+                fingerprint="a" * 64,
+                policy_version="robustness_policy.v2",
+                policy_hash="b" * 64,
+                policy_json={},
+                plan_json={},
+                final_status="needs_data",
+                gate_results_json={"cost_stress": {"outcome": "unknown"}},
+                summary_json={},
+                unknowns_json=["gate:cost_stress"],
+                created_by="test",
+            )
+        )
+
+    with pytest.raises(ValueError, match="requires a validated robustness run"):
+        PaperPromotionService(db).request(
+            evidence_id=evidence_id, reason="should remain blocked"
+        )
+    with db.session() as session:
+        run = session.query(RobustnessValidationRun).one()
+        run.final_status = "validated"
+
+    pending = PaperPromotionService(db).request(
+        evidence_id=evidence_id, reason="robustness now validated"
+    )
+    assert pending["status"] == "pending_paper_approval"
 
 
 def test_paper_observation_is_read_only_and_keeps_data_gaps_visible() -> None:

@@ -9,15 +9,23 @@ from hypertrade.db import Database
 from hypertrade.main import create_app
 from hypertrade.research.experiment_ledger import ExperimentLedgerService
 from hypertrade.research.orchestrator import ResearchOrchestrator
-from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
+from hypertrade.research.robustness import RobustnessValidationService
+from hypertrade.research.schemas import ResearchBudget, ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
 
 
 class FixtureBitProAdapter:
-    def __init__(self, *, missing_locked_metric: bool = False, unhealthy: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        missing_locked_metric: bool = False,
+        unhealthy: bool = False,
+        missing_robustness_result: bool = False,
+    ) -> None:
         self.calls: list[str] = []
         self.missing_locked_metric = missing_locked_metric
         self.unhealthy = unhealthy
+        self.missing_robustness_result = missing_robustness_result
         self.result_number = 0
 
     def capabilities(self) -> dict[str, Any]:
@@ -72,6 +80,8 @@ class FixtureBitProAdapter:
         }
         if self.missing_locked_metric and kwargs["start_date"] == "2026-01-17":
             metrics.pop("trade_count")
+        if self.missing_robustness_result and self.result_number == 10:
+            return {"job": {"job_id": "bp_job_10"}, "tool_calls": []}
         return {
             "job": {"job_id": f"bp_job_{self.result_number}"},
             "backtest_result": {"id": self.result_number, "metrics": metrics},
@@ -116,14 +126,15 @@ def test_orchestrator_persists_bitpro_matrix_evidence_without_paper_action() -> 
     assert report["outcome"]["paper_promotion"] == "not_available_in_sprint_82"
     assert "paper_configure" not in adapter.calls
     assert "paper_start" not in adapter.calls
-    assert adapter.calls.count("backtest_start_job") == 9
+    assert adapter.calls.count("backtest_start_job") == 13
     assert report["job"]["external_refs"]["sprint_82"]["bitpro_strategy_id"] == "42"
+    assert report["job"]["external_refs"]["sprint_82"]["robustness_status"] == "validated"
     ledger = report["job"]["external_refs"]["experiment_ledger"]
     assert len(ledger["fingerprint"]) == 64
     execution = ExperimentLedgerService(db).executions(ledger["fingerprint"])[0]
     assert execution["status"] == "completed"
-    assert execution["usage"] == {"backtests": 9, "tool_calls": 0}
-    assert len(execution["artifacts"]["items"]) == 9
+    assert execution["usage"] == {"backtests": 13, "tool_calls": 0}
+    assert len(execution["artifacts"]["items"]) == 16
     assert len(execution["evidence"]) == 3
 
 
@@ -165,7 +176,7 @@ def test_orchestrator_reuses_completed_fingerprint_before_bitpro_writes() -> Non
     assert second_ledger["execution_id"] == first_ledger["execution_id"]
     assert second_ledger["fingerprint"] == first_ledger["fingerprint"]
     assert adapter.calls.count("strategy_create") == 1
-    assert adapter.calls.count("backtest_start_job") == 9
+    assert adapter.calls.count("backtest_start_job") == 13
 
 
 def test_orchestrator_rejects_missing_locked_metric_without_paper_action() -> None:
@@ -183,6 +194,19 @@ def test_orchestrator_rejects_missing_locked_metric_without_paper_action() -> No
     assert "paper_configure" not in adapter.calls
 
 
+def test_orchestrator_marks_partial_robustness_result_needs_data() -> None:
+    db, job_id = _queued_job()
+    adapter = FixtureBitProAdapter(missing_robustness_result=True)
+
+    report = ResearchOrchestrator(db, bitpro_adapter=adapter).run(job_id)
+
+    assert report["job"]["status"] == "rejected"
+    refs = report["job"]["external_refs"]["sprint_82"]
+    assert refs["robustness_status"] == "needs_data"
+    validation = RobustnessValidationService(db).get(refs["robustness_validation_id"])
+    assert validation["gates"]["walk_forward"]["outcome"] == "unknown"
+
+
 def test_orchestrator_stops_before_strategy_write_when_bitpro_is_unhealthy() -> None:
     db, job_id = _queued_job()
     adapter = FixtureBitProAdapter(unhealthy=True)
@@ -191,6 +215,36 @@ def test_orchestrator_stops_before_strategy_write_when_bitpro_is_unhealthy() -> 
 
     assert report["job"]["status"] == "failed"
     assert adapter.calls == ["bitpro_capabilities", "bitpro_health"]
+
+
+def test_orchestrator_pre_reserves_robustness_budget_before_strategy_write() -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    program = ResearchProgramService(db)
+    mandate = program.create_mandate(
+        ResearchMandateCreate(
+            name="legacy nine backtest budget",
+            symbols=["BTC"],
+            timeframes=["1H"],
+            strategy_categories=["TREND"],
+            budget=ResearchBudget(max_total_backtests_per_day=9),
+        )
+    )
+    job = program.queue_job(
+        str(mandate["id"]),
+        ResearchJobCreate(
+            prompt="test bounded budget rejection",
+            idempotency_key="sprint100-budget-job-key",
+        ),
+    )
+    adapter = FixtureBitProAdapter()
+
+    report = ResearchOrchestrator(db, bitpro_adapter=adapter).run(str(job["id"]))
+
+    assert report["job"]["status"] == "rejected"
+    assert "strategy_validate_code" not in adapter.calls
+    assert "strategy_create" not in adapter.calls
+    assert "backtest_start_job" not in adapter.calls
 
 
 def test_research_job_api_runs_worker_and_exposes_read_only_report() -> None:

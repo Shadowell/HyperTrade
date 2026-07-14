@@ -7,7 +7,14 @@ from typing import Any, Protocol, cast
 
 from sqlalchemy import desc, select
 
-from hypertrade.db import Database, PaperPromotion, ResearchExperimentEvidence, ResearchMandate
+from hypertrade.db import (
+    Database,
+    ExperimentEvidenceLink,
+    PaperPromotion,
+    ResearchExperimentEvidence,
+    ResearchMandate,
+    RobustnessValidationRun,
+)
 
 PAPER_PROMOTION_STATES = frozenset(
     {
@@ -65,6 +72,22 @@ class PaperPromotionService:
                 raise ValueError(
                     "only fully passing validation evidence can request paper promotion"
                 )
+            experiment_link = session.scalar(
+                select(ExperimentEvidenceLink).where(
+                    ExperimentEvidenceLink.evidence_id == evidence.id
+                )
+            )
+            if experiment_link is not None:
+                robustness = session.scalar(
+                    select(RobustnessValidationRun).where(
+                        RobustnessValidationRun.experiment_execution_id
+                        == experiment_link.execution_id
+                    )
+                )
+                if robustness is None or robustness.final_status != "validated":
+                    raise ValueError(
+                        "paper promotion requires a validated robustness run"
+                    )
             mandate = _mandate(session, evidence.mandate_id)
             if mandate.paper_promotion_mode != "manual_approval" or mandate.live_mode != "disabled":
                 raise ValueError("mandate does not permit manual paper-only promotion")

@@ -10,9 +10,11 @@ from sqlalchemy import desc, select
 from hypertrade.db import (
     BitProPaperMonitorSnapshot,
     Database,
+    ExperimentEvidenceLink,
     PaperPromotion,
     ResearchExperimentEvidence,
     ResearchMandate,
+    RobustnessValidationRun,
 )
 
 
@@ -41,7 +43,22 @@ class StrategyCardService:
                     .order_by(desc(BitProPaperMonitorSnapshot.created_at))
                     .limit(1)
                 ).first()
-                cards.append(_card(promotion, evidence, mandate, snapshot))
+                experiment_link = session.scalar(
+                    select(ExperimentEvidenceLink).where(
+                        ExperimentEvidenceLink.evidence_id == evidence.id
+                    )
+                )
+                robustness = (
+                    session.scalar(
+                        select(RobustnessValidationRun).where(
+                            RobustnessValidationRun.experiment_execution_id
+                            == experiment_link.execution_id
+                        )
+                    )
+                    if experiment_link is not None
+                    else None
+                )
+                cards.append(_card(promotion, evidence, mandate, snapshot, robustness))
             return cards
 
 
@@ -50,6 +67,7 @@ def _card(
     evidence: ResearchExperimentEvidence,
     mandate: ResearchMandate,
     snapshot: BitProPaperMonitorSnapshot | None,
+    robustness: RobustnessValidationRun | None,
 ) -> dict[str, Any]:
     observation = dict(promotion.observation_json)
     raw_drift = observation.get("drift")
@@ -63,6 +81,7 @@ def _card(
         evidence.status == "evidence_recorded"
         and bool(evidence.gate_results_json)
         and all(evidence.gate_results_json.values())
+        and (robustness is None or robustness.final_status == "validated")
     )
     freshness = _freshness(evidence.updated_at)
     if freshness != "fresh":
@@ -83,6 +102,10 @@ def _card(
         "allowed_timeframes": list(mandate.timeframes_json),
         "declared_regime_fit": _regime_fit(mandate.strategy_categories_json),
         "validation_status": "passed" if passed else "not_passed",
+        "robustness_validation_id": robustness.id if robustness is not None else "",
+        "robustness_status": (
+            robustness.final_status if robustness is not None else "legacy_not_available"
+        ),
         "evidence_freshness": freshness,
         "paper_status": promotion.status,
         "monitor_snapshot_id": snapshot.id if snapshot is not None else "",
@@ -94,6 +117,7 @@ def _card(
             "validation_evidence_id": evidence.id,
             "paper_promotion_id": promotion.id,
             "monitor_snapshot_id": snapshot.id if snapshot is not None else "",
+            "robustness_validation_id": robustness.id if robustness is not None else "",
         },
     }
 

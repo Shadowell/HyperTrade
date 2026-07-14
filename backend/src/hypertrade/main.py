@@ -92,6 +92,7 @@ from hypertrade.research.legacy_evidence import LegacyEvidenceAdapter
 from hypertrade.research.orchestrator import BitProResearchAdapter, ResearchOrchestrator
 from hypertrade.research.paper_observation import PaperObservationService
 from hypertrade.research.paper_promotion import PaperPromotionAdapter, PaperPromotionService
+from hypertrade.research.robustness import RobustnessValidationService
 from hypertrade.research.role_provider import (
     ChatResearchRoleProvider,
     DeterministicGapRoleProvider,
@@ -1162,6 +1163,17 @@ def create_app(
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Experiment not found") from exc
+
+    @app.get("/api/research/validations")
+    def list_robustness_validations(limit: int = 50) -> dict[str, list[dict[str, Any]]]:
+        return {"items": RobustnessValidationService(database).list(limit=limit)}
+
+    @app.get("/api/research/validations/{validation_id}")
+    def get_robustness_validation(validation_id: str) -> dict[str, Any]:
+        try:
+            return RobustnessValidationService(database).get(validation_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Validation run not found") from exc
 
     @app.get("/api/research/mandates")
     def list_research_mandates(_: AdminUser) -> dict[str, list[dict[str, Any]]]:

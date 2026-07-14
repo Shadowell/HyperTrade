@@ -61,6 +61,7 @@ def test_strategy_card_joins_passing_evidence_and_paper_review_state() -> None:
     card = StrategyCardService(db).list()[0]
 
     assert card["validation_status"] == "passed"
+    assert card["robustness_status"] == "legacy_not_available"
     assert card["paper_status"] == "paper_review_required"
     assert card["declared_regime_fit"] == ["risk_on", "mixed"]
     assert "missing equity" in card["coverage_flags"]

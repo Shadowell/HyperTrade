@@ -22,6 +22,14 @@ from hypertrade.research.experiment_schemas import (
     ExperimentVersions,
     ExperimentWindow,
 )
+from hypertrade.research.robustness import (
+    RobustnessValidationService,
+    plan_robustness_validation,
+)
+from hypertrade.research.robustness_schemas import (
+    RobustnessPolicyV2,
+    ScenarioObservation,
+)
 from hypertrade.research.schemas import StrategySpecDraft
 from hypertrade.research.service import ResearchProgramService
 from hypertrade.research.validation import ValidationGate
@@ -110,6 +118,7 @@ class ResearchOrchestrator:
         self.tool_calls: list[dict[str, Any]] = []
         self.bitpro_contract_version = "unknown"
         self.data_snapshot_hash = _sha256("unavailable")
+        self.preflight_candle_times: list[datetime] = []
 
     def run(self, job_id: str) -> dict[str, Any]:
         job = self.program.get_job(job_id)
@@ -165,6 +174,7 @@ class ResearchOrchestrator:
                     fingerprint=fingerprint,
                 )
             ExperimentLedgerService(self.db).start(execution_id)
+            _ensure_research_budget(job=job, mandate=mandate, window_count=len(windows))
             self._advance(job_id, "strategy_validation")
             self._validate_strategy(job=job, script_content=script_content)
             strategy_id = self._create_strategy(
@@ -177,13 +187,26 @@ class ResearchOrchestrator:
                 strategy_id=strategy_id,
                 windows=windows,
             )
+            robustness = self._run_robustness(
+                job=job,
+                mandate=mandate,
+                strategy_id=strategy_id,
+                execution_id=execution_id,
+                fingerprint=fingerprint,
+                evidence=evidence,
+                existing_backtests=len(evidence) * len(windows),
+            )
             self._advance(job_id, "validation")
             passing = [row for row in evidence if row["status"] == "evidence_recorded"]
+            if robustness["final_status"] != "validated":
+                passing = []
             refs = {
                 "bitpro_strategy_id": strategy_id,
                 "matrix_candidate_count": len(evidence),
                 "passing_candidate_ids": [row["variant_id"] for row in passing],
                 "boundary": "backtest_only_no_paper_or_live",
+                "robustness_validation_id": robustness["id"],
+                "robustness_status": robustness["final_status"],
             }
             self.program.update_job_external_refs(job_id, updates={"sprint_82": refs})
             report = self.program.report(job_id)
@@ -195,6 +218,7 @@ class ResearchOrchestrator:
                     contract_version=self.bitpro_contract_version,
                     tool_call_count=len(self.tool_calls),
                     outcome_status="evidence_recorded" if passing else "rejected",
+                    robustness=robustness,
                 ),
                 actor="research_orchestrator",
             )
@@ -303,6 +327,7 @@ class ResearchOrchestrator:
         if len(candles) < int(validation["min_candle_count"]):
             raise ResearchRejected("real_data_coverage_inadequate")
         self.data_snapshot_hash = _candle_snapshot_hash(candles)
+        self.preflight_candle_times = [_candle_time(row) for row in candles]
         return _chronological_windows(candles, validation=validation)
 
     def _validate_strategy(self, *, job: dict[str, Any], script_content: str) -> None:
@@ -363,7 +388,7 @@ class ResearchOrchestrator:
             limit=int(mandate["budget"]["max_variants_per_candidate"]),
         )
         projected = len(variants) * len(windows)
-        if projected > int(mandate["budget"]["max_total_backtests_per_day"]):
+        if projected > _per_candidate_backtest_cap(mandate["budget"]):
             raise ResearchRejected("matrix_exceeds_mandate_backtest_budget")
 
         rows: list[dict[str, Any]] = []
@@ -522,6 +547,113 @@ class ResearchOrchestrator:
             tags=["strategy", "strategy_knowledge", "bitpro", str(evidence["strategy_key"])],
         )
 
+    def _run_robustness(
+        self,
+        *,
+        job: dict[str, Any],
+        mandate: dict[str, Any],
+        strategy_id: str,
+        execution_id: str,
+        fingerprint: str,
+        evidence: list[dict[str, Any]],
+        existing_backtests: int,
+    ) -> dict[str, Any]:
+        validation = dict(mandate["validation"])
+        policy = RobustnessPolicyV2(
+            locked_oos_bars=int(validation["locked_out_of_sample_bars"]),
+            min_trade_count=int(validation["min_trade_count"]),
+            max_drawdown_pct=Decimal(str(validation["max_drawdown_pct"])),
+        )
+        spec = dict(job["strategy_spec"])
+        try:
+            plan = plan_robustness_validation(
+                fingerprint=fingerprint,
+                data_snapshot_hash=self.data_snapshot_hash,
+                candle_times=self.preflight_candle_times,
+                parameter_bounds=dict(spec.get("parameter_bounds", {})),
+                maker_fee_bps=Decimal(str(validation["fee_bps"])),
+                taker_fee_bps=Decimal(str(validation["fee_bps"])),
+                slippage_bps=Decimal(str(validation["slippage_bps"])),
+                policy=policy,
+                max_new_backtests=(
+                    _per_candidate_backtest_cap(mandate["budget"]) - existing_backtests
+                ),
+            )
+        except ValueError as exc:
+            raise ResearchRejected(f"robustness_planning_rejected:{exc}") from exc
+        evidence_by_variant = {str(row["variant_id"]): row for row in evidence}
+        observations: list[ScenarioObservation] = []
+        baseline = evidence_by_variant.get("baseline", {})
+        for scenario in plan.scenarios:
+            if scenario.source == "reuse":
+                variant = (
+                    "baseline"
+                    if scenario.kind == "locked_oos"
+                    else f"adjacent_{next(iter(scenario.parameters), '')}"
+                )
+                source = evidence_by_variant.get(variant, baseline if variant == "baseline" else {})
+                observations.append(
+                    _scenario_observation_from_evidence(scenario.scenario_id, source)
+                )
+        if any(item.source == "execute" for item in plan.scenarios):
+            reset = self.adapter.strategy_update(
+                strategy_id=int(strategy_id),
+                config={
+                    "strategy_source": "db_script",
+                    "script_content_source": "db",
+                    "research_parameters": {},
+                    "research_job_id": job["id"],
+                },
+                idempotency_key=_idempotency_key(str(job["id"]), "robustness-reset"),
+            )
+            self._record("strategy_update", reset)
+        for scenario in plan.scenarios:
+            if scenario.source != "execute":
+                continue
+            payload = self.adapter.backtest_start_job(
+                strategy_id=int(strategy_id),
+                start_date=scenario.window.start.date().isoformat(),
+                end_date=scenario.window.end.date().isoformat(),
+                symbol=str(spec["symbols"][0]),
+                timeframe=str(spec["timeframes"][0]),
+                maker_fee_bps=float(scenario.maker_fee_bps),
+                taker_fee_bps=float(scenario.taker_fee_bps),
+                slippage_bps=float(scenario.slippage_bps),
+                wait_for_result=True,
+                idempotency_key=_idempotency_key(
+                    str(job["id"]), f"robustness-{scenario.scenario_id}"
+                ),
+            )
+            self._record("backtest_start_job", payload)
+            detail = _result_from_backtest_payload(payload)
+            if not detail:
+                observations.append(
+                    ScenarioObservation(
+                        scenario_id=scenario.scenario_id,
+                        status="unknown",
+                        error_code="completed_bitpro_result_missing",
+                    )
+                )
+                continue
+            observations.append(
+                ScenarioObservation(
+                    scenario_id=scenario.scenario_id,
+                    status="completed",
+                    result_ref={
+                        "job_id": str((payload.get("job") or {}).get("job_id", "")),
+                        "result_id": str(detail.get("id", "")),
+                    },
+                    metrics=_decimal_metrics(dict(detail.get("metrics") or {})),
+                )
+            )
+        return RobustnessValidationService(self.db).record(
+            execution_id=execution_id,
+            plan=plan,
+            policy=policy,
+            observations=observations,
+            actor="research_orchestrator",
+        )
+
     def _record(self, tool: str, payload: dict[str, Any]) -> None:
         raw_calls = payload.get("tool_calls")
         calls = raw_calls if isinstance(raw_calls, list) else []
@@ -594,6 +726,7 @@ def _execution_complete_payload(
     contract_version: str,
     tool_call_count: int,
     outcome_status: str,
+    robustness: dict[str, Any],
 ) -> ExperimentExecutionComplete:
     evidence = [dict(item) for item in report.get("evidence", [])]
     artifacts: list[ArtifactReference] = []
@@ -623,15 +756,41 @@ def _execution_complete_payload(
                 metrics[f"{variant}.locked.{key}"] = Decimal(str(value))
             except InvalidOperation:
                 continue
+    for scenario in robustness.get("scenarios", []):
+        ref = dict(scenario.get("result_ref", {}))
+        if not ref:
+            continue
+        bounded_ref = {
+            "job_id": str(ref.get("job_id", "")),
+            "result_id": str(ref.get("result_id", "")),
+        }
+        artifacts.append(
+            ArtifactReference(
+                artifact_id=f"robustness:{scenario.get('scenario_id', 'scenario')}",
+                artifact_ref=(
+                    f"bitpro:backtest:{bounded_ref['job_id']}:{bounded_ref['result_id']}"
+                ),
+                content_hash=_sha256(
+                    json.dumps(bounded_ref, separators=(",", ":"), sort_keys=True)
+                ),
+                contract_version=contract_version,
+            )
+        )
     return ExperimentExecutionComplete(
         external_refs={
             "bitpro_strategy_id": strategy_id,
             "research_job_id": str(report["job"]["id"]),
             "outcome_status": outcome_status,
+            "robustness_validation_id": str(robustness["id"]),
+            "robustness_status": str(robustness["final_status"]),
         },
         metrics=metrics,
         artifacts=artifacts,
-        usage={"backtests": len(artifacts), "tool_calls": tool_call_count},
+        usage={
+            "backtests": len(evidence) * 3
+            + int(dict(robustness.get("plan", {})).get("projected_new_backtests", 0)),
+            "tool_calls": tool_call_count,
+        },
         evidence_ids=[str(item["id"]) for item in evidence],
         evidence_kind="legacy_experiment",
     )
@@ -661,6 +820,56 @@ def _candle_snapshot_hash(candles: list[dict[str, Any]]) -> str:
     """Hash bounded candle identities, never raw market values."""
     identities = sorted(_candle_time(row).isoformat() for row in candles)
     return _sha256(json.dumps(identities, separators=(",", ":")))
+
+
+def _scenario_observation_from_evidence(
+    scenario_id: str, evidence: dict[str, Any]
+) -> ScenarioObservation:
+    metrics = dict(evidence.get("metrics", {})).get("locked_out_of_sample", {})
+    result_ref = dict(evidence.get("result_refs", {})).get("locked_out_of_sample", {})
+    if not isinstance(metrics, dict) or not isinstance(result_ref, dict) or not result_ref:
+        return ScenarioObservation(
+            scenario_id=scenario_id,
+            status="unknown",
+            error_code="reused_locked_oos_evidence_missing",
+        )
+    return ScenarioObservation(
+        scenario_id=scenario_id,
+        status="completed",
+        result_ref={
+            "job_id": str(result_ref.get("job_id", "")),
+            "result_id": str(result_ref.get("result_id", "")),
+        },
+        metrics=_decimal_metrics(metrics),
+    )
+
+
+def _decimal_metrics(metrics: dict[str, Any]) -> dict[str, Decimal]:
+    result: dict[str, Decimal] = {}
+    for key, value in metrics.items():
+        parsed = _decimal(value)
+        if parsed is not None and parsed.is_finite():
+            result[str(key)] = parsed
+    return result
+
+
+def _per_candidate_backtest_cap(budget: dict[str, Any]) -> int:
+    candidates = max(1, int(budget["max_candidates_per_day"]))
+    baseline = int(budget["max_variants_per_candidate"]) * 3
+    return max(baseline, int(budget["max_total_backtests_per_day"]) // candidates)
+
+
+def _ensure_research_budget(
+    *, job: dict[str, Any], mandate: dict[str, Any], window_count: int
+) -> None:
+    bounds = job["strategy_spec"].get("parameter_bounds", {})
+    variants = _matrix_variants(
+        bounds if isinstance(bounds, dict) else {},
+        limit=int(mandate["budget"]["max_variants_per_candidate"]),
+    )
+    projected = len(variants) * window_count + 4
+    if projected > _per_candidate_backtest_cap(mandate["budget"]):
+        raise ResearchRejected("robustness_plan_exceeds_per_candidate_backtest_budget")
 
 
 def _chronological_windows(
