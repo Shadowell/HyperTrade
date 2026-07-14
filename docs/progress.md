@@ -13,8 +13,9 @@
   the aggregate report excludes prompts, reports, arguments, raw outputs, and
   credentials. Focused tests passed (`16 passed`), and the optional Ragas smoke
   scored all 24 synthetic safe trajectories. Full `./scripts/check.sh` passed
-  (frontend lint/test/build, Ruff, mypy, and 338 Python tests); deployment
-  verification is pending before release.
+  (frontend lint/test/build, Ruff, mypy, and 338 Python tests). Deployment run
+  `29327574329` succeeded for SHA `0f02d1c`; the production health endpoint
+  returned `{"status":"ok","service":"hypertrade-api"}`.
 - Last verified state: Sprint 92 Agent evaluation foundation completed locally on
   2026-07-14. The deterministic `/evals` suite remains the required regression
   gate; `evaluation_mode=true` records attempted tool selection while denying
