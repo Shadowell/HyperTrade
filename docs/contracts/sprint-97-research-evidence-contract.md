@@ -1,6 +1,6 @@
 # Sprint 97 - Research Evidence Contract
 
-> 状态：Active，Sprint 96 已完成；2026-07-14 经操作员批准进入实施。
+> 状态：Completed，2026-07-14 完成实现、全量回归、生产部署与远程验收。
 
 ## Goal
 
@@ -75,5 +75,8 @@ uv run pytest tests/test_strategy_evidence.py tests/test_rag_citations.py -q
   来源适配、REST、graph/report projection 和 legacy adapter。
 - 聚焦回归 `25 passed`；migration `upgrade -> downgrade -> upgrade` 通过；
   `./scripts/check.sh` 全部通过，Python `361 passed`。
-- 生产 PostgreSQL migration、远程 append/read/graph/lifecycle smoke 尚待实现提交部署后
-  验证；完成前 Sprint 保持 Active。
+- 实现提交 `a8484b3` 由工作流 `29340215236` 成功部署并应用 PostgreSQL migration。
+- 生产 synthetic QA 验证 append/dedupe/public read/filter/graph/expire/supersede：原事实
+  `evi_1b69534e27be4c49a555` 保留为 superseded，替代事实
+  `evi_1acf40f0bc9a401e8cfb` 为 active；反证 `evi_65b614d49dc4430ea814`
+  过期后仍保留在 graph，source health 为 available，生产健康保持 OK。

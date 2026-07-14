@@ -2,8 +2,9 @@
 
 ## Verdict
 
-Local verdict: **PASS**. Production deployment: **PENDING** until the implementation
-commit applies migration `0013` and the remote evidence API smokes complete.
+Final verdict: **PASS**. Local gates, production deployment, PostgreSQL migration,
+authenticated mutations, public reads, filters, graphs, and lifecycle smokes all
+completed successfully.
 
 ## Contract Review
 
@@ -32,11 +33,13 @@ commit applies migration `0013` and the remote evidence API smokes complete.
 
 - None in the Sprint 97 implementation or focused regression suite.
 
-### Not Checked Yet
+### Not Checked
 
-- Production PostgreSQL migration and index creation, pending deployment.
-- Production authenticated append, public read/filter/graph, and lifecycle smoke,
-  pending deployment. The smoke will use synthetic QA evidence only.
+- No real strategy claim was promoted or modified during the smoke. Production
+  writes were explicitly labelled synthetic QA evidence and prove contract wiring,
+  not trading performance.
+- High-concurrency hash-race behavior was not load-tested on production; unique-key
+  race recovery is covered by the service boundary and deterministic tests.
 
 ## Verification Evidence
 
@@ -46,10 +49,18 @@ commit applies migration `0013` and the remote evidence API smokes complete.
   `0012`: upgrade, downgrade, and upgrade passed.
 - Full `./scripts/check.sh`: frontend lint/test/build, Ruff, Mypy, and Python tests
   passed (`361 passed`).
+- Implementation commit `a8484b3` deployed successfully in workflow `29340215236`;
+  the API could immediately append/read records, proving PostgreSQL migration
+  `0013` was applied.
+- Production fact `evi_1b69534e27be4c49a555` replayed to the same ID with
+  `idempotency_replayed=true`. Counter-evidence `evi_65b614d49dc4430ea814`
+  was expired explicitly, and replacement `evi_1acf40f0bc9a401e8cfb` linked by
+  `supersedes` while the original remained queryable as `superseded`.
+- The bounded graph returned three nodes with `challenges` and `supersedes` edges;
+  Task/type filtering returned both historical and active facts, public GET showed
+  the Trace source still available, and production health returned OK.
 
 ## Next
 
-1. Push the implementation commit and verify the deployment workflow.
-2. Verify PostgreSQL-backed append/dedupe/read/filter/graph/lifecycle behavior and
-   production health.
-3. Record final PASS, close Sprint 97, then activate Sprint 98.
+Activate Sprint 98 and require every research role output to pass through this
+Evidence V2 service before it can advance the research graph.

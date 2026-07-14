@@ -413,6 +413,12 @@ Agent role 不能直接调用 POST API；由 `RoleExecutor` 在输出 schema 校
   上 `upgrade -> downgrade -> upgrade` 通过；全仓 `./scripts/check.sh` 通过，Python
   `361 passed`。
 
+生产验收记录：实现提交 `a8484b3` 由工作流 `29340215236` 成功部署并应用 migration
+`0013`。synthetic QA fact `evi_1b69534e27be4c49a555` 验证 hash replay 后被
+`evi_1acf40f0bc9a401e8cfb` 显式 supersede；反证 `evi_65b614d49dc4430ea814`
+显式过期但未删除。公开读取、Task/type filter、三节点关系图、source health 和生产健康
+均通过；这些 QA 记录只证明证据合同，不构成策略表现证据。
+
 ## 7. Sprint 98：Multi-Agent Research Graph V1
 
 ### 7.1 使用技术

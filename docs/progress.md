@@ -4,16 +4,19 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 97 implementation state: local implementation and QA completed on
-  2026-07-14; production deployment verification is pending. Evidence V2 now
+- Sprint 97 implementation state: completed and production-verified on
+  2026-07-14. Evidence V2 now
   has discriminated schemas, canonical UTC/Decimal hashing, append-only records
   and typed relations, source health/data-gap projection, lifecycle/query/graph
   services, bounded source adapters, administrator-only mutation APIs, public
   read APIs, and explicit legacy read projections. Focused evidence and existing
   RAG/strategy/BitPro regressions passed (`25 passed`), migration `0013` passed
   upgrade/downgrade/upgrade, and `./scripts/check.sh` passed with `361 passed`
-  Python tests. Multi-Agent graph, automatic fact adjudication, and paper/live
-  behavior remain out of scope.
+  Python tests. Commit `a8484b3` deployed successfully in run `29340215236`;
+  PostgreSQL-backed append/dedupe/public read/filter/graph/expire/supersede smokes
+  passed with synthetic QA evidence, and production health remained OK.
+  Multi-Agent graph, automatic fact adjudication, and paper/live behavior remain
+  out of scope.
 - Sprint 96 implementation state: completed and production-verified on
   2026-07-14. Durable
   AgentSession/AgentTask/TaskNodeRun/TaskCheckpoint/TaskEvent persistence,
@@ -39,7 +42,7 @@
   background triggers, governed Memory/Skills, and portfolio lifecycle review.
   This activation does not change runtime, trading, paper, BitPro, provider,
   deployment, or database behavior. Sprint 95 and Sprint 96 are completed;
-  Sprint 97 is active.
+  Sprint 97 is completed; Sprint 98 is next.
 - Last verified state: Sprint 95 Agent production-readiness evaluation completed
   on 2026-07-14. The isolated API deterministic suite passed 14/14, but the
   real Codex Provider 24-case golden baseline stopped at case 11 with an
