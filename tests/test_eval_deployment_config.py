@@ -27,12 +27,14 @@ def test_eval_compose_disables_production_write_paths_and_uses_a_secret() -> Non
 
     assert 'PAPER_ENABLED: "false"' in compose
     assert 'MONITOR_SCHEDULER_ENABLED: "false"' in compose
+    assert compose.count('RESEARCH_TRIGGERS_ENABLED: "false"') == 2
     assert "BITPRO_MCP_API_BASE: http://127.0.0.1:9/api/v2" in compose
     assert "CODEX_AUTH_SOURCE_PATH" in compose
     assert "CODEX_AUTH_JSON=/run/secrets/hypertrade_eval_codex_auth" in env_example
     assert "ACTIVE_CHAT_PROVIDER=codex" in env_example
     assert "PAPER_ENABLED=false" in env_example
     assert "MONITOR_SCHEDULER_ENABLED=false" in env_example
+    assert "RESEARCH_TRIGGERS_ENABLED=false" in env_example
     assert "BITPRO_MCP_API_BASE=http://127.0.0.1:9/api/v2" in env_example
 
 

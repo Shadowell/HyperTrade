@@ -17,6 +17,7 @@ class FakeWorkbenchClient:
     def __init__(self) -> None:
         self.controls: list[tuple[str, str, str]] = []
         self.created: list[str] = []
+        self.trigger_controls: list[tuple[str, str, str]] = []
 
     def list_agent_sessions(self) -> list[dict[str, Any]]:
         return [{"id": "sess_1", "title": "TUI session", "status": "active"}]
@@ -106,6 +107,42 @@ class FakeWorkbenchClient:
     def list_paper_promotions(self) -> list[dict[str, Any]]:
         return [{"id": "p_1", "status": "pending_review"}]
 
+    def list_research_triggers(self) -> dict[str, Any]:
+        return {
+            "feature_enabled": True,
+            "control": {"kill_switch": False, "reason": ""},
+            "items": [
+                {
+                    "id": "rtrg_1",
+                    "name": "Drift trigger",
+                    "trigger_type": "strategy_drift",
+                    "enabled": True,
+                    "next_run_at": None,
+                }
+            ],
+        }
+
+    def list_research_trigger_fires(self, trigger_id: str = "") -> list[dict[str, Any]]:
+        return [{"id": "rfire_1", "status": "created", "task_id": "task_1", "reason": ""}]
+
+    def set_research_trigger_enabled(
+        self, trigger_id: str, *, enabled: bool, reason: str
+    ) -> dict[str, Any]:
+        self.trigger_controls.append((trigger_id, "enable" if enabled else "disable", reason))
+        return {"id": trigger_id, "enabled": enabled}
+
+    def set_research_trigger_control(
+        self, *, kill_switch: bool, reason: str
+    ) -> dict[str, Any]:
+        self.trigger_controls.append(("global", "kill_on" if kill_switch else "kill_off", reason))
+        return {"kill_switch": kill_switch}
+
+    def fire_research_trigger(
+        self, trigger_id: str, *, reason: str = "operator_run_now"
+    ) -> dict[str, Any]:
+        self.trigger_controls.append((trigger_id, "run", reason))
+        return {"id": "rfire_new", "status": "created"}
+
     def control_agent_task(
         self, task_id: str, action: str, *, reason: str
     ) -> dict[str, Any]:
@@ -158,3 +195,21 @@ async def test_tui_multiline_prompt_creates_new_session_and_task() -> None:
         await pilot.pause()
 
     assert client.created == ["Research ETH\nwith bounded evidence"]
+
+
+@pytest.mark.anyio
+async def test_tui_trigger_tab_projects_and_controls_server_trigger() -> None:
+    client = FakeWorkbenchClient()
+    app = ResearchWorkbenchApp(client=client)
+
+    async with app.run_test(size=(160, 50)) as pilot:
+        await pilot.press("t")
+        await pilot.click("#trigger-disable")
+        await pilot.pause()
+        assert isinstance(app.screen, ControlConfirmScreen)
+        app.screen.query_one("#control-reason", Input).value = "operator review"
+        await pilot.click("#control-submit")
+        await pilot.pause()
+        assert "rtrg_1" in str(app.query_one("#trigger-detail", Static).content)
+
+    assert client.trigger_controls == [("rtrg_1", "disable", "operator review")]

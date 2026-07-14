@@ -30,6 +30,7 @@ from hypertrade.research.role_provider import (
     ChatResearchRoleProvider,
     DeterministicGapRoleProvider,
 )
+from hypertrade.research.triggers import ResearchTriggerService
 
 logger = logging.getLogger("hypertrade.worker")
 
@@ -124,7 +125,7 @@ def agent_task_worker_once(
     )
     if task is None:
         return {"status": "idle", "task_id": None}
-    if task.kind not in {"chat_run", "research_graph"}:
+    if task.kind not in {"chat_run", "research_graph", "triggered_research"}:
         error = {
             "code": "unsupported_task_kind",
             "category": "task_dispatch",
@@ -186,6 +187,7 @@ def agent_task_worker_once(
             knowledge_dir=str(active_settings.knowledge_dir),
             settings=active_settings,
             provider_name=active_settings.active_chat_provider,
+            evaluation_mode=task.kind == "triggered_research",
         )
         run = AgentTaskExecutor(db).execute_chat(task.id, kernel, task.objective)
         return {"status": "completed", "task_id": task.id, "run_id": run.id}
@@ -229,6 +231,51 @@ async def agent_task_worker_loop(db: Database) -> None:
         await asyncio.sleep(max(0.25, settings.agent_task_poll_interval_seconds))
 
 
+def research_trigger_worker_once(
+    db: Database,
+    *,
+    settings: Settings | None = None,
+    worker_id: str | None = None,
+) -> dict[str, Any]:
+    active_settings = settings or get_settings()
+    if not active_settings.research_triggers_enabled:
+        return {"status": "disabled", "trigger_id": None}
+    owner = worker_id or f"{socket.gethostname()}:{os.getpid()}:triggers"
+    service = ResearchTriggerService(db, settings=active_settings)
+    trigger = service.claim_due(owner)
+    if trigger is None:
+        return {"status": "idle", "trigger_id": None}
+    result = service.run_claimed(str(trigger["id"]), owner)
+    return {
+        "status": str(result["status"]),
+        "trigger_id": trigger["id"],
+        "fire_id": result["id"],
+        "task_id": result["task_id"],
+        "reason": result["reason"],
+    }
+
+
+async def research_trigger_loop(db: Database) -> None:
+    settings = get_settings()
+    while True:
+        try:
+            result = await asyncio.to_thread(
+                research_trigger_worker_once,
+                db,
+                settings=settings,
+            )
+            if result.get("status") not in {"idle", "disabled"}:
+                logger.info(
+                    "research_trigger status=%s trigger_id=%s task_id=%s",
+                    result.get("status"),
+                    result.get("trigger_id"),
+                    result.get("task_id"),
+                )
+        except Exception:
+            logger.exception("research_trigger failed")
+        await asyncio.sleep(max(1.0, settings.research_trigger_poll_interval_seconds))
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     settings = get_settings()
@@ -244,6 +291,8 @@ async def main() -> None:
         tasks.append(monitor_scheduler_loop(db))
     if settings.agent_task_worker_enabled:
         tasks.append(agent_task_worker_loop(db))
+    if settings.research_triggers_enabled:
+        tasks.append(research_trigger_loop(db))
     await asyncio.gather(*tasks)
 
 

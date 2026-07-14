@@ -30,6 +30,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hypertrade_eval}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the evaluation .env}@postgres:5432/${POSTGRES_DB:-hypertrade_eval}
       PAPER_ENABLED: "false"
       MONITOR_SCHEDULER_ENABLED: "false"
+      RESEARCH_TRIGGERS_ENABLED: "false"
       BITPRO_MCP_API_BASE: http://127.0.0.1:9/api/v2
     ports:
       - "127.0.0.1:${HYPERTRADE_EVAL_PORT:-4334}:3334"
@@ -56,6 +57,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hypertrade_eval}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the evaluation .env}@postgres:5432/${POSTGRES_DB:-hypertrade_eval}
       PAPER_ENABLED: "false"
       MONITOR_SCHEDULER_ENABLED: "false"
+      RESEARCH_TRIGGERS_ENABLED: "false"
       BITPRO_MCP_API_BASE: http://127.0.0.1:9/api/v2
     depends_on:
       postgres:

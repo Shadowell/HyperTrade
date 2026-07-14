@@ -4,12 +4,19 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 103 implementation state: active on 2026-07-15 after Sprint 102 production
-  TTY acceptance. The bounded slice adds disabled-by-default durable research triggers,
+- Sprint 103 implementation state: local implementation and QA complete on 2026-07-15;
+  production deployment acceptance is pending. The bounded slice adds
+  disabled-by-default durable research triggers,
   fire audit, lease/cooldown/quota/dedupe/kill-switch enforcement and Task-only
   dispatch. Trigger code may read committed Monitor/World/Paper/Eval facts but cannot
   import or call BitPro, paper, testnet, live or approval adapters. Trigger-created
   Tasks remain visible and controllable through the existing API/TUI contracts.
+  Migration `0016`, UTC interval/daily schedules, PostgreSQL lease/skip-locked claims,
+  immutable fingerprinted fire decisions, bounded committed-event adapters, API/CLI/TUI
+  controls and read-only `triggered_research` dispatch are implemented. Concurrency,
+  restart, trigger-storm, quota, cooldown, kill-switch, budget-revalidation, API auth,
+  TUI and deployment-boundary tests pass; full `./scripts/check.sh` passes with 449
+  Python tests. Production remains disabled until explicit operator configuration.
 - Sprint 102 implementation state: completed and production-verified on 2026-07-15
   after Sprint 101 isolated
   acceptance. The bounded slice adds an optional Textual terminal workbench over

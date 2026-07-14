@@ -71,6 +71,19 @@ class Settings(BaseSettings):
         alias="AGENT_TASK_POLL_INTERVAL_SECONDS",
     )
     agent_task_lease_seconds: int = Field(default=60, alias="AGENT_TASK_LEASE_SECONDS")
+    research_triggers_enabled: bool = Field(default=False, alias="RESEARCH_TRIGGERS_ENABLED")
+    research_trigger_poll_interval_seconds: float = Field(
+        default=10.0,
+        alias="RESEARCH_TRIGGER_POLL_INTERVAL_SECONDS",
+    )
+    research_trigger_lease_seconds: int = Field(
+        default=60,
+        alias="RESEARCH_TRIGGER_LEASE_SECONDS",
+    )
+    research_trigger_global_daily_quota: int = Field(
+        default=20,
+        alias="RESEARCH_TRIGGER_GLOBAL_DAILY_QUOTA",
+    )
     rag_scan_interval_seconds: int = Field(default=600, alias="RAG_SCAN_INTERVAL_SECONDS")
     knowledge_dir: Path = Field(default=Path("docs/knowledge"), alias="KNOWLEDGE_DIR")
     raw_market_retention_days: int = Field(default=7, alias="RAW_MARKET_RETENTION_DAYS")

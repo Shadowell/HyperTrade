@@ -65,6 +65,27 @@ class RecoveryClient:
     def list_paper_promotions(self) -> list[dict[str, Any]]:
         return []
 
+    def list_research_triggers(self) -> dict[str, Any]:
+        return {"feature_enabled": False, "control": {}, "items": []}
+
+    def list_research_trigger_fires(self, trigger_id: str = "") -> list[dict[str, Any]]:
+        return []
+
+    def set_research_trigger_enabled(
+        self, trigger_id: str, *, enabled: bool, reason: str
+    ) -> dict[str, Any]:
+        return {"id": trigger_id, "enabled": enabled}
+
+    def set_research_trigger_control(
+        self, *, kill_switch: bool, reason: str
+    ) -> dict[str, Any]:
+        return {"kill_switch": kill_switch}
+
+    def fire_research_trigger(
+        self, trigger_id: str, *, reason: str = "operator_run_now"
+    ) -> dict[str, Any]:
+        return {"id": "rfire_1", "status": "created"}
+
     def control_agent_task(
         self, task_id: str, action: str, *, reason: str
     ) -> dict[str, Any]:

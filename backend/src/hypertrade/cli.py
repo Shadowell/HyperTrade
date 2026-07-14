@@ -53,6 +53,11 @@ from hypertrade.research.robustness import RobustnessValidationService
 from hypertrade.research.role_provider import DeterministicGapRoleProvider
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
+from hypertrade.research.triggers import (
+    ResearchTriggerService,
+    TriggerControlUpdate,
+    TriggerEvent,
+)
 from hypertrade.strategy.experiment import StrategyExperimentService
 from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.service import StrategyResearchService
@@ -117,6 +122,22 @@ class AgentClient(Protocol):
     def list_robustness_validations(self) -> list[dict[str, Any]]: ...
 
     def get_robustness_validation(self, validation_id: str) -> dict[str, Any]: ...
+
+    def list_research_triggers(self) -> dict[str, Any]: ...
+
+    def list_research_trigger_fires(self, trigger_id: str = "") -> list[dict[str, Any]]: ...
+
+    def set_research_trigger_enabled(
+        self, trigger_id: str, *, enabled: bool, reason: str
+    ) -> dict[str, Any]: ...
+
+    def set_research_trigger_control(
+        self, *, kill_switch: bool, reason: str
+    ) -> dict[str, Any]: ...
+
+    def fire_research_trigger(
+        self, trigger_id: str, *, reason: str = "operator_run_now"
+    ) -> dict[str, Any]: ...
 
     def control_agent_task(
         self,
@@ -287,6 +308,10 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
         "/validations list|show <validation_id>",
         "Inspect locked-OOS, walk-forward, sensitivity, and stress gates.",
     ),
+    (
+        "/triggers list|fires [id]|enable|disable|run <id>|kill on|off",
+        "Inspect and control bounded background research triggers.",
+    ),
     ("/memory", "List active audited memory."),
     ("/memory search <query>", "Search audited memory by text."),
     ("/memory disable <mem_id>", "Disable one memory item without deleting audit history."),
@@ -381,6 +406,7 @@ SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
     "/research-graph": ("topology", "list", "show"),
     "/ledger": ("list", "show", "diff"),
     "/validations": ("list", "show"),
+    "/triggers": ("list", "fires", "enable", "disable", "run", "kill"),
     "/backtest": ("list", "latest", "--live", "--source bitpro_mcp"),
     "/paper": ("status", "pause", "resume", "close", "reset"),
     "/live": ("intents", "intent", "approve", "reject", "execute"),
@@ -811,6 +837,51 @@ class AgentApiClient:
     def get_robustness_validation(self, validation_id: str) -> dict[str, Any]:
         return self._get_object(f"/api/research/validations/{quote(validation_id, safe='')}")
 
+    def list_research_triggers(self) -> dict[str, Any]:
+        return self._get_object("/api/research/triggers")
+
+    def list_research_trigger_fires(self, trigger_id: str = "") -> list[dict[str, Any]]:
+        suffix = f"?trigger_id={quote(trigger_id, safe='')}" if trigger_id else ""
+        return self._get_list(f"/api/research/triggers/fires{suffix}", "items")
+
+    def set_research_trigger_enabled(
+        self, trigger_id: str, *, enabled: bool, reason: str
+    ) -> dict[str, Any]:
+        return self._put_object(
+            f"/api/research/triggers/{quote(trigger_id, safe='')}/enabled",
+            {"enabled": enabled, "reason": reason},
+        )
+
+    def set_research_trigger_control(
+        self, *, kill_switch: bool, reason: str
+    ) -> dict[str, Any]:
+        return self._put_object(
+            "/api/research/triggers/control",
+            {"kill_switch": kill_switch, "reason": reason},
+        )
+
+    def fire_research_trigger(
+        self, trigger_id: str, *, reason: str = "operator_run_now"
+    ) -> dict[str, Any]:
+        trigger = next(
+            (
+                item
+                for item in self.list_research_triggers().get("items", [])
+                if item.get("id") == trigger_id
+            ),
+            None,
+        )
+        if not isinstance(trigger, dict):
+            raise KeyError(trigger_id)
+        return self._post_object(
+            f"/api/research/triggers/{quote(trigger_id, safe='')}/fire",
+            {
+                "source_type": trigger.get("trigger_type", "schedule"),
+                "source_id": new_id("manual"),
+                "metrics": {"operator_reason": reason},
+            },
+        )
+
     def control_agent_task(
         self,
         task_id: str,
@@ -1097,6 +1168,14 @@ class AgentApiClient:
             raise TypeError(f"{path} response must be a JSON object")
         return dict(payload)
 
+    def _put_object(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        response = self.client.put(self._url(path), json=body)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError(f"{path} response must be a JSON object")
+        return dict(payload)
+
 
 def _request_timeout(timeout_seconds: float) -> httpx.Timeout:
     return httpx.Timeout(timeout=timeout_seconds)
@@ -1266,6 +1345,52 @@ class LocalAgentClient:
 
     def get_robustness_validation(self, validation_id: str) -> dict[str, Any]:
         return RobustnessValidationService(self.db).get(validation_id)
+
+    def list_research_triggers(self) -> dict[str, Any]:
+        service = ResearchTriggerService(self.db, settings=self.settings)
+        return {
+            "items": service.list_triggers(),
+            "control": service.control(),
+            "feature_enabled": self.settings.research_triggers_enabled,
+        }
+
+    def list_research_trigger_fires(self, trigger_id: str = "") -> list[dict[str, Any]]:
+        return ResearchTriggerService(self.db, settings=self.settings).list_fires(
+            trigger_id=trigger_id
+        )
+
+    def set_research_trigger_enabled(
+        self, trigger_id: str, *, enabled: bool, reason: str
+    ) -> dict[str, Any]:
+        return ResearchTriggerService(self.db, settings=self.settings).set_enabled(
+            trigger_id,
+            enabled=enabled,
+            reason=reason,
+            actor="cli_operator",
+        )
+
+    def set_research_trigger_control(
+        self, *, kill_switch: bool, reason: str
+    ) -> dict[str, Any]:
+        return ResearchTriggerService(self.db, settings=self.settings).set_control(
+            TriggerControlUpdate(kill_switch=kill_switch, reason=reason),
+            actor="cli_operator",
+        )
+
+    def fire_research_trigger(
+        self, trigger_id: str, *, reason: str = "operator_run_now"
+    ) -> dict[str, Any]:
+        service = ResearchTriggerService(self.db, settings=self.settings)
+        trigger = service.get(trigger_id)
+        return service.fire(
+            trigger_id,
+            TriggerEvent(
+                source_type=cast(Any, trigger["trigger_type"]),
+                source_id=new_id("manual"),
+                metrics={"operator_reason": reason},
+            ),
+            actor="cli_operator",
+        )
 
     def control_agent_task(
         self,
@@ -1911,6 +2036,8 @@ def handle_slash_command(
         handle_experiment_ledger_command(command, client=client, output=output)
     elif name == "/validations":
         handle_robustness_validation_command(command, client=client, output=output)
+    elif name == "/triggers":
+        handle_research_trigger_command(command, client=client, output=output)
     elif name == "/memory":
         handle_memory_command(command, client=client, output=output)
     elif name == "/rag":
@@ -3356,6 +3483,87 @@ def handle_robustness_validation_command(
             )
         return
     print("Usage: /validations list|show <validation_id>", file=output)
+
+
+def handle_research_trigger_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split(maxsplit=3)
+    action = parts[1].lower() if len(parts) > 1 else "list"
+    if action == "list":
+        payload = client.list_research_triggers()
+        control = dict(payload.get("control", {}))
+        print(
+            "Research triggers: "
+            f"feature_enabled={payload.get('feature_enabled', False)} "
+            f"kill_switch={control.get('kill_switch', False)}",
+            file=output,
+        )
+        rows = payload.get("items", [])
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:30]:
+            print(
+                f"- {row.get('id')} [{('enabled' if row.get('enabled') else 'disabled')}] "
+                f"{row.get('trigger_type')} {row.get('name')} "
+                f"next={row.get('next_run_at') or '-'}",
+                file=output,
+            )
+        return
+    if action == "fires":
+        trigger_id = parts[2] if len(parts) > 2 else ""
+        rows = client.list_research_trigger_fires(trigger_id)
+        print("Research trigger fires:", file=output)
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:30]:
+            print(
+                f"- {row.get('id')} [{row.get('status')}] trigger={row.get('trigger_id')} "
+                f"task={row.get('task_id') or '-'} reason={row.get('reason') or '-'}",
+                file=output,
+            )
+        return
+    if action in {"enable", "disable"} and len(parts) >= 3:
+        reason = parts[3] if len(parts) > 3 else f"cli_{action}"
+        row = client.set_research_trigger_enabled(
+            parts[2],
+            enabled=action == "enable",
+            reason=reason,
+        )
+        print(
+            f"Trigger {row.get('id')} "
+            f"[{'enabled' if row.get('enabled') else 'disabled'}]",
+            file=output,
+        )
+        return
+    if action == "run" and len(parts) >= 3:
+        reason = parts[3] if len(parts) > 3 else "cli_run_now"
+        row = client.fire_research_trigger(parts[2], reason=reason)
+        print(
+            f"Trigger fire {row.get('id')} [{row.get('status')}] "
+            f"task={row.get('task_id') or '-'} reason={row.get('reason') or '-'}",
+            file=output,
+        )
+        return
+    if action == "kill" and len(parts) >= 3 and parts[2].lower() in {"on", "off"}:
+        reason = parts[3] if len(parts) > 3 else f"cli_kill_{parts[2].lower()}"
+        row = client.set_research_trigger_control(
+            kill_switch=parts[2].lower() == "on",
+            reason=reason,
+        )
+        print(
+            f"Trigger kill switch={row.get('kill_switch')} reason={row.get('reason')}",
+            file=output,
+        )
+        return
+    print(
+        "Usage: /triggers list|fires [id]|enable|disable <id> [reason]|"
+        "run <id>|kill on|off [reason]",
+        file=output,
+    )
 
 
 def handle_run_command(command: str, *, client: AgentClient, output: TextIO) -> None:

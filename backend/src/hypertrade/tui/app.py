@@ -51,15 +51,17 @@ class ControlConfirmScreen(ModalScreen[str | None]):
     #control-buttons Button { margin-left: 1; }
     """
 
-    def __init__(self, action: str, task_id: str) -> None:
+    def __init__(self, action: str, resource_id: str, *, resource_kind: str = "task") -> None:
         super().__init__()
         self.action_name = action
-        self.task_id = task_id
+        self.resource_id = resource_id
+        self.resource_kind = resource_kind
 
     def compose(self) -> ComposeResult:
         with Vertical(id="control-dialog"):
             yield Label(
-                f"REQUEST {self.action_name.upper()}\n{self.task_id}\n"
+                f"REQUEST {self.action_name.upper()} {self.resource_kind.upper()}\n"
+                f"{self.resource_id or 'global'}\n"
                 "Server auth, idempotency and task state remain authoritative.",
                 markup=False,
             )
@@ -98,7 +100,7 @@ class HelpScreen(ModalScreen[None]):
                 "Ctrl+R  request resume/retry based on status\n"
                 "Ctrl+C  request cancel\n"
                 "R       refresh REST snapshot\n"
-                "G/E/A   graph, evidence, approval focus\n"
+                "G/E/A/T graph, evidence, approval, triggers\n"
                 "?       help\n"
                 "Q       quit\n\n"
                 "Every mutation requires a reason and is revalidated by the server.",
@@ -124,6 +126,7 @@ class ResearchWorkbenchApp(App[None]):
         ("g", "graph", "Graph"),
         ("e", "evidence", "Evidence"),
         ("a", "approval", "Approval"),
+        ("t", "triggers", "Triggers"),
         ("question_mark", "help", "Help"),
         ("q", "quit", "Quit"),
     ]
@@ -153,6 +156,10 @@ class ResearchWorkbenchApp(App[None]):
     #prompt-row { height: 7; margin: 0 1 1 1; }
     #task-prompt { width: 1fr; border: solid #285348; }
     #start-task { width: 18; height: 3; margin: 1; }
+    #trigger-actions { height: 4; }
+    #trigger-actions Input { width: 1fr; margin-right: 1; }
+    #trigger-actions Button { width: 13; margin-right: 1; }
+    #trigger-detail { height: 1fr; }
     .medium #evidence-pane { display: none; }
     .compact #sessions-pane, .compact #evidence-pane { display: none; }
     .compact #detail-tabs { height: 14; }
@@ -195,6 +202,15 @@ class ResearchWorkbenchApp(App[None]):
                 )
             with TabPane("Approval", id="tab-approval"):
                 yield Static("No approval", id="approval-detail", classes="detail", markup=False)
+            with TabPane("Triggers", id="tab-triggers"):
+                with Horizontal(id="trigger-actions"):
+                    yield Input(placeholder="Trigger ID", id="trigger-id")
+                    yield Button("Enable", id="trigger-enable", variant="success")
+                    yield Button("Disable", id="trigger-disable", variant="warning")
+                    yield Button("Run now", id="trigger-run", variant="primary")
+                    yield Button("Kill ON", id="trigger-kill-on", variant="error")
+                    yield Button("Kill OFF", id="trigger-kill-off")
+                yield Static("No triggers", id="trigger-detail", classes="detail", markup=False)
         with Horizontal(id="prompt-row"):
             yield TextArea(
                 "",
@@ -257,6 +273,11 @@ class ResearchWorkbenchApp(App[None]):
         self.query_one("#approval-detail", Static).update(
             self._records_text(state.approvals, "id", "status")
         )
+        self.query_one("#trigger-detail", Static).update(self._trigger_text(state))
+        trigger_input = self.query_one("#trigger-id", Input)
+        trigger_items = state.trigger_projection.get("items", [])
+        if not trigger_input.value and trigger_items:
+            trigger_input.value = str(trigger_items[0].get("id", ""))
 
     @work(thread=True, exclusive=True, group="task-stream")
     def follow_task_stream(self, task_id: str) -> None:
@@ -328,7 +349,12 @@ class ResearchWorkbenchApp(App[None]):
         self.follow_task_stream(event.item.task_id)
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id != "start-task":
+        button_id = event.button.id or ""
+        if button_id.startswith("trigger-"):
+            action = button_id.removeprefix("trigger-").replace("-", "_")
+            self._request_trigger_control(action)
+            return
+        if button_id != "start-task":
             return
         prompt = self.query_one("#task-prompt", TextArea).text.strip()
         try:
@@ -393,6 +419,39 @@ class ResearchWorkbenchApp(App[None]):
 
     def action_approval(self) -> None:
         self.query_one("#detail-tabs", TabbedContent).active = "tab-approval"
+
+    def action_triggers(self) -> None:
+        self.query_one("#detail-tabs", TabbedContent).active = "tab-triggers"
+
+    def _request_trigger_control(self, action: str) -> None:
+        trigger_id = self.query_one("#trigger-id", Input).value.strip()
+        if action not in {"kill_on", "kill_off"} and not trigger_id:
+            self.notify("Trigger ID is required", severity="warning")
+            return
+        self.push_screen(
+            ControlConfirmScreen(action, trigger_id, resource_kind="trigger"),
+            lambda reason: self._apply_trigger_control(action, trigger_id, reason),
+        )
+
+    def _apply_trigger_control(
+        self,
+        action: str,
+        trigger_id: str,
+        reason: str | None,
+    ) -> None:
+        if reason is None:
+            return
+        try:
+            result = self.store.control_trigger(
+                action,
+                trigger_id=trigger_id,
+                reason=reason,
+            )
+        except Exception as exc:
+            self.notify(f"Trigger control rejected: {type(exc).__name__}", severity="error")
+            return
+        self.notify(f"Trigger {action} accepted: {result.get('status', 'ok')}")
+        self.call_later(self._render_state, self.store.state)
 
     def action_help(self) -> None:
         self.push_screen(HelpScreen())
@@ -481,4 +540,29 @@ class ResearchWorkbenchApp(App[None]):
         for item in records[:20]:
             identifier = str(item.get(id_key, ""))
             lines.append(f"{item.get(status_key, 'unknown')} · {identifier[:80]}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _trigger_text(state: WorkbenchState) -> str:
+        projection = state.trigger_projection
+        control = projection.get("control", {})
+        lines = [
+            f"feature_enabled={projection.get('feature_enabled', False)} · "
+            f"kill_switch={control.get('kill_switch', False)} · "
+            f"reason={control.get('reason') or '-'}"
+        ]
+        for item in projection.get("items", [])[:20]:
+            status = "enabled" if item.get("enabled") else "disabled"
+            lines.append(
+                f"{status} · {item.get('trigger_type')} · {item.get('id')} · "
+                f"next={item.get('next_run_at') or '-'}"
+            )
+        lines.append("\nRECENT FIRES")
+        for item in state.trigger_fires[:20]:
+            lines.append(
+                f"{item.get('status')} · {item.get('id')} · task={item.get('task_id') or '-'} · "
+                f"reason={item.get('reason') or '-'}"
+            )
+        if len(lines) == 2:
+            lines.append("No trigger records")
         return "\n".join(lines)

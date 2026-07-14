@@ -665,6 +665,63 @@ class PaperReviewRequest(Base, TimestampMixin):
     evidence_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class ResearchTrigger(Base, TimestampMixin):
+    """Disabled-by-default rule that may create only a bounded Agent Task."""
+
+    __tablename__ = "research_triggers"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("rtrg"))
+    name: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    trigger_type: Mapped[str] = mapped_column(String(48), index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    mandate_id: Mapped[str] = mapped_column(String(32), index=True)
+    objective_template: Mapped[str] = mapped_column(Text)
+    condition_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    schedule_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    task_budget_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    cooldown_seconds: Mapped[int] = mapped_column(Integer, default=3600)
+    daily_quota: Mapped[int] = mapped_column(Integer, default=2)
+    next_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    last_fired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    audit_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_by: Mapped[str] = mapped_column(String(128), default="operator", index=True)
+
+
+class ResearchTriggerFire(Base, TimestampMixin):
+    """Immutable trigger decision and optional Task reference."""
+
+    __tablename__ = "research_trigger_fires"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("rfire"))
+    trigger_id: Mapped[str] = mapped_column(String(32), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    bucket_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    source_type: Mapped[str] = mapped_column(String(48), index=True)
+    source_id: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    event_ref_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    task_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+
+
+class ResearchTriggerControl(Base, TimestampMixin):
+    """Singleton persistent global kill switch for background Task creation."""
+
+    __tablename__ = "research_trigger_control"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="global")
+    kill_switch: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    updated_by: Mapped[str] = mapped_column(String(128), default="operator")
+
+
 class Database:
     def __init__(self, url: str, *, echo: bool = False) -> None:
         connect_args: dict[str, Any] = {}

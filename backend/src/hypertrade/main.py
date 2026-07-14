@@ -20,7 +20,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from itsdangerous import BadSignature, URLSafeSerializer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, select
 
 from hypertrade.agent.checkpoints import TaskCheckpointService, checkpoint_to_dict
@@ -100,6 +100,12 @@ from hypertrade.research.role_provider import (
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
 from hypertrade.research.strategy_cards import StrategyCardService
+from hypertrade.research.triggers import (
+    ResearchTriggerCreate,
+    ResearchTriggerService,
+    TriggerControlUpdate,
+    TriggerEvent,
+)
 from hypertrade.strategy.experiment import StrategyExperimentService
 from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.sdk import Candle
@@ -206,6 +212,11 @@ class StrategyResearchPayload(BaseModel):
 
 class ResearchJobCancelPayload(BaseModel):
     reason: str = "operator_canceled"
+
+
+class TriggerEnabledPayload(BaseModel):
+    enabled: bool
+    reason: str = Field(min_length=1, max_length=1000)
 
 
 class PaperPromotionRequestPayload(BaseModel):
@@ -1174,6 +1185,90 @@ def create_app(
             return RobustnessValidationService(database).get(validation_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Validation run not found") from exc
+
+    @app.post("/api/research/triggers")
+    def create_research_trigger(
+        payload: ResearchTriggerCreate,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return ResearchTriggerService(database, settings=app_settings).create(
+                payload,
+                actor=username,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/research/triggers")
+    def list_research_triggers(_: AdminUser) -> dict[str, Any]:
+        service = ResearchTriggerService(database, settings=app_settings)
+        return {
+            "items": service.list_triggers(),
+            "control": service.control(),
+            "feature_enabled": app_settings.research_triggers_enabled,
+        }
+
+    @app.get("/api/research/triggers/fires")
+    def list_research_trigger_fires(
+        _: AdminUser,
+        trigger_id: str = "",
+    ) -> dict[str, Any]:
+        return {
+            "items": ResearchTriggerService(
+                database,
+                settings=app_settings,
+            ).list_fires(trigger_id=trigger_id)
+        }
+
+    @app.put("/api/research/triggers/control")
+    def update_research_trigger_control(
+        payload: TriggerControlUpdate,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        return ResearchTriggerService(database, settings=app_settings).set_control(
+            payload,
+            actor=username,
+        )
+
+    @app.get("/api/research/triggers/{trigger_id}")
+    def get_research_trigger(trigger_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return ResearchTriggerService(database, settings=app_settings).get(trigger_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Trigger not found") from exc
+
+    @app.put("/api/research/triggers/{trigger_id}/enabled")
+    def set_research_trigger_enabled(
+        trigger_id: str,
+        payload: TriggerEnabledPayload,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return ResearchTriggerService(database, settings=app_settings).set_enabled(
+                trigger_id,
+                enabled=payload.enabled,
+                reason=payload.reason,
+                actor=username,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Trigger not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post("/api/research/triggers/{trigger_id}/fire")
+    def fire_research_trigger(
+        trigger_id: str,
+        payload: TriggerEvent,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return ResearchTriggerService(database, settings=app_settings).fire(
+                trigger_id,
+                payload,
+                actor=username,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Trigger not found") from exc
 
     @app.get("/api/research/mandates")
     def list_research_mandates(_: AdminUser) -> dict[str, list[dict[str, Any]]]:

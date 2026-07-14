@@ -35,6 +35,22 @@ class WorkbenchClient(Protocol):
 
     def list_paper_promotions(self) -> list[dict[str, Any]]: ...
 
+    def list_research_triggers(self) -> dict[str, Any]: ...
+
+    def list_research_trigger_fires(self, trigger_id: str = "") -> list[dict[str, Any]]: ...
+
+    def set_research_trigger_enabled(
+        self, trigger_id: str, *, enabled: bool, reason: str
+    ) -> dict[str, Any]: ...
+
+    def set_research_trigger_control(
+        self, *, kill_switch: bool, reason: str
+    ) -> dict[str, Any]: ...
+
+    def fire_research_trigger(
+        self, trigger_id: str, *, reason: str = "operator_run_now"
+    ) -> dict[str, Any]: ...
+
     def control_agent_task(
         self, task_id: str, action: str, *, reason: str
     ) -> dict[str, Any]: ...
@@ -84,6 +100,8 @@ class WorkbenchState:
     experiments: list[dict[str, Any]] = field(default_factory=list)
     validations: list[dict[str, Any]] = field(default_factory=list)
     approvals: list[dict[str, Any]] = field(default_factory=list)
+    trigger_projection: dict[str, Any] = field(default_factory=dict)
+    trigger_fires: list[dict[str, Any]] = field(default_factory=list)
     cursor: TaskEventCursor = field(default_factory=TaskEventCursor)
     connection_status: str = "snapshot"
     last_error: str = ""
@@ -99,6 +117,8 @@ class WorkbenchStore:
     def refresh_index(self) -> WorkbenchState:
         self.state.sessions = self.client.list_agent_sessions()
         self.state.tasks = self.client.list_agent_tasks()
+        self.state.trigger_projection = self.client.list_research_triggers()
+        self.state.trigger_fires = self.client.list_research_trigger_fires()
         if self.state.selected_session_id and not any(
             str(item.get("id", "")) == self.state.selected_session_id
             for item in self.state.sessions
@@ -192,6 +212,42 @@ class WorkbenchStore:
         )
         self.state.selected_task = dict(result)
         self.reconcile_events()
+        return result
+
+    def control_trigger(
+        self,
+        action: str,
+        *,
+        trigger_id: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        normalized_reason = reason.strip()
+        if not normalized_reason:
+            raise ValueError("Operator reason is required")
+        if action in {"enable", "disable"}:
+            if not trigger_id:
+                raise ValueError("Trigger ID is required")
+            result = self.client.set_research_trigger_enabled(
+                trigger_id,
+                enabled=action == "enable",
+                reason=normalized_reason,
+            )
+        elif action == "run":
+            if not trigger_id:
+                raise ValueError("Trigger ID is required")
+            result = self.client.fire_research_trigger(
+                trigger_id,
+                reason=normalized_reason,
+            )
+        elif action in {"kill_on", "kill_off"}:
+            result = self.client.set_research_trigger_control(
+                kill_switch=action == "kill_on",
+                reason=normalized_reason,
+            )
+        else:
+            raise ValueError(f"Unsupported trigger action: {action}")
+        self.state.trigger_projection = self.client.list_research_triggers()
+        self.state.trigger_fires = self.client.list_research_trigger_fires()
         return result
 
     @property
