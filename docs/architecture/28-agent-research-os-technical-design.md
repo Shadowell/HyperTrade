@@ -501,6 +501,33 @@ backend/src/hypertrade/research/roles/
 - 并发分支顺序不影响 evidence hash/最终 gate 的确定性测试。
 - adversarial prompt 不能让任何 role 调用 paper/live writes。
 
+### 7.6 已实现架构记录（2026-07-14）
+
+- `ResearchGraphRuntime` 编译固定 13 节点 `StateGraph`。LangGraph 只负责执行；
+  `AgentTask`、`TaskNodeRun`、`TaskEvent`、`TaskCheckpoint` 和 Research Evidence V2
+  是可恢复、可审计的事实源。
+- `RoleDefinition` 固定 prompt 文件/version/hash、Pydantic output schema、只读工具
+  allowlist 和 role budget。`RoleToolPolicyResolver` 对 role、operator allowlist 与
+  `ToolRegistry` 求交，任何非 `read/none`、未知工具或 secret/private-reasoning 参数在
+  runner 之前拒绝。
+- `TaskBudgetGuard` 使用任务行锁在 provider/tool 调用前预留全局 token/model/tool
+  预算，完成后按 provider usage 结算，失败释放。独立信号量限制 provider=2、一般
+  read tool=2、BitPro read=1；图分支默认并发 2、最大 4。生产校准后的 13 个 role
+  token 上限总和为 272k，低于默认 Task 全局 300k，并由测试锁定该不变量。
+- Role provider 的工具计划只暴露真实可用工具枚举，不使用虚构占位符；输出只允许一次
+  schema repair。第二次无效时不保存模型文本，而是生成零置信度 data gap，使固定图
+  fail-closed 继续运行。显式 provider timeout、策略违规或代码抛出的 schema error
+  仍进入结构化失败/重试状态。
+- 每次 node 成功即写 checkpoint。重试只新增失败/中断节点 attempt；已完成节点直接
+  replay，已有 evidence 不重复。pause/cancel 在 provider/tool 调用前后安全点生效。
+- Strategy Engineer 的 `StrategySpecDraft` 通过幂等 `ResearchProgramService.queue_job`
+  交给现有 `ResearchOrchestrator` 合约；role 本身不获得 BitPro mutation 工具。验证节点
+  只能读取 job/report/result，paper/live 路径始终为零。
+- API 提供 topology/create/list/get/run；CLI 提供
+  `/research-graph topology|list|show <task_id>`。projection 包含 role/prompt/tool-policy
+  hash、attempt、usage、checkpoint 和 Evidence V2 引用，不包含 credential、private
+  reasoning、raw market artifact 或无界 provider 输出。
+
 ## 8. Sprint 99：Reproducible Experiment Ledger
 
 ### 8.1 使用技术

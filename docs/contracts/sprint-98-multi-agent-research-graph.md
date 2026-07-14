@@ -1,6 +1,6 @@
 # Sprint 98 - Multi-Agent Research Graph V1
 
-> 状态：Active，Sprint 96–97 已完成；2026-07-14 经操作员批准进入实施。
+> 状态：Completed；2026-07-14 本地验收与生产部署通过。
 
 ## Goal
 
@@ -75,3 +75,17 @@ Manual/QA：
 ## Handoff
 
 - 下一步：Sprint 99 为 Graph 产生的每次策略实验建立不可变指纹和复现账本。
+
+## Implementation Record
+
+- 固定 13-role LangGraph、版本化 prompts/schemas、role selector 和结构化 provider
+  adapter 已实现；必需角色不能被 planner 跳过，可选角色缺能力时写 data gap。
+- ToolRegistry/operator/role 三方权限求交、危险参数检查、dispatch 前拒绝和
+  provider/BitPro/read semaphore 已实现；没有 role 具备 paper/live write 权限。
+- 全局预算原子预留/结算、node attempts、checkpoint、pause/cancel safe points、失败节点
+  retry/replay、worker dispatch 和 Task/Event projection 已实现。
+- StrategySpec 通过既有 ResearchProgram/ResearchOrchestrator 队列交接；研究图不直接
+  创建 BitPro strategy。API 与 CLI 图查询已实现。
+- 生产 smoke 暴露并修复了工具计划占位符和 schema repair 后全图终止问题；无效模型
+  输出现在 fail-closed 为 Evidence V2 data gap，且 retry 会清空实时错误投影，历史错误
+  仍保留在事件流。

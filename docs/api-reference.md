@@ -1234,6 +1234,38 @@ Execute a defensive action.
 
 ---
 
+## Research Graph V1
+
+### GET /api/research/graphs/topology
+
+Returns the fixed role catalog, prompt/policy hashes, budgets, and DAG edges. Public,
+read-only, and never starts research.
+
+### POST /api/research/graphs
+
+Creates an idempotent `research_graph` Agent Task for an active mandate. Administrator
+authentication is required. `capabilities` only controls optional roles;
+`operator_tool_allowlist` can narrow but never expand each role's read-only policy.
+
+### GET /api/research/graphs
+
+Lists graph tasks without allowing unrelated Agent Tasks to consume the requested page.
+
+### GET /api/research/graphs/{task_id}
+
+Returns the Task configuration, fixed topology, all node attempts, bounded usage,
+Evidence V2 records, and latest checkpoint. Provider private reasoning and raw artifacts
+are not exposed.
+
+### POST /api/research/graphs/{task_id}/run
+
+Runs a queued graph inline when the background worker is not claiming tasks. Administrator
+authentication is required. Normal production execution is performed by the durable Task
+worker. Role tools remain read-only; StrategySpec validation is handed to the existing
+ResearchOrchestrator queue.
+
+---
+
 ## Error Responses
 
 All error responses follow a consistent format:

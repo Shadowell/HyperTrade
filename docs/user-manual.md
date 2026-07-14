@@ -761,6 +761,27 @@ MONITOR_LOOP_INTERVAL_SECONDS=300
 
 ---
 
+## 多 Agent 研究图
+
+研究图是固定、受预算的 13 角色流程，不是动态创建的任意 Agent。查看拓扑、任务和
+节点证据：
+
+```text
+/research-graph topology
+/research-graph list
+/research-graph show task_xxx
+```
+
+每个节点会显示 attempt、状态、预算使用和 Evidence V2 引用。缺少衍生品、事件源或
+模型结构化输出时，系统记录 data gap；不会编造事实。重试仅重跑失败节点，已完成节点
+和 evidence 会被复用。Strategy Engineer 只能生成严格 StrategySpec 并交给既有研究
+编排队列，不能直接创建 BitPro 策略，也不能启动模拟盘或实盘。
+
+创建和运行图使用管理员 API；生产 worker 会自动领取 queued 图任务。操作员可继续使用
+通用 `/task <task_id> pause|resume|cancel|retry` 在安全点控制执行。
+
+---
+
 ## 最佳实践
 
 ### 市场研究

@@ -94,9 +94,14 @@ Sprint 97 entered implementation on 2026-07-14 after Sprint 96 production
 acceptance. Its active boundary is the append-only Research Evidence V2 contract;
 the multi-Agent role graph remains deferred to Sprint 98.
 
-Sprint 98 entered implementation on 2026-07-14 after Sprint 97 production
-acceptance. It adds only the fixed, bounded research role graph; Evidence V2 and
-the durable Task/Node control plane remain mandatory facts of record.
+Sprint 98 completed implementation and production acceptance on 2026-07-14.
+The fixed 13-role LangGraph DAG uses durable Task/Node/Event/Checkpoint state,
+Evidence V2-only outputs, read-only role-policy intersections, atomic budgets,
+bounded provider/BitPro concurrency, safe-point controls, failed-node replay,
+and a trusted StrategySpec handoff to the existing ResearchOrchestrator queue.
+Invalid provider JSON receives one repair attempt and then becomes an explicit
+data gap; it is never stored as evidence. No role can invoke paper/live writes,
+and the graph cannot promote a candidate or allocate capital.
 
 ## V1 In Scope
 

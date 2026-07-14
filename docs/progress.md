@@ -4,10 +4,21 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 98 implementation state: active on 2026-07-14. The bounded scope is a
-  fixed LangGraph research DAG, versioned role definitions/prompts/schemas,
-  intersected read-only tool policy, per-role/global budgets, durable Node/Event/
-  Checkpoint state, Evidence V2-only role outputs, and graph/API projections.
+- Sprint 98 implementation state: completed and production-verified on
+  2026-07-14. A fixed 13-role LangGraph DAG now runs over durable
+  Task/Node/Event/Checkpoint facts with versioned prompts/schemas, role/operator/
+  ToolRegistry read-only policy intersections, atomic global and per-role budgets,
+  bounded provider/BitPro concurrency, safe-point controls, failed-node replay,
+  Evidence V2-only outputs, API/CLI projections, and an idempotent StrategySpec
+  handoff to the existing ResearchOrchestrator queue. Production smoke exposed
+  and verified fixes for a provider tool-plan placeholder, schema-repair fallback,
+  stale retry errors, realistic role token budgets, and pre-persistence usage
+  enforcement. Full `./scripts/check.sh` passed with `378 passed` Python tests.
+  Final production Task `task_337586947e7348a39523` matched the deployed catalog,
+  completed all 13 nodes with zero failed nodes, emitted 21 explicit Evidence V2
+  data gaps and 103 audited events, and stayed within budget at 72,533 tokens,
+  29 model calls, zero tool calls, and zero backtests. Final deployment workflow
+  `29346380441` succeeded and production health remained OK.
   Dynamic agents, arbitrary code/tools, paper/live writes, and automatic capital
   decisions remain out of scope.
 - Sprint 97 implementation state: completed and production-verified on
@@ -48,7 +59,7 @@
   background triggers, governed Memory/Skills, and portfolio lifecycle review.
   This activation does not change runtime, trading, paper, BitPro, provider,
   deployment, or database behavior. Sprint 95 and Sprint 96 are completed;
-  Sprint 97 is completed; Sprint 98 is active.
+  Sprints 96–98 are completed; Sprint 99 is next.
 - Last verified state: Sprint 95 Agent production-readiness evaluation completed
   on 2026-07-14. The isolated API deterministic suite passed 14/14, but the
   real Codex Provider 24-case golden baseline stopped at case 11 with an
