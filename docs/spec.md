@@ -331,6 +331,12 @@ Agent code execution, or any bypass of BitPro MCP and existing approval gates.
   runtime uses its own API, PostgreSQL container, network, loopback-only port,
   data path, and server-only configuration. It has no production BitPro data
   mount, Nginx route, paper/monitor worker by default, or production database.
+- Sprint 95 production-readiness evaluation: attempted isolated provider-backed
+  golden baselines, adversarial safety checks, deterministic-gate evidence, and
+  a primary-source comparison with representative trading-Agent and
+  production-quant systems are documented as diagnostic evidence. Incomplete
+  provider or framework runs remain explicit findings; the review does not
+  claim comparable trading performance or authorize live trading.
   It is logical isolation on the current host; a separate VM is required for
   physical isolation.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.

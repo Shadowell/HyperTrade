@@ -16,6 +16,18 @@
   background triggers, governed Memory/Skills, and portfolio lifecycle review.
   No runtime, trading, paper, BitPro, provider, deployment, or database behavior
   changed; Sprint 96 has not started, and the active Sprint 95 remains separate.
+- Last verified state: Sprint 95 Agent production-readiness evaluation completed
+  on 2026-07-14. The isolated API deterministic suite passed 14/14, but the
+  real Codex Provider 24-case golden baseline stopped at case 11 with an
+  unhandled HTTP 500; a separate 16-case non-BitPro core subset stopped at
+  case 3. Server evidence identifies an uncaught `httpx.ReadTimeout` from the
+  Codex Provider, so no valid full quality, latency, token, or repeatability
+  baseline exists. Two direct adversarial requests completed in evaluation mode
+  without a tool dispatch; the Promptfoo suite did not start because its local
+  `npx` dependency bootstrap stalled. The complete assessment, comparison, QA
+  status, and P0 remediation path are in
+  `docs/qa/sprint-95-agent-production-readiness.md`. The system is assessed as
+  L2 controlled research/paper-ready, not production live-trading-ready.
 - Last verified state: Sprint 94 isolated evaluation deployment completed on
   2026-07-14. The server target at `/opt/hypertrade-eval` is a fresh `main`
   clone with its own `hypertrade-eval` Compose project/network,
@@ -223,8 +235,8 @@
 
 ## Active Contract
 
-- Sprint 94 isolated evaluation deployment is active under
-  `docs/contracts/sprint-94-isolated-evaluation-deployment.md`.
+- Sprint 95 Agent production-readiness evaluation is active under
+  `docs/contracts/sprint-95-agent-production-readiness-evaluation.md`.
 
 ## Approved Follow-On Design
 
