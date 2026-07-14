@@ -1299,6 +1299,27 @@ ResearchOrchestrator queue.
 
 ---
 
+## Robustness Validations
+
+### GET /api/research/validations
+
+Lists persisted robustness decisions newest first. Each item contains the immutable
+experiment execution/fingerprint references, policy version, final status, gate summary
+and bounded scenario result references. This endpoint is read-only and does not run a
+backtest or start paper/live trading.
+
+### GET /api/research/validations/{validation_id}
+
+Returns one validation with its locked-OOS, walk-forward, parameter-sensitivity,
+cost-stress and optional regime scenarios. Gate outcomes are `passed`, `failed`,
+`unknown`, or `not_applicable`; final status is `validated`, `rejected`, `needs_data`,
+or `needs_review`. A missing required metric never becomes a pass.
+
+`404` is returned when the validation does not exist. These read endpoints do not
+require administrator authentication; all underlying writes remain orchestrator-owned.
+
+---
+
 ## Error Responses
 
 All error responses follow a consistent format:

@@ -1,6 +1,6 @@
 # Sprint 100 - Robustness Validation Suite
 
-> 状态：Active；Sprint 99 已完成并通过生产验收，2026-07-14 进入实施。
+> 状态：Completed；2026-07-15 通过代码、迁移、部署和生产真实回测验收。
 
 ## Goal
 
@@ -66,4 +66,17 @@ uv run pytest tests/test_paper_promotion.py tests/test_research_orchestrator.py 
 
 ## Handoff
 
+- 迁移 0015、鲁棒性服务、API、CLI、策略卡片和 paper promotion gate 已交付。
+- `./scripts/check.sh` 通过：前端 lint/8 tests/build、Ruff、129 个 mypy 模块、
+  403 个 Python tests。
+- HyperTrade commits `bf627d4`、`119bd24`、`f7b1bea` 分别完成主体、远程 MCP
+  传输和 BitPro 原生运行时契约；最终部署 workflow `29353572908` 成功。
+- BitPro PR `#570`/workflow `29351668545` 修复远程 MCP lifespan，PR `#571`/
+  workflow `29353194135` 修复 smoke 校验异步边界。生产生成策略返回
+  `valid=true, smoke=true`。
+- 生产 ResearchJob `rjob_5dcc95b103394cffb130` 完成 13 次真实 BitPro 回测、
+  3 份候选证据、7 个鲁棒性场景和 16 个 artifact refs；validation
+  `rvld_5f43ed2c628847ada2a5` 因 locked OOS、walk-forward、参数敏感性和成本压力
+  失败而正确 `rejected`。Experiment `exex_c64e1699533c48b0a0b3` completed，未触发
+  paper/live。
 - 下一步：Sprint 101 把 Task、Graph、Evidence、Experiment 和 Validation 纳入系统评测。

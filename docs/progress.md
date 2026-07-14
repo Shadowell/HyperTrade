@@ -4,8 +4,8 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 100 implementation state: active on 2026-07-14 after Sprint 99 production
-  acceptance. The bounded slice adds versioned robustness policies/results, locked OOS
+- Sprint 100 implementation state: completed and production-verified on 2026-07-15.
+  The bounded slice adds versioned robustness policies/results, locked OOS
   freeze, non-overlapping walk-forward windows, budgeted parameter neighborhoods,
   cost/slippage and regime stress scenarios, fail-closed data/trade/result gates,
   persisted validation runs, and API/CLI/report projections. It reuses BitPro as the
@@ -26,8 +26,12 @@
   async validation entrypoints, deployed in workflow `29353194135`, and the generated
   HyperTrade strategy then passed the production 120-bar runtime smoke with
   `valid=true, smoke=true`. Full `./scripts/check.sh` passed with `403 passed`;
-  HyperTrade deployment and a new immutable successor ResearchJob remain pending
-  before Sprint 100 can close.
+  HyperTrade deployment workflow `29353572908` succeeded. Immutable successor
+  ResearchJob `rjob_5dcc95b103394cffb130` completed 13 real BitPro backtests, 3
+  evidence rows, 7 robustness scenarios and 16 artifact refs. Validation
+  `rvld_5f43ed2c628847ada2a5` correctly rejected the candidate after locked OOS,
+  walk-forward, parameter sensitivity and cost stress failed; data integrity passed
+  and no paper/live action occurred. Sprint 101 Agent Research Evaluation is next.
 - Sprint 99 implementation state: completed and production-verified on 2026-07-14.
   `ExperimentManifestV1` canonicalizes StrategySpec, code/data/cost/window and version
   hashes into a stable SHA-256 fingerprint. PostgreSQL stores immutable manifests,

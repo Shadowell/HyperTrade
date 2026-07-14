@@ -6,10 +6,14 @@ This runbook describes how HyperTrade or an external Agent should call BitPro MC
 
 ## Connection
 
-- Transport: `streamable-http` for remote Agents, `stdio` for same-host local Agents.
+- Transport: `streamable-http` for HyperTrade and remote Agents; `stdio` remains available
+  for direct same-host operator clients.
 - Remote path: `/api/v2/mcp/`.
 - Default API base reported by BitPro capabilities: `http://127.0.0.1:8889/api/v2`.
-- Docker Compose deployments should set `BITPRO_MCP_API_BASE=http://host.docker.internal:8889/api/v2`; `docker-compose.yml` maps `host.docker.internal` to the Linux host gateway for `api` and `worker`.
+- Docker Compose deployments should set `BITPRO_MCP_API_BASE=http://host.docker.internal:8889/api/v2`
+  and `BITPRO_REMOTE_MCP_URL=http://host.docker.internal:8889/api/v2/mcp/`;
+  `docker-compose.yml` maps `host.docker.internal` to the Linux host gateway for `api`
+  and `worker`.
 - Token header: `X-BitPro-MCP-Token`, unless `BITPRO_MCP_AUTH_HEADER` overrides it.
 - Token source: generate an MCP Agent Token in BitPro Settings -> Agent Access -> MCP Agent Token, or through `POST /api/v2/settings/mcp-agent-tokens`; the legacy `/settings/mcp-token/generate` UI path remains a compatible operator shortcut.
 - Token environment variable in HyperTrade: `BITPRO_MCP_API_TOKEN`.
@@ -87,7 +91,9 @@ The Agent must not generate or infer those confirmation fields for the user.
 
 HyperTrade now includes a BitPro MCP adapter in `backend/src/hypertrade/bitpro/mcp.py`. Keep the boundary explicit:
 
-1. Store `BITPRO_MCP_API_BASE`, `BITPRO_MCP_API_TOKEN`, and `BITPRO_MCP_AUTH_HEADER` server-side only.
+1. Store `BITPRO_MCP_API_BASE`, `BITPRO_REMOTE_MCP_URL`, `BITPRO_MCP_API_TOKEN`, and
+   `BITPRO_MCP_AUTH_HEADER` server-side only. The remote URL is required for MCP-only
+   tools such as runtime strategy validation.
 2. Use the adapter wrapper that always calls `bitpro_capabilities` and `bitpro_health` before task-specific tools.
 3. Registered HyperTrade read tools include `bitpro.capabilities`, `bitpro.health`, `bitpro.market_klines`, `bitpro.paper_dashboard`, `bitpro.live_positions`, `bitpro.live_order_history`, and `bitpro.live_strategy_performance`.
 4. Registered HyperTrade strategy lifecycle tools include `bitpro.strategy_search`, `bitpro.strategy_generate`, `bitpro.strategy_create`, `bitpro.strategy_update`, `bitpro.backtest_start_job`, `bitpro.backtest_get_job`, `bitpro.backtest_list_results`, `bitpro.backtest_get_result`, `bitpro.paper_configure`, `bitpro.paper_start`, `bitpro.paper_pause`, `bitpro.paper_resume`, and `bitpro.paper_stop`.

@@ -119,6 +119,8 @@ git clone git@github.com:Shadowell/HyperTrade.git
 cd HyperTrade
 cp .env.example .env
 # Edit .env with your API keys
+# Same-host Docker deployments normally use the BitPro MCP endpoint below:
+# BITPRO_REMOTE_MCP_URL=http://host.docker.internal:8889/api/v2/mcp/
 ```
 
 ### Launch
@@ -179,6 +181,8 @@ uv run hypertrade --local ask "看下目前市场的热度怎么样"
 /backtest                         # Run Backtrader backtest
 /experiment 不同参数动量策略       # Multi-variant experiment
 /strategy library momentum_v1     # Query aggregated evidence
+/validations list                 # List robustness decisions
+/validations show rvld_xxx        # Inspect scenarios and hard gates
 ```
 
 ### BitPro Integration
@@ -398,7 +402,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Research Evidence V2 contract | Production |
 | Multi-Agent research graph V1 | Production |
 | Reproducible experiment ledger | Production |
-| Robustness validation suite | In Progress |
+| Robustness validation suite | Production |
 
 ### Planned (V3+)
 

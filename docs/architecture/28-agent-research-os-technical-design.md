@@ -636,6 +636,23 @@ runs、locked OOS freeze 和压力场景属于 Sprint 100。
 - BitPro 缺指标、超时、部分窗口失败时的 fail-closed 测试。
 - 相同 manifest 的 validation 输出必须确定性一致。
 
+### 9.5 实施记录（2026-07-15）
+
+- `RobustnessPolicyV2`、确定性 planner、`ScenarioObservation` 和 gate evaluator 已落地；
+  required gate 的 failed/unknown 分别收敛为 `rejected/needs_data`，不会自动通过。
+- PostgreSQL migration 0015 保存 validation、scenario 和 gate；API
+  `/api/research/validations`、CLI `/validations` 与 StrategyCard 只投影有界证据。
+- ResearchOrchestrator 在矩阵前预扣 13 次回测预算，复用 locked OOS/相邻参数证据，
+  对新增 walk-forward/成本场景执行 BitPro 回测，并把 scenario refs 写回 Sprint 99 账本。
+- 策略写入前通过远程 Streamable HTTP MCP 调用 BitPro `strategy_validate_code`，携带
+  symbol、market type、timeframe 和 `smoke=true`；静态安全与 120-bar 运行契约任一失败
+  都停止创建策略。模板遵循 BitPro `BaseStrategy(state, broker)`、`on_init/on_bar` 和
+  async contract API，不保留历史兼容构造器。
+- PaperPromotion 只接受关联 ExperimentExecution 且最终 `validated` 的证据；该门禁不启动
+  paper，不改变 live 禁用边界。
+- 生产任务 `rjob_5dcc95b103394cffb130` 完成 13 次回测并正确拒绝不稳健策略，证明
+  系统验收目标是可追溯地拒绝坏候选，而不是制造盈利结果。
+
 ## 10. Sprint 101：Agent Research Evaluation
 
 ### 10.1 使用技术

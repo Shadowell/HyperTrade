@@ -801,6 +801,23 @@ usage，不显示完整 prompt、凭据、private reasoning、原始 K 线或 ra
 
 ---
 
+## 鲁棒性验证
+
+研究编排会在受预算的参数矩阵后执行 locked OOS、walk-forward、邻域敏感性和成本压力；
+有可靠市场状态窗口时才增加 regime 场景。查看结果：
+
+```text
+/validations list
+/validations show <validation_id>
+```
+
+`validated` 表示所有 required hard gates 通过；`rejected` 表示至少一个 hard gate 失败；
+`needs_data` 表示必需证据缺失；`needs_review` 表示需要人工判断。高收益但交易数不足、
+样本外失败、参数尖峰或成本后失效的候选仍会被拒绝。只有 `validated` 证据才能申请人工
+模拟盘晋升，查询或验证本身不会启动模拟盘，更不会触发实盘。
+
+---
+
 ## 最佳实践
 
 ### 市场研究
