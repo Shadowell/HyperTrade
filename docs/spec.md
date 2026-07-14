@@ -103,12 +103,14 @@ Invalid provider JSON receives one repair attempt and then becomes an explicit
 data gap; it is never stored as evidence. No role can invoke paper/live writes,
 and the graph cannot promote a candidate or allocate capital.
 
-Sprint 99 entered implementation on 2026-07-14 after Sprint 98 production
-acceptance. It adds only immutable experiment manifests, canonical fingerprints,
-append-only executions/evidence associations, bounded BitPro references, explicit
-rerun audit, and diff/query projections. It does not add robustness selection,
-parameter optimization, raw market/result storage, paper/live behavior, or any
-credential/private-reasoning persistence.
+Sprint 99 completed implementation and production acceptance on 2026-07-14.
+Every orchestrated experiment now receives a canonical `ExperimentManifestV1`
+fingerprint before BitPro strategy/backtest writes. Immutable manifests are separated
+from append-only executions and evidence links; same-fingerprint requests reuse one
+physical execution, failed/forced attempts retain an audit reason, and bounded BitPro
+refs, metrics, artifact hashes and usage remain queryable through API and `/ledger`.
+Raw data, secrets, full prompts and private reasoning are excluded. Robustness selection
+remains deferred to Sprint 100, and no paper/live permission changed.
 
 ## V1 In Scope
 

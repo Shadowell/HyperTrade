@@ -4,12 +4,17 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 99 implementation state: active on 2026-07-14 after Sprint 98 production
-  acceptance. The bounded scope is an immutable ExperimentManifest V1, canonical
-  fingerprint, append-only executions/evidence links, BitPro reference verification,
-  idempotent reuse/forced-rerun audit, manifest diff, and API/CLI/report projections.
-  Robustness methods, parameter optimization, paper/live actions, raw candles/results,
-  credentials, full prompts, and private reasoning remain out of scope.
+- Sprint 99 implementation state: completed and production-verified on 2026-07-14.
+  `ExperimentManifestV1` canonicalizes StrategySpec, code/data/cost/window and version
+  hashes into a stable SHA-256 fingerprint. PostgreSQL stores immutable manifests,
+  append-only attempts and evidence links; duplicate fingerprints reuse one execution,
+  while failed or explicit reruns require an audited reason. ResearchOrchestrator
+  registers before any BitPro strategy/backtest write and stores bounded refs, metrics,
+  artifact hashes and actual usage. Concurrent registration, contract mismatch,
+  evidence links, diff, privacy, API/CLI and reuse tests passed. Full
+  `./scripts/check.sh` passed with `389 passed`; commit `d14fbab` deployed in workflow
+  `29348485494`. Production SHA/health/read API and all three ledger tables passed.
+  Robustness optimization, paper/live, raw data, full prompts and secrets remain out.
 - Sprint 98 implementation state: completed and production-verified on
   2026-07-14. A fixed 13-role LangGraph DAG now runs over durable
   Task/Node/Event/Checkpoint facts with versioned prompts/schemas, role/operator/
@@ -65,7 +70,7 @@
   background triggers, governed Memory/Skills, and portfolio lifecycle review.
   This activation does not change runtime, trading, paper, BitPro, provider,
   deployment, or database behavior. Sprint 95 and Sprint 96 are completed;
-  Sprints 96–98 are completed; Sprint 99 is active.
+  Sprints 96–99 are completed; Sprint 100 is next.
 - Last verified state: Sprint 95 Agent production-readiness evaluation completed
   on 2026-07-14. The isolated API deterministic suite passed 14/14, but the
   real Codex Provider 24-case golden baseline stopped at case 11 with an

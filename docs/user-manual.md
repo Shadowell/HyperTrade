@@ -782,6 +782,25 @@ MONITOR_LOOP_INTERVAL_SECONDS=300
 
 ---
 
+## 可复现实验账本
+
+ResearchOrchestrator 在任何 BitPro 策略创建或回测写入前登记 fingerprint。相同语义输入的
+queued/running/completed 实验复用一个 execution；失败重跑必须记录原因并追加新 attempt。
+
+```text
+/ledger list
+/ledger show <fingerprint>
+/ledger diff <left_fingerprint> <right_fingerprint>
+```
+
+`show` 查看 attempt、状态和 Evidence 数；`diff` 按策略、数据、成本、模型、prompt hash、
+工具和 policy 解释变化。账本仅显示版本 hash、有界 metrics、BitPro refs、artifact hash 和
+usage，不显示完整 prompt、凭据、private reasoning、原始 K 线或 raw result。
+
+这证明实验可追溯，不证明策略盈利，也不会自动晋升模拟盘或实盘。
+
+---
+
 ## 最佳实践
 
 ### 市场研究

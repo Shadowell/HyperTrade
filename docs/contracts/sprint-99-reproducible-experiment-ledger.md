@@ -1,6 +1,6 @@
 # Sprint 99 - Reproducible Experiment Ledger
 
-> 状态：Active；Sprint 96–98 已完成并通过生产验收，2026-07-14 进入实施。
+> 状态：Completed；2026-07-14 通过本地、迁移、部署与生产验收。
 
 ## Goal
 
@@ -66,4 +66,9 @@ uv run pytest tests/test_research_orchestrator.py tests/test_bitpro_mcp_adapter.
 
 ## Handoff
 
+- 实现：canonical fingerprint、0014 三表迁移、并发去重、append-only retry/evidence、
+  artifact contract、API/CLI diff、pre-write registration 和 completed reuse 已落地。
+- 验证：focused 15 tests；全量 389 passed；0014 upgrade/downgrade/upgrade；commit
+  `d14fbab` workflow `29348485494`；生产 SHA、health、read API、三表通过。
+- 边界：没有 raw data/result、完整 prompt、secret/private reasoning、optimizer、paper/live。
 - 下一步：Sprint 100 在 immutable manifest 上增加 OOS、walk-forward 和压力验证。

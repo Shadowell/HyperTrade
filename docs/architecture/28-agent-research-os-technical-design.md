@@ -576,6 +576,26 @@ diff 必须解释参数、窗口、策略代码、模型、prompt、工具、费
 - BitPro ref 缺失、artifact hash 不匹配、MCP contract 变化时拒绝复用。
 - 报告不包含原始行情、凭据、完整 prompt 或 private reasoning。
 
+### 8.6 Sprint 99 实施记录（2026-07-14）
+
+- Pydantic strict schema 规范 UTC、Decimal、参数和窗口顺序；canonical JSON 计算
+  SHA-256。Task/ResearchJob/idempotency/created_at 不进入指纹。
+- `experiment_manifests` 只创建/读取；`experiment_executions` 以 attempt 追加；
+  `experiment_evidence_links` 关联有界 Evidence ref。失败/force rerun 保存 retry 和 reason。
+- fingerprint、attempt、idempotency 唯一约束结合 PostgreSQL row lock 和冲突
+  reconciliation；双线程同指纹测试只创建一个 physical execution。
+- ResearchOrchestrator 在 capability/health/candle identity 预检后生成 data snapshot hash，
+  在任何 strategy/backtest write 前注册。completed reuse 跳过外部写；账本完成先于 Job 终态。
+- artifact projection 保存 BitPro strategy/job/result ref hash 与 MCP contract version；不匹配
+  fail closed。raw data/result、完整 prompt、credential、private reasoning 不进入账本。
+- API 提供 register/list/get/executions/diff；CLI `/ledger list|show|diff` 和 ResearchJob
+  external refs 显示 fingerprint。迁移 0014 往返、全量 389 tests、workflow `29348485494`
+  及生产 SHA/health/read API/三表存在性通过。
+
+边界：首次登记需要 read-only BitPro preflight 才能确定真实 contract/data identity；去重
+保证昂贵 strategy/backtest writes 不重复，但不跳过健康与数据身份读取。鲁棒性 validation
+runs、locked OOS freeze 和压力场景属于 Sprint 100。
+
 ## 9. Sprint 100：Robustness Validation Suite
 
 ### 9.1 使用技术

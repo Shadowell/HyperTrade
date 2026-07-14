@@ -588,6 +588,39 @@ content is never updated in place.
 
 ---
 
+## Reproducible Experiments
+
+Manifests contain semantic inputs and version hashes, never full prompts, credentials,
+private reasoning, raw candles, or raw BitPro results. A SHA-256 `fingerprint`
+identifies the immutable manifest; executions are append-only attempts.
+
+### POST /research/experiments
+
+Register `ExperimentManifestV1`. **Authentication required.** The request includes an
+idempotency key, optional Task/ResearchJob refs, and optional audited
+`force_rerun`/`force_reason`. Same-fingerprint queued/running/completed work returns the
+existing execution; failed work requires an explicit force reason.
+
+### GET /research/experiments
+
+List manifest projections. `limit` defaults to 50 and is capped at 500.
+
+### GET /research/experiments/{fingerprint}
+
+Read the immutable manifest and executions with bounded refs, metrics, artifacts,
+actual usage, errors and Evidence associations.
+
+### GET /research/experiments/{fingerprint}/executions
+
+Read append-only attempts for one fingerprint.
+
+### GET /research/experiments/{fingerprint}/diff/{other_fingerprint}
+
+Explain differences as `strategy`, `data`, `costs`, `model`, `prompt`, `tool`,
+`policy`, or `runtime`.
+
+---
+
 ## Strategy Research
 
 ### POST /strategy/research

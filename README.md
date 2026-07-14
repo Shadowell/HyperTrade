@@ -275,6 +275,26 @@ mutations require an administrator session; no Agent tool has direct evidence
 mutation authority. Legacy experiment and Memory evidence remains read-only and
 is explicitly labelled as legacy context rather than promoted to a V2 fact.
 
+### Reproducible Experiment Ledger
+
+ResearchOrchestrator creates a canonical `ExperimentManifestV1` before any BitPro
+strategy or backtest write. Semantic inputs and version hashes produce a stable
+SHA-256 fingerprint; Task/Job IDs and timestamps do not. Identical queued, running,
+or completed work reuses one execution, while failed or forced reruns append an
+audited attempt.
+
+HyperTrade retains bounded BitPro references, metrics, artifact hashes, usage and
+Evidence IDs—not raw data, credentials, full prompts or private reasoning:
+
+```text
+/ledger list
+/ledger show <fingerprint>
+/ledger diff <left_fingerprint> <right_fingerprint>
+```
+
+Sprint 99 is production-verified. The ledger establishes reproducibility and audit,
+not profitability, automatic optimization, paper promotion or live authority.
+
 ---
 
 ## Documentation
@@ -377,7 +397,8 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Agent Session and Task OS | Production |
 | Research Evidence V2 contract | Production |
 | Multi-Agent research graph V1 | Production |
-| Reproducible experiment ledger | In Progress |
+| Reproducible experiment ledger | Production |
+| Robustness validation suite | Planned |
 
 ### Planned (V3+)
 
