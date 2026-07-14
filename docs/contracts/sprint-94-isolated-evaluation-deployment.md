@@ -18,6 +18,9 @@ or deployment configuration.
 - Mount the server's Codex auth file only into the evaluation API as a
   read-only Compose secret; do not copy the token into any repository file or
   evaluation environment file.
+- Make the Codex Responses adapter compatible with the ChatGPT Codex
+  stream-only endpoint by sending `stream=true`, placing trusted system
+  guidance in `instructions`, and rebuilding completed output items from SSE.
 - Disable paper trading, monitor scheduling, BitPro host access, private
   exchange credentials, Feishu, and Langfuse in the evaluation environment.
 - Keep the background worker as an opt-in Compose profile; the default
@@ -44,6 +47,8 @@ or deployment configuration.
   BitPro host gateway/data mount.
 - The isolated API reports healthy and lists Codex as configured without
   revealing credentials.
+- A minimal `evaluation_mode=true` Codex request completes through the
+  stream-only transport without targeting a production service.
 
 ## Verification
 

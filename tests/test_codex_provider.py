@@ -108,9 +108,9 @@ def test_codex_provider_posts_responses_payload_and_parses_tool_call() -> None:
         captured["url"] = str(request.url)
         captured["authorization"] = request.headers.get("authorization")
         captured["payload"] = json.loads(request.content.decode("utf-8"))
-        return httpx.Response(
-            200,
-            json={
+        completed = {
+            "type": "response.completed",
+            "response": {
                 "usage": {
                     "input_tokens": 120,
                     "output_tokens": 15,
@@ -118,15 +118,35 @@ def test_codex_provider_posts_responses_payload_and_parses_tool_call() -> None:
                     "input_tokens_details": {"cached_tokens": 40},
                     "output_tokens_details": {"reasoning_tokens": 7},
                 },
-                "output": [
-                    {
-                        "type": "function_call",
-                        "call_id": "call_market",
-                        "name": "market_summary",
-                        "arguments": "{}",
-                    }
-                ]
+                # The ChatGPT Codex SSE completed event intentionally leaves
+                # this empty; function calls arrive in output_item.done.
+                "output": [],
             },
+        }
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            text=(
+                "event: response.output_item.done\n"
+                "data: "
+                + json.dumps(
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "type": "function_call",
+                            "id": "fc_market",
+                            "call_id": "call_market",
+                            "name": "market_summary",
+                            "arguments": "{}",
+                        },
+                    }
+                )
+                + "\n\n"
+                "event: response.completed\n"
+                "data: "
+                + json.dumps(completed)
+                + "\n\n"
+            ),
         )
 
     provider = CodexResponsesChatProvider(
@@ -156,15 +176,16 @@ def test_codex_provider_posts_responses_payload_and_parses_tool_call() -> None:
     assert captured["url"] == "https://chatgpt.test/backend-api/codex/responses"
     assert captured["authorization"] == "Bearer codex-secret-token"
     assert captured["payload"]["model"] == "gpt-5.4"
-    assert captured["payload"]["input"][0] == {
-        "role": "developer",
-        "content": "You are HyperTrade.",
-    }
+    assert captured["payload"]["instructions"] == "You are HyperTrade."
+    assert captured["payload"]["input"] == [{"role": "user", "content": "请做行情归纳"}]
+    assert captured["payload"]["store"] is False
+    assert captured["payload"]["stream"] is True
     assert captured["payload"]["tools"] == [
         {
             "type": "function",
             "name": "market_summary",
             "description": "Fetch all-market state.",
+            "strict": False,
             "parameters": {"type": "object", "properties": {}, "required": []},
         }
     ]
@@ -189,21 +210,29 @@ def test_codex_provider_maps_tool_outputs_back_to_responses_input() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["payload"] = json.loads(request.content.decode("utf-8"))
+        message = {
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "output_text",
+                    "text": "# 市场归纳\n\n已基于工具结果完成。",
+                }
+            ],
+        }
         return httpx.Response(
             200,
-            json={
-                "output": [
-                    {
-                        "type": "message",
-                        "content": [
-                            {
-                                "type": "output_text",
-                                "text": "# 市场归纳\n\n已基于工具结果完成。",
-                            }
-                        ],
-                    }
-                ]
-            },
+            headers={"content-type": "text/event-stream"},
+            text=(
+                "event: response.output_item.done\n"
+                "data: "
+                + json.dumps({"type": "response.output_item.done", "item": message})
+                + "\n\n"
+                "event: response.completed\n"
+                "data: "
+                + json.dumps({"type": "response.completed", "response": {"output": []}})
+                + "\n\n"
+            ),
         )
 
     provider = CodexResponsesChatProvider(

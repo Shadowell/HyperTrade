@@ -70,7 +70,15 @@ class CodexResponsesChatProvider:
         payload: dict[str, Any] = {
             "model": self.model,
             "input": _messages_to_responses_input(messages),
+            "store": False,
+            # The ChatGPT Codex backend is stream-only. Buffering its SSE
+            # response here keeps the provider contract synchronous while
+            # HyperTrade retains control of every returned tool call.
+            "stream": True,
         }
+        instructions = _instructions_from_messages(messages)
+        if instructions:
+            payload["instructions"] = instructions
         if tools:
             payload["tools"] = _chat_tools_to_responses_tools(tools)
             payload["tool_choice"] = "auto"
@@ -83,7 +91,7 @@ class CodexResponsesChatProvider:
             json=payload,
         )
         response.raise_for_status()
-        data = response.json()
+        data = _responses_payload_from_http_response(response)
         if not isinstance(data, dict):
             return ChatResponse(content="")
         return _parse_responses_payload(data)
@@ -128,6 +136,8 @@ def _messages_to_responses_input(messages: list[dict[str, Any]]) -> list[dict[st
     items: list[dict[str, Any]] = []
     for message in messages:
         role = str(message.get("role") or "user")
+        if role == "system":
+            continue
         if role == "tool":
             items.append(
                 {
@@ -150,11 +160,19 @@ def _messages_to_responses_input(messages: list[dict[str, Any]]) -> list[dict[st
                         items.append(call_item)
             continue
 
-        response_role = "developer" if role == "system" else role
-        items.append(
-            {"role": response_role, "content": _coerce_content_text(message.get("content"))}
-        )
+        items.append({"role": role, "content": _coerce_content_text(message.get("content"))})
     return items
+
+
+def _instructions_from_messages(messages: list[dict[str, Any]]) -> str:
+    """Move trusted system guidance to the Codex Responses instructions field."""
+
+    return "\n\n".join(
+        _coerce_content_text(message.get("content")).strip()
+        for message in messages
+        if str(message.get("role") or "") == "system"
+        and _coerce_content_text(message.get("content")).strip()
+    )
 
 
 def _assistant_tool_call_to_responses_input(value: Any) -> dict[str, Any] | None:
@@ -190,10 +208,82 @@ def _chat_tools_to_responses_tools(tools: list[dict[str, Any]]) -> list[dict[str
                 "type": "function",
                 "name": name.strip(),
                 "description": str(function.get("description") or ""),
+                "strict": False,
                 "parameters": function.get("parameters") or {"type": "object", "properties": {}},
             }
         )
     return converted
+
+
+def _responses_payload_from_http_response(response: httpx.Response) -> dict[str, Any]:
+    """Decode JSON Responses replies and the ChatGPT Codex SSE variant."""
+
+    content_type = response.headers.get("content-type", "").lower()
+    body = response.text
+    if "text/event-stream" in content_type or body.lstrip().startswith("event:"):
+        return _responses_payload_from_sse(body)
+    try:
+        data = response.json()
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _responses_payload_from_sse(body: str) -> dict[str, Any]:
+    """Reassemble terminal response items because Codex completes with output=[]"""
+
+    output_items: list[dict[str, Any]] = []
+    output_text: list[str] = []
+    completed_response: dict[str, Any] = {}
+    event_data: list[str] = []
+
+    def consume_event() -> None:
+        nonlocal completed_response
+        if not event_data:
+            return
+        raw = "\n".join(event_data).strip()
+        event_data.clear()
+        if not raw or raw == "[DONE]":
+            return
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(event, dict):
+            return
+        event_type = event.get("type")
+        if event_type == "response.output_item.done":
+            item = event.get("item")
+            if isinstance(item, dict):
+                output_items.append(item)
+        elif event_type == "response.output_text.done":
+            text = event.get("text")
+            if isinstance(text, str) and text:
+                output_text.append(text)
+        elif event_type == "response.completed":
+            response = event.get("response")
+            if isinstance(response, dict):
+                completed_response = response
+
+    for line in body.splitlines():
+        if line.startswith("data:"):
+            event_data.append(line[5:].lstrip())
+        elif not line.strip():
+            consume_event()
+    consume_event()
+
+    payload = dict(completed_response)
+    if output_items:
+        payload["output"] = output_items
+    elif output_text:
+        payload["output"] = [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "\n".join(output_text)}],
+            }
+        ]
+    return payload
 
 
 def _parse_responses_payload(payload: dict[str, Any]) -> ChatResponse:

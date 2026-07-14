@@ -43,6 +43,14 @@ back as `function_call_output` input items. Codex never executes HyperTrade
 tools, shell commands, patches, approvals, BitPro actions, or exchange actions
 directly.
 
+The ChatGPT Codex backend requires `stream=true` even for HyperTrade's
+synchronous planner contract. The adapter keeps the request boundary explicit:
+it moves trusted system guidance to the Responses `instructions` field, buffers
+the server-sent event stream, and reconstructs `response.output_item.done`
+items before applying normal function-call parsing. The model still returns
+intent only; HyperTrade's policy and tool executor remain the sole execution
+boundary.
+
 ## Sprint 61 Codex Model Picker Update
 
 `CODEX_MODEL` remains the default Codex model. `CODEX_MODEL_OPTIONS` is a
