@@ -4,12 +4,20 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 94 isolated evaluation deployment is in progress. The intended server
-  target is `/opt/hypertrade-eval`, separate from the dirty production working
-  tree and all production Compose component names, network, database volume,
-  port, and environment file. It reuses the production API image without
-  rebuilding it on the capacity-constrained host; the default target starts
-  only evaluation API/PostgreSQL and keeps the background worker disabled.
+- Last verified state: Sprint 94 isolated evaluation deployment completed on
+  2026-07-14. The server target at `/opt/hypertrade-eval` is a fresh `main`
+  clone with its own `hypertrade-eval` Compose project/network,
+  `hypertrade-eval-api`/`hypertrade-eval-postgres` containers, database volume,
+  server-only `.env`, and loopback-only `127.0.0.1:4334` API. It shares no
+  production Compose component, PostgreSQL data, BitPro data mount/gateway,
+  Nginx route, or worker process. The Codex auth file is mounted read-only only
+  into the evaluation API; paper/monitor/BitPro/Feishu/Langfuse paths remain
+  disabled. The initial deployment commit `a2aef07` deployed in run
+  `29332415454`; the stream-only Codex Responses compatibility fix `97e9242`
+  deployed in run `29333033089`. Local Compose/config tests and full
+  `./scripts/check.sh` passed. A provider-backed evaluation-mode smoke
+  `run_10d4ce8fc70f4a869052` completed through Codex with a read-only
+  `market_ticker` tool call; the production health endpoint remained healthy.
 - Last verified state: Sprint 93 Agent golden baseline completed locally on
   2026-07-14. The isolated-only baseline now evaluates 24 authored,
   privacy-safe tasks across market, knowledge, Memory, strategy, BitPro, World
