@@ -1,6 +1,6 @@
 # Sprint 103 - Background Research Triggers
 
-> 状态：Proposed，依赖 Sprint 96、98、101–102。
+> 状态：Active；Sprint 96、98、101–102 已完成验收，2026-07-15 开始实施。
 
 ## Goal
 

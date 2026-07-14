@@ -379,6 +379,10 @@ task input; `Ctrl+P`, `Ctrl+R`, and `Ctrl+C` request pause, resume/retry, and ca
 through reason-required modals. The TUI is an operator surface only; server-side auth,
 idempotency, state machines, budgets and risk gates remain authoritative.
 
+Sprint 103 is implementing disabled-by-default background research triggers. They
+create only bounded, auditable Tasks from committed schedule/market/data/eval facts;
+they have no direct BitPro, paper, testnet, live, approval or capital path.
+
 ---
 
 ## Deployment

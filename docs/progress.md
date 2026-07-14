@@ -4,6 +4,12 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 103 implementation state: active on 2026-07-15 after Sprint 102 production
+  TTY acceptance. The bounded slice adds disabled-by-default durable research triggers,
+  fire audit, lease/cooldown/quota/dedupe/kill-switch enforcement and Task-only
+  dispatch. Trigger code may read committed Monitor/World/Paper/Eval facts but cannot
+  import or call BitPro, paper, testnet, live or approval adapters. Trigger-created
+  Tasks remain visible and controllable through the existing API/TUI contracts.
 - Sprint 102 implementation state: completed and production-verified on 2026-07-15
   after Sprint 101 isolated
   acceptance. The bounded slice adds an optional Textual terminal workbench over
