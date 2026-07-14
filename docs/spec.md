@@ -304,6 +304,12 @@ BitPro business logic to HyperTrade.
   World Model, and write-attempt safety. An isolated-only runner produces a
   prompt-free diagnostic baseline for tool accuracy/F1, citation coverage,
   denial evidence, latency, and tokens; it does not gate deployment.
+- Sprint 94 isolated evaluation deployment: a server-side `hypertrade-eval`
+  runtime uses its own API, PostgreSQL container, network, loopback-only port,
+  data path, and server-only configuration. It has no production BitPro data
+  mount, Nginx route, paper/monitor worker by default, or production database.
+  It is logical isolation on the current host; a separate VM is required for
+  physical isolation.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.

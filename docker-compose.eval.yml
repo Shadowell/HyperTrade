@@ -1,0 +1,73 @@
+name: hypertrade-eval
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: hypertrade-eval-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hypertrade_eval}
+      POSTGRES_USER: ${POSTGRES_USER:-hypertrade_eval}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the evaluation .env}
+    volumes:
+      - /opt/hypertrade-eval/data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hypertrade_eval} -d ${POSTGRES_DB:-hypertrade_eval}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+    networks:
+      - hypertrade-eval
+
+  api:
+    image: ${HYPERTRADE_EVAL_IMAGE:-hypertrade-api:latest}
+    container_name: hypertrade-eval-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hypertrade_eval}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the evaluation .env}@postgres:5432/${POSTGRES_DB:-hypertrade_eval}
+      PAPER_ENABLED: "false"
+      MONITOR_SCHEDULER_ENABLED: "false"
+      BITPRO_MCP_API_BASE: http://127.0.0.1:9/api/v2
+    ports:
+      - "127.0.0.1:${HYPERTRADE_EVAL_PORT:-4334}:3334"
+    secrets:
+      - source: codex_auth
+        target: hypertrade_eval_codex_auth
+        mode: 0400
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 768m
+    networks:
+      - hypertrade-eval
+
+  worker:
+    profiles: ["background"]
+    image: ${HYPERTRADE_EVAL_IMAGE:-hypertrade-api:latest}
+    container_name: hypertrade-eval-worker
+    restart: unless-stopped
+    command: ["python", "-m", "hypertrade.worker"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hypertrade_eval}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the evaluation .env}@postgres:5432/${POSTGRES_DB:-hypertrade_eval}
+      PAPER_ENABLED: "false"
+      MONITOR_SCHEDULER_ENABLED: "false"
+      BITPRO_MCP_API_BASE: http://127.0.0.1:9/api/v2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 512m
+    networks:
+      - hypertrade-eval
+
+networks:
+  hypertrade-eval:
+    name: hypertrade-eval
+
+secrets:
+  codex_auth:
+    file: ${CODEX_AUTH_SOURCE_PATH:?Set CODEX_AUTH_SOURCE_PATH in the evaluation .env}

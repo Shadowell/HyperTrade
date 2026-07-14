@@ -16,6 +16,25 @@ Secrets stay in `/opt/hypertrade/.env`. PostgreSQL port is not public. BitPro MC
 tokens, provider keys, OKX credentials, and admin credentials must never be
 committed.
 
+## Isolated Evaluation Deployment
+
+The server-side evaluation target is a separate Compose project, not a
+production deployment mode. It lives at `/opt/hypertrade-eval` and uses the
+`hypertrade-eval` project/network, `hypertrade-eval-*` container names, a
+separate PostgreSQL data directory, and `127.0.0.1:4334`. It has no Nginx site,
+no production database/data bind mount, and no BitPro host-gateway mapping.
+
+The default evaluator starts only PostgreSQL and API; its worker is an explicit
+`background` profile so background market ingestion, paper trading, and monitor
+scheduling do not run during a baseline. Paper, monitors, BitPro connectivity,
+Feishu, Langfuse, and private exchange credentials are disabled in its
+server-only `.env`. A server Codex auth file may be mounted only into the
+evaluation API as a read-only Compose secret.
+
+Use the production-built `hypertrade-api:latest` image as the evaluation image
+to avoid a second build on the server. This gives logical isolation on the same
+host; a separate VM/server is required when physical isolation is required.
+
 ## 中文
 
 部署使用单台服务器：
@@ -30,3 +49,20 @@ committed.
 
 密钥只放 `/opt/hypertrade/.env`。PostgreSQL 端口不对公网暴露。BitPro MCP
 token、provider key、OKX 凭证和 admin 凭证不能提交到仓库。
+
+## 独立评测部署
+
+服务器评测目标是独立 Compose 项目，不是生产模式的开关。它位于
+`/opt/hypertrade-eval`，使用 `hypertrade-eval` 项目/网络、
+`hypertrade-eval-*` 容器名、独立 PostgreSQL 数据目录和
+`127.0.0.1:4334`。它不配置 Nginx、不挂载生产数据库/数据目录，也不映射
+BitPro 宿主机网关。
+
+默认只启动 PostgreSQL 与 API；Worker 仅作为显式 `background` profile
+保留，因此基线评测不会持续抓取行情、运行模拟盘或监控。评测 `.env` 禁用
+paper、monitor、BitPro、Feishu、Langfuse 和私有交易所凭证。服务器 Codex
+认证文件仅可作为只读 Compose secret 挂载到评测 API。
+
+评测复用已经构建完成的 `hypertrade-api:latest` 镜像，避免在服务器构建第二
+份镜像。该方案在同一台主机上提供逻辑隔离；若需要物理隔离，必须使用独立
+VM/服务器。

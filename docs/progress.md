@@ -4,6 +4,12 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 94 isolated evaluation deployment is in progress. The intended server
+  target is `/opt/hypertrade-eval`, separate from the dirty production working
+  tree and all production Compose component names, network, database volume,
+  port, and environment file. It reuses the production API image without
+  rebuilding it on the capacity-constrained host; the default target starts
+  only evaluation API/PostgreSQL and keeps the background worker disabled.
 - Last verified state: Sprint 93 Agent golden baseline completed locally on
   2026-07-14. The isolated-only baseline now evaluates 24 authored,
   privacy-safe tasks across market, knowledge, Memory, strategy, BitPro, World
@@ -197,8 +203,8 @@
 
 ## Active Contract
 
-- Sprint 93 Agent golden baseline is active under
-  `docs/contracts/sprint-93-agent-golden-baseline.md`.
+- Sprint 94 isolated evaluation deployment is active under
+  `docs/contracts/sprint-94-isolated-evaluation-deployment.md`.
 
 ## Approved Follow-On Design
 

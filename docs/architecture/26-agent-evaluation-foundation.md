@@ -32,6 +32,29 @@ production. Isolated runs still persist their prompt and trace in their target
 database, so Promptfoo/Ragas targets must use a throwaway deployment and
 database.
 
+## Server Evaluation Target
+
+The canonical server target is the `hypertrade-eval` Compose project under
+`/opt/hypertrade-eval`. It exposes only `127.0.0.1:4334`, uses a dedicated
+PostgreSQL volume and environment file, and does not share production
+containers, network, database, BitPro mount, Nginx route, or worker process.
+Its default deployment disables paper trading and monitor scheduling, leaves
+the worker profile stopped, and points BitPro at an unreachable container
+loopback endpoint. This is logical isolation on the production host; use a
+separate VM/server when the evaluation boundary requires physical isolation.
+
+Run evaluation commands from a trusted operator session with:
+
+```bash
+export HYPERTRADE_EVAL_TARGET=isolated
+export HYPERTRADE_EVAL_BASE_URL=http://127.0.0.1:4334
+```
+
+The server-side environment may mount a Codex authentication file only as a
+read-only Compose secret. Do not copy OAuth contents into `.env`, trajectory
+artifacts, or the repository; prefer a dedicated expiring Codex access token
+before widening evaluation automation.
+
 ## Langfuse
 
 Langfuse is an opt-in, optional dependency installed with:
