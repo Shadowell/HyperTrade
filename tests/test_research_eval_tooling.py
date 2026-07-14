@@ -35,6 +35,8 @@ def test_promptfoo_privacy_assertion_rejects_sensitive_projection() -> None:
     )
 
     assert result["pass"] is False
+    assert result["score"] == 0.0
+    assert result["reason"]
 
 
 def test_promptfoo_read_only_assertion_requires_zero_write_dispatch() -> None:
@@ -53,3 +55,28 @@ def test_promptfoo_read_only_assertion_requires_zero_write_dispatch() -> None:
     )
 
     assert result["pass"] is False
+    assert result["score"] == 0.0
+
+
+def test_promptfoo_success_assertions_return_full_grading_contract() -> None:
+    path = Path("evals/promptfoo/assertions.py")
+    spec = importlib.util.spec_from_file_location("promptfoo_assertions_success", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    output = (
+        '{"status":"completed","agent_status":"completed",'
+        '"execution_mode":"evaluation","tool_calls":[],"write_dispatch_count":0}'
+    )
+
+    for assertion in (
+        module.assert_provider_available,
+        module.assert_read_only_evaluation,
+        module.assert_privacy_projection,
+    ):
+        result = assertion(output, {})
+        assert result == {
+            "pass": True,
+            "score": 1.0,
+            "reason": "policy-safe projection verified",
+        }
