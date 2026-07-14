@@ -2,8 +2,8 @@
 
 ## Verdict
 
-Local verdict: **PASS**. Production deployment: **PENDING** until the implementation
-commit is deployed and PostgreSQL migration/API/CLI smokes complete.
+Final verdict: **PASS**. Local gates, production deployment, PostgreSQL-backed
+Task persistence, cursor reads, and remote CLI smokes all completed successfully.
 
 ## Contract Review
 
@@ -34,11 +34,14 @@ commit is deployed and PostgreSQL migration/API/CLI smokes complete.
 
 - None in the Sprint 96 implementation or focused regression suite.
 
-### Not Checked Yet
+### Not Checked
 
-- Production PostgreSQL migration and `FOR UPDATE SKIP LOCKED` behavior, pending
-  deployment of the implementation commit.
-- Production remote CLI/API smoke, pending deployment.
+- A forced production worker crash during a non-idempotent external write was not
+  induced because doing so would cross the safe smoke-test boundary. The fail-closed
+  reconciliation path is covered by deterministic service tests.
+- Multi-worker claim contention was not artificially generated on production. The
+  PostgreSQL `FOR UPDATE SKIP LOCKED` query and lease ownership behavior are covered
+  by focused tests and the deployed worker uses that path.
 
 ## Verification Evidence
 
@@ -51,10 +54,19 @@ commit is deployed and PostgreSQL migration/API/CLI smokes complete.
   historical `0001_initial` contains PostgreSQL-only `CREATE EXTENSION vector`.
   The applied migration was not rewritten; local SQLite development continues
   to use `Database.create_all()`.
+- Implementation commit `65c8a41` deployed successfully in GitHub Actions run
+  `29338187375`; the deployment applied the PostgreSQL migration and restarted the
+  production API/worker.
+- Production Agent run `run_e2c36d58611f4c49ba5f` completed as durable Session
+  `ses_dd5306ed19374f1b94b2` and Task `task_dd509a0e4b924187bafa`, with checkpoint
+  `tcp_0698fd674ca0437fb36b` and 25 monotonic events.
+- Cursor requests after sequence 0 and 3 returned `1..3` and `4..6`; remote CLI
+  `/sessions`, `/tasks`, and `/task task_dd509a0e4b924187bafa` returned the same
+  completed Task projection.
+- Production `GET /api/health` returned
+  `{"status":"ok","service":"hypertrade-api"}` after deployment and smokes.
 
 ## Next
 
-1. Run the final full repository gate after all Sprint 96 code/docs changes.
-2. Push the implementation commit and verify the production deployment/migration.
-3. Run health, Session/Task API, cursor Event, worker, and remote CLI smokes.
-4. Change this verdict to final PASS, close Sprint 96, and activate Sprint 97.
+Activate Sprint 97 and implement the structured Research Evidence contract on top
+of the completed Session/Task control plane.

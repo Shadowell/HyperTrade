@@ -257,6 +257,9 @@ Task events are cursor-addressable through
 `GET /api/agent/tasks/{task_id}/stream`. Control APIs require an authenticated
 administrator, a reason, and an idempotency key. Provider timeouts become
 structured retryable Task errors instead of uncaught HTTP 500 responses.
+Sprint 96 is production-verified: the PostgreSQL migration, durable Agent run,
+checkpoint, monotonic event cursor, and remote CLI inspection all passed after
+deployment.
 
 ---
 

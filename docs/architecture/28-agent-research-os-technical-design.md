@@ -319,6 +319,12 @@ Sprint 96 已按“Task 是控制事实源、Run 是单次执行 attempt”的�
 `reconciliation_required`，禁止猜测外部写是否发生。SQLite 仅承诺单 worker；生产
 多 worker 互斥由 PostgreSQL row lock 保证。
 
+生产验收记录：实现提交 `65c8a41` 由工作流 `29338187375` 成功部署；真实请求形成
+Session `ses_dd5306ed19374f1b94b2`、Task `task_dd509a0e4b924187bafa`、Run
+`run_e2c36d58611f4c49ba5f` 和 checkpoint `tcp_0698fd674ca0437fb36b`。Task 最终
+`completed` 并产生 25 条单调事件；cursor 分页和远程 `/sessions`、`/tasks`、`/task`
+读取通过，生产健康保持 OK。
+
 ## 6. Sprint 97：Research Evidence Contract
 
 ### 6.1 使用技术

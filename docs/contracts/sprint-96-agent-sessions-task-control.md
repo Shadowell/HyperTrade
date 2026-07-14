@@ -1,6 +1,6 @@
 # Sprint 96 - Agent Sessions and Task Control
 
-> 状态：Active，2026-07-14 经操作员批准进入实施。
+> 状态：Completed，2026-07-14 完成实现、全量回归、生产部署与远程验收。
 
 ## Goal
 
@@ -81,3 +81,17 @@ Manual/QA：
 ## Handoff
 
 - 下一步：Sprint 97 定义所有研究角色必须使用的 Evidence V2 合同。
+
+## Implementation Record
+
+- 实现提交：`65c8a41`；生产部署工作流：`29338187375`，状态 success。
+- 聚焦回归 `101 passed`；`./scripts/check.sh` 全部通过，Python 测试
+  `350 passed`。
+- 生产真实运行 `run_e2c36d58611f4c49ba5f` 被持久化为
+  `ses_dd5306ed19374f1b94b2` / `task_dd509a0e4b924187bafa`，最终状态
+  `completed`，生成 checkpoint `tcp_0698fd674ca0437fb36b` 和 25 条连续事件。
+- 生产远程 CLI 的 `/sessions`、`/tasks`、`/task` 均读取同一持久 Task 投影；
+  Event API 使用 `after=0` 和 `after=3` 分别返回 sequence `1..3`、`4..6`，
+  验证 cursor 无重复恢复。
+- 生产健康检查返回 `{"status":"ok","service":"hypertrade-api"}`；API 成功读取
+  Session/Task/Checkpoint/Event，确认 PostgreSQL migration 已生效。

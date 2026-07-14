@@ -4,15 +4,19 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 96 implementation state: local implementation and QA completed on
-  2026-07-14; production deployment verification is pending. Durable
+- Sprint 96 implementation state: completed and production-verified on
+  2026-07-14. Durable
   AgentSession/AgentTask/TaskNodeRun/TaskCheckpoint/TaskEvent persistence,
   deterministic controls, budgets, PostgreSQL lease/heartbeat recovery,
   cursor-based Event REST/SSE, legacy AgentRun adapter, CLI commands, worker
   dispatch, and structured Provider timeout handling are implemented. Focused
   Agent Task/API/CLI/worker regressions passed, the new `0012` migration passed
   upgrade/downgrade/upgrade, and the full repository quality gate passed with
-  `350 passed` Python tests.
+  `350 passed` Python tests. Commit `65c8a41` deployed successfully in run
+  `29338187375`; production run `run_e2c36d58611f4c49ba5f` completed through
+  durable Task `task_dd509a0e4b924187bafa`, checkpointed, emitted 25 monotonic
+  events, and was readable through the remote CLI and cursor API. Production
+  health remained OK.
 - Planning state: approved Sprint 96–105 Agent Research OS roadmap entered
   implementation with Sprint 96 on 2026-07-14. The roadmap selectively adopts durable
   Session/Task/TUI/Skill capabilities associated with mature Agent runtimes and
@@ -24,7 +28,8 @@
   reproducible experiments, robustness validation, Agent evaluation, TUI,
   background triggers, governed Memory/Skills, and portfolio lifecycle review.
   This activation does not change runtime, trading, paper, BitPro, provider,
-  deployment, or database behavior. Sprint 95 is completed; Sprint 96 is active.
+  deployment, or database behavior. Sprint 95 and Sprint 96 are completed;
+  Sprint 97 is next.
 - Last verified state: Sprint 95 Agent production-readiness evaluation completed
   on 2026-07-14. The isolated API deterministic suite passed 14/14, but the
   real Codex Provider 24-case golden baseline stopped at case 11 with an
