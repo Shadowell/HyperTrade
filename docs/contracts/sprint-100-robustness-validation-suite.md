@@ -1,6 +1,6 @@
 # Sprint 100 - Robustness Validation Suite
 
-> 状态：Proposed，依赖 Sprint 99。
+> 状态：Active；Sprint 99 已完成并通过生产验收，2026-07-14 进入实施。
 
 ## Goal
 

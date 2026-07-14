@@ -112,6 +112,13 @@ refs, metrics, artifact hashes and usage remain queryable through API and `/ledg
 Raw data, secrets, full prompts and private reasoning are excluded. Robustness selection
 remains deferred to Sprint 100, and no paper/live permission changed.
 
+Sprint 100 entered implementation on 2026-07-14 after Sprint 99 production
+acceptance. It adds bounded locked-OOS, walk-forward, parameter-neighborhood,
+cost/slippage and regime validation with explicit passed/failed/unknown/not-applicable
+gates. BitPro remains the backtest source of truth and each scenario must link to the
+immutable experiment ledger. It excludes unbounded or profit-seeking optimization,
+raw-result persistence, automatic paper/live promotion and capital allocation.
+
 ## V1 In Scope
 
 - Harness routing: sidebar destinations are independent, refreshable SPA paths

@@ -398,7 +398,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Research Evidence V2 contract | Production |
 | Multi-Agent research graph V1 | Production |
 | Reproducible experiment ledger | Production |
-| Robustness validation suite | Planned |
+| Robustness validation suite | In Progress |
 
 ### Planned (V3+)
 

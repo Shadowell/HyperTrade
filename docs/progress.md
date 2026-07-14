@@ -4,6 +4,14 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 100 implementation state: active on 2026-07-14 after Sprint 99 production
+  acceptance. The bounded slice adds versioned robustness policies/results, locked OOS
+  freeze, non-overlapping walk-forward windows, budgeted parameter neighborhoods,
+  cost/slippage and regime stress scenarios, fail-closed data/trade/result gates,
+  persisted validation runs, and API/CLI/report projections. It reuses BitPro as the
+  backtest/artifact source and the Sprint 99 immutable experiment ledger. Bayesian or
+  genetic optimization, unbounded grids, raw-result storage, automatic ranking,
+  automatic paper/live promotion and capital decisions remain out of scope.
 - Sprint 99 implementation state: completed and production-verified on 2026-07-14.
   `ExperimentManifestV1` canonicalizes StrategySpec, code/data/cost/window and version
   hashes into a stable SHA-256 fingerprint. PostgreSQL stores immutable manifests,
@@ -70,7 +78,7 @@
   background triggers, governed Memory/Skills, and portfolio lifecycle review.
   This activation does not change runtime, trading, paper, BitPro, provider,
   deployment, or database behavior. Sprint 95 and Sprint 96 are completed;
-  Sprints 96–99 are completed; Sprint 100 is next.
+  Sprints 96–99 are completed; Sprint 100 is active.
 - Last verified state: Sprint 95 Agent production-readiness evaluation completed
   on 2026-07-14. The isolated API deterministic suite passed 14/14, but the
   real Codex Provider 24-case golden baseline stopped at case 11 with an
