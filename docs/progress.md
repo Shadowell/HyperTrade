@@ -4,6 +4,13 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 104 implementation state: active on 2026-07-15 after Sprint 103 production
+  acceptance. This slice adds source-bound Memory assertions with explicit conflict,
+  expiry and supersession plus a code-free Skill proposal/evaluation/approval/release/
+  rollback lifecycle. Existing `MemoryItem` remains compatible; proposed or failed
+  content cannot enter production prompts, add tools, execute code or widen paper/live
+  authority. Sprint 101 isolated evaluation and administrator approval remain required
+  before an immutable Skill version can become active.
 - Sprint 103 implementation state: completed and production-verified on 2026-07-15.
   The bounded slice adds
   disabled-by-default durable research triggers,

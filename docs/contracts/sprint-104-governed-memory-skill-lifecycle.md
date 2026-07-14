@@ -1,6 +1,6 @@
 # Sprint 104 - Governed Memory and Skill Lifecycle
 
-> 状态：Proposed，依赖 Sprint 97、101、103。
+> 状态：Active；Sprint 97、101、103 已完成验收，2026-07-15 开始实施。
 
 ## Goal
 

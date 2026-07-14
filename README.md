@@ -397,6 +397,10 @@ hypertrade --remote http://127.0.0.1:3334 chat
 Production stays inert until `RESEARCH_TRIGGERS_ENABLED=true` is deliberately set.
 Every fire still revalidates the active mandate and bounded zero-backtest budget.
 
+Sprint 104 is implementing governed Memory assertions and code-free Skill lifecycle
+records. Until static checks, isolated evaluation and administrator approval all pass,
+a proposal remains inactive and cannot affect production prompts or tool permissions.
+
 ---
 
 ## Deployment

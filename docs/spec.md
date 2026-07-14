@@ -157,6 +157,14 @@ PostgreSQL row locks/leases, and API/CLI/TUI controls require administrator auth
 and operator reasons. Production migration `0016_research_triggers` is active while
 the worker feature remains explicitly disabled.
 
+Sprint 104 entered implementation on 2026-07-15. It introduces governed,
+source-bound Memory assertions and code-free reusable Skill definitions. Agents may
+propose content, but static policy checks, isolated regression evidence and explicit
+administrator approval must all pass before an immutable version becomes active.
+Conflicted, expired or superseded assertions remain visible but cannot silently win
+retrieval; Skill releases cannot execute Python/shell, add endpoints/tools or widen any
+paper/live permission.
+
 ## V1 In Scope
 
 - Harness routing: sidebar destinations are independent, refreshable SPA paths
