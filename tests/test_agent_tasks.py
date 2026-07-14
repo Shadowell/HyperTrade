@@ -129,6 +129,10 @@ def test_provider_timeout_becomes_retryable_task_error_and_checkpoint() -> None:
     assert stored.error_json["source"] == "ReadTimeout"
     assert TaskCheckpointService(db).latest(task.id) is not None
 
+    retried = service.retry(task.id, _control("timeout-retry-1"))
+    assert retried.status == "queued"
+    assert retried.error_json == {}
+
 
 def test_running_task_honors_pause_at_agent_event_safe_point() -> None:
     db, service, session_id = _task_service()

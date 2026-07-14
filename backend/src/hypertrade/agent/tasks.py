@@ -413,6 +413,10 @@ class AgentTaskService:
             # Task-kind configuration and active budget reservations share this
             # audited envelope; a control action must not erase either boundary.
             row.control_json = {**control_state, "requests": requests[-100:]}
+            if action == "retry":
+                # The immutable event stream retains the prior failure. The live
+                # projection must describe the new attempt, not a stale error.
+                row.error_json = {}
             self._transition_in_session(
                 session,
                 row,

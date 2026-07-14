@@ -177,8 +177,24 @@ class ChatResearchRoleProvider:
             )
             try:
                 output = RoleOutput.model_validate(_json_object(repair.content))
-            except (ValueError, ValidationError) as exc:
-                raise RoleSchemaError(f"role output invalid after one repair: {role.key}") from exc
+            except (ValueError, ValidationError):
+                # Invalid model text is untrusted and is never persisted. After the
+                # single repair allowance, continue with an explicit unknown instead
+                # of fabricating evidence or terminating the whole fixed graph.
+                output = RoleOutput(
+                    summary=f"{role.key} output invalid after one schema repair",
+                    evidence=[
+                        DataGapDraft(
+                            claim=f"{role.key} provider output could not satisfy schema",
+                            confidence=0.0,
+                            expected_sources=["tool"],
+                            remediation=(
+                                "Inspect the provider/model compatibility and rerun only "
+                                f"the {role.key} node."
+                            ),
+                        )
+                    ],
+                )
             usage = _usage(first)
             repaired_usage = _usage(repair)
             return ProviderResult(

@@ -156,3 +156,42 @@ def test_tool_plan_contract_enumerates_real_names_without_placeholder() -> None:
     assert "research.mandate_read" in chat.request["allowed_tools"]
     assert chat.request["output_contract"]["tool_calls"] == []
     assert "allowed.tool" not in json.dumps(chat.request)
+
+
+class InvalidTwiceProvider:
+    name = "invalid-twice"
+    model = "invalid-twice-v1"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def chat(self, messages, tools=None):
+        del messages, tools
+        self.calls += 1
+        return ChatResponse(
+            content="still-not-json",
+            usage=TokenUsage(total_tokens=7, reported=True),
+        )
+
+
+def test_invalid_output_after_one_repair_becomes_explicit_data_gap() -> None:
+    chat = InvalidTwiceProvider()
+    provider = ChatResearchRoleProvider(chat)
+
+    result = provider.synthesize(
+        ROLE_CATALOG["preflight"],
+        RoleProviderContext(
+            task_id="task_test",
+            node_run_id="node_test",
+            objective="bounded test",
+            mandate={"id": "rman_test"},
+            evidence=(),
+        ),
+        [],
+    )
+
+    assert chat.calls == 2
+    assert result.value.evidence[0].evidence_type == "data_gap"
+    assert result.value.evidence[0].expected_sources == ["tool"]
+    assert result.usage.model_calls == 2
+    assert result.usage.tokens == 14
