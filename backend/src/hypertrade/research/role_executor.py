@@ -207,13 +207,6 @@ class RoleExecutor:
                 ),
                 control_guard=control_guard,
             )
-            automatic_gap_ids = self._record_unavailable_gaps(
-                role,
-                task_id=task_id,
-                node_run_id=start.node.id,
-                mandate=mandate,
-                observations=observations,
-            )
             self._guard(control_guard, start.node.id)
             synth_result = await self._provider_call(
                 task_id,
@@ -225,6 +218,8 @@ class RoleExecutor:
                 control_guard=control_guard,
                 node_run_id=start.node.id,
             )
+            usage = _sum_usage(plan_result.usage, tool_usage, synth_result.usage)
+            self._enforce_role_usage(role, usage)
             evidence_ids, strategy_spec = self._persist_output(
                 synth_result.value,
                 role=role,
@@ -233,9 +228,14 @@ class RoleExecutor:
                 mandate=mandate,
                 observations=observations,
             )
+            automatic_gap_ids = self._record_unavailable_gaps(
+                role,
+                task_id=task_id,
+                node_run_id=start.node.id,
+                mandate=mandate,
+                observations=observations,
+            )
             all_evidence_ids = tuple(sorted({*automatic_gap_ids, *evidence_ids}))
-            usage = _sum_usage(plan_result.usage, tool_usage, synth_result.usage)
-            self._enforce_role_usage(role, usage)
             output_ref = {
                 "evidence_ids": list(all_evidence_ids),
                 "summary": synth_result.value.summary,
@@ -405,7 +405,7 @@ class RoleExecutor:
             for row in self.evidence.query(task_id=task_id, limit=200)
         }
         now = utc_now()
-        evidence_ids: list[str] = []
+        payloads: list[Any] = []
         for draft in output.evidence:
             unknown_sources = set(draft.source_ids) - set(source_map)
             if unknown_sources:
@@ -443,11 +443,12 @@ class RoleExecutor:
                 "supporting_evidence_ids": draft.supporting_evidence_ids,
                 "opposing_evidence_ids": draft.opposing_evidence_ids,
             }
-            payload = _evidence_input(draft, common)
+            payloads.append(_evidence_input(draft, common))
+        strategy_spec = self._strategy_spec(output, role=role, mandate=mandate)
+        evidence_ids: list[str] = []
+        for payload in payloads:
             stored = self.evidence.append(payload, actor=f"role_executor:{role.key}")
             evidence_ids.append(str(stored["id"]))
-            task_evidence[str(stored["id"])] = stored
-        strategy_spec = self._strategy_spec(output, role=role, mandate=mandate)
         return evidence_ids, strategy_spec
 
     def _record_unavailable_gaps(

@@ -252,6 +252,35 @@ def test_global_budget_is_reserved_before_provider_dispatch(tmp_path) -> None:
     assert projection["nodes"][0]["error"]["code"] == "role_execution_failed"
 
 
+class OverRoleBudgetProvider(DeterministicGapRoleProvider):
+    def synthesize(self, role, context, observations):
+        result = super().synthesize(role, context, observations)
+        return ProviderResult(
+            result.value,
+            RoleUsage(model_calls=1, tokens=role.budget.max_tokens + 1),
+        )
+
+
+def test_role_budget_failure_does_not_persist_partial_role_evidence(tmp_path) -> None:
+    db = _db(tmp_path)
+    mandate = _mandate(db)
+    task_id = _graph_task(db, str(mandate["id"]), key="graph-role-budget-001")
+    runtime = ResearchGraphRuntime(
+        db,
+        provider=OverRoleBudgetProvider(),
+        tool_runner=BuiltinResearchToolRunner(db),
+    )
+
+    with pytest.raises(RoleSchemaError, match="role token budget exceeded"):
+        runtime.run(task_id)
+
+    projection = runtime.projection(task_id)
+    assert projection["task"]["status"] == "failed"
+    assert {row["role_key"] for row in projection["evidence"]} == {
+        "research_graph_runtime"
+    }
+
+
 class PauseOnceProvider(DeterministicGapRoleProvider):
     def __init__(self, db: Database) -> None:
         self.db = db

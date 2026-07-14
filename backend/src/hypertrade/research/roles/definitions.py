@@ -61,7 +61,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "preflight_v1.md",
         ("research.mandate_read", "bitpro.capabilities", "bitpro.health"),
         True,
-        RoleBudget(max_tool_calls=3, max_tokens=4_000),
+        RoleBudget(max_tool_calls=3, max_tokens=12_000),
         "Verify mandate, runtime capabilities, and source health without conclusions.",
     ),
     "data_quality": RoleDefinition(
@@ -70,7 +70,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "data_quality_v1.md",
         ("research.mandate_read", "market.tickers", "bitpro.market_klines"),
         True,
-        RoleBudget(max_tool_calls=3, max_tokens=6_000),
+        RoleBudget(max_tool_calls=3, max_tokens=12_000),
         "Assess source freshness, coverage, and gaps before analysis.",
     ),
     "market_regime": RoleDefinition(
@@ -79,7 +79,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "market_regime_v1.md",
         ("global_market.snapshot", "market.tickers", "bitpro.market_klines"),
         True,
-        RoleBudget(max_tool_calls=3),
+        RoleBudget(max_tool_calls=3, max_tokens=16_000),
         "Classify bounded market regimes from source-backed observations.",
     ),
     "technical_structure": RoleDefinition(
@@ -88,7 +88,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "technical_structure_v1.md",
         ("bitpro.market_klines", "market.tickers", "strategy.library_search"),
         True,
-        RoleBudget(max_tool_calls=3),
+        RoleBudget(max_tool_calls=3, max_tokens=16_000),
         "Describe technical structure without treating one indicator as a conclusion.",
     ),
     "derivatives_flow": RoleDefinition(
@@ -97,7 +97,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "derivatives_flow_v1.md",
         ("market.intelligence", "bitpro.market_klines"),
         False,
-        RoleBudget(max_tool_calls=2, max_tokens=6_000),
+        RoleBudget(max_tool_calls=2, max_tokens=12_000),
         "Assess derivatives flow or emit an explicit data gap.",
     ),
     "event_context": RoleDefinition(
@@ -106,7 +106,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "event_context_v1.md",
         ("rag.search",),
         False,
-        RoleBudget(max_tool_calls=2, max_tokens=6_000),
+        RoleBudget(max_tool_calls=2, max_tokens=12_000),
         "Capture event context without converting news directly into a signal.",
     ),
     "evidence_synthesis": RoleDefinition(
@@ -115,7 +115,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "evidence_synthesis_v1.md",
         _READ_EVIDENCE,
         True,
-        RoleBudget(max_tool_calls=1),
+        RoleBudget(max_tool_calls=1, max_tokens=18_000),
         "Synthesize support, conflicts, freshness, and gaps from Task evidence only.",
     ),
     "bull_case": RoleDefinition(
@@ -124,7 +124,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "bull_case_v1.md",
         _READ_EVIDENCE,
         True,
-        RoleBudget(max_tool_calls=1, max_tokens=6_000),
+        RoleBudget(max_tool_calls=1, max_tokens=14_000),
         "Build the strongest source-bound upside case and its invalidation.",
     ),
     "bear_case": RoleDefinition(
@@ -133,7 +133,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "bear_case_v1.md",
         _READ_EVIDENCE,
         True,
-        RoleBudget(max_tool_calls=1, max_tokens=6_000),
+        RoleBudget(max_tool_calls=1, max_tokens=14_000),
         "Challenge the upside case and surface adverse evidence.",
     ),
     "strategy_engineer": RoleDefinition(
@@ -142,7 +142,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "strategy_engineer_v1.md",
         ("research.evidence_read", "research.strategy_spec_draft"),
         True,
-        RoleBudget(max_tool_calls=2),
+        RoleBudget(max_tool_calls=2, max_tokens=20_000),
         "Create a bounded StrategySpec draft; never write directly to BitPro.",
     ),
     "bitpro_validation": RoleDefinition(
@@ -151,7 +151,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "bitpro_validation_v1.md",
         ("research.job_report", "bitpro.backtest_get_job", "bitpro.backtest_get_result"),
         True,
-        RoleBudget(max_tool_calls=3, max_tokens=6_000, timeout_seconds=120),
+        RoleBudget(max_tool_calls=3, max_tokens=14_000, timeout_seconds=120),
         "Read trusted BitPro validation results produced by the existing orchestrator.",
     ),
     "validation_reviewer": RoleDefinition(
@@ -160,7 +160,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "validation_reviewer_v1.md",
         ("research.evidence_read", "research.job_report"),
         True,
-        RoleBudget(max_tool_calls=2),
+        RoleBudget(max_tool_calls=2, max_tokens=16_000),
         "Review deterministic validation evidence without changing gate metrics.",
     ),
     "risk_committee": RoleDefinition(
@@ -169,7 +169,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "risk_committee_v1.md",
         ("research.evidence_read", "world_model.snapshot"),
         True,
-        RoleBudget(max_tool_calls=2),
+        RoleBudget(max_tool_calls=2, max_tokens=18_000),
         "Issue a research candidate decision only; no allocation or trading mutation.",
     ),
 }
