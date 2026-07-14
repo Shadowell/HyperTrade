@@ -4,8 +4,8 @@
 
 - Branch: `main`
 - Harness status: active
-- Planning state: proposed Sprint 96–105 Agent Research OS roadmap completed on
-  2026-07-14 for operator review. The roadmap selectively adopts durable
+- Planning state: approved Sprint 96–105 Agent Research OS roadmap entered
+  implementation with Sprint 96 on 2026-07-14. The roadmap selectively adopts durable
   Session/Task/TUI/Skill capabilities associated with mature Agent runtimes and
   structured role graphs associated with multi-Agent research frameworks while
   preserving HyperTrade's BitPro MCP, evidence, approval, idempotency, paper
@@ -14,8 +14,8 @@
   contracts covering Sessions/Tasks, Evidence V2, the research graph,
   reproducible experiments, robustness validation, Agent evaluation, TUI,
   background triggers, governed Memory/Skills, and portfolio lifecycle review.
-  No runtime, trading, paper, BitPro, provider, deployment, or database behavior
-  changed; Sprint 96 has not started, and the active Sprint 95 remains separate.
+  This activation does not change runtime, trading, paper, BitPro, provider,
+  deployment, or database behavior. Sprint 95 is completed; Sprint 96 is active.
 - Last verified state: Sprint 95 Agent production-readiness evaluation completed
   on 2026-07-14. The isolated API deterministic suite passed 14/14, but the
   real Codex Provider 24-case golden baseline stopped at case 11 with an
@@ -235,8 +235,8 @@
 
 ## Active Contract
 
-- Sprint 95 Agent production-readiness evaluation is active under
-  `docs/contracts/sprint-95-agent-production-readiness-evaluation.md`.
+- Sprint 96 Agent Sessions and Task Control is active under
+  `docs/contracts/sprint-96-agent-sessions-task-control.md`.
 
 ## Approved Follow-On Design
 

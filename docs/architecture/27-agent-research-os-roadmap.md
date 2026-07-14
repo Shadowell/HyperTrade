@@ -1,6 +1,6 @@
 # 27 Agent Research OS 规划路线图
 
-> 状态：Proposed，供操作员评审；不代表已开始实现。
+> 状态：Approved；Sprint 96 已于 2026-07-14 开始实施。
 
 ## 1. 规划目的
 

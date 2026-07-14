@@ -67,9 +67,9 @@ This roadmap does not promise stable profitability and does not add automatic
 live trading, automatic live promotion, direct BitPro database access, or
 BitPro business logic to HyperTrade.
 
-## Proposed Post-Sprint-94 Agent Research OS Roadmap
+## Approved Post-Sprint-95 Agent Research OS Roadmap
 
-The proposed Sprint 96–105 phase is documented in
+The approved Sprint 96–105 phase is documented in
 `docs/architecture/27-agent-research-os-roadmap.md`, with implementation-level
 contracts in `docs/contracts/sprint-96-*` through `docs/contracts/sprint-105-*`
 and the cross-sprint technical design in
@@ -86,7 +86,7 @@ isolated-evaluation boundaries intact while adding:
 - bounded background research triggers, governed Memory/Skill changes, and
   read-only portfolio lifecycle review.
 
-This phase is proposed for operator review. It does not enable automatic paper
+This phase entered implementation with Sprint 96 on 2026-07-14. It does not enable automatic paper
 promotion, automatic live trading, automatic capital allocation, arbitrary
 Agent code execution, or any bypass of BitPro MCP and existing approval gates.
 

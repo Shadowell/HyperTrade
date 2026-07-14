@@ -1,6 +1,6 @@
 # Sprint 96 - Agent Sessions and Task Control
 
-> 状态：Proposed，等待路线图评审后实施。
+> 状态：Active，2026-07-14 经操作员批准进入实施。
 
 ## Goal
 
@@ -35,7 +35,8 @@ AgentRun、ResearchJob 和命令行为兼容。
 
 ## Implementation Plan
 
-1. 定义状态枚举、合法转换表、结构化错误和预算 schema。
+1. 先修复 Sprint 95 暴露的 Provider timeout 裸 HTTP 500：统一映射为可审计、
+   可重试的结构化 Task 错误，再定义状态枚举、合法转换表和预算 schema。
 2. 添加数据库表、唯一约束、sequence 索引、lease/heartbeat 字段与 migration 测试。
 3. 实现事务性 Task 创建：Task 与首个 Event 必须同事务提交。
 4. 实现 Task transition/control；所有 mutation 要求 reason 和 idempotency key。
@@ -73,6 +74,8 @@ Manual/QA：
 
 - SQLite 不提供生产级 skip-locked 并发，开发模式限制单 worker。
 - BitPro 同步调用中断时只能记录结果未知并恢复前 reconcile，不能谎报取消成功。
+- Provider timeout 必须进入 `retry_wait` 或结构化 `failed`，不得以未处理异常中断
+  SSE、整批评测或返回裸 HTTP 500。
 - Task/Event payload 必须使用安全投影，禁止保存 credential 或 private reasoning。
 
 ## Handoff

@@ -1,6 +1,6 @@
 # 28 Agent Research OS 总体技术设计
 
-> 状态：Proposed。本文是 Sprint 96–105 的技术事实草案，评审通过后才进入实现。
+> 状态：Approved。本文是 Sprint 96–105 的技术事实入口，随每个 Sprint 的实际实现更新。
 
 ## 1. 目标与边界
 
