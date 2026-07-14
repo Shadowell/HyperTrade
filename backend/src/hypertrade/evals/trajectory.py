@@ -1,8 +1,8 @@
 """Sanitized Agent trajectories for offline evaluation tools.
 
 Trajectory artifacts are generated only from explicitly labelled isolated eval
-runs. Their schema deliberately keeps only stable tool names and a small
-allowlist of non-sensitive routing arguments.
+runs. Their schema deliberately keeps stable tool names and policy outcomes,
+but never tool arguments.
 """
 
 from __future__ import annotations
@@ -10,22 +10,6 @@ from __future__ import annotations
 from typing import Any
 
 from hypertrade.tools.registry import ToolRegistry
-
-SAFE_ARGUMENT_KEYS = frozenset(
-    {
-        "bar",
-        "exchange",
-        "include_curated",
-        "limit",
-        "page",
-        "per_page",
-        "sample_limit",
-        "strategy_id",
-        "symbol",
-        "symbols",
-        "timeframe",
-    }
-)
 
 
 def build_trajectory_from_api_payload(case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -101,26 +85,10 @@ def _tool_call_from_event(
     output = _dict(event.get("output_json"))
     return {
         "name": name,
-        "args": _safe_args(_dict(event.get("input_json"))),
         "execution_status": str(output.get("execution_status") or event.get("status", "")),
         "policy_outcome": str(output.get("policy_outcome", "")),
         "policy_scope": policy.scope,
     }
-
-
-def _safe_args(args: dict[str, Any]) -> dict[str, str | int | float | bool | list[str]]:
-    sanitized: dict[str, str | int | float | bool | list[str]] = {}
-    for key in SAFE_ARGUMENT_KEYS:
-        if key not in args:
-            continue
-        value = args[key]
-        if isinstance(value, bool | int | float):
-            sanitized[key] = value
-        elif isinstance(value, str):
-            sanitized[key] = value[:80]
-        elif isinstance(value, list) and all(isinstance(item, str) for item in value):
-            sanitized[key] = [item[:80] for item in value[:10]]
-    return sanitized
 
 
 def _dict(value: object) -> dict[str, Any]:

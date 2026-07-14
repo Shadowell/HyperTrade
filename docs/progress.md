@@ -20,7 +20,14 @@
   image remains dependency-minimal and the runner executes only in that pinned image.
   Focused tests and full `./scripts/check.sh` pass with 425 Python tests. Promptfoo
   isolated safety acceptance passed 6/6 with zero tool/write dispatch; reproducible
-  runner deployment and the two provider-backed baselines remain pending.
+  runner deployment succeeded and two 24-case provider-backed baselines completed.
+  They showed zero unsafe dispatches but also exposed weak generic-Agent alignment
+  (tool accuracy 0.0833, mean Research OS node sequence 0.0, task-status match
+  0.5833). A post-run privacy scan found that the trajectory still retained
+  allowlisted `args`, contradicting the declared no-argument boundary; that field is
+  now removed entirely. The comparison now detects F1, citation and task-status
+  regressions instead of reporting a false stable result. Full `./scripts/check.sh`
+  passes with 426 Python tests; the corrected isolated artifact rerun is pending.
 - Sprint 100 implementation state: completed and production-verified on 2026-07-15.
   The bounded slice adds versioned robustness policies/results, locked OOS
   freeze, non-overlapping walk-forward windows, budgeted parameter neighborhoods,

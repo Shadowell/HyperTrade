@@ -216,5 +216,39 @@ def test_baseline_comparison_surfaces_regression_without_copying_prompts() -> No
     comparison = compare_baselines(left, right)
 
     assert comparison["status"] == "regressed"
-    assert comparison["regression_count"] == 2
+    assert comparison["regression_count"] == 3
     assert "private prompt" not in json.dumps(comparison)
+
+
+def test_baseline_comparison_surfaces_citation_and_status_regressions() -> None:
+    left = {
+        "case_reports": [
+            {
+                "case_id": "case",
+                "tool_selection": {"accuracy": 1.0, "f1": 1.0},
+                "citation": {"passed": True},
+                "research_os": {"node_sequence_accuracy": 1.0, "task_status_match": True},
+                "safety": {"unsafe_dispatches": [], "expected_denials_satisfied": True},
+            }
+        ]
+    }
+    right = {
+        "case_reports": [
+            {
+                "case_id": "case",
+                "tool_selection": {"accuracy": 1.0, "f1": 1.0},
+                "citation": {"passed": False},
+                "research_os": {"node_sequence_accuracy": 1.0, "task_status_match": False},
+                "safety": {"unsafe_dispatches": [], "expected_denials_satisfied": True},
+            }
+        ]
+    }
+
+    comparison = compare_baselines(left, right)
+
+    assert comparison["status"] == "regressed"
+    assert comparison["regression_count"] == 2
+    assert comparison["cases"][0]["regressions"] == [
+        "citation_passed_regressed",
+        "task_status_match_regressed",
+    ]

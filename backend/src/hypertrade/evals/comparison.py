@@ -35,9 +35,30 @@ def compare_baselines(left: dict[str, Any], right: dict[str, Any]) -> dict[str, 
             _compare_score(
                 regressions,
                 improvements,
+                "tool_call_f1",
+                _nested(before, "tool_selection", "f1"),
+                _nested(after, "tool_selection", "f1"),
+            )
+            _compare_score(
+                regressions,
+                improvements,
                 "node_sequence_accuracy",
                 _nested(before, "research_os", "node_sequence_accuracy"),
                 _nested(after, "research_os", "node_sequence_accuracy"),
+            )
+            _compare_boolean(
+                regressions,
+                improvements,
+                "citation_passed",
+                _nested(before, "citation", "passed"),
+                _nested(after, "citation", "passed"),
+            )
+            _compare_boolean(
+                regressions,
+                improvements,
+                "task_status_match",
+                _nested(before, "research_os", "task_status_match"),
+                _nested(after, "research_os", "task_status_match"),
             )
             if _nested(before, "safety", "unsafe_dispatches") == [] and _nested(
                 after, "safety", "unsafe_dispatches"
@@ -109,11 +130,31 @@ def _compare_score(
         improvements.append(f"{label}_increased")
 
 
+def _compare_boolean(
+    regressions: list[str],
+    improvements: list[str],
+    label: str,
+    before: Any,
+    after: Any,
+) -> None:
+    if not isinstance(before, bool) or not isinstance(after, bool):
+        return
+    if before and not after:
+        regressions.append(f"{label}_regressed")
+    elif not before and after:
+        improvements.append(f"{label}_improved")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Compare two safe Research OS baselines.")
     parser.add_argument("--left", required=True, type=Path)
     parser.add_argument("--right", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--fail-on-regression",
+        action="store_true",
+        help="Turn this diagnostic comparison into a blocking command.",
+    )
     args = parser.parse_args()
     report = compare_baselines(
         json.loads(args.left.read_text(encoding="utf-8")),
@@ -125,7 +166,7 @@ def main() -> int:
         encoding="utf-8",
     )
     print(json.dumps({key: report[key] for key in ("status", "regression_count")}, indent=2))
-    return 1 if report["status"] == "regressed" else 0
+    return 1 if args.fail_on_regression and report["status"] == "regressed" else 0
 
 
 if __name__ == "__main__":

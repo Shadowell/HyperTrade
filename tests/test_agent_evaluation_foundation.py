@@ -216,14 +216,12 @@ def test_trajectory_projection_removes_prompt_and_sensitive_tool_arguments() -> 
         "tool_calls": [
             {
                 "name": "market_ticker",
-                "args": {"symbol": "ETH"},
                 "execution_status": "completed",
                 "policy_outcome": "",
                 "policy_scope": "read",
             },
             {
                 "name": "memory_write",
-                "args": {},
                 "execution_status": "denied",
                 "policy_outcome": "",
                 "policy_scope": "research_write",
