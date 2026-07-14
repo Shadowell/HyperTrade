@@ -33,6 +33,7 @@ def test_role_catalog_has_fixed_versioned_topology_and_prompt_hashes() -> None:
         "risk_committee",
     }
     assert all(len(role.prompt_hash) == 64 for role in ROLE_CATALOG.values())
+    assert sum(role.budget.max_tokens for role in ROLE_CATALOG.values()) <= 300_000
     assert topology["edges"][-1] == {"from": ["risk_committee"], "to": "__end__"}
 
 
