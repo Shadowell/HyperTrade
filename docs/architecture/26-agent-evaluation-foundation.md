@@ -48,7 +48,14 @@ Run evaluation commands from a trusted operator session with:
 ```bash
 export HYPERTRADE_EVAL_TARGET=isolated
 export HYPERTRADE_EVAL_BASE_URL=http://127.0.0.1:4334
+./scripts/run_agent_eval_baseline.sh
 ```
+
+The baseline launcher is a Docker orchestrator, not a Python environment
+bootstrapper. Run `deploy/deploy-eval.sh` first so the version-matched
+`hypertrade-agent-eval:latest` image exists. That image is built from the
+`agent-eval` target with the locked `agent-evals` extra; the production image
+does not carry those optional packages.
 
 The server-side environment may mount a Codex authentication file only as a
 read-only Compose secret. Do not copy OAuth contents into `.env`, trajectory

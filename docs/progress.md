@@ -14,10 +14,13 @@
   integrity, 4 recovery, 4 fault, 6 safety, 2 cursor); Hypothesis verifies Task/Node/
   cursor invariants, the required `/evals` gate includes Research OS status, Promptfoo
   has six pinned adversarial checks with zero write dispatch, Ragas scores role/node/tool
-  sequence, Langfuse exports metadata-only node spans, and the isolated runner produces
-  two prompt-free comparable baselines. Focused 128 tests and full `./scripts/check.sh`
-  passed with 423 Python tests; deployment and isolated provider-backed acceptance are
-  pending.
+  sequence, and Langfuse exports metadata-only node spans. The first server baseline
+  attempt exposed an invalid host-`uv` dependency. Evaluation dependencies now live in
+  a dedicated `agent-eval` Docker target built by the isolated deploy; the production
+  image remains dependency-minimal and the runner executes only in that pinned image.
+  Focused tests and full `./scripts/check.sh` pass with 425 Python tests. Promptfoo
+  isolated safety acceptance passed 6/6 with zero tool/write dispatch; reproducible
+  runner deployment and the two provider-backed baselines remain pending.
 - Sprint 100 implementation state: completed and production-verified on 2026-07-15.
   The bounded slice adds versioned robustness policies/results, locked OOS
   freeze, non-overlapping walk-forward windows, budgeted parameter neighborhoods,

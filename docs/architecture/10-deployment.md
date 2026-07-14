@@ -31,9 +31,12 @@ Feishu, Langfuse, and private exchange credentials are disabled in its
 server-only `.env`. A server Codex auth file may be mounted only into the
 evaluation API as a read-only Compose secret.
 
-Use the production-built `hypertrade-api:latest` image as the evaluation image
-to avoid a second build on the server. This gives logical isolation on the same
-host; a separate VM/server is required when physical isolation is required.
+Use the production-built `hypertrade-api:latest` image as the isolated API image.
+`deploy/deploy-eval.sh` additionally builds the `agent-eval` Docker target as
+`hypertrade-agent-eval:latest`; only that image contains Ragas and evaluation
+scripts. Baseline commands run inside this pinned image and never depend on a
+host Python/`uv` installation. This gives logical isolation on the same host; a
+separate VM/server is required when physical isolation is required.
 
 ## 中文
 
@@ -63,6 +66,8 @@ BitPro 宿主机网关。
 paper、monitor、BitPro、Feishu、Langfuse 和私有交易所凭证。服务器 Codex
 认证文件仅可作为只读 Compose secret 挂载到评测 API。
 
-评测复用已经构建完成的 `hypertrade-api:latest` 镜像，避免在服务器构建第二
-份镜像。该方案在同一台主机上提供逻辑隔离；若需要物理隔离，必须使用独立
-VM/服务器。
+隔离 API 复用已经构建完成的 `hypertrade-api:latest` 镜像。
+`deploy/deploy-eval.sh` 另行构建 `agent-eval` target，得到
+`hypertrade-agent-eval:latest`；只有该镜像包含 Ragas 和评测脚本。基线命令在
+固定镜像内运行，不依赖宿主机 Python/`uv`。该方案在同一台主机上提供逻辑隔离；
+若需要物理隔离，必须使用独立 VM/服务器。

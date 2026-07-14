@@ -3,8 +3,10 @@
 set -euo pipefail
 
 ROOT_DIR="${HYPERTRADE_EVAL_ROOT:-/opt/hypertrade-eval}"
+SOURCE_DIR="${HYPERTRADE_SOURCE_ROOT:-/opt/hypertrade}"
 ENV_FILE="$ROOT_DIR/.env"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.eval.yml"
+EVAL_RUNNER_IMAGE="${HYPERTRADE_EVAL_RUNNER_IMAGE:-hypertrade-agent-eval:latest}"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "[eval-deploy] missing $ENV_FILE"
@@ -44,6 +46,11 @@ if ! docker image inspect "$eval_image" >/dev/null 2>&1; then
   exit 1
 fi
 
+if [ ! -f "$SOURCE_DIR/backend/Dockerfile" ]; then
+  echo "[eval-deploy] missing source tree at $SOURCE_DIR"
+  exit 1
+fi
+
 chmod 600 "$ENV_FILE"
 mkdir -p "$ROOT_DIR/data/postgres" "$ROOT_DIR/eval-artifacts"
 
@@ -51,6 +58,13 @@ compose=(docker compose --project-name hypertrade-eval --env-file "$ENV_FILE" -f
 
 echo "[eval-deploy] validating isolated Compose configuration"
 "${compose[@]}" config -q
+
+echo "[eval-deploy] building reproducible Agent evaluation runner"
+docker build \
+  --target agent-eval \
+  --tag "$EVAL_RUNNER_IMAGE" \
+  --file "$SOURCE_DIR/backend/Dockerfile" \
+  "$SOURCE_DIR"
 
 echo "[eval-deploy] starting isolated postgres"
 "${compose[@]}" up -d postgres

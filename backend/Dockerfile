@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -19,3 +19,12 @@ EXPOSE 3334
 
 CMD ["uvicorn", "hypertrade.main:app", "--host", "0.0.0.0", "--port", "3334"]
 
+# Evaluation dependencies and scripts stay out of the production image. The
+# isolated deployment builds this target explicitly for reproducible baselines.
+FROM runtime AS agent-eval
+
+COPY scripts ./scripts
+
+RUN uv sync --frozen --no-dev --extra agent-evals
+
+FROM runtime AS production

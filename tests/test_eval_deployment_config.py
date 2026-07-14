@@ -45,3 +45,16 @@ def test_eval_deploy_script_only_manages_the_isolated_project() -> None:
     assert "up -d --force-recreate api" in deploy
     assert "worker profile remains disabled" in deploy
     assert "http://127.0.0.1:${eval_port}/api/health" in deploy
+    assert "--target agent-eval" in deploy
+    assert (
+        'EVAL_RUNNER_IMAGE="${HYPERTRADE_EVAL_RUNNER_IMAGE:-hypertrade-agent-eval:latest}"'
+        in deploy
+    )
+
+
+def test_agent_eval_runner_is_a_separate_docker_target() -> None:
+    dockerfile = (REPO_ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "FROM runtime AS agent-eval" in dockerfile
+    assert "RUN uv sync --frozen --no-dev --extra agent-evals" in dockerfile
+    assert "FROM runtime AS production" in dockerfile
