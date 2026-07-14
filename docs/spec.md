@@ -94,6 +94,10 @@ Sprint 97 entered implementation on 2026-07-14 after Sprint 96 production
 acceptance. Its active boundary is the append-only Research Evidence V2 contract;
 the multi-Agent role graph remains deferred to Sprint 98.
 
+Sprint 98 entered implementation on 2026-07-14 after Sprint 97 production
+acceptance. It adds only the fixed, bounded research role graph; Evidence V2 and
+the durable Task/Node control plane remain mandatory facts of record.
+
 ## V1 In Scope
 
 - Harness routing: sidebar destinations are independent, refreshable SPA paths

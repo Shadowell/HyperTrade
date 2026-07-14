@@ -1,6 +1,6 @@
 # Sprint 98 - Multi-Agent Research Graph V1
 
-> 状态：Proposed，依赖 Sprint 96–97。
+> 状态：Active，Sprint 96–97 已完成；2026-07-14 经操作员批准进入实施。
 
 ## Goal
 

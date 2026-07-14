@@ -4,6 +4,12 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 98 implementation state: active on 2026-07-14. The bounded scope is a
+  fixed LangGraph research DAG, versioned role definitions/prompts/schemas,
+  intersected read-only tool policy, per-role/global budgets, durable Node/Event/
+  Checkpoint state, Evidence V2-only role outputs, and graph/API projections.
+  Dynamic agents, arbitrary code/tools, paper/live writes, and automatic capital
+  decisions remain out of scope.
 - Sprint 97 implementation state: completed and production-verified on
   2026-07-14. Evidence V2 now
   has discriminated schemas, canonical UTC/Decimal hashing, append-only records
@@ -42,7 +48,7 @@
   background triggers, governed Memory/Skills, and portfolio lifecycle review.
   This activation does not change runtime, trading, paper, BitPro, provider,
   deployment, or database behavior. Sprint 95 and Sprint 96 are completed;
-  Sprint 97 is completed; Sprint 98 is next.
+  Sprint 97 is completed; Sprint 98 is active.
 - Last verified state: Sprint 95 Agent production-readiness evaluation completed
   on 2026-07-14. The isolated API deterministic suite passed 14/14, but the
   real Codex Provider 24-case golden baseline stopped at case 11 with an

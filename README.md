@@ -376,6 +376,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Enhanced output formatting | Complete |
 | Agent Session and Task OS | Production |
 | Research Evidence V2 contract | Production |
+| Multi-Agent research graph V1 | In Progress |
 
 ### Planned (V3+)
 
