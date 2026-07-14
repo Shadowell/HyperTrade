@@ -403,8 +403,13 @@ fail closed during normal Memory search. Skills require static policy, an HMAC-v
 isolated evaluation and separate administrator approval before an immutable release can
 enter a matching role prompt. They cannot add tools, execute code or widen paper/live
 permissions. Operators review the same state through Web Memory governance, the TUI
-Governance tab, or `/assertions` and `/skills` in the CLI. Production acceptance is
-pending; an empty `SKILL_EVAL_ATTESTATION_SECRET` intentionally blocks eval imports.
+Governance tab, or `/assertions` and `/skills` in the CLI. Production acceptance passed;
+an empty `SKILL_EVAL_ATTESTATION_SECRET` intentionally blocks eval imports until the
+server operator configures the shared isolated-evaluation secret.
+
+Sprint 105 is implementing portfolio-level strategy lifecycle review. It will preserve
+unknown data, bounded correlation/exposure evidence and human accept/reject/hold records,
+while prohibiting automatic capital, rebalance, pause/start, promotion or order actions.
 
 ---
 

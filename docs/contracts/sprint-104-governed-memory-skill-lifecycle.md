@@ -1,6 +1,6 @@
 # Sprint 104 - Governed Memory and Skill Lifecycle
 
-> 状态：Implementation complete / production acceptance pending；2026-07-15 本地门禁通过。
+> 状态：Completed；2026-07-15 本地与生产验收通过。
 
 ## Goal
 
@@ -92,3 +92,11 @@ uv run pytest tests/test_agent_research_evals.py tests/test_agent_tool_policy.py
 - PostgreSQL migration：`0017` upgrade → `0016` downgrade → `0017` upgrade，8 表存在。
 - 聚焦 Assertion/Skill/API/CLI/TUI/role-loader 测试通过；伪造 attestation、过期来源、
   冲突 assertion、恶意 Skill、未评测发布与 hash tamper 均 fail closed。
+
+## Production Acceptance
+
+- Commit `d4d43bb` 在 workflow `29363666735` 部署成功，记录 SHA 完全一致。
+- API/Worker 正常，最近部署日志无 error/traceback；PostgreSQL head 为
+  `0017_memory_skills`，8/8 治理表存在。
+- 管理员读取 Assertion、proposal、release 均 HTTP 200 且为空，没有生产内容被激活。
+- 生产共享 attestation secret 尚未配置；伪造证明导入返回 HTTP 409，验证默认 fail closed。

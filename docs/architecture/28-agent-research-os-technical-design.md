@@ -910,6 +910,8 @@ FastAPI mutation 均要求管理员，CLI `/assertions`、`/skills`、Textual Go
 Web `/harness/memory` 只传 resource id、decision、reason/idempotency。角色 provider 在 plan、
 synthesize、repair 三条模型路径追加相同 approved template；worker 与 API runtime 使用
 同一 loader。生产未配置 attestation secret 时仍可查看/提案，但不能导入评测或发布。
+Commit `d4d43bb` 经 workflow `29363666735` 部署，`0017_memory_skills`、8/8 表、空队列、
+健康日志和伪造 attestation HTTP 409 均通过生产验收。
 
 ## 14. Sprint 105：Portfolio Strategy Lifecycle
 

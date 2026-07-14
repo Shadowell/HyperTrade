@@ -4,8 +4,15 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 104 implementation state: locally complete on 2026-07-15; production acceptance
-  is pending. Eight `0017_memory_skills` tables, source-bound `MemoryAssertionV1`,
+- Sprint 105 implementation state: active on 2026-07-15 after Sprint 104 production
+  acceptance. This final roadmap slice adds persisted `PortfolioAssessmentV2` and
+  human-reviewed lifecycle decisions over bounded StrategyCard, WorldState, paper,
+  monitor, Evidence and BitPro read projections. It must preserve unknown for insufficient
+  or misaligned series, never copy full long-lived return/equity histories, and can only
+  recommend observation, targeted research or review. Automatic capital allocation,
+  rebalance, BitPro/paper/live mutation and orders remain prohibited.
+- Sprint 104 implementation state: completed and production-verified on 2026-07-15.
+  Eight `0017_memory_skills` tables, source-bound `MemoryAssertionV1`,
   explicit conflict/supersede/expiry, ordinary-search fail-closed compatibility Memory,
   code-free Skill proposal/static-check/evaluation/approval/release/rollback, immutable
   versions and role-scoped approved loading are implemented. Isolated evaluation
@@ -15,7 +22,10 @@
   Web Memory review surfaces all delegate to the same server state machine. PostgreSQL
   `0017 -> 0016 -> 0017` migration passed; full `./scripts/check.sh` passed with frontend
   lint/8 tests/build, Ruff, mypy over 138 source files and 464 Python tests. No Skill or
-  Assertion has been activated in production; deployment verification is next.
+  Assertion was activated in production. Commit `d4d43bb` deployed in workflow
+  `29363666735`; SHA/health/log/API/8-table checks passed. The production attestation
+  secret remains absent, so forged import returned 409 and releases remain fail closed.
+  Sprint 105 Portfolio Strategy Lifecycle is next and active.
 - Sprint 103 implementation state: completed and production-verified on 2026-07-15.
   The bounded slice adds
   disabled-by-default durable research triggers,
@@ -32,7 +42,7 @@
   PostgreSQL migrated to `0016_research_triggers`, authenticated trigger projection
   returned no rules/fires, worker probe returned `disabled`, and API/worker health
   remained normal. Production remains disabled until explicit operator configuration.
-  Sprint 104 Governed Memory and Skill Lifecycle is next.
+  Sprint 104 Governed Memory and Skill Lifecycle is completed.
 - Sprint 102 implementation state: completed and production-verified on 2026-07-15
   after Sprint 101 isolated
   acceptance. The bounded slice adds an optional Textual terminal workbench over
@@ -172,8 +182,7 @@
   reproducible experiments, robustness validation, Agent evaluation, TUI,
   background triggers, governed Memory/Skills, and portfolio lifecycle review.
   This activation does not change runtime, trading, paper, BitPro, provider,
-  deployment, or database behavior. Sprint 95 and Sprint 96 are completed;
-  Sprints 96–101 are completed; Sprint 102 is next.
+  deployment, or database behavior. Sprints 96–104 are completed; Sprint 105 is active.
 - Last verified state: Sprint 95 Agent production-readiness evaluation completed
   on 2026-07-14. The isolated API deterministic suite passed 14/14, but the
   real Codex Provider 24-case golden baseline stopped at case 11 with an

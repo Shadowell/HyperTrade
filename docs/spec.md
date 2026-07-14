@@ -157,8 +157,7 @@ PostgreSQL row locks/leases, and API/CLI/TUI controls require administrator auth
 and operator reasons. Production migration `0016_research_triggers` is active while
 the worker feature remains explicitly disabled.
 
-Sprint 104 completed local implementation on 2026-07-15 and awaits production
-acceptance. Governed Memory assertions require active Evidence V2 sources and explicit
+Sprint 104 completed production acceptance on 2026-07-15. Governed Memory assertions require active Evidence V2 sources and explicit
 review; conflicts, supersession and expiry remain queryable while ordinary Memory reads
 fail closed. Code-free Skill definitions pass schema/static policy, a HMAC-authenticated
 isolated regression attestation and independent administrator approval before an
@@ -166,6 +165,11 @@ immutable version can become active. The role loader rechecks release hash, sche
 role and tool-policy intersection and injects template metadata only. It cannot execute
 Python/shell, register endpoints/tools or widen paper/live permission. API, CLI, TUI and
 Web review surfaces contain no alternate state transition logic.
+
+Sprint 105 entered implementation on 2026-07-15. Its active boundary is a read-only,
+evidence-linked portfolio strategy lifecycle assessment with explicit unknown handling
+and human review decisions. It cannot allocate capital, rebalance, pause/start BitPro or
+paper strategies, promote to live, place orders, or overwrite historical research facts.
 
 ## V1 In Scope
 
