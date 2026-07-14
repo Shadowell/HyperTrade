@@ -18,10 +18,16 @@
   PR `#570` fixed and deployed the authenticated transport in workflow `29351668545`;
   production MCP initialize and a generated-candidate sandbox validation now pass.
   HyperTrade now uses the official MCP Python client for local-only tools, maps the
-  validator's real `code` schema, and emits a valid asynchronous dynamic BaseStrategy
-  instead of the historical no-op/incompatible class. Full `./scripts/check.sh`
-  passed with `402 passed`; HyperTrade deployment and the original ResearchJob rerun
-  remain pending before Sprint 100 can close.
+  validator's real `code` schema, and emits a BitPro-native asynchronous dynamic
+  BaseStrategy instead of the historical incompatible constructor/history API.
+  Validation is fail-closed with `smoke=true`, exact symbol/market/timeframe context,
+  and terminal backtest status diagnostics before downstream evidence handling.
+  This exposed BitPro's nested `asyncio.run()` defect; BitPro PR `#571` split sync and
+  async validation entrypoints, deployed in workflow `29353194135`, and the generated
+  HyperTrade strategy then passed the production 120-bar runtime smoke with
+  `valid=true, smoke=true`. Full `./scripts/check.sh` passed with `403 passed`;
+  HyperTrade deployment and a new immutable successor ResearchJob remain pending
+  before Sprint 100 can close.
 - Sprint 99 implementation state: completed and production-verified on 2026-07-14.
   `ExperimentManifestV1` canonicalizes StrategySpec, code/data/cost/window and version
   hashes into a stable SHA-256 fingerprint. PostgreSQL stores immutable manifests,

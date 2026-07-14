@@ -47,7 +47,14 @@ class BitProResearchAdapter(Protocol):
     ) -> dict[str, Any]: ...
 
     def strategy_validate_code(
-        self, *, script_content: str, idempotency_key: str
+        self,
+        *,
+        script_content: str,
+        idempotency_key: str,
+        symbols: list[str] | None = None,
+        market_type: str = "spot",
+        timeframe: str = "1m",
+        smoke: bool = True,
     ) -> dict[str, Any]: ...
 
     def strategy_create(
@@ -146,9 +153,7 @@ class ResearchOrchestrator:
                     task_id=str(job.get("source_run_id", "")),
                     force_rerun=job["status"] == "failed",
                     force_reason=(
-                        "operator retried failed ResearchJob"
-                        if job["status"] == "failed"
-                        else ""
+                        "operator retried failed ResearchJob" if job["status"] == "failed" else ""
                     ),
                 ),
                 actor="research_orchestrator",
@@ -176,7 +181,11 @@ class ResearchOrchestrator:
             ExperimentLedgerService(self.db).start(execution_id)
             _ensure_research_budget(job=job, mandate=mandate, window_count=len(windows))
             self._advance(job_id, "strategy_validation")
-            self._validate_strategy(job=job, script_content=script_content)
+            self._validate_strategy(
+                job=job,
+                mandate=mandate,
+                script_content=script_content,
+            )
             strategy_id = self._create_strategy(
                 job=job, mandate=mandate, script_content=script_content
             )
@@ -285,9 +294,7 @@ class ResearchOrchestrator:
         self, *, job: dict[str, Any], mandate: dict[str, Any]
     ) -> dict[str, dict[str, str]]:
         capabilities = self.adapter.capabilities()
-        self.bitpro_contract_version = str(
-            capabilities.get("contract_version") or "unknown"
-        )
+        self.bitpro_contract_version = str(capabilities.get("contract_version") or "unknown")
         health = self.adapter.health()
         self._record("bitpro_capabilities", capabilities)
         self._record("bitpro_health", health)
@@ -330,10 +337,20 @@ class ResearchOrchestrator:
         self.preflight_candle_times = [_candle_time(row) for row in candles]
         return _chronological_windows(candles, validation=validation)
 
-    def _validate_strategy(self, *, job: dict[str, Any], script_content: str) -> None:
+    def _validate_strategy(
+        self,
+        *,
+        job: dict[str, Any],
+        mandate: dict[str, Any],
+        script_content: str,
+    ) -> None:
         result = self.adapter.strategy_validate_code(
             script_content=script_content,
             idempotency_key=_idempotency_key(str(job["id"]), "validate"),
+            symbols=[str(symbol) for symbol in job["strategy_spec"]["symbols"]],
+            market_type=str(mandate["market_type"]).casefold(),
+            timeframe=str(job["strategy_spec"]["timeframes"][0]),
+            smoke=True,
         )
         self._record("strategy_validate_code", result)
         raw_validation = result.get("validation")
@@ -460,6 +477,11 @@ class ResearchOrchestrator:
             self._record("backtest_start_job", payload)
             detail = _result_from_backtest_payload(payload)
             if not detail:
+                raw_job = payload.get("job")
+                backtest_job = cast(dict[str, Any], raw_job) if isinstance(raw_job, dict) else {}
+                status = str(backtest_job.get("status", "")).casefold()
+                if status in {"failed", "error", "cancelled", "canceled"}:
+                    raise ResearchRejected(f"bitpro_backtest_{status}:{variant_id}:{window_name}")
                 raise ResearchRejected(
                     f"completed_bitpro_result_missing:{variant_id}:{window_name}"
                 )
@@ -676,10 +698,7 @@ def _experiment_manifest(
         ExperimentWindow(
             name=name,
             start=datetime.fromisoformat(value["start_date"]).replace(tzinfo=UTC),
-            end=(
-                datetime.fromisoformat(value["end_date"]).replace(tzinfo=UTC)
-                + _one_day()
-            ),
+            end=(datetime.fromisoformat(value["end_date"]).replace(tzinfo=UTC) + _one_day()),
         )
         for name, value in sorted(windows.items())
     ]
@@ -710,9 +729,7 @@ def _experiment_manifest(
             model="deterministic_bitpro_matrix_v1",
             prompt_hash=_sha256(" ".join(str(job["prompt"]).split())),
             tool_registry_hash=_tool_registry_hash(),
-            policy_hash=_sha256(
-                json.dumps(policy_payload, separators=(",", ":"), sort_keys=True)
-            ),
+            policy_hash=_sha256(json.dumps(policy_payload, separators=(",", ":"), sort_keys=True)),
             mcp_contract_version=mcp_contract_version,
             git_commit_sha=os.getenv("HYPERTRADE_GIT_SHA", "unknown0")[:64],
         ),
@@ -915,13 +932,13 @@ def _compile_strategy(strategy_key: str) -> str:
     class_name = "Research" + "".join(part.capitalize() for part in strategy_key.split("_"))[:80]
     return "\n".join(
         [
+            "from collections import deque",
             "from app.core.execution.base_strategy import BaseStrategy",
             "",
             f"class {class_name}(BaseStrategy):",
             '    """Bounded dynamic DB moving-average research candidate."""',
             "",
-            "    def __init__(self, config=None):",
-            "        super().__init__(config or {})",
+            "    async def on_init(self):",
             '        params = self.config.get("research_parameters", {})',
             '        self.fast_window = max(2, int(params.get("fast_window", 8)))',
             (
@@ -932,24 +949,32 @@ def _compile_strategy(strategy_key: str) -> str:
                 "        self.trade_notional_usdt = float("
                 'self.config.get("trade_notional_usdt", 1000.0))'
             ),
+            '        self.leverage = float(self.config.get("leverage", 2.0))',
+            "        self._closes = {",
+            "            symbol: deque(maxlen=self.slow_window) for symbol in self.symbols()",
+            "        }",
+            "        self._direction = {symbol: 0 for symbol in self.symbols()}",
             "",
             "    async def on_bar(self, bar):",
-            '        symbol = bar.symbol or self.config.get("symbol")',
-            "        close = float(bar.close or 0)",
-            "        if not symbol or close <= 0:",
+            "        symbol = bar.symbol",
+            "        close = float(bar.close)",
+            "        if symbol not in self._closes or close <= 0:",
             "            return None",
-            "        history = self.get_recent_bars(symbol, limit=self.slow_window)",
-            "        if len(history) < self.slow_window:",
+            "        closes = self._closes[symbol]",
+            "        closes.append(close)",
+            "        if len(closes) < self.slow_window:",
             "            return None",
-            "        closes = [float(item.close or 0) for item in history]",
-            "        fast_ma = sum(closes[-self.fast_window:]) / self.fast_window",
-            "        slow_ma = sum(closes[-self.slow_window:]) / self.slow_window",
-            "        position = self.get_position(symbol)",
-            "        quantity = float(position.quantity or 0) if position else 0.0",
-            "        if fast_ma > slow_ma and quantity <= 0:",
-            "            return self.buy(symbol=symbol, amount=self.trade_notional_usdt / close)",
-            "        if fast_ma < slow_ma and quantity > 0:",
-            "            return self.sell(symbol=symbol, amount=quantity)",
+            "        values = list(closes)",
+            "        fast_ma = sum(values[-self.fast_window:]) / self.fast_window",
+            "        slow_ma = sum(values) / self.slow_window",
+            "        if fast_ma > slow_ma and self._direction[symbol] == 0:",
+            "            await self.open_contract(",
+            '                symbol, "long", self.trade_notional_usdt, leverage=self.leverage',
+            "            )",
+            "            self._direction[symbol] = 1",
+            "        elif fast_ma < slow_ma and self._direction[symbol] == 1:",
+            '            await self.close_contract(symbol, "long")',
+            "            self._direction[symbol] = 0",
             "        return None",
             "",
         ]

@@ -591,13 +591,25 @@ class BitProToolAdapter:
         *,
         script_content: str,
         idempotency_key: str,
+        symbols: list[str] | None = None,
+        market_type: str = "spot",
+        timeframe: str = "1m",
+        smoke: bool = True,
     ) -> dict[str, Any]:
-        """Call BitPro's validator while retaining HyperTrade's local audit key."""
+        """Run BitPro's sandbox and deterministic runtime smoke validation."""
         self.last_tool_calls = []
         capabilities, health = self._preflight()
         validation = self._call(
             "strategy_validate_code",
-            {"code": script_content},
+            _compact(
+                {
+                    "code": script_content,
+                    "symbols": symbols,
+                    "market_type": market_type,
+                    "timeframe": _normalize_bitpro_timeframe(timeframe),
+                    "smoke": smoke,
+                }
+            ),
         )
         return {
             "status": "ok",

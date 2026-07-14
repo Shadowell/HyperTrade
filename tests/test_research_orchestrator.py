@@ -21,11 +21,13 @@ class FixtureBitProAdapter:
         missing_locked_metric: bool = False,
         unhealthy: bool = False,
         missing_robustness_result: bool = False,
+        failed_backtest: bool = False,
     ) -> None:
         self.calls: list[str] = []
         self.missing_locked_metric = missing_locked_metric
         self.unhealthy = unhealthy
         self.missing_robustness_result = missing_robustness_result
+        self.failed_backtest = failed_backtest
         self.result_number = 0
 
     def capabilities(self) -> dict[str, Any]:
@@ -57,10 +59,16 @@ class FixtureBitProAdapter:
 
     def strategy_validate_code(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append("strategy_validate_code")
-        assert "from app.core.execution.base_strategy import BaseStrategy" in kwargs[
-            "script_content"
-        ]
+        assert (
+            "from app.core.execution.base_strategy import BaseStrategy" in kwargs["script_content"]
+        )
         assert "async def on_bar(self, bar):" in kwargs["script_content"]
+        assert "def __init__" not in kwargs["script_content"]
+        assert "get_recent_bars" not in kwargs["script_content"]
+        assert kwargs["symbols"] == ["BTC"]
+        assert kwargs["market_type"] == "swap"
+        assert kwargs["timeframe"] == "1H"
+        assert kwargs["smoke"] is True
         return {"validation": {"valid": True}, "tool_calls": []}
 
     def strategy_create(self, **kwargs: Any) -> dict[str, Any]:
@@ -77,6 +85,11 @@ class FixtureBitProAdapter:
     def backtest_start_job(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append("backtest_start_job")
         self.result_number += 1
+        if self.failed_backtest:
+            return {
+                "job": {"job_id": "bp_job_failed", "status": "failed"},
+                "tool_calls": [],
+            }
         metrics: dict[str, str] = {
             "total_return_pct": str(self.result_number),
             "max_drawdown_pct": "8.5",
@@ -196,6 +209,18 @@ def test_orchestrator_rejects_missing_locked_metric_without_paper_action() -> No
         for reason in row["rejection_reasons"]
     )
     assert "paper_configure" not in adapter.calls
+
+
+def test_orchestrator_reports_terminal_bitpro_backtest_failure() -> None:
+    db, job_id = _queued_job()
+    adapter = FixtureBitProAdapter(failed_backtest=True)
+
+    report = ResearchOrchestrator(db, bitpro_adapter=adapter).run(job_id)
+
+    assert report["job"]["status"] == "rejected"
+    assert report["job"]["transitions"][-1]["reason"] == (
+        "bitpro_backtest_failed:baseline:in_sample"
+    )
 
 
 def test_orchestrator_marks_partial_robustness_result_needs_data() -> None:

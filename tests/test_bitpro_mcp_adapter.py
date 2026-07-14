@@ -109,6 +109,10 @@ def test_strategy_validation_uses_remote_mcp_after_health_preflight() -> None:
     result = BitProToolAdapter(client).strategy_validate_code(
         script_content="class Research(BaseStrategy):\n    pass\n",
         idempotency_key="validate-remote-001",
+        symbols=["BTC/USDT:USDT"],
+        market_type="swap",
+        timeframe="1H",
+        smoke=True,
     )
 
     assert result["validation"]["valid"] is True
@@ -117,6 +121,10 @@ def test_strategy_validation_uses_remote_mcp_after_health_preflight() -> None:
             "strategy_validate_code",
             {
                 "code": "class Research(BaseStrategy):\n    pass\n",
+                "symbols": ["BTC/USDT:USDT"],
+                "market_type": "swap",
+                "timeframe": "1h",
+                "smoke": True,
             },
         )
     ]
