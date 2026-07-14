@@ -30,7 +30,12 @@ if [ -t 1 ] && [ "${HYPERTRADE_RENDERER+x}" != "x" ]; then
   env_args+=("-e" "HYPERTRADE_RENDERER=rich")
 fi
 
+service="api"
+if [ "${1:-}" = "tui" ]; then
+  service="cli"
+fi
+
 # Run the CLI in a short-lived client container instead of exec'ing into the
 # long-running API service. Deploys can replace hypertrade-api without killing
 # this terminal session.
-exec docker compose run --rm --no-deps "${env_args[@]}" api hypertrade "$@"
+exec docker compose run --rm --no-deps "${env_args[@]}" "$service" hypertrade "$@"

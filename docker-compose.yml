@@ -60,6 +60,22 @@ services:
     networks:
       - hypertrade
 
+  cli:
+    profiles: ["cli"]
+    image: hypertrade-tui:latest
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: tui
+    env_file:
+      - .env
+    environment:
+      HYPERTRADE_API_URL: http://api:3334
+    depends_on:
+      - api
+    networks:
+      - hypertrade
+
 networks:
   hypertrade:
     name: hypertrade

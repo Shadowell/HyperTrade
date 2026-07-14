@@ -10,7 +10,12 @@
   experiments, validations and approvals. It may request task controls only through
   authenticated API reason/idempotency contracts; it cannot access the database,
   ToolRegistry, BitPro or trading services directly. Existing chat/plain/Web surfaces
-  and all paper/live boundaries remain unchanged.
+  and all paper/live boundaries remain unchanged. Textual `8.2.8` is pinned in the
+  optional `tui` extra; UI-independent store/cursor models, remote/local client
+  methods, responsive workbench panels, multiline task creation, reason-required
+  control modals, cursor SSE reconciliation and a separate short-lived TUI Docker
+  target are implemented. Focused TUI/CLI/API/deploy regressions pass (`91 passed`);
+  full gate and production TTY acceptance are pending.
 - Sprint 101 implementation state: completed and isolated-production-verified on
   2026-07-15 after Sprint 100 production
   acceptance. The bounded slice adds versioned Research OS golden cases, deterministic

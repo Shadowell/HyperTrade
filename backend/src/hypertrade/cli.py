@@ -29,6 +29,7 @@ from sqlalchemy import desc, select
 
 from hypertrade.agent.kernel import AgentKernel, CompletedAgentRun
 from hypertrade.agent.sessions import AgentSessionCreate, AgentSessionService, session_to_dict
+from hypertrade.agent.task_events import TaskEventService, task_event_to_dict
 from hypertrade.agent.task_executor import AgentTaskExecutor
 from hypertrade.agent.tasks import (
     AgentTaskCreate,
@@ -77,9 +78,27 @@ class AgentClient(Protocol):
 
     def list_agent_sessions(self) -> list[dict[str, Any]]: ...
 
+    def create_agent_session(self, title: str) -> dict[str, Any]: ...
+
     def list_agent_tasks(self) -> list[dict[str, Any]]: ...
 
+    def create_agent_task(
+        self,
+        session_id: str,
+        objective: str,
+        *,
+        kind: str = "chat_run",
+    ) -> dict[str, Any]: ...
+
     def get_agent_task(self, task_id: str) -> dict[str, Any]: ...
+
+    def list_agent_task_events(
+        self, task_id: str, *, after: int = 0
+    ) -> list[dict[str, Any]]: ...
+
+    def stream_agent_task_events(
+        self, task_id: str, *, after: int = 0
+    ) -> Iterator[dict[str, Any]]: ...
 
     def research_graph_topology(self) -> dict[str, Any]: ...
 
@@ -698,11 +717,70 @@ class AgentApiClient:
     def list_agent_sessions(self) -> list[dict[str, Any]]:
         return self._get_list("/api/agent/sessions", "sessions")
 
+    def create_agent_session(self, title: str) -> dict[str, Any]:
+        return self._post_object(
+            "/api/agent/sessions",
+            {"title": title, "surface": "tui", "created_by": "tui_operator"},
+        )
+
     def list_agent_tasks(self) -> list[dict[str, Any]]:
         return self._get_list("/api/agent/tasks", "tasks")
 
+    def create_agent_task(
+        self,
+        session_id: str,
+        objective: str,
+        *,
+        kind: str = "chat_run",
+    ) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/agent/sessions/{quote(session_id, safe='')}/tasks",
+            {
+                "objective": objective,
+                "kind": kind,
+                "idempotency_key": new_id("tui_task"),
+            },
+        )
+
     def get_agent_task(self, task_id: str) -> dict[str, Any]:
         return self._get_object(f"/api/agent/tasks/{quote(task_id, safe='')}")
+
+    def list_agent_task_events(
+        self, task_id: str, *, after: int = 0
+    ) -> list[dict[str, Any]]:
+        return self._get_list(
+            f"/api/agent/tasks/{quote(task_id, safe='')}/events?after={max(after, 0)}",
+            "events",
+        )
+
+    def stream_agent_task_events(
+        self, task_id: str, *, after: int = 0
+    ) -> Iterator[dict[str, Any]]:
+        cursor = max(after, 0)
+        with self.client.stream(
+            "GET",
+            self._url(
+                f"/api/agent/tasks/{quote(task_id, safe='')}/stream?after={cursor}"
+            ),
+            headers={"Last-Event-ID": str(cursor)},
+            timeout=_stream_timeout(config=self.config),
+        ) as response:
+            response.raise_for_status()
+            event_name = "message"
+            data_lines: list[str] = []
+            for line in response.iter_lines():
+                if line == "":
+                    if data_lines:
+                        yield _parse_sse_event(event_name, data_lines)
+                    event_name = "message"
+                    data_lines = []
+                    continue
+                if line.startswith("event:"):
+                    event_name = line.split(":", 1)[1].strip()
+                elif line.startswith("data:"):
+                    data_lines.append(line.split(":", 1)[1].strip())
+            if data_lines:
+                yield _parse_sse_event(event_name, data_lines)
 
     def research_graph_topology(self) -> dict[str, Any]:
         return self._get_object("/api/research/graphs/topology")
@@ -1104,11 +1182,57 @@ class LocalAgentClient:
     def list_agent_sessions(self) -> list[dict[str, Any]]:
         return [session_to_dict(row) for row in AgentSessionService(self.db).list(limit=50)]
 
+    def create_agent_session(self, title: str) -> dict[str, Any]:
+        return session_to_dict(
+            AgentSessionService(self.db).create(
+                AgentSessionCreate(
+                    title=title,
+                    surface="tui",
+                    created_by="tui_operator",
+                )
+            )
+        )
+
     def list_agent_tasks(self) -> list[dict[str, Any]]:
         return [task_to_dict(row) for row in AgentTaskService(self.db).list_tasks(limit=100)]
 
+    def create_agent_task(
+        self,
+        session_id: str,
+        objective: str,
+        *,
+        kind: str = "chat_run",
+    ) -> dict[str, Any]:
+        if kind not in {"chat_run", "research_graph", "evaluation", "triggered_research"}:
+            raise ValueError(f"unknown task kind: {kind}")
+        return task_to_dict(
+            AgentTaskService(self.db).create(
+                AgentTaskCreate(
+                    session_id=session_id,
+                    kind=cast(Any, kind),
+                    objective=objective,
+                    idempotency_key=new_id("tui_task"),
+                ),
+                actor="tui_operator",
+            )
+        )
+
     def get_agent_task(self, task_id: str) -> dict[str, Any]:
         return task_to_dict(AgentTaskService(self.db).get(task_id))
+
+    def list_agent_task_events(
+        self, task_id: str, *, after: int = 0
+    ) -> list[dict[str, Any]]:
+        return [
+            task_event_to_dict(row)
+            for row in TaskEventService(self.db).list(task_id, after=max(after, 0), limit=500)
+        ]
+
+    def stream_agent_task_events(
+        self, task_id: str, *, after: int = 0
+    ) -> Iterator[dict[str, Any]]:
+        for event in self.list_agent_task_events(task_id, after=after):
+            yield {"event": event["event"], **event}
 
     def research_graph_topology(self) -> dict[str, Any]:
         return graph_topology_projection()
@@ -1534,6 +1658,18 @@ def main(
             parser.error("ask requires a prompt")
         agent_client.login()
         render_run_stream(agent_client, prompt, output=output)
+        return 0
+
+    if args.command == "tui":
+        agent_client.login()
+        try:
+            from hypertrade.tui import dependency_error, launch_tui
+
+            launch_tui(agent_client, session_id=str(args.session or ""))
+        except ImportError as exc:
+            from hypertrade.tui import dependency_error
+
+            raise dependency_error(exc) from exc
         return 0
 
     run_chat(client=agent_client, input_fn=input_fn, output=output)
@@ -5794,6 +5930,8 @@ def _build_parser() -> argparse.ArgumentParser:
     ask = subparsers.add_parser("ask", help="Run one Agent prompt through the HyperTrade API.")
     ask.add_argument("prompt", nargs="+")
     subparsers.add_parser("chat", help="Start an interactive Agent conversation loop.")
+    tui = subparsers.add_parser("tui", help="Start the optional Textual research workbench.")
+    tui.add_argument("--session", default="", help="Initially select tasks from this session.")
     subparsers.add_parser("login", help="Save remote HyperTrade API login for this machine.")
     subparsers.add_parser("/login", help="Save remote HyperTrade API login for this machine.")
     return parser

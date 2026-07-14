@@ -19,6 +19,11 @@ EXPOSE 3334
 
 CMD ["uvicorn", "hypertrade.main:app", "--host", "0.0.0.0", "--port", "3334"]
 
+# The operator TUI is a short-lived client image, not part of API/worker runtime.
+FROM runtime AS tui
+
+RUN uv sync --frozen --no-dev --extra tui
+
 # Evaluation dependencies and scripts stay out of the production image. The
 # isolated deployment builds this target explicitly for reproducible baselines.
 FROM runtime AS agent-eval
