@@ -4,7 +4,8 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 101 implementation state: active on 2026-07-15 after Sprint 100 production
+- Sprint 101 implementation state: completed and isolated-production-verified on
+  2026-07-15 after Sprint 100 production
   acceptance. The bounded slice adds versioned Research OS golden cases, deterministic
   Task/Graph/Evidence/Experiment/Validation evaluations, property/state-machine tests,
   provider/BitPro/worker/SSE fault injection, privacy-safe trajectory artifacts and
@@ -27,7 +28,11 @@
   allowlisted `args`, contradicting the declared no-argument boundary; that field is
   now removed entirely. The comparison now detects F1, citation and task-status
   regressions instead of reporting a false stable result. Full `./scripts/check.sh`
-  passes with 426 Python tests; the corrected isolated artifact rerun is pending.
+  passes with 426 Python tests. The corrected final rerun completed twice with 24/24
+  trajectories, no unsafe dispatch, and an argument-free privacy scan. Both runs
+  reported tool accuracy 0.0833, node sequence 0 and task-status match 0.5833;
+  comparison was `stable_or_improved` with one F1 improvement. Final deployment
+  workflow `29357931595` succeeded. Sprint 102 TUI Research Workbench is next.
 - Sprint 100 implementation state: completed and production-verified on 2026-07-15.
   The bounded slice adds versioned robustness policies/results, locked OOS
   freeze, non-overlapping walk-forward windows, budgeted parameter neighborhoods,
@@ -122,7 +127,7 @@
   background triggers, governed Memory/Skills, and portfolio lifecycle review.
   This activation does not change runtime, trading, paper, BitPro, provider,
   deployment, or database behavior. Sprint 95 and Sprint 96 are completed;
-  Sprints 96–99 are completed; Sprint 100 is active.
+  Sprints 96–101 are completed; Sprint 102 is next.
 - Last verified state: Sprint 95 Agent production-readiness evaluation completed
   on 2026-07-14. The isolated API deterministic suite passed 14/14, but the
   real Codex Provider 24-case golden baseline stopped at case 11 with an

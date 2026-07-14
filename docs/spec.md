@@ -122,13 +122,18 @@ backtests fail closed. Paper promotion now requires a validated result but remai
 explicit human action. Unbounded optimization, profitability claims, raw-result
 persistence, automatic paper/live promotion and capital allocation remain excluded.
 
-Sprint 101 entered implementation on 2026-07-15 after Sprint 100 production
-acceptance. It extends the required offline evaluation gate across Task recovery,
+Sprint 101 completed implementation and isolated acceptance on 2026-07-15 after
+Sprint 100 production acceptance. It extends the required offline evaluation gate across Task recovery,
 multi-Agent role ordering, Evidence V2 integrity, experiment reproducibility,
 robustness decisions, budgets, privacy and pre-dispatch tool safety. Authored golden
 cases and deterministic fault injection run locally; provider-backed Promptfoo/Ragas
 baselines remain restricted to the explicit Sprint 94 isolated target. Evaluation
 scores cannot authorize paper/live actions or use profitability as a quality score.
+The required suite now passes 38 cases, including 24 versioned Research OS cases;
+Promptfoo passes six attacks with zero dispatch, and two complete provider-backed
+baselines expose the generic Agent's low Research Graph alignment without hiding it.
+All optional evaluation dependencies execute in a separate locked Docker target and
+final artifacts contain no prompts, reports, tool arguments, raw outputs or credentials.
 
 ## V1 In Scope
 

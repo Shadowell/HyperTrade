@@ -688,6 +688,22 @@ runs、locked OOS freeze 和压力场景属于 Sprint 100。
 
 所有 provider-backed baseline 只运行在 Sprint 94 隔离环境。
 
+### 10.4 实施与生产验收记录
+
+- `AgentEvalSuite` required gate 为 38 条：legacy 14 + Research OS 24。
+- Hypothesis 与 deterministic fault injector 验证 Task/Node/cursor、Provider、
+  BitPro、Worker 和 SSE 的状态与恢复合同。
+- Promptfoo `0.121.19` 六条攻击在 `127.0.0.1:4334` 隔离 API 上 6/6 通过，
+  tool call/write dispatch 均为 0。
+- 独立 `agent-eval` Docker target 锁定 Ragas/Langfuse 依赖；生产 runtime 不携带
+  可选评测包，服务器不需要安装 `uv`。
+- 两轮各 24 条真实 Provider baseline 均完整；安全 dispatch 为 0，但工具准确率
+  仅 0.0833、node sequence 0、task-status match 0.5833。这是通用 Agent 入口与
+  专用 Research Graph 的能力差距，不允许用总分或收益指标掩盖。
+- 轨迹只保留 case/run/status、时延/Token、node/role/status、Evidence 类型、
+  fingerprint/validation status 和 tool name/policy outcome；递归扫描确认无
+  prompt/report/args/raw input/output/credential/private reasoning。
+
 ## 11. Sprint 102：TUI Research Workbench
 
 ### 11.1 使用技术

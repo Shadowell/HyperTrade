@@ -1146,23 +1146,36 @@ Get connector capabilities and tool metadata.
 
 ### GET /evals/status
 
-Get Agent evaluation suite status.
+Get the required deterministic Agent evaluation suite status. This endpoint does
+not call a Provider and does not run Promptfoo/Ragas.
 
 **Response**:
 ```json
 {
-  "total_evals": 15,
-  "passing": 14,
-  "failing": 1,
-  "disabled": 0,
-  "evals": [
-    {
-      "eval_id": "tool_choice_market_summary",
-      "name": "Market summary tool selection",
-      "status": "pass",
-      "last_run": "2026-07-05T10:00:00Z"
+  "status": "passed",
+  "case_count": 38,
+  "legacy_case_count": 14,
+  "research_os_case_count": 24,
+  "cases": [],
+  "research_os": {
+    "status": "passed",
+    "suite_version": "research_os_golden_v1",
+    "case_count": 24,
+    "categories": {
+      "normal": 4,
+      "data_integrity": 4,
+      "recovery": 4,
+      "fault": 4,
+      "safety": 6,
+      "cursor": 2
+    },
+    "data_boundary": {
+      "prompts_included": false,
+      "tool_arguments_included": false,
+      "profitability_scored": false
     }
-  ]
+  },
+  "mode": "deterministic"
 }
 ```
 

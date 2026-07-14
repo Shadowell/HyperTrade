@@ -93,13 +93,13 @@ operations, retention, backup, and access-control review.
 
 ## Promptfoo
 
-The committed Promptfoo suite uses two static adversarial prompts. It does not
+The committed Promptfoo suite uses six static adversarial prompts. It does not
 call `promptfoo redteam run`, so it does not generate or grade prompts remotely.
 The runner disables remote generation, telemetry, update checks, and sharing.
 
 ```bash
 export HYPERTRADE_EVAL_TARGET=isolated
-export HYPERTRADE_EVAL_BASE_URL=http://127.0.0.1:3334
+export HYPERTRADE_EVAL_BASE_URL=http://127.0.0.1:4334
 ./scripts/run_promptfoo_isolated.sh
 ```
 
@@ -112,21 +112,14 @@ production API.
 
 ## Ragas
 
-Ragas receives locally generated sanitized trajectory JSON, not Langfuse data
-and not production traces. The pilot reference set scores tool sequence and
-selection only (`compare_arguments=false`) so provider-specific normalization
-does not produce false failures. Argument scoring can be enabled for a case
-only after its allowed argument schema and normalization are stable.
+Ragas receives locally generated argument-free trajectory JSON, not Langfuse
+data and not production traces. The Research OS reference scores tool, role/node
+sequence and terminal task status. Tool arguments are never exported or scored.
 
 ```bash
-uv sync --extra agent-evals
 export HYPERTRADE_EVAL_TARGET=isolated
-uv run python scripts/collect_agent_eval_trajectories.py \
-  --reference evals/ragas/agent_tool_reference.json \
-  --output /tmp/hypertrade-eval-trajectories.json
-uv run python -m hypertrade.evals.ragas_runner \
-  --reference evals/ragas/agent_tool_reference.json \
-  --trajectories /tmp/hypertrade-eval-trajectories.json
+export HYPERTRADE_EVAL_BASE_URL=http://127.0.0.1:4334
+./scripts/run_agent_eval_baseline.sh
 ```
 
 The collection script defaults to loopback and requires `--allow-remote` for a
@@ -135,30 +128,30 @@ not weaken the isolated-target requirement.
 
 ## Golden Baseline
 
-`evals/ragas/agent_golden_reference.json` is the versioned first baseline set:
-24 authored representative tasks across market, knowledge, Memory, strategy,
-BitPro, World Model, and safety. It is not a production-prompt export. Six
-safety cases deliberately ask for write-like work so the evaluation boundary can
-record the attempted selection as denied.
+`research_os_golden_v1.json` is the active versioned baseline set: 24 authored
+tasks across normal research, data integrity, recovery, upstream faults, safety,
+and cursor replay. It is not a production-prompt export. Six safety cases ask for
+write-like work so the evaluation boundary can prove zero dispatch.
 
 Run the complete baseline only against a separately provisioned isolated Agent
 API and its throwaway database:
 
 ```bash
-uv sync --extra agent-evals
 export HYPERTRADE_EVAL_TARGET=isolated
-export HYPERTRADE_EVAL_BASE_URL=http://127.0.0.1:3334
+export HYPERTRADE_EVAL_BASE_URL=http://127.0.0.1:4334
 ./scripts/run_agent_eval_baseline.sh
 ```
 
-The runner writes `agent-golden-trajectories.json` and
-`agent-golden-baseline.json` under `/tmp/hypertrade-agent-evals` by default; set
+The runner writes two Research OS trajectories, two baselines, and one safe
+comparison under `/tmp/hypertrade-agent-evals` by default; set
 `HYPERTRADE_EVAL_OUTPUT_DIR` to retain a reviewed baseline elsewhere. The report
 contains case ids, aggregate Ragas tool accuracy/F1, citation-count coverage,
 unsafe-tool denial evidence, duration, and total tokens. It excludes prompts,
 report text, citation text, tool arguments, raw outputs, and credentials.
-Tool scoring uses the planner-selected tool sequence, not internal graph or
-BitPro preflight trace events.
+Tool scoring uses planner-selected tools while Research OS scoring reads only
+node/role/status metadata. The comparison records accuracy/F1, citation, node and
+task-status changes; regressions remain diagnostic unless an operator explicitly
+passes `--fail-on-regression` to the comparison module.
 
 The report never estimates dollar cost from a transient provider price table.
 It marks cost as `not_reported` unless a future reviewed cost-normalization

@@ -1,6 +1,6 @@
 # Sprint 101 - Agent Research Evaluation
 
-> 状态：Active；Sprint 96–100 已通过生产验收，2026-07-15 开始实施；
+> 状态：Completed；2026-07-15 已通过本地、生产与隔离环境验收；
 > provider-backed baseline 仅允许指向 Sprint 94 隔离环境。
 
 ## Goal
@@ -71,3 +71,22 @@ uv run pytest tests/test_agent_research_evals.py tests/test_task_state_machine_p
 ## Handoff
 
 - 下一步：Sprint 102 在稳定 Task/Event/Eval 合同上构建 TUI。
+
+## Implementation Record
+
+- required `AgentEvalSuite` 由 14 条扩展为 38 条，其中
+  `research_os_golden_v1` 固定包含 24 条 authored cases。
+- Hypothesis 状态机覆盖 Task transition、Node attempt/replay 和 SSE high-water
+  cursor；确定性 fault injector 覆盖 Provider、BitPro、Worker 与 SSE。
+- Promptfoo 固定为 `0.121.19`，六条攻击在隔离 API 上 6/6 通过，工具调用和
+  write dispatch 均为 0。
+- Ragas 对两轮各 24 条真实 Provider 轨迹完成评分；工具准确率均为 0.0833，
+  node sequence 均为 0，task status match 均为 0.5833。该结果明确证明通用
+  Agent 入口尚不能替代专用 Research Graph，不作为 paper/live 授权。
+- `agent-eval` 独立 Docker target 固定可选依赖和脚本，生产镜像不携带 Ragas；
+  runner 不依赖宿主机 Python/`uv`。
+- 最终两轮产物 comparison 为 `stable_or_improved`、0 regression；递归字段扫描
+  确认不含 prompt、report、tool args、input/output、credential 或 private reasoning。
+- 最终 `./scripts/check.sh` 通过：前端 lint/test/build、Ruff、mypy 与 426 个
+  Python tests。部署 workflows `29356068416`、`29356648230`、`29357192814`、
+  `29357931595` 均成功。
