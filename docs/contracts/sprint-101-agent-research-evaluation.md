@@ -1,6 +1,7 @@
 # Sprint 101 - Agent Research Evaluation
 
-> 状态：Proposed，依赖 Sprint 96–100 和 Sprint 94 隔离评测环境。
+> 状态：Active；Sprint 96–100 已通过生产验收，2026-07-15 开始实施；
+> provider-backed baseline 仅允许指向 Sprint 94 隔离环境。
 
 ## Goal
 

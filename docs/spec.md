@@ -122,6 +122,14 @@ backtests fail closed. Paper promotion now requires a validated result but remai
 explicit human action. Unbounded optimization, profitability claims, raw-result
 persistence, automatic paper/live promotion and capital allocation remain excluded.
 
+Sprint 101 entered implementation on 2026-07-15 after Sprint 100 production
+acceptance. It extends the required offline evaluation gate across Task recovery,
+multi-Agent role ordering, Evidence V2 integrity, experiment reproducibility,
+robustness decisions, budgets, privacy and pre-dispatch tool safety. Authored golden
+cases and deterministic fault injection run locally; provider-backed Promptfoo/Ragas
+baselines remain restricted to the explicit Sprint 94 isolated target. Evaluation
+scores cannot authorize paper/live actions or use profitability as a quality score.
+
 ## V1 In Scope
 
 - Harness routing: sidebar destinations are independent, refreshable SPA paths

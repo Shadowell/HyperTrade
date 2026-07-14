@@ -4,6 +4,13 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 101 implementation state: active on 2026-07-15 after Sprint 100 production
+  acceptance. The bounded slice adds versioned Research OS golden cases, deterministic
+  Task/Graph/Evidence/Experiment/Validation evaluations, property/state-machine tests,
+  provider/BitPro/worker/SSE fault injection, privacy-safe trajectory artifacts and
+  isolated Promptfoo/Ragas extensions. Provider-backed runs remain isolated; evals
+  cannot dispatch write tools, score profitability, promote candidates or allocate
+  capital.
 - Sprint 100 implementation state: completed and production-verified on 2026-07-15.
   The bounded slice adds versioned robustness policies/results, locked OOS
   freeze, non-overlapping walk-forward windows, budgeted parameter neighborhoods,

@@ -403,6 +403,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Multi-Agent research graph V1 | Production |
 | Reproducible experiment ledger | Production |
 | Robustness validation suite | Production |
+| Agent Research Evaluation | In Progress |
 
 ### Planned (V3+)
 
