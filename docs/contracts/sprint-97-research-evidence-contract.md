@@ -1,6 +1,6 @@
 # Sprint 97 - Research Evidence Contract
 
-> 状态：Proposed，依赖 Sprint 96。
+> 状态：Active，Sprint 96 已完成；2026-07-14 经操作员批准进入实施。
 
 ## Goal
 

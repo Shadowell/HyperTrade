@@ -90,6 +90,10 @@ This phase entered implementation with Sprint 96 on 2026-07-14. It does not enab
 promotion, automatic live trading, automatic capital allocation, arbitrary
 Agent code execution, or any bypass of BitPro MCP and existing approval gates.
 
+Sprint 97 entered implementation on 2026-07-14 after Sprint 96 production
+acceptance. Its active boundary is the append-only Research Evidence V2 contract;
+the multi-Agent role graph remains deferred to Sprint 98.
+
 ## V1 In Scope
 
 - Harness routing: sidebar destinations are independent, refreshable SPA paths

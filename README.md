@@ -361,6 +361,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Vide Coding (opus-4.6) provider | Production |
 | Enhanced output formatting | Complete |
 | Agent Session and Task OS | Production |
+| Research Evidence V2 contract | In Progress |
 
 ### Planned (V3+)
 
