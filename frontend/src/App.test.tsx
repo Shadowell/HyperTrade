@@ -526,7 +526,7 @@ test("renders memory composition, creation cadence, and governance signals from 
   render(<App />);
 
   expect(await screen.findByText("记忆态势")).toBeInTheDocument();
-  expect(screen.getByText("容量构成")).toBeInTheDocument();
+  expect(await screen.findByText("容量构成")).toBeInTheDocument();
   expect(screen.getByRole("img", { name: /容量构成/ })).toBeInTheDocument();
   expect(screen.getByRole("img", { name: /写入节奏/ })).toBeInTheDocument();
   expect(screen.getAllByText("strategy_knowledge").length).toBeGreaterThanOrEqual(1);

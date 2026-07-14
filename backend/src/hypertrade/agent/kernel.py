@@ -33,6 +33,7 @@ from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.bitpro.paper_monitor import BitProPaperMonitorService
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import AgentRun, Database, TraceEvent, utc_now
+from hypertrade.evals.langfuse import LangfuseTraceExporter
 from hypertrade.live.service import LiveOrderIntentService
 from hypertrade.market.analysis import summarize_candles
 from hypertrade.market.client import OkxRestClient
@@ -76,12 +77,17 @@ class AgentKernel:
         provider_name: str | None = None,
         provider_model: str | None = None,
         bitpro_adapter: Any | None = None,
+        evaluation_mode: bool = False,
     ) -> None:
         self.db = db
         self._settings = settings
         self.provider_name = provider_name
         self.provider_model = provider_model
         self.bitpro_adapter = bitpro_adapter
+        # Evaluation mode is a second trusted boundary for adversarial suites.
+        # A planner may still reveal attempted write-tool selection, but dispatch
+        # never reaches database, BitPro, paper, Testnet, or live write handlers.
+        self.evaluation_mode = evaluation_mode
         self.market = MarketRepository(db)
         self.memory = MemoryService(db)
         self.rag = RagService(db, knowledge_dir=knowledge_dir)
@@ -99,7 +105,7 @@ class AgentKernel:
     ) -> CompletedAgentRun:
         settings = self._settings if self._settings is not None else get_settings()
         started_at = time.monotonic()
-        run_id = self._create_run(prompt)
+        run_id = self._create_run(prompt, execution_mode=self._execution_mode())
         _emit(event_sink, {"event": "run_started", "run_id": run_id, "status": "running"})
         try:
             # The first two graph nodes are intentionally lightweight. They make
@@ -147,6 +153,7 @@ class AgentKernel:
                 run_id,
                 duration_ms=round((time.monotonic() - started_at) * 1000, 3),
             )
+            self._export_run_observability(run_id, settings)
             _emit(
                 event_sink,
                 {"event": "run_failed", "run_id": run_id, "status": "failed", "error": str(exc)},
@@ -156,6 +163,7 @@ class AgentKernel:
             run_id,
             duration_ms=round((time.monotonic() - started_at) * 1000, 3),
         )
+        self._export_run_observability(run_id, settings)
         run = self.get_run(run_id)
         _emit(
             event_sink,
@@ -208,6 +216,7 @@ class AgentKernel:
             "trigger": "user_request",
             "planner": llm.name,
             "model": llm.model,
+            "execution_mode": self._execution_mode(),
             "tool_calls": [{"tool": r.tool_name, "input": r.input_json} for r in result.tool_calls],
             "citations": _citations_from_tool_calls(result.tool_calls),
             "graph": self._get_run_state(run_id).get("graph", []),
@@ -272,6 +281,7 @@ class AgentKernel:
             "trigger": "user_request",
             "planner": "provider_unavailable",
             "model": "",
+            "execution_mode": self._execution_mode(),
             "tool_calls": [],
             "citations": [],
             "graph": self._get_run_state(run_id).get("graph", []),
@@ -328,6 +338,11 @@ class AgentKernel:
     ) -> ToolExecutor:
         def executor(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
             decision = self.governance.evaluate(tool_name, args)
+            if self.evaluation_mode and decision.policy.scope not in {
+                "read",
+                "live_diagnostic_read",
+            }:
+                decision = self._evaluation_mode_denial(decision)
             policy = decision.policy
             # Tool policy is enforced at the Agent runtime boundary. Planner
             # schemas help with selection, but only this trusted path decides
@@ -765,6 +780,23 @@ class AgentKernel:
 
         return executor
 
+    def _execution_mode(self) -> str:
+        return "evaluation" if self.evaluation_mode else "standard"
+
+    @staticmethod
+    def _evaluation_mode_denial(decision: GovernanceDecision) -> GovernanceDecision:
+        return GovernanceDecision(
+            requested_tool_name=decision.requested_tool_name,
+            registry_tool_name=decision.registry_tool_name,
+            policy=decision.policy,
+            allowed=False,
+            status="denied",
+            missing_fields=list(decision.missing_fields),
+            denial_reason=(
+                "evaluation mode permits only read and live_diagnostic_read tool scopes"
+            ),
+        )
+
     def _tool_policy(self, tool_name: str) -> ToolPolicy:
         try:
             return self.tools.get_for_runtime_name(tool_name).policy
@@ -899,6 +931,20 @@ class AgentKernel:
                 },
             )
 
+    def _export_run_observability(self, run_id: str, settings: Settings) -> None:
+        # Langfuse is an optional secondary projection. The durable local trace
+        # remains authoritative, and exporter failure must never change the run.
+        result = LangfuseTraceExporter(settings).export(self.get_run(run_id))
+        with self.db.session() as session:
+            run = session.get(AgentRun, run_id)
+            if run is None:
+                return
+            state = dict(run.run_state_json or {})
+            exports = _dict_or_empty(state.get("external_observability"))
+            exports["langfuse"] = result.as_dict()
+            state["external_observability"] = exports
+            run.run_state_json = state
+
     # ------------------------------------------------------------------
     # DB helpers
     # ------------------------------------------------------------------
@@ -933,9 +979,13 @@ class AgentKernel:
         self._cancel_run(run_id, reason)
         return self.get_run(run_id)
 
-    def _create_run(self, prompt: str) -> str:
+    def _create_run(self, prompt: str, *, execution_mode: str) -> str:
         with self.db.session() as session:
-            run = AgentRun(prompt=prompt, status="running")
+            run = AgentRun(
+                prompt=prompt,
+                status="running",
+                run_state_json={"execution_mode": execution_mode},
+            )
             session.add(run)
             session.flush()
             return run.id

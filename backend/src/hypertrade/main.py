@@ -146,6 +146,7 @@ class LoginPayload(BaseModel):
 
 class AgentRunPayload(BaseModel):
     prompt: str
+    evaluation_mode: bool = False
 
 
 class ProviderSelectionPayload(BaseModel):
@@ -545,6 +546,7 @@ def create_app(
             settings=app_settings,
             provider_name=str(app.state.active_chat_provider),
             provider_model=str(app.state.active_chat_model or "") or None,
+            evaluation_mode=payload.evaluation_mode,
         )
         run = kernel.run_chat(payload.prompt)
         return _run_to_dict(run)
@@ -558,6 +560,7 @@ def create_app(
                 payload.prompt,
                 provider_name=str(app.state.active_chat_provider),
                 provider_model=str(app.state.active_chat_model or "") or None,
+                evaluation_mode=payload.evaluation_mode,
             ),
             media_type="text/event-stream",
         )
@@ -1113,6 +1116,7 @@ def _agent_run_sse(
     prompt: str,
     provider_name: str | None = None,
     provider_model: str | None = None,
+    evaluation_mode: bool = False,
 ) -> Any:
     events: Queue[dict[str, Any] | None] = Queue()
 
@@ -1124,6 +1128,7 @@ def _agent_run_sse(
                 settings=settings,
                 provider_name=provider_name,
                 provider_model=provider_model,
+                evaluation_mode=evaluation_mode,
             )
             run = kernel.run_chat_with_events(prompt, event_sink=events.put)
             events.put({"event": "final", "run": _run_to_dict(run)})

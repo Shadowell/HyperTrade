@@ -33,6 +33,7 @@ class AgentObservabilityService:
                 ).all()
             )
             observability = _run_observability(run)
+            state = _dict(run.run_state_json)
             memory_ids = _memory_ids(observability, events)
             memories = (
                 list(
@@ -59,6 +60,7 @@ class AgentObservabilityService:
                     "duration_ms": _safe_float(observability.get("duration_ms")),
                     "started_at": _iso(run.created_at),
                     "completed_at": str(observability.get("completed_at", "")),
+                    "execution_mode": str(state.get("execution_mode", "standard")),
                 },
                 "usage": _dict(observability.get("usage")),
                 "models": {
@@ -72,10 +74,12 @@ class AgentObservabilityService:
                 },
                 "timeline": timeline,
                 "categories": _category_counts(timeline),
+                "external_observability": _dict(state.get("external_observability")),
                 "safety": {
                     "private_reasoning_stored": False,
                     "secrets_redacted": True,
                     "payload_mode": "summary",
+                    "evaluation_mode": state.get("execution_mode") == "evaluation",
                 },
             }
 

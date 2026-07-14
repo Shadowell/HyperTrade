@@ -289,6 +289,12 @@ uv run ht --local /evals
 curl http://localhost:3334/api/evals/status
 ```
 
+Optional evaluation tooling is documented in
+[`docs/architecture/26-agent-evaluation-foundation.md`](docs/architecture/26-agent-evaluation-foundation.md).
+It keeps the deterministic suite as the CI gate, uses metadata-only opt-in
+self-hosted Langfuse tracing, and limits Promptfoo/Ragas to isolated,
+read-only evaluation runs.
+
 ---
 
 ## Deployment

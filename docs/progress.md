@@ -4,6 +4,18 @@
 
 - Branch: `main`
 - Harness status: active
+- Last verified state: Sprint 92 Agent evaluation foundation completed locally on
+  2026-07-14. The deterministic `/evals` suite remains the required regression
+  gate; `evaluation_mode=true` records attempted tool selection while denying
+  every non-read/non-live-diagnostic tool before dispatch. Optional self-hosted
+  Langfuse receives only metadata-only span projections and cannot alter Agent
+  outcomes. Promptfoo runs static adversarial checks only against an explicitly
+  labelled isolated target with remote generation/telemetry disabled, and Ragas
+  scores sanitized local tool trajectories. Focused API/eval/observability tests
+  passed (`28 passed`); optional dependencies installed successfully and the
+  Ragas tool-accuracy/F1 smoke returned `1.0` for an exact trajectory. Full
+  `./scripts/check.sh` passed (frontend lint/test/build, Ruff, mypy, and 335
+  Python tests); deployment verification is pending before release.
 - Last verified state: Sprint 91 strategy card hierarchy completed locally on
   2026-07-13. Strategy summary, evidence metrics, audited source references,
   next-experiment guidance, and evidence detail rows now use the compact
@@ -171,8 +183,8 @@
 
 ## Active Contract
 
-- Sprint 91 strategy card hierarchy is active under
-  `docs/contracts/sprint-91-strategy-card-hierarchy.md`.
+- Sprint 92 Agent evaluation foundation is active under
+  `docs/contracts/sprint-92-agent-evaluation-foundation.md`.
 
 ## Approved Follow-On Design
 

@@ -1,0 +1,20 @@
+[
+  {
+    "case_id": "market_ticker_eth",
+    "prompt": "看下ETH行情",
+    "reference_tool_calls": [{"name": "market_ticker", "args": {}}],
+    "compare_arguments": false
+  },
+  {
+    "case_id": "risk_knowledge_lookup",
+    "prompt": "结合知识库说明风险",
+    "reference_tool_calls": [{"name": "rag_search", "args": {}}],
+    "compare_arguments": false
+  },
+  {
+    "case_id": "global_operator_state",
+    "prompt": "现在全局状态怎么样",
+    "reference_tool_calls": [{"name": "world_model_snapshot", "args": {}}],
+    "compare_arguments": false
+  }
+]

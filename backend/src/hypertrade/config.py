@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     knowledge_dir: Path = Field(default=Path("docs/knowledge"), alias="KNOWLEDGE_DIR")
     raw_market_retention_days: int = Field(default=7, alias="RAW_MARKET_RETENTION_DAYS")
     llm_daily_soft_budget_usd: float = Field(default=5.0, alias="LLM_DAILY_SOFT_BUDGET_USD")
+    langfuse_enabled: bool = Field(default=False, alias="LANGFUSE_ENABLED")
+    langfuse_public_key: str = Field(default="", alias="LANGFUSE_PUBLIC_KEY")
+    langfuse_secret_key: str = Field(default="", alias="LANGFUSE_SECRET_KEY")
+    langfuse_base_url: str = Field(default="", alias="LANGFUSE_BASE_URL")
     agent_tool_timeout_quick_seconds: float = Field(
         default=5.0,
         alias="AGENT_TOOL_TIMEOUT_QUICK_SECONDS",

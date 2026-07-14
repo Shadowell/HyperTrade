@@ -294,6 +294,11 @@ BitPro business logic to HyperTrade.
   `GET /api/agent/runs/{run_id}/observability` projects an ordered graph/model/
   tool/policy/Memory timeline, `/api/harness/overview.observability` aggregates
   recent-run telemetry, and `/harness` renders the componentized Flight Recorder.
+- Sprint 92 Agent evaluation foundation: deterministic `/evals` remains the CI
+  gate; an explicit evaluation mode rejects every write-like tool before
+  dispatch, self-hosted Langfuse receives metadata-only trace projections when
+  opt-in, and Promptfoo/Ragas run only against isolated evaluation targets and
+  sanitized trajectories.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.
@@ -412,6 +417,11 @@ BitPro business logic to HyperTrade.
   `我的实盘最近的一笔订单是什么` and `看下实盘收益最高的策略`; these cases require the
   matching BitPro live diagnostic tools and fail if the Agent substitutes
   generic `market_summary` / `Market Report` evidence.
+- Developer can run optional Langfuse, Promptfoo, and Ragas evaluation tooling
+  without weakening the deterministic gate: Langfuse is disabled by default and
+  receives metadata only; Promptfoo and trajectory collection require an
+  isolated target with `evaluation_mode=true`, which denies every non-read
+  Agent tool before dispatch.
 - Operator can use `docs/knowledge/tool-usage-guide.md` to validate each Agent tool surface and follow related operational source-code comments.
 - Operator can review the BitPro tool-surface requirements before wiring external data, backtest, paper/simulation, or live-state APIs into Agent tools.
 - Operator can call BitPro read tools through HyperTrade API/Agent paths while every flow starts with `bitpro_capabilities` and `bitpro_health`.

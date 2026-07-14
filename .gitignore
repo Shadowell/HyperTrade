@@ -18,6 +18,9 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .playwright-cli/
+.promptfoo/
+evals/promptfoo/promptfoo-results*
+evals/promptfoo/redteam.yaml
 .venv/
 venv/
 .idea/
