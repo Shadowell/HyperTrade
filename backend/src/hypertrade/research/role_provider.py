@@ -84,8 +84,13 @@ class ChatResearchRoleProvider:
                             "objective": context.objective,
                             "mandate": _bounded(context.mandate),
                             "allowed_tools": [tool.name for tool in policy.allowed],
+                            "rules": [
+                                "Return JSON only.",
+                                "Every tool name must exactly match one allowed_tools entry.",
+                                "Return an empty tool_calls list when no allowed tool is needed.",
+                            ],
                             "output_contract": {
-                                "tool_calls": [{"name": "allowed.tool", "arguments": {}}],
+                                "tool_calls": [],
                                 "rationale": "short",
                             },
                         },

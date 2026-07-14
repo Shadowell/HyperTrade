@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from hypertrade.providers.chat import ChatResponse, TokenUsage
 from hypertrade.research.graph import ResearchGraphSelector, graph_topology_projection
@@ -116,3 +118,41 @@ def test_role_output_gets_exactly_one_schema_repair() -> None:
     assert result.value.evidence[0].evidence_type == "data_gap"
     assert result.usage.model_calls == 2
     assert result.usage.tokens == 20
+
+
+class CapturingPlanProvider:
+    name = "capture-test"
+    model = "capture-test-v1"
+
+    def __init__(self) -> None:
+        self.request: dict = {}
+
+    def chat(self, messages, tools=None):
+        del tools
+        self.request = json.loads(messages[-1]["content"])
+        return ChatResponse(content='{"tool_calls":[],"rationale":"no read needed"}')
+
+
+def test_tool_plan_contract_enumerates_real_names_without_placeholder() -> None:
+    chat = CapturingPlanProvider()
+    provider = ChatResearchRoleProvider(chat)
+    role = ROLE_CATALOG["preflight"]
+    policy = RoleToolPolicyResolver().resolve(role)
+
+    result = provider.plan(
+        role,
+        RoleProviderContext(
+            task_id="task_test",
+            node_run_id="node_test",
+            objective="bounded test",
+            mandate={"id": "rman_test"},
+            evidence=(),
+        ),
+        policy,
+    )
+
+    assert result.value.tool_calls == []
+    assert chat.request["allowed_tools"] == [tool.name for tool in policy.allowed]
+    assert "research.mandate_read" in chat.request["allowed_tools"]
+    assert chat.request["output_contract"]["tool_calls"] == []
+    assert "allowed.tool" not in json.dumps(chat.request)
