@@ -4,13 +4,17 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 105 implementation state: active on 2026-07-15 after Sprint 104 production
-  acceptance. This final roadmap slice adds persisted `PortfolioAssessmentV2` and
-  human-reviewed lifecycle decisions over bounded StrategyCard, WorldState, paper,
-  monitor, Evidence and BitPro read projections. It must preserve unknown for insufficient
-  or misaligned series, never copy full long-lived return/equity histories, and can only
-  recommend observation, targeted research or review. Automatic capital allocation,
-  rebalance, BitPro/paper/live mutation and orders remain prohibited.
+- Sprint 105 implementation state: locally complete and awaiting production acceptance
+  on 2026-07-15. Persisted `portfolio_assessment.v2` binds idempotency keys to canonical
+  requests, consumes bounded StrategyCard/WorldState/paper/monitor/Evidence/governed
+  Memory projections, stores correlation summaries rather than return histories and
+  preserves unknown for insufficient, misaligned or zero-variance samples. Six fixed
+  recommendation types are research/review only; accept/reject/hold writes an immutable
+  human review fact and cannot reach BitPro, paper or live mutation adapters. API,
+  `/portfolio-v2`, Textual and Web `/harness/portfolio` use the same service. PostgreSQL
+  `0018 -> 0017 -> 0018`, focused 23-test backend acceptance, frontend lint/9 tests/build,
+  Ruff, mypy over 140 source files and all 473 Python tests pass. Deployment and production
+  read-only smoke remain before Gate D is closed.
 - Sprint 104 implementation state: completed and production-verified on 2026-07-15.
   Eight `0017_memory_skills` tables, source-bound `MemoryAssertionV1`,
   explicit conflict/supersede/expiry, ordinary-search fail-closed compatibility Memory,

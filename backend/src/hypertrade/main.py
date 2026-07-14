@@ -74,6 +74,11 @@ from hypertrade.memory.governance import (
 from hypertrade.memory.service import MemoryService
 from hypertrade.monitoring import MonitorService
 from hypertrade.paper.service import PaperTradingService
+from hypertrade.portfolio.lifecycle import (
+    PortfolioAssessmentRequestV2,
+    PortfolioAssessmentService,
+    StrategyLifecycleDecisionV1,
+)
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagHit, RagService
 from hypertrade.research.evidence import EvidenceService, EvidenceSourceUnavailable
@@ -580,6 +585,55 @@ def create_app(
     @app.get("/api/research/strategy-cards")
     def list_strategy_cards(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
         return {"items": StrategyCardService(database).list()}
+
+    @app.post("/api/portfolio/assessments")
+    def create_portfolio_assessment(
+        payload: PortfolioAssessmentRequestV2,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return PortfolioAssessmentService(database).assess(payload, actor=username)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/portfolio/assessments")
+    def list_portfolio_assessments(_: AdminUser) -> dict[str, Any]:
+        return {"items": PortfolioAssessmentService(database).list_assessments()}
+
+    @app.get("/api/portfolio/assessments/{assessment_id}")
+    def get_portfolio_assessment(assessment_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return PortfolioAssessmentService(database).get(assessment_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Assessment not found") from exc
+
+    @app.get("/api/portfolio/assessments/{left_id}/diff/{right_id}")
+    def diff_portfolio_assessments(
+        left_id: str,
+        right_id: str,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return PortfolioAssessmentService(database).diff(left_id, right_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Assessment not found") from exc
+
+    @app.post("/api/portfolio/assessments/{assessment_id}/reviews")
+    def review_portfolio_recommendation(
+        assessment_id: str,
+        payload: StrategyLifecycleDecisionV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return PortfolioAssessmentService(database).review(
+                assessment_id,
+                payload,
+                actor=username,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Assessment not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/api/global-market/snapshot")
     def global_market_snapshot() -> dict[str, Any]:

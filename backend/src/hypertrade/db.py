@@ -355,6 +355,45 @@ class SkillActivePointer(Base, TimestampMixin):
     reason: Mapped[str] = mapped_column(Text)
 
 
+class PortfolioAssessment(Base, TimestampMixin):
+    """Immutable bounded portfolio lifecycle assessment; never an execution instruction."""
+
+    __tablename__ = "portfolio_assessments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("pasmt"))
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    policy_version: Mapped[str] = mapped_column(String(64), index=True)
+    policy_hash: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    world_state_ref: Mapped[str] = mapped_column(String(128), default="", index=True)
+    input_refs_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    strategy_assessments_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    pairwise_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    unknowns_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    recommendations_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
+class StrategyLifecycleReview(Base, TimestampMixin):
+    """Human accept/reject/hold fact with no path to trading adapters."""
+
+    __tablename__ = "strategy_lifecycle_reviews"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("slrev"))
+    assessment_id: Mapped[str] = mapped_column(String(32), index=True)
+    recommendation_id: Mapped[str] = mapped_column(String(96), index=True)
+    strategy_card_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    recommendation_action: Mapped[str] = mapped_column(String(64), index=True)
+    decision: Mapped[str] = mapped_column(String(16), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    decided_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
 class Job(Base, TimestampMixin):
     __tablename__ = "jobs"
 

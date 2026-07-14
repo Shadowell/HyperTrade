@@ -105,6 +105,22 @@ class RecoveryClient:
     ) -> dict[str, Any]:
         return {"id": proposal_id, "status": decision}
 
+    def list_portfolio_assessments(self) -> list[dict[str, Any]]:
+        return []
+
+    def create_portfolio_assessment(self) -> dict[str, Any]:
+        return {"id": "pasmt_1", "status": "needs_data"}
+
+    def review_portfolio_recommendation(
+        self,
+        assessment_id: str,
+        recommendation_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        return {"id": "slrev_1", "decision": decision}
+
     def control_agent_task(
         self, task_id: str, action: str, *, reason: str
     ) -> dict[str, Any]:

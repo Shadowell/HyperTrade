@@ -44,6 +44,11 @@ from hypertrade.db import AgentRun, Database, TraceEvent, new_id
 from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.memory.governance import MemoryAssertionReviewV1, MemoryAssertionService
 from hypertrade.memory.service import MemoryService
+from hypertrade.portfolio.lifecycle import (
+    PortfolioAssessmentRequestV2,
+    PortfolioAssessmentService,
+    StrategyLifecycleDecisionV1,
+)
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.reporting.blocks import ReportBlock, render_report_blocks
 from hypertrade.research.experiment_ledger import ExperimentLedgerService
@@ -173,6 +178,25 @@ class AgentClient(Protocol):
 
     def rollback_skill_release(
         self, release_id: str, *, target_release_id: str, reason: str
+    ) -> dict[str, Any]: ...
+
+    def list_portfolio_assessments(self) -> list[dict[str, Any]]: ...
+
+    def create_portfolio_assessment(self) -> dict[str, Any]: ...
+
+    def get_portfolio_assessment(self, assessment_id: str) -> dict[str, Any]: ...
+
+    def diff_portfolio_assessments(
+        self, left_id: str, right_id: str
+    ) -> dict[str, Any]: ...
+
+    def review_portfolio_recommendation(
+        self,
+        assessment_id: str,
+        recommendation_id: str,
+        *,
+        decision: str,
+        reason: str,
     ) -> dict[str, Any]: ...
 
     def search_rag(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]: ...
@@ -344,6 +368,10 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     (
         "/skills proposals|show|releases|approve|reject|rollback",
         "Review evaluated code-free Skill proposals and immutable releases.",
+    ),
+    (
+        "/portfolio-v2 list|assess|show|diff|review",
+        "Inspect bounded portfolio lifecycle assessments and record human review.",
     ),
     ("/rag <query>", "Search project and trading knowledge chunks."),
     ("/evals", "Show deterministic Agent eval status."),
@@ -777,6 +805,46 @@ class AgentApiClient:
         return self._post_object(
             "/api/agent/sessions",
             {"title": title, "surface": "tui", "created_by": "tui_operator"},
+        )
+
+    def list_portfolio_assessments(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/portfolio/assessments", "items")
+
+    def create_portfolio_assessment(self) -> dict[str, Any]:
+        return self._post_object(
+            "/api/portfolio/assessments",
+            {"idempotency_key": new_id("cli_portfolio")},
+        )
+
+    def get_portfolio_assessment(self, assessment_id: str) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/portfolio/assessments/{quote(assessment_id, safe='')}"
+        )
+
+    def diff_portfolio_assessments(
+        self, left_id: str, right_id: str
+    ) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/portfolio/assessments/{quote(left_id, safe='')}"
+            f"/diff/{quote(right_id, safe='')}"
+        )
+
+    def review_portfolio_recommendation(
+        self,
+        assessment_id: str,
+        recommendation_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/portfolio/assessments/{quote(assessment_id, safe='')}/reviews",
+            {
+                "recommendation_id": recommendation_id,
+                "decision": decision,
+                "reason": reason,
+                "idempotency_key": new_id("cli_lifecycle_review"),
+            },
         )
 
     def list_agent_tasks(self) -> list[dict[str, Any]]:
@@ -1599,6 +1667,44 @@ class LocalAgentClient:
             actor="cli_operator",
         )
 
+    def list_portfolio_assessments(self) -> list[dict[str, Any]]:
+        return PortfolioAssessmentService(self.db).list_assessments()
+
+    def create_portfolio_assessment(self) -> dict[str, Any]:
+        return PortfolioAssessmentService(self.db).assess(
+            PortfolioAssessmentRequestV2(idempotency_key=new_id("cli_portfolio")),
+            actor="cli_operator",
+        )
+
+    def get_portfolio_assessment(self, assessment_id: str) -> dict[str, Any]:
+        return PortfolioAssessmentService(self.db).get(assessment_id)
+
+    def diff_portfolio_assessments(
+        self, left_id: str, right_id: str
+    ) -> dict[str, Any]:
+        return PortfolioAssessmentService(self.db).diff(left_id, right_id)
+
+    def review_portfolio_recommendation(
+        self,
+        assessment_id: str,
+        recommendation_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        if decision not in {"accept", "reject", "hold"}:
+            raise ValueError(f"unsupported lifecycle decision: {decision}")
+        return PortfolioAssessmentService(self.db).review(
+            assessment_id,
+            StrategyLifecycleDecisionV1(
+                recommendation_id=recommendation_id,
+                decision=cast(Any, decision),
+                reason=reason,
+                idempotency_key=new_id("cli_lifecycle_review"),
+            ),
+            actor="cli_operator",
+        )
+
     def search_rag(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]:
         from hypertrade.rag.service import RagService
 
@@ -2177,6 +2283,8 @@ def handle_slash_command(
         handle_memory_assertion_command(command, client=client, output=output)
     elif name == "/skills":
         handle_skill_command(command, client=client, output=output)
+    elif name in {"/portfolio-v2", "/pv2"}:
+        handle_portfolio_v2_command(command, client=client, output=output)
     elif name == "/rag":
         handle_rag_command(command, client=client, output=output)
     elif name in {"/evals", "/eval"}:
@@ -3823,6 +3931,81 @@ def handle_skill_command(
         "Usage: /skills proposals|show <proposal_id>|releases|"
         "approve|reject <proposal_id> [reason]|"
         "rollback <active_release_id> <target_release_id> [reason]",
+        file=output,
+    )
+
+
+def handle_portfolio_v2_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split()
+    action = parts[1].lower() if len(parts) > 1 else "list"
+    if action == "list":
+        rows = client.list_portfolio_assessments()
+        print("Portfolio lifecycle assessments:", file=output)
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:30]:
+            print(
+                f"- {row.get('id')} [{row.get('status')}] "
+                f"strategies={len(row.get('strategies', []))} "
+                f"unknowns={len(row.get('unknowns', []))} valid={row.get('valid_until')}",
+                file=output,
+            )
+        return
+    if action == "assess":
+        row = client.create_portfolio_assessment()
+        print(
+            f"Portfolio assessment {row.get('id')} [{row.get('status')}] "
+            f"recommendations={len(row.get('recommendations', []))}",
+            file=output,
+        )
+        return
+    if action == "show" and len(parts) == 3:
+        row = client.get_portfolio_assessment(parts[2])
+        print(
+            f"Portfolio assessment {row.get('id')} [{row.get('status')}] "
+            f"policy={row.get('policy_version')}",
+            file=output,
+        )
+        for recommendation in row.get("recommendations", []):
+            print(
+                f"- {recommendation.get('recommendation_id')} "
+                f"{recommendation.get('action')} "
+                f"card={recommendation.get('strategy_card_id') or '-'}",
+                file=output,
+            )
+        for unknown in row.get("unknowns", [])[:20]:
+            print(f"  unknown: {unknown}", file=output)
+        return
+    if action == "diff" and len(parts) == 4:
+        row = client.diff_portfolio_assessments(parts[2], parts[3])
+        print(json.dumps(row, ensure_ascii=False, indent=2), file=output)
+        return
+    if action == "review" and len(parts) >= 6:
+        decision = parts[4].lower()
+        if decision not in {"accept", "reject", "hold"}:
+            print("Decision must be accept, reject, or hold", file=output)
+            return
+        row = client.review_portfolio_recommendation(
+            parts[2],
+            parts[3],
+            decision=decision,
+            reason=" ".join(parts[5:]),
+        )
+        print(
+            f"Lifecycle review {row.get('id')} [{row.get('decision')}] "
+            f"action={row.get('recommendation_action')}",
+            file=output,
+        )
+        return
+    print(
+        "Usage: /portfolio-v2 list|assess|show <assessment_id>|"
+        "diff <left> <right>|review <assessment_id> <recommendation_id> "
+        "accept|reject|hold <reason>",
         file=output,
     )
 

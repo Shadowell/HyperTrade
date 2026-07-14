@@ -65,6 +65,19 @@ class WorkbenchClient(Protocol):
         self, proposal_id: str, *, decision: str, reason: str
     ) -> dict[str, Any]: ...
 
+    def list_portfolio_assessments(self) -> list[dict[str, Any]]: ...
+
+    def create_portfolio_assessment(self) -> dict[str, Any]: ...
+
+    def review_portfolio_recommendation(
+        self,
+        assessment_id: str,
+        recommendation_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]: ...
+
     def control_agent_task(
         self, task_id: str, action: str, *, reason: str
     ) -> dict[str, Any]: ...
@@ -119,6 +132,7 @@ class WorkbenchState:
     memory_assertions: list[dict[str, Any]] = field(default_factory=list)
     skill_proposals: list[dict[str, Any]] = field(default_factory=list)
     skill_releases: list[dict[str, Any]] = field(default_factory=list)
+    portfolio_assessments: list[dict[str, Any]] = field(default_factory=list)
     cursor: TaskEventCursor = field(default_factory=TaskEventCursor)
     connection_status: str = "snapshot"
     last_error: str = ""
@@ -139,6 +153,7 @@ class WorkbenchStore:
         self.state.memory_assertions = self.client.list_memory_assertions()
         self.state.skill_proposals = self.client.list_skill_proposals()
         self.state.skill_releases = self.client.list_skill_releases()
+        self.state.portfolio_assessments = self.client.list_portfolio_assessments()
         if self.state.selected_session_id and not any(
             str(item.get("id", "")) == self.state.selected_session_id
             for item in self.state.sessions
@@ -300,6 +315,33 @@ class WorkbenchStore:
         self.state.memory_assertions = self.client.list_memory_assertions()
         self.state.skill_proposals = self.client.list_skill_proposals()
         self.state.skill_releases = self.client.list_skill_releases()
+        return result
+
+    def create_portfolio_assessment(self) -> dict[str, Any]:
+        result = self.client.create_portfolio_assessment()
+        self.state.portfolio_assessments = self.client.list_portfolio_assessments()
+        return result
+
+    def review_portfolio(
+        self,
+        assessment_id: str,
+        recommendation_id: str,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        if decision not in {"accept", "reject", "hold"}:
+            raise ValueError(f"Unsupported portfolio decision: {decision}")
+        if not assessment_id or not recommendation_id:
+            raise ValueError("Assessment and recommendation IDs are required")
+        if not reason.strip():
+            raise ValueError("Operator reason is required")
+        result = self.client.review_portfolio_recommendation(
+            assessment_id,
+            recommendation_id,
+            decision=decision,
+            reason=reason.strip(),
+        )
+        self.state.portfolio_assessments = self.client.list_portfolio_assessments()
         return result
 
     @property

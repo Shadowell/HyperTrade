@@ -579,6 +579,66 @@ test("renders memory composition, creation cadence, and governance signals from 
   expect(screen.getAllByRole("button", { name: "批准" })[0]).toBeDisabled();
 });
 
+test("renders portfolio lifecycle evidence and keeps review buttons reason-gated", async () => {
+  window.history.replaceState({}, "", "/harness/portfolio");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/harness/overview")) {
+        return jsonResponse(overview);
+      }
+      if (url.endsWith("/api/memory")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.endsWith("/api/portfolio/assessments")) {
+        return jsonResponse({
+          items: [
+            {
+              id: "pasmt_web_1",
+              status: "needs_data",
+              policy_version: "portfolio_lifecycle_policy.v1",
+              valid_until: "2026-07-15T02:00:00Z",
+              strategies: [{ card_id: "scard_web_1" }],
+              pairwise: [
+                {
+                  left_card_id: "scard_web_1",
+                  right_card_id: "scard_web_2",
+                  correlation: null,
+                  sample_count: 2
+                }
+              ],
+              unknowns: ["correlation.scard_web_1.scard_web_2.unknown"],
+              recommendations: [
+                {
+                  recommendation_id: "plrec_web_1",
+                  action: "run_targeted_research",
+                  strategy_card_id: "scard_web_1",
+                  reason: "Aligned returns are insufficient. Recommendation is research only.",
+                  requires_human_review: true,
+                  allocation_change_allowed: false,
+                  trading_mutation_allowed: false
+                }
+              ]
+            }
+          ]
+        });
+      }
+      return jsonResponse({}, 404);
+    })
+  );
+
+  render(<App />);
+
+  expect(
+    await screen.findByRole("heading", { name: "组合生命周期" })
+  ).toBeInTheDocument();
+  expect(await screen.findByText("run_targeted_research")).toBeInTheDocument();
+  expect(screen.getByText(/allocation=false/)).toBeInTheDocument();
+  expect(screen.getByText(/corr=unknown/)).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "批准" })[0]).toBeDisabled();
+});
+
 test("renders scoped metric strips for every routed operator page", async () => {
   window.history.replaceState({}, "", "/harness/strategy");
   vi.stubGlobal(
@@ -619,8 +679,8 @@ test("renders scoped metric strips for every routed operator page", async () => 
 
   render(<App />);
 
-  expect(await screen.findByText("策略条目")).toBeInTheDocument();
-  let metricStrip = screen.getByRole("region", { name: "页面指标" });
+  let metricStrip = await screen.findByRole("region", { name: "页面指标" });
+  expect(within(metricStrip).getByText("策略条目")).toBeInTheDocument();
   expect(within(metricStrip).getByText("累计证据")).toBeInTheDocument();
   expect(within(metricStrip).getByText("通过证据")).toBeInTheDocument();
 

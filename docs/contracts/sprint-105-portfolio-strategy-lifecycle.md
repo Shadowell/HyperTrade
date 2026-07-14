@@ -1,6 +1,6 @@
 # Sprint 105 - Portfolio Strategy Lifecycle
 
-> 状态：Active；Sprint 97、99–104 已完成验收，2026-07-15 开始实施。
+> 状态：Implementation complete, production acceptance pending；2026-07-15 本地验收通过。
 
 ## Goal
 
@@ -74,3 +74,18 @@ Manual/QA：
 
 - 路线图 Gate D 完成后，重新评审是否需要专门的组合优化、物理隔离或实盘治理路线；
   这些都必须另立合同。
+
+## Implementation Record
+
+- `PortfolioAssessmentService` 持久化 `portfolio_assessment.v2`，请求哈希绑定
+  idempotency key；同键不同请求失败关闭。
+- StrategyCard projection 关联 paper/evidence/governed Memory，并公开声明的 regime、
+  capacity、liquidity、drawdown、drift 与明确 unknown。
+- 相关性只读取每策略最多 50 个 paper equity 摘要，按固定时间桶对齐后计算收益；
+  样本不足、错位或零方差时返回带原因的 unknown，数据库只保存统计摘要。
+- 推荐动作被固定在六个只读 research/review action；模块不导入 BitPro、paper 或
+  live mutation adapter。accept/reject/hold 只写审阅账本且原因/决定受幂等键绑定。
+- 管理员 API、CLI `/portfolio-v2`、Textual Portfolio tab 与 Web
+  `/harness/portfolio` 均委托同一服务状态机。
+- PostgreSQL `0018 -> 0017 -> 0018` 可逆迁移通过；聚焦后端 23 项、前端 9 项及
+  `./scripts/check.sh`（473 项 Python 测试）通过。生产证据待部署后补录。

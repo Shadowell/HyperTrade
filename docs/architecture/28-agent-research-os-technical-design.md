@@ -948,6 +948,31 @@ Commit `d4d43bb` 经 workflow `29363666735` 部署，`0017_memory_skills`、8/8 
 所有建议必须带 evidence ids、unknown fields、理由、有效期、人工复核状态。相关性样本数、
 时间对齐或数据来源不足时不能输出数值相关性结论。
 
+### 14.4 实际实现记录
+
+`PortfolioAssessmentService` 是唯一写入边界。创建请求先规范化除 idempotency key 外的
+payload 并计算 SHA-256 `request_hash`；已存在的 key 只有在 hash 完全一致时才重放。
+assessment 同时保存 schema/policy/content hash、WorldState ref、StrategyCard/source Evidence/
+governed Memory refs、有效期和创建人。人工 review 也把 assessment、recommendation、decision
+和规范化 reason 绑定到 idempotency key，不允许语义不同的重放。
+
+StrategyCard 由现有 Research Evidence、PaperPromotion、最新 monitor snapshot 与 active governed
+Memory assertion 投影得到。相关性读取每策略最多 50 个 `latest_equity` 快照，按 5/15/30/60/
+240/1440 分钟桶对齐，先计算相邻收益再用 `statistics.correlation`；不足最小样本、时间错位、
+零方差或无效 Decimal 都输出 `correlation=null` 和 `unknown_reason`。持久层只保存 correlation、
+样本数/起止桶与共同 symbol/timeframe/factor，不保存 equity/return series。
+
+服务只生成 `observe`、`run_targeted_research`、`request_paper_review`、
+`request_pause_review`、`retire_candidate_review`、`request_risk_budget_review`。每项明确
+`allocation_change_allowed=false`、`trading_mutation_allowed=false`；review 不派发动作。
+源代码安全回归阻止 Portfolio 模块引入 BitPro adapter、paper start/pause 或 live/order 调用。
+FastAPI、CLI `/portfolio-v2`、Textual Portfolio tab 与 Web `/harness/portfolio` 只是同一服务的
+输入/投影层。
+
+Alembic `0018_portfolio_lifecycle` 新增 `portfolio_assessments` 与
+`strategy_lifecycle_reviews`。真实 PostgreSQL 已通过 `0018 -> 0017 -> 0018`，本地全量门禁为
+前端 lint/9 tests/build、Ruff、mypy 140 source files 和 473 Python tests；生产记录待部署补录。
+
 ## 15. API 与事件兼容策略
 
 ### 15.1 版本

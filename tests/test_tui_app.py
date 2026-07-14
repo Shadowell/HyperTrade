@@ -19,6 +19,7 @@ class FakeWorkbenchClient:
         self.created: list[str] = []
         self.trigger_controls: list[tuple[str, str, str]] = []
         self.governance_controls: list[tuple[str, str, str]] = []
+        self.portfolio_reviews: list[tuple[str, str, str, str]] = []
 
     def list_agent_sessions(self) -> list[dict[str, Any]]:
         return [{"id": "sess_1", "title": "TUI session", "status": "active"}]
@@ -180,6 +181,39 @@ class FakeWorkbenchClient:
         self.governance_controls.append((proposal_id, decision, reason))
         return {"id": proposal_id, "status": decision}
 
+    def list_portfolio_assessments(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "pasmt_1",
+                "status": "needs_data",
+                "strategies": [{"card_id": "scard_1"}],
+                "unknowns": ["strategy.scard_1.capacity"],
+                "recommendations": [
+                    {
+                        "recommendation_id": "plrec_001",
+                        "action": "run_targeted_research",
+                        "strategy_card_id": "scard_1",
+                    }
+                ],
+            }
+        ]
+
+    def create_portfolio_assessment(self) -> dict[str, Any]:
+        return self.list_portfolio_assessments()[0]
+
+    def review_portfolio_recommendation(
+        self,
+        assessment_id: str,
+        recommendation_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        self.portfolio_reviews.append(
+            (assessment_id, recommendation_id, decision, reason)
+        )
+        return {"id": "slrev_1", "decision": decision}
+
     def control_agent_task(
         self, task_id: str, action: str, *, reason: str
     ) -> dict[str, Any]:
@@ -269,3 +303,24 @@ async def test_tui_governance_tab_reviews_source_bound_assertion() -> None:
         await pilot.pause()
 
     assert client.governance_controls == [("masrt_1", "approve", "sources verified")]
+
+
+@pytest.mark.anyio
+async def test_tui_portfolio_tab_records_human_review_only() -> None:
+    client = FakeWorkbenchClient()
+    app = ResearchWorkbenchApp(client=client)
+
+    async with app.run_test(size=(190, 50)) as pilot:
+        await pilot.press("l")
+        await pilot.pause()
+        assert "plrec_001" in str(app.query_one("#portfolio-detail", Static).content)
+        await pilot.click("#portfolio-hold")
+        await pilot.pause()
+        assert isinstance(app.screen, ControlConfirmScreen)
+        app.screen.query_one("#control-reason", Input).value = "need aligned returns"
+        await pilot.click("#control-submit")
+        await pilot.pause()
+
+    assert client.portfolio_reviews == [
+        ("pasmt_1", "plrec_001", "hold", "need aligned returns")
+    ]

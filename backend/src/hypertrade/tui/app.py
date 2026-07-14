@@ -100,7 +100,7 @@ class HelpScreen(ModalScreen[None]):
                 "Ctrl+R  request resume/retry based on status\n"
                 "Ctrl+C  request cancel\n"
                 "R       refresh REST snapshot\n"
-                "G/E/A/T/M graph, evidence, approval, triggers, governance\n"
+                "G/E/A/T/M/L graph, evidence, approval, triggers, governance, lifecycle\n"
                 "?       help\n"
                 "Q       quit\n\n"
                 "Every mutation requires a reason and is revalidated by the server.",
@@ -128,6 +128,7 @@ class ResearchWorkbenchApp(App[None]):
         ("a", "approval", "Approval"),
         ("t", "triggers", "Triggers"),
         ("m", "governance", "Governance"),
+        ("l", "portfolio", "Portfolio"),
         ("question_mark", "help", "Help"),
         ("q", "quit", "Quit"),
     ]
@@ -165,6 +166,10 @@ class ResearchWorkbenchApp(App[None]):
     #governance-actions Input { width: 1fr; margin-right: 1; }
     #governance-actions Button { width: 14; margin-right: 1; }
     #governance-detail { height: 1fr; }
+    #portfolio-actions { height: 4; }
+    #portfolio-actions Input { width: 1fr; margin-right: 1; }
+    #portfolio-actions Button { width: 12; margin-right: 1; }
+    #portfolio-detail { height: 1fr; }
     .medium #evidence-pane { display: none; }
     .compact #sessions-pane, .compact #evidence-pane { display: none; }
     .compact #detail-tabs { height: 14; }
@@ -235,6 +240,20 @@ class ResearchWorkbenchApp(App[None]):
                 yield Static(
                     "No governance records",
                     id="governance-detail",
+                    classes="detail",
+                    markup=False,
+                )
+            with TabPane("Portfolio", id="tab-portfolio"):
+                with Horizontal(id="portfolio-actions"):
+                    yield Input(placeholder="Assessment ID", id="portfolio-assessment-id")
+                    yield Input(placeholder="Recommendation ID", id="portfolio-recommendation-id")
+                    yield Button("Assess", id="portfolio-assess", variant="primary")
+                    yield Button("Accept", id="portfolio-accept", variant="success")
+                    yield Button("Hold", id="portfolio-hold", variant="warning")
+                    yield Button("Reject", id="portfolio-reject", variant="error")
+                yield Static(
+                    "No portfolio assessments",
+                    id="portfolio-detail",
                     classes="detail",
                     markup=False,
                 )
@@ -317,6 +336,18 @@ class ResearchWorkbenchApp(App[None]):
         ]
         if not governance_input.value and pending:
             governance_input.value = str(pending[0].get("id", ""))
+        self.query_one("#portfolio-detail", Static).update(self._portfolio_text(state))
+        assessment_input = self.query_one("#portfolio-assessment-id", Input)
+        recommendation_input = self.query_one("#portfolio-recommendation-id", Input)
+        if state.portfolio_assessments:
+            latest = state.portfolio_assessments[0]
+            if not assessment_input.value:
+                assessment_input.value = str(latest.get("id", ""))
+            recommendations = latest.get("recommendations", [])
+            if not recommendation_input.value and recommendations:
+                recommendation_input.value = str(
+                    recommendations[0].get("recommendation_id", "")
+                )
 
     @work(thread=True, exclusive=True, group="task-stream")
     def follow_task_stream(self, task_id: str) -> None:
@@ -397,6 +428,12 @@ class ResearchWorkbenchApp(App[None]):
             _, resource_kind, action = button_id.split("-", maxsplit=2)
             self._request_governance_control(resource_kind, action)
             return
+        if button_id == "portfolio-assess":
+            self._create_portfolio_assessment()
+            return
+        if button_id.startswith("portfolio-"):
+            self._request_portfolio_review(button_id.removeprefix("portfolio-"))
+            return
         if button_id != "start-task":
             return
         prompt = self.query_one("#task-prompt", TextArea).text.strip()
@@ -469,6 +506,9 @@ class ResearchWorkbenchApp(App[None]):
     def action_governance(self) -> None:
         self.query_one("#detail-tabs", TabbedContent).active = "tab-governance"
 
+    def action_portfolio(self) -> None:
+        self.query_one("#detail-tabs", TabbedContent).active = "tab-portfolio"
+
     def _request_trigger_control(self, action: str) -> None:
         trigger_id = self.query_one("#trigger-id", Input).value.strip()
         if action not in {"kill_on", "kill_off"} and not trigger_id:
@@ -534,6 +574,53 @@ class ResearchWorkbenchApp(App[None]):
             self.notify(f"Governance rejected: {type(exc).__name__}", severity="error")
             return
         self.notify(f"Governance accepted: {result.get('status', action)}")
+        self.call_later(self._render_state, self.store.state)
+
+    def _create_portfolio_assessment(self) -> None:
+        try:
+            result = self.store.create_portfolio_assessment()
+        except Exception as exc:
+            self.notify(f"Assessment failed: {type(exc).__name__}", severity="error")
+            return
+        self.notify(f"Assessment created: {result.get('id', 'unknown')}")
+        self.call_later(self._render_state, self.store.state)
+
+    def _request_portfolio_review(self, decision: str) -> None:
+        assessment_id = self.query_one("#portfolio-assessment-id", Input).value.strip()
+        recommendation_id = self.query_one("#portfolio-recommendation-id", Input).value.strip()
+        if not assessment_id or not recommendation_id:
+            self.notify("Assessment and recommendation IDs are required", severity="warning")
+            return
+        self.push_screen(
+            ControlConfirmScreen(decision, recommendation_id, resource_kind="portfolio"),
+            lambda reason: self._apply_portfolio_review(
+                assessment_id,
+                recommendation_id,
+                decision,
+                reason,
+            ),
+        )
+
+    def _apply_portfolio_review(
+        self,
+        assessment_id: str,
+        recommendation_id: str,
+        decision: str,
+        reason: str | None,
+    ) -> None:
+        if reason is None:
+            return
+        try:
+            result = self.store.review_portfolio(
+                assessment_id,
+                recommendation_id,
+                decision,
+                reason,
+            )
+        except Exception as exc:
+            self.notify(f"Portfolio review rejected: {type(exc).__name__}", severity="error")
+            return
+        self.notify(f"Portfolio review recorded: {result.get('decision', decision)}")
         self.call_later(self._render_state, self.store.state)
 
     def action_help(self) -> None:
@@ -676,4 +763,23 @@ class ResearchWorkbenchApp(App[None]):
             )
         if not state.skill_releases:
             lines.append("No releases")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _portfolio_text(state: WorkbenchState) -> str:
+        if not state.portfolio_assessments:
+            return "No portfolio assessments"
+        lines: list[str] = []
+        for assessment in state.portfolio_assessments[:10]:
+            lines.append(
+                f"{assessment.get('status')} · {assessment.get('id')} · "
+                f"strategies={len(assessment.get('strategies', []))} · "
+                f"unknowns={len(assessment.get('unknowns', []))}"
+            )
+            for recommendation in assessment.get("recommendations", [])[:8]:
+                lines.append(
+                    f"  {recommendation.get('recommendation_id')} · "
+                    f"{recommendation.get('action')} · "
+                    f"card={recommendation.get('strategy_card_id') or '-'}"
+                )
         return "\n".join(lines)

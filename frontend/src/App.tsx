@@ -33,7 +33,14 @@ import {
 } from "./components/observability/AgentFlightRecorder";
 
 type Language = "zh" | "en";
-type NavSection = "harness" | "strategy" | "alerts" | "runs" | "memory" | "rag";
+type NavSection =
+  | "harness"
+  | "strategy"
+  | "portfolio"
+  | "alerts"
+  | "runs"
+  | "memory"
+  | "rag";
 
 type TraceEvent = {
   id?: string;
@@ -196,6 +203,27 @@ type SkillRelease = {
   skill_key: string;
   version: number;
   status: string;
+};
+
+type PortfolioRecommendation = {
+  recommendation_id: string;
+  action: string;
+  strategy_card_id: string;
+  reason: string;
+  requires_human_review: boolean;
+  allocation_change_allowed: boolean;
+  trading_mutation_allowed: boolean;
+};
+
+type PortfolioAssessment = {
+  id: string;
+  status: string;
+  policy_version: string;
+  valid_until: string;
+  strategies: Array<Record<string, unknown>>;
+  pairwise: Array<Record<string, unknown>>;
+  unknowns: string[];
+  recommendations: PortfolioRecommendation[];
 };
 
 type RagHit = {
@@ -499,6 +527,14 @@ const copy = {
     noAssertions: "暂无 Assertion",
     noSkillProposals: "暂无 Skill 提案",
     noSkillReleases: "暂无 Skill 发布",
+    portfolioLifecycle: "组合生命周期",
+    portfolioLifecycleHint: "基于有界证据查看状态适配、共同暴露与相关性；这里只记录研究或人工复核决定。",
+    runPortfolioAssessment: "生成组合评估",
+    portfolioAssessments: "历史评估",
+    portfolioUnknowns: "未知项",
+    portfolioPairs: "策略对",
+    hold: "暂缓",
+    noPortfolioAssessments: "暂无组合评估",
     initialCash: "初始资金",
     candleSource: "数据源",
     strategyKey: "策略",
@@ -708,6 +744,15 @@ const copy = {
     noAssertions: "No assertions",
     noSkillProposals: "No skill proposals",
     noSkillReleases: "No skill releases",
+    portfolioLifecycle: "Portfolio Lifecycle",
+    portfolioLifecycleHint:
+      "Review regime fit, shared exposure, and bounded correlation evidence; this surface records research or human review decisions only.",
+    runPortfolioAssessment: "Create Assessment",
+    portfolioAssessments: "Assessment History",
+    portfolioUnknowns: "Unknowns",
+    portfolioPairs: "Strategy Pairs",
+    hold: "Hold",
+    noPortfolioAssessments: "No portfolio assessments",
     initialCash: "Initial Cash",
     candleSource: "Source",
     strategyKey: "Strategy",
@@ -997,6 +1042,8 @@ function App() {
   const [skillProposals, setSkillProposals] = useState<SkillProposal[]>([]);
   const [skillReleases, setSkillReleases] = useState<SkillRelease[]>([]);
   const [governanceReason, setGovernanceReason] = useState("");
+  const [portfolioAssessments, setPortfolioAssessments] = useState<PortfolioAssessment[]>([]);
+  const [portfolioReason, setPortfolioReason] = useState("");
   const [ragQuery, setRagQuery] = useState("risk");
   const [ragHits, setRagHits] = useState<RagHit[]>([]);
   const [showRawMarkdown, setShowRawMarkdown] = useState(false);
@@ -1130,6 +1177,32 @@ function App() {
     [activeOverview.rag, ragHits.length, ragQuery, t]
   );
 
+  const portfolioRouteMetrics = useMemo<RouteMetric[]>(() => {
+    const latest = portfolioAssessments[0];
+    return [
+      {
+        label: t.portfolioAssessments,
+        value: formatMetricNumber(portfolioAssessments.length),
+        tone: "signal"
+      },
+      {
+        label: t.strategyCount,
+        value: formatMetricNumber(latest?.strategies.length ?? 0),
+        tone: "violet"
+      },
+      {
+        label: t.portfolioPairs,
+        value: formatMetricNumber(latest?.pairwise.length ?? 0),
+        tone: "brass"
+      },
+      {
+        label: t.portfolioUnknowns,
+        value: formatMetricNumber(latest?.unknowns.length ?? 0),
+        tone: "danger"
+      }
+    ];
+  }, [portfolioAssessments, t]);
+
   const refreshMemoryItems = useCallback(async (query = "") => {
     const path = query ? `/api/memory?query=${encodeURIComponent(query)}` : "/api/memory";
     const response = await fetch(path, { credentials: "include" });
@@ -1193,6 +1266,16 @@ function App() {
     );
   }, []);
 
+  const refreshPortfolioAssessments = useCallback(async () => {
+    const response = await fetch("/api/portfolio/assessments", { credentials: "include" });
+    if (!response.ok) {
+      setPortfolioAssessments([]);
+      return;
+    }
+    const payload = (await response.json()) as { items?: PortfolioAssessment[] };
+    setPortfolioAssessments(Array.isArray(payload.items) ? payload.items : []);
+  }, []);
+
   const refreshOverview = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -1203,6 +1286,7 @@ function App() {
         await refreshStrategyLibrary();
         await refreshMonitorAlerts();
         await refreshGovernance();
+        await refreshPortfolioAssessments();
         setHarnessError("");
         return;
       }
@@ -1210,7 +1294,13 @@ function App() {
     } finally {
       setRefreshing(false);
     }
-  }, [refreshGovernance, refreshMemoryItems, refreshMonitorAlerts, refreshStrategyLibrary]);
+  }, [
+    refreshGovernance,
+    refreshMemoryItems,
+    refreshMonitorAlerts,
+    refreshPortfolioAssessments,
+    refreshStrategyLibrary
+  ]);
 
   const loadRunObservability = useCallback(async (runId: string) => {
     setObservabilityLoading(true);
@@ -1331,6 +1421,47 @@ function App() {
     }
   }
 
+  async function handlePortfolioAssessment() {
+    const response = await fetch("/api/portfolio/assessments", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idempotency_key: `web_portfolio_${Date.now()}` })
+    });
+    if (response.ok) {
+      await refreshPortfolioAssessments();
+    }
+  }
+
+  async function handlePortfolioReview(
+    assessmentId: string,
+    recommendationId: string,
+    decision: "accept" | "reject" | "hold"
+  ) {
+    const reason = portfolioReason.trim();
+    if (!reason) {
+      return;
+    }
+    const response = await fetch(
+      `/api/portfolio/assessments/${encodeURIComponent(assessmentId)}/reviews`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recommendation_id: recommendationId,
+          decision,
+          reason,
+          idempotency_key: `web_portfolio_review_${Date.now()}`
+        })
+      }
+    );
+    if (response.ok) {
+      setPortfolioReason("");
+      await refreshPortfolioAssessments();
+    }
+  }
+
   async function handleLoadRun(runId: string) {
     const response = await fetch(`/api/agent/runs/${encodeURIComponent(runId)}`, {
       credentials: "include"
@@ -1390,6 +1521,14 @@ function App() {
             >
               <Archive size={16} />
               {t.strategyLibrary}
+            </a>
+            <a
+              className={navItemClass("portfolio")}
+              href={sectionPath("portfolio")}
+              onClick={(event) => handleNavClick("portfolio", event)}
+            >
+              <Layers3 size={16} />
+              {t.portfolioLifecycle}
             </a>
             <a
               className={navItemClass("alerts")}
@@ -1871,6 +2010,18 @@ function App() {
             </div>
           </section>
 
+          <section className="mt-5" hidden={activeSection !== "portfolio"}>
+            <RouteMetricStrip label={t.pageMetrics} metrics={portfolioRouteMetrics} />
+            <PortfolioLifecyclePanel
+              assessments={portfolioAssessments}
+              onAssess={handlePortfolioAssessment}
+              onReview={handlePortfolioReview}
+              reason={portfolioReason}
+              setReason={setPortfolioReason}
+              t={t}
+            />
+          </section>
+
           <section className="mt-5" hidden={activeSection !== "memory" && activeSection !== "rag"}>
             <div className="min-w-0 space-y-5" hidden={activeSection !== "memory"}>
               <RouteMetricStrip label={t.pageMetrics} metrics={memoryRouteMetrics} />
@@ -2137,6 +2288,7 @@ function activeSectionFromPath(): NavSection {
   const section = window.location.pathname.split("/").filter(Boolean).at(-1) ?? "harness";
   if (
     section === "strategy" ||
+    section === "portfolio" ||
     section === "alerts" ||
     section === "runs" ||
     section === "memory" ||
@@ -2221,6 +2373,124 @@ type MemoryActivityInsight = {
   label: string;
   count: number;
 };
+
+function PortfolioLifecyclePanel({
+  assessments,
+  reason,
+  setReason,
+  onAssess,
+  onReview,
+  t
+}: {
+  assessments: PortfolioAssessment[];
+  reason: string;
+  setReason: (value: string) => void;
+  onAssess: () => Promise<void>;
+  onReview: (
+    assessmentId: string,
+    recommendationId: string,
+    decision: "accept" | "reject" | "hold"
+  ) => Promise<void>;
+  t: Record<string, string>;
+}) {
+  const latest = assessments[0];
+  return (
+    <div className="mt-3 grid grid-cols-[1.2fr_0.8fr] gap-5 max-xl:grid-cols-1">
+      <section className="panel">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="section-title">{t.portfolioLifecycle}</h2>
+            <p className="mt-1 text-sm text-ink/50">{t.portfolioLifecycleHint}</p>
+          </div>
+          <button className="button-primary" onClick={() => void onAssess()} type="button">
+            <Layers3 size={16} />
+            {t.runPortfolioAssessment}
+          </button>
+        </div>
+        <input
+          aria-label={t.governanceReason}
+          className="field-light mt-4 w-full"
+          onChange={(event) => setReason(event.target.value)}
+          placeholder={t.governanceReason}
+          value={reason}
+        />
+        {!latest ? (
+          <div className="empty-row mt-4">{t.noPortfolioAssessments}</div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {latest.recommendations.map((recommendation) => (
+              <div
+                className="operator-card block"
+                data-tone={recommendation.action === "observe" ? "signal" : "brass"}
+                key={recommendation.recommendation_id}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong>{recommendation.action}</strong>
+                  <span className="font-mono text-xs text-ink/45">
+                    {recommendation.recommendation_id}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-ink/65">{recommendation.reason}</p>
+                <div className="mt-2 text-xs text-ink/45">
+                  card={recommendation.strategy_card_id || "portfolio"} · allocation=false ·
+                  trading=false
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(["accept", "hold", "reject"] as const).map((decision) => (
+                    <button
+                      className="icon-button"
+                      disabled={!reason.trim()}
+                      key={decision}
+                      onClick={() =>
+                        void onReview(latest.id, recommendation.recommendation_id, decision)
+                      }
+                      type="button"
+                    >
+                      {decision === "accept"
+                        ? t.approve
+                        : decision === "hold"
+                          ? t.hold
+                          : t.reject}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+      <section className="panel">
+        <h2 className="section-title">{t.portfolioAssessments}</h2>
+        <div className="mt-4 space-y-2">
+          {assessments.length === 0 ? (
+            <div className="empty-row">{t.noPortfolioAssessments}</div>
+          ) : (
+            assessments.slice(0, 12).map((assessment) => (
+              <div className="operator-card block" data-tone="violet" key={assessment.id}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs">{assessment.id}</span>
+                  <span className="text-xs text-brass">{statusLabel(assessment.status)}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-ink/55">
+                  <span>{assessment.strategies.length} strategies</span>
+                  <span>{assessment.pairwise.length} pairs</span>
+                  <span>{assessment.unknowns.length} unknowns</span>
+                </div>
+                {assessment.pairwise.slice(0, 4).map((pair, index) => (
+                  <div className="mt-2 font-mono text-xs text-ink/45" key={index}>
+                    {stringifyValue(pair.left_card_id)} ↔ {stringifyValue(pair.right_card_id)} ·
+                    corr={stringifyValue(pair.correlation ?? "unknown")} · n=
+                    {stringifyValue(pair.sample_count)}
+                  </div>
+                ))}
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
 
 function GovernanceReview({
   assertions,

@@ -166,10 +166,14 @@ role and tool-policy intersection and injects template metadata only. It cannot 
 Python/shell, register endpoints/tools or widen paper/live permission. API, CLI, TUI and
 Web review surfaces contain no alternate state transition logic.
 
-Sprint 105 entered implementation on 2026-07-15. Its active boundary is a read-only,
-evidence-linked portfolio strategy lifecycle assessment with explicit unknown handling
-and human review decisions. It cannot allocate capital, rebalance, pause/start BitPro or
-paper strategies, promote to live, place orders, or overwrite historical research facts.
+Sprint 105 completed local implementation on 2026-07-15 and awaits production acceptance.
+`portfolio_assessment.v2` persists canonical request/policy/content hashes, bounded source
+refs, per-strategy lifecycle projections, pairwise aligned-return summaries, explicit
+unknowns and six fixed research/review recommendations. Request and review idempotency keys
+are bound to their canonical payloads. Human accept/reject/hold writes only a review ledger;
+the portfolio module imports no BitPro/paper/live mutation adapter. API, CLI, Textual and
+Web are thin projections of the same service. It cannot allocate capital, rebalance,
+pause/start strategies, promote to live, place orders, or overwrite historical facts.
 
 ## V1 In Scope
 
