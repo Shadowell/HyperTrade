@@ -4,6 +4,18 @@
 
 - Branch: `main`
 - Harness status: active
+- Planning state: proposed Sprint 96–105 Agent Research OS roadmap completed on
+  2026-07-14 for operator review. The roadmap selectively adopts durable
+  Session/Task/TUI/Skill capabilities associated with mature Agent runtimes and
+  structured role graphs associated with multi-Agent research frameworks while
+  preserving HyperTrade's BitPro MCP, evidence, approval, idempotency, paper
+  observation, and isolated-evaluation boundaries. The proposal includes one
+  roadmap, one detailed cross-sprint technical design, and ten focused sprint
+  contracts covering Sessions/Tasks, Evidence V2, the research graph,
+  reproducible experiments, robustness validation, Agent evaluation, TUI,
+  background triggers, governed Memory/Skills, and portfolio lifecycle review.
+  No runtime, trading, paper, BitPro, provider, deployment, or database behavior
+  changed; Sprint 96 has not started, and the active Sprint 95 remains separate.
 - Last verified state: Sprint 94 isolated evaluation deployment completed on
   2026-07-14. The server target at `/opt/hypertrade-eval` is a fresh `main`
   clone with its own `hypertrade-eval` Compose project/network,
