@@ -15,7 +15,9 @@
   passed (`28 passed`); optional dependencies installed successfully and the
   Ragas tool-accuracy/F1 smoke returned `1.0` for an exact trajectory. Full
   `./scripts/check.sh` passed (frontend lint/test/build, Ruff, mypy, and 335
-  Python tests); deployment verification is pending before release.
+  Python tests). Deployment run `29324969807` succeeded for SHA `2d273ad`;
+  the production health endpoint returned
+  `{"status":"ok","service":"hypertrade-api"}`.
 - Last verified state: Sprint 91 strategy card hierarchy completed locally on
   2026-07-13. Strategy summary, evidence metrics, audited source references,
   next-experiment guidance, and evidence detail rows now use the compact
