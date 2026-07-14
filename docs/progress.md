@@ -4,6 +4,12 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 99 implementation state: active on 2026-07-14 after Sprint 98 production
+  acceptance. The bounded scope is an immutable ExperimentManifest V1, canonical
+  fingerprint, append-only executions/evidence links, BitPro reference verification,
+  idempotent reuse/forced-rerun audit, manifest diff, and API/CLI/report projections.
+  Robustness methods, parameter optimization, paper/live actions, raw candles/results,
+  credentials, full prompts, and private reasoning remain out of scope.
 - Sprint 98 implementation state: completed and production-verified on
   2026-07-14. A fixed 13-role LangGraph DAG now runs over durable
   Task/Node/Event/Checkpoint facts with versioned prompts/schemas, role/operator/
@@ -59,7 +65,7 @@
   background triggers, governed Memory/Skills, and portfolio lifecycle review.
   This activation does not change runtime, trading, paper, BitPro, provider,
   deployment, or database behavior. Sprint 95 and Sprint 96 are completed;
-  Sprints 96–98 are completed; Sprint 99 is next.
+  Sprints 96–98 are completed; Sprint 99 is active.
 - Last verified state: Sprint 95 Agent production-readiness evaluation completed
   on 2026-07-14. The isolated API deterministic suite passed 14/14, but the
   real Codex Provider 24-case golden baseline stopped at case 11 with an

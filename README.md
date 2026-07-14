@@ -377,6 +377,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Agent Session and Task OS | Production |
 | Research Evidence V2 contract | Production |
 | Multi-Agent research graph V1 | Production |
+| Reproducible experiment ledger | In Progress |
 
 ### Planned (V3+)
 

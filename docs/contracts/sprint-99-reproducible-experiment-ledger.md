@@ -1,6 +1,6 @@
 # Sprint 99 - Reproducible Experiment Ledger
 
-> 状态：Proposed，依赖 Sprint 96–98。
+> 状态：Active；Sprint 96–98 已完成并通过生产验收，2026-07-14 进入实施。
 
 ## Goal
 
