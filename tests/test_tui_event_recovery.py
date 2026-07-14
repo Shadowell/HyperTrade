@@ -86,6 +86,25 @@ class RecoveryClient:
     ) -> dict[str, Any]:
         return {"id": "rfire_1", "status": "created"}
 
+    def list_memory_assertions(self) -> list[dict[str, Any]]:
+        return []
+
+    def review_memory_assertion(
+        self, assertion_id: str, *, decision: str, reason: str
+    ) -> dict[str, Any]:
+        return {"id": assertion_id, "status": decision}
+
+    def list_skill_proposals(self) -> list[dict[str, Any]]:
+        return []
+
+    def list_skill_releases(self) -> list[dict[str, Any]]:
+        return []
+
+    def decide_skill_proposal(
+        self, proposal_id: str, *, decision: str, reason: str
+    ) -> dict[str, Any]:
+        return {"id": proposal_id, "status": decision}
+
     def control_agent_task(
         self, task_id: str, action: str, *, reason: str
     ) -> dict[str, Any]:

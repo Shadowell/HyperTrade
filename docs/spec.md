@@ -157,13 +157,15 @@ PostgreSQL row locks/leases, and API/CLI/TUI controls require administrator auth
 and operator reasons. Production migration `0016_research_triggers` is active while
 the worker feature remains explicitly disabled.
 
-Sprint 104 entered implementation on 2026-07-15. It introduces governed,
-source-bound Memory assertions and code-free reusable Skill definitions. Agents may
-propose content, but static policy checks, isolated regression evidence and explicit
-administrator approval must all pass before an immutable version becomes active.
-Conflicted, expired or superseded assertions remain visible but cannot silently win
-retrieval; Skill releases cannot execute Python/shell, add endpoints/tools or widen any
-paper/live permission.
+Sprint 104 completed local implementation on 2026-07-15 and awaits production
+acceptance. Governed Memory assertions require active Evidence V2 sources and explicit
+review; conflicts, supersession and expiry remain queryable while ordinary Memory reads
+fail closed. Code-free Skill definitions pass schema/static policy, a HMAC-authenticated
+isolated regression attestation and independent administrator approval before an
+immutable version can become active. The role loader rechecks release hash, schema,
+role and tool-policy intersection and injects template metadata only. It cannot execute
+Python/shell, register endpoints/tools or widen paper/live permission. API, CLI, TUI and
+Web review surfaces contain no alternate state transition logic.
 
 ## V1 In Scope
 

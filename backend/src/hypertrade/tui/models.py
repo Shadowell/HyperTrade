@@ -51,6 +51,20 @@ class WorkbenchClient(Protocol):
         self, trigger_id: str, *, reason: str = "operator_run_now"
     ) -> dict[str, Any]: ...
 
+    def list_memory_assertions(self) -> list[dict[str, Any]]: ...
+
+    def review_memory_assertion(
+        self, assertion_id: str, *, decision: str, reason: str
+    ) -> dict[str, Any]: ...
+
+    def list_skill_proposals(self) -> list[dict[str, Any]]: ...
+
+    def list_skill_releases(self) -> list[dict[str, Any]]: ...
+
+    def decide_skill_proposal(
+        self, proposal_id: str, *, decision: str, reason: str
+    ) -> dict[str, Any]: ...
+
     def control_agent_task(
         self, task_id: str, action: str, *, reason: str
     ) -> dict[str, Any]: ...
@@ -102,6 +116,9 @@ class WorkbenchState:
     approvals: list[dict[str, Any]] = field(default_factory=list)
     trigger_projection: dict[str, Any] = field(default_factory=dict)
     trigger_fires: list[dict[str, Any]] = field(default_factory=list)
+    memory_assertions: list[dict[str, Any]] = field(default_factory=list)
+    skill_proposals: list[dict[str, Any]] = field(default_factory=list)
+    skill_releases: list[dict[str, Any]] = field(default_factory=list)
     cursor: TaskEventCursor = field(default_factory=TaskEventCursor)
     connection_status: str = "snapshot"
     last_error: str = ""
@@ -119,6 +136,9 @@ class WorkbenchStore:
         self.state.tasks = self.client.list_agent_tasks()
         self.state.trigger_projection = self.client.list_research_triggers()
         self.state.trigger_fires = self.client.list_research_trigger_fires()
+        self.state.memory_assertions = self.client.list_memory_assertions()
+        self.state.skill_proposals = self.client.list_skill_proposals()
+        self.state.skill_releases = self.client.list_skill_releases()
         if self.state.selected_session_id and not any(
             str(item.get("id", "")) == self.state.selected_session_id
             for item in self.state.sessions
@@ -248,6 +268,38 @@ class WorkbenchStore:
             raise ValueError(f"Unsupported trigger action: {action}")
         self.state.trigger_projection = self.client.list_research_triggers()
         self.state.trigger_fires = self.client.list_research_trigger_fires()
+        return result
+
+    def review_governance(
+        self,
+        resource_kind: str,
+        action: str,
+        *,
+        resource_id: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        normalized_reason = reason.strip()
+        if not normalized_reason:
+            raise ValueError("Operator reason is required")
+        if not resource_id:
+            raise ValueError("Governance resource ID is required")
+        if resource_kind == "assertion" and action in {"approve", "reject", "dispute"}:
+            result = self.client.review_memory_assertion(
+                resource_id,
+                decision=action,
+                reason=normalized_reason,
+            )
+        elif resource_kind == "skill" and action in {"approve", "reject"}:
+            result = self.client.decide_skill_proposal(
+                resource_id,
+                decision=action,
+                reason=normalized_reason,
+            )
+        else:
+            raise ValueError(f"Unsupported governance action: {resource_kind}:{action}")
+        self.state.memory_assertions = self.client.list_memory_assertions()
+        self.state.skill_proposals = self.client.list_skill_proposals()
+        self.state.skill_releases = self.client.list_skill_releases()
         return result
 
     @property

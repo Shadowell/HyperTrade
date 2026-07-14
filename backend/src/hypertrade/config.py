@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     langfuse_public_key: str = Field(default="", alias="LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: str = Field(default="", alias="LANGFUSE_SECRET_KEY")
     langfuse_base_url: str = Field(default="", alias="LANGFUSE_BASE_URL")
+    skill_eval_attestation_secret: str = Field(
+        default="",
+        alias="SKILL_EVAL_ATTESTATION_SECRET",
+    )
     agent_tool_timeout_quick_seconds: float = Field(
         default=5.0,
         alias="AGENT_TOOL_TIMEOUT_QUICK_SECONDS",

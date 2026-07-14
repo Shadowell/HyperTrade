@@ -174,6 +174,30 @@ type MemoryItem = {
   created_at: string;
 };
 
+type MemoryAssertion = {
+  id: string;
+  claim: string;
+  status: string;
+  usable: boolean;
+  source_evidence_ids?: string[];
+  confidence?: string;
+};
+
+type SkillProposal = {
+  id: string;
+  skill_key: string;
+  status: string;
+  definition_hash: string;
+  diff?: string;
+};
+
+type SkillRelease = {
+  id: string;
+  skill_key: string;
+  version: number;
+  status: string;
+};
+
 type RagHit = {
   source_path: string;
   title: string;
@@ -465,6 +489,16 @@ const copy = {
     memoryKinds: "记忆类型",
     memoryEntries: "条",
     memoryNoActivity: "暂无可用创建日期",
+    governanceReview: "记忆与技能治理",
+    governanceReviewHint: "只有来源有效的 Assertion 与通过隔离评测、人工批准的无代码 Skill 才能进入 Agent。",
+    memoryAssertions: "Memory Assertions",
+    skillProposals: "Skill 提案",
+    skillReleases: "不可变发布",
+    governanceReason: "必填：人工复核理由",
+    dispute: "标记争议",
+    noAssertions: "暂无 Assertion",
+    noSkillProposals: "暂无 Skill 提案",
+    noSkillReleases: "暂无 Skill 发布",
     initialCash: "初始资金",
     candleSource: "数据源",
     strategyKey: "策略",
@@ -663,6 +697,17 @@ const copy = {
     memoryKinds: "Memory kinds",
     memoryEntries: "items",
     memoryNoActivity: "No usable creation dates",
+    governanceReview: "Memory and Skill Governance",
+    governanceReviewHint:
+      "Only source-valid Assertions and code-free Skills with isolated evaluation plus human approval can enter the Agent.",
+    memoryAssertions: "Memory Assertions",
+    skillProposals: "Skill Proposals",
+    skillReleases: "Immutable Releases",
+    governanceReason: "Required operator review reason",
+    dispute: "Dispute",
+    noAssertions: "No assertions",
+    noSkillProposals: "No skill proposals",
+    noSkillReleases: "No skill releases",
     initialCash: "Initial Cash",
     candleSource: "Source",
     strategyKey: "Strategy",
@@ -948,6 +993,10 @@ function App() {
   const [memoryInventoryItems, setMemoryInventoryItems] = useState<MemoryItem[]>([]);
   const [selectedMemoryId, setSelectedMemoryId] = useState("");
   const [memoryQuery, setMemoryQuery] = useState("");
+  const [memoryAssertions, setMemoryAssertions] = useState<MemoryAssertion[]>([]);
+  const [skillProposals, setSkillProposals] = useState<SkillProposal[]>([]);
+  const [skillReleases, setSkillReleases] = useState<SkillRelease[]>([]);
+  const [governanceReason, setGovernanceReason] = useState("");
   const [ragQuery, setRagQuery] = useState("risk");
   const [ragHits, setRagHits] = useState<RagHit[]>([]);
   const [showRawMarkdown, setShowRawMarkdown] = useState(false);
@@ -1121,6 +1170,29 @@ function App() {
     setMonitorAlerts([]);
   }, []);
 
+  const refreshGovernance = useCallback(async () => {
+    const [assertionsResponse, proposalsResponse, releasesResponse] = await Promise.all([
+      fetch("/api/memory/assertions", { credentials: "include" }),
+      fetch("/api/skills/proposals", { credentials: "include" }),
+      fetch("/api/skills/releases", { credentials: "include" })
+    ]);
+    setMemoryAssertions(
+      assertionsResponse.ok
+        ? (((await assertionsResponse.json()) as { items?: MemoryAssertion[] }).items ?? [])
+        : []
+    );
+    setSkillProposals(
+      proposalsResponse.ok
+        ? (((await proposalsResponse.json()) as { items?: SkillProposal[] }).items ?? [])
+        : []
+    );
+    setSkillReleases(
+      releasesResponse.ok
+        ? (((await releasesResponse.json()) as { items?: SkillRelease[] }).items ?? [])
+        : []
+    );
+  }, []);
+
   const refreshOverview = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -1130,6 +1202,7 @@ function App() {
         await refreshMemoryItems();
         await refreshStrategyLibrary();
         await refreshMonitorAlerts();
+        await refreshGovernance();
         setHarnessError("");
         return;
       }
@@ -1137,7 +1210,7 @@ function App() {
     } finally {
       setRefreshing(false);
     }
-  }, [refreshMemoryItems, refreshMonitorAlerts, refreshStrategyLibrary]);
+  }, [refreshGovernance, refreshMemoryItems, refreshMonitorAlerts, refreshStrategyLibrary]);
 
   const loadRunObservability = useCallback(async (runId: string) => {
     setObservabilityLoading(true);
@@ -1227,6 +1300,35 @@ function App() {
 
   async function handleStrategySearch() {
     await refreshStrategyLibrary(strategyQuery);
+  }
+
+  async function handleGovernanceDecision(
+    resource: "assertion" | "skill",
+    resourceId: string,
+    decision: "approve" | "reject" | "dispute"
+  ) {
+    const reason = governanceReason.trim();
+    if (!reason) {
+      return;
+    }
+    const path =
+      resource === "assertion"
+        ? `/api/memory/assertions/${encodeURIComponent(resourceId)}/review`
+        : `/api/skills/proposals/${encodeURIComponent(resourceId)}/approve`;
+    const response = await fetch(path, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        decision,
+        reason,
+        idempotency_key: `web_${resource}_${Date.now()}_${resourceId}`
+      })
+    });
+    if (response.ok) {
+      setGovernanceReason("");
+      await refreshGovernance();
+    }
   }
 
   async function handleLoadRun(runId: string) {
@@ -1777,6 +1879,15 @@ function App() {
                 items={memoryInventoryItems}
                 t={t}
               />
+              <GovernanceReview
+                assertions={memoryAssertions}
+                onDecision={handleGovernanceDecision}
+                proposals={skillProposals}
+                reason={governanceReason}
+                releases={skillReleases}
+                setReason={setGovernanceReason}
+                t={t}
+              />
               <div className="panel">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -2110,6 +2221,155 @@ type MemoryActivityInsight = {
   label: string;
   count: number;
 };
+
+function GovernanceReview({
+  assertions,
+  proposals,
+  releases,
+  reason,
+  setReason,
+  onDecision,
+  t
+}: {
+  assertions: MemoryAssertion[];
+  proposals: SkillProposal[];
+  releases: SkillRelease[];
+  reason: string;
+  setReason: (value: string) => void;
+  onDecision: (
+    resource: "assertion" | "skill",
+    resourceId: string,
+    decision: "approve" | "reject" | "dispute"
+  ) => Promise<void>;
+  t: Record<string, string>;
+}) {
+  const pendingAssertions = assertions.filter((item) =>
+    ["proposed", "disputed"].includes(item.status)
+  );
+  const pendingSkills = proposals.filter((item) => item.status === "pending_approval");
+  return (
+    <section className="panel" aria-labelledby="governance-review-title">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="section-title" id="governance-review-title">
+            {t.governanceReview}
+          </h2>
+          <p className="mt-1 text-sm text-ink/50">{t.governanceReviewHint}</p>
+        </div>
+        <CheckCircle2 className="text-signal" size={18} />
+      </div>
+      <input
+        aria-label={t.governanceReason}
+        className="field-light mt-4 w-full"
+        onChange={(event) => setReason(event.target.value)}
+        placeholder={t.governanceReason}
+        value={reason}
+      />
+      <div className="mt-4 grid grid-cols-2 gap-4 max-xl:grid-cols-1">
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase text-ink/45">
+            {t.memoryAssertions} · {pendingAssertions.length}
+          </div>
+          <div className="space-y-2">
+            {pendingAssertions.length === 0 ? (
+              <div className="empty-row">{t.noAssertions}</div>
+            ) : (
+              pendingAssertions.slice(0, 10).map((item) => (
+                <div className="operator-card block" data-tone="brass" key={item.id}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono text-xs text-ink/45">{item.id}</span>
+                    <span className="text-xs text-brass">{statusLabel(item.status)}</span>
+                  </div>
+                  <p className="mt-2 text-sm">{item.claim}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      className="icon-button"
+                      disabled={!reason.trim()}
+                      onClick={() => void onDecision("assertion", item.id, "approve")}
+                      type="button"
+                    >
+                      {t.approve}
+                    </button>
+                    <button
+                      className="icon-button"
+                      disabled={!reason.trim()}
+                      onClick={() => void onDecision("assertion", item.id, "dispute")}
+                      type="button"
+                    >
+                      {t.dispute}
+                    </button>
+                    <button
+                      className="icon-button"
+                      disabled={!reason.trim()}
+                      onClick={() => void onDecision("assertion", item.id, "reject")}
+                      type="button"
+                    >
+                      {t.reject}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase text-ink/45">
+            {t.skillProposals} · {pendingSkills.length}
+          </div>
+          <div className="space-y-2">
+            {pendingSkills.length === 0 ? (
+              <div className="empty-row">{t.noSkillProposals}</div>
+            ) : (
+              pendingSkills.slice(0, 10).map((item) => (
+                <div className="operator-card block" data-tone="violet" key={item.id}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <strong>{item.skill_key}</strong>
+                    <span className="font-mono text-xs text-ink/45">
+                      {item.definition_hash.slice(0, 12)}
+                    </span>
+                  </div>
+                  <div className="mt-2 font-mono text-xs text-ink/45">{item.id}</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      className="icon-button"
+                      disabled={!reason.trim()}
+                      onClick={() => void onDecision("skill", item.id, "approve")}
+                      type="button"
+                    >
+                      {t.approve}
+                    </button>
+                    <button
+                      className="icon-button"
+                      disabled={!reason.trim()}
+                      onClick={() => void onDecision("skill", item.id, "reject")}
+                      type="button"
+                    >
+                      {t.reject}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="mb-2 mt-4 text-xs font-semibold uppercase text-ink/45">
+            {t.skillReleases} · {releases.length}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {releases.length === 0 ? (
+              <div className="empty-row w-full">{t.noSkillReleases}</div>
+            ) : (
+              releases.slice(0, 10).map((release) => (
+                <span className="evidence-chip" key={release.id}>
+                  {release.skill_key} v{release.version} · {statusLabel(release.status)}
+                </span>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function MemoryObservatory({
   items,

@@ -31,6 +31,7 @@ from hypertrade.research.role_provider import (
     DeterministicGapRoleProvider,
 )
 from hypertrade.research.triggers import ResearchTriggerService
+from hypertrade.skills.lifecycle import ApprovedSkillLoader
 
 logger = logging.getLogger("hypertrade.worker")
 
@@ -163,7 +164,10 @@ def agent_task_worker_once(
                 selected=active_settings.active_chat_provider
             )
             role_provider = (
-                ChatResearchRoleProvider(chat_provider)
+                ChatResearchRoleProvider(
+                    chat_provider,
+                    skill_loader=ApprovedSkillLoader(db),
+                )
                 if chat_provider is not None
                 else DeterministicGapRoleProvider()
             )

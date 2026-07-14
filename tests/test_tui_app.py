@@ -18,6 +18,7 @@ class FakeWorkbenchClient:
         self.controls: list[tuple[str, str, str]] = []
         self.created: list[str] = []
         self.trigger_controls: list[tuple[str, str, str]] = []
+        self.governance_controls: list[tuple[str, str, str]] = []
 
     def list_agent_sessions(self) -> list[dict[str, Any]]:
         return [{"id": "sess_1", "title": "TUI session", "status": "active"}]
@@ -143,6 +144,42 @@ class FakeWorkbenchClient:
         self.trigger_controls.append((trigger_id, "run", reason))
         return {"id": "rfire_new", "status": "created"}
 
+    def list_memory_assertions(self) -> list[dict[str, Any]]:
+        status = "active" if self.governance_controls else "proposed"
+        return [
+            {
+                "id": "masrt_1",
+                "status": status,
+                "usable": status == "active",
+                "claim": "Evidence-bound volatility assertion",
+            }
+        ]
+
+    def review_memory_assertion(
+        self, assertion_id: str, *, decision: str, reason: str
+    ) -> dict[str, Any]:
+        self.governance_controls.append((assertion_id, decision, reason))
+        return {"id": assertion_id, "status": "active" if decision == "approve" else decision}
+
+    def list_skill_proposals(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "skp_1",
+                "status": "pending_approval",
+                "skill_key": "regime_summary",
+                "definition_hash": "a" * 64,
+            }
+        ]
+
+    def list_skill_releases(self) -> list[dict[str, Any]]:
+        return []
+
+    def decide_skill_proposal(
+        self, proposal_id: str, *, decision: str, reason: str
+    ) -> dict[str, Any]:
+        self.governance_controls.append((proposal_id, decision, reason))
+        return {"id": proposal_id, "status": decision}
+
     def control_agent_task(
         self, task_id: str, action: str, *, reason: str
     ) -> dict[str, Any]:
@@ -213,3 +250,22 @@ async def test_tui_trigger_tab_projects_and_controls_server_trigger() -> None:
         assert "rtrg_1" in str(app.query_one("#trigger-detail", Static).content)
 
     assert client.trigger_controls == [("rtrg_1", "disable", "operator review")]
+
+
+@pytest.mark.anyio
+async def test_tui_governance_tab_reviews_source_bound_assertion() -> None:
+    client = FakeWorkbenchClient()
+    app = ResearchWorkbenchApp(client=client)
+
+    async with app.run_test(size=(180, 50)) as pilot:
+        await pilot.press("m")
+        await pilot.pause()
+        assert "masrt_1" in str(app.query_one("#governance-detail", Static).content)
+        await pilot.click("#governance-assertion-approve")
+        await pilot.pause()
+        assert isinstance(app.screen, ControlConfirmScreen)
+        app.screen.query_one("#control-reason", Input).value = "sources verified"
+        await pilot.click("#control-submit")
+        await pilot.pause()
+
+    assert client.governance_controls == [("masrt_1", "approve", "sources verified")]

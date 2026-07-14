@@ -880,6 +880,37 @@ POST     /api/skills/releases/{id}/rollback
 
 所有 mutation 需要管理员、reason 和 idempotency。TUI/Web 只提供 review surface。
 
+### 13.5 实际实现记录（2026-07-15）
+
+`0017_memory_skills` 实际创建八张表：`memory_assertions`、relations、reviews、
+`skill_proposals`、evaluations、approvals、releases 与 active pointers。Assertion canonical
+JSON 包含 claim、scope、排序后的 Evidence V2 ids、confidence 和有效期，并生成 SHA-256；
+proposal/review/relation 均有独立幂等键。review 前重新验证所有 Evidence V2 为 active 且未
+过期。conflict 会把两边置为 disputed，supersede 只在来源 assertion active 后生效；状态
+仍保留审计，linked `MemoryItem` 会被禁用。`MemoryService.list_active/search` 在正常读取前
+刷新治理生命周期，因此不需要操作员先打开治理页才能阻断过期知识。
+
+`SkillDefinitionV1` 只含 role prompt、已注册只读工具指南、schema 示例和报告模板。
+`SkillStaticPolicy` 拒绝代码 fence、import/dynamic execution、shell/network endpoint、secret
+材料、paper/live 写动作、未知工具、非只读工具以及 role allowlist 外的工具。隔离环境的
+`SkillIsolatedEvaluator` 运行 Sprint 101 deterministic suite，只输出 metadata-only
+attestation。证明使用服务器环境中的 `SKILL_EVAL_ATTESTATION_SECRET` 做 HMAC-SHA256，
+覆盖 proposal hash、suite/baseline、case/pass/regression/unsafe 计数、artifact hash、runtime
+和 idempotency key；生产导入先验签，缺密钥或任何字段被改写都失败关闭。HMAC 不替代
+管理员查看 diff 与评测后进行的独立批准。
+
+release 保留 canonical definition、hash、version、proposal、批准人和原因；active pointer
+是唯一可变引用。PostgreSQL proposal/assertion 行锁阻止同资源并发决策，skill-key advisory
+transaction lock 也覆盖首个 pointer 尚不存在时的并发发布。rollback 仅恢复旧 pointer 并
+记录审批事实，不删除或改写 definition。`ApprovedSkillLoader` 每次按 active pointer 查询，
+复验 hash/Pydantic schema/role/tool intersection，最多加载 5 个、约 20k 字符；它不接触
+ToolRegistry 注册或外部 adapter。
+
+FastAPI mutation 均要求管理员，CLI `/assertions`、`/skills`、Textual Governance tab 和
+Web `/harness/memory` 只传 resource id、decision、reason/idempotency。角色 provider 在 plan、
+synthesize、repair 三条模型路径追加相同 approved template；worker 与 API runtime 使用
+同一 loader。生产未配置 attestation secret 时仍可查看/提案，但不能导入评测或发布。
+
 ## 14. Sprint 105：Portfolio Strategy Lifecycle
 
 ### 14.1 使用技术

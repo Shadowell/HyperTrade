@@ -4,13 +4,18 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 104 implementation state: active on 2026-07-15 after Sprint 103 production
-  acceptance. This slice adds source-bound Memory assertions with explicit conflict,
-  expiry and supersession plus a code-free Skill proposal/evaluation/approval/release/
-  rollback lifecycle. Existing `MemoryItem` remains compatible; proposed or failed
-  content cannot enter production prompts, add tools, execute code or widen paper/live
-  authority. Sprint 101 isolated evaluation and administrator approval remain required
-  before an immutable Skill version can become active.
+- Sprint 104 implementation state: locally complete on 2026-07-15; production acceptance
+  is pending. Eight `0017_memory_skills` tables, source-bound `MemoryAssertionV1`,
+  explicit conflict/supersede/expiry, ordinary-search fail-closed compatibility Memory,
+  code-free Skill proposal/static-check/evaluation/approval/release/rollback, immutable
+  versions and role-scoped approved loading are implemented. Isolated evaluation
+  attestations are HMAC-bound to proposal/suite/baseline/counters/artifact and production
+  fails closed when the shared server secret is absent or mismatched; administrator
+  approval remains a separate gate. API, `/assertions` and `/skills`, TUI Governance and
+  Web Memory review surfaces all delegate to the same server state machine. PostgreSQL
+  `0017 -> 0016 -> 0017` migration passed; full `./scripts/check.sh` passed with frontend
+  lint/8 tests/build, Ruff, mypy over 138 source files and 464 Python tests. No Skill or
+  Assertion has been activated in production; deployment verification is next.
 - Sprint 103 implementation state: completed and production-verified on 2026-07-15.
   The bounded slice adds
   disabled-by-default durable research triggers,

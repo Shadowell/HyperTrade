@@ -397,9 +397,14 @@ hypertrade --remote http://127.0.0.1:3334 chat
 Production stays inert until `RESEARCH_TRIGGERS_ENABLED=true` is deliberately set.
 Every fire still revalidates the active mandate and bounded zero-backtest budget.
 
-Sprint 104 is implementing governed Memory assertions and code-free Skill lifecycle
-records. Until static checks, isolated evaluation and administrator approval all pass,
-a proposal remains inactive and cannot affect production prompts or tool permissions.
+Sprint 104 implements governed Memory assertions and a code-free Skill lifecycle.
+Assertions require active Evidence V2 and human review; conflicts and expired sources
+fail closed during normal Memory search. Skills require static policy, an HMAC-verified
+isolated evaluation and separate administrator approval before an immutable release can
+enter a matching role prompt. They cannot add tools, execute code or widen paper/live
+permissions. Operators review the same state through Web Memory governance, the TUI
+Governance tab, or `/assertions` and `/skills` in the CLI. Production acceptance is
+pending; an empty `SKILL_EVAL_ATTESTATION_SECRET` intentionally blocks eval imports.
 
 ---
 

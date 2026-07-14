@@ -1,6 +1,6 @@
 # Sprint 104 - Governed Memory and Skill Lifecycle
 
-> 状态：Active；Sprint 97、101、103 已完成验收，2026-07-15 开始实施。
+> 状态：Implementation complete / production acceptance pending；2026-07-15 本地门禁通过。
 
 ## Goal
 
@@ -67,3 +67,28 @@ uv run pytest tests/test_agent_research_evals.py tests/test_agent_tool_policy.py
 ## Handoff
 
 - 下一步：Sprint 105 使用受治理 evidence/memory 形成组合级策略生命周期审阅。
+
+## Implementation Record
+
+- Alembic `0017_memory_skills` 新增 Assertion、relation、review、Skill proposal、
+  evaluation、approval、release 和 active pointer 八张表；PostgreSQL 已通过完整
+  upgrade/downgrade/upgrade。
+- `MemoryAssertionService` 强制 Evidence V2 来源、人工 review、冲突/替代/过期状态和
+  fail-closed 检索；现有 `MemoryItem` 仅作为兼容投影，来源失效会在普通检索前禁用。
+- `SkillLifecycleService` 只接受无代码 definition，静态阻断脚本、网络、secret、写工具和
+  role 权限扩张。隔离评测使用 HMAC 证明绑定 proposal hash、suite、baseline、计数和 artifact；
+  未配置验签密钥、证明被篡改或缺少人工批准时均不能发布。
+- 发布使用 immutable release/hash/version 与 active pointer；PostgreSQL row/advisory locks
+  串行化 review/release，rollback 只切换 pointer 并保留历史。
+- `ApprovedSkillLoader` 仅向匹配角色 prompt 注入 hash/schema/tool-policy 均有效的 active
+  metadata/template，不注册工具、不执行代码、不扩大 paper/live 权限。
+- 管理员 API、CLI `/assertions`/`/skills`、TUI Governance tab 和 Web Memory 治理队列共用
+  同一服务端状态机，所有决策要求 reason 和 idempotency。
+
+## Local Acceptance
+
+- `./scripts/check.sh`：前端 lint、8 tests、build；Ruff；mypy 138 source files；
+  464 Python tests。
+- PostgreSQL migration：`0017` upgrade → `0016` downgrade → `0017` upgrade，8 表存在。
+- 聚焦 Assertion/Skill/API/CLI/TUI/role-loader 测试通过；伪造 attestation、过期来源、
+  冲突 assertion、恶意 Skill、未评测发布与 hash tamper 均 fail closed。

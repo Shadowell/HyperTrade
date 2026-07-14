@@ -100,7 +100,7 @@ class HelpScreen(ModalScreen[None]):
                 "Ctrl+R  request resume/retry based on status\n"
                 "Ctrl+C  request cancel\n"
                 "R       refresh REST snapshot\n"
-                "G/E/A/T graph, evidence, approval, triggers\n"
+                "G/E/A/T/M graph, evidence, approval, triggers, governance\n"
                 "?       help\n"
                 "Q       quit\n\n"
                 "Every mutation requires a reason and is revalidated by the server.",
@@ -127,6 +127,7 @@ class ResearchWorkbenchApp(App[None]):
         ("e", "evidence", "Evidence"),
         ("a", "approval", "Approval"),
         ("t", "triggers", "Triggers"),
+        ("m", "governance", "Governance"),
         ("question_mark", "help", "Help"),
         ("q", "quit", "Quit"),
     ]
@@ -160,6 +161,10 @@ class ResearchWorkbenchApp(App[None]):
     #trigger-actions Input { width: 1fr; margin-right: 1; }
     #trigger-actions Button { width: 13; margin-right: 1; }
     #trigger-detail { height: 1fr; }
+    #governance-actions { height: 4; }
+    #governance-actions Input { width: 1fr; margin-right: 1; }
+    #governance-actions Button { width: 14; margin-right: 1; }
+    #governance-detail { height: 1fr; }
     .medium #evidence-pane { display: none; }
     .compact #sessions-pane, .compact #evidence-pane { display: none; }
     .compact #detail-tabs { height: 14; }
@@ -211,6 +216,28 @@ class ResearchWorkbenchApp(App[None]):
                     yield Button("Kill ON", id="trigger-kill-on", variant="error")
                     yield Button("Kill OFF", id="trigger-kill-off")
                 yield Static("No triggers", id="trigger-detail", classes="detail", markup=False)
+            with TabPane("Governance", id="tab-governance"):
+                with Horizontal(id="governance-actions"):
+                    yield Input(placeholder="Assertion / proposal ID", id="governance-id")
+                    yield Button(
+                        "Assertion ✓",
+                        id="governance-assertion-approve",
+                        variant="success",
+                    )
+                    yield Button(
+                        "Assertion !",
+                        id="governance-assertion-dispute",
+                        variant="warning",
+                    )
+                    yield Button("Assertion ✕", id="governance-assertion-reject", variant="error")
+                    yield Button("Skill ✓", id="governance-skill-approve", variant="success")
+                    yield Button("Skill ✕", id="governance-skill-reject", variant="error")
+                yield Static(
+                    "No governance records",
+                    id="governance-detail",
+                    classes="detail",
+                    markup=False,
+                )
         with Horizontal(id="prompt-row"):
             yield TextArea(
                 "",
@@ -278,6 +305,18 @@ class ResearchWorkbenchApp(App[None]):
         trigger_items = state.trigger_projection.get("items", [])
         if not trigger_input.value and trigger_items:
             trigger_input.value = str(trigger_items[0].get("id", ""))
+        self.query_one("#governance-detail", Static).update(self._governance_text(state))
+        governance_input = self.query_one("#governance-id", Input)
+        pending = [
+            *[
+                item
+                for item in state.memory_assertions
+                if item.get("status") in {"proposed", "disputed"}
+            ],
+            *[item for item in state.skill_proposals if item.get("status") == "pending_approval"],
+        ]
+        if not governance_input.value and pending:
+            governance_input.value = str(pending[0].get("id", ""))
 
     @work(thread=True, exclusive=True, group="task-stream")
     def follow_task_stream(self, task_id: str) -> None:
@@ -354,6 +393,10 @@ class ResearchWorkbenchApp(App[None]):
             action = button_id.removeprefix("trigger-").replace("-", "_")
             self._request_trigger_control(action)
             return
+        if button_id.startswith("governance-"):
+            _, resource_kind, action = button_id.split("-", maxsplit=2)
+            self._request_governance_control(resource_kind, action)
+            return
         if button_id != "start-task":
             return
         prompt = self.query_one("#task-prompt", TextArea).text.strip()
@@ -423,6 +466,9 @@ class ResearchWorkbenchApp(App[None]):
     def action_triggers(self) -> None:
         self.query_one("#detail-tabs", TabbedContent).active = "tab-triggers"
 
+    def action_governance(self) -> None:
+        self.query_one("#detail-tabs", TabbedContent).active = "tab-governance"
+
     def _request_trigger_control(self, action: str) -> None:
         trigger_id = self.query_one("#trigger-id", Input).value.strip()
         if action not in {"kill_on", "kill_off"} and not trigger_id:
@@ -451,6 +497,43 @@ class ResearchWorkbenchApp(App[None]):
             self.notify(f"Trigger control rejected: {type(exc).__name__}", severity="error")
             return
         self.notify(f"Trigger {action} accepted: {result.get('status', 'ok')}")
+        self.call_later(self._render_state, self.store.state)
+
+    def _request_governance_control(self, resource_kind: str, action: str) -> None:
+        resource_id = self.query_one("#governance-id", Input).value.strip()
+        if not resource_id:
+            self.notify("Governance resource ID is required", severity="warning")
+            return
+        self.push_screen(
+            ControlConfirmScreen(action, resource_id, resource_kind=resource_kind),
+            lambda reason: self._apply_governance_control(
+                resource_kind,
+                action,
+                resource_id,
+                reason,
+            ),
+        )
+
+    def _apply_governance_control(
+        self,
+        resource_kind: str,
+        action: str,
+        resource_id: str,
+        reason: str | None,
+    ) -> None:
+        if reason is None:
+            return
+        try:
+            result = self.store.review_governance(
+                resource_kind,
+                action,
+                resource_id=resource_id,
+                reason=reason,
+            )
+        except Exception as exc:
+            self.notify(f"Governance rejected: {type(exc).__name__}", severity="error")
+            return
+        self.notify(f"Governance accepted: {result.get('status', action)}")
         self.call_later(self._render_state, self.store.state)
 
     def action_help(self) -> None:
@@ -565,4 +648,32 @@ class ResearchWorkbenchApp(App[None]):
             )
         if len(lines) == 2:
             lines.append("No trigger records")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _governance_text(state: WorkbenchState) -> str:
+        lines = ["MEMORY ASSERTIONS"]
+        for item in state.memory_assertions[:20]:
+            lines.append(
+                f"{item.get('status')} · {item.get('id')} · usable={item.get('usable', False)}\n"
+                f"  {str(item.get('claim', ''))[:120]}"
+            )
+        if len(lines) == 1:
+            lines.append("No assertions")
+        lines.append("\nSKILL PROPOSALS")
+        for item in state.skill_proposals[:20]:
+            lines.append(
+                f"{item.get('status')} · {item.get('id')} · {item.get('skill_key')} · "
+                f"{str(item.get('definition_hash', ''))[:12]}"
+            )
+        if not state.skill_proposals:
+            lines.append("No proposals")
+        lines.append("\nACTIVE / HISTORICAL RELEASES")
+        for item in state.skill_releases[:20]:
+            lines.append(
+                f"{item.get('status')} · {item.get('id')} · "
+                f"{item.get('skill_key')} v{item.get('version')}"
+            )
+        if not state.skill_releases:
+            lines.append("No releases")
         return "\n".join(lines)

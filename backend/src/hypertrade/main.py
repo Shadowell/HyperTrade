@@ -65,6 +65,12 @@ from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.global_market.service import GlobalMarketService
 from hypertrade.live.service import LiveOrderIntentService
 from hypertrade.market.repository import MarketRepository
+from hypertrade.memory.governance import (
+    MemoryAssertionRelationV1,
+    MemoryAssertionReviewV1,
+    MemoryAssertionService,
+    MemoryAssertionV1,
+)
 from hypertrade.memory.service import MemoryService
 from hypertrade.monitoring import MonitorService
 from hypertrade.paper.service import PaperTradingService
@@ -105,6 +111,14 @@ from hypertrade.research.triggers import (
     ResearchTriggerService,
     TriggerControlUpdate,
     TriggerEvent,
+)
+from hypertrade.skills.lifecycle import (
+    ApprovedSkillLoader,
+    SkillApprovalV1,
+    SkillEvaluationV1,
+    SkillLifecycleService,
+    SkillProposalV1,
+    SkillRollbackV1,
 )
 from hypertrade.strategy.experiment import StrategyExperimentService
 from hypertrade.strategy.library import StrategyLibraryService
@@ -333,7 +347,10 @@ def create_app(
             selected_model=str(app.state.active_chat_model),
         )
         role_provider = (
-            ChatResearchRoleProvider(chat_provider)
+            ChatResearchRoleProvider(
+                chat_provider,
+                skill_loader=ApprovedSkillLoader(database),
+            )
             if chat_provider is not None
             else DeterministicGapRoleProvider()
         )
@@ -1569,6 +1586,180 @@ def create_app(
         else:
             items = service.list_active()
         return {"items": [_memory_to_dict(item) for item in items]}
+
+    @app.post("/api/memory/assertions")
+    def propose_memory_assertion(
+        payload: MemoryAssertionV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return MemoryAssertionService(database).propose(payload, actor=username)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/memory/assertions")
+    def list_memory_assertions(
+        _: AdminUser,
+        query: str = "",
+        status: str = "",
+    ) -> dict[str, Any]:
+        return {
+            "items": MemoryAssertionService(database).list_assertions(
+                query=query,
+                status=status,
+            )
+        }
+
+    @app.post("/api/memory/assertion-relations")
+    def create_memory_assertion_relation(
+        payload: MemoryAssertionRelationV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return MemoryAssertionService(database).add_relation(payload, actor=username)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Assertion not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/memory/assertions/{assertion_id}")
+    def get_memory_assertion(assertion_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return MemoryAssertionService(database).get(assertion_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Assertion not found") from exc
+
+    @app.post("/api/memory/assertions/{assertion_id}/review")
+    def review_memory_assertion(
+        assertion_id: str,
+        payload: MemoryAssertionReviewV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return MemoryAssertionService(database).review(
+                assertion_id,
+                payload,
+                actor=username,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Assertion not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/skills/proposals")
+    def propose_skill(payload: SkillProposalV1, username: AdminUser) -> dict[str, Any]:
+        try:
+            return SkillLifecycleService(
+                database,
+                attestation_secret=app_settings.skill_eval_attestation_secret,
+            ).propose(payload, actor=username)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/skills/proposals")
+    def list_skill_proposals(_: AdminUser) -> dict[str, Any]:
+        return {
+            "items": SkillLifecycleService(
+                database,
+                attestation_secret=app_settings.skill_eval_attestation_secret,
+            ).list_proposals()
+        }
+
+    @app.get("/api/skills/proposals/{proposal_id}")
+    def get_skill_proposal(proposal_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return SkillLifecycleService(
+                database,
+                attestation_secret=app_settings.skill_eval_attestation_secret,
+            ).get_proposal(proposal_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Skill proposal not found") from exc
+
+    @app.get("/api/skills/proposals/{proposal_id}/diff")
+    def get_skill_proposal_diff(proposal_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            proposal = SkillLifecycleService(
+                database,
+                attestation_secret=app_settings.skill_eval_attestation_secret,
+            ).get_proposal(proposal_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Skill proposal not found") from exc
+        return {
+            "proposal_id": proposal_id,
+            "definition_hash": proposal["definition_hash"],
+            "diff": proposal["diff"],
+        }
+
+    @app.post("/api/skills/proposals/{proposal_id}/evaluate")
+    def record_skill_evaluation(
+        proposal_id: str,
+        payload: SkillEvaluationV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return SkillLifecycleService(
+                database,
+                attestation_secret=app_settings.skill_eval_attestation_secret,
+            ).record_evaluation(
+                proposal_id,
+                payload,
+                actor=username,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Skill proposal not found") from exc
+        except (PermissionError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/skills/proposals/{proposal_id}/approve")
+    def decide_skill_proposal(
+        proposal_id: str,
+        payload: SkillApprovalV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return SkillLifecycleService(
+                database,
+                attestation_secret=app_settings.skill_eval_attestation_secret,
+            ).decide(
+                proposal_id,
+                payload,
+                actor=username,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Skill proposal not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/skills/releases")
+    def list_skill_releases(_: AdminUser, active_only: bool = False) -> dict[str, Any]:
+        return {
+            "items": SkillLifecycleService(
+                database,
+                attestation_secret=app_settings.skill_eval_attestation_secret,
+            ).list_releases(
+                active_only=active_only
+            )
+        }
+
+    @app.post("/api/skills/releases/{release_id}/rollback")
+    def rollback_skill_release(
+        release_id: str,
+        payload: SkillRollbackV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return SkillLifecycleService(
+                database,
+                attestation_secret=app_settings.skill_eval_attestation_secret,
+            ).rollback(
+                release_id,
+                payload,
+                actor=username,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Skill release not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.delete("/api/memory/{memory_id}")
     def disable_memory(memory_id: str, _: AdminUser) -> dict[str, str]:

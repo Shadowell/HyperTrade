@@ -64,6 +64,7 @@ class MemoryService:
             return item
 
     def list_active(self) -> list[MemoryItem]:
+        self._refresh_governed_assertions()
         with self.db.session() as session:
             items = session.scalars(
                 select(MemoryItem)
@@ -82,6 +83,7 @@ class MemoryService:
         tag: str = "",
         limit: int = 20,
     ) -> list[MemoryItem]:
+        self._refresh_governed_assertions()
         normalized_query = query.casefold().strip()
         normalized_kind = kind.strip()
         normalized_tag = tag.casefold().strip()
@@ -113,6 +115,13 @@ class MemoryService:
             for item in result:
                 session.expunge(item)
             return list(result)
+
+    def _refresh_governed_assertions(self) -> None:
+        # Governed assertions fail closed before every read. Governance owns
+        # assertion lifecycle only and never expands Agent permissions.
+        from hypertrade.memory.governance import MemoryAssertionService
+
+        MemoryAssertionService(self.db).refresh_lifecycle()
 
     def disable(self, memory_id: str) -> None:
         with self.db.session() as session:

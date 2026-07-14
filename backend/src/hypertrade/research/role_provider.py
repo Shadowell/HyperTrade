@@ -19,6 +19,7 @@ from hypertrade.research.roles.schemas import (
     ToolObservation,
 )
 from hypertrade.research.tool_policy import RoleToolPolicy
+from hypertrade.skills.lifecycle import ApprovedSkillLoader
 
 
 @dataclass(frozen=True)
@@ -62,8 +63,14 @@ class RoleSchemaError(ValueError):
 class ChatResearchRoleProvider:
     """Uses ChatProvider but accepts only strict JSON; private reasoning is discarded."""
 
-    def __init__(self, provider: ChatProvider) -> None:
+    def __init__(
+        self,
+        provider: ChatProvider,
+        *,
+        skill_loader: ApprovedSkillLoader | None = None,
+    ) -> None:
         self.provider = provider
+        self.skill_loader = skill_loader
         self.name = provider.name
         self.model = provider.model
 
@@ -75,7 +82,7 @@ class ChatResearchRoleProvider:
     ) -> ProviderResult[RoleToolPlan]:
         response = self.provider.chat(
             [
-                {"role": "system", "content": role.prompt},
+                {"role": "system", "content": self._system_prompt(role)},
                 {
                     "role": "user",
                     "content": json.dumps(
@@ -146,7 +153,7 @@ class ChatResearchRoleProvider:
         }
         first = self.provider.chat(
             [
-                {"role": "system", "content": role.prompt},
+                {"role": "system", "content": self._system_prompt(role)},
                 {
                     "role": "user",
                     "content": json.dumps(request, ensure_ascii=False, sort_keys=True),
@@ -159,7 +166,7 @@ class ChatResearchRoleProvider:
         except (ValueError, ValidationError) as first_error:
             repair = self.provider.chat(
                 [
-                    {"role": "system", "content": role.prompt},
+                    {"role": "system", "content": self._system_prompt(role)},
                     {
                         "role": "user",
                         "content": json.dumps(
@@ -204,6 +211,11 @@ class ChatResearchRoleProvider:
                     tokens=usage.tokens + repaired_usage.tokens,
                 ),
             )
+
+    def _system_prompt(self, role: RoleDefinition) -> str:
+        if self.skill_loader is None:
+            return role.prompt
+        return role.prompt + self.skill_loader.prompt_for_role(role)
 
 
 class DeterministicGapRoleProvider:

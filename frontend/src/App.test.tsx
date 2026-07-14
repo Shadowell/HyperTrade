@@ -513,6 +513,44 @@ test("renders memory composition, creation cadence, and governance signals from 
           ]
         });
       }
+      if (url.endsWith("/api/memory/assertions")) {
+        return jsonResponse({
+          items: [
+            {
+              id: "masrt_web_1",
+              claim: "Source-bound BTC volatility claim",
+              status: "proposed",
+              usable: false,
+              source_evidence_ids: ["evi_1"],
+              confidence: "0.8"
+            }
+          ]
+        });
+      }
+      if (url.endsWith("/api/skills/proposals")) {
+        return jsonResponse({
+          items: [
+            {
+              id: "skp_web_1",
+              skill_key: "regime_summary",
+              status: "pending_approval",
+              definition_hash: "a".repeat(64)
+            }
+          ]
+        });
+      }
+      if (url.endsWith("/api/skills/releases")) {
+        return jsonResponse({
+          items: [
+            {
+              id: "skrel_web_1",
+              skill_key: "evidence_summary",
+              version: 2,
+              status: "active"
+            }
+          ]
+        });
+      }
       if (url.endsWith("/api/strategy/library")) {
         return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
       }
@@ -534,6 +572,11 @@ test("renders memory composition, creation cadence, and governance signals from 
   expect(screen.getByText("平均可信度")).toBeInTheDocument();
   expect(screen.getByText("累计复用")).toBeInTheDocument();
   expect(screen.getByText("5/26")).toBeInTheDocument();
+  expect(screen.getByText("记忆与技能治理")).toBeInTheDocument();
+  expect(screen.getByText("Source-bound BTC volatility claim")).toBeInTheDocument();
+  expect(screen.getByText("regime_summary")).toBeInTheDocument();
+  expect(screen.getByText(/evidence_summary v2/)).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "批准" })[0]).toBeDisabled();
 });
 
 test("renders scoped metric strips for every routed operator page", async () => {

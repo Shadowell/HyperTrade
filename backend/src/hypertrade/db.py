@@ -209,6 +209,152 @@ class MemoryItem(Base, TimestampMixin):
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class MemoryAssertion(Base, TimestampMixin):
+    """Source-bound claim whose lifecycle is governed separately from MemoryItem."""
+
+    __tablename__ = "memory_assertions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("masr"))
+    schema_version: Mapped[str] = mapped_column(
+        String(64), default="memory_assertion.v1", index=True
+    )
+    claim: Mapped[str] = mapped_column(Text)
+    scope_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    source_evidence_ids_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(10, 8))
+    valid_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(String(32), default="proposed", index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    linked_memory_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    created_by: Mapped[str] = mapped_column(String(128), default="agent", index=True)
+    reviewed_by: Mapped[str] = mapped_column(String(128), default="")
+    review_reason: Mapped[str] = mapped_column(Text, default="")
+    audit_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+
+
+class MemoryAssertionRelation(Base, TimestampMixin):
+    """Immutable supports/conflicts/supersedes edge between assertions."""
+
+    __tablename__ = "memory_assertion_relations"
+    __table_args__ = (
+        UniqueConstraint(
+            "from_assertion_id",
+            "to_assertion_id",
+            "relation_type",
+            name="uq_memory_assertion_relation",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("mrel"))
+    from_assertion_id: Mapped[str] = mapped_column(String(32), index=True)
+    to_assertion_id: Mapped[str] = mapped_column(String(32), index=True)
+    relation_type: Mapped[str] = mapped_column(String(32), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    created_by: Mapped[str] = mapped_column(String(128), default="operator", index=True)
+
+
+class MemoryAssertionReview(Base, TimestampMixin):
+    """Idempotent human decision over one proposed assertion."""
+
+    __tablename__ = "memory_assertion_reviews"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("mrev"))
+    assertion_id: Mapped[str] = mapped_column(String(32), index=True)
+    decision: Mapped[str] = mapped_column(String(32), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    decided_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
+class SkillProposal(Base, TimestampMixin):
+    """Untrusted code-free skill candidate; never loaded directly by a role."""
+
+    __tablename__ = "skill_proposals"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("skp"))
+    skill_key: Mapped[str] = mapped_column(String(96), index=True)
+    base_release_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    definition_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    definition_hash: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="proposed", index=True)
+    static_check_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    diff_text: Mapped[str] = mapped_column(Text, default="")
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    proposed_by: Mapped[str] = mapped_column(String(128), default="agent", index=True)
+    audit_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+
+
+class SkillEvaluation(Base, TimestampMixin):
+    """Privacy-safe attestation imported from the isolated evaluation runtime."""
+
+    __tablename__ = "skill_evaluations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("skev"))
+    proposal_id: Mapped[str] = mapped_column(String(32), index=True)
+    proposal_hash: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    suite_version: Mapped[str] = mapped_column(String(96), index=True)
+    baseline_id: Mapped[str] = mapped_column(String(128), index=True)
+    case_count: Mapped[int] = mapped_column(Integer)
+    passed_count: Mapped[int] = mapped_column(Integer)
+    artifact_hash: Mapped[str] = mapped_column(String(64), index=True)
+    runtime: Mapped[str] = mapped_column(String(64), index=True)
+    result_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    evaluated_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
+class SkillApproval(Base, TimestampMixin):
+    """Immutable administrator decision for approve/reject/rollback."""
+
+    __tablename__ = "skill_approvals"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("skap"))
+    proposal_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    release_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    target_release_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    decision: Mapped[str] = mapped_column(String(32), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    decided_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
+class SkillRelease(Base, TimestampMixin):
+    """Immutable approved definition; status changes only reflect active pointer history."""
+
+    __tablename__ = "skill_releases"
+    __table_args__ = (
+        UniqueConstraint("skill_key", "version", name="uq_skill_release_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("skrel"))
+    skill_key: Mapped[str] = mapped_column(String(96), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    proposal_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    definition_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    definition_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    approved_by: Mapped[str] = mapped_column(String(128), index=True)
+    approval_reason: Mapped[str] = mapped_column(Text)
+    audit_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+
+
+class SkillActivePointer(Base, TimestampMixin):
+    """Mutable pointer; releases themselves remain immutable and recoverable."""
+
+    __tablename__ = "skill_active_pointers"
+
+    skill_key: Mapped[str] = mapped_column(String(96), primary_key=True)
+    active_release_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    updated_by: Mapped[str] = mapped_column(String(128), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+
+
 class Job(Base, TimestampMixin):
     __tablename__ = "jobs"
 

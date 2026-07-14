@@ -42,6 +42,7 @@ from hypertrade.config import Settings, get_settings
 from hypertrade.connectors.registry import ConnectorRegistry
 from hypertrade.db import AgentRun, Database, TraceEvent, new_id
 from hypertrade.evals.service import AgentEvalSuite
+from hypertrade.memory.governance import MemoryAssertionReviewV1, MemoryAssertionService
 from hypertrade.memory.service import MemoryService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.reporting.blocks import ReportBlock, render_report_blocks
@@ -58,6 +59,7 @@ from hypertrade.research.triggers import (
     TriggerControlUpdate,
     TriggerEvent,
 )
+from hypertrade.skills.lifecycle import SkillApprovalV1, SkillLifecycleService, SkillRollbackV1
 from hypertrade.strategy.experiment import StrategyExperimentService
 from hypertrade.strategy.library import StrategyLibraryService
 from hypertrade.strategy.service import StrategyResearchService
@@ -152,6 +154,26 @@ class AgentClient(Protocol):
     def search_memory(self, query: str) -> list[dict[str, Any]]: ...
 
     def disable_memory(self, memory_id: str) -> dict[str, Any]: ...
+
+    def list_memory_assertions(self) -> list[dict[str, Any]]: ...
+
+    def review_memory_assertion(
+        self, assertion_id: str, *, decision: str, reason: str
+    ) -> dict[str, Any]: ...
+
+    def list_skill_proposals(self) -> list[dict[str, Any]]: ...
+
+    def get_skill_proposal(self, proposal_id: str) -> dict[str, Any]: ...
+
+    def list_skill_releases(self) -> list[dict[str, Any]]: ...
+
+    def decide_skill_proposal(
+        self, proposal_id: str, *, decision: str, reason: str
+    ) -> dict[str, Any]: ...
+
+    def rollback_skill_release(
+        self, release_id: str, *, target_release_id: str, reason: str
+    ) -> dict[str, Any]: ...
 
     def search_rag(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]: ...
 
@@ -315,6 +337,14 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("/memory", "List active audited memory."),
     ("/memory search <query>", "Search audited memory by text."),
     ("/memory disable <mem_id>", "Disable one memory item without deleting audit history."),
+    (
+        "/assertions list|approve|reject|dispute <id> [reason]",
+        "Review source-bound Memory Assertions.",
+    ),
+    (
+        "/skills proposals|show|releases|approve|reject|rollback",
+        "Review evaluated code-free Skill proposals and immutable releases.",
+    ),
     ("/rag <query>", "Search project and trading knowledge chunks."),
     ("/evals", "Show deterministic Agent eval status."),
     ("/monitors", "List configured read-only monitors."),
@@ -910,6 +940,54 @@ class AgentApiClient:
         payload = response.json()
         return dict(payload) if isinstance(payload, dict) else {"status": "ok"}
 
+    def list_memory_assertions(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/memory/assertions", "items")
+
+    def review_memory_assertion(
+        self, assertion_id: str, *, decision: str, reason: str
+    ) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/memory/assertions/{quote(assertion_id, safe='')}/review",
+            {
+                "decision": decision,
+                "reason": reason,
+                "idempotency_key": new_id("cli_review"),
+            },
+        )
+
+    def list_skill_proposals(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/skills/proposals", "items")
+
+    def get_skill_proposal(self, proposal_id: str) -> dict[str, Any]:
+        return self._get_object(f"/api/skills/proposals/{quote(proposal_id, safe='')}")
+
+    def list_skill_releases(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/skills/releases", "items")
+
+    def decide_skill_proposal(
+        self, proposal_id: str, *, decision: str, reason: str
+    ) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/skills/proposals/{quote(proposal_id, safe='')}/approve",
+            {
+                "decision": decision,
+                "reason": reason,
+                "idempotency_key": new_id("cli_skill"),
+            },
+        )
+
+    def rollback_skill_release(
+        self, release_id: str, *, target_release_id: str, reason: str
+    ) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/skills/releases/{quote(release_id, safe='')}/rollback",
+            {
+                "target_release_id": target_release_id,
+                "reason": reason,
+                "idempotency_key": new_id("cli_rollback"),
+            },
+        )
+
     def search_rag(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]:
         return self._get_list(f"/api/rag/search?query={quote(query)}&limit={limit}", "hits")
 
@@ -1465,6 +1543,61 @@ class LocalAgentClient:
     def disable_memory(self, memory_id: str) -> dict[str, Any]:
         MemoryService(self.db).disable(memory_id)
         return {"status": "ok"}
+
+    def list_memory_assertions(self) -> list[dict[str, Any]]:
+        return MemoryAssertionService(self.db).list_assertions()
+
+    def review_memory_assertion(
+        self, assertion_id: str, *, decision: str, reason: str
+    ) -> dict[str, Any]:
+        if decision not in {"approve", "reject", "dispute"}:
+            raise ValueError(f"unsupported assertion decision: {decision}")
+        return MemoryAssertionService(self.db).review(
+            assertion_id,
+            MemoryAssertionReviewV1(
+                decision=cast(Any, decision),
+                reason=reason,
+                idempotency_key=new_id("cli_review"),
+            ),
+            actor="cli_operator",
+        )
+
+    def list_skill_proposals(self) -> list[dict[str, Any]]:
+        return SkillLifecycleService(self.db).list_proposals()
+
+    def get_skill_proposal(self, proposal_id: str) -> dict[str, Any]:
+        return SkillLifecycleService(self.db).get_proposal(proposal_id)
+
+    def list_skill_releases(self) -> list[dict[str, Any]]:
+        return SkillLifecycleService(self.db).list_releases()
+
+    def decide_skill_proposal(
+        self, proposal_id: str, *, decision: str, reason: str
+    ) -> dict[str, Any]:
+        if decision not in {"approve", "reject"}:
+            raise ValueError(f"unsupported skill decision: {decision}")
+        return SkillLifecycleService(self.db).decide(
+            proposal_id,
+            SkillApprovalV1(
+                decision=cast(Any, decision),
+                reason=reason,
+                idempotency_key=new_id("cli_skill"),
+            ),
+            actor="cli_operator",
+        )
+
+    def rollback_skill_release(
+        self, release_id: str, *, target_release_id: str, reason: str
+    ) -> dict[str, Any]:
+        return SkillLifecycleService(self.db).rollback(
+            release_id,
+            SkillRollbackV1(
+                target_release_id=target_release_id,
+                reason=reason,
+                idempotency_key=new_id("cli_rollback"),
+            ),
+            actor="cli_operator",
+        )
 
     def search_rag(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]:
         from hypertrade.rag.service import RagService
@@ -2040,6 +2173,10 @@ def handle_slash_command(
         handle_research_trigger_command(command, client=client, output=output)
     elif name == "/memory":
         handle_memory_command(command, client=client, output=output)
+    elif name == "/assertions":
+        handle_memory_assertion_command(command, client=client, output=output)
+    elif name == "/skills":
+        handle_skill_command(command, client=client, output=output)
     elif name == "/rag":
         handle_rag_command(command, client=client, output=output)
     elif name in {"/evals", "/eval"}:
@@ -3562,6 +3699,130 @@ def handle_research_trigger_command(
     print(
         "Usage: /triggers list|fires [id]|enable|disable <id> [reason]|"
         "run <id>|kill on|off [reason]",
+        file=output,
+    )
+
+
+def handle_memory_assertion_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split(maxsplit=3)
+    action = parts[1].lower() if len(parts) > 1 else "list"
+    if action == "list":
+        rows = client.list_memory_assertions()
+        print("Memory assertions:", file=output)
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:30]:
+            print(
+                f"- {row.get('id')} [{row.get('status')}] "
+                f"usable={row.get('usable', False)} sources="
+                f"{len(row.get('source_evidence_ids', []))} "
+                f"{str(row.get('claim', ''))[:100]}",
+                file=output,
+            )
+        return
+    if action in {"approve", "reject", "dispute"} and len(parts) >= 3:
+        reason = parts[3] if len(parts) > 3 else f"cli_{action}"
+        row = client.review_memory_assertion(
+            parts[2],
+            decision=action,
+            reason=reason,
+        )
+        print(
+            f"Memory assertion {row.get('id')} [{row.get('status')}] "
+            f"usable={row.get('usable', False)}",
+            file=output,
+        )
+        return
+    print(
+        "Usage: /assertions list|approve|reject|dispute <assertion_id> [reason]",
+        file=output,
+    )
+
+
+def handle_skill_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split()
+    action = parts[1].lower() if len(parts) > 1 else "proposals"
+    if action == "proposals":
+        rows = client.list_skill_proposals()
+        print("Skill proposals:", file=output)
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:30]:
+            print(
+                f"- {row.get('id')} [{row.get('status')}] "
+                f"{row.get('skill_key')} hash={str(row.get('definition_hash', ''))[:12]}",
+                file=output,
+            )
+        return
+    if action == "show" and len(parts) >= 3:
+        row = client.get_skill_proposal(parts[2])
+        print(
+            f"Skill proposal {row.get('id')} [{row.get('status')}] "
+            f"{row.get('skill_key')} hash={row.get('definition_hash')}",
+            file=output,
+        )
+        print(str(row.get("diff", "")).rstrip() or "- no diff", file=output)
+        for evaluation in row.get("evaluations", []):
+            print(
+                f"- evaluation [{evaluation.get('status')}] "
+                f"suite={evaluation.get('suite_version')} artifact="
+                f"{str(evaluation.get('artifact_hash', ''))[:12]}",
+                file=output,
+            )
+        return
+    if action == "releases":
+        rows = client.list_skill_releases()
+        print("Skill releases:", file=output)
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:30]:
+            print(
+                f"- {row.get('id')} [{row.get('status')}] "
+                f"{row.get('skill_key')} v{row.get('version')}",
+                file=output,
+            )
+        return
+    if action in {"approve", "reject"} and len(parts) >= 3:
+        reason = " ".join(parts[3:]) if len(parts) > 3 else f"cli_{action}"
+        row = client.decide_skill_proposal(
+            parts[2],
+            decision=action,
+            reason=reason,
+        )
+        release = row.get("release", {})
+        print(
+            f"Skill proposal {parts[2]} [{action}] "
+            f"release={release.get('id', '-') if isinstance(release, dict) else '-'}",
+            file=output,
+        )
+        return
+    if action == "rollback" and len(parts) >= 4:
+        reason = " ".join(parts[4:]) if len(parts) > 4 else "cli_rollback"
+        row = client.rollback_skill_release(
+            parts[2],
+            target_release_id=parts[3],
+            reason=reason,
+        )
+        print(
+            f"Skill release restored {row.get('id')} v{row.get('version')} "
+            f"[{row.get('status')}]",
+            file=output,
+        )
+        return
+    print(
+        "Usage: /skills proposals|show <proposal_id>|releases|"
+        "approve|reject <proposal_id> [reason]|"
+        "rollback <active_release_id> <target_release_id> [reason]",
         file=output,
     )
 
