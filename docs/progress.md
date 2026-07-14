@@ -4,6 +4,13 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 102 implementation state: active on 2026-07-15 after Sprint 101 isolated
+  acceptance. The bounded slice adds an optional Textual terminal workbench over
+  existing REST/SSE contracts for Sessions, Tasks, graph/timeline, Evidence,
+  experiments, validations and approvals. It may request task controls only through
+  authenticated API reason/idempotency contracts; it cannot access the database,
+  ToolRegistry, BitPro or trading services directly. Existing chat/plain/Web surfaces
+  and all paper/live boundaries remain unchanged.
 - Sprint 101 implementation state: completed and isolated-production-verified on
   2026-07-15 after Sprint 100 production
   acceptance. The bounded slice adds versioned Research OS golden cases, deterministic

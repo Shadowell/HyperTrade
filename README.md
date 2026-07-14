@@ -364,6 +364,10 @@ self-hosted Langfuse tracing, and limits the six-case Promptfoo suite and two-ru
 Ragas Research OS baseline to isolated, read-only evaluation runs. Their scores are
 diagnostic evidence and never authorize paper or live trading.
 
+Sprint 102 is adding an optional Textual research workbench (`uv sync --extra tui`,
+then `ht tui`) over the same durable Session/Task/Event APIs. The TUI is an operator
+surface only; server-side auth, state machines, budgets and risk gates remain authoritative.
+
 ---
 
 ## Deployment

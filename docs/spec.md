@@ -135,6 +135,13 @@ baselines expose the generic Agent's low Research Graph alignment without hiding
 All optional evaluation dependencies execute in a separate locked Docker target and
 final artifacts contain no prompts, reports, tool arguments, raw outputs or credentials.
 
+Sprint 102 entered implementation on 2026-07-15. It adds an optional Textual TUI
+that projects the durable Session/Task/Event/Evidence/Experiment/Validation contracts
+and reconnects from a cursor after SSE loss. The client contains no trading, approval,
+budget or state-transition business logic: every mutation remains an authenticated API
+request with reason and idempotency, and dangerous actions require an explicit modal.
+The existing chat CLI, plain renderer and Web Harness remain supported.
+
 ## V1 In Scope
 
 - Harness routing: sidebar destinations are independent, refreshable SPA paths

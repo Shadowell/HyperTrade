@@ -1,6 +1,6 @@
 # Sprint 102 - TUI Research Workbench
 
-> 状态：Proposed，依赖 Sprint 96–101。
+> 状态：Active；Sprint 96–101 已完成验收，2026-07-15 开始实施。
 
 ## Goal
 
