@@ -1,6 +1,6 @@
 # Sprint 105 - Portfolio Strategy Lifecycle
 
-> 状态：Implementation complete, production acceptance pending；2026-07-15 本地验收通过。
+> 状态：Completed；2026-07-15 本地与生产验收通过。
 
 ## Goal
 
@@ -88,4 +88,8 @@ Manual/QA：
 - 管理员 API、CLI `/portfolio-v2`、Textual Portfolio tab 与 Web
   `/harness/portfolio` 均委托同一服务状态机。
 - PostgreSQL `0018 -> 0017 -> 0018` 可逆迁移通过；聚焦后端 23 项、前端 9 项及
-  `./scripts/check.sh`（473 项 Python 测试）通过。生产证据待部署后补录。
+  `./scripts/check.sh`（473 项 Python 测试）通过。
+- Commit `e80cf0d` 经 workflow `29365535535` 部署；记录 SHA、健康状态、Alembic
+  `0018`、2/2 表、4 个 OpenAPI 路由、认证读 API、Web route 与零错误日志均通过。
+  生产验收 assessment `pasmt_fbb18fbd79e8499a8c31` 在无 StrategyCard 时返回
+  `needs_data`/1 unknown/0 recommendation，未生成伪结果；review ledger 保持空。

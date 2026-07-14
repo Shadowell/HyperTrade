@@ -413,6 +413,8 @@ human accept/reject/hold records. Operators use Web `/harness/portfolio`, the Te
 Portfolio tab, REST `/api/portfolio/assessments*`, or CLI `/portfolio-v2` (`/pv2`). Every
 recommendation is limited to observation, targeted research or a named human review;
 automatic capital, rebalance, pause/start, promotion and order actions are prohibited.
+Production acceptance passed on Alembic `0018`; the empty-card smoke remained
+`needs_data` with an explicit unknown and performed no lifecycle or trading action.
 
 ---
 

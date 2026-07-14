@@ -4,8 +4,8 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 105 implementation state: locally complete and awaiting production acceptance
-  on 2026-07-15. Persisted `portfolio_assessment.v2` binds idempotency keys to canonical
+- Sprint 105 implementation state: completed and production-verified on 2026-07-15.
+  Persisted `portfolio_assessment.v2` binds idempotency keys to canonical
   requests, consumes bounded StrategyCard/WorldState/paper/monitor/Evidence/governed
   Memory projections, stores correlation summaries rather than return histories and
   preserves unknown for insufficient, misaligned or zero-variance samples. Six fixed
@@ -13,8 +13,12 @@
   human review fact and cannot reach BitPro, paper or live mutation adapters. API,
   `/portfolio-v2`, Textual and Web `/harness/portfolio` use the same service. PostgreSQL
   `0018 -> 0017 -> 0018`, focused 23-test backend acceptance, frontend lint/9 tests/build,
-  Ruff, mypy over 140 source files and all 473 Python tests pass. Deployment and production
-  read-only smoke remain before Gate D is closed.
+  Ruff, mypy over 140 source files and all 473 Python tests pass. Commit `e80cf0d`
+  deployed in workflow `29365535535`; recorded SHA, health, Alembic `0018`, 2/2 tables,
+  four OpenAPI paths, authenticated list API, Web route and API/worker logs passed.
+  Production assessment `pasmt_fbb18fbd79e8499a8c31` found no StrategyCards and therefore
+  returned `needs_data`, one explicit unknown and no recommendations instead of fabricating
+  evidence; no lifecycle review was written. Gate D and the Sprint 96–105 roadmap are closed.
 - Sprint 104 implementation state: completed and production-verified on 2026-07-15.
   Eight `0017_memory_skills` tables, source-bound `MemoryAssertionV1`,
   explicit conflict/supersede/expiry, ordinary-search fail-closed compatibility Memory,

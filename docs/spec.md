@@ -166,7 +166,7 @@ role and tool-policy intersection and injects template metadata only. It cannot 
 Python/shell, register endpoints/tools or widen paper/live permission. API, CLI, TUI and
 Web review surfaces contain no alternate state transition logic.
 
-Sprint 105 completed local implementation on 2026-07-15 and awaits production acceptance.
+Sprint 105 completed implementation and production acceptance on 2026-07-15.
 `portfolio_assessment.v2` persists canonical request/policy/content hashes, bounded source
 refs, per-strategy lifecycle projections, pairwise aligned-return summaries, explicit
 unknowns and six fixed research/review recommendations. Request and review idempotency keys
@@ -174,6 +174,8 @@ are bound to their canonical payloads. Human accept/reject/hold writes only a re
 the portfolio module imports no BitPro/paper/live mutation adapter. API, CLI, Textual and
 Web are thin projections of the same service. It cannot allocate capital, rebalance,
 pause/start strategies, promote to live, place orders, or overwrite historical facts.
+Production intentionally returned `needs_data` with an explicit unknown when no StrategyCard
+was available; it emitted no recommendation and no human review rather than inventing inputs.
 
 ## V1 In Scope
 

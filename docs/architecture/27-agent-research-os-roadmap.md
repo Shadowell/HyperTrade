@@ -129,8 +129,7 @@ flowchart TB
 | 104 | Governed Memory & Skill Lifecycle | 声明级 Memory、冲突/过期、Skill proposal/test/approve/rollback | Agent 不能直接发布 Skill 或静默改写 Memory |
 | 105 | Portfolio Strategy Lifecycle | 相关性、状态适配、容量、风险贡献、衰减、退役审阅 | 只给出研究/复核建议；不自动改资金或实盘 |
 
-截至 2026-07-15，Sprint 96–104 已完成并通过生产验收；Sprint 105 已完成本地实现与
-全量验收，等待生产部署验证后关闭 Gate D。
+截至 2026-07-15，Sprint 96–105 均已完成并通过生产验收，Gate A–D 全部关闭。
 
 ## 7. 阶段验收门
 
@@ -159,6 +158,9 @@ flowchart TB
 - 策略组合审阅能区分相关性、共同暴露、容量、状态适配和数据未知。
 - 建议只能进入人工复核或新研究，不能产生自动资金/实盘写动作。
 - 退役与降权理由具有证据链，不修改历史回测结论。
+
+验收结果：通过。生产无 StrategyCard 的 smoke 返回 `needs_data` 和明确 unknown，未生成
+伪相关性、资金动作或人工决定；有界证据、只读建议和 review ledger 由自动化测试覆盖。
 
 ## 8. 成功指标
 

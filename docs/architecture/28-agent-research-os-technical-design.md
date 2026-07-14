@@ -971,7 +971,10 @@ FastAPI、CLI `/portfolio-v2`、Textual Portfolio tab 与 Web `/harness/portfoli
 
 Alembic `0018_portfolio_lifecycle` 新增 `portfolio_assessments` 与
 `strategy_lifecycle_reviews`。真实 PostgreSQL 已通过 `0018 -> 0017 -> 0018`，本地全量门禁为
-前端 lint/9 tests/build、Ruff、mypy 140 source files 和 473 Python tests；生产记录待部署补录。
+前端 lint/9 tests/build、Ruff、mypy 140 source files 和 473 Python tests。Commit `e80cf0d`
+经 workflow `29365535535` 部署，生产 SHA/health/Alembic/2 表/4 routes/Web/API/log 均通过。
+只读验收 assessment `pasmt_fbb18fbd79e8499a8c31` 在无 StrategyCard 时输出
+`needs_data`、1 unknown、0 recommendation；review ledger 为 0，证明缺数据失败关闭。
 
 ## 15. API 与事件兼容策略
 

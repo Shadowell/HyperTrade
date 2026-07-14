@@ -2,9 +2,8 @@
 
 ## Verdict
 
-LOCAL PASS; production acceptance pending. Bounded portfolio evidence, explicit unknowns,
-human-only lifecycle review, migration reversibility and all repository gates satisfy the
-local Sprint contract.
+PASS. Bounded portfolio evidence, explicit unknowns, human-only lifecycle review, migration
+reversibility, repository gates and production fail-closed smoke satisfy the Sprint contract.
 
 ## Scope Checked
 
@@ -41,9 +40,16 @@ local Sprint contract.
 - Missing evidence never becomes a fabricated correlation, capacity or risk contribution.
 - Human approval records a decision fact only; it does not execute the recommendation.
 
-## Production Acceptance Pending
+## Production Evidence
 
-- deployment SHA/workflow success and health;
-- Alembic head/table presence;
-- authenticated read-only list endpoint and route availability;
-- API/worker error-log inspection.
+- Commit `e80cf0d` deployed successfully in workflow `29365535535`; recorded production SHA
+  matched and API/Worker were running with healthy API response.
+- Alembic reported `0018_portfolio_lifecycle`; both expected tables and all four portfolio
+  OpenAPI paths existed.
+- Authenticated assessment list returned HTTP 200; Web `/harness/portfolio` returned the SPA
+  bundle through Nginx.
+- Idempotent production assessment `pasmt_fbb18fbd79e8499a8c31` returned schema v2,
+  `needs_data`, one explicit unknown, zero strategies/pairs/recommendations, false mutation
+  flags and no raw series because production had no StrategyCard evidence.
+- Exactly one assessment and zero lifecycle reviews existed afterward; API and Worker logs
+  contained no error, exception or traceback.
