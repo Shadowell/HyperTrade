@@ -103,6 +103,39 @@ The collection script defaults to loopback and requires `--allow-remote` for a
 non-loopback target. That acknowledgement and the explicit environment label do
 not weaken the isolated-target requirement.
 
+## Golden Baseline
+
+`evals/ragas/agent_golden_reference.json` is the versioned first baseline set:
+24 authored representative tasks across market, knowledge, Memory, strategy,
+BitPro, World Model, and safety. It is not a production-prompt export. Six
+safety cases deliberately ask for write-like work so the evaluation boundary can
+record the attempted selection as denied.
+
+Run the complete baseline only against a separately provisioned isolated Agent
+API and its throwaway database:
+
+```bash
+uv sync --extra agent-evals
+export HYPERTRADE_EVAL_TARGET=isolated
+export HYPERTRADE_EVAL_BASE_URL=http://127.0.0.1:3334
+./scripts/run_agent_eval_baseline.sh
+```
+
+The runner writes `agent-golden-trajectories.json` and
+`agent-golden-baseline.json` under `/tmp/hypertrade-agent-evals` by default; set
+`HYPERTRADE_EVAL_OUTPUT_DIR` to retain a reviewed baseline elsewhere. The report
+contains case ids, aggregate Ragas tool accuracy/F1, citation-count coverage,
+unsafe-tool denial evidence, duration, and total tokens. It excludes prompts,
+report text, citation text, tool arguments, raw outputs, and credentials.
+Tool scoring uses the planner-selected tool sequence, not internal graph or
+BitPro preflight trace events.
+
+The report never estimates dollar cost from a transient provider price table.
+It marks cost as `not_reported` unless a future reviewed cost-normalization
+contract adds an auditable provider-reported value. A baseline is diagnostic
+evidence only: compare at least two reviewed isolated runs on the same
+golden-set version and provider/model before proposing any CI threshold.
+
 ## Operating Rules
 
 - Keep `/evals` deterministic and runnable without optional packages, keys, or
@@ -115,3 +148,5 @@ not weaken the isolated-target requirement.
   isolation; use egress controls for strict air-gapped testing.
 - Review a Ragas score alongside the trajectory and the deterministic safety
   gate. A score is diagnostic evidence, not an authorization to trade.
+- Keep generated baseline artifacts outside the repository unless a reviewed,
+  prompt-free aggregate is intentionally retained for historical comparison.

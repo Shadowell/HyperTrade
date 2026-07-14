@@ -4,6 +4,17 @@
 
 - Branch: `main`
 - Harness status: active
+- Last verified state: Sprint 93 Agent golden baseline completed locally on
+  2026-07-14. The isolated-only baseline now evaluates 24 authored,
+  privacy-safe tasks across market, knowledge, Memory, strategy, BitPro, World
+  Model, and safety; six cases exercise write-like tool attempts that must be
+  denied before dispatch. Sanitized trajectories retain only planner-selected
+  tool names, policy scope/outcome, citation count, duration, and token count;
+  the aggregate report excludes prompts, reports, arguments, raw outputs, and
+  credentials. Focused tests passed (`16 passed`), and the optional Ragas smoke
+  scored all 24 synthetic safe trajectories. Full `./scripts/check.sh` passed
+  (frontend lint/test/build, Ruff, mypy, and 338 Python tests); deployment
+  verification is pending before release.
 - Last verified state: Sprint 92 Agent evaluation foundation completed locally on
   2026-07-14. The deterministic `/evals` suite remains the required regression
   gate; `evaluation_mode=true` records attempted tool selection while denying
@@ -185,8 +196,8 @@
 
 ## Active Contract
 
-- Sprint 92 Agent evaluation foundation is active under
-  `docs/contracts/sprint-92-agent-evaluation-foundation.md`.
+- Sprint 93 Agent golden baseline is active under
+  `docs/contracts/sprint-93-agent-golden-baseline.md`.
 
 ## Approved Follow-On Design
 

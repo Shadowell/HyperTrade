@@ -168,6 +168,10 @@ def test_trajectory_projection_removes_prompt_and_sensitive_tool_arguments() -> 
             "id": "run_eval_001",
             "status": "completed",
             "run_state_json": {"execution_mode": "evaluation"},
+            "report_json": {
+                "citations": [{"source_path": "docs/knowledge/risk.md"}],
+                "tool_calls": [{"tool": "market_ticker"}, {"tool": "memory_write"}],
+            },
             "trace_events": [
                 {
                     "tool_name": "graph.intent_classify",
@@ -184,6 +188,11 @@ def test_trajectory_projection_removes_prompt_and_sensitive_tool_arguments() -> 
                     "input_json": {"content": "do-not-export"},
                     "output_json": {"execution_status": "denied"},
                 },
+                {
+                    "tool_name": "bitpro.health",
+                    "input_json": {"token": "must-not-export"},
+                    "output_json": {"execution_status": "completed"},
+                },
             ],
         },
     )
@@ -194,18 +203,22 @@ def test_trajectory_projection_removes_prompt_and_sensitive_tool_arguments() -> 
         "run_id": "run_eval_001",
         "status": "completed",
         "execution_mode": "evaluation",
+        "citation_count": 1,
+        "metrics": {"duration_ms": None, "total_tokens": None},
         "tool_calls": [
             {
                 "name": "market_ticker",
                 "args": {"symbol": "ETH"},
                 "execution_status": "completed",
                 "policy_outcome": "",
+                "policy_scope": "read",
             },
             {
                 "name": "memory_write",
                 "args": {},
                 "execution_status": "denied",
                 "policy_outcome": "",
+                "policy_scope": "research_write",
             },
         ],
     }
