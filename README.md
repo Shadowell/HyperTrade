@@ -261,6 +261,20 @@ Sprint 96 is production-verified: the PostgreSQL migration, durable Agent run,
 checkpoint, monotonic event cursor, and remote CLI inspection all passed after
 deployment.
 
+### Structured Research Evidence
+
+Research Evidence V2 is an append-only, source-bound ledger for `fact`,
+`inference`, `counter_evidence`, and `data_gap` records. Canonical UTC/Decimal
+JSON produces a stable SHA-256 identity; facts require an available non-Memory
+source, inferences require active supporting evidence, and counter-evidence must
+name the challenged record. Expiry, rejection, conflict, and supersession remain
+visible lifecycle or graph state instead of rewriting historical claims.
+
+Read APIs expose evidence, filters, and relation graphs. Append and lifecycle
+mutations require an administrator session; no Agent tool has direct evidence
+mutation authority. Legacy experiment and Memory evidence remains read-only and
+is explicitly labelled as legacy context rather than promoted to a V2 fact.
+
 ---
 
 ## Documentation

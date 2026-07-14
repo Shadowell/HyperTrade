@@ -388,6 +388,26 @@ curl -X POST http://localhost:3334/api/strategy/research \
 - 最新实验结果
 - 改进建议
 
+### 结构化研究证据
+
+Evidence V2 把研究结论分为事实、推断、反证和数据缺口。操作员查看时应重点检查：
+
+- `status` 是否仍为 `active`，以及 `as_of` / `valid_until` 是否覆盖当前决策窗口；
+- Fact 是否至少有一个非 Memory 且 available 的 source；
+- Inference 是否列出 active supporting evidence；
+- `source_health` / `data_gaps` 是否表明原始 Trace、RAG 或 Memory 已失效；
+- graph 中是否存在 `challenges`、`opposed_by` 或 `supersedes` 关系。
+
+```bash
+curl "http://localhost:3334/api/research/evidence?symbol=BTC&type=fact"
+curl "http://localhost:3334/api/research/evidence/evi_abc123/graph?depth=2"
+```
+
+证据读取不需要把旧数据改写为新事实。旧实验和 Memory 会显示 `legacy=true`；Memory
+只能作为上下文，不能单独证明市场事实。Append、expire、reject、supersede 只能由
+已登录管理员通过受信 API 执行，Agent 没有直接修改证据的工具。置信度是研究声明，
+不是盈利概率或收益保证。
+
 ---
 
 ## 模拟盘管理

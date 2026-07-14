@@ -68,3 +68,12 @@ uv run pytest tests/test_strategy_evidence.py tests/test_rag_citations.py -q
 ## Handoff
 
 - 下一步：Sprint 98 使用 Evidence V2 作为每个研究角色的唯一输出合同。
+
+## Implementation Record
+
+- 本地实现完成：Pydantic V2 schema、Alembic `0013`、append-only repository/service、
+  来源适配、REST、graph/report projection 和 legacy adapter。
+- 聚焦回归 `25 passed`；migration `upgrade -> downgrade -> upgrade` 通过；
+  `./scripts/check.sh` 全部通过，Python `361 passed`。
+- 生产 PostgreSQL migration、远程 append/read/graph/lifecycle smoke 尚待实现提交部署后
+  验证；完成前 Sprint 保持 Active。

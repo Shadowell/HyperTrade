@@ -386,6 +386,33 @@ Agent role 不能直接调用 POST API；由 `RoleExecutor` 在输出 schema 校
 - source 删除或不可访问时显示 data gap，不级联删除 evidence。
 - property-based schema 测试和旧 StrategyEvidence 适配测试。
 
+### 6.5 Sprint 97 实际实现记录（2026-07-14）
+
+- `research/evidence_schemas.py` 使用 Pydantic 判别联合实现四类 V2 输入，统一 UTC、
+  Decimal、claim 空白、scope/source/id 列表顺序和 canonical JSON；实际
+  `schema_version` 固定为可读字符串 `research_evidence.v2`。
+- Alembic `0013_research_evidence_v2` 创建 append-only `research_evidence` 内容表和
+  `research_evidence_relations` 类型边表。内容哈希唯一；生命周期只允许变更 status、
+  lifecycle 和 supersede 指针，不提供 claim/payload 原地更新服务。
+- `EvidenceService` 实现 append/dedupe/query/graph/expire/reject/supersede。Fact 要求
+  available 非 Memory 来源；Inference 的 supporting evidence 必须存在且 active；
+  Counter Evidence 必须指向既有记录。关系边为 `supported_by`、`opposed_by`、
+  `challenges`、`supersedes`。
+- `append_or_gap` 在来源不可用时 fail closed 为持久 `data_gap`；读取时还会重新检查
+  本地 Trace/RAG/Memory 来源，已删除来源以 `data_gaps` 投影显示，不级联删除证据。
+- `source_refs.py` 将 TraceEvent、RAG citation、Memory、BitPro result、Paper Snapshot
+  和旧 research experiment 转为只含 ID、时间和内容哈希的 bounded source ref，不保存
+  完整行情、BitPro artifact 或工具原始输出。
+- REST 提供 append、list/filter、get、graph、supersede、expire 和 reject。读取路径可供
+  operator surface 使用；所有 mutation 继续要求管理员 session，且没有注册 Agent
+  evidence mutation tool。
+- `LegacyEvidenceAdapter` 只读投影旧 `ResearchExperimentEvidence`、
+  `StrategyEvidence` 和通用 Memory metadata，明确 `legacy=true`，不 backfill 或伪装
+  成 V2 fact。
+- 聚焦 evidence/legacy/RAG/BitPro adapter 回归 `25 passed`；migration 在临时 SQLite
+  上 `upgrade -> downgrade -> upgrade` 通过；全仓 `./scripts/check.sh` 通过，Python
+  `361 passed`。
+
 ## 7. Sprint 98：Multi-Agent Research Graph V1
 
 ### 7.1 使用技术

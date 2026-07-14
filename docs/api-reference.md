@@ -551,6 +551,43 @@ Delete or disable a memory item.
 
 ---
 
+## Research Evidence V2
+
+Research Evidence V2 is append-only. Read endpoints return effective expiry,
+source-health/data-gap projections, content hash, lifecycle, and legacy labels;
+they never promote Memory into a verified fact.
+
+### POST /research/evidence
+
+Append one discriminated `fact`, `inference`, `counter_evidence`, or `data_gap`.
+**Authentication required.** Common fields include `claim`, `scope`, `sources`,
+`confidence`, `as_of`, optional `valid_until`, Task/Node/role refs, and supporting
+or opposing evidence IDs. Facts require an available non-Memory source.
+
+### GET /research/evidence
+
+List V2 evidence. Filters: `task_id`, `type`, `status`, `symbol`, and `limit`.
+Set `include_legacy=true` without other filters to include explicitly labelled
+legacy experiment and Memory projections.
+
+### GET /research/evidence/{evidence_id}
+
+Read one V2 or legacy record. V2 responses include stable `content_hash`,
+`stored_status`, effective `status`, `source_health`, `data_gaps`, and lifecycle.
+
+### GET /research/evidence/{evidence_id}/graph
+
+Read bounded relation nodes/edges. `depth` defaults to 2 and is capped at 5.
+
+### POST /research/evidence/{evidence_id}/{action}
+
+Supported lifecycle actions are `supersede`, `expire`, and `reject`.
+**Authentication required.** Expire/reject require a reason; supersede requires
+a reason plus a complete replacement evidence payload. Historical claim/payload
+content is never updated in place.
+
+---
+
 ## Strategy Research
 
 ### POST /strategy/research

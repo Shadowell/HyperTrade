@@ -350,6 +350,12 @@ the multi-Agent role graph remains deferred to Sprint 98.
   form one canonical control plane. Provider timeouts become structured
   retryable Task errors; they do not escape as an uncaught HTTP 500. Existing
   paper/live approval and BitPro MCP boundaries are unchanged.
+- Sprint 97 Research Evidence V2: append-only facts, inferences,
+  counter-evidence, and data gaps use one canonical UTC/Decimal hash contract.
+  Facts require available non-Memory sources; inferences require active support;
+  conflicts, expiry, rejection, and supersession remain queryable. Existing
+  experiment/StrategyEvidence/Memory records are read-only legacy projections,
+  and all V2 mutations remain administrator-only trusted-service operations.
 - BitPro MCP Agent Token alignment: HyperTrade mirrors BitPro `agent_auth`, `remote_mcp`, scope classes, token-management routes, idempotency requirements, and live-diagnostic grouping while keeping token plaintext server-side only.
 - CLI slash command discovery: entering `/` displays the command list, and interactive readline sessions support Tab completion for slash commands and common subcommands.
 - BitPro backtest result reads through `bitpro_backtest_list_results`, including total-return threshold filters and page-parity reporting based on BitPro-owned result records.

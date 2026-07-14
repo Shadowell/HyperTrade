@@ -70,6 +70,13 @@ from hypertrade.monitoring import MonitorService
 from hypertrade.paper.service import PaperTradingService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagHit, RagService
+from hypertrade.research.evidence import EvidenceService, EvidenceSourceUnavailable
+from hypertrade.research.evidence_schemas import (
+    EvidenceLifecycleRequest,
+    EvidenceSupersedeRequest,
+    ResearchEvidenceInput,
+)
+from hypertrade.research.legacy_evidence import LegacyEvidenceAdapter
 from hypertrade.research.orchestrator import BitProResearchAdapter, ResearchOrchestrator
 from hypertrade.research.paper_observation import PaperObservationService
 from hypertrade.research.paper_promotion import PaperPromotionAdapter, PaperPromotionService
@@ -926,6 +933,101 @@ def create_app(
     @app.post("/api/research/mandates")
     def create_research_mandate(payload: ResearchMandateCreate, _: AdminUser) -> dict[str, Any]:
         return ResearchProgramService(database).create_mandate(payload)
+
+    @app.post("/api/research/evidence")
+    def append_research_evidence(
+        payload: ResearchEvidenceInput, username: AdminUser
+    ) -> dict[str, Any]:
+        """Append through the trusted schema boundary; Agent tools get no direct mutation tool."""
+        try:
+            return EvidenceService(database).append(payload, actor=f"admin:{username}")
+        except EvidenceSourceUnavailable as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "evidence_source_unavailable", "sources": exc.sources},
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/research/evidence")
+    def list_research_evidence(
+        task_id: str = "",
+        type: str = "",
+        status: str = "",
+        symbol: str = "",
+        limit: int = 100,
+        include_legacy: bool = False,
+    ) -> dict[str, list[dict[str, Any]]]:
+        items = EvidenceService(database).query(
+            task_id=task_id,
+            evidence_type=type,
+            status=status,
+            symbol=symbol,
+            limit=limit,
+        )
+        if include_legacy and not task_id and not type and not status and not symbol:
+            items.extend(LegacyEvidenceAdapter(database).query(limit=limit))
+            items = sorted(items, key=lambda item: item["created_at"], reverse=True)[:limit]
+        return {"items": items}
+
+    @app.get("/api/research/evidence/{evidence_id}/graph")
+    def research_evidence_graph(evidence_id: str, depth: int = 2) -> dict[str, Any]:
+        try:
+            return EvidenceService(database).graph(evidence_id, depth=depth)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Research evidence not found") from exc
+
+    @app.get("/api/research/evidence/{evidence_id}")
+    def get_research_evidence(evidence_id: str) -> dict[str, Any]:
+        try:
+            return EvidenceService(database).get(evidence_id)
+        except KeyError:
+            try:
+                return LegacyEvidenceAdapter(database).get(evidence_id)
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail="Research evidence not found") from exc
+
+    @app.post("/api/research/evidence/{evidence_id}/supersede")
+    def supersede_research_evidence(
+        evidence_id: str, payload: EvidenceSupersedeRequest, username: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return EvidenceService(database).supersede(
+                evidence_id,
+                payload.evidence,
+                reason=payload.reason,
+                actor=f"admin:{username}",
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Research evidence not found") from exc
+        except (ValueError, EvidenceSourceUnavailable) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/research/evidence/{evidence_id}/expire")
+    def expire_research_evidence(
+        evidence_id: str, payload: EvidenceLifecycleRequest, username: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return EvidenceService(database).expire(
+                evidence_id, reason=payload.reason, actor=f"admin:{username}"
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Research evidence not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/research/evidence/{evidence_id}/reject")
+    def reject_research_evidence(
+        evidence_id: str, payload: EvidenceLifecycleRequest, username: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return EvidenceService(database).reject(
+                evidence_id, reason=payload.reason, actor=f"admin:{username}"
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Research evidence not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/api/research/mandates")
     def list_research_mandates(_: AdminUser) -> dict[str, list[dict[str, Any]]]:

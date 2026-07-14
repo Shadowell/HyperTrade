@@ -475,6 +475,57 @@ class ResearchExperimentEvidence(Base, TimestampMixin):
     tool_calls_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
 
 
+class ResearchEvidence(Base, TimestampMixin):
+    """Append-only evidence content; only lifecycle fields may transition."""
+
+    __tablename__ = "research_evidence"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("evi"))
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    evidence_type: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    claim: Mapped[str] = mapped_column(Text)
+    task_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    node_run_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    role_key: Mapped[str] = mapped_column(String(96), default="", index=True)
+    symbols_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    timeframes_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    market_type: Mapped[str] = mapped_column(String(32), default="", index=True)
+    scope_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    sources_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(10, 8))
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    valid_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    supersedes_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    superseded_by_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    lifecycle_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_by: Mapped[str] = mapped_column(String(128), default="evidence_service", index=True)
+
+
+class ResearchEvidenceRelation(Base, TimestampMixin):
+    """Typed immutable edge between two evidence records."""
+
+    __tablename__ = "research_evidence_relations"
+    __table_args__ = (
+        UniqueConstraint(
+            "from_evidence_id",
+            "to_evidence_id",
+            "relation_type",
+            name="uq_research_evidence_relation",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("erel"))
+    from_evidence_id: Mapped[str] = mapped_column(String(32), index=True)
+    to_evidence_id: Mapped[str] = mapped_column(String(32), index=True)
+    relation_type: Mapped[str] = mapped_column(String(32), index=True)
+    created_by: Mapped[str] = mapped_column(String(128), default="evidence_service", index=True)
+
+
 class PaperPromotion(Base, TimestampMixin):
     """Human-approved bridge from validated research evidence to BitPro paper only."""
 
