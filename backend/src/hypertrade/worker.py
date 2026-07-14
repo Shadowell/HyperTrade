@@ -3,7 +3,7 @@ import logging
 import os
 import socket
 from threading import Event, Thread
-from typing import Any
+from typing import Any, cast
 
 from hypertrade.agent.kernel import AgentKernel
 from hypertrade.agent.task_executor import (
@@ -19,7 +19,17 @@ from hypertrade.market.client import MarketIngestor
 from hypertrade.market.repository import MarketRepository
 from hypertrade.monitoring import MonitorService
 from hypertrade.paper.service import PaperTradingService
+from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagService
+from hypertrade.research.graph import ResearchGraphRuntime
+from hypertrade.research.graph_tools import (
+    BuiltinResearchToolRunner,
+    ResearchBitProReadAdapter,
+)
+from hypertrade.research.role_provider import (
+    ChatResearchRoleProvider,
+    DeterministicGapRoleProvider,
+)
 
 logger = logging.getLogger("hypertrade.worker")
 
@@ -114,7 +124,7 @@ def agent_task_worker_once(
     )
     if task is None:
         return {"status": "idle", "task_id": None}
-    if task.kind != "chat_run":
+    if task.kind not in {"chat_run", "research_graph"}:
         error = {
             "code": "unsupported_task_kind",
             "category": "task_dispatch",
@@ -147,6 +157,30 @@ def agent_task_worker_once(
     heartbeat_thread = Thread(target=heartbeat, daemon=True)
     heartbeat_thread.start()
     try:
+        if task.kind == "research_graph":
+            chat_provider = ProviderRuntime(active_settings).get_chat_provider(
+                selected=active_settings.active_chat_provider
+            )
+            role_provider = (
+                ChatResearchRoleProvider(chat_provider)
+                if chat_provider is not None
+                else DeterministicGapRoleProvider()
+            )
+            bitpro_adapter = BitProToolAdapter(BitProMcpClient(settings=active_settings))
+            result = ResearchGraphRuntime(
+                db,
+                provider=role_provider,
+                tool_runner=BuiltinResearchToolRunner(
+                    db,
+                    bitpro_adapter=cast(ResearchBitProReadAdapter, bitpro_adapter),
+                    knowledge_dir=active_settings.knowledge_dir,
+                ),
+            ).run(task.id)
+            return {
+                "status": str(result["task"]["status"]),
+                "task_id": task.id,
+                "evidence_count": len(result["evidence"]),
+            }
         kernel = AgentKernel(
             db,
             knowledge_dir=str(active_settings.knowledge_dir),
@@ -164,6 +198,15 @@ def agent_task_worker_once(
             "status": current.status,
             "task_id": task.id,
             "error": exc.error,
+        }
+    except Exception:
+        if task.kind != "research_graph":
+            raise
+        current = task_service.get(task.id)
+        return {
+            "status": current.status,
+            "task_id": task.id,
+            "error": dict(current.error_json),
         }
     finally:
         stop_heartbeat.set()

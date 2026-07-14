@@ -44,7 +44,10 @@ from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.memory.service import MemoryService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.reporting.blocks import ReportBlock, render_report_blocks
+from hypertrade.research.graph import ResearchGraphRuntime, graph_topology_projection
+from hypertrade.research.graph_tools import BuiltinResearchToolRunner
 from hypertrade.research.paper_promotion import PaperPromotionService
+from hypertrade.research.role_provider import DeterministicGapRoleProvider
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
 from hypertrade.strategy.experiment import StrategyExperimentService
@@ -75,6 +78,12 @@ class AgentClient(Protocol):
     def list_agent_tasks(self) -> list[dict[str, Any]]: ...
 
     def get_agent_task(self, task_id: str) -> dict[str, Any]: ...
+
+    def research_graph_topology(self) -> dict[str, Any]: ...
+
+    def list_research_graphs(self) -> list[dict[str, Any]]: ...
+
+    def get_research_graph(self, task_id: str) -> dict[str, Any]: ...
 
     def control_agent_task(
         self,
@@ -233,6 +242,10 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
         "/task <task_id> pause|resume|cancel|retry|branch [reason]",
         "Apply an idempotent operator control action.",
     ),
+    (
+        "/research-graph topology|list|show <task_id>",
+        "Inspect the fixed role graph, node budgets, and evidence.",
+    ),
     ("/memory", "List active audited memory."),
     ("/memory search <query>", "Search audited memory by text."),
     ("/memory disable <mem_id>", "Disable one memory item without deleting audit history."),
@@ -324,6 +337,7 @@ SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
         "observe-paper",
         "cancel",
     ),
+    "/research-graph": ("topology", "list", "show"),
     "/backtest": ("list", "latest", "--live", "--source bitpro_mcp"),
     "/paper": ("status", "pause", "resume", "close", "reset"),
     "/live": ("intents", "intent", "approve", "reject", "execute"),
@@ -665,6 +679,15 @@ class AgentApiClient:
 
     def get_agent_task(self, task_id: str) -> dict[str, Any]:
         return self._get_object(f"/api/agent/tasks/{quote(task_id, safe='')}")
+
+    def research_graph_topology(self) -> dict[str, Any]:
+        return self._get_object("/api/research/graphs/topology")
+
+    def list_research_graphs(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/research/graphs", "items")
+
+    def get_research_graph(self, task_id: str) -> dict[str, Any]:
+        return self._get_object(f"/api/research/graphs/{quote(task_id, safe='')}")
 
     def control_agent_task(
         self,
@@ -1042,6 +1065,24 @@ class LocalAgentClient:
 
     def get_agent_task(self, task_id: str) -> dict[str, Any]:
         return task_to_dict(AgentTaskService(self.db).get(task_id))
+
+    def research_graph_topology(self) -> dict[str, Any]:
+        return graph_topology_projection()
+
+    def list_research_graphs(self) -> list[dict[str, Any]]:
+        return [
+            task_to_dict(row)
+            for row in AgentTaskService(self.db).list_tasks(
+                kind="research_graph", limit=100
+            )
+        ]
+
+    def get_research_graph(self, task_id: str) -> dict[str, Any]:
+        return ResearchGraphRuntime(
+            self.db,
+            provider=DeterministicGapRoleProvider(),
+            tool_runner=BuiltinResearchToolRunner(self.db),
+        ).projection(task_id)
 
     def control_agent_task(
         self,
@@ -1669,6 +1710,8 @@ def handle_slash_command(
         render_agent_tasks(client.list_agent_tasks(), output=output)
     elif name == "/task":
         handle_agent_task_command(command, client=client, output=output)
+    elif name in {"/research-graph", "/rg"}:
+        handle_research_graph_command(command, client=client, output=output)
     elif name == "/memory":
         handle_memory_command(command, client=client, output=output)
     elif name == "/rag":
@@ -2971,6 +3014,61 @@ def handle_agent_task_command(
     print(f"- checkpoint: {item.get('last_checkpoint_id') or 'none'}", file=output)
     if item.get("error"):
         print(f"- error: {json.dumps(item['error'], ensure_ascii=False)}", file=output)
+
+
+def handle_research_graph_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split(maxsplit=2)
+    action = parts[1].lower() if len(parts) > 1 else "list"
+    if action == "topology":
+        payload = client.research_graph_topology()
+        roles = payload.get("roles", [])
+        print(
+            f"Research graph {str(payload.get('catalog_hash', ''))[:12]} "
+            f"({len(roles)} fixed roles)",
+            file=output,
+        )
+        for role in roles:
+            print(
+                f"- {role.get('key')} [{role.get('version')}] "
+                f"required={role.get('required')} "
+                f"prompt={str(role.get('prompt_hash', ''))[:12]}",
+                file=output,
+            )
+        return
+    if action == "list":
+        render_agent_tasks(client.list_research_graphs(), output=output)
+        return
+    if action != "show" or len(parts) < 3:
+        print("Usage: /research-graph topology|list|show <task_id>", file=output)
+        return
+    task_id = parts[2].strip()
+    payload = client.get_research_graph(task_id)
+    task = dict(payload.get("task", {}))
+    nodes = payload.get("nodes", [])
+    evidence = payload.get("evidence", [])
+    print(
+        f"Research graph {task.get('id', task_id)} "
+        f"[{task.get('status', 'unknown')}]",
+        file=output,
+    )
+    print(
+        f"- nodes: {len(nodes)}; evidence: {len(evidence)}; "
+        f"usage: {json.dumps(task.get('usage', {}), ensure_ascii=False)}",
+        file=output,
+    )
+    for node in nodes:
+        output_ref = dict(node.get("output_ref", {}))
+        print(
+            f"- {node.get('role_key')} attempt={node.get('attempt')} "
+            f"[{node.get('status')}] "
+            f"evidence={len(output_ref.get('evidence_ids', []))}",
+            file=output,
+        )
 
 
 def handle_run_command(command: str, *, client: AgentClient, output: TextIO) -> None:

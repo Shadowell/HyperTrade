@@ -76,10 +76,24 @@ from hypertrade.research.evidence_schemas import (
     EvidenceSupersedeRequest,
     ResearchEvidenceInput,
 )
+from hypertrade.research.graph import (
+    ResearchGraphCreate,
+    ResearchGraphRuntime,
+    ResearchGraphTaskService,
+    graph_topology_projection,
+)
+from hypertrade.research.graph_tools import (
+    BuiltinResearchToolRunner,
+    ResearchBitProReadAdapter,
+)
 from hypertrade.research.legacy_evidence import LegacyEvidenceAdapter
 from hypertrade.research.orchestrator import BitProResearchAdapter, ResearchOrchestrator
 from hypertrade.research.paper_observation import PaperObservationService
 from hypertrade.research.paper_promotion import PaperPromotionAdapter, PaperPromotionService
+from hypertrade.research.role_provider import (
+    ChatResearchRoleProvider,
+    DeterministicGapRoleProvider,
+)
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
 from hypertrade.research.strategy_cards import StrategyCardService
@@ -298,6 +312,26 @@ def create_app(
         if not active_model:
             return {}
         return {str(app.state.active_chat_provider): active_model}
+
+    def research_graph_runtime() -> ResearchGraphRuntime:
+        chat_provider = ProviderRuntime(app_settings).get_chat_provider(
+            selected=str(app.state.active_chat_provider),
+            selected_model=str(app.state.active_chat_model),
+        )
+        role_provider = (
+            ChatResearchRoleProvider(chat_provider)
+            if chat_provider is not None
+            else DeterministicGapRoleProvider()
+        )
+        return ResearchGraphRuntime(
+            database,
+            provider=role_provider,
+            tool_runner=BuiltinResearchToolRunner(
+                database,
+                bitpro_adapter=cast(ResearchBitProReadAdapter, get_bitpro_adapter()),
+                knowledge_dir=app_settings.knowledge_dir,
+            ),
+        )
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -1028,6 +1062,60 @@ def create_app(
             raise HTTPException(status_code=404, detail="Research evidence not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/research/graphs/topology")
+    def research_graph_topology() -> dict[str, Any]:
+        return graph_topology_projection()
+
+    @app.post("/api/research/graphs")
+    def create_research_graph(
+        payload: ResearchGraphCreate, username: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return ResearchGraphTaskService(database).create(
+                payload, created_by=f"admin:{username}"
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/research/graphs")
+    def list_research_graphs(limit: int = 50) -> dict[str, list[dict[str, Any]]]:
+        tasks = AgentTaskService(database).list_tasks(kind="research_graph", limit=limit)
+        return {"items": [task_to_dict(task) for task in tasks]}
+
+    @app.get("/api/research/graphs/{task_id}")
+    def get_research_graph(task_id: str) -> dict[str, Any]:
+        try:
+            return research_graph_runtime().projection(task_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Research graph not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/research/graphs/{task_id}/run")
+    def run_research_graph(task_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return research_graph_runtime().run(task_id)
+        except httpx.TimeoutException as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "research_role_timeout", "retryable": True},
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Research graph not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (PermissionError, RuntimeError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "research_graph_failed",
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            ) from exc
 
     @app.get("/api/research/mandates")
     def list_research_mandates(_: AdminUser) -> dict[str, list[dict[str, Any]]]:

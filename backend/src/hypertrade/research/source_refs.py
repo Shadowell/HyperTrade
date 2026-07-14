@@ -65,6 +65,16 @@ def source_ref_from_bitpro_result(
 def source_ref_from_paper_snapshot(
     *, snapshot_id: str, snapshot_projection: dict[str, Any], observed_at: datetime
 ) -> EvidenceSourceRef:
+    return source_ref_from_snapshot(
+        snapshot_id=snapshot_id,
+        snapshot_projection=snapshot_projection,
+        observed_at=observed_at,
+    )
+
+
+def source_ref_from_snapshot(
+    *, snapshot_id: str, snapshot_projection: dict[str, Any], observed_at: datetime
+) -> EvidenceSourceRef:
     return EvidenceSourceRef(
         source_type="snapshot",
         source_id=snapshot_id,

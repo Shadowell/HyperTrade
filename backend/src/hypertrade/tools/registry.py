@@ -159,6 +159,11 @@ class ToolRegistry:
                     "Read persisted bounded BitPro research evidence and gate outcomes.",
                     "research",
                 ),
+                ToolDefinition(
+                    "research.evidence_read",
+                    "Read active, source-bound Evidence V2 records for the current Task.",
+                    "research",
+                ),
                 ToolDefinition("backtest.run", "Run Backtrader strategy backtests.", "backtest"),
                 ToolDefinition(
                     "bitpro.capabilities",

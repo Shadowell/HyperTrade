@@ -180,6 +180,7 @@ class AgentTaskService:
         *,
         session_id: str | None = None,
         status: str | None = None,
+        kind: str | None = None,
         limit: int = 100,
     ) -> list[AgentTask]:
         query = select(AgentTask)
@@ -187,6 +188,8 @@ class AgentTaskService:
             query = query.where(AgentTask.session_id == session_id)
         if status:
             query = query.where(AgentTask.status == status)
+        if kind:
+            query = query.where(AgentTask.kind == kind)
         query = query.order_by(desc(AgentTask.created_at)).limit(max(1, min(limit, 500)))
         with self.db.session() as session:
             rows = session.scalars(query).all()
@@ -396,7 +399,8 @@ class AgentTaskService:
             if self._control_was_applied(row, control.idempotency_key):
                 session.expunge(row)
                 return row
-            requests = list((row.control_json or {}).get("requests", []))
+            control_state = dict(row.control_json or {})
+            requests = list(control_state.get("requests", []))
             requests.append(
                 {
                     "action": action,
@@ -406,7 +410,9 @@ class AgentTaskService:
                     "requested_at": utc_now().isoformat(),
                 }
             )
-            row.control_json = {"requests": requests[-100:]}
+            # Task-kind configuration and active budget reservations share this
+            # audited envelope; a control action must not erase either boundary.
+            row.control_json = {**control_state, "requests": requests[-100:]}
             self._transition_in_session(
                 session,
                 row,
