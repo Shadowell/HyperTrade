@@ -23,26 +23,33 @@ case "$HYPERTRADE_EVAL_BASE_URL" in
 esac
 
 output_dir="${HYPERTRADE_EVAL_OUTPUT_DIR:-/tmp/hypertrade-agent-evals}"
-reference="evals/ragas/agent_golden_reference.json"
-trajectories="$output_dir/agent-golden-trajectories.json"
-report="$output_dir/agent-golden-baseline.json"
-collector_args=(
-  --reference "$reference"
-  --output "$trajectories"
-  --base-url "$HYPERTRADE_EVAL_BASE_URL"
-)
-
-case "$HYPERTRADE_EVAL_BASE_URL" in
-  http://127.0.0.1*|http://localhost*) ;;
-  *) collector_args+=(--allow-remote) ;;
-esac
+reference="backend/src/hypertrade/evals/research_os_golden_v1.json"
 
 mkdir -p "$output_dir"
-uv run python scripts/collect_agent_eval_trajectories.py \
-  "${collector_args[@]}"
-uv run python -m hypertrade.evals.baseline_runner \
-  --reference "$reference" \
-  --trajectories "$trajectories" \
-  --output "$report"
+for run_number in 1 2; do
+  trajectories="$output_dir/research-os-trajectories-$run_number.json"
+  report="$output_dir/research-os-baseline-$run_number.json"
+  collector_args=(
+    --reference "$reference"
+    --output "$trajectories"
+    --base-url "$HYPERTRADE_EVAL_BASE_URL"
+  )
+  case "$HYPERTRADE_EVAL_BASE_URL" in
+    http://127.0.0.1*|http://localhost*) ;;
+    *) collector_args+=(--allow-remote) ;;
+  esac
+  uv run --extra agent-evals python scripts/collect_agent_eval_trajectories.py \
+    "${collector_args[@]}"
+  uv run --extra agent-evals python -m hypertrade.evals.baseline_runner \
+    --reference "$reference" \
+    --trajectories "$trajectories" \
+    --output "$report"
+done
 
-echo "Baseline report: $report"
+comparison="$output_dir/research-os-baseline-comparison.json"
+uv run --extra agent-evals python -m hypertrade.evals.comparison \
+  --left "$output_dir/research-os-baseline-1.json" \
+  --right "$output_dir/research-os-baseline-2.json" \
+  --output "$comparison"
+
+echo "Baseline reports and comparison: $output_dir"

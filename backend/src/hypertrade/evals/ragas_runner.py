@@ -69,6 +69,11 @@ async def score_trajectories(
                 "tool_call_accuracy": round(float(accuracy.value), 4),
                 "tool_call_f1": round(float(f1.value), 4),
                 "compare_arguments": include_arguments,
+                "node_sequence_accuracy": _node_sequence_accuracy(
+                    reference,
+                    trajectory,
+                ),
+                "task_status_match": _task_status_match(reference, trajectory),
             }
         )
     return results
@@ -91,6 +96,51 @@ def _tool_calls(
         args = record.get("args") if include_arguments else {}
         calls.append(ToolCall(name=name, args=dict(args) if isinstance(args, dict) else {}))
     return calls
+
+
+def _node_sequence_accuracy(
+    reference: dict[str, Any],
+    trajectory: dict[str, Any],
+) -> float | None:
+    requirements = reference.get("requirements")
+    expected = requirements.get("required_nodes", []) if isinstance(requirements, dict) else []
+    if not isinstance(expected, list) or not expected:
+        return None
+    research_os = trajectory.get("research_os")
+    actual_nodes = research_os.get("nodes", []) if isinstance(research_os, dict) else []
+    actual = [
+        str(item.get("node_key", ""))
+        for item in actual_nodes
+        if isinstance(item, dict) and item.get("node_key")
+    ]
+    cursor = 0
+    matched = 0
+    for node in expected:
+        wanted = str(node)
+        with_index = next(
+            (index for index in range(cursor, len(actual)) if actual[index] == wanted),
+            None,
+        )
+        if with_index is None:
+            continue
+        matched += 1
+        cursor = with_index + 1
+    return round(matched / len(expected), 4)
+
+
+def _task_status_match(
+    reference: dict[str, Any],
+    trajectory: dict[str, Any],
+) -> bool | None:
+    requirements = reference.get("requirements")
+    expected = (
+        str(requirements.get("terminal_status", "")) if isinstance(requirements, dict) else ""
+    )
+    if not expected:
+        return None
+    research_os = trajectory.get("research_os")
+    actual = str(research_os.get("task_status", "")) if isinstance(research_os, dict) else ""
+    return actual == expected
 
 
 def _load_records(path: Path) -> list[dict[str, Any]]:

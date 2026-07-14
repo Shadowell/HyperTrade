@@ -37,6 +37,12 @@ def build_trajectory_from_api_payload(case_id: str, payload: dict[str, Any]) -> 
     planned_tool_names = _planned_tool_names(report.get("tool_calls"))
     trace_events = payload.get("trace_events")
     events = trace_events if isinstance(trace_events, list) else []
+    raw_nodes = payload.get("node_runs") or payload.get("nodes") or report.get("nodes")
+    nodes = raw_nodes if isinstance(raw_nodes, list) else []
+    raw_evidence = payload.get("evidence") or report.get("evidence")
+    evidence = raw_evidence if isinstance(raw_evidence, list) else []
+    experiment = _dict(payload.get("experiment") or report.get("experiment"))
+    validation = _dict(payload.get("validation") or report.get("validation"))
     return {
         "schema_version": "agent-evaluation-trajectory-v1",
         "case_id": case_id,
@@ -50,12 +56,35 @@ def build_trajectory_from_api_payload(case_id: str, payload: dict[str, Any]) -> 
             "duration_ms": _number(observability.get("duration_ms")),
             "total_tokens": _integer(usage.get("total_tokens")),
         },
+        "research_os": {
+            "task_status": str(payload.get("task_status") or payload.get("status", "")),
+            "nodes": [_safe_node(node) for node in nodes if isinstance(node, dict)],
+            "evidence_types": sorted(
+                {
+                    str(item.get("evidence_type", item.get("type", "")))
+                    for item in evidence
+                    if isinstance(item, dict) and (item.get("evidence_type") or item.get("type"))
+                }
+            ),
+            "experiment_fingerprint": str(experiment.get("fingerprint", ""))[:64],
+            "validation_status": str(validation.get("final_status", validation.get("status", ""))),
+        },
         "tool_calls": [
             tool_call
             for event in events
             if isinstance(event, dict)
             if (tool_call := _tool_call_from_event(event, planned_tool_names)) is not None
         ],
+    }
+
+
+def _safe_node(node: dict[str, Any]) -> dict[str, str | int]:
+    attempt = node.get("attempt", 0)
+    return {
+        "node_key": str(node.get("node_key", ""))[:80],
+        "role_key": str(node.get("role_key", ""))[:80],
+        "status": str(node.get("status", ""))[:32],
+        "attempt": max(0, int(attempt)) if isinstance(attempt, int) else 0,
     }
 
 
@@ -102,9 +131,7 @@ def _planned_tool_names(value: object) -> set[str]:
     if not isinstance(value, list):
         return set()
     return {
-        str(item.get("tool", ""))
-        for item in value
-        if isinstance(item, dict) and item.get("tool")
+        str(item.get("tool", "")) for item in value if isinstance(item, dict) and item.get("tool")
     }
 
 

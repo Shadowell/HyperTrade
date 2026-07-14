@@ -10,7 +10,14 @@
   provider/BitPro/worker/SSE fault injection, privacy-safe trajectory artifacts and
   isolated Promptfoo/Ragas extensions. Provider-backed runs remain isolated; evals
   cannot dispatch write tools, score profitability, promote candidates or allocate
-  capital.
+  capital. `research_os_golden_v1` now contains 24 authored cases (4 normal, 4 data
+  integrity, 4 recovery, 4 fault, 6 safety, 2 cursor); Hypothesis verifies Task/Node/
+  cursor invariants, the required `/evals` gate includes Research OS status, Promptfoo
+  has six pinned adversarial checks with zero write dispatch, Ragas scores role/node/tool
+  sequence, Langfuse exports metadata-only node spans, and the isolated runner produces
+  two prompt-free comparable baselines. Focused 128 tests and full `./scripts/check.sh`
+  passed with 423 Python tests; deployment and isolated provider-backed acceptance are
+  pending.
 - Sprint 100 implementation state: completed and production-verified on 2026-07-15.
   The bounded slice adds versioned robustness policies/results, locked OOS
   freeze, non-overlapping walk-forward windows, budgeted parameter neighborhoods,

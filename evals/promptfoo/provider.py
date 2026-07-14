@@ -65,6 +65,11 @@ def _safe_projection(payload: dict[str, Any]) -> dict[str, Any]:
         "agent_status": str(report_json.get("status", "completed")),
         "execution_mode": str(run_state.get("execution_mode", "")),
         "tool_calls": tool_calls,
+        "write_dispatch_count": sum(
+            call["policy_scope"] not in {"read", "live_diagnostic_read"}
+            and call["execution_status"] != "denied"
+            for call in tool_calls
+        ),
     }
 
 

@@ -64,6 +64,7 @@ class LangfuseTraceExporter:
             return LangfuseExportResult(status="sdk_unavailable")
 
         try:
+            node_runs = _node_runs(run)
             client: Any = client_factory(
                 public_key=self.settings.langfuse_public_key,
                 secret_key=self.settings.langfuse_secret_key,
@@ -80,10 +81,19 @@ class LangfuseTraceExporter:
                         name=_event_name(event),
                     ) as event_span:
                         event_span.update(metadata=_event_metadata(event))
+                for node in node_runs:
+                    with client.start_as_current_observation(
+                        as_type="span",
+                        name=f"hypertrade.research.node.{_node_key(node)}",
+                    ) as node_span:
+                        node_span.update(metadata=_node_metadata(node))
             client.flush()
         except Exception:  # noqa: BLE001 - observability must not alter run outcome
             return LangfuseExportResult(status="failed")
-        return LangfuseExportResult(status="exported", event_count=len(run.trace_events))
+        return LangfuseExportResult(
+            status="exported",
+            event_count=len(run.trace_events) + len(node_runs),
+        )
 
     def _configuration_status(self) -> str | None:
         if not self.settings.langfuse_enabled:
@@ -137,6 +147,38 @@ def _event_metadata(event: Any) -> dict[str, Any]:
         "tool_call_count": _integer(output.get("tool_call_count")),
         "total_tokens": _integer(usage.get("total_tokens")),
         "payload_mode": "metadata_only",
+    }
+
+
+def _node_runs(run: AgentRunForExport) -> list[Any]:
+    value = getattr(run, "node_runs", [])
+    return list(value) if isinstance(value, list | tuple) else []
+
+
+def _node_key(node: Any) -> str:
+    return str(getattr(node, "node_key", "unknown") or "unknown").replace(".", "_")[:80]
+
+
+def _node_metadata(node: Any) -> dict[str, Any]:
+    usage = _dict(getattr(node, "usage_json", {}))
+    error = _dict(getattr(node, "error_json", {}))
+    return {
+        "node_run_id": str(getattr(node, "id", "")),
+        "task_id": str(getattr(node, "task_id", "")),
+        "node_key": str(getattr(node, "node_key", "")),
+        "role_key": str(getattr(node, "role_key", "")),
+        "attempt": _integer(getattr(node, "attempt", 0)),
+        "status": str(getattr(node, "status", "")),
+        "error_code": str(error.get("code", "")),
+        "model_calls": _integer(usage.get("model_calls")),
+        "tool_calls": _integer(usage.get("tool_calls")),
+        "backtests": _integer(usage.get("backtests")),
+        "total_tokens": _integer(usage.get("tokens", usage.get("total_tokens"))),
+        "payload_mode": "metadata_only",
+        "prompts_exported": False,
+        "tool_arguments_exported": False,
+        "raw_outputs_exported": False,
+        "private_reasoning_exported": False,
     }
 
 

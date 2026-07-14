@@ -21,6 +21,7 @@ from hypertrade.cli import (
     main,
     render_backtest_result,
     render_connectors,
+    render_evals_status,
     render_run,
     render_run_stream,
     render_slash_help,
@@ -498,9 +499,7 @@ class FakeAgentClient:
         }
 
     def get_model_status(self) -> dict[str, Any]:
-        codex_model = (
-            self.selected_provider_model if self.selected_model == "codex" else "gpt-5.4"
-        )
+        codex_model = self.selected_provider_model if self.selected_model == "codex" else "gpt-5.4"
         providers = [
             {
                 "name": "deepseek",
@@ -857,20 +856,14 @@ def test_slash_command_root_displays_help_without_unknown_message() -> None:
 
 
 def test_compact_markdown_report_removes_excess_spacing_and_rules() -> None:
-    compact = _compact_markdown_report(
-        "# 标题\n\n\n正文\n\n---\n\n\n## 小节\n\n\n- 项目\n\n\n"
-    )
+    compact = _compact_markdown_report("# 标题\n\n\n正文\n\n---\n\n\n## 小节\n\n\n- 项目\n\n\n")
 
     assert compact == "# 标题\n\n正文\n\n## 小节\n\n- 项目"
 
 
 def test_report_cleanup_hides_citations_and_keycap_icons() -> None:
     cleaned = _strip_report_icons(
-        "## 引用来源\n\n"
-        "1. docs/a.md#0\n\n"
-        "## 📟 Ticker 是什么？\n\n"
-        "### 1️⃣ 交易代码\n\n"
-        "正文 😊"
+        "## 引用来源\n\n1. docs/a.md#0\n\n## 📟 Ticker 是什么？\n\n### 1️⃣ 交易代码\n\n正文 😊"
     )
 
     assert "引用来源" not in cleaned
@@ -2085,8 +2078,7 @@ def test_render_run_uses_rich_bitpro_backtest_result_table(monkeypatch) -> None:
                                 "id": 161,
                                 "strategy_id": 178,
                                 "strategy_name": (
-                                    "[合约][1D][CTA] ETH · "
-                                    "Donchian89/EMA89趋势跟踪稳健版 · 100U"
+                                    "[合约][1D][CTA] ETH · Donchian89/EMA89趋势跟踪稳健版 · 100U"
                                 ),
                                 "total_return_pct": "305.53878586955756",
                                 "annual_return_pct": "80.6615",
@@ -2101,8 +2093,7 @@ def test_render_run_uses_rich_bitpro_backtest_result_table(monkeypatch) -> None:
                                 "id": 193,
                                 "strategy_id": 162,
                                 "strategy_name": (
-                                    "[合约][1H][CTA] ETH · "
-                                    "Heikin Ashi趋势跟踪低频版 · 100U"
+                                    "[合约][1H][CTA] ETH · Heikin Ashi趋势跟踪低频版 · 100U"
                                 ),
                                 "total_return_pct": "141.83713784801657",
                                 "annual_return_pct": "142.4246",
@@ -2373,6 +2364,28 @@ def test_run_stream_shows_thinking_animation_for_tty() -> None:
     assert "# CLI Report" not in rendered
 
 
+def test_evals_renderer_summarizes_research_os_without_dumping_cases() -> None:
+    output = StringIO()
+
+    render_evals_status(
+        {
+            "status": "passed",
+            "cases": [{"name": "tool_selection", "status": "passed"}],
+            "research_os": {
+                "status": "passed",
+                "suite_version": "research_os_golden_v1",
+                "case_count": 24,
+                "categories": {"safety": 6, "normal": 4},
+            },
+        },
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "Research OS: passed suite=research_os_golden_v1 cases=24" in rendered
+    assert "normal=4 safety=6" in rendered
+
+
 def test_chat_reuses_client_until_exit(capsys) -> None:
     client = FakeAgentClient()
     inputs = iter(["研究趋势突破策略", "exit"])
@@ -2501,12 +2514,10 @@ def test_slash_help_describes_every_command() -> None:
         assert command in rendered
         assert description in rendered
     assert any(
-        "/memory search <query>" in line and "Search audited memory" in line
-        for line in lines
+        "/memory search <query>" in line and "Search audited memory" in line for line in lines
     )
     assert any(
-        "/backtest --source bitpro_mcp" in line and "BitPro MCP K-lines" in line
-        for line in lines
+        "/backtest --source bitpro_mcp" in line and "BitPro MCP K-lines" in line for line in lines
     )
 
 

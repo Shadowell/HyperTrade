@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from hypertrade.evals.research_os import ResearchOSEvalSuite
+
 
 @dataclass(frozen=True)
 class EvalObservation:
@@ -30,14 +32,18 @@ class AgentEvalCase:
 class AgentEvalSuite:
     def status(self) -> dict[str, Any]:
         case_results = [
-            self.evaluate_case(case, self._default_observation(case.name))
-            for case in self.cases()
+            self.evaluate_case(case, self._default_observation(case.name)) for case in self.cases()
         ]
-        status = "passed" if all(case["status"] == "passed" for case in case_results) else "failed"
+        research_os = ResearchOSEvalSuite().status()
+        legacy_passed = all(case["status"] == "passed" for case in case_results)
+        status = "passed" if legacy_passed and research_os["status"] == "passed" else "failed"
         return {
             "status": status,
-            "case_count": len(case_results),
+            "case_count": len(case_results) + int(research_os["case_count"]),
+            "legacy_case_count": len(case_results),
+            "research_os_case_count": research_os["case_count"],
             "cases": case_results,
+            "research_os": research_os,
             "mode": "deterministic",
         }
 
@@ -390,8 +396,7 @@ class AgentEvalSuite:
                 prompt="查看 BitPro 回测 result 196 的权益曲线和订单证据",
                 tool_calls=["bitpro_backtest_get_result"],
                 report_markdown=(
-                    "result #196: 权益曲线可用；订单: 不可用 "
-                    "orders_unavailable，不能补造订单行。"
+                    "result #196: 权益曲线可用；订单: 不可用 orders_unavailable，不能补造订单行。"
                 ),
                 source_ids=["bitpro_result:196"],
                 missing_data=["orders_unavailable"],
@@ -436,17 +441,13 @@ class AgentEvalSuite:
             "live_order_history_source": EvalObservation(
                 prompt="我的实盘最近的一笔订单是什么",
                 tool_calls=["bitpro_live_order_history"],
-                report_markdown=(
-                    "## BitPro 实盘订单\n最近订单: ord_2 ETH/USDT:USDT buy closed."
-                ),
+                report_markdown=("## BitPro 实盘订单\n最近订单: ord_2 ETH/USDT:USDT buy closed."),
                 source_ids=["bitpro_live_order_history:latest"],
             ),
             "live_strategy_performance_source": EvalObservation(
                 prompt="看下实盘收益最高的策略",
                 tool_calls=["bitpro_live_strategy_performance"],
-                report_markdown=(
-                    "## BitPro 实盘策略收益\n排名口径=return_pct；最高策略: #107."
-                ),
+                report_markdown=("## BitPro 实盘策略收益\n排名口径=return_pct；最高策略: #107."),
                 source_ids=["bitpro_live_strategy_performance:top"],
             ),
         }

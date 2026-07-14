@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from hypertrade.evals.baseline import build_baseline_report
+from hypertrade.evals.comparison import compare_baselines
 
 
 def test_golden_reference_covers_operator_domains_and_write_attempts() -> None:
@@ -25,6 +26,23 @@ def test_golden_reference_covers_operator_domains_and_write_attempts() -> None:
     assert len(safety_cases) == 6
     assert all(case["required_denied_tools"] for case in safety_cases)
     assert all(case["prompt"] and case["reference_tool_calls"] for case in references)
+
+
+def test_research_os_reference_covers_24_authored_cases_and_six_safety_attacks() -> None:
+    path = Path("backend/src/hypertrade/evals/research_os_golden_v1.json")
+    references = json.loads(path.read_text(encoding="utf-8"))
+
+    assert len(references) == 24
+    assert {case["category"] for case in references} == {
+        "normal",
+        "data_integrity",
+        "recovery",
+        "fault",
+        "safety",
+        "cursor",
+    }
+    assert sum(case["category"] == "safety" for case in references) == 6
+    assert all(case["requirements"]["terminal_status"] for case in references)
 
 
 def test_baseline_aggregates_tool_citation_safety_and_performance_without_prompts() -> None:
@@ -82,12 +100,16 @@ def test_baseline_aggregates_tool_citation_safety_and_performance_without_prompt
             "status": "scored",
             "tool_call_accuracy": 1.0,
             "tool_call_f1": 1.0,
+            "node_sequence_accuracy": 1.0,
+            "task_status_match": True,
         },
         {
             "case_id": "safety",
             "status": "scored",
             "tool_call_accuracy": 1.0,
             "tool_call_f1": 1.0,
+            "node_sequence_accuracy": 0.5,
+            "task_status_match": False,
         },
     ]
 
@@ -115,6 +137,12 @@ def test_baseline_aggregates_tool_citation_safety_and_performance_without_prompt
     }
     assert report["metrics"]["performance"]["mean_duration_ms"] == 50.0
     assert report["metrics"]["performance"]["total_tokens"] == 300
+    assert report["metrics"]["research_os"] == {
+        "node_sequence_samples": 2,
+        "mean_node_sequence_accuracy": 0.75,
+        "task_status_samples": 2,
+        "task_status_match_rate": 0.5,
+    }
     assert "must not appear in output" not in json.dumps(report)
     assert "raw output must not appear in output" not in json.dumps(report)
     assert report["data_boundary"]["reports_included"] is False
@@ -153,3 +181,40 @@ def test_baseline_marks_an_unsafe_dispatch_instead_of_hiding_it() -> None:
     assert safety["expected_denial_case_rate"] == 0.0
     assert safety["unsafe_tool_denial_rate"] == 0.0
     assert safety["unsafe_dispatches"] == ["live_order_intent"]
+
+
+def test_baseline_comparison_surfaces_regression_without_copying_prompts() -> None:
+    left = build_baseline_report(
+        [{"case_id": "case", "category": "normal", "prompt": "private prompt"}],
+        [{"case_id": "case", "citation_count": 0, "metrics": {}, "tool_calls": []}],
+        [
+            {
+                "case_id": "case",
+                "status": "scored",
+                "tool_call_accuracy": 1.0,
+                "tool_call_f1": 1.0,
+                "node_sequence_accuracy": 1.0,
+                "task_status_match": True,
+            }
+        ],
+    )
+    right = build_baseline_report(
+        [{"case_id": "case", "category": "normal", "prompt": "private prompt"}],
+        [{"case_id": "case", "citation_count": 0, "metrics": {}, "tool_calls": []}],
+        [
+            {
+                "case_id": "case",
+                "status": "scored",
+                "tool_call_accuracy": 0.5,
+                "tool_call_f1": 0.5,
+                "node_sequence_accuracy": 0.5,
+                "task_status_match": True,
+            }
+        ],
+    )
+
+    comparison = compare_baselines(left, right)
+
+    assert comparison["status"] == "regressed"
+    assert comparison["regression_count"] == 2
+    assert "private prompt" not in json.dumps(comparison)

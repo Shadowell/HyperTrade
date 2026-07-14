@@ -26,9 +26,7 @@ def build_baseline_report(
     trajectory_by_case = {
         str(trajectory.get("case_id", "")): trajectory for trajectory in trajectories
     }
-    ragas_by_case = {
-        str(result.get("case_id", "")): result for result in ragas_results
-    }
+    ragas_by_case = {str(result.get("case_id", "")): result for result in ragas_results}
     case_reports: list[dict[str, Any]] = []
 
     for reference in references:
@@ -48,6 +46,7 @@ def build_baseline_report(
             "safety": _safety_metrics(case_reports),
             "performance": _performance_metrics(case_reports),
             "categories": _category_metrics(case_reports),
+            "research_os": _research_os_metrics(case_reports),
         },
         "data_boundary": {
             "prompts_included": False,
@@ -114,6 +113,14 @@ def _case_report(
             "cost_usd": None,
             "cost_status": "not_reported",
         },
+        "research_os": {
+            "node_sequence_accuracy": _optional_score(ragas.get("node_sequence_accuracy")),
+            "task_status_match": (
+                bool(ragas["task_status_match"])
+                if isinstance(ragas.get("task_status_match"), bool)
+                else None
+            ),
+        },
     }
 
 
@@ -138,9 +145,7 @@ def _tool_selection_metrics(case_reports: list[dict[str, Any]]) -> dict[str, Any
 
 
 def _citation_metrics(case_reports: list[dict[str, Any]]) -> dict[str, Any]:
-    required_cases = [
-        case for case in case_reports if case["citation"]["required_minimum"] > 0
-    ]
+    required_cases = [case for case in case_reports if case["citation"]["required_minimum"] > 0]
     passed_cases = [case for case in required_cases if case["citation"]["passed"]]
     return {
         "required_cases": len(required_cases),
@@ -150,20 +155,14 @@ def _citation_metrics(case_reports: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _safety_metrics(case_reports: list[dict[str, Any]]) -> dict[str, Any]:
-    safety_cases = [
-        case for case in case_reports if case["safety"]["required_denied_tools"]
-    ]
+    safety_cases = [case for case in case_reports if case["safety"]["required_denied_tools"]]
     satisfied_cases = [
         case for case in safety_cases if case["safety"]["expected_denials_satisfied"]
     ]
     unsafe_attempts = sum(case["safety"]["unsafe_tool_attempts"] for case in case_reports)
     unsafe_denials = sum(case["safety"]["unsafe_tool_denials"] for case in case_reports)
     dispatches = sorted(
-        {
-            tool_name
-            for case in case_reports
-            for tool_name in case["safety"]["unsafe_dispatches"]
-        }
+        {tool_name for case in case_reports for tool_name in case["safety"]["unsafe_dispatches"]}
     )
     return {
         "expected_denial_cases": len(safety_cases),
@@ -203,6 +202,21 @@ def _category_metrics(case_reports: list[dict[str, Any]]) -> dict[str, dict[str,
             "tool_selection_accuracy": _average(accuracies),
         }
     return metrics
+
+
+def _research_os_metrics(case_reports: list[dict[str, Any]]) -> dict[str, Any]:
+    node_scores = _scores(case["research_os"]["node_sequence_accuracy"] for case in case_reports)
+    task_matches = [
+        case["research_os"]["task_status_match"]
+        for case in case_reports
+        if isinstance(case["research_os"]["task_status_match"], bool)
+    ]
+    return {
+        "node_sequence_samples": len(node_scores),
+        "mean_node_sequence_accuracy": _average(node_scores),
+        "task_status_samples": len(task_matches),
+        "task_status_match_rate": _ratio(sum(task_matches), len(task_matches)),
+    }
 
 
 def _tool_calls(trajectory: dict[str, Any] | None) -> list[dict[str, Any]]:

@@ -717,9 +717,7 @@ class AgentApiClient:
         return self._get_list("/api/research/experiments", "items")
 
     def get_experiment_manifest(self, fingerprint: str) -> dict[str, Any]:
-        return self._get_object(
-            f"/api/research/experiments/{quote(fingerprint, safe='')}"
-        )
+        return self._get_object(f"/api/research/experiments/{quote(fingerprint, safe='')}")
 
     def diff_experiment_manifests(
         self, left_fingerprint: str, right_fingerprint: str
@@ -733,9 +731,7 @@ class AgentApiClient:
         return self._get_list("/api/research/validations", "items")
 
     def get_robustness_validation(self, validation_id: str) -> dict[str, Any]:
-        return self._get_object(
-            f"/api/research/validations/{quote(validation_id, safe='')}"
-        )
+        return self._get_object(f"/api/research/validations/{quote(validation_id, safe='')}")
 
     def control_agent_task(
         self,
@@ -1120,9 +1116,7 @@ class LocalAgentClient:
     def list_research_graphs(self) -> list[dict[str, Any]]:
         return [
             task_to_dict(row)
-            for row in AgentTaskService(self.db).list_tasks(
-                kind="research_graph", limit=100
-            )
+            for row in AgentTaskService(self.db).list_tasks(kind="research_graph", limit=100)
         ]
 
     def get_research_graph(self, task_id: str) -> dict[str, Any]:
@@ -1141,9 +1135,7 @@ class LocalAgentClient:
     def diff_experiment_manifests(
         self, left_fingerprint: str, right_fingerprint: str
     ) -> dict[str, Any]:
-        return ExperimentLedgerService(self.db).diff(
-            left_fingerprint, right_fingerprint
-        )
+        return ExperimentLedgerService(self.db).diff(left_fingerprint, right_fingerprint)
 
     def list_robustness_validations(self) -> list[dict[str, Any]]:
         return RobustnessValidationService(self.db).list(limit=100)
@@ -3123,8 +3115,7 @@ def handle_research_graph_command(
     nodes = payload.get("nodes", [])
     evidence = payload.get("evidence", [])
     print(
-        f"Research graph {task.get('id', task_id)} "
-        f"[{task.get('status', 'unknown')}]",
+        f"Research graph {task.get('id', task_id)} [{task.get('status', 'unknown')}]",
         file=output,
     )
     print(
@@ -3181,8 +3172,7 @@ def handle_experiment_ledger_command(
     if action == "diff" and len(parts) == 4:
         payload = client.diff_experiment_manifests(parts[2], parts[3])
         print(
-            f"Manifest diff equal={payload.get('equal')} "
-            f"changes={len(payload.get('changes', []))}",
+            f"Manifest diff equal={payload.get('equal')} changes={len(payload.get('changes', []))}",
             file=output,
         )
         for change in payload.get("changes", [])[:50]:
@@ -3299,6 +3289,18 @@ def render_rag_hits(items: list[dict[str, Any]], *, output: TextIO) -> None:
 def render_evals_status(payload: dict[str, Any], *, output: TextIO) -> None:
     print("Eval suite:", file=output)
     print(f"- Status: {payload.get('status', 'unknown')}", file=output)
+    research_os = payload.get("research_os")
+    if isinstance(research_os, dict):
+        print(
+            f"- Research OS: {research_os.get('status', 'unknown')} "
+            f"suite={research_os.get('suite_version', 'unknown')} "
+            f"cases={research_os.get('case_count', 0)}",
+            file=output,
+        )
+        categories = research_os.get("categories")
+        if isinstance(categories, dict):
+            summary = " ".join(f"{name}={count}" for name, count in sorted(categories.items()))
+            print(f"  categories: {summary}", file=output)
     cases = payload.get("cases", [])
     if not isinstance(cases, list) or not cases:
         print("- no cases", file=output)

@@ -29,4 +29,4 @@ export PROMPTFOO_DISABLE_UPDATE=1
 export PROMPTFOO_DISABLE_SHARING=1
 export PROMPTFOO_SELF_HOSTED=1
 
-npx --yes promptfoo@latest eval --config evals/promptfoo/promptfooconfig.yaml --no-cache
+npx --yes promptfoo@0.121.19 eval --config evals/promptfoo/promptfooconfig.yaml --no-cache

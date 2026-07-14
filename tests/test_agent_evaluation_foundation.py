@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from types import SimpleNamespace
 from typing import Any
@@ -205,6 +206,13 @@ def test_trajectory_projection_removes_prompt_and_sensitive_tool_arguments() -> 
         "execution_mode": "evaluation",
         "citation_count": 1,
         "metrics": {"duration_ms": None, "total_tokens": None},
+        "research_os": {
+            "task_status": "completed",
+            "nodes": [],
+            "evidence_types": [],
+            "experiment_fingerprint": "",
+            "validation_status": "",
+        },
         "tool_calls": [
             {
                 "name": "market_ticker",
@@ -222,3 +230,105 @@ def test_trajectory_projection_removes_prompt_and_sensitive_tool_arguments() -> 
             },
         ],
     }
+
+
+def test_research_os_trajectory_keeps_node_order_but_drops_node_payloads() -> None:
+    trajectory = build_trajectory_from_api_payload(
+        "research_graph",
+        {
+            "id": "run_research",
+            "status": "completed",
+            "nodes": [
+                {
+                    "node_key": "market_regime",
+                    "role_key": "market_regime",
+                    "status": "completed",
+                    "attempt": 2,
+                    "input_ref": {"prompt": "private"},
+                    "output_ref": {"raw": "private"},
+                }
+            ],
+            "evidence": [{"evidence_type": "data_gap", "claim": "private"}],
+            "experiment": {"fingerprint": "a" * 64, "manifest": {"prompt": "private"}},
+            "validation": {"final_status": "needs_data", "scenarios": ["private"]},
+        },
+    )
+
+    assert trajectory["research_os"] == {
+        "task_status": "completed",
+        "nodes": [
+            {
+                "node_key": "market_regime",
+                "role_key": "market_regime",
+                "status": "completed",
+                "attempt": 2,
+            }
+        ],
+        "evidence_types": ["data_gap"],
+        "experiment_fingerprint": "a" * 64,
+        "validation_status": "needs_data",
+    }
+    assert "private" not in json.dumps(trajectory)
+
+
+def test_langfuse_research_node_spans_export_metadata_only(monkeypatch) -> None:
+    received_metadata: list[dict[str, Any]] = []
+
+    class FakeSpan:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            del exc_type, exc, traceback
+
+        def update(self, *, metadata: dict[str, Any]) -> None:
+            received_metadata.append(metadata)
+
+    class FakeLangfuse:
+        def __init__(self, **kwargs: Any) -> None:
+            del kwargs
+
+        def start_as_current_observation(self, **kwargs: Any) -> FakeSpan:
+            del kwargs
+            return FakeSpan()
+
+        def flush(self) -> None:
+            return None
+
+    monkeypatch.setitem(sys.modules, "langfuse", SimpleNamespace(Langfuse=FakeLangfuse))
+    run = SimpleNamespace(
+        id="run_node_eval",
+        status="completed",
+        run_state_json={"execution_mode": "evaluation"},
+        trace_events=[],
+        node_runs=[
+            SimpleNamespace(
+                id="node_001",
+                task_id="task_001",
+                node_key="validation_reviewer",
+                role_key="validation_reviewer",
+                attempt=2,
+                status="failed",
+                input_ref_json={"prompt": "never export"},
+                output_ref_json={"raw": "never export"},
+                usage_json={"tokens": 123, "model_calls": 1, "tool_calls": 2},
+                error_json={"code": "role_schema_invalid", "message": "private output"},
+            )
+        ],
+    )
+    settings = Settings(
+        LANGFUSE_ENABLED=True,
+        LANGFUSE_PUBLIC_KEY="pk-lf-test",
+        LANGFUSE_SECRET_KEY="sk-lf-test",
+        LANGFUSE_BASE_URL="http://langfuse.internal",
+    )
+
+    result = LangfuseTraceExporter(settings).export(run)
+
+    assert result.status == "exported"
+    assert result.event_count == 1
+    node_metadata = next(item for item in received_metadata if item.get("node_run_id"))
+    assert node_metadata["node_key"] == "validation_reviewer"
+    assert node_metadata["error_code"] == "role_schema_invalid"
+    assert "never export" not in repr(received_metadata)
+    assert "private output" not in repr(received_metadata)

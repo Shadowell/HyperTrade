@@ -23,7 +23,9 @@ def test_eval_suite_exposes_sprint_53_cases_with_contract_fields() -> None:
         "world_model_portfolio_review",
     }
     assert status["status"] == "passed"
-    assert status["case_count"] == len(expected_cases)
+    assert status["legacy_case_count"] == len(expected_cases)
+    assert status["research_os_case_count"] == 24
+    assert status["case_count"] == len(expected_cases) + 24
     assert {case["name"] for case in status["cases"]} == expected_cases
 
     sprint_53_cases = {
@@ -59,8 +61,7 @@ def test_strategy_library_eval_fails_without_strategy_library_tool() -> None:
             prompt=case.prompt,
             tool_calls=["memory_search"],
             report_markdown=(
-                "strategy_knowledge evidence from memory:mem_strategy_001; "
-                "下一轮继续验证低频参数。"
+                "strategy_knowledge evidence from memory:mem_strategy_001; 下一轮继续验证低频参数。"
             ),
             source_ids=["memory:mem_strategy_001"],
         ),
@@ -195,8 +196,7 @@ def test_world_model_eval_rejects_missing_scenario_decision_evidence() -> None:
             prompt=case.prompt,
             tool_calls=["world_model_snapshot"],
             report_markdown=(
-                "## 全局世界模型\nWorldState missing_data "
-                "global_market.us_equities_unavailable"
+                "## 全局世界模型\nWorldState missing_data global_market.us_equities_unavailable"
             ),
             source_ids=["world_model:latest"],
             missing_data=["global_market.us_equities_unavailable"],
