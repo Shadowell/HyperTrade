@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from hypertrade.config import Settings
 from hypertrade.db import Database
 from hypertrade.main import create_app
+from hypertrade.research.experiment_ledger import ExperimentLedgerService
 from hypertrade.research.orchestrator import ResearchOrchestrator
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
@@ -117,6 +118,54 @@ def test_orchestrator_persists_bitpro_matrix_evidence_without_paper_action() -> 
     assert "paper_start" not in adapter.calls
     assert adapter.calls.count("backtest_start_job") == 9
     assert report["job"]["external_refs"]["sprint_82"]["bitpro_strategy_id"] == "42"
+    ledger = report["job"]["external_refs"]["experiment_ledger"]
+    assert len(ledger["fingerprint"]) == 64
+    execution = ExperimentLedgerService(db).executions(ledger["fingerprint"])[0]
+    assert execution["status"] == "completed"
+    assert execution["usage"] == {"backtests": 9, "tool_calls": 0}
+    assert len(execution["artifacts"]["items"]) == 9
+    assert len(execution["evidence"]) == 3
+
+
+def test_orchestrator_reuses_completed_fingerprint_before_bitpro_writes() -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    program = ResearchProgramService(db)
+    mandate = program.create_mandate(
+        ResearchMandateCreate(
+            name="BTC deduplicated matrix",
+            symbols=["BTC"],
+            timeframes=["1H"],
+            strategy_categories=["TREND"],
+        )
+    )
+    first = program.queue_job(
+        str(mandate["id"]),
+        ResearchJobCreate(
+            prompt="test a bounded BTC trend hypothesis",
+            idempotency_key="sprint99-first-job-key",
+        ),
+    )
+    second = program.queue_job(
+        str(mandate["id"]),
+        ResearchJobCreate(
+            prompt="  test   a bounded BTC trend hypothesis ",
+            idempotency_key="sprint99-second-job-key",
+        ),
+    )
+    adapter = FixtureBitProAdapter()
+
+    first_report = ResearchOrchestrator(db, bitpro_adapter=adapter).run(str(first["id"]))
+    second_report = ResearchOrchestrator(db, bitpro_adapter=adapter).run(str(second["id"]))
+
+    first_ledger = first_report["job"]["external_refs"]["experiment_ledger"]
+    second_ledger = second_report["job"]["external_refs"]["experiment_ledger"]
+    assert second_report["job"]["status"] == "evidence_recorded"
+    assert second_ledger["reused"] is True
+    assert second_ledger["execution_id"] == first_ledger["execution_id"]
+    assert second_ledger["fingerprint"] == first_ledger["fingerprint"]
+    assert adapter.calls.count("strategy_create") == 1
+    assert adapter.calls.count("backtest_start_job") == 9
 
 
 def test_orchestrator_rejects_missing_locked_metric_without_paper_action() -> None:

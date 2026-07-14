@@ -2,15 +2,31 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import hashlib
+import json
+import os
+from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol, cast
 
 from hypertrade.db import Database, ResearchExperimentEvidence
 from hypertrade.memory.service import MemoryService
+from hypertrade.research.experiment_ledger import ExperimentLedgerService
+from hypertrade.research.experiment_schemas import (
+    ArtifactReference,
+    ExperimentCosts,
+    ExperimentExecutionComplete,
+    ExperimentManifestV1,
+    ExperimentRegister,
+    ExperimentVersions,
+    ExperimentWindow,
+)
+from hypertrade.research.schemas import StrategySpecDraft
 from hypertrade.research.service import ResearchProgramService
 from hypertrade.research.validation import ValidationGate
 from hypertrade.strategy.evidence import StrategyEvidence
+from hypertrade.tools.registry import ToolRegistry
 
 
 class BitProResearchAdapter(Protocol):
@@ -92,18 +108,64 @@ class ResearchOrchestrator:
         self.program = ResearchProgramService(db)
         self.gate = ValidationGate()
         self.tool_calls: list[dict[str, Any]] = []
+        self.bitpro_contract_version = "unknown"
+        self.data_snapshot_hash = _sha256("unavailable")
 
     def run(self, job_id: str) -> dict[str, Any]:
         job = self.program.get_job(job_id)
         if job["status"] not in {"queued", "failed"}:
             raise ValueError(f"research job is not runnable from {job['status']}")
+        execution_id = ""
         try:
             self.program.transition_job(job_id, target="planning", reason="orchestrator_started")
             mandate = self.program.get_mandate(str(job["mandate_id"]))
             self._advance(job_id, "data_preflight")
             windows = self._preflight_and_windows(job=job, mandate=mandate)
-            self._advance(job_id, "strategy_validation")
             script_content = _compile_strategy(str(job["strategy_spec"]["strategy_key"]))
+            registration = ExperimentLedgerService(self.db).register(
+                ExperimentRegister(
+                    manifest=_experiment_manifest(
+                        job=job,
+                        mandate=mandate,
+                        windows=windows,
+                        script_content=script_content,
+                        mcp_contract_version=self.bitpro_contract_version,
+                        data_snapshot_hash=self.data_snapshot_hash,
+                    ),
+                    idempotency_key=f"ledger:{job_id}:attempt:{int(job['attempts']) + 1}",
+                    research_job_id=job_id,
+                    task_id=str(job.get("source_run_id", "")),
+                    force_rerun=job["status"] == "failed",
+                    force_reason=(
+                        "operator retried failed ResearchJob"
+                        if job["status"] == "failed"
+                        else ""
+                    ),
+                ),
+                actor="research_orchestrator",
+            )
+            execution = dict(registration["execution"])
+            execution_id = str(execution["id"])
+            fingerprint = str(registration["manifest"]["fingerprint"])
+            self.program.update_job_external_refs(
+                job_id,
+                updates={
+                    "experiment_ledger": {
+                        "fingerprint": fingerprint,
+                        "execution_id": execution_id,
+                        "attempt": execution["attempt"],
+                        "reused": registration["reused"],
+                    }
+                },
+            )
+            if registration["reused"]:
+                return self._finish_reused_job(
+                    job_id,
+                    execution=execution,
+                    fingerprint=fingerprint,
+                )
+            ExperimentLedgerService(self.db).start(execution_id)
+            self._advance(job_id, "strategy_validation")
             self._validate_strategy(job=job, script_content=script_content)
             strategy_id = self._create_strategy(
                 job=job, mandate=mandate, script_content=script_content
@@ -124,6 +186,18 @@ class ResearchOrchestrator:
                 "boundary": "backtest_only_no_paper_or_live",
             }
             self.program.update_job_external_refs(job_id, updates={"sprint_82": refs})
+            report = self.program.report(job_id)
+            ExperimentLedgerService(self.db).complete(
+                execution_id,
+                _execution_complete_payload(
+                    report=report,
+                    strategy_id=strategy_id,
+                    contract_version=self.bitpro_contract_version,
+                    tool_call_count=len(self.tool_calls),
+                    outcome_status="evidence_recorded" if passing else "rejected",
+                ),
+                actor="research_orchestrator",
+            )
             if not passing:
                 self.program.transition_job(
                     job_id, target="rejected", reason="validation_gates_failed"
@@ -134,11 +208,51 @@ class ResearchOrchestrator:
                 )
             return self.program.report(job_id)
         except ResearchRejected as exc:
+            if execution_id:
+                ExperimentLedgerService(self.db).fail(
+                    execution_id,
+                    error={"code": "research_rejected", "message": str(exc)},
+                )
             self.program.transition_job(job_id, target="rejected", reason=str(exc))
             return self.program.report(job_id)
         except Exception as exc:  # noqa: BLE001 - persist external failures for safe resume
-            self.program.transition_job(job_id, target="failed", reason=f"upstream_failure:{exc}")
+            if execution_id:
+                with suppress(ValueError):
+                    ExperimentLedgerService(self.db).fail(
+                        execution_id,
+                        error={"code": "orchestrator_failed", "type": type(exc).__name__},
+                    )
+            current = self.program.get_job(job_id)
+            if current["status"] not in {"failed", "rejected", "evidence_recorded"}:
+                self.program.transition_job(
+                    job_id, target="failed", reason=f"upstream_failure:{exc}"
+                )
             return self.program.report(job_id)
+
+    def _finish_reused_job(
+        self,
+        job_id: str,
+        *,
+        execution: dict[str, Any],
+        fingerprint: str,
+    ) -> dict[str, Any]:
+        status = str(execution["status"])
+        self._advance(job_id, "strategy_validation")
+        self._advance(job_id, "backtesting")
+        self._advance(job_id, "validation")
+        if status == "completed":
+            self.program.transition_job(
+                job_id,
+                target="evidence_recorded",
+                reason=f"reused_completed_experiment:{fingerprint}",
+            )
+        else:
+            self.program.transition_job(
+                job_id,
+                target="rejected",
+                reason=f"duplicate_experiment_{status}:{fingerprint}",
+            )
+        return self.program.report(job_id)
 
     def _advance(self, job_id: str, target: str) -> None:
         self.program.transition_job(job_id, target=target, reason=f"orchestrator:{target}")
@@ -147,6 +261,9 @@ class ResearchOrchestrator:
         self, *, job: dict[str, Any], mandate: dict[str, Any]
     ) -> dict[str, dict[str, str]]:
         capabilities = self.adapter.capabilities()
+        self.bitpro_contract_version = str(
+            capabilities.get("contract_version") or "unknown"
+        )
         health = self.adapter.health()
         self._record("bitpro_capabilities", capabilities)
         self._record("bitpro_health", health)
@@ -185,6 +302,7 @@ class ResearchOrchestrator:
         )
         if len(candles) < int(validation["min_candle_count"]):
             raise ResearchRejected("real_data_coverage_inadequate")
+        self.data_snapshot_hash = _candle_snapshot_hash(candles)
         return _chronological_windows(candles, validation=validation)
 
     def _validate_strategy(self, *, job: dict[str, Any], script_content: str) -> None:
@@ -410,6 +528,139 @@ class ResearchOrchestrator:
         self.tool_calls.extend(
             {"stage_tool": tool, **dict(call)} for call in calls if isinstance(call, dict)
         )
+
+
+def _experiment_manifest(
+    *,
+    job: dict[str, Any],
+    mandate: dict[str, Any],
+    windows: dict[str, dict[str, str]],
+    script_content: str,
+    mcp_contract_version: str,
+    data_snapshot_hash: str,
+) -> ExperimentManifestV1:
+    spec = StrategySpecDraft.model_validate(job["strategy_spec"])
+    window_models = [
+        ExperimentWindow(
+            name=name,
+            start=datetime.fromisoformat(value["start_date"]).replace(tzinfo=UTC),
+            end=(
+                datetime.fromisoformat(value["end_date"]).replace(tzinfo=UTC)
+                + _one_day()
+            ),
+        )
+        for name, value in sorted(windows.items())
+    ]
+    validation = dict(mandate["validation"])
+    policy_payload = {
+        "budget": mandate["budget"],
+        "validation": validation,
+        "paper_promotion_mode": mandate["paper_promotion_mode"],
+        "live_mode": mandate["live_mode"],
+    }
+    return ExperimentManifestV1(
+        strategy_spec=spec,
+        strategy_code_sha256=_sha256(script_content),
+        strategy_code_ref=f"hypertrade:compiled:{spec.strategy_key}",
+        parameters={},
+        exchange="OKX",
+        market_type=str(mandate["market_type"]),
+        windows=window_models,
+        costs=ExperimentCosts(
+            maker_fee_bps=Decimal(str(validation["fee_bps"])),
+            taker_fee_bps=Decimal(str(validation["fee_bps"])),
+            slippage_bps=Decimal(str(validation["slippage_bps"])),
+            funding_mode="included" if validation["include_funding"] else "excluded",
+        ),
+        data_snapshot_hash=data_snapshot_hash,
+        versions=ExperimentVersions(
+            provider="research_orchestrator",
+            model="deterministic_bitpro_matrix_v1",
+            prompt_hash=_sha256(" ".join(str(job["prompt"]).split())),
+            tool_registry_hash=_tool_registry_hash(),
+            policy_hash=_sha256(
+                json.dumps(policy_payload, separators=(",", ":"), sort_keys=True)
+            ),
+            mcp_contract_version=mcp_contract_version,
+            git_commit_sha=os.getenv("HYPERTRADE_GIT_SHA", "unknown0")[:64],
+        ),
+    )
+
+
+def _execution_complete_payload(
+    *,
+    report: dict[str, Any],
+    strategy_id: str,
+    contract_version: str,
+    tool_call_count: int,
+    outcome_status: str,
+) -> ExperimentExecutionComplete:
+    evidence = [dict(item) for item in report.get("evidence", [])]
+    artifacts: list[ArtifactReference] = []
+    metrics: dict[str, Decimal] = {}
+    for item in evidence:
+        variant = str(item.get("variant_id", "variant"))
+        for window, ref in sorted(dict(item.get("result_refs", {})).items()):
+            bounded_ref = {
+                "job_id": str(dict(ref).get("job_id", "")),
+                "result_id": str(dict(ref).get("result_id", "")),
+            }
+            artifacts.append(
+                ArtifactReference(
+                    artifact_id=f"{variant}:{window}",
+                    artifact_ref=(
+                        f"bitpro:backtest:{bounded_ref['job_id']}:{bounded_ref['result_id']}"
+                    ),
+                    content_hash=_sha256(
+                        json.dumps(bounded_ref, separators=(",", ":"), sort_keys=True)
+                    ),
+                    contract_version=contract_version,
+                )
+            )
+        locked = dict(item.get("metrics", {})).get("locked_out_of_sample", {})
+        for key, value in sorted(dict(locked).items()):
+            try:
+                metrics[f"{variant}.locked.{key}"] = Decimal(str(value))
+            except InvalidOperation:
+                continue
+    return ExperimentExecutionComplete(
+        external_refs={
+            "bitpro_strategy_id": strategy_id,
+            "research_job_id": str(report["job"]["id"]),
+            "outcome_status": outcome_status,
+        },
+        metrics=metrics,
+        artifacts=artifacts,
+        usage={"backtests": len(artifacts), "tool_calls": tool_call_count},
+        evidence_ids=[str(item["id"]) for item in evidence],
+        evidence_kind="legacy_experiment",
+    )
+
+
+def _tool_registry_hash() -> str:
+    payload = [
+        {
+            "name": tool.name,
+            "category": tool.category,
+            "policy": tool.policy.to_dict(),
+        }
+        for tool in sorted(ToolRegistry.default().list_tools(), key=lambda item: item.name)
+    ]
+    return _sha256(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+
+
+def _sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _one_day() -> timedelta:
+    return timedelta(days=1)
+
+
+def _candle_snapshot_hash(candles: list[dict[str, Any]]) -> str:
+    """Hash bounded candle identities, never raw market values."""
+    identities = sorted(_candle_time(row).isoformat() for row in candles)
+    return _sha256(json.dumps(identities, separators=(",", ":")))
 
 
 def _chronological_windows(

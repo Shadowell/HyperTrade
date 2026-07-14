@@ -526,6 +526,63 @@ class ResearchEvidenceRelation(Base, TimestampMixin):
     created_by: Mapped[str] = mapped_column(String(128), default="evidence_service", index=True)
 
 
+class ExperimentManifest(Base, TimestampMixin):
+    """Immutable semantic inputs for a reproducible research experiment."""
+
+    __tablename__ = "experiment_manifests"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("expm"))
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    strategy_key: Mapped[str] = mapped_column(String(128), index=True)
+    mandate_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    research_job_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    canonical_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(128), default="experiment_ledger", index=True)
+
+
+class ExperimentExecution(Base, TimestampMixin):
+    """Append-only attempts for one immutable experiment manifest."""
+
+    __tablename__ = "experiment_executions"
+    __table_args__ = (
+        UniqueConstraint("manifest_id", "attempt", name="uq_experiment_execution_attempt"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("exex"))
+    manifest_id: Mapped[str] = mapped_column(String(32), index=True)
+    attempt: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    task_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    research_job_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    retry_of_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    force_reason: Mapped[str] = mapped_column(Text, default="")
+    external_refs_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    metrics_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    artifact_manifest_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    usage_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    error_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(128), default="experiment_ledger", index=True)
+
+
+class ExperimentEvidenceLink(Base, TimestampMixin):
+    """Immutable association from an execution to bounded evidence references."""
+
+    __tablename__ = "experiment_evidence_links"
+    __table_args__ = (
+        UniqueConstraint("execution_id", "evidence_id", name="uq_experiment_evidence_link"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("exel"))
+    execution_id: Mapped[str] = mapped_column(String(32), index=True)
+    evidence_id: Mapped[str] = mapped_column(String(32), index=True)
+    evidence_kind: Mapped[str] = mapped_column(String(32), default="evidence_v2", index=True)
+    created_by: Mapped[str] = mapped_column(String(128), default="experiment_ledger", index=True)
+
+
 class PaperPromotion(Base, TimestampMixin):
     """Human-approved bridge from validated research evidence to BitPro paper only."""
 

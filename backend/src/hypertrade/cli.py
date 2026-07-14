@@ -44,6 +44,7 @@ from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.memory.service import MemoryService
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.reporting.blocks import ReportBlock, render_report_blocks
+from hypertrade.research.experiment_ledger import ExperimentLedgerService
 from hypertrade.research.graph import ResearchGraphRuntime, graph_topology_projection
 from hypertrade.research.graph_tools import BuiltinResearchToolRunner
 from hypertrade.research.paper_promotion import PaperPromotionService
@@ -84,6 +85,14 @@ class AgentClient(Protocol):
     def list_research_graphs(self) -> list[dict[str, Any]]: ...
 
     def get_research_graph(self, task_id: str) -> dict[str, Any]: ...
+
+    def list_experiment_manifests(self) -> list[dict[str, Any]]: ...
+
+    def get_experiment_manifest(self, fingerprint: str) -> dict[str, Any]: ...
+
+    def diff_experiment_manifests(
+        self, left_fingerprint: str, right_fingerprint: str
+    ) -> dict[str, Any]: ...
 
     def control_agent_task(
         self,
@@ -246,6 +255,10 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
         "/research-graph topology|list|show <task_id>",
         "Inspect the fixed role graph, node budgets, and evidence.",
     ),
+    (
+        "/ledger list|show <fingerprint>|diff <left> <right>",
+        "Inspect immutable experiment manifests, executions, and semantic differences.",
+    ),
     ("/memory", "List active audited memory."),
     ("/memory search <query>", "Search audited memory by text."),
     ("/memory disable <mem_id>", "Disable one memory item without deleting audit history."),
@@ -338,6 +351,7 @@ SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
         "cancel",
     ),
     "/research-graph": ("topology", "list", "show"),
+    "/ledger": ("list", "show", "diff"),
     "/backtest": ("list", "latest", "--live", "--source bitpro_mcp"),
     "/paper": ("status", "pause", "resume", "close", "reset"),
     "/live": ("intents", "intent", "approve", "reject", "execute"),
@@ -688,6 +702,22 @@ class AgentApiClient:
 
     def get_research_graph(self, task_id: str) -> dict[str, Any]:
         return self._get_object(f"/api/research/graphs/{quote(task_id, safe='')}")
+
+    def list_experiment_manifests(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/research/experiments", "items")
+
+    def get_experiment_manifest(self, fingerprint: str) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/research/experiments/{quote(fingerprint, safe='')}"
+        )
+
+    def diff_experiment_manifests(
+        self, left_fingerprint: str, right_fingerprint: str
+    ) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/research/experiments/{quote(left_fingerprint, safe='')}"
+            f"/diff/{quote(right_fingerprint, safe='')}"
+        )
 
     def control_agent_task(
         self,
@@ -1083,6 +1113,19 @@ class LocalAgentClient:
             provider=DeterministicGapRoleProvider(),
             tool_runner=BuiltinResearchToolRunner(self.db),
         ).projection(task_id)
+
+    def list_experiment_manifests(self) -> list[dict[str, Any]]:
+        return ExperimentLedgerService(self.db).list(limit=100)
+
+    def get_experiment_manifest(self, fingerprint: str) -> dict[str, Any]:
+        return ExperimentLedgerService(self.db).get(fingerprint)
+
+    def diff_experiment_manifests(
+        self, left_fingerprint: str, right_fingerprint: str
+    ) -> dict[str, Any]:
+        return ExperimentLedgerService(self.db).diff(
+            left_fingerprint, right_fingerprint
+        )
 
     def control_agent_task(
         self,
@@ -1712,6 +1755,8 @@ def handle_slash_command(
         handle_agent_task_command(command, client=client, output=output)
     elif name in {"/research-graph", "/rg"}:
         handle_research_graph_command(command, client=client, output=output)
+    elif name == "/ledger":
+        handle_experiment_ledger_command(command, client=client, output=output)
     elif name == "/memory":
         handle_memory_command(command, client=client, output=output)
     elif name == "/rag":
@@ -3069,6 +3114,59 @@ def handle_research_graph_command(
             f"evidence={len(output_ref.get('evidence_ids', []))}",
             file=output,
         )
+
+
+def handle_experiment_ledger_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split()
+    action = parts[1].lower() if len(parts) > 1 else "list"
+    if action == "list":
+        rows = client.list_experiment_manifests()
+        print("Experiment manifests:", file=output)
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:20]:
+            print(
+                f"- {row.get('fingerprint', '')[:16]} "
+                f"{row.get('strategy_key', '')} manifest={row.get('id', '')}",
+                file=output,
+            )
+        return
+    if action == "show" and len(parts) == 3:
+        payload = client.get_experiment_manifest(parts[2])
+        manifest = dict(payload.get("manifest", {}))
+        executions = payload.get("executions", [])
+        print(
+            f"Experiment {manifest.get('fingerprint', parts[2])} "
+            f"strategy={manifest.get('strategy_key', '')}",
+            file=output,
+        )
+        for execution in executions:
+            print(
+                f"- attempt={execution.get('attempt')} [{execution.get('status')}] "
+                f"execution={execution.get('id')} evidence={len(execution.get('evidence', []))}",
+                file=output,
+            )
+        return
+    if action == "diff" and len(parts) == 4:
+        payload = client.diff_experiment_manifests(parts[2], parts[3])
+        print(
+            f"Manifest diff equal={payload.get('equal')} "
+            f"changes={len(payload.get('changes', []))}",
+            file=output,
+        )
+        for change in payload.get("changes", [])[:50]:
+            print(
+                f"- [{change.get('category')}] {change.get('path')}: "
+                f"{change.get('left')} -> {change.get('right')}",
+                file=output,
+            )
+        return
+    print("Usage: /ledger list|show <fingerprint>|diff <left> <right>", file=output)
 
 
 def handle_run_command(command: str, *, client: AgentClient, output: TextIO) -> None:

@@ -76,6 +76,8 @@ from hypertrade.research.evidence_schemas import (
     EvidenceSupersedeRequest,
     ResearchEvidenceInput,
 )
+from hypertrade.research.experiment_ledger import ExperimentLedgerService
+from hypertrade.research.experiment_schemas import ExperimentRegister
 from hypertrade.research.graph import (
     ResearchGraphCreate,
     ResearchGraphRuntime,
@@ -1116,6 +1118,50 @@ def create_app(
                     "message": str(exc),
                 },
             ) from exc
+
+    @app.post("/api/research/experiments")
+    def register_research_experiment(
+        payload: ExperimentRegister, username: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return ExperimentLedgerService(database).register(
+                payload, actor=f"admin:{username}"
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/research/experiments")
+    def list_research_experiments(limit: int = 50) -> dict[str, list[dict[str, Any]]]:
+        return {"items": ExperimentLedgerService(database).list(limit=limit)}
+
+    @app.get("/api/research/experiments/{fingerprint}")
+    def get_research_experiment(fingerprint: str) -> dict[str, Any]:
+        try:
+            return ExperimentLedgerService(database).get(fingerprint)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Experiment not found") from exc
+
+    @app.get("/api/research/experiments/{fingerprint}/executions")
+    def list_research_experiment_executions(fingerprint: str) -> dict[str, Any]:
+        try:
+            return {
+                "items": ExperimentLedgerService(database).executions(fingerprint)
+            }
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Experiment not found") from exc
+
+    @app.get("/api/research/experiments/{fingerprint}/diff/{other_fingerprint}")
+    def diff_research_experiments(
+        fingerprint: str, other_fingerprint: str
+    ) -> dict[str, Any]:
+        try:
+            return ExperimentLedgerService(database).diff(
+                fingerprint, other_fingerprint
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Experiment not found") from exc
 
     @app.get("/api/research/mandates")
     def list_research_mandates(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
