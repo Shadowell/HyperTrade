@@ -12,7 +12,14 @@
 
 ## What is HyperTrade?
 
-HyperTrade is a production-grade Agent runtime for crypto trading research and execution. It provides a unified environment for market research, strategy development, paper trading, and controlled Testnet execution.
+HyperTrade is a self-hosted, governed Agent runtime for crypto-market research. It turns an open-ended
+objective into a durable Mission with a versioned plan, bounded steps, evidence, budgets, operator
+controls, and an auditable delivery. It provides a unified environment for market research, strategy
+development, paper observations, and controlled Testnet intent inspection.
+
+Models can propose work, but they cannot grant permissions, invent evidence, or authorize trades.
+HyperTrade is a controlled research loop—not an unattended trading bot—and it does not promise
+profitability or provide investment advice.
 
 **Key Capabilities**:
 - 🤖 Natural language interaction with automatic tool selection
@@ -22,6 +29,9 @@ HyperTrade is a production-grade Agent runtime for crypto trading research and e
 - ⚡ Approval-gated Testnet execution (V1 blocks mainnet)
 - 🔗 BitPro integration via MCP adapter
 - 💾 RAG knowledge retrieval and audited Memory system
+
+> Start with the [System Architecture](docs/architecture/33-system-architecture.md) for the current
+> Mission Runtime, data boundaries, safety model, and deployment topology.
 
 ---
 
@@ -120,6 +130,10 @@ Data Layer (PostgreSQL/SQLite, OKX, BitPro)
 - Database: PostgreSQL 14+ with pgvector (or SQLite)
 - Infrastructure: Docker Compose, Nginx, GitHub Actions
 
+The current operator workflow uses a server-owned Mission ledger in PostgreSQL. Web, CLI, TUI, and the
+desktop companion are REST/SSE projections; the reviewed capability catalog and risk policy remain the
+only tool-dispatch authority. See the [complete architecture](docs/architecture/33-system-architecture.md).
+
 ---
 
 ## Documentation
@@ -127,6 +141,7 @@ Data Layer (PostgreSQL/SQLite, OKX, BitPro)
 | Document | Link |
 |----------|------|
 | **Complete README** | [README.md](README.md) |
+| **System Architecture** | [docs/architecture/33-system-architecture.md](docs/architecture/33-system-architecture.md) |
 | **API Reference** | [docs/api-reference.md](docs/api-reference.md) |
 | **User Manual** | [docs/user-manual.md](docs/user-manual.md) |
 | **Developer Guide** | [docs/developer-guide.md](docs/developer-guide.md) |

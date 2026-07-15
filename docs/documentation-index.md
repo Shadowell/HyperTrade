@@ -35,6 +35,7 @@
 ### 架构文档
 详细的系统架构和设计文档：
 - [Architecture Overview](architecture/) - 架构概览目录
+- [System Architecture](architecture/33-system-architecture.md) - 系统上下文、Mission Runtime、控制/数据平面、信任边界、安全与部署
 - [System Architecture Diagram](architecture/19-hypertrade-architecture-diagram.md)
 - [Tool Calling Design](architecture/04-tool-calling.md)
 - [Agent Graph Runtime](architecture/12-agent-graph-langgraph-runtime.md)
@@ -106,7 +107,7 @@
 - 代码本身已足够清晰
 - 信息已存在于其他文档
 
-详见全局规则：[CLAUDE.md](../.claude/CLAUDE.md)
+详见项目规则：[AGENTS.md](../AGENTS.md)
 
 ---
 
@@ -136,4 +137,4 @@ curl "http://localhost:3334/api/rag/search?query=<关键词>&limit=5"
 
 ## 📄 许可证
 
-私有仓库。保护密钥、提供者密钥、OKX 凭证、BitPro 令牌、数据库文件和生产 `.env` 文件，不要提交到版本控制。
+本项目采用 [MIT License](../LICENSE)。保护密钥、提供者密钥、OKX 凭证、BitPro 令牌、数据库文件和生产 `.env` 文件，不要提交到版本控制。

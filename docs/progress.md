@@ -1,5 +1,19 @@
 # Progress Log
 
+## Project architecture and public documentation refresh — 2026-07-16
+
+- Added [System Architecture](architecture/33-system-architecture.md) as the canonical reader entry
+  point for the Mission Runtime, control/data planes, external-system ownership, lifecycle, trust
+  boundaries, deployment model and contributor decisions. It complements the visual map and the
+  Sprint 111–116 roadmap/technical design rather than replacing their implementation evidence.
+- Reworked the root README and language summaries around the actual Mission-first operating model:
+  durable server-owned state, reviewed capabilities, bounded evidence delivery, BitPro MCP/API
+  ownership, isolated strategy sandbox and explicit non-goals. Documentation navigation now points
+  new readers to the architecture first.
+- Corrected the public license presentation to MIT and aligned GitHub repository description, homepage
+  and topics with the governed research-runtime scope. No runtime behavior, permission, provider,
+  BitPro, paper, Testnet or mainnet setting changed.
+
 ## Sprint 116 completed — 2026-07-16
 
 - Gate M is closed. The isolated `operator_answer_golden_v1` deployment finished with 20 supported

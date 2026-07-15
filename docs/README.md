@@ -7,6 +7,8 @@ runbooks, and sprint state. Chat history is not considered durable project state
 
 - `spec.md`: product scope, V1 acceptance criteria, and explicit out-of-scope boundaries.
 - `progress.md`: latest completed work, verification status, and deployment notes.
+- `architecture/33-system-architecture.md`: canonical system architecture:
+  Mission Runtime, control/data planes, trust boundaries, lifecycle, safety and deployment.
 - `architecture/19-hypertrade-architecture-diagram.md`: poster-style
   HyperTrade architecture map and layer responsibilities.
 - `architecture/18-hypertrade-capability-roadmap.md`: post-Sprint-44 capability
@@ -33,7 +35,9 @@ runbooks, and sprint state. Chat history is not considered durable project state
 | Area | Current surface | Source of truth |
 | --- | --- | --- |
 | Agent graph and trace | API, CLI, `/harness` | `architecture/12-agent-graph-langgraph-runtime.md` |
+| System architecture | Canonical system context, runtime layers, data flow, trust boundaries and deployment model | `architecture/33-system-architecture.md` |
 | System architecture map | SVG poster, layer responsibilities, logical flow | `architecture/19-hypertrade-architecture-diagram.md` |
+| Professional Mission Runtime | Mission/Plan/Step/Event, reviewed Catalog, Context, Supervisor, sandbox and full cutover | `architecture/30-professional-agent-runtime-v2-roadmap.md`, `architecture/31-professional-agent-runtime-v2-technical-design.md` |
 | Provider routing | CLI `/model`, API, settings | `architecture/13-provider-router.md` |
 | Tool calling | Agent planner, ToolRegistry, trace | `architecture/04-tool-calling.md` |
 | RAG | `/rag`, `/api/rag/search`, Memory/RAG panels | `architecture/05-rag-pgvector.md` |

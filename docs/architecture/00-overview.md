@@ -1,23 +1,31 @@
-# 00 Overview / 总览
+# 00 Architecture Overview / 架构总览
 
-## English
+## Start here / 从这里开始
 
-HyperTrade separates the development harness from the trading agent runtime.
+- [33 System Architecture](33-system-architecture.md) is the canonical current system entry point:
+  Mission Runtime, control/data planes, trust boundaries, lifecycle, safety, deployment, and
+  contributor decisions.
+- [19 Visual Architecture Map](19-hypertrade-architecture-diagram.md) is the concise layer diagram
+  for product discussion.
+- [30 Professional Agent Runtime V2 Roadmap](30-professional-agent-runtime-v2-roadmap.md) explains
+  why the runtime was rebuilt and records the completed vertical-cutover plan.
+- [31 Professional Agent Runtime V2 Technical Design](31-professional-agent-runtime-v2-technical-design.md)
+  contains the concrete contracts for Mission, Catalog, Context, Supervisor, Sandbox and cutover.
 
-- Development harness: `AGENTS.md`, `docs/spec.md`, `docs/contracts`, `docs/progress.md`, `docs/qa`, and `scripts/check.sh`.
-- Agent harness: ProviderRuntime, ToolRegistry, AgentKernel, RAG, Memory, Trace, and approval gates.
-- Trading domain: OKX market ingestion, BitPro MCP/API adapters, market summaries, paper trading, strategy experiments, strategy knowledge memory, backtesting, and Testnet/live order intent.
+## System boundary / 系统边界
 
-Current V1 is production-oriented: HyperTrade keeps Agent planning, trace,
-Memory, RAG, approval gates, and reporting, while BitPro remains an external
-trading-system provider reached only through stable MCP/API contracts.
+HyperTrade owns the governed Agent control and research layer: Mission planning, evidence/Artifact
+references, provider/tool governance, audit, reporting and human review. BitPro remains an external
+trading-system provider for market/reference data, strategy storage, backtests, paper state and future
+execution state, reached only through stable MCP/API contracts.
 
-## 中文
+HyperTrade does not copy BitPro business logic, query BitPro databases directly, promise profitability,
+or permit mainnet execution. Missing, stale or conflicting evidence remains visible as an explicit
+unknown rather than becoming an inferred recommendation.
 
-HyperTrade 分成两层：
+## Documentation maintenance / 文档维护
 
-- 开发 Harness：`AGENTS.md`、`docs/spec.md`、`docs/contracts`、`docs/progress.md`、`docs/qa`、`scripts/check.sh`。
-- Agent Harness：ProviderRuntime、ToolRegistry、AgentKernel、RAG、Memory、Trace、审批门禁。
-- 交易领域：OKX 行情采集、BitPro MCP/API 适配、行情归纳、模拟盘、策略实验、策略知识记忆、回测、Testnet/实盘订单意图。
-
-当前 V1 是生产导向的 Agent 能力：HyperTrade 负责规划、trace、Memory、RAG、审批门和报告；BitPro 作为外部交易系统能力提供方，只能通过稳定 MCP/API 合同访问。
+- Product scope and acceptance: [Product Spec](../spec.md)
+- Current verified state: [Progress Log](../progress.md)
+- Active delivery boundary: [Sprint contracts](../contracts/)
+- Deployment and operational procedures: [Runbooks](../runbooks/)

@@ -5,18 +5,19 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Private-red.svg" alt="License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" /></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python" /></a>
   <a href="#"><img src="https://img.shields.io/badge/FastAPI-0.104+-009688.svg" alt="FastAPI" /></a>
   <a href="#"><img src="https://img.shields.io/badge/React-18+-61DAFB.svg" alt="React" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.0+-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14+-4169E1.svg" alt="PostgreSQL" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/status-active-success.svg" alt="Status" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/status-production--verified-success.svg" alt="Status" /></a>
 </p>
 
 <p align="center">
   <a href="README.zh-CN.md">中文文档</a> ·
   <a href="README.en.md">English Summary</a> ·
+  <a href="docs/architecture/33-system-architecture.md">Architecture</a> ·
   <a href="docs/documentation-index.md">Documentation</a> ·
   <a href="docs/api-reference.md">API</a> ·
   <a href="docs/user-manual.md">User Manual</a> ·
@@ -27,11 +28,30 @@
 
 ## Overview
 
-HyperTrade is a self-hosted Agent runtime that connects LLM-powered reasoning with governed access to crypto market data, strategy backtesting, paper trading, and risk-gated Testnet execution. It provides a unified environment for systematic trading research — from natural language exploration to evidence-backed strategy iteration.
+HyperTrade is a self-hosted, governed Agent runtime for crypto-market research. It turns an open-ended
+research objective into a durable **Mission** with a versioned plan, bounded steps, evidence, budgets,
+operator controls, and an auditable delivery. Models can propose work; they cannot expand permissions,
+invent evidence, or authorize trades.
+
+It connects LLM reasoning to governed market data, strategy/backtest facts, paper-state observations and
+risk-gated Testnet intent summaries. The result is a controlled research loop—from a natural-language
+question to evidence-backed strategy iteration—not an unattended trading bot.
 
 ![HyperTrade Architecture](docs/assets/hypertrade-architecture.svg)
 
-> 📖 [Detailed Architecture Documentation](docs/architecture/19-hypertrade-architecture-diagram.md)
+> 📖 Start with the [System Architecture](docs/architecture/33-system-architecture.md), then use the
+> [visual architecture map](docs/architecture/19-hypertrade-architecture-diagram.md) and the
+> [Professional Runtime technical design](docs/architecture/31-professional-agent-runtime-v2-technical-design.md)
+> for implementation detail.
+
+### What HyperTrade Owns—and What It Does Not
+
+| HyperTrade owns | It deliberately does not do |
+| --- | --- |
+| Mission lifecycle, tool governance, evidence/Artifact references, research orchestration, audit and operator delivery | Promise profitability, give investment advice, or enable unattended real-money trading |
+| A reviewed capability catalog over market, knowledge, strategy/backtest, paper and Testnet-read surfaces | Treat model text as evidence or let a planner grant itself a tool/permission |
+| Stable MCP/API integration with BitPro | Read BitPro's database directly or copy BitPro trading business logic |
+| Human-reviewed research and isolated strategy-code validation | Enable mainnet execution; current Mission capabilities are governed reads |
 
 ### Core Capabilities
 
@@ -49,38 +69,40 @@ HyperTrade is a self-hosted Agent runtime that connects LLM-powered reasoning wi
 
 ---
 
-## Architecture
+## Architecture at a Glance
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Client Layer                                                        │
-│  CLI (ht) · Web Console (/harness) · REST/SSE API · External Agents │
-├─────────────────────────────────────────────────────────────────────┤
-│  Agent Runtime                                                       │
-│  Graph Kernel · Provider Router · Tool Executor                      │
-├─────────────────────────────────────────────────────────────────────┤
-│  Governance Layer                                                    │
-│  ToolRegistry · Risk Policy · Approval Gates · Audit Trace          │
-├─────────────────────────────────────────────────────────────────────┤
-│  Service Layer                                                       │
-│  Market · RAG · Memory · Strategy · Backtest · World Model          │
-├─────────────────────────────────────────────────────────────────────┤
-│  Data Layer                                                          │
-│  PostgreSQL/pgvector · OKX API · BitPro MCP · Alpha Vantage         │
-└─────────────────────────────────────────────────────────────────────┘
-```
+~~~mermaid
+flowchart LR
+  U["Operator / External Agent"] --> S["Web · CLI · TUI · Desktop<br/>REST / SSE"]
+  S --> C["Mission Control API"]
+  C --> M["Mission Runtime<br/>Plan · Context · Validate · Deliver"]
+  W["SQL-leased Worker"] --> M
+  M --> G["Reviewed Capability Catalog<br/>Governed Tool Executor"]
+  M --> D[("PostgreSQL + pgvector<br/>events · projections · audit")]
+  G --> X["OKX · RAG · Memory<br/>BitPro MCP/API"]
+  C --> B["Isolated strategy sandbox<br/>digest-bound UDS"]
+~~~
+
+The Mission ledger in PostgreSQL is the canonical workflow state. Web, CLI, Textual TUI and the
+desktop client are server-state projections; an SSE cursor lets them reconnect without creating a
+second task state machine. Each step compiles a bounded Context Pack, executes only reviewed
+capabilities, validates source/artifact provenance, and records either a verified observation,
+explicit unknown, recoverable failure, or a bounded replan.
+
+See the [complete system architecture](docs/architecture/33-system-architecture.md) for the data
+flow, trust boundaries, deployment model and contributor rules.
 
 ### Technology Stack
 
 | Layer | Technologies |
 |-------|-------------|
 | **Runtime** | Python 3.12+, FastAPI, SQLAlchemy, Alembic |
-| **Agent Engine** | Graph-based kernel, provider routing, policy-enforced tool execution |
+| **Agent Engine** | Mission Runtime, provider-backed bounded planner, reviewed capability catalog, policy-enforced tool execution |
 | **Frontend** | React 18, TypeScript 5, Vite, TanStack Query, Recharts |
 | **Database** | PostgreSQL 14+ with pgvector (or SQLite for development) |
 | **LLM Providers** | Vide Coding (opus-4.6), DeepSeek, OpenAI, Codex, OpenRouter, Qwen |
 | **Backtesting** | Backtrader |
-| **Infrastructure** | Docker Compose, Nginx, GitHub Actions CI/CD |
+| **Infrastructure** | Docker Compose, Nginx, PostgreSQL leases, GitHub Actions CI/CD |
 
 ### Agent Capabilities
 
@@ -307,11 +329,12 @@ not profitability, automatic optimization, paper promotion or live authority.
 
 | Document | Description |
 |----------|-------------|
+| [System Architecture](docs/architecture/33-system-architecture.md) | Canonical system context, runtime layers, trust boundaries, data flow, deployment model, and contribution rules |
 | [API Reference](docs/api-reference.md) | Complete REST/SSE API documentation |
 | [User Manual](docs/user-manual.md) | Operator guide for all surfaces (CLI, Web, API) |
 | [Developer Guide](docs/developer-guide.md) | Extending HyperTrade with tools, providers, connectors |
 | [Documentation Index](docs/documentation-index.md) | Full documentation map |
-| [Architecture Docs](docs/architecture/) | System design and module documentation (20+ docs) |
+| [Architecture Docs](docs/architecture/) | System design, runtime contracts, integration boundaries, and implementation decisions |
 | [Product Spec](docs/spec.md) | Vision, scope, and roadmap |
 | [Knowledge Base](docs/knowledge/) | Operator guides and best practices |
 | [Runbooks](docs/runbooks/) | Deployment, monitoring, incident response |

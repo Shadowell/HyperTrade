@@ -12,7 +12,12 @@
 
 ## HyperTrade 是什么？
 
-HyperTrade 是一个生产级的 Agent 运行时，专为加密货币交易研究和执行设计。它为市场研究、策略开发、模拟盘交易和受控的 Testnet 执行提供统一环境。
+HyperTrade 是一个自托管、受治理的加密市场研究 Agent Runtime。它把开放式目标转化为可恢复的
+Mission：版本化计划、有界步骤、证据、预算、操作员控制与可审计交付，并为市场研究、策略开发、
+模拟盘观察和受控的 Testnet 意图检查提供统一环境。
+
+模型可以提出工作，但不能自行增加权限、伪造证据或授权交易。HyperTrade 是受控的研究闭环，不是
+无人值守的交易机器人；它不承诺盈利，也不构成投资建议。
 
 ![HyperTrade 架构](docs/assets/hypertrade-architecture.svg)
 
@@ -25,7 +30,9 @@ HyperTrade 是一个生产级的 Agent 运行时，专为加密货币交易研�
 - 🔗 通过 MCP 适配器集成 BitPro
 - 💾 RAG 知识检索和审计的 Memory 系统
 
-> 📖 [详细架构文档](docs/architecture/19-hypertrade-architecture-diagram.md)
+> 📖 从[系统架构](docs/architecture/33-system-architecture.md)开始，了解当前 Mission Runtime、
+> 数据边界、安全模型和部署拓扑；[可视化架构图](docs/architecture/19-hypertrade-architecture-diagram.md)
+> 适合快速讨论系统分层。
 
 ---
 
@@ -124,6 +131,10 @@ Agent 运行时 (Kernel, Planner, Tool Executor)
 - 数据库：PostgreSQL 14+ with pgvector（或 SQLite）
 - 基础设施：Docker Compose, Nginx, GitHub Actions
 
+当前工作流以 PostgreSQL 中的服务端 Mission 账本为准。Web、CLI、TUI 和桌面伴侣只投影 REST/SSE
+状态；经过审核的 Capability Catalog 与风险策略仍是唯一的工具调用授权边界。详见
+[完整系统架构](docs/architecture/33-system-architecture.md)。
+
 ---
 
 ## 文档
@@ -131,6 +142,7 @@ Agent 运行时 (Kernel, Planner, Tool Executor)
 | 文档 | 链接 |
 |------|------|
 | **完整 README** | [README.md](README.md) |
+| **系统架构** | [docs/architecture/33-system-architecture.md](docs/architecture/33-system-architecture.md) |
 | **API 参考** | [docs/api-reference.zh-CN.md](docs/api-reference.zh-CN.md) |
 | **用户手册** | [docs/user-manual.zh-CN.md](docs/user-manual.zh-CN.md) |
 | **开发者指南** | [docs/developer-guide.zh-CN.md](docs/developer-guide.zh-CN.md) |
