@@ -46,6 +46,8 @@ _RESEARCH_TERMS = (
     "证据",
     "回测",
 )
+_PAPER_TERMS = ("paper", "模拟盘", "持仓", "仓位", "异常")
+_INTENT_TERMS = ("testnet", "测试网", "待批准", "订单", "intent")
 _CAPABILITY_SCHEMAS: dict[str, dict[str, Any]] = {
     "runtime.objective_inspection": {
         "type": "object",
@@ -54,6 +56,12 @@ _CAPABILITY_SCHEMAS: dict[str, dict[str, Any]] = {
     "market.summary": {"type": "object", "required": ["items", "count"]},
     "rag.search": {"type": "object", "required": ["hits", "count"]},
     "memory.search": {"type": "object", "required": ["items", "count"]},
+    "strategy.performance_summary": {
+        "type": "object",
+        "required": ["items", "count", "found"],
+    },
+    "paper.summary": {"type": "object", "required": ["positions", "orders", "count"]},
+    "execution.intent_summary": {"type": "object", "required": ["items", "count"]},
 }
 
 
@@ -188,6 +196,12 @@ def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
         capabilities.append("market.summary")
     if any(term in lowered for term in _RESEARCH_TERMS):
         capabilities.extend(("rag.search", "memory.search"))
+    if _strategy_lookup_requested(lowered):
+        capabilities.append("strategy.performance_summary")
+    if any(term in lowered for term in _PAPER_TERMS):
+        capabilities.append("paper.summary")
+    if any(term in lowered for term in _INTENT_TERMS):
+        capabilities.append("execution.intent_summary")
     return tuple(dict.fromkeys(capabilities))
 
 
@@ -216,13 +230,47 @@ def _steps_for_objective(objective: str) -> Sequence[PlanStepV2]:
                 arguments={"query": objective[:500], "limit": 5},
                 expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
             )
-        else:
+        elif capability_id == "memory.search":
             step = PlanStepV2(
                 step_id="memory_context",
                 title="Retrieve governed prior research memory",
                 depends_on=(previous,),
                 capability_id=capability_id,
                 arguments={"query": objective[:500], "limit": 10},
+                expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
+            )
+        elif capability_id == "strategy.performance_summary":
+            step = PlanStepV2(
+                step_id="strategy_performance",
+                title="Read bounded local strategy and backtest evidence",
+                depends_on=(previous,),
+                capability_id=capability_id,
+                arguments={
+                    "strategy_key": _requested_strategy_key(objective),
+                    "backtest_id": _requested_backtest_id(objective),
+                    "limit": 3,
+                },
+                expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
+            )
+        elif capability_id == "paper.summary":
+            step = PlanStepV2(
+                step_id="paper_summary",
+                title="Read bounded paper positions and orders",
+                depends_on=(previous,),
+                capability_id=capability_id,
+                arguments={
+                    "focus": "anomaly" if "异常" in objective else "positions",
+                    "limit": 10,
+                },
+                expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
+            )
+        else:
+            step = PlanStepV2(
+                step_id="intent_summary",
+                title="Read bounded pending testnet intent metadata",
+                depends_on=(previous,),
+                capability_id=capability_id,
+                arguments={"environment": "testnet", "limit": 10},
                 expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
             )
         steps.append(step)
@@ -362,6 +410,23 @@ def _requested_market_instrument(objective: str) -> str | None:
         if len(base) >= 2 and base.isalnum():
             return f"{base}-USDT-SWAP"
     return None
+
+
+def _strategy_lookup_requested(objective: str) -> bool:
+    return any(
+        term in objective
+        for term in ("strategy", "策略", "backtest", "回测", "历史表现", "样本", "oos")
+    )
+
+
+def _requested_strategy_key(objective: str) -> str:
+    match = re.search(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b", objective.casefold())
+    return match.group(1) if match else ""
+
+
+def _requested_backtest_id(objective: str) -> str:
+    match = re.search(r"\bbacktest_id\s*=\s*([a-z0-9_-]+)\b", objective.casefold())
+    return match.group(1) if match else ""
 
 
 def _json_object(content: str) -> str:

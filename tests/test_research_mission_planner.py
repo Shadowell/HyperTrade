@@ -41,9 +41,24 @@ async def test_deterministic_planner_builds_a_bounded_research_plan() -> None:
         "market.summary",
         "rag.search",
         "memory.search",
+        "strategy.performance_summary",
     ]
     assert all(step.read_only and not step.requires_approval for step in plan.steps)
-    assert plan.steps[-1].depends_on == ("research_evidence",)
+    assert plan.steps[-1].depends_on == ("memory_context",)
+
+
+@pytest.mark.anyio
+async def test_planner_adds_read_summaries_for_paper_and_testnet_queries() -> None:
+    mission = await _mission("查看待批准的 Testnet 订单与模拟盘持仓")
+
+    plan = await DeterministicResearchPlanner().plan(mission)
+
+    assert [step.capability_id for step in plan.steps] == [
+        "runtime.objective_inspection",
+        "paper.summary",
+        "execution.intent_summary",
+    ]
+    assert all(step.read_only and not step.requires_approval for step in plan.steps)
 
 
 @pytest.mark.anyio

@@ -105,8 +105,10 @@ PlanStepV2
 `SqlCapabilityCatalog` persists snapshots, discovery proposals and append-only idempotent reviews.
 Discovery from MCP/OpenAPI is represented only as `pending_review`; it cannot enter the active map
 until an authenticated administrator reviews the exact definition. Code-owned built-ins are
-reconciled on startup and currently expose only objective inspection, market summary, RAG search and
-Memory search as read capabilities.
+reconciled on startup and currently expose objective inspection, market summary, RAG search, Memory
+search, strategy/backtest performance summary, paper portfolio summary and Testnet intent summary.
+The last three are bounded local database reads: they cannot start paper trading, approve an intent or
+execute an order.
 
 `GovernedToolExecutor` is the single dispatch boundary. It validates JSON Schema, requires matching
 contract/policy hashes, denies writes to read-only Missions, applies a bounded timeout, opens
@@ -234,6 +236,13 @@ audited permission boundary, never a natural-language execution mechanism. Only 
 operator-evaluation target can enable `HYPERTRADE_OPERATOR_EVAL_FIXTURES_ENABLED`; two named fixture
 cases inject a bounded timeout/source-unavailable terminal state without a provider or connector call.
 Production rejects an `evaluation_case_id` and never enables that flag.
+
+The isolated evaluator seeds a small idempotent fact set only after its own migrations: one synthetic
+backtest, paper session/position/order and pending Testnet intent. The seeder requires both
+`HYPERTRADE_EVAL_TARGET=isolated` and `APP_ENV=evaluation`; it is not present in the production deploy
+path and does not call an exchange, BitPro, paper execution or approval service. These facts exercise
+the same read capability contracts used by the normal Mission path rather than teaching the evaluator
+to fabricate evidence.
 
 Production sandbox activation is explicit. `AGENT_STRATEGY_SANDBOX_IMAGE` must name an immutable
 `repository@sha256:<64 lowercase hex>` image identity; the deployment script derives a

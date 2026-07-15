@@ -407,6 +407,75 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
                 "required": ["items", "count"],
             },
         ),
+        CapabilityDefinitionV1(
+            capability_id="strategy.performance_summary",
+            title="Strategy performance summary",
+            description="Read bounded local strategy/backtest metadata without strategy mutation.",
+            source_owner="hypertrade.strategy",
+            handler_key="strategy.performance_summary",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "strategy_key": {"type": "string", "maxLength": 128},
+                    "backtest_id": {"type": "string", "maxLength": 64},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+                },
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "items": {"type": "array"},
+                    "count": {"type": "integer"},
+                    "found": {"type": "boolean"},
+                },
+                "required": ["items", "count", "found"],
+            },
+        ),
+        CapabilityDefinitionV1(
+            capability_id="paper.summary",
+            title="Paper portfolio summary",
+            description="Read bounded paper position/order metadata without paper mutation.",
+            source_owner="hypertrade.paper",
+            handler_key="paper.summary",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "focus": {"type": "string", "enum": ["positions", "anomaly"]},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                },
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "positions": {"type": "array"},
+                    "orders": {"type": "array"},
+                    "count": {"type": "integer"},
+                },
+                "required": ["positions", "orders", "count"],
+            },
+        ),
+        CapabilityDefinitionV1(
+            capability_id="execution.intent_summary",
+            title="Testnet intent summary",
+            description="Read bounded approval-gated Testnet intent metadata without execution.",
+            source_owner="hypertrade.live",
+            handler_key="execution.intent_summary",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "environment": {"type": "string", "enum": ["testnet"]},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                },
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"items": {"type": "array"}, "count": {"type": "integer"}},
+                "required": ["items", "count"],
+            },
+        ),
     )
 
 

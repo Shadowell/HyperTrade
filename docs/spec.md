@@ -239,6 +239,11 @@ conclusion, confidence, provenance-bound evidence, explicit gaps and a safe next
 Mission/Plan/tool telemetry remains an audited drill-down, not default chat content; model prompts,
 answers, tool arguments and raw results are never retained in output-evaluation artifacts.
 
+The reviewed Mission read catalog includes market, RAG/Memory, local strategy/backtest performance,
+paper portfolio and pending Testnet intent summaries. These reads are bounded and source-bound;
+they cannot create/approve/execute an order or change paper state. Isolated evaluator facts are
+synthetic, post-migration and explicitly environment-gated; they are never seeded in production.
+
 Migration uses vertical cutover without dual writes; historical runs remain read-only, and every
 Sprint includes an explicit legacy deletion budget. The roadmap is planning-only until explicitly approved. The first draft contract is
 `docs/contracts/sprint-111-professional-agent-loop-v2.md`; no feature flag is enabled and no current

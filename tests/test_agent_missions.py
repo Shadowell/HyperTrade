@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from hypertrade.config import Settings
-from hypertrade.db import AgentRun, AgentTask, Database
+from hypertrade.db import (
+    AgentRun,
+    AgentTask,
+    BacktestRun,
+    Database,
+    LiveOrderIntent,
+    PaperOrder,
+    PaperPosition,
+    PaperSession,
+)
 from hypertrade.main import create_app
 from hypertrade.runtime.adapters.foundation import (
     FoundationExecutor,
@@ -515,6 +525,104 @@ def test_operator_eval_fixtures_are_isolated_and_terminal() -> None:
     assert operator_response["next_actions"]
 
 
+def test_chat_canary_projects_seeded_read_only_strategy_paper_and_intent_evidence() -> None:
+    database = Database("sqlite:///:memory:")
+    database.create_all()
+    with database.session() as session:
+        session.add(
+            BacktestRun(
+                id="eval_backtest",
+                strategy_key="momentum_breakout_v1",
+                status="completed",
+                start_cash=Decimal("100000"),
+                end_value=Decimal("102100"),
+                total_return_pct=Decimal("2.1"),
+                max_drawdown_pct=Decimal("1.4"),
+                trade_count=12,
+            )
+        )
+        session.add(
+            PaperSession(
+                id="eval_paper",
+                status="running",
+                cash=Decimal("100000"),
+                equity=Decimal("100250"),
+            )
+        )
+        session.add(
+            PaperPosition(
+                id="eval_position",
+                session_id="eval_paper",
+                inst_id="ETH-USDT-SWAP",
+                side="long",
+                quantity=Decimal("1"),
+                entry_price=Decimal("3000"),
+                mark_price=Decimal("3025"),
+                notional=Decimal("3025"),
+                status="open",
+            )
+        )
+        session.add(
+            PaperOrder(
+                id="eval_order",
+                session_id="eval_paper",
+                inst_id="ETH-USDT-SWAP",
+                side="buy",
+                quantity=Decimal("1"),
+                target_notional=Decimal("3025"),
+                status="filled",
+            )
+        )
+        session.add(
+            LiveOrderIntent(
+                id="eval_intent",
+                environment="testnet",
+                status="pending_approval",
+                inst_id="ETH-USDT-SWAP",
+                side="buy",
+                size=Decimal("1"),
+            )
+        )
+    settings = Settings(
+        DATABASE_URL="sqlite:///:memory:",
+        ADMIN_USERNAME="admin",
+        ADMIN_PASSWORD="secret",
+        SESSION_SECRET="mission-read-summary-test-secret",
+        MISSION_RUNTIME_ENABLED=True,
+        MISSION_RUNTIME_CANARY_PERCENT=100,
+    )
+    prompts = {
+        "strategy": "分析 momentum_breakout_v1 的历史表现",
+        "paper": "查看模拟盘异常并给出处理建议",
+        "intent": "查看待批准的 Testnet 订单",
+    }
+    with TestClient(create_app(settings=settings, db=database)) as client:
+        responses = {
+            name: client.post(
+                "/api/agent/runs",
+                headers={"Idempotency-Key": f"read-summary-{name}-001"},
+                json={"prompt": prompt},
+            )
+            for name, prompt in prompts.items()
+        }
+
+    assert all(response.status_code == 200 for response in responses.values())
+    refs = {
+        name: [
+            ref
+            for evidence in response.json()["report_json"]["operator_response"]["evidence"]
+            for ref in evidence["source_refs"]
+        ]
+        for name, response in responses.items()
+    }
+    assert any(ref.startswith("hypertrade_db:backtest_runs:") for ref in refs["strategy"])
+    assert any(ref.startswith("hypertrade_db:paper_positions:") for ref in refs["paper"])
+    assert any(ref.startswith("hypertrade_db:live_order_intents:") for ref in refs["intent"])
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(AgentTask)) == 0
+        assert session.scalar(select(func.count()).select_from(AgentRun)) == 0
+
+
 def test_mission_stream_terminalizes_dispatch_failures_without_internal_error_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -575,10 +683,13 @@ def test_full_mission_cutover_makes_legacy_task_writes_read_only() -> None:
         MISSION_RUNTIME_CANARY_PERCENT=100,
     )
     with TestClient(create_app(settings=settings, db=database)) as client:
-        assert client.post(
-            "/api/auth/login",
-            json={"username": "admin", "password": "secret"},
-        ).status_code == 200
+        assert (
+            client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "secret"},
+            ).status_code
+            == 200
+        )
         legacy = client.post(
             "/api/agent/sessions",
             json={"title": "legacy task should be archived"},
@@ -604,10 +715,13 @@ def test_mission_run_endpoint_leaves_dispatch_to_enabled_worker() -> None:
         MISSION_RUNTIME_WORKER_ENABLED=True,
     )
     with TestClient(create_app(settings=settings, db=database)) as client:
-        assert client.post(
-            "/api/auth/login",
-            json={"username": "admin", "password": "secret"},
-        ).status_code == 200
+        assert (
+            client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "secret"},
+            ).status_code
+            == 200
+        )
         created = client.post(
             "/api/agent/missions",
             json=mission_payload(idempotency_key="worker-dispatch-001").model_dump(mode="json"),

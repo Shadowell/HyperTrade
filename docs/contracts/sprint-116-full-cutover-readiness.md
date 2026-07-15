@@ -50,6 +50,9 @@ resume、cancel 或 steer；系统不以模型文字宣称完成，不放宽 pap
   `blocked`、`waiting_approval` 或 `waiting_input`；不得调用 provider、connector 或写能力。
 - `evaluation_case_id` 只允许物理隔离目标且 `HYPERTRADE_OPERATOR_EVAL_FIXTURES_ENABLED=true`；生产
   必须拒绝该入口，fixture 不得访问 provider、BitPro 或交易能力。
+- Catalog 新增的 strategy/backtest、paper portfolio 和 Testnet intent summary 必须保持 `read` /
+  `side_effect=none`，仅在隔离评测环境 idempotent seed 的合成事实；不得用 prompt 或模型文字伪造
+  可见证据。
 - 生产 `AGENT_STRATEGY_SANDBOX_ENABLED` 默认关闭；无 digest-bound isolated sandbox service 时 HTTP
   503，不能执行宿主或 API subprocess。
 - README、技术架构、QA、progress 和 active contract 记录实际验证，不声称未做的部署/截图/生产 canary。

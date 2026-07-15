@@ -79,6 +79,11 @@ echo "[eval-deploy] starting isolated postgres"
 echo "[eval-deploy] running isolated database migrations"
 "${compose[@]}" run --rm api alembic upgrade head
 
+echo "[eval-deploy] seeding isolated public-answer fixtures"
+HYPERTRADE_EVAL_TARGET=isolated "${compose[@]}" run --rm \
+  -e HYPERTRADE_EVAL_TARGET=isolated \
+  api python scripts/seed_operator_answer_eval.py
+
 echo "[eval-deploy] starting isolated API (worker profile remains disabled)"
 "${compose[@]}" up -d --force-recreate api
 

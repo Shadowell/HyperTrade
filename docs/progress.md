@@ -64,6 +64,10 @@
   named timeout/source-unavailable fixtures behind an explicit disabled-by-default flag; production
   rejects those fixture ids. A declared `not_supported` result no longer turns an otherwise clean
   evaluator run into a synthetic failure, and remains excluded from `passed_count`.
+- The reviewed Mission catalog now also exposes bounded read-only strategy/backtest, paper portfolio
+  and Testnet intent summaries. The isolated evaluator seeds one idempotent synthetic fact for each
+  surface after migrations, guarded by `HYPERTRADE_EVAL_TARGET=isolated` plus `APP_ENV=evaluation`;
+  production receives neither the seeder nor any paper/order/approval call.
 - Local CLI full-canary execution now creates only a Mission, and remote CLI sends an idempotency key
   for replay-safe API routing. Mission event SSE honours both `after` and `Last-Event-ID`. A separate
   disabled-by-default Mission worker now uses SQL lease claim/heartbeat/release and terminal lease

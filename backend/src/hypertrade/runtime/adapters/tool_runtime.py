@@ -15,7 +15,14 @@ from jsonschema.validators import validator_for
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from hypertrade.db import AgentToolObservation, Database
+from hypertrade.db import (
+    AgentToolObservation,
+    BacktestRun,
+    Database,
+    LiveOrderIntent,
+    PaperOrder,
+    PaperPosition,
+)
 from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
 from hypertrade.rag.service import RagService
@@ -524,8 +531,7 @@ def builtin_handlers(db: Database, *, knowledge_dir: str) -> dict[str, ToolHandl
         if requested_inst_id:
             item = items[0]
             summary = (
-                f"{item['inst_id']} 最新价 {item['last']}，"
-                f"24h 变动 {item['change_utc0_pct']}%。"
+                f"{item['inst_id']} 最新价 {item['last']}，24h 变动 {item['change_utc0_pct']}%。"
             )
             source_refs = (f"hypertrade_db:market_tickers:{requested_inst_id}",)
         else:
@@ -611,11 +617,157 @@ def builtin_handlers(db: Database, *, knowledge_dir: str) -> dict[str, ToolHandl
             ),
         )
 
+    async def strategy_performance_summary(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        strategy_key = str(arguments.get("strategy_key", "")).strip()
+        backtest_id = str(arguments.get("backtest_id", "")).strip()
+        limit = int(arguments.get("limit", 3))
+
+        def read() -> list[BacktestRun]:
+            with db.session() as session:
+                statement = select(BacktestRun).order_by(BacktestRun.created_at.desc()).limit(limit)
+                if backtest_id:
+                    statement = statement.where(BacktestRun.id == backtest_id)
+                elif strategy_key:
+                    statement = statement.where(BacktestRun.strategy_key == strategy_key)
+                return list(session.scalars(statement))
+
+        rows = await anyio.to_thread.run_sync(read, limiter=limiter)
+        if not rows:
+            target = backtest_id or strategy_key or "requested strategy"
+            return ToolResult(
+                payload={"items": [], "count": 0, "found": False},
+                source_refs=("strategy:no_matches",),
+                unknowns=(f"未找到 {target} 的可验证回测记录。",),
+                public_summary=f"未找到 {target} 的可验证回测记录。",
+            )
+        items = [
+            {
+                "backtest_id": row.id,
+                "strategy_key": row.strategy_key,
+                "status": row.status,
+                "total_return_pct": str(row.total_return_pct),
+                "max_drawdown_pct": str(row.max_drawdown_pct),
+                "trade_count": row.trade_count,
+            }
+            for row in rows
+        ]
+        return ToolResult(
+            payload={"items": items, "count": len(items), "found": True},
+            source_refs=tuple(f"hypertrade_db:backtest_runs:{row.id}" for row in rows),
+            public_summary=f"已读取 {len(items)} 条本地回测记录及其收益、回撤和交易次数。",
+        )
+
+    async def paper_summary(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        limit = int(arguments.get("limit", 10))
+        focus = str(arguments.get("focus", "positions"))
+
+        def read() -> tuple[list[PaperPosition], list[PaperOrder]]:
+            with db.session() as session:
+                positions = list(
+                    session.scalars(
+                        select(PaperPosition)
+                        .where(PaperPosition.status == "open")
+                        .order_by(PaperPosition.created_at.desc())
+                        .limit(limit)
+                    )
+                )
+                orders = list(
+                    session.scalars(
+                        select(PaperOrder).order_by(PaperOrder.created_at.desc()).limit(limit)
+                    )
+                )
+                return positions, orders
+
+        positions, orders = await anyio.to_thread.run_sync(read, limiter=limiter)
+        position_items = [
+            {"inst_id": row.inst_id, "side": row.side, "notional": str(row.notional)}
+            for row in positions
+        ]
+        order_items = [{"status": row.status, "inst_id": row.inst_id} for row in orders]
+        refs = tuple(f"hypertrade_db:paper_positions:{row.id}" for row in positions) or tuple(
+            f"hypertrade_db:paper_orders:{row.id}" for row in orders
+        )
+        if not refs:
+            return ToolResult(
+                payload={"positions": [], "orders": [], "count": 0},
+                source_refs=("paper:no_matches",),
+                unknowns=("模拟盘当前没有可验证的持仓或订单记录。",),
+                public_summary="模拟盘当前没有可验证的持仓或订单记录。",
+            )
+        unknowns = ("异常阈值或策略归属未在本次只读快照中提供。",) if focus == "anomaly" else ()
+        return ToolResult(
+            payload={
+                "positions": position_items,
+                "orders": order_items,
+                "count": len(position_items) + len(order_items),
+            },
+            source_refs=refs[:3],
+            unknowns=unknowns,
+            public_summary=(
+                f"已读取 {len(position_items)} 个模拟盘持仓和 {len(order_items)} 条订单元数据。"
+            ),
+        )
+
+    async def execution_intent_summary(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        limit = int(arguments.get("limit", 10))
+
+        def read() -> list[LiveOrderIntent]:
+            with db.session() as session:
+                return list(
+                    session.scalars(
+                        select(LiveOrderIntent)
+                        .where(LiveOrderIntent.environment == "testnet")
+                        .order_by(LiveOrderIntent.created_at.desc())
+                        .limit(limit)
+                    )
+                )
+
+        rows = await anyio.to_thread.run_sync(read, limiter=limiter)
+        if not rows:
+            return ToolResult(
+                payload={"items": [], "count": 0},
+                source_refs=("execution_intent:no_matches",),
+                unknowns=("没有可验证的 Testnet 交易意图记录。",),
+                public_summary="没有可验证的 Testnet 交易意图记录。",
+            )
+        items = [
+            {"intent_id": row.id, "status": row.status, "inst_id": row.inst_id} for row in rows
+        ]
+        return ToolResult(
+            payload={"items": items, "count": len(items)},
+            source_refs=tuple(f"hypertrade_db:live_order_intents:{row.id}" for row in rows[:3]),
+            public_summary=f"已读取 {len(items)} 条 Testnet 交易意图元数据；未执行订单。",
+        )
+
     return {
         "runtime.objective_inspection": objective,
         "market.summary": market_summary,
         "rag.search": rag_search,
         "memory.search": memory_search,
+        "strategy.performance_summary": strategy_performance_summary,
+        "paper.summary": paper_summary,
+        "execution.intent_summary": execution_intent_summary,
     }
 
 
