@@ -22,6 +22,8 @@ class FakeWorkbenchClient:
         self.portfolio_reviews: list[tuple[str, str, str, str]] = []
         self.window_captures = 0
         self.cohort_builds = 0
+        self.shadow_builds = 0
+        self.shadow_reviews: list[tuple[str, str, str, str]] = []
 
     def list_agent_sessions(self) -> list[dict[str, Any]]:
         return [{"id": "sess_1", "title": "TUI session", "status": "active"}]
@@ -233,6 +235,34 @@ class FakeWorkbenchClient:
         self.cohort_builds += 1
         return self.list_paper_cohorts()[0]
 
+    def list_shadow_portfolios(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "shpf_1",
+                "version_number": 1,
+                "status": "needs_data",
+                "intake_count": 2,
+                "eligible_count": 0,
+                "scenario_count": 0,
+                "scenarios": [{"scenario_id": "shsc_1", "template": "equal_weight"}],
+            }
+        ]
+
+    def build_shadow_portfolio(self) -> dict[str, Any]:
+        self.shadow_builds += 1
+        return self.list_shadow_portfolios()[0]
+
+    def review_shadow_portfolio(
+        self,
+        proposal_id: str,
+        scenario_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        self.shadow_reviews.append((proposal_id, scenario_id, decision, reason))
+        return {"id": "shrv_1", "decision": decision, "capital_authorized": False}
+
     def list_strategy_cards(self) -> list[dict[str, Any]]:
         return [
             {
@@ -368,6 +398,17 @@ async def test_tui_portfolio_tab_records_human_review_only() -> None:
         assert "FUNNEL · denominator=1 · cards=1" in str(
             app.query_one("#portfolio-detail", Static).content
         )
+        assert "SHADOW · shpf_1" in str(app.query_one("#portfolio-detail", Static).content)
+        await pilot.click("#portfolio-shadow")
+        await pilot.pause()
+        app.query_one("#shadow-proposal-id", Input).value = "shpf_1"
+        app.query_one("#shadow-scenario-id", Input).value = "shsc_1"
+        await pilot.click("#shadow-hold")
+        await pilot.pause()
+        assert isinstance(app.screen, ControlConfirmScreen)
+        app.screen.query_one("#control-reason", Input).value = "hypothetical review only"
+        await pilot.click("#control-submit")
+        await pilot.pause()
         await pilot.click("#portfolio-hold")
         await pilot.pause()
         assert isinstance(app.screen, ControlConfirmScreen)
@@ -377,4 +418,8 @@ async def test_tui_portfolio_tab_records_human_review_only() -> None:
 
     assert client.portfolio_reviews == [
         ("pasmt_1", "plrec_001", "hold", "need aligned returns")
+    ]
+    assert client.shadow_builds == 1
+    assert client.shadow_reviews == [
+        ("shpf_1", "shsc_1", "hold", "hypothetical review only")
     ]

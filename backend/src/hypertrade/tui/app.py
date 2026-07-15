@@ -169,6 +169,9 @@ class ResearchWorkbenchApp(App[None]):
     #portfolio-actions { height: 4; }
     #portfolio-actions Input { width: 1fr; margin-right: 1; }
     #portfolio-actions Button { width: 12; margin-right: 1; }
+    #shadow-actions { height: 4; }
+    #shadow-actions Input { width: 1fr; margin-right: 1; }
+    #shadow-actions Button { width: 15; margin-right: 1; }
     #portfolio-detail { height: 1fr; }
     .medium #evidence-pane { display: none; }
     .compact #sessions-pane, .compact #evidence-pane { display: none; }
@@ -249,10 +252,17 @@ class ResearchWorkbenchApp(App[None]):
                     yield Input(placeholder="Recommendation ID", id="portfolio-recommendation-id")
                     yield Button("Capture", id="portfolio-capture")
                     yield Button("Cohort", id="portfolio-cohort")
+                    yield Button("Shadow", id="portfolio-shadow")
                     yield Button("Assess", id="portfolio-assess", variant="primary")
                     yield Button("Accept", id="portfolio-accept", variant="success")
                     yield Button("Hold", id="portfolio-hold", variant="warning")
                     yield Button("Reject", id="portfolio-reject", variant="error")
+                with Horizontal(id="shadow-actions"):
+                    yield Input(placeholder="Shadow Proposal ID", id="shadow-proposal-id")
+                    yield Input(placeholder="Scenario ID", id="shadow-scenario-id")
+                    yield Button("Shadow Accept", id="shadow-accept", variant="success")
+                    yield Button("Shadow Hold", id="shadow-hold", variant="warning")
+                    yield Button("Shadow Reject", id="shadow-reject", variant="error")
                 yield Static(
                     "No portfolio assessments",
                     id="portfolio-detail",
@@ -447,6 +457,12 @@ class ResearchWorkbenchApp(App[None]):
         if button_id == "portfolio-cohort":
             self._build_paper_cohort()
             return
+        if button_id == "portfolio-shadow":
+            self._build_shadow_portfolio()
+            return
+        if button_id.startswith("shadow-"):
+            self._request_shadow_review(button_id.removeprefix("shadow-"))
+            return
         if button_id.startswith("portfolio-"):
             self._request_portfolio_review(button_id.removeprefix("portfolio-"))
             return
@@ -619,6 +635,15 @@ class ResearchWorkbenchApp(App[None]):
         self.notify(f"Cohort built: {result.get('id', 'unknown')}")
         self.call_later(self._render_state, self.store.state)
 
+    def _build_shadow_portfolio(self) -> None:
+        try:
+            result = self.store.build_shadow_portfolio()
+        except Exception as exc:
+            self.notify(f"Shadow build failed: {type(exc).__name__}", severity="error")
+            return
+        self.notify(f"Shadow built: {result.get('id', 'unknown')}")
+        self.call_later(self._render_state, self.store.state)
+
     def _request_portfolio_review(self, decision: str) -> None:
         assessment_id = self.query_one("#portfolio-assessment-id", Input).value.strip()
         recommendation_id = self.query_one("#portfolio-recommendation-id", Input).value.strip()
@@ -655,6 +680,41 @@ class ResearchWorkbenchApp(App[None]):
             self.notify(f"Portfolio review rejected: {type(exc).__name__}", severity="error")
             return
         self.notify(f"Portfolio review recorded: {result.get('decision', decision)}")
+        self.call_later(self._render_state, self.store.state)
+
+    def _request_shadow_review(self, decision: str) -> None:
+        proposal_id = self.query_one("#shadow-proposal-id", Input).value.strip()
+        scenario_id = self.query_one("#shadow-scenario-id", Input).value.strip()
+        if not proposal_id or not scenario_id:
+            self.notify("Shadow proposal and scenario IDs are required", severity="warning")
+            return
+        self.push_screen(
+            ControlConfirmScreen(decision, scenario_id, resource_kind="shadow"),
+            lambda reason: self._apply_shadow_review(
+                proposal_id, scenario_id, decision, reason
+            ),
+        )
+
+    def _apply_shadow_review(
+        self,
+        proposal_id: str,
+        scenario_id: str,
+        decision: str,
+        reason: str | None,
+    ) -> None:
+        if reason is None:
+            return
+        try:
+            result = self.store.review_shadow_portfolio(
+                proposal_id, scenario_id, decision, reason
+            )
+        except Exception as exc:
+            self.notify(f"Shadow review rejected: {type(exc).__name__}", severity="error")
+            return
+        self.notify(
+            f"Shadow research review recorded: {result.get('decision', decision)}; "
+            "capital=false execution=false"
+        )
         self.call_later(self._render_state, self.store.state)
 
     def action_help(self) -> None:
@@ -830,6 +890,16 @@ class ResearchWorkbenchApp(App[None]):
             )
         if not state.paper_cohorts:
             lines.append("No paper cohorts")
+        lines.append("\nSHADOW PORTFOLIOS · HYPOTHETICAL ONLY")
+        for proposal in state.shadow_portfolios[:5]:
+            lines.append(
+                f"SHADOW · {proposal.get('id')} · v{proposal.get('version_number')} · "
+                f"{proposal.get('status')} · eligible={proposal.get('eligible_count', 0)}/"
+                f"{proposal.get('intake_count', 0)} · scenarios="
+                f"{proposal.get('scenario_count', 0)} · execution=false"
+            )
+        if not state.shadow_portfolios:
+            lines.append("No shadow portfolios")
         for card in state.strategy_cards[:10]:
             version = card.get("version", {})
             version = version if isinstance(version, dict) else {}

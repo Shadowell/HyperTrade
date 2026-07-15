@@ -77,6 +77,19 @@ class WorkbenchClient(Protocol):
 
     def build_paper_cohort(self) -> dict[str, Any]: ...
 
+    def list_shadow_portfolios(self) -> list[dict[str, Any]]: ...
+
+    def build_shadow_portfolio(self) -> dict[str, Any]: ...
+
+    def review_shadow_portfolio(
+        self,
+        proposal_id: str,
+        scenario_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]: ...
+
     def create_portfolio_assessment(self) -> dict[str, Any]: ...
 
     def review_portfolio_recommendation(
@@ -146,6 +159,7 @@ class WorkbenchState:
     portfolio_assessments: list[dict[str, Any]] = field(default_factory=list)
     portfolio_observation_windows: list[dict[str, Any]] = field(default_factory=list)
     paper_cohorts: list[dict[str, Any]] = field(default_factory=list)
+    shadow_portfolios: list[dict[str, Any]] = field(default_factory=list)
     strategy_cards: list[dict[str, Any]] = field(default_factory=list)
     research_funnel: dict[str, Any] = field(default_factory=dict)
     cursor: TaskEventCursor = field(default_factory=TaskEventCursor)
@@ -177,6 +191,8 @@ class WorkbenchStore:
         )
         list_cohorts = getattr(self.client, "list_paper_cohorts", None)
         self.state.paper_cohorts = list_cohorts() if callable(list_cohorts) else []
+        list_shadow = getattr(self.client, "list_shadow_portfolios", None)
+        self.state.shadow_portfolios = list_shadow() if callable(list_shadow) else []
         list_cards = getattr(self.client, "list_strategy_cards", None)
         self.state.strategy_cards = list_cards() if callable(list_cards) else []
         get_funnel = getattr(self.client, "get_research_funnel", None)
@@ -359,6 +375,33 @@ class WorkbenchStore:
     def build_paper_cohort(self) -> dict[str, Any]:
         result = self.client.build_paper_cohort()
         self.state.paper_cohorts = self.client.list_paper_cohorts()
+        return result
+
+    def build_shadow_portfolio(self) -> dict[str, Any]:
+        result = self.client.build_shadow_portfolio()
+        self.state.shadow_portfolios = self.client.list_shadow_portfolios()
+        return result
+
+    def review_shadow_portfolio(
+        self,
+        proposal_id: str,
+        scenario_id: str,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        if decision not in {"accept", "reject", "hold"}:
+            raise ValueError(f"Unsupported shadow decision: {decision}")
+        if not proposal_id or not scenario_id:
+            raise ValueError("Shadow proposal and scenario IDs are required")
+        if not reason.strip():
+            raise ValueError("Operator reason is required")
+        result = self.client.review_shadow_portfolio(
+            proposal_id,
+            scenario_id,
+            decision=decision,
+            reason=reason.strip(),
+        )
+        self.state.shadow_portfolios = self.client.list_shadow_portfolios()
         return result
 
     def review_portfolio(

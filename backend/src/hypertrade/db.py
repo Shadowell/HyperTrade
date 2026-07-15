@@ -464,6 +464,53 @@ class PaperCohortLabelDecision(Base, TimestampMixin):
     decided_by: Mapped[str] = mapped_column(String(128), index=True)
 
 
+class ShadowPortfolioProposal(Base, TimestampMixin):
+    """Immutable hypothetical allocation research; never an order instruction."""
+
+    __tablename__ = "shadow_portfolio_proposals"
+    __table_args__ = (
+        UniqueConstraint("portfolio_key", "version_number", name="uq_shadow_portfolio_version"),
+        UniqueConstraint("portfolio_key", "source_hash", name="uq_shadow_portfolio_source"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("shpf"))
+    portfolio_key: Mapped[str] = mapped_column(String(64), index=True)
+    version_number: Mapped[int] = mapped_column(Integer)
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    policy_version: Mapped[str] = mapped_column(String(64), index=True)
+    policy_hash: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    cohort_snapshot_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    observation_window_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    intake_count: Mapped[int] = mapped_column(Integer)
+    eligible_count: Mapped[int] = mapped_column(Integer)
+    scenario_count: Mapped[int] = mapped_column(Integer)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    source_hash: Mapped[str] = mapped_column(String(64), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    proposal_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
+class ShadowPortfolioReviewDecision(Base, TimestampMixin):
+    """Human research review with no capital, paper, or execution authority."""
+
+    __tablename__ = "shadow_portfolio_review_decisions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("shrv"))
+    proposal_id: Mapped[str] = mapped_column(String(32), index=True)
+    scenario_id: Mapped[str] = mapped_column(String(64), index=True)
+    template: Mapped[str] = mapped_column(String(48), index=True)
+    decision: Mapped[str] = mapped_column(String(16), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    decided_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
 class Job(Base, TimestampMixin):
     __tablename__ = "jobs"
 

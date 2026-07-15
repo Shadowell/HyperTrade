@@ -268,6 +268,19 @@ type PaperCohort = {
   execution_authorized: boolean;
 };
 
+type ShadowPortfolio = {
+  id: string;
+  status: string;
+  version_number: number;
+  intake_count: number;
+  eligible_count: number;
+  scenario_count: number;
+  scenarios: Array<{ scenario_id: string; template: string }>;
+  hypothetical: boolean;
+  execution_authorized: boolean;
+  capital_authorized: boolean;
+};
+
 type RagHit = {
   source_path: string;
   title: string;
@@ -596,6 +609,9 @@ const copy = {
     buildCohort: "构建可比 Cohort",
     cohortComparable: "可比成员",
     noPaperCohorts: "暂无 Paper Cohort",
+    shadowPortfolios: "影子组合方案",
+    buildShadow: "生成影子方案",
+    noShadowPortfolios: "暂无影子组合方案",
     hold: "暂缓",
     noPortfolioAssessments: "暂无组合评估",
     initialCash: "初始资金",
@@ -826,6 +842,9 @@ const copy = {
     buildCohort: "Build Comparable Cohort",
     cohortComparable: "Comparable Members",
     noPaperCohorts: "No paper cohorts",
+    shadowPortfolios: "Shadow Portfolios",
+    buildShadow: "Build Shadow Proposal",
+    noShadowPortfolios: "No shadow portfolios",
     hold: "Hold",
     noPortfolioAssessments: "No portfolio assessments",
     initialCash: "Initial Cash",
@@ -1126,6 +1145,7 @@ function App() {
     PortfolioObservationWindow[]
   >([]);
   const [paperCohorts, setPaperCohorts] = useState<PaperCohort[]>([]);
+  const [shadowPortfolios, setShadowPortfolios] = useState<ShadowPortfolio[]>([]);
   const [portfolioReason, setPortfolioReason] = useState("");
   const [ragQuery, setRagQuery] = useState("risk");
   const [ragHits, setRagHits] = useState<RagHit[]>([]);
@@ -1279,8 +1299,8 @@ function App() {
         tone: "violet"
       },
       {
-        label: t.paperCohorts,
-        value: formatMetricNumber(paperCohorts.length),
+        label: t.shadowPortfolios,
+        value: formatMetricNumber(shadowPortfolios.length),
         tone: "brass"
       },
       {
@@ -1289,7 +1309,7 @@ function App() {
         tone: "danger"
       }
     ];
-  }, [paperCohorts, portfolioAssessments, portfolioObservationWindows, t]);
+  }, [portfolioAssessments, portfolioObservationWindows, shadowPortfolios, t]);
 
   const refreshMemoryItems = useCallback(async (query = "") => {
     const path = query ? `/api/memory?query=${encodeURIComponent(query)}` : "/api/memory";
@@ -1405,6 +1425,16 @@ function App() {
     setPaperCohorts(Array.isArray(payload.items) ? payload.items : []);
   }, []);
 
+  const refreshShadowPortfolios = useCallback(async () => {
+    const response = await fetch("/api/portfolio/shadow-portfolios", { credentials: "include" });
+    if (!response.ok) {
+      setShadowPortfolios([]);
+      return;
+    }
+    const payload = (await response.json()) as { items?: ShadowPortfolio[] };
+    setShadowPortfolios(Array.isArray(payload.items) ? payload.items : []);
+  }, []);
+
   const refreshOverview = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -1419,6 +1449,7 @@ function App() {
         await refreshPortfolioAssessments();
         await refreshPortfolioObservationWindows();
         await refreshPaperCohorts();
+        await refreshShadowPortfolios();
         setHarnessError("");
         return;
       }
@@ -1433,6 +1464,7 @@ function App() {
     refreshPortfolioAssessments,
     refreshPortfolioObservationWindows,
     refreshPaperCohorts,
+    refreshShadowPortfolios,
     refreshStrategyCards,
     refreshStrategyLibrary
   ]);
@@ -1589,6 +1621,46 @@ function App() {
     });
     if (response.ok) {
       await refreshPaperCohorts();
+    }
+  }
+
+  async function handleShadowPortfolioBuild() {
+    const response = await fetch("/api/portfolio/shadow-portfolios", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idempotency_key: `web_shadow_portfolio_${Date.now()}` })
+    });
+    if (response.ok) {
+      await refreshShadowPortfolios();
+    }
+  }
+
+  async function handleShadowPortfolioReview(
+    proposalId: string,
+    scenarioId: string,
+    decision: "accept" | "reject" | "hold"
+  ) {
+    const reason = portfolioReason.trim();
+    if (!reason) {
+      return;
+    }
+    const response = await fetch(
+      `/api/portfolio/shadow-portfolios/${encodeURIComponent(proposalId)}/reviews`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scenario_id: scenarioId,
+          decision,
+          reason,
+          idempotency_key: `web_shadow_review_${Date.now()}`
+        })
+      }
+    );
+    if (response.ok) {
+      await refreshShadowPortfolios();
     }
   }
 
@@ -2182,10 +2254,13 @@ function App() {
             <PortfolioLifecyclePanel
               assessments={portfolioAssessments}
               cohorts={paperCohorts}
+              shadowPortfolios={shadowPortfolios}
               observationWindows={portfolioObservationWindows}
               onAssess={handlePortfolioAssessment}
               onCapture={handlePortfolioWindowCapture}
               onCohortBuild={handlePaperCohortBuild}
+              onShadowBuild={handleShadowPortfolioBuild}
+              onShadowReview={handleShadowPortfolioReview}
               onReview={handlePortfolioReview}
               reason={portfolioReason}
               setReason={setPortfolioReason}
@@ -2636,23 +2711,33 @@ type MemoryActivityInsight = {
 function PortfolioLifecyclePanel({
   assessments,
   cohorts,
+  shadowPortfolios,
   observationWindows,
   reason,
   setReason,
   onAssess,
   onCapture,
   onCohortBuild,
+  onShadowBuild,
+  onShadowReview,
   onReview,
   t
 }: {
   assessments: PortfolioAssessment[];
   cohorts: PaperCohort[];
+  shadowPortfolios: ShadowPortfolio[];
   observationWindows: PortfolioObservationWindow[];
   reason: string;
   setReason: (value: string) => void;
   onAssess: () => Promise<void>;
   onCapture: () => Promise<void>;
   onCohortBuild: () => Promise<void>;
+  onShadowBuild: () => Promise<void>;
+  onShadowReview: (
+    proposalId: string,
+    scenarioId: string,
+    decision: "accept" | "reject" | "hold"
+  ) => Promise<void>;
   onReview: (
     assessmentId: string,
     recommendationId: string,
@@ -2683,6 +2768,10 @@ function PortfolioLifecyclePanel({
             <button className="icon-button justify-center" onClick={() => void onCohortBuild()} type="button">
               <Layers3 size={15} />
               {t.buildCohort}
+            </button>
+            <button className="icon-button justify-center" onClick={() => void onShadowBuild()} type="button">
+              <Layers3 size={15} />
+              {t.buildShadow}
             </button>
           </div>
           {observationWindows[0] ? (
@@ -2790,6 +2879,54 @@ function PortfolioLifecyclePanel({
                   <span>{cohort.comparable_count} {t.cohortComparable}</span>
                   <span>{cohort.proposal_count} proposals · execution=false</span>
                 </div>
+              </div>
+            ))
+          )}
+        </div>
+        <h2 className="section-title mt-5">{t.shadowPortfolios}</h2>
+        <div className="mt-4 space-y-2">
+          {shadowPortfolios.length === 0 ? (
+            <div className="empty-row">{t.noShadowPortfolios}</div>
+          ) : (
+            shadowPortfolios.slice(0, 6).map((proposal) => (
+              <div className="operator-card block" data-tone="violet" key={proposal.id}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs">
+                    {proposal.id} · v{proposal.version_number}
+                  </span>
+                  <span className="text-xs text-violet">{statusLabel(proposal.status)}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-ink/55">
+                  <span>{proposal.eligible_count}/{proposal.intake_count} eligible</span>
+                  <span>{proposal.scenario_count} scenarios</span>
+                  <span>hypothetical=true · capital=false · execution=false</span>
+                </div>
+                {proposal.scenarios.map((scenario) => (
+                  <div className="mt-3 border-t border-ink/10 pt-3" key={scenario.scenario_id}>
+                    <div className="font-mono text-xs text-ink/55">
+                      {scenario.template} · {scenario.scenario_id}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {(["accept", "hold", "reject"] as const).map((decision) => (
+                        <button
+                          className="icon-button"
+                          disabled={!reason.trim()}
+                          key={decision}
+                          onClick={() =>
+                            void onShadowReview(proposal.id, scenario.scenario_id, decision)
+                          }
+                          type="button"
+                        >
+                          {decision === "accept"
+                            ? t.approve
+                            : decision === "hold"
+                              ? t.hold
+                              : t.reject}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             ))
           )}

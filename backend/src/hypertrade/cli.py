@@ -56,6 +56,11 @@ from hypertrade.portfolio.lifecycle import (
     PortfolioAssessmentService,
     StrategyLifecycleDecisionV1,
 )
+from hypertrade.portfolio.shadow import ShadowPortfolioService
+from hypertrade.portfolio.shadow_schemas import (
+    ShadowPortfolioBuildV1,
+    ShadowPortfolioReviewV1,
+)
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.reporting.blocks import ReportBlock, render_report_blocks
 from hypertrade.research.experiment_ledger import ExperimentLedgerService
@@ -204,6 +209,23 @@ class AgentClient(Protocol):
         self,
         cohort_id: str,
         proposal_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]: ...
+
+    def list_shadow_portfolios(self) -> list[dict[str, Any]]: ...
+
+    def build_shadow_portfolio(self) -> dict[str, Any]: ...
+
+    def get_shadow_portfolio(self, proposal_id: str) -> dict[str, Any]: ...
+
+    def diff_shadow_portfolios(self, left_id: str, right_id: str) -> dict[str, Any]: ...
+
+    def review_shadow_portfolio(
+        self,
+        proposal_id: str,
+        scenario_id: str,
         *,
         decision: str,
         reason: str,
@@ -896,6 +918,44 @@ class AgentApiClient:
                 "decision": decision,
                 "reason": reason,
                 "idempotency_key": new_id("cli_cohort_decision"),
+            },
+        )
+
+    def list_shadow_portfolios(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/portfolio/shadow-portfolios", "items")
+
+    def build_shadow_portfolio(self) -> dict[str, Any]:
+        return self._post_object(
+            "/api/portfolio/shadow-portfolios",
+            {"idempotency_key": new_id("cli_shadow")},
+        )
+
+    def get_shadow_portfolio(self, proposal_id: str) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/portfolio/shadow-portfolios/{quote(proposal_id, safe='')}"
+        )
+
+    def diff_shadow_portfolios(self, left_id: str, right_id: str) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/portfolio/shadow-portfolios/{quote(left_id, safe='')}"
+            f"/diff/{quote(right_id, safe='')}"
+        )
+
+    def review_shadow_portfolio(
+        self,
+        proposal_id: str,
+        scenario_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/portfolio/shadow-portfolios/{quote(proposal_id, safe='')}/reviews",
+            {
+                "scenario_id": scenario_id,
+                "decision": decision,
+                "reason": reason,
+                "idempotency_key": new_id("cli_shadow_review"),
             },
         )
 
@@ -1829,6 +1889,40 @@ class LocalAgentClient:
             actor="cli_operator",
         )
 
+    def list_shadow_portfolios(self) -> list[dict[str, Any]]:
+        return ShadowPortfolioService(self.db).list_proposals()
+
+    def build_shadow_portfolio(self) -> dict[str, Any]:
+        return ShadowPortfolioService(self.db).build(
+            ShadowPortfolioBuildV1(idempotency_key=new_id("cli_shadow")),
+            actor="cli_operator",
+        )
+
+    def get_shadow_portfolio(self, proposal_id: str) -> dict[str, Any]:
+        return ShadowPortfolioService(self.db).get(proposal_id)
+
+    def diff_shadow_portfolios(self, left_id: str, right_id: str) -> dict[str, Any]:
+        return ShadowPortfolioService(self.db).diff(left_id, right_id)
+
+    def review_shadow_portfolio(
+        self,
+        proposal_id: str,
+        scenario_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        return ShadowPortfolioService(self.db).review(
+            proposal_id,
+            ShadowPortfolioReviewV1(
+                scenario_id=scenario_id,
+                decision=cast(Any, decision),
+                reason=reason,
+                idempotency_key=new_id("cli_shadow_review"),
+            ),
+            actor="cli_operator",
+        )
+
     def capture_portfolio_observation_window(self) -> dict[str, Any]:
         return self._portfolio_evidence_service().capture(
             PortfolioObservationCaptureV1(idempotency_key=new_id("cli_window")),
@@ -2468,6 +2562,8 @@ def handle_slash_command(
         handle_portfolio_window_command(command, client=client, output=output)
     elif name in {"/cohorts", "/paper-cohorts"}:
         handle_paper_cohort_command(command, client=client, output=output)
+    elif name in {"/shadow", "/shadow-portfolios"}:
+        handle_shadow_portfolio_command(command, client=client, output=output)
     elif name == "/rag":
         handle_rag_command(command, client=client, output=output)
     elif name in {"/evals", "/eval"}:
@@ -4241,6 +4337,76 @@ def handle_paper_cohort_command(
     print(
         "Usage: /cohorts list|build|show <cohort_id>|diff <left> <right>|"
         "decide <cohort_id> <proposal_id> accept|reject|hold <reason>",
+        file=output,
+    )
+
+
+def handle_shadow_portfolio_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split()
+    action = parts[1].lower() if len(parts) > 1 else "list"
+    if action == "list":
+        rows = client.list_shadow_portfolios()
+        print("Shadow portfolios (hypothetical only):", file=output)
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:30]:
+            print(
+                f"- {row.get('id')} v{row.get('version_number')} [{row.get('status')}] "
+                f"eligible={row.get('eligible_count', 0)}/{row.get('intake_count', 0)} "
+                f"scenarios={row.get('scenario_count', 0)} execution=false",
+                file=output,
+            )
+        return
+    if action == "build":
+        row = client.build_shadow_portfolio()
+        print(
+            f"Shadow portfolio {row.get('id')} v{row.get('version_number')} "
+            f"[{row.get('status')}] scenarios={row.get('scenario_count', 0)} "
+            "hypothetical=true capital=false execution=false",
+            file=output,
+        )
+        return
+    if action == "show" and len(parts) == 3:
+        print(
+            json.dumps(client.get_shadow_portfolio(parts[2]), ensure_ascii=False, indent=2),
+            file=output,
+        )
+        return
+    if action == "diff" and len(parts) == 4:
+        print(
+            json.dumps(
+                client.diff_shadow_portfolios(parts[2], parts[3]),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            file=output,
+        )
+        return
+    if action == "review" and len(parts) >= 6:
+        decision = parts[4].lower()
+        if decision not in {"accept", "reject", "hold"}:
+            print("Decision must be accept, reject, or hold", file=output)
+            return
+        row = client.review_shadow_portfolio(
+            parts[2],
+            parts[3],
+            decision=decision,
+            reason=" ".join(parts[5:]),
+        )
+        print(
+            f"Shadow review {row.get('id')} [{row.get('decision')}] "
+            "hypothetical=true capital=false execution=false",
+            file=output,
+        )
+        return
+    print(
+        "Usage: /shadow list|build|show <proposal_id>|diff <left> <right>|"
+        "review <proposal_id> <scenario_id> accept|reject|hold <reason>",
         file=output,
     )
 

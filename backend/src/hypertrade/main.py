@@ -86,6 +86,11 @@ from hypertrade.portfolio.lifecycle import (
     PortfolioAssessmentService,
     StrategyLifecycleDecisionV1,
 )
+from hypertrade.portfolio.shadow import ShadowPortfolioService
+from hypertrade.portfolio.shadow_schemas import (
+    ShadowPortfolioBuildV1,
+    ShadowPortfolioReviewV1,
+)
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagHit, RagService
 from hypertrade.research.evidence import EvidenceService, EvidenceSourceUnavailable
@@ -670,6 +675,51 @@ def create_app(
             return PaperCohortService(database).decide(cohort_id, payload, actor=username)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Paper cohort not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/portfolio/shadow-portfolios")
+    def build_shadow_portfolio(
+        payload: ShadowPortfolioBuildV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return ShadowPortfolioService(database).build(payload, actor=username)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Paper cohort not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/portfolio/shadow-portfolios")
+    def list_shadow_portfolios(_: AdminUser) -> dict[str, Any]:
+        return {"items": ShadowPortfolioService(database).list_proposals()}
+
+    @app.get("/api/portfolio/shadow-portfolios/{proposal_id}")
+    def get_shadow_portfolio(proposal_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return ShadowPortfolioService(database).get(proposal_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Shadow proposal not found") from exc
+
+    @app.get("/api/portfolio/shadow-portfolios/{left_id}/diff/{right_id}")
+    def diff_shadow_portfolios(left_id: str, right_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return ShadowPortfolioService(database).diff(left_id, right_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Shadow proposal not found") from exc
+
+    @app.post("/api/portfolio/shadow-portfolios/{proposal_id}/reviews")
+    def review_shadow_portfolio(
+        proposal_id: str,
+        payload: ShadowPortfolioReviewV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return ShadowPortfolioService(database).review(
+                proposal_id, payload, actor=username
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Shadow proposal not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
