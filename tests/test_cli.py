@@ -641,6 +641,29 @@ def test_configure_interactive_history_reads_and_writes_history(tmp_path) -> Non
     assert fake_readline.added == ["看下ETH行情", "/tools"]
 
 
+def test_configure_interactive_history_skips_invalid_persistence_path(tmp_path) -> None:
+    fake_readline = FakeReadline()
+    registered: list[tuple[Any, tuple[Any, ...]]] = []
+    history_path = tmp_path / "history"
+    history_path.mkdir()
+
+    history = configure_interactive_history(
+        enabled=True,
+        history_path=history_path,
+        readline_module=fake_readline,
+        register_exit=lambda fn, *args: registered.append((fn, args)),
+    )
+
+    assert history.enabled is True
+    assert fake_readline.read_path == ""
+    assert registered == []
+    assert fake_readline.completer is not None
+
+    history.add("看下ETH行情")
+
+    assert fake_readline.added == ["看下ETH行情"]
+
+
 def test_slash_command_completion_matches_commands_and_subcommands() -> None:
     root_matches = _slash_command_completion_matches(line="/", text="/", begidx=0)
     model_matches = _slash_command_completion_matches(line="/m", text="/m", begidx=0)
@@ -1721,6 +1744,13 @@ def test_welcome_banner_prioritizes_tasks_and_operator_controls() -> None:
     assert "MAINNET  BLOCKED" in rendered
     assert "/tasks" in rendered
     assert "/live intents" in rendered
+    assert "System posture, risk gates, and session" in rendered
+    assert "Mission queue and safe-point controls" in rendered
+    assert "Research evidence and trace drill-down" in rendered
+    assert "Review pending Testnet execution intents" in rendered
+    assert "Inspect the active model and provider" in rendered
+    assert "Commands, syntax, and safety guardrails" in rendered
+    assert "Inspect or change this session's provider" not in rendered
     assert "/paper close" not in rendered
     assert "Exact ticker shortcut" not in rendered
     assert "风险提示：本工具输出仅用于研究辅助，不构成投资建议。" not in rendered

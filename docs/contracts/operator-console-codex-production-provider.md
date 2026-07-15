@@ -14,6 +14,11 @@ environment file.
   commands.
 - Keep slash commands available through `/help`, but remove market shortcuts
   and mutating paper controls from the welcome screen.
+- Describe control commands by operator outcome and governance boundary, rather
+  than implementation detail or an implied unrestricted provider switch.
+- Keep local readline history best-effort: an invalid, inaccessible, or
+  directory-valued history path must not prevent an interactive session from
+  starting, completing commands, or recalling commands in the current session.
 - Add a read-only Docker Compose secret mount for a server-local Codex auth
   file to the API and worker; an empty fallback must leave Codex unavailable
   rather than exposing a secret or weakening the default local setup.
@@ -41,6 +46,8 @@ environment file.
 ## Verification
 
 - Focused CLI and deployment configuration tests, then `./scripts/check.sh`.
+- Focused CLI coverage for a directory-valued history path that skips disk
+  persistence while retaining interactive completion and in-session history.
 - `docker compose config -q` with no Codex source path and with the
   server-local source path.
 - After deployment, verify `/api/harness/overview` reports `codex/gpt-5.4` as

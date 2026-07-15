@@ -620,16 +620,27 @@ def configure_interactive_history(
         return InteractiveHistory(enabled=False)
 
     path = history_path or (Path.home() / ".hypertrade" / "history")
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    with suppress(OSError):
+    history_persistence_enabled = True
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         path.parent.chmod(0o700)
+    except OSError:
+        # History persistence is convenience-only. Completion and in-session
+        # recall must remain available when the local history path is invalid.
+        history_persistence_enabled = False
+    if path.exists() and not path.is_file():
+        history_persistence_enabled = False
     history_file = str(path)
     if hasattr(module, "set_history_length"):
         module.set_history_length(1000)
-    if hasattr(module, "read_history_file"):
-        with suppress(FileNotFoundError):
+    if history_persistence_enabled and hasattr(module, "read_history_file"):
+        try:
             module.read_history_file(history_file)
-    if hasattr(module, "write_history_file"):
+        except FileNotFoundError:
+            pass
+        except OSError:
+            history_persistence_enabled = False
+    if history_persistence_enabled and hasattr(module, "write_history_file"):
         register_exit(module.write_history_file, history_file)
     _configure_slash_command_completion(module)
     return InteractiveHistory(enabled=True, readline_module=module)
@@ -2406,28 +2417,27 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
     )
     print(f"{color['section']}OPERATOR CONTROLS{color['reset']}", file=output)
     print(
-        f"  {color['cmd']}/status{color['reset']}        Runtime, risk, and session status",
+        f"  {color['cmd']}/status{color['reset']}        System posture, risk gates, and session",
         file=output,
     )
     print(
-        f"  {color['cmd']}/tasks{color['reset']}         Active workflows and safe-point controls",
+        f"  {color['cmd']}/tasks{color['reset']}         Mission queue and safe-point controls",
         file=output,
     )
     print(
-        f"  {color['cmd']}/runs{color['reset']}          Recent research outputs"
-        " and trace entry points",
+        f"  {color['cmd']}/runs{color['reset']}          Research evidence and trace drill-down",
         file=output,
     )
     print(
-        f"  {color['cmd']}/live intents{color['reset']}  Approval queue for Testnet intents",
+        f"  {color['cmd']}/live intents{color['reset']}  Review pending Testnet execution intents",
         file=output,
     )
     print(
-        f"  {color['cmd']}/model{color['reset']}         Inspect or change this session's provider",
+        f"  {color['cmd']}/model{color['reset']}         Inspect the active model and provider",
         file=output,
     )
     print(
-        f"  {color['cmd']}/help{color['reset']}          Full operator command inventory",
+        f"  {color['cmd']}/help{color['reset']}          Commands, syntax, and safety guardrails",
         file=output,
     )
     print("", file=output)
