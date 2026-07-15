@@ -249,16 +249,16 @@ Production sandbox activation is explicit. `AGENT_STRATEGY_SANDBOX_IMAGE` must n
 `local@sha256:...` identity from the reviewed service image. Tags, including `:latest`, are rejected.
 The API binds every UDS request to that digest, and the service rejects a mismatch. When
 `APP_ENV` is production/staging and the digest or service socket is absent, the API returns 503 and
-no host/API subprocess is started. The operator canary must still prove the deployed service has no
-network, secret, BitPro or Docker-socket access and that resource/timeout cleanup is enforced before
-the feature flag is enabled.
+no host/API subprocess is started. The production canary verified the deployed service's networkless,
+non-root, read-only, no-Docker-socket boundary; static network-import rejection, CPU-limit termination
+and a 20-second wall-timeout all completed without a provider, BitPro or external strategy write.
 
 The initial Sprint 116 UI/readiness implementation passed its local checks, but a subsequent
-completion audit reopened the Sprint: the default chat API, local CLI/TUI and worker still retain
-legacy AgentKernel/AgentTask write paths. The next cutover slice replaces that controlled entrypoint
-with a Mission projection while keeping historical legacy records read-only. The production canary
-remains disabled until deployment evidence is collected; it is not represented as a successful
-production claim.
+completion audit reopened the Sprint because default chat and worker paths still retained legacy
+AgentKernel/AgentTask writes. The completed cutover replaces those controlled entrypoints with a
+Mission projection while keeping historical records read-only. Production was promoted through a
+stable 25% cohort and then 100%; repeated keys replay the same Mission, and legacy writes now return
+HTTP 410.
 
 The reopened slice replaces the single-step `FoundationPlanner` in application composition with a
 provider-backed, catalog-bounded research planner. Providers may propose transient JSON plans only;
@@ -276,8 +276,9 @@ Mission worker delivery uses the same PostgreSQL Mission Store rather than a sec
 non-terminal Mission with a bounded SQL lease, renews it by heartbeat and releases it on terminal
 transition or orderly exit. PostgreSQL uses `FOR UPDATE SKIP LOCKED`; local SQLite acceptance covers
 lease contention. A worker exception records only the bounded `worker_execution_failure` reason code
-and fails the Mission without storing provider/private error text. The worker remains disabled by
-default until the deployment canary verifies its process and recovery behaviour.
+and fails the Mission without storing provider/private error text. The code default remains disabled;
+the production canary observed a worker lease claim, terminal lease cleanup and a bounded public SSE
+stream before the worker was explicitly enabled.
 
 Textual and Web are Mission projections rather than workflow authorities. The TUI prefers Mission
 list/detail/plan/attempt/event APIs and retains its legacy Task adapter only for an older server that
@@ -291,5 +292,21 @@ historical read endpoints remain available.
 If `MISSION_RUNTIME_WORKER_ENABLED` is true, `POST /missions/{id}/run` records no inline execution:
 the leased worker claims the durable Mission and the event stream tails its cursor until terminal.
 The default chat SSE follows that same Mission rather than creating a second in-process execution.
-The worker flag is independently disabled by default, so normal rollout remains explicit and
-fail-closed when no worker process is deployed.
+The worker flag is independently disabled by default, so a fresh deployment remains explicit and
+fail-closed when no worker process is deployed. The verified production deployment is an intentional
+exception: `MISSION_RUNTIME_ENABLED=true`, `MISSION_RUNTIME_WORKER_ENABLED=true` and canary `100`.
+
+### Production Gate M evidence — 2026-07-16
+
+The isolated public-answer evaluator completed with 20 supported cases passed, 0 failed and 4
+explicit multi-turn `not_supported` cases; its API, database, Docker network and synthetic facts are
+separate from production. The production sandbox canary validated a lint/test/limited-backtest
+candidate, rejected a network import before execution, terminated an infinite CPU candidate by its
+resource limit and a sleeping candidate by the 20-second wall timeout. Sandbox review recorded
+`external_write_performed=false`; no BitPro import, paper action, order or capital action occurred.
+
+The Mission rollout first validated a stable 25% cohort, then set the percentage to 100. At both
+stages a repeated idempotency key returned the same `mission_v2` projection and the legacy
+`agent_tasks`/`agent_runs` counts remained unchanged. The 100% probe observed an SQL worker lease,
+terminal lease cleanup, public `answer_delta`, `evidence_ready` and `final` events, and HTTP 410 for
+a legacy session-write request. Historical legacy read endpoints remain available for audit only.

@@ -1,8 +1,8 @@
 # 30 Professional Agent Runtime V2 路线图
 
-> 状态：Sprint 111–114 已完成生产验证；Sprint 115 仅在本地关闭且生产 fail-closed。2026-07-16
-> completion audit 重新打开 Sprint 116：默认 chat/CLI/TUI/worker 仍有 legacy AgentKernel 写路径，
-> 因此 Gate M 的全面切换与 operational canary 均未完成。当前生产权限保持不变。
+> 状态：Sprint 111–116 已完成。2026-07-16 completion audit 曾重新打开 Sprint 116；后续
+> digest-bound sandbox、SQL-leased worker/SSE 和 25%→100% Mission canary 已在生产验证。生产
+> 仍只开放受治理的只读研究与隔离代码验证，不增加 paper/live/order/capital mutation 权限。
 
 ## 1. 目标
 
@@ -391,8 +391,9 @@ golden long-horizon scenarios、fault injection、isolated provider matrix、Ope
   budget 和 safety 门槛；
 - fault injection 覆盖 provider、MCP、DB lease、schema、source stale 和用户 steer；
 - CLI/TUI/Web 对同一 Mission 投影一致，运行可 replay；
-- 生产 feature flag 默认关闭，通过 canary 后才按管理员明确动作启用。
-- 所有新入口切换完成，旧 runtime 无生产调用者；历史只读查询保留，旧写路径和兼容层删除。
+- 源码 feature flag 默认关闭；管理员完成只读 canary 后已显式启用生产 Mission worker、dynamic
+  team 和 digest-bound sandbox，Mission canary 为 100%。
+- 所有新入口已切换完成，旧 runtime 无生产写调用者；历史只读查询保留，旧写路径返回 HTTP 410。
 
 ## 9. 核心评测指标
 
@@ -435,8 +436,9 @@ AGENT_DYNAMIC_TEAM_ENABLED=false
 AGENT_STRATEGY_SANDBOX_ENABLED=false
 ```
 
-每个 flag 独立，后续 flag 不能绕过前置 Gate。生产 canary 先使用只读研究 Mission、零 paper/
-live/capital 权限、严格预算和单并发；provider benchmark 继续在隔离环境执行。
+每个 flag 独立，后续 flag 不能绕过前置 Gate。源码默认值保持关闭；生产 canary 已按只读
+Mission、零新增 paper/live/capital 权限和单并发完成，随后由管理员显式设为 Mission 100%、
+worker/dynamic-team/sandbox enabled。provider benchmark 继续只在隔离环境执行。
 
 ## 12. 明确不做
 

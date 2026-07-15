@@ -1,8 +1,8 @@
 # Sprint 116 - Full Cutover, Professional UX & Readiness
 
-> 状态：Active — 2026-07-16 completion audit reopened 后，Mission-first API/CLI/TUI/worker 的本地
-> 切换与 legacy-write archive 已实现。Gate M 仍不能宣称完成：生产 worker recovery、digest-bound
-> isolated sandbox-service canary 和隔离长任务证明尚未在本环境运行。
+> 状态：Completed — 2026-07-16。Mission-first API/CLI/TUI/worker 已完成生产切换；隔离评测
+> 20/24 supported-case 通过（4 个多轮场景明确为 `not_supported`），digest-bound sandbox 与
+> worker/SSE/100% canary 均已在生产验证。没有开启任何 paper、live、order 或 capital mutation。
 
 ## Goal
 
@@ -53,8 +53,8 @@ resume、cancel 或 steer；系统不以模型文字宣称完成，不放宽 pap
 - Catalog 新增的 strategy/backtest、paper portfolio 和 Testnet intent summary 必须保持 `read` /
   `side_effect=none`，仅在隔离评测环境 idempotent seed 的合成事实；不得用 prompt 或模型文字伪造
   可见证据。
-- 生产 `AGENT_STRATEGY_SANDBOX_ENABLED` 默认关闭；无 digest-bound isolated sandbox service 时 HTTP
-  503，不能执行宿主或 API subprocess。
+- 源码默认 `AGENT_STRATEGY_SANDBOX_ENABLED=false`；生产仅在 digest-bound isolated sandbox
+  canary 通过后显式启用。无 digest-bound service 时仍返回 HTTP 503，不能执行宿主或 API subprocess。
 - README、技术架构、QA、progress 和 active contract 记录实际验证，不声称未做的部署/截图/生产 canary。
 
 ## Verification
@@ -72,9 +72,9 @@ git diff --check
 
 ## Handoff
 
-Gate M 通过后，旧 AgentKernel/legacy Mission write callers 才能按 deletion budget 删除；历史
-查询保留只读 adapter。若容器 canary、长任务恢复或安全 gate 任一失败，feature flags 保持关闭，
-并把失败证据留在 QA 报告中。
+Gate M 已通过：生产 `MISSION_RUNTIME_CANARY_PERCENT=100`，新的 chat/worker 写入均进入 Mission
+账本；`AgentTask`/ResearchGraph 写入口返回 HTTP 410，历史查询保持只读。后续删除仅限没有
+生产调用者的 legacy implementation budget，不能删除历史审计读取或放宽交易权限。
 
 ## User-directed desktop client
 

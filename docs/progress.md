@@ -1,5 +1,24 @@
 # Progress Log
 
+## Sprint 116 completed — 2026-07-16
+
+- Gate M is closed. The isolated `operator_answer_golden_v1` deployment finished with 20 supported
+  cases passed, 0 failed and 4 declared multi-turn `not_supported` cases. The evaluation API,
+  PostgreSQL database, Docker network and synthetic facts remained physically separate from
+  production.
+- The digest-bound production sandbox service ran as non-root with no network, read-only root,
+  dropped capabilities and bounded PID/memory/CPU/tmpfs resources. A valid candidate passed
+  lint/test/limited-backtest; source-level network import was rejected; CPU and wall-time limits
+  terminated adversarial candidates; and the review ledger recorded no external write. No BitPro
+  import, paper, live, order or capital action was enabled by this canary.
+- Production Mission Runtime was promoted through a stable 25% cohort to 100%. Replays returned the
+  same `mission_v2` projection, the SQL worker lease and terminal cleanup were observed, public SSE
+  emitted `answer_delta`, `evidence_ready` and `final`, and legacy Task/Run table counts stayed
+  `11/160`. New legacy session writes now return HTTP 410 while historical reads remain available.
+- Production intentionally enables Mission Runtime/worker, dynamic-team and the reviewed sandbox
+  after these gates. Deployment workflow `29443605644` succeeded; API, worker, sandbox and PostgreSQL
+  health checks passed. Source defaults remain fail-closed for fresh deployments.
+
 ## User-directed desktop floating bot — 2026-07-16
 
 - Added a Tauri 2 macOS companion that stays above other apps, collapses to a 64×64 logical-pixel
