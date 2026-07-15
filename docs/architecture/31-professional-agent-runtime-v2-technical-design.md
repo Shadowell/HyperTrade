@@ -248,3 +248,11 @@ into a canonical read-only Mission with a caller idempotency key, runs it throug
 and returns a chat-compatible projection generated only from Mission/Plan/Attempt/Event facts. The
 new path never creates `AgentTask` or `AgentRun` rows. A temporary no-header request receives a new
 key; API clients that need retry semantics must send `Idempotency-Key`.
+
+Mission worker delivery uses the same PostgreSQL Mission Store rather than a second queue. When both
+`MISSION_RUNTIME_ENABLED` and `MISSION_RUNTIME_WORKER_ENABLED` are true, the worker claims a
+non-terminal Mission with a bounded SQL lease, renews it by heartbeat and releases it on terminal
+transition or orderly exit. PostgreSQL uses `FOR UPDATE SKIP LOCKED`; local SQLite acceptance covers
+lease contention. A worker exception records only the bounded `worker_execution_failure` reason code
+and fails the Mission without storing provider/private error text. The worker remains disabled by
+default until the deployment canary verifies its process and recovery behaviour.

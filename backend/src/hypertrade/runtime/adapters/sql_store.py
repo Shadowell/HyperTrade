@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -23,6 +23,7 @@ from hypertrade.db import (
 )
 from hypertrade.runtime.adapters.memory_store import MissionVersionConflict
 from hypertrade.runtime.domain.models import (
+    TERMINAL_STATUSES,
     MissionBudgetV1,
     MissionCreate,
     MissionEventV1,
@@ -128,6 +129,91 @@ class SqlAlchemyMissionStore:
             ).all()
             return [_projection(row) for row in rows]
 
+    async def claim_next(
+        self,
+        worker_id: str,
+        *,
+        lease_seconds: int = 60,
+    ) -> MissionProjection | None:
+        """Claim one Mission without introducing a second queue or truth source."""
+
+        now = datetime.now(UTC)
+        runnable = (
+            MissionStatus.DRAFT.value,
+            MissionStatus.RUNNING.value,
+            MissionStatus.RETRY_WAIT.value,
+            MissionStatus.REPLANNING.value,
+        )
+        async with self.sessions.begin() as session:
+            query = (
+                select(AgentMission)
+                .where(AgentMission.status.in_(runnable))
+                .where(
+                    or_(
+                        AgentMission.lease_expires_at.is_(None),
+                        AgentMission.lease_expires_at < now,
+                    )
+                )
+                .order_by(AgentMission.created_at)
+                .limit(1)
+            )
+            if session.bind is not None and session.bind.dialect.name == "postgresql":
+                query = query.with_for_update(skip_locked=True)
+            row = await session.scalar(query)
+            if row is None:
+                return None
+            row.lease_owner = worker_id
+            row.lease_expires_at = now + timedelta(seconds=max(10, lease_seconds))
+            await self._append_event(
+                session,
+                row,
+                "mission_lease_claimed",
+                f"worker:{worker_id}",
+                {"lease_seconds": max(10, lease_seconds)},
+            )
+            await session.flush()
+            return _projection(row)
+
+    async def heartbeat(
+        self,
+        mission_id: str,
+        worker_id: str,
+        *,
+        lease_seconds: int = 60,
+    ) -> MissionProjection:
+        async with self.sessions.begin() as session:
+            row = await self._locked_mission(session, mission_id)
+            if row.lease_owner != worker_id:
+                raise PermissionError(f"worker {worker_id} does not own mission {mission_id}")
+            row.lease_expires_at = datetime.now(UTC) + timedelta(
+                seconds=max(10, lease_seconds)
+            )
+            await self._append_event(
+                session,
+                row,
+                "mission_lease_heartbeat",
+                f"worker:{worker_id}",
+                {"lease_seconds": max(10, lease_seconds)},
+            )
+            await session.flush()
+            return _projection(row)
+
+    async def release(self, mission_id: str, worker_id: str) -> None:
+        async with self.sessions.begin() as session:
+            row = await self._locked_mission(session, mission_id)
+            if row.lease_owner != worker_id:
+                return
+            row.lease_owner = None
+            row.lease_expires_at = None
+            await self._append_event(
+                session,
+                row,
+                "mission_lease_released",
+                f"worker:{worker_id}",
+                {},
+            )
+            await session.flush()
+
     async def transition(
         self,
         mission_id: str,
@@ -149,6 +235,9 @@ class SqlAlchemyMissionStore:
             row.status = target.value
             row.version += 1
             row.updated_at = datetime.now(UTC)
+            if target in TERMINAL_STATUSES:
+                row.lease_owner = None
+                row.lease_expires_at = None
             if current_step_id is not None:
                 row.current_step_id = current_step_id
             if terminal_summary is not None:

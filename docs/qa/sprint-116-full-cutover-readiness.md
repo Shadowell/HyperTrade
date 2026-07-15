@@ -34,8 +34,10 @@ reviewed rootless Docker image/digest is available in this environment.
 
 ## Blocking scope still open
 
-- Migrate local CLI, Textual task creation and worker execution to the canonical Mission path; leave
-  legacy Task/Run endpoints as historical read-only queries only.
+- Migrate Textual task creation/control and default background scheduling to the canonical Mission
+  path; leave legacy Task/Run endpoints as historical read-only queries only. Local CLI full-canary
+  routing and a disabled-by-default SQL lease/heartbeat/release Mission worker are implemented and
+  locally covered, but the deployed worker canary has not run.
 - Replace buffered Mission stream output with event-cursor replay plus public `answer_delta` and
   `evidence_ready` events. The answer catalog is a quality gate, not evidence that streaming is live.
 - Exercise Mission recovery/lease behavior through the deployed worker, not only synchronous API runs.

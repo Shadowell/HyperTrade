@@ -27,6 +27,16 @@ class MissionStore(Protocol):
 
     async def list(self, *, limit: int = 50) -> Sequence[MissionProjection]: ...
 
+    async def claim_next(
+        self, worker_id: str, *, lease_seconds: int = 60
+    ) -> MissionProjection | None: ...
+
+    async def heartbeat(
+        self, mission_id: str, worker_id: str, *, lease_seconds: int = 60
+    ) -> MissionProjection: ...
+
+    async def release(self, mission_id: str, worker_id: str) -> None: ...
+
     async def transition(
         self,
         mission_id: str,

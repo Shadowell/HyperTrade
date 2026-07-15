@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from hypertrade.agent.sessions import AgentSessionCreate, AgentSessionService
 from hypertrade.agent.tasks import AgentTaskCreate, AgentTaskService
 from hypertrade.config import Settings
-from hypertrade.db import Database
+from hypertrade.db import AgentMission, Database
 from hypertrade.research.graph import ResearchGraphCreate, ResearchGraphTaskService
 from hypertrade.research.schemas import ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
-from hypertrade.worker import agent_task_worker_once, monitor_scheduler_once
+from hypertrade.runtime.adapters.sql_store import SqlAlchemyMissionStore
+from hypertrade.runtime.application.entrypoint import mission_request_for_prompt
+from hypertrade.worker import agent_task_worker_once, mission_worker_once, monitor_scheduler_once
 
 
 def test_monitor_scheduler_once_respects_disabled_setting(monkeypatch) -> None:
@@ -165,3 +168,48 @@ def test_agent_task_worker_dispatches_research_graph_kind(monkeypatch, tmp_path)
     assert result["task_id"] == task_id
     assert result["evidence_count"] >= 13
     assert AgentTaskService(db).get(task_id).status == "completed"
+
+
+@pytest.mark.anyio
+async def test_mission_worker_claims_with_lease_and_completes_without_legacy_rows(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'mission-worker.db'}"
+    db = Database(database_url)
+    db.create_all()
+    settings = Settings(
+        DATABASE_URL=database_url,
+        DEEPSEEK_API_KEY="",
+        KNOWLEDGE_DIR=tmp_path,
+        MISSION_RUNTIME_ENABLED=True,
+        MISSION_RUNTIME_WORKER_ENABLED=True,
+        MISSION_RUNTIME_LEASE_SECONDS=10,
+    )
+    store = SqlAlchemyMissionStore(database_url)
+    try:
+        mission = await store.create(
+            mission_request_for_prompt(
+                "研究 BTC 当前市场状态",
+                actor="test",
+                idempotency_key="mission-worker-lease-001",
+            )
+        )
+        claimed = await store.claim_next("worker-a", lease_seconds=10)
+        assert claimed is not None
+        assert claimed.mission_id == mission.mission_id
+
+        blocked = await mission_worker_once(db, settings=settings, worker_id="worker-b")
+        assert blocked == {"status": "idle", "mission_id": None}
+
+        await store.release(mission.mission_id, "worker-a")
+        result = await mission_worker_once(db, settings=settings, worker_id="worker-b")
+        completed = await store.get(mission.mission_id)
+    finally:
+        await store.dispose()
+
+    assert result["status"] == "completed"
+    assert result["mission_id"] == mission.mission_id
+    assert completed.status.value == "completed"
+    with db.session() as session:
+        row = session.get(AgentMission, mission.mission_id)
+        assert row is not None
+        assert row.lease_owner is None
+        assert row.lease_expires_at is None

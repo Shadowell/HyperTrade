@@ -78,6 +78,22 @@ class Settings(BaseSettings):
         le=100,
         alias="MISSION_RUNTIME_CANARY_PERCENT",
     )
+    mission_runtime_worker_enabled: bool = Field(
+        default=False,
+        alias="MISSION_RUNTIME_WORKER_ENABLED",
+    )
+    mission_runtime_poll_interval_seconds: float = Field(
+        default=1.0,
+        ge=0.25,
+        le=60.0,
+        alias="MISSION_RUNTIME_POLL_INTERVAL_SECONDS",
+    )
+    mission_runtime_lease_seconds: int = Field(
+        default=60,
+        ge=10,
+        le=3_600,
+        alias="MISSION_RUNTIME_LEASE_SECONDS",
+    )
     dynamic_team_enabled: bool = Field(default=False, alias="AGENT_DYNAMIC_TEAM_ENABLED")
     strategy_sandbox_enabled: bool = Field(default=False, alias="AGENT_STRATEGY_SANDBOX_ENABLED")
     strategy_sandbox_image: str = Field(default="", alias="AGENT_STRATEGY_SANDBOX_IMAGE")

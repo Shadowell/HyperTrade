@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from datetime import datetime, timedelta
 from hashlib import sha256
 
 from hypertrade.runtime.domain.models import (
@@ -34,6 +35,7 @@ class InMemoryMissionStore:
         self._events: dict[str, list[MissionEventV1]] = {}
         self._steers: dict[str, list[SteeringEventV1]] = {}
         self._idempotency: dict[str, tuple[str, str]] = {}
+        self._leases: dict[str, tuple[str, datetime]] = {}
         self._sequence = 0
 
     def _id(self, prefix: str) -> str:
@@ -94,6 +96,75 @@ class InMemoryMissionStore:
     async def list(self, *, limit: int = 50) -> list[MissionProjection]:
         values = sorted(self._missions.values(), key=lambda row: row.created_at, reverse=True)
         return values[: max(1, min(limit, 200))]
+
+    async def claim_next(
+        self,
+        worker_id: str,
+        *,
+        lease_seconds: int = 60,
+    ) -> MissionProjection | None:
+        """Reserve one non-terminal Mission for a single deterministic worker."""
+
+        now = utc_now()
+        runnable = {
+            MissionStatus.DRAFT,
+            MissionStatus.RUNNING,
+            MissionStatus.RETRY_WAIT,
+            MissionStatus.REPLANNING,
+        }
+        for mission in sorted(self._missions.values(), key=lambda row: row.created_at):
+            if mission.status not in runnable:
+                continue
+            lease = self._leases.get(mission.mission_id)
+            if lease is not None and lease[1] >= now:
+                continue
+            self._leases[mission.mission_id] = (
+                worker_id,
+                now + timedelta(seconds=max(10, lease_seconds)),
+            )
+            await self.append_event(
+                mission.mission_id,
+                "mission_lease_claimed",
+                actor=f"worker:{worker_id}",
+                payload={"lease_seconds": max(10, lease_seconds)},
+            )
+            return mission
+        return None
+
+    async def heartbeat(
+        self,
+        mission_id: str,
+        worker_id: str,
+        *,
+        lease_seconds: int = 60,
+    ) -> MissionProjection:
+        mission = await self.get(mission_id)
+        lease = self._leases.get(mission_id)
+        if lease is None or lease[0] != worker_id:
+            raise PermissionError(f"worker {worker_id} does not own mission {mission_id}")
+        self._leases[mission_id] = (
+            worker_id,
+            utc_now() + timedelta(seconds=max(10, lease_seconds)),
+        )
+        await self.append_event(
+            mission_id,
+            "mission_lease_heartbeat",
+            actor=f"worker:{worker_id}",
+            payload={"lease_seconds": max(10, lease_seconds)},
+        )
+        return mission
+
+    async def release(self, mission_id: str, worker_id: str) -> None:
+        lease = self._leases.get(mission_id)
+        if lease is None or lease[0] != worker_id:
+            return
+        self._leases.pop(mission_id, None)
+        await self.append_event(
+            mission_id,
+            "mission_lease_released",
+            actor=f"worker:{worker_id}",
+            payload={},
+        )
 
     async def transition(
         self,

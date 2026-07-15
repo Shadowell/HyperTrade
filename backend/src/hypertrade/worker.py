@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import socket
+from contextlib import suppress
 from threading import Event, Thread
 from typing import Any, cast
 
@@ -31,9 +32,182 @@ from hypertrade.research.role_provider import (
     DeterministicGapRoleProvider,
 )
 from hypertrade.research.triggers import ResearchTriggerService
+from hypertrade.runtime.adapters.capability_catalog import (
+    CatalogCapabilityPolicy,
+    SqlCapabilityCatalog,
+    builtin_capabilities,
+)
+from hypertrade.runtime.adapters.context_engine import (
+    ContextArtifactEngine,
+    SqlContextArtifactStore,
+)
+from hypertrade.runtime.adapters.research_planner import ProviderBackedResearchPlanner
+from hypertrade.runtime.adapters.sql_store import SqlAlchemyMissionStore
+from hypertrade.runtime.adapters.tool_runtime import (
+    GovernedToolExecutor,
+    SqlObservationStore,
+    builtin_handlers,
+)
+from hypertrade.runtime.application.service import MissionRuntime
+from hypertrade.runtime.domain.models import TERMINAL_STATUSES, MissionStatus
 from hypertrade.skills.lifecycle import ApprovedSkillLoader
 
 logger = logging.getLogger("hypertrade.worker")
+
+
+async def _mission_runtime_resources(
+    db: Database,
+    settings: Settings,
+) -> tuple[MissionRuntime, SqlAlchemyMissionStore, tuple[object, ...]]:
+    """Build the same governed runtime as the API, owned by the worker process.
+
+    The worker receives only read-only catalog capabilities. A lease controls
+    execution ownership; a provider cannot expand tool permissions or budgets.
+    """
+
+    store = SqlAlchemyMissionStore(db.url)
+    catalog = SqlCapabilityCatalog(db.url)
+    observations = SqlObservationStore(db.url)
+    context_store = SqlContextArtifactStore(db.url)
+    await catalog.bootstrap(builtin_capabilities())
+    runtime = MissionRuntime(
+        store,
+        ProviderBackedResearchPlanner(
+            provider=ProviderRuntime(settings).get_chat_provider(
+                selected=settings.active_chat_provider,
+            )
+        ),
+        GovernedToolExecutor(
+            catalog,
+            builtin_handlers(db, knowledge_dir=str(settings.knowledge_dir)),
+            observations=observations,
+        ),
+        CatalogCapabilityPolicy(catalog),
+        ContextArtifactEngine(context_store),
+    )
+    return runtime, store, (store, catalog, observations, context_store)
+
+
+async def mission_worker_once(
+    db: Database,
+    *,
+    settings: Settings | None = None,
+    worker_id: str | None = None,
+    runtime: MissionRuntime | None = None,
+    store: SqlAlchemyMissionStore | None = None,
+) -> dict[str, Any]:
+    """Claim and execute one durable Mission, with a bounded heartbeat lease."""
+
+    active_settings = settings or get_settings()
+    if not (
+        active_settings.mission_runtime_enabled
+        and active_settings.mission_runtime_worker_enabled
+    ):
+        return {"status": "disabled", "mission_id": None}
+    owner = worker_id or f"{socket.gethostname()}:{os.getpid()}:missions"
+    resources: tuple[object, ...] = ()
+    if runtime is None or store is None:
+        runtime, store, resources = await _mission_runtime_resources(db, active_settings)
+    mission = await store.claim_next(
+        owner,
+        lease_seconds=active_settings.mission_runtime_lease_seconds,
+    )
+    if mission is None:
+        await _dispose_resources(resources)
+        return {"status": "idle", "mission_id": None}
+
+    stop_heartbeat = asyncio.Event()
+
+    async def heartbeat() -> None:
+        interval = max(1.0, active_settings.mission_runtime_lease_seconds / 3)
+        while not stop_heartbeat.is_set():
+            try:
+                await asyncio.wait_for(stop_heartbeat.wait(), timeout=interval)
+                return
+            except TimeoutError:
+                try:
+                    await store.heartbeat(
+                        mission.mission_id,
+                        owner,
+                        lease_seconds=active_settings.mission_runtime_lease_seconds,
+                    )
+                except (KeyError, PermissionError):
+                    return
+
+    heartbeat_task = asyncio.create_task(heartbeat())
+    try:
+        completed = await runtime.run(mission.mission_id)
+        return {
+            "status": completed.status.value,
+            "mission_id": completed.mission_id,
+            "plan_version": completed.active_plan_version,
+        }
+    except Exception:
+        logger.exception("mission_worker execution failed mission_id=%s", mission.mission_id)
+        current = await store.get(mission.mission_id)
+        if current.status not in TERMINAL_STATUSES:
+            await store.append_event(
+                mission.mission_id,
+                "mission_worker_failed",
+                actor=f"worker:{owner}",
+                payload={"code": "worker_execution_failure"},
+            )
+            try:
+                current = await store.get(mission.mission_id)
+                failed = await store.transition(
+                    mission.mission_id,
+                    expected_version=current.version,
+                    target=MissionStatus.FAILED,
+                    actor=f"worker:{owner}",
+                    reason="worker_execution_failure",
+                    terminal_summary=(
+                        "Mission execution failed before a validated result was produced."
+                    ),
+                )
+                return {"status": failed.status.value, "mission_id": failed.mission_id}
+            except (KeyError, RuntimeError, ValueError):
+                logger.exception("mission_worker failed to record terminal state")
+        return {"status": "failed", "mission_id": mission.mission_id}
+    finally:
+        stop_heartbeat.set()
+        heartbeat_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await heartbeat_task
+        with suppress(KeyError, PermissionError):
+            await store.release(mission.mission_id, owner)
+        await _dispose_resources(resources)
+
+
+async def _dispose_resources(resources: tuple[object, ...]) -> None:
+    for resource in resources:
+        dispose = getattr(resource, "dispose", None)
+        if dispose is not None:
+            await dispose()
+
+
+async def mission_worker_loop(db: Database) -> None:
+    settings = get_settings()
+    runtime, store, resources = await _mission_runtime_resources(db, settings)
+    try:
+        while True:
+            try:
+                result = await mission_worker_once(
+                    db,
+                    settings=settings,
+                    runtime=runtime,
+                    store=store,
+                )
+                if result.get("status") not in {"idle", "disabled"}:
+                    logger.info(
+                        "mission_worker status=%s mission_id=%s",
+                        result.get("status"),
+                        result.get("mission_id"),
+                    )
+            except Exception:
+                logger.exception("mission_worker loop failed")
+            await asyncio.sleep(settings.mission_runtime_poll_interval_seconds)
+    finally:
+        await _dispose_resources(resources)
 
 
 async def rag_scanner_loop(db: Database) -> None:
@@ -295,6 +469,8 @@ async def main() -> None:
         tasks.append(monitor_scheduler_loop(db))
     if settings.agent_task_worker_enabled:
         tasks.append(agent_task_worker_loop(db))
+    if settings.mission_runtime_enabled and settings.mission_runtime_worker_enabled:
+        tasks.append(mission_worker_loop(db))
     if settings.research_triggers_enabled:
         tasks.append(research_trigger_loop(db))
     await asyncio.gather(*tasks)

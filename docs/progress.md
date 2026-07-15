@@ -30,6 +30,12 @@
   treated as evidence. `operator_answer_golden_v1` supplies 24 deterministic public-answer cases
   across market, strategy, portfolio, execution, context and delivery cohorts. This is a local
   quality contract only; public answer-delta streaming and worker-driven execution remain open.
+- Local CLI full-canary execution now creates only a Mission, and remote CLI sends an idempotency key
+  for replay-safe API routing. Mission event SSE honours both `after` and `Last-Event-ID`. A separate
+  disabled-by-default Mission worker now uses SQL lease claim/heartbeat/release and terminal lease
+  cleanup; local SQLite acceptance proves a competing worker cannot dispatch a leased Mission and
+  that completion releases ownership. Textual migration, real-time public answer events and deployed
+  worker/canary evidence remain open.
 
 ## Current Baseline
 
