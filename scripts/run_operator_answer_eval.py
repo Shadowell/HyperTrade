@@ -148,7 +148,7 @@ def _post_json(
     try:
         with urlopen(request, timeout=timeout) as response:  # noqa: S310 - guarded isolated target
             payload = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
         raise RuntimeError("isolated target request failed") from exc
     if not isinstance(payload, dict):
         raise RuntimeError("isolated target returned a non-object response")
@@ -197,7 +197,7 @@ def _stream_run(
                             final_run = candidate
                     current_event = "message"
                     data_lines = []
-    except (HTTPError, URLError, TimeoutError) as exc:
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
         raise RuntimeError("isolated target stream failed") from exc
     if final_run is None:
         raise RuntimeError("isolated target stream has no final run")

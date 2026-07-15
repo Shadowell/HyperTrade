@@ -6,8 +6,9 @@ frontend/dist
 node_modules
 dist
 coverage
+workspace/
+data/
 .env
 .env.*
 !.env.example
 *.log
-
