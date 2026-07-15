@@ -1,5 +1,19 @@
 # Progress Log
 
+## User-directed desktop floating bot — 2026-07-16
+
+- Added a Tauri 2 macOS companion that stays above other apps, collapses to a 64×64 logical-pixel
+  product icon, expands to a 420×640 research panel, supports dragging and tray show/hide/quit, and
+  preserves intended dimensions on Retina displays.
+- The React client projects the existing public Mission SSE contract through a bounded Rust adapter;
+  the WebView has no arbitrary network permission and receives no provider, trading or execution
+  credential. This adds no paper/live/order/capital mutation path and does not replace `/harness`.
+- Conversation direction is explicit: HT conclusions and evidence stay left, while user questions
+  sit right. The original non-human precision-instrument product symbol remains legible at 34–52px.
+- Local frontend/Rust checks, packaged `.app` build and strict ad-hoc signature verification are the
+  acceptance boundary. No notarization, production distribution or Sprint 116 Gate M completion is
+  claimed by this client work.
+
 ## Sprint 116 completion audit reopened — 2026-07-16
 
 - Added the Mission workspace to the Web research surface. It projects server-owned Mission

@@ -25,6 +25,9 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 5. User reviews the report from `/harness`; privileged sharing or mutation actions stay outside the primary workbench and require admin-authenticated API/CLI paths.
 6. User creates auditable strategy research records and Backtrader backtests through API/CLI workflows.
 7. Developer runs `hypertrade` for a standalone terminal Agent, or `hypertrade --remote <url>` to connect to a deployed API.
+8. Operator can open the optional macOS floating bot for a short governed research question. User
+   messages appear on the right and HT conclusions on the left; the desktop client projects public
+   Mission events only and keeps credentials and execution authority on the server.
 
 ## Post-Sprint-44 Capability Roadmap
 

@@ -66,3 +66,9 @@ git diff --check
 Gate M 通过后，旧 AgentKernel/legacy Mission write callers 才能按 deletion budget 删除；历史
 查询保留只读 adapter。若容器 canary、长任务恢复或安全 gate 任一失败，feature flags 保持关闭，
 并把失败证据留在 QA 报告中。
+
+## User-directed desktop client
+
+The separately requested desktop floating client is governed by
+`docs/contracts/user-directed-desktop-floating-bot.md`. It consumes the same public Mission stream
+and adds no runtime truth source or execution permission. Its local completion does not close Gate M.
