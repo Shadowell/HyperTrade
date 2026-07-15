@@ -44,6 +44,11 @@ from hypertrade.db import AgentRun, Database, TraceEvent, new_id
 from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.memory.governance import MemoryAssertionReviewV1, MemoryAssertionService
 from hypertrade.memory.service import MemoryService
+from hypertrade.portfolio.cohort_schemas import (
+    PaperCohortBuildV1,
+    PaperCohortLabelDecisionV1,
+)
+from hypertrade.portfolio.cohorts import PaperCohortService
 from hypertrade.portfolio.evidence import PortfolioEvidenceService
 from hypertrade.portfolio.evidence_schemas import PortfolioObservationCaptureV1
 from hypertrade.portfolio.lifecycle import (
@@ -186,6 +191,23 @@ class AgentClient(Protocol):
     def list_portfolio_assessments(self) -> list[dict[str, Any]]: ...
 
     def list_portfolio_observation_windows(self) -> list[dict[str, Any]]: ...
+
+    def list_paper_cohorts(self) -> list[dict[str, Any]]: ...
+
+    def build_paper_cohort(self) -> dict[str, Any]: ...
+
+    def get_paper_cohort(self, cohort_id: str) -> dict[str, Any]: ...
+
+    def diff_paper_cohorts(self, left_id: str, right_id: str) -> dict[str, Any]: ...
+
+    def decide_paper_cohort_label(
+        self,
+        cohort_id: str,
+        proposal_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]: ...
 
     def capture_portfolio_observation_window(self) -> dict[str, Any]: ...
 
@@ -393,6 +415,10 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     (
         "/windows list|capture|show|diff",
         "Inspect bounded PortfolioObservationWindow data-quality evidence.",
+    ),
+    (
+        "/cohorts list|build|show|diff|decide",
+        "Inspect comparable paper cohorts and record expiring label reviews.",
     ),
     ("/rag <query>", "Search project and trading knowledge chunks."),
     ("/evals", "Show deterministic Agent eval status."),
@@ -834,6 +860,44 @@ class AgentApiClient:
 
     def list_portfolio_observation_windows(self) -> list[dict[str, Any]]:
         return self._get_list("/api/portfolio/observation-windows", "items")
+
+    def list_paper_cohorts(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/portfolio/paper-cohorts", "items")
+
+    def build_paper_cohort(self) -> dict[str, Any]:
+        return self._post_object(
+            "/api/portfolio/paper-cohorts",
+            {"idempotency_key": new_id("cli_cohort")},
+        )
+
+    def get_paper_cohort(self, cohort_id: str) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/portfolio/paper-cohorts/{quote(cohort_id, safe='')}"
+        )
+
+    def diff_paper_cohorts(self, left_id: str, right_id: str) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/portfolio/paper-cohorts/{quote(left_id, safe='')}"
+            f"/diff/{quote(right_id, safe='')}"
+        )
+
+    def decide_paper_cohort_label(
+        self,
+        cohort_id: str,
+        proposal_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/portfolio/paper-cohorts/{quote(cohort_id, safe='')}/decisions",
+            {
+                "proposal_id": proposal_id,
+                "decision": decision,
+                "reason": reason,
+                "idempotency_key": new_id("cli_cohort_decision"),
+            },
+        )
 
     def capture_portfolio_observation_window(self) -> dict[str, Any]:
         return self._post_object(
@@ -1731,6 +1795,40 @@ class LocalAgentClient:
     def list_portfolio_observation_windows(self) -> list[dict[str, Any]]:
         return self._portfolio_evidence_service().list()
 
+    def list_paper_cohorts(self) -> list[dict[str, Any]]:
+        return PaperCohortService(self.db).list()
+
+    def build_paper_cohort(self) -> dict[str, Any]:
+        return PaperCohortService(self.db).build(
+            PaperCohortBuildV1(idempotency_key=new_id("cli_cohort")),
+            actor="cli_operator",
+        )
+
+    def get_paper_cohort(self, cohort_id: str) -> dict[str, Any]:
+        return PaperCohortService(self.db).get(cohort_id)
+
+    def diff_paper_cohorts(self, left_id: str, right_id: str) -> dict[str, Any]:
+        return PaperCohortService(self.db).diff(left_id, right_id)
+
+    def decide_paper_cohort_label(
+        self,
+        cohort_id: str,
+        proposal_id: str,
+        *,
+        decision: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        return PaperCohortService(self.db).decide(
+            cohort_id,
+            PaperCohortLabelDecisionV1(
+                proposal_id=proposal_id,
+                decision=cast(Any, decision),
+                reason=reason,
+                idempotency_key=new_id("cli_cohort_decision"),
+            ),
+            actor="cli_operator",
+        )
+
     def capture_portfolio_observation_window(self) -> dict[str, Any]:
         return self._portfolio_evidence_service().capture(
             PortfolioObservationCaptureV1(idempotency_key=new_id("cli_window")),
@@ -2368,6 +2466,8 @@ def handle_slash_command(
         handle_portfolio_v2_command(command, client=client, output=output)
     elif name in {"/windows", "/observation-windows"}:
         handle_portfolio_window_command(command, client=client, output=output)
+    elif name in {"/cohorts", "/paper-cohorts"}:
+        handle_paper_cohort_command(command, client=client, output=output)
     elif name == "/rag":
         handle_rag_command(command, client=client, output=output)
     elif name in {"/evals", "/eval"}:
@@ -4068,6 +4168,81 @@ def handle_portfolio_window_command(
         print(json.dumps(row, ensure_ascii=False, indent=2), file=output)
         return
     print("Usage: /windows list|capture|show <window_id>|diff <left> <right>", file=output)
+
+
+def handle_paper_cohort_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split()
+    action = parts[1].lower() if len(parts) > 1 else "list"
+    if action == "list":
+        rows = client.list_paper_cohorts()
+        print("Paper cohorts:", file=output)
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:30]:
+            print(
+                f"- {row.get('id')} v{row.get('version_number')} [{row.get('status')}] "
+                f"intake={row.get('intake_count', 0)} "
+                f"comparable={row.get('comparable_count', 0)} "
+                f"proposals={row.get('proposal_count', 0)}",
+                file=output,
+            )
+        return
+    if action == "build":
+        row = client.build_paper_cohort()
+        print(
+            f"Paper cohort {row.get('id')} v{row.get('version_number')} "
+            f"[{row.get('status')}] comparable={row.get('comparable_count', 0)} "
+            "execution=false",
+            file=output,
+        )
+        return
+    if action == "show" and len(parts) == 3:
+        print(
+            json.dumps(
+                client.get_paper_cohort(parts[2]),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            file=output,
+        )
+        return
+    if action == "diff" and len(parts) == 4:
+        print(
+            json.dumps(
+                client.diff_paper_cohorts(parts[2], parts[3]),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            file=output,
+        )
+        return
+    if action == "decide" and len(parts) >= 6:
+        decision = parts[4].lower()
+        if decision not in {"accept", "reject", "hold"}:
+            print("Decision must be accept, reject, or hold", file=output)
+            return
+        row = client.decide_paper_cohort_label(
+            parts[2],
+            parts[3],
+            decision=decision,
+            reason=" ".join(parts[5:]),
+        )
+        print(
+            f"Cohort label review {row.get('id')} [{row.get('decision')}] "
+            f"label={row.get('proposed_label')} execution=false",
+            file=output,
+        )
+        return
+    print(
+        "Usage: /cohorts list|build|show <cohort_id>|diff <left> <right>|"
+        "decide <cohort_id> <proposal_id> accept|reject|hold <reason>",
+        file=output,
+    )
 
 
 def handle_portfolio_v2_command(

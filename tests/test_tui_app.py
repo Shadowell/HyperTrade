@@ -21,6 +21,7 @@ class FakeWorkbenchClient:
         self.governance_controls: list[tuple[str, str, str]] = []
         self.portfolio_reviews: list[tuple[str, str, str, str]] = []
         self.window_captures = 0
+        self.cohort_builds = 0
 
     def list_agent_sessions(self) -> list[dict[str, Any]]:
         return [{"id": "sess_1", "title": "TUI session", "status": "active"}]
@@ -215,6 +216,22 @@ class FakeWorkbenchClient:
     def capture_portfolio_observation_window(self) -> dict[str, Any]:
         self.window_captures += 1
         return self.list_portfolio_observation_windows()[0]
+
+    def list_paper_cohorts(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "pcoh_1",
+                "version_number": 1,
+                "status": "needs_data",
+                "intake_count": 2,
+                "comparable_count": 1,
+                "proposal_count": 1,
+            }
+        ]
+
+    def build_paper_cohort(self) -> dict[str, Any]:
+        self.cohort_builds += 1
+        return self.list_paper_cohorts()[0]
 
     def list_strategy_cards(self) -> list[dict[str, Any]]:
         return [

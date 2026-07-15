@@ -248,6 +248,7 @@ class ResearchWorkbenchApp(App[None]):
                     yield Input(placeholder="Assessment ID", id="portfolio-assessment-id")
                     yield Input(placeholder="Recommendation ID", id="portfolio-recommendation-id")
                     yield Button("Capture", id="portfolio-capture")
+                    yield Button("Cohort", id="portfolio-cohort")
                     yield Button("Assess", id="portfolio-assess", variant="primary")
                     yield Button("Accept", id="portfolio-accept", variant="success")
                     yield Button("Hold", id="portfolio-hold", variant="warning")
@@ -443,6 +444,9 @@ class ResearchWorkbenchApp(App[None]):
         if button_id == "portfolio-capture":
             self._capture_portfolio_observation_window()
             return
+        if button_id == "portfolio-cohort":
+            self._build_paper_cohort()
+            return
         if button_id.startswith("portfolio-"):
             self._request_portfolio_review(button_id.removeprefix("portfolio-"))
             return
@@ -604,6 +608,15 @@ class ResearchWorkbenchApp(App[None]):
             self.notify(f"Window capture failed: {type(exc).__name__}", severity="error")
             return
         self.notify(f"Window captured: {result.get('id', 'unknown')}")
+        self.call_later(self._render_state, self.store.state)
+
+    def _build_paper_cohort(self) -> None:
+        try:
+            result = self.store.build_paper_cohort()
+        except Exception as exc:
+            self.notify(f"Cohort build failed: {type(exc).__name__}", severity="error")
+            return
+        self.notify(f"Cohort built: {result.get('id', 'unknown')}")
         self.call_later(self._render_state, self.store.state)
 
     def _request_portfolio_review(self, decision: str) -> None:
@@ -808,6 +821,15 @@ class ResearchWorkbenchApp(App[None]):
             )
         if not state.portfolio_observation_windows:
             lines.append("No observation windows")
+        lines.append("\nPAPER COHORTS")
+        for cohort in state.paper_cohorts[:5]:
+            lines.append(
+                f"COHORT · {cohort.get('id')} · v{cohort.get('version_number')} · "
+                f"{cohort.get('status')} · comparable={cohort.get('comparable_count', 0)}/"
+                f"{cohort.get('intake_count', 0)} · proposals={cohort.get('proposal_count', 0)}"
+            )
+        if not state.paper_cohorts:
+            lines.append("No paper cohorts")
         for card in state.strategy_cards[:10]:
             version = card.get("version", {})
             version = version if isinstance(version, dict) else {}

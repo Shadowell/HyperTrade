@@ -74,6 +74,11 @@ from hypertrade.memory.governance import (
 from hypertrade.memory.service import MemoryService
 from hypertrade.monitoring import MonitorService
 from hypertrade.paper.service import PaperTradingService
+from hypertrade.portfolio.cohort_schemas import (
+    PaperCohortBuildV1,
+    PaperCohortLabelDecisionV1,
+)
+from hypertrade.portfolio.cohorts import PaperCohortService
 from hypertrade.portfolio.evidence import PortfolioEvidenceService
 from hypertrade.portfolio.evidence_schemas import PortfolioObservationCaptureV1
 from hypertrade.portfolio.lifecycle import (
@@ -624,6 +629,47 @@ def create_app(
     ) -> dict[str, Any]:
         try:
             return PortfolioAssessmentService(database).assess(payload, actor=username)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/portfolio/paper-cohorts")
+    def build_paper_cohort(
+        payload: PaperCohortBuildV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return PaperCohortService(database).build(payload, actor=username)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/portfolio/paper-cohorts")
+    def list_paper_cohorts(_: AdminUser) -> dict[str, Any]:
+        return {"items": PaperCohortService(database).list()}
+
+    @app.get("/api/portfolio/paper-cohorts/{cohort_id}")
+    def get_paper_cohort(cohort_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return PaperCohortService(database).get(cohort_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Paper cohort not found") from exc
+
+    @app.get("/api/portfolio/paper-cohorts/{left_id}/diff/{right_id}")
+    def diff_paper_cohorts(left_id: str, right_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return PaperCohortService(database).diff(left_id, right_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Paper cohort not found") from exc
+
+    @app.post("/api/portfolio/paper-cohorts/{cohort_id}/decisions")
+    def decide_paper_cohort_label(
+        cohort_id: str,
+        payload: PaperCohortLabelDecisionV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return PaperCohortService(database).decide(cohort_id, payload, actor=username)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Paper cohort not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 

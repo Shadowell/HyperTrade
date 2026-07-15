@@ -418,6 +418,52 @@ class PortfolioObservationWindow(Base, TimestampMixin):
     created_by: Mapped[str] = mapped_column(String(128), index=True)
 
 
+class PaperCohortSnapshot(Base, TimestampMixin):
+    """Immutable comparability and label proposal projection over committed facts."""
+
+    __tablename__ = "paper_cohort_snapshots"
+    __table_args__ = (
+        UniqueConstraint("cohort_key", "version_number", name="uq_paper_cohort_version"),
+        UniqueConstraint("cohort_key", "source_hash", name="uq_paper_cohort_source"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("pcoh"))
+    cohort_key: Mapped[str] = mapped_column(String(64), index=True)
+    version_number: Mapped[int] = mapped_column(Integer)
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    policy_version: Mapped[str] = mapped_column(String(64), index=True)
+    policy_hash: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    observation_window_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    intake_count: Mapped[int] = mapped_column(Integer)
+    comparable_count: Mapped[int] = mapped_column(Integer)
+    proposal_count: Mapped[int] = mapped_column(Integer)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    source_hash: Mapped[str] = mapped_column(String(64), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    snapshot_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
+class PaperCohortLabelDecision(Base, TimestampMixin):
+    """Human label review fact with no paper or execution authority."""
+
+    __tablename__ = "paper_cohort_label_decisions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("pcld"))
+    cohort_snapshot_id: Mapped[str] = mapped_column(String(32), index=True)
+    proposal_id: Mapped[str] = mapped_column(String(64), index=True)
+    strategy_card_id: Mapped[str] = mapped_column(String(64), index=True)
+    proposed_label: Mapped[str] = mapped_column(String(32), index=True)
+    decision: Mapped[str] = mapped_column(String(16), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    decided_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
 class Job(Base, TimestampMixin):
     __tablename__ = "jobs"
 

@@ -257,6 +257,17 @@ type PortfolioObservationWindow = {
   raw_series_persisted: boolean;
 };
 
+type PaperCohort = {
+  id: string;
+  status: string;
+  version_number: number;
+  intake_count: number;
+  comparable_count: number;
+  proposal_count: number;
+  groups: Array<Record<string, unknown>>;
+  execution_authorized: boolean;
+};
+
 type RagHit = {
   source_path: string;
   title: string;
@@ -581,6 +592,10 @@ const copy = {
     windowCoverage: "窗口覆盖率",
     captureWindow: "采集只读窗口",
     noObservationWindows: "暂无组合观察窗口",
+    paperCohorts: "Paper Cohort",
+    buildCohort: "构建可比 Cohort",
+    cohortComparable: "可比成员",
+    noPaperCohorts: "暂无 Paper Cohort",
     hold: "暂缓",
     noPortfolioAssessments: "暂无组合评估",
     initialCash: "初始资金",
@@ -807,6 +822,10 @@ const copy = {
     windowCoverage: "Window Coverage",
     captureWindow: "Capture Read-only Window",
     noObservationWindows: "No portfolio observation windows",
+    paperCohorts: "Paper Cohorts",
+    buildCohort: "Build Comparable Cohort",
+    cohortComparable: "Comparable Members",
+    noPaperCohorts: "No paper cohorts",
     hold: "Hold",
     noPortfolioAssessments: "No portfolio assessments",
     initialCash: "Initial Cash",
@@ -1106,6 +1125,7 @@ function App() {
   const [portfolioObservationWindows, setPortfolioObservationWindows] = useState<
     PortfolioObservationWindow[]
   >([]);
+  const [paperCohorts, setPaperCohorts] = useState<PaperCohort[]>([]);
   const [portfolioReason, setPortfolioReason] = useState("");
   const [ragQuery, setRagQuery] = useState("risk");
   const [ragHits, setRagHits] = useState<RagHit[]>([]);
@@ -1259,8 +1279,8 @@ function App() {
         tone: "violet"
       },
       {
-        label: t.portfolioPairs,
-        value: formatMetricNumber(latest?.pairwise.length ?? 0),
+        label: t.paperCohorts,
+        value: formatMetricNumber(paperCohorts.length),
         tone: "brass"
       },
       {
@@ -1269,7 +1289,7 @@ function App() {
         tone: "danger"
       }
     ];
-  }, [portfolioAssessments, portfolioObservationWindows, t]);
+  }, [paperCohorts, portfolioAssessments, portfolioObservationWindows, t]);
 
   const refreshMemoryItems = useCallback(async (query = "") => {
     const path = query ? `/api/memory?query=${encodeURIComponent(query)}` : "/api/memory";
@@ -1375,6 +1395,16 @@ function App() {
     setPortfolioObservationWindows(Array.isArray(payload.items) ? payload.items : []);
   }, []);
 
+  const refreshPaperCohorts = useCallback(async () => {
+    const response = await fetch("/api/portfolio/paper-cohorts", { credentials: "include" });
+    if (!response.ok) {
+      setPaperCohorts([]);
+      return;
+    }
+    const payload = (await response.json()) as { items?: PaperCohort[] };
+    setPaperCohorts(Array.isArray(payload.items) ? payload.items : []);
+  }, []);
+
   const refreshOverview = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -1388,6 +1418,7 @@ function App() {
         await refreshGovernance();
         await refreshPortfolioAssessments();
         await refreshPortfolioObservationWindows();
+        await refreshPaperCohorts();
         setHarnessError("");
         return;
       }
@@ -1401,6 +1432,7 @@ function App() {
     refreshMonitorAlerts,
     refreshPortfolioAssessments,
     refreshPortfolioObservationWindows,
+    refreshPaperCohorts,
     refreshStrategyCards,
     refreshStrategyLibrary
   ]);
@@ -1545,6 +1577,18 @@ function App() {
     });
     if (response.ok) {
       await refreshPortfolioObservationWindows();
+    }
+  }
+
+  async function handlePaperCohortBuild() {
+    const response = await fetch("/api/portfolio/paper-cohorts", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idempotency_key: `web_paper_cohort_${Date.now()}` })
+    });
+    if (response.ok) {
+      await refreshPaperCohorts();
     }
   }
 
@@ -2137,9 +2181,11 @@ function App() {
             <RouteMetricStrip label={t.pageMetrics} metrics={portfolioRouteMetrics} />
             <PortfolioLifecyclePanel
               assessments={portfolioAssessments}
+              cohorts={paperCohorts}
               observationWindows={portfolioObservationWindows}
               onAssess={handlePortfolioAssessment}
               onCapture={handlePortfolioWindowCapture}
+              onCohortBuild={handlePaperCohortBuild}
               onReview={handlePortfolioReview}
               reason={portfolioReason}
               setReason={setPortfolioReason}
@@ -2589,20 +2635,24 @@ type MemoryActivityInsight = {
 
 function PortfolioLifecyclePanel({
   assessments,
+  cohorts,
   observationWindows,
   reason,
   setReason,
   onAssess,
   onCapture,
+  onCohortBuild,
   onReview,
   t
 }: {
   assessments: PortfolioAssessment[];
+  cohorts: PaperCohort[];
   observationWindows: PortfolioObservationWindow[];
   reason: string;
   setReason: (value: string) => void;
   onAssess: () => Promise<void>;
   onCapture: () => Promise<void>;
+  onCohortBuild: () => Promise<void>;
   onReview: (
     assessmentId: string,
     recommendationId: string,
@@ -2625,10 +2675,16 @@ function PortfolioLifecyclePanel({
           </button>
         </div>
         <div className="mt-4 grid grid-cols-[auto_1fr] gap-3 max-sm:grid-cols-1">
-          <button className="icon-button justify-center" onClick={() => void onCapture()} type="button">
-            <Activity size={15} />
-            {t.captureWindow}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button className="icon-button justify-center" onClick={() => void onCapture()} type="button">
+              <Activity size={15} />
+              {t.captureWindow}
+            </button>
+            <button className="icon-button justify-center" onClick={() => void onCohortBuild()} type="button">
+              <Layers3 size={15} />
+              {t.buildCohort}
+            </button>
+          </div>
           {observationWindows[0] ? (
             <div className="operator-card operator-card-compact" data-tone="signal">
               <span>
@@ -2713,6 +2769,26 @@ function PortfolioLifecyclePanel({
                   <span>{window.quality.available_count}/{window.quality.denominator} available</span>
                   <span>{window.quality.coverage_ratio} coverage</span>
                   <span>{window.pairwise.length} pairs</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <h2 className="section-title mt-5">{t.paperCohorts}</h2>
+        <div className="mt-4 space-y-2">
+          {cohorts.length === 0 ? (
+            <div className="empty-row">{t.noPaperCohorts}</div>
+          ) : (
+            cohorts.slice(0, 6).map((cohort) => (
+              <div className="operator-card block" data-tone="brass" key={cohort.id}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs">{cohort.id} · v{cohort.version_number}</span>
+                  <span className="text-xs text-brass">{statusLabel(cohort.status)}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-ink/55">
+                  <span>{cohort.intake_count} intake</span>
+                  <span>{cohort.comparable_count} {t.cohortComparable}</span>
+                  <span>{cohort.proposal_count} proposals · execution=false</span>
                 </div>
               </div>
             ))
