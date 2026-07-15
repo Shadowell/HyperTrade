@@ -775,9 +775,26 @@ class ResearchWorkbenchApp(App[None]):
 
     @staticmethod
     def _portfolio_text(state: WorkbenchState) -> str:
+        funnel = state.research_funnel
+        lines: list[str] = [
+            f"FUNNEL · denominator={funnel.get('denominator', 0)} · "
+            f"cards={len(state.strategy_cards)}"
+        ]
+        stages = funnel.get("stages", {})
+        if isinstance(stages, dict) and stages:
+            lines.append(" · ".join(f"{key}={value}" for key, value in stages.items()))
+        for card in state.strategy_cards[:10]:
+            version = card.get("version", {})
+            version = version if isinstance(version, dict) else {}
+            lines.append(
+                f"CARD · {card.get('strategy_key')} · v{version.get('version_number', '-')} · "
+                f"{card.get('lifecycle_status', card.get('paper_status', 'unknown'))} · "
+                f"complete={card.get('completeness_score', 'unknown')}"
+            )
         if not state.portfolio_assessments:
-            return "No portfolio assessments"
-        lines: list[str] = []
+            lines.append("No portfolio assessments")
+            return "\n".join(lines)
+        lines.append("\nPORTFOLIO ASSESSMENTS")
         for assessment in state.portfolio_assessments[:10]:
             lines.append(
                 f"{assessment.get('status')} · {assessment.get('id')} · "

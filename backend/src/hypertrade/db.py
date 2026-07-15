@@ -768,6 +768,73 @@ class ExperimentEvidenceLink(Base, TimestampMixin):
     created_by: Mapped[str] = mapped_column(String(128), default="experiment_ledger", index=True)
 
 
+class StrategyLineage(Base, TimestampMixin):
+    """Stable mandate-scoped strategy identity; never stores mutable evidence."""
+
+    __tablename__ = "strategy_lineages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("sline"))
+    lineage_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    mandate_id: Mapped[str] = mapped_column(String(32), index=True)
+    strategy_key: Mapped[str] = mapped_column(String(128), index=True)
+    created_by: Mapped[str] = mapped_column(String(128), default="strategy_card_v2", index=True)
+
+
+class StrategyVersion(Base, TimestampMixin):
+    """Immutable version identity bound one-to-one to an ExperimentManifest."""
+
+    __tablename__ = "strategy_versions"
+    __table_args__ = (
+        UniqueConstraint("lineage_id", "version_number", name="uq_strategy_version_number"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("sver"))
+    lineage_id: Mapped[str] = mapped_column(String(32), index=True)
+    version_number: Mapped[int] = mapped_column(Integer)
+    manifest_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    manifest_fingerprint: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    strategy_spec_hash: Mapped[str] = mapped_column(String(64), index=True)
+    created_by: Mapped[str] = mapped_column(String(128), default="strategy_card_v2", index=True)
+
+
+class StrategyCardSnapshot(Base, TimestampMixin):
+    """Immutable, rebuildable projection over authoritative research facts."""
+
+    __tablename__ = "strategy_card_snapshots"
+    __table_args__ = (
+        UniqueConstraint("version_id", "content_hash", name="uq_strategy_card_content"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("scsnap"))
+    card_id: Mapped[str] = mapped_column(String(64), index=True)
+    lineage_id: Mapped[str] = mapped_column(String(32), index=True)
+    version_id: Mapped[str] = mapped_column(String(32), index=True)
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    lifecycle_status: Mapped[str] = mapped_column(String(32), index=True)
+    completeness_score: Mapped[Decimal] = mapped_column(Numeric(6, 5))
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    card_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(128), default="strategy_card_v2", index=True)
+
+
+class StrategyCardLifecycleDecision(Base, TimestampMixin):
+    """Human review fact; it cannot authorize paper, live, order, or capital actions."""
+
+    __tablename__ = "strategy_card_lifecycle_decisions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("scdec"))
+    card_id: Mapped[str] = mapped_column(String(64), index=True)
+    lineage_id: Mapped[str] = mapped_column(String(32), index=True)
+    version_id: Mapped[str] = mapped_column(String(32), index=True)
+    snapshot_id: Mapped[str] = mapped_column(String(32), index=True)
+    target_status: Mapped[str] = mapped_column(String(32), index=True)
+    decision: Mapped[str] = mapped_column(String(16), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    decided_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
 class RobustnessValidationRun(Base, TimestampMixin):
     """Versioned fail-closed validation over one immutable experiment execution."""
 

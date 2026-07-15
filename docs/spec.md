@@ -190,6 +190,12 @@ windows, human-reviewed Champion–Challenger paper cohorts and execution-isolat
 Portfolio proposals. None of these phases promises profitability or enables automatic
 paper/live promotion, capital allocation, rebalance or orders.
 
+Sprint 107 implementation uses `ExperimentManifest` as the StrategyCard V2 identity boundary.
+Mandate-scoped lineages, Manifest-bound versions, immutable content-hashed snapshots and human
+lifecycle decisions are projection facts in `0019`; they cannot edit source facts or authorize
+execution. The research funnel denominator is the Manifest candidate set, including incomplete
+and rejected candidates rather than only PaperPromotion records.
+
 ## V1 In Scope
 
 - Harness routing: sidebar destinations are independent, refreshable SPA paths

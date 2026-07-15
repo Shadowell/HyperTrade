@@ -159,6 +159,15 @@ flowchart LR
 - PortfolioAssessment 不再因为缺少 PaperPromotion 而看不到所有研究候选；
 - 不新增自动 paper/live/资金动作。
 
+### 7.3 实施记录（进行中）
+
+- `0019_strategy_card_v2` 持久化 mandate-scoped lineage、Manifest version、immutable
+  snapshot 与独立 lifecycle decision；数据库唯一约束负责身份/版本/幂等边界。
+- Experiment Manifest 登记即 reconcile Card，历史 Manifest 按相同算法回填；无 Manifest
+  的 legacy promotion Card 只作为 compat/unknown 投影，不进入 V2 funnel denominator。
+- FastAPI、CLI `/cards`、Textual Portfolio 和 Web strategy metrics 消费同一服务结果；
+  projection 模块不导入 BitPro、Paper service、Live 或订单 adapter。
+
 ## 8. Sprint 108：Portfolio Evidence Data Plane
 
 ### 8.1 技术方案

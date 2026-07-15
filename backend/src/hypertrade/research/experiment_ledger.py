@@ -241,6 +241,14 @@ class ExperimentLedgerService:
     def _projection(
         self, manifest: ExperimentManifest, execution: ExperimentExecution, *, replay: str
     ) -> dict[str, Any]:
+        # Strategy identity is established with the immutable Manifest, never
+        # delayed until paper promotion. The service writes projection tables only.
+        from hypertrade.research.strategy_cards import StrategyCardService
+
+        StrategyCardService(self.db).reconcile_manifest(
+            manifest.id,
+            actor="experiment_ledger",
+        )
         return {
             "manifest": manifest_to_dict(manifest),
             "execution": execution_to_dict(execution),

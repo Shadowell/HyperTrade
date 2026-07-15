@@ -110,6 +110,7 @@ from hypertrade.research.role_provider import (
 )
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
+from hypertrade.research.strategy_card_schemas import StrategyCardDecisionRequestV1
 from hypertrade.research.strategy_cards import StrategyCardService
 from hypertrade.research.triggers import (
     ResearchTriggerCreate,
@@ -585,6 +586,34 @@ def create_app(
     @app.get("/api/research/strategy-cards")
     def list_strategy_cards(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
         return {"items": StrategyCardService(database).list()}
+
+    @app.get("/api/research/strategy-cards/funnel")
+    def strategy_card_funnel(_: AdminUser) -> dict[str, Any]:
+        return StrategyCardService(database).funnel()
+
+    @app.post("/api/research/strategy-cards/reconcile")
+    def reconcile_strategy_cards(username: AdminUser) -> dict[str, Any]:
+        return StrategyCardService(database).reconcile_all(actor=username)
+
+    @app.get("/api/research/strategy-cards/{card_id}/snapshots")
+    def strategy_card_snapshots(card_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return {"items": StrategyCardService(database).snapshots(card_id)}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="StrategyCard not found") from exc
+
+    @app.post("/api/research/strategy-cards/{card_id}/decisions")
+    def record_strategy_card_decision(
+        card_id: str,
+        payload: StrategyCardDecisionRequestV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return StrategyCardService(database).decide(card_id, payload, actor=username)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="StrategyCard not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/api/portfolio/assessments")
     def create_portfolio_assessment(

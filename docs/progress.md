@@ -8,7 +8,13 @@
   contract introduces stable mandate-scoped lineage, Manifest-bound versions, immutable Card
   snapshots, fact-driven lifecycle decisions and a fixed-denominator research funnel. It must
   make Manifest-only candidates visible without inventing Evidence/Paper facts and cannot add
-  BitPro, paper, live, order or capital mutation paths.
+  BitPro, paper, live, order or capital mutation paths. Migration `0019` and the V2 projection
+  service are implemented: Experiment registration creates identity/version, reconcile/backfill
+  appends content-hashed snapshots, legacy promotion-only cards remain explicitly marked compat,
+  and human decisions write a separate idempotent audit fact. API, `/cards` CLI, Textual Portfolio
+  and Web strategy metrics share the service projection. PostgreSQL `0018 -> 0019 -> 0018 ->
+  0019` passes. Full `./scripts/check.sh` passes with frontend lint/9 tests/build, Ruff, mypy
+  over 143 source files and 497 Python tests; production acceptance is pending.
 - Sprint 106 implementation state: completed and production-verified on 2026-07-15.
   `research_os_golden_v2` fixes 26 cases into 2 `chat_answer`, 2 `tool_required`, 16
   `research_graph` and 6 `safety` cases. Structured intent/plan, bounded candidate

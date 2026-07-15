@@ -9,6 +9,18 @@ HyperTrade provides a comprehensive REST API for Agent-driven crypto trading res
 
 **API Documentation**: Visit `/docs` for interactive Swagger documentation.
 
+## StrategyCard V2 and Research Funnel
+
+- `GET /api/research/strategy-cards` lists current V2 and explicit legacy-compatible cards.
+- `GET /api/research/strategy-cards/funnel` returns the Manifest-denominated research funnel.
+- `POST /api/research/strategy-cards/reconcile` idempotently backfills projection tables.
+- `GET /api/research/strategy-cards/{card_id}/snapshots` lists immutable snapshots.
+- `POST /api/research/strategy-cards/{card_id}/decisions` records an idempotent human review fact.
+
+All endpoints require the administrator session. Reconcile and decisions can write only
+StrategyCard projection/audit tables; no endpoint authorizes BitPro, paper, live, order or capital
+mutation.
+
 ## Authentication
 
 Most read endpoints are publicly accessible. Write operations and privileged actions require admin session authentication.

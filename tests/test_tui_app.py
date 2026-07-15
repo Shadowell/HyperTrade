@@ -198,6 +198,22 @@ class FakeWorkbenchClient:
             }
         ]
 
+    def list_strategy_cards(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "strategy_key": "btc_trend_v1",
+                "version": {"version_number": 1},
+                "lifecycle_status": "testing",
+                "completeness_score": "0.50000",
+            }
+        ]
+
+    def get_research_funnel(self) -> dict[str, Any]:
+        return {
+            "denominator": 1,
+            "stages": {"manifest": 1, "paper": 0, "card": 1},
+        }
+
     def create_portfolio_assessment(self) -> dict[str, Any]:
         return self.list_portfolio_assessments()[0]
 
@@ -314,6 +330,9 @@ async def test_tui_portfolio_tab_records_human_review_only() -> None:
         await pilot.press("l")
         await pilot.pause()
         assert "plrec_001" in str(app.query_one("#portfolio-detail", Static).content)
+        assert "FUNNEL · denominator=1 · cards=1" in str(
+            app.query_one("#portfolio-detail", Static).content
+        )
         await pilot.click("#portfolio-hold")
         await pilot.pause()
         assert isinstance(app.screen, ControlConfirmScreen)

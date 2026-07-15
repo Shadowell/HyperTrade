@@ -136,6 +136,8 @@ class WorkbenchState:
     skill_proposals: list[dict[str, Any]] = field(default_factory=list)
     skill_releases: list[dict[str, Any]] = field(default_factory=list)
     portfolio_assessments: list[dict[str, Any]] = field(default_factory=list)
+    strategy_cards: list[dict[str, Any]] = field(default_factory=list)
+    research_funnel: dict[str, Any] = field(default_factory=dict)
     cursor: TaskEventCursor = field(default_factory=TaskEventCursor)
     connection_status: str = "snapshot"
     last_error: str = ""
@@ -159,6 +161,10 @@ class WorkbenchStore:
         self.state.skill_proposals = self.client.list_skill_proposals()
         self.state.skill_releases = self.client.list_skill_releases()
         self.state.portfolio_assessments = self.client.list_portfolio_assessments()
+        list_cards = getattr(self.client, "list_strategy_cards", None)
+        self.state.strategy_cards = list_cards() if callable(list_cards) else []
+        get_funnel = getattr(self.client, "get_research_funnel", None)
+        self.state.research_funnel = get_funnel() if callable(get_funnel) else {}
         if self.state.selected_session_id and not any(
             str(item.get("id", "")) == self.state.selected_session_id
             for item in self.state.sessions

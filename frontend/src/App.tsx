@@ -124,6 +124,20 @@ type StrategyResearchSummary = {
   created_at: string;
 };
 
+type StrategyCardProjection = {
+  card_id: string;
+  strategy_key: string;
+  lifecycle_status?: string;
+  completeness_score?: string;
+  missing_fields?: string[];
+};
+
+type ResearchFunnel = {
+  denominator: number;
+  denominator_unit: string;
+  stages: Record<string, number>;
+};
+
 type BacktestSummary = {
   id: string;
   research_id: string;
@@ -627,6 +641,10 @@ const copy = {
     evidenceCount: "证据数",
     pageMetrics: "页面指标",
     strategyCount: "策略条目",
+    cardCandidates: "候选卡片",
+    incompleteCards: "不完整卡片",
+    manifestStage: "Manifest 阶段",
+    paperStage: "Paper 阶段",
     evidenceTotal: "累计证据",
     passedEvidence: "通过证据",
     failedEvidence: "失败证据",
@@ -847,6 +865,10 @@ const copy = {
     evidenceCount: "Evidence",
     pageMetrics: "Page metrics",
     strategyCount: "Strategies",
+    cardCandidates: "Candidate Cards",
+    incompleteCards: "Incomplete Cards",
+    manifestStage: "Manifest Stage",
+    paperStage: "Paper Stage",
     evidenceTotal: "Evidence total",
     passedEvidence: "Passed evidence",
     failedEvidence: "Failed evidence",
@@ -1067,6 +1089,12 @@ function App() {
     items: []
   });
   const [strategyQuery, setStrategyQuery] = useState("");
+  const [strategyCards, setStrategyCards] = useState<StrategyCardProjection[]>([]);
+  const [researchFunnel, setResearchFunnel] = useState<ResearchFunnel>({
+    denominator: 0,
+    denominator_unit: "experiment_manifest",
+    stages: {}
+  });
   const [monitorAlerts, setMonitorAlerts] = useState<MonitorAlert[]>([]);
   const [evidenceSelection, setEvidenceSelection] = useState<EvidenceSelection | null>(null);
   const [runObservability, setRunObservability] = useState<RunObservability | null>(null);
@@ -1123,16 +1151,14 @@ function App() {
   );
 
   const strategyRouteMetrics = useMemo<RouteMetric[]>(() => {
-    const evidence = strategyLibrary.items.reduce((total, item) => total + item.evidence_count, 0);
-    const passed = strategyLibrary.items.reduce((total, item) => total + item.passed_count, 0);
-    const failed = strategyLibrary.items.reduce((total, item) => total + item.failed_count, 0);
+    const incomplete = strategyCards.filter((card) => (card.missing_fields?.length ?? 0) > 0).length;
     return [
-      { label: t.strategyCount, value: formatMetricNumber(strategyLibrary.items.length), tone: "signal" },
-      { label: t.evidenceTotal, value: formatMetricNumber(evidence), tone: "brass" },
-      { label: t.passedEvidence, value: formatMetricNumber(passed), tone: "signal" },
-      { label: t.failedEvidence, value: formatMetricNumber(failed), tone: "danger" }
+      { label: t.cardCandidates, value: formatMetricNumber(strategyCards.length), tone: "signal" },
+      { label: t.incompleteCards, value: formatMetricNumber(incomplete), tone: "brass" },
+      { label: t.manifestStage, value: formatMetricNumber(researchFunnel.stages.manifest ?? 0), tone: "violet" },
+      { label: t.paperStage, value: formatMetricNumber(researchFunnel.stages.paper ?? 0), tone: "signal" }
     ];
-  }, [strategyLibrary, t]);
+  }, [researchFunnel, strategyCards, t]);
 
   const alertRouteMetrics = useMemo<RouteMetric[]>(() => {
     const priorityAlerts = monitorAlerts.filter((alert) =>
@@ -1247,6 +1273,27 @@ function App() {
     }
   }, []);
 
+  const refreshStrategyCards = useCallback(async () => {
+    const [cardsResponse, funnelResponse] = await Promise.all([
+      fetch("/api/research/strategy-cards", { credentials: "include" }),
+      fetch("/api/research/strategy-cards/funnel", { credentials: "include" })
+    ]);
+    if (cardsResponse.ok) {
+      const payload = (await cardsResponse.json()) as { items?: StrategyCardProjection[] };
+      setStrategyCards(Array.isArray(payload.items) ? payload.items : []);
+    } else {
+      setStrategyCards([]);
+    }
+    if (funnelResponse.ok) {
+      const payload = (await funnelResponse.json()) as Partial<ResearchFunnel>;
+      setResearchFunnel({
+        denominator: payload.denominator ?? 0,
+        denominator_unit: payload.denominator_unit ?? "experiment_manifest",
+        stages: payload.stages ?? {}
+      });
+    }
+  }, []);
+
   const refreshMonitorAlerts = useCallback(async () => {
     const response = await fetch("/api/alerts", { credentials: "include" });
     if (response.ok) {
@@ -1298,6 +1345,7 @@ function App() {
         setOverview((await response.json()) as HarnessOverview);
         await refreshMemoryItems();
         await refreshStrategyLibrary();
+        await refreshStrategyCards();
         await refreshMonitorAlerts();
         await refreshGovernance();
         await refreshPortfolioAssessments();
@@ -1313,6 +1361,7 @@ function App() {
     refreshMemoryItems,
     refreshMonitorAlerts,
     refreshPortfolioAssessments,
+    refreshStrategyCards,
     refreshStrategyLibrary
   ]);
 

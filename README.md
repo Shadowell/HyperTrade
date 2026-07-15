@@ -422,6 +422,11 @@ automatic capital, rebalance, pause/start, promotion and order actions are prohi
 Production acceptance passed on Alembic `0018`; the empty-card smoke remained
 `needs_data` with an explicit unknown and performed no lifecycle or trading action.
 
+Sprint 107 moves StrategyCard creation to the immutable ExperimentManifest boundary. Use CLI
+`/cards` or the Web/TUI strategy and portfolio surfaces to inspect stable versions, completeness,
+missing sources and the fixed research funnel. Card snapshots and review decisions are audit
+projections only; they cannot create paper sessions, place orders or allocate capital.
+
 ---
 
 ## Deployment

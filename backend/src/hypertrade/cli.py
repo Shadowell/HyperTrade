@@ -59,6 +59,7 @@ from hypertrade.research.robustness import RobustnessValidationService
 from hypertrade.research.role_provider import DeterministicGapRoleProvider
 from hypertrade.research.schemas import ResearchJobCreate, ResearchMandateCreate
 from hypertrade.research.service import ResearchProgramService
+from hypertrade.research.strategy_cards import StrategyCardService
 from hypertrade.research.triggers import (
     ResearchTriggerService,
     TriggerControlUpdate,
@@ -202,6 +203,10 @@ class AgentClient(Protocol):
     def search_rag(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]: ...
 
     def get_evals_status(self) -> dict[str, Any]: ...
+
+    def list_strategy_cards(self) -> list[dict[str, Any]]: ...
+
+    def get_research_funnel(self) -> dict[str, Any]: ...
 
     def list_monitors(self) -> list[dict[str, Any]]: ...
 
@@ -375,6 +380,7 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ),
     ("/rag <query>", "Search project and trading knowledge chunks."),
     ("/evals", "Show deterministic Agent eval status."),
+    ("/cards", "Show StrategyCard V2 candidates and the fixed research funnel."),
     ("/monitors", "List configured read-only monitors."),
     ("/monitor run <monitor_id>", "Run one monitor manually and persist alerts."),
     ("/alerts", "List recent monitor alert events."),
@@ -1062,6 +1068,12 @@ class AgentApiClient:
     def get_evals_status(self) -> dict[str, Any]:
         return self._get_object("/api/evals/status")
 
+    def list_strategy_cards(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/research/strategy-cards", "items")
+
+    def get_research_funnel(self) -> dict[str, Any]:
+        return self._get_object("/api/research/strategy-cards/funnel")
+
     def list_monitors(self) -> list[dict[str, Any]]:
         return self._get_list("/api/monitors", "items")
 
@@ -1724,6 +1736,12 @@ class LocalAgentClient:
     def get_evals_status(self) -> dict[str, Any]:
         return AgentEvalSuite().status()
 
+    def list_strategy_cards(self) -> list[dict[str, Any]]:
+        return StrategyCardService(self.db).list()
+
+    def get_research_funnel(self) -> dict[str, Any]:
+        return StrategyCardService(self.db).funnel()
+
     def list_monitors(self) -> list[dict[str, Any]]:
         from hypertrade.monitoring import MonitorService
 
@@ -2289,6 +2307,12 @@ def handle_slash_command(
         handle_rag_command(command, client=client, output=output)
     elif name in {"/evals", "/eval"}:
         render_evals_status(client.get_evals_status(), output=output)
+    elif name in {"/cards", "/strategy-cards"}:
+        render_strategy_cards(
+            client.list_strategy_cards(),
+            client.get_research_funnel(),
+            output=output,
+        )
     elif name == "/monitors":
         render_monitors(client.list_monitors(), output=output)
     elif name == "/monitor":
@@ -4112,6 +4136,42 @@ def render_evals_status(payload: dict[str, Any], *, output: TextIO) -> None:
             f"- {case.get('name', 'unknown')} {case.get('status', 'unknown')}",
             file=output,
         )
+
+
+def render_strategy_cards(
+    cards: list[dict[str, Any]],
+    funnel: dict[str, Any],
+    *,
+    output: TextIO,
+) -> None:
+    print(
+        "Research Funnel: "
+        f"denominator={funnel.get('denominator', 0)} "
+        f"unit={funnel.get('denominator_unit', 'unknown')}",
+        file=output,
+    )
+    stages = funnel.get("stages", {})
+    if isinstance(stages, dict):
+        print(
+            "Stages: " + " · ".join(f"{key}={value}" for key, value in stages.items()),
+            file=output,
+        )
+    if not cards:
+        print("No StrategyCards.", file=output)
+        return
+    for card in cards:
+        version = card.get("version", {})
+        version = version if isinstance(version, dict) else {}
+        print(
+            f"- {card.get('card_id', '-')} {card.get('strategy_key', '-')} "
+            f"v{version.get('version_number', '-')} "
+            f"status={card.get('lifecycle_status', card.get('paper_status', 'unknown'))} "
+            f"complete={card.get('completeness_score', 'unknown')}",
+            file=output,
+        )
+        missing = card.get("missing_fields", [])
+        if isinstance(missing, list) and missing:
+            print(f"  missing={','.join(str(value) for value in missing)}", file=output)
 
 
 def render_monitors(items: list[dict[str, Any]], *, output: TextIO) -> None:

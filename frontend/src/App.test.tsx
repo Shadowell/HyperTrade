@@ -666,6 +666,26 @@ test("renders scoped metric strips for every routed operator page", async () => 
       if (url.endsWith("/api/strategy/library")) {
         return jsonResponse(strategyLibrary);
       }
+      if (url.endsWith("/api/research/strategy-cards")) {
+        return jsonResponse({
+          items: [
+            {
+              card_id: "scard_metrics",
+              strategy_key: "btc_trend_v1",
+              lifecycle_status: "testing",
+              completeness_score: "0.50000",
+              missing_fields: ["paper"]
+            }
+          ]
+        });
+      }
+      if (url.endsWith("/api/research/strategy-cards/funnel")) {
+        return jsonResponse({
+          denominator: 1,
+          denominator_unit: "experiment_manifest",
+          stages: { manifest: 1, paper: 0, card: 1 }
+        });
+      }
       if (url.endsWith("/api/alerts")) {
         return jsonResponse({
           items: [
@@ -680,9 +700,9 @@ test("renders scoped metric strips for every routed operator page", async () => 
   render(<App />);
 
   let metricStrip = await screen.findByRole("region", { name: "页面指标" });
-  expect(within(metricStrip).getByText("策略条目")).toBeInTheDocument();
-  expect(within(metricStrip).getByText("累计证据")).toBeInTheDocument();
-  expect(within(metricStrip).getByText("通过证据")).toBeInTheDocument();
+  expect(within(metricStrip).getByText("候选卡片")).toBeInTheDocument();
+  expect(within(metricStrip).getByText("不完整卡片")).toBeInTheDocument();
+  expect(within(metricStrip).getByText("Manifest 阶段")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("link", { name: "监控告警" }));
   metricStrip = screen.getByRole("region", { name: "页面指标" });

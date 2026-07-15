@@ -94,3 +94,16 @@ Manual/production checks:
 
 - Gate F 通过后创建 Sprint 108 合同，实施 bounded PortfolioObservationWindow/DataQuality。
 - Gate F 未通过时继续修复身份、回填、快照或漏斗，不提前实现 paper cohort/shadow capital。
+
+## Implementation Record
+
+- 新增 `0019_strategy_card_v2` 的 lineage/version/snapshot/decision 四张表及唯一约束。
+- `ExperimentLedgerService.register` 在 Manifest 身份边界触发 projection-only reconcile；
+  历史 Manifest 可幂等 backfill，相同 content hash 不产生重复 snapshot。
+- Card V2 从 execution/evidence/validation/paper/monitor/governed Memory 事实确定性投影；
+  legacy promotion-only Card 保持 compat/manifest unknown，不做模糊关联。
+- fixed funnel 使用 ExperimentManifest 作为 denominator；API、CLI、Textual、Web 只展示
+  服务端 lifecycle/completeness/missing fields，不在客户端复算。
+- 临时 PostgreSQL 已通过全链升级、`0019 -> 0018 -> 0019` 和四表存在性检查。
+- 完整 `./scripts/check.sh` 通过：frontend lint/9 tests/build、Ruff、mypy（143 source
+  files）及 497 Python tests。生产迁移/backfill/read smoke 尚待部署后执行。
