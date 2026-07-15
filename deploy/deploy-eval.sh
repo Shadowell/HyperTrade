@@ -80,9 +80,23 @@ echo "[eval-deploy] running isolated database migrations"
 "${compose[@]}" run --rm api alembic upgrade head
 
 echo "[eval-deploy] seeding isolated public-answer fixtures"
-HYPERTRADE_EVAL_TARGET=isolated "${compose[@]}" run --rm \
-  -e HYPERTRADE_EVAL_TARGET=isolated \
-  api python scripts/seed_operator_answer_eval.py
+eval_db="$(read_env_value POSTGRES_DB)"
+eval_user="$(read_env_value POSTGRES_USER)"
+eval_password="$(read_env_value POSTGRES_PASSWORD)"
+if [ -z "$eval_db" ] || [ -z "$eval_user" ] || [ -z "$eval_password" ]; then
+  echo "[eval-deploy] evaluation database credentials are required for fixture seeding"
+  exit 1
+fi
+# The production API image deliberately excludes evaluation scripts. Seed only
+# through the isolated runner image on the evaluation network, never via the
+# production API container or host Python.
+docker run --rm \
+  --network hypertrade-eval \
+  --env-file "$ENV_FILE" \
+  --env HYPERTRADE_EVAL_TARGET=isolated \
+  --env "DATABASE_URL=postgresql+psycopg://${eval_user}:${eval_password}@postgres:5432/${eval_db}" \
+  "$EVAL_RUNNER_IMAGE" \
+  python scripts/seed_operator_answer_eval.py
 
 echo "[eval-deploy] starting isolated API (worker profile remains disabled)"
 "${compose[@]}" up -d --force-recreate api

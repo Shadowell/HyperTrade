@@ -52,6 +52,9 @@ def test_eval_deploy_script_only_manages_the_isolated_project() -> None:
         'EVAL_RUNNER_IMAGE="${HYPERTRADE_EVAL_RUNNER_IMAGE:-hypertrade-agent-eval:latest}"'
         in deploy
     )
+    assert "--network hypertrade-eval" in deploy
+    assert '"$EVAL_RUNNER_IMAGE" \\' in deploy
+    assert "python scripts/seed_operator_answer_eval.py" in deploy
 
 
 def test_agent_eval_runner_is_a_separate_docker_target() -> None:

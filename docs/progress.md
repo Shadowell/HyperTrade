@@ -64,6 +64,10 @@
   named timeout/source-unavailable fixtures behind an explicit disabled-by-default flag; production
   rejects those fixture ids. A declared `not_supported` result no longer turns an otherwise clean
   evaluator run into a synthetic failure, and remains excluded from `passed_count`.
+- Isolated public-answer fixture seeding runs only in `hypertrade-agent-eval` on the dedicated
+  evaluation network. The production API image intentionally excludes evaluation scripts, so
+  deployment cannot seed through the production container or host Python. The next isolated baseline
+  is pending after this runner-bound seed correction.
 - The reviewed Mission catalog now also exposes bounded read-only strategy/backtest, paper portfolio
   and Testnet intent summaries. The isolated evaluator seeds one idempotent synthetic fact for each
   surface after migrations, guarded by `HYPERTRADE_EVAL_TARGET=isolated` plus `APP_ENV=evaluation`;
