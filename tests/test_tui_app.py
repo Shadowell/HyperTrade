@@ -309,7 +309,7 @@ async def test_tui_renders_graph_evidence_metrics_and_compact_layout() -> None:
 
     async with app.run_test(size=(160, 50)) as pilot:
         await pilot.pause()
-        assert "TASKS\n1" in str(app.query_one("#metric-tasks", Static).content)
+        assert "MISSIONS\n1" in str(app.query_one("#metric-tasks", Static).content)
         assert "market_regime" in str(app.query_one("#graph-view", Static).content)
         assert "market_fact" in str(app.query_one("#evidence-view", Static).content)
         assert "cursor=2" in str(app.query_one("#timeline-view", Static).content)
