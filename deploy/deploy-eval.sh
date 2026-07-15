@@ -23,6 +23,16 @@ read_env_value() {
   awk -F= -v key="$key" '$1 == key {value = substr($0, length(key) + 2)} END {print value}' "$ENV_FILE"
 }
 
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  if grep -q "^${key}=" "$ENV_FILE"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+  else
+    printf '\n%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+  fi
+}
+
 codex_auth_source="$(read_env_value CODEX_AUTH_SOURCE_PATH)"
 eval_port="$(read_env_value HYPERTRADE_EVAL_PORT)"
 eval_image="$(read_env_value HYPERTRADE_EVAL_IMAGE)"
@@ -54,9 +64,10 @@ fi
 # This target is physically isolated and has no paper/live execution path. The
 # flag admits only the two deterministic failure fixtures used by the public
 # answer evaluator; production never sets it.
-if ! grep -q '^HYPERTRADE_OPERATOR_EVAL_FIXTURES_ENABLED=' "$ENV_FILE"; then
-  printf '\nHYPERTRADE_OPERATOR_EVAL_FIXTURES_ENABLED=true\n' >> "$ENV_FILE"
-fi
+set_env_value HYPERTRADE_OPERATOR_EVAL_FIXTURES_ENABLED true
+# The evaluator must exercise the deterministic Mission planner, never make a
+# network model call through credentials mounted for unrelated console checks.
+set_env_value ACTIVE_CHAT_PROVIDER isolated
 
 chmod 600 "$ENV_FILE"
 mkdir -p "$ROOT_DIR/data/postgres" "$ROOT_DIR/eval-artifacts"
