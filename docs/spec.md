@@ -215,6 +215,20 @@ retained three intake members but returned 0 eligible/0 scenarios because no acc
 cohort exists; repeated build was idempotent, persisted no execution payload keys and changed no
 paper/live counts. Gate H and the Sprint 106–110 research-operations route are closed.
 
+## Proposed Professional Agent Runtime V2 Roadmap
+
+The proposed Sprints 111–116 sequence is documented in
+`docs/architecture/30-professional-agent-runtime-v2-roadmap.md`. It does not replace the existing
+Task OS or fixed Research Graph. It adds a durable Mission aggregate, immutable Plan versions,
+validated Step observations, bounded adaptive replanning, reviewed capability discovery, compiled
+Context Packs, a Mission Artifact Index, bounded multi-Agent supervision, sandboxed strategy
+development and long-horizon readiness evaluation.
+
+The roadmap is planning-only until explicitly approved. The first draft contract is
+`docs/contracts/sprint-111-professional-agent-loop-v2.md`; no feature flag is enabled and no current
+paper/live/order/capital permission changes. Professional Agent capability means controllable,
+recoverable and evidence-backed goal execution, not unrestricted autonomy or profitability.
+
 Sprint 107 implementation uses `ExperimentManifest` as the StrategyCard V2 identity boundary.
 Mandate-scoped lineages, Manifest-bound versions, immutable content-hashed snapshots and human
 lifecycle decisions are projection facts in `0019`; they cannot edit source facts or authorize

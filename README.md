@@ -509,10 +509,12 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Portfolio Evidence Data Plane | Production (Sprint 108) |
 | Champion–Challenger Paper Incubation | Production (Sprint 109) |
 | Shadow Portfolio Governance | Production (Sprint 110) |
+| Professional Agent Runtime V2 | Proposed (Sprints 111–116) |
 
 ### Planned (V3+)
 
 - [Research Operations and Shadow Portfolio roadmap](docs/architecture/29-research-operations-shadow-portfolio-roadmap.md)
+- [Professional Agent Runtime V2 roadmap](docs/architecture/30-professional-agent-runtime-v2-roadmap.md)
 - Custom strategy DSL
 - Multi-exchange support (Binance, Bybit)
 - Advanced risk modeling (VaR, CVaR)

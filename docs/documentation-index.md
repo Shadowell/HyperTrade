@@ -44,6 +44,7 @@
 - [Agent Research OS Roadmap](architecture/27-agent-research-os-roadmap.md)
 - [Agent Research OS Technical Design](architecture/28-agent-research-os-technical-design.md)
 - [Research Operations and Shadow Portfolio Roadmap](architecture/29-research-operations-shadow-portfolio-roadmap.md)
+- [Professional Agent Runtime V2 Roadmap](architecture/30-professional-agent-runtime-v2-roadmap.md)
 
 ### 知识库
 操作指南和最佳实践：
@@ -65,6 +66,7 @@
 - [Sprint 81–84 Research Institution Plan](architecture/23-autonomous-strategy-research-institution.md#分期实施)
 - [Sprint 96–105 Agent Research OS Plan](architecture/27-agent-research-os-roadmap.md#6-分期路线)
 - [Sprint 106–110 Research Operations Plan](architecture/29-research-operations-shadow-portfolio-roadmap.md#5-分期计划)
+- [Sprint 111–116 Professional Agent Runtime V2 Plan](architecture/30-professional-agent-runtime-v2-roadmap.md#7-sprint-路线)
 
 ---
 

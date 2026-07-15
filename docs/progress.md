@@ -4,6 +4,12 @@
 
 - Branch: `main`
 - Harness status: active
+- Professional Agent Runtime V2 planning state: proposed on 2026-07-15; no implementation contract
+  is active. `docs/architecture/30-professional-agent-runtime-v2-roadmap.md` defines Sprints 111–116
+  over the existing LangGraph/Task OS/MCP/Memory/Evidence foundation. The focused Sprint 111 draft
+  adds durable Mission/Plan/Step state, bounded observation-driven replan and user steer while
+  retaining all current permissions and fixed Research Graph behavior. User review is required
+  before changing the draft contract to Active.
 - Sprint 110 implementation state: completed and production-verified on 2026-07-15. Immutable
   Shadow Portfolio proposals bind exact cohort/window/Card/label decision facts, retain a fixed
   denominator and allow only equal-weight, evidence-complete inverse-volatility and capped risk-
