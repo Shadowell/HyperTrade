@@ -9,7 +9,8 @@
   the WebView has no arbitrary network permission and receives no provider, trading or execution
   credential. This adds no paper/live/order/capital mutation path and does not replace `/harness`.
 - Conversation direction is explicit: HT conclusions and evidence stay left, while user questions
-  sit right. The original non-human precision-instrument product symbol remains legible at 34–52px.
+  sit right. The original non-human precision-instrument product symbol now uses a 26px header mark
+  and 39px collapsed mark while retaining the 64px click target.
 - Assistant output now renders sanitized GFM headings, lists, emphasis, quotes, code and tables with
   narrow-panel styling; raw HTML stays disabled and user questions remain plain text.
 - Local frontend/Rust checks, packaged `.app` build and strict ad-hoc signature verification are the

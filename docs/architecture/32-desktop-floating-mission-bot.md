@@ -32,7 +32,7 @@ remain server-side. The client introduces no paper, live, order, approval or cap
 - Assistant output renders sanitized GitHub-Flavored Markdown for headings, lists, emphasis, quotes,
   code and tables. Raw HTML is not enabled, while user-authored messages remain plain text.
 - The product symbol is an original non-human precision-instrument mark designed to remain legible at
-  34–52 pixels. It does not use a person, mascot or third-party chat-product likeness.
+  26–39 pixels. It does not use a person, mascot or third-party chat-product likeness.
 
 ## Failure behavior
 

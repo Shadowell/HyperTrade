@@ -47,9 +47,9 @@ textarea:focus-visible {
 
 .bot-orb {
   position: relative;
-  width: 52px;
-  height: 52px;
-  padding: 3px;
+  width: 39px;
+  height: 39px;
+  padding: 2px;
   border: 1px solid rgba(232, 238, 233, 0.18);
   border-radius: 50%;
   background: #0d1714;
@@ -101,11 +101,11 @@ textarea:focus-visible {
 
 .orb-status {
   position: absolute;
-  right: 2px;
-  bottom: 5px;
-  width: 10px;
-  height: 10px;
-  border: 2px solid #0d1714;
+  right: 1px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid #0d1714;
   border-radius: 50%;
   background: #5ad6c4;
 }
@@ -182,14 +182,14 @@ textarea:focus-visible {
 .identity {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 9px;
 }
 
 .avatar-mini {
   position: relative;
-  width: 34px;
-  height: 34px;
-  padding: 2px;
+  width: 26px;
+  height: 26px;
+  padding: 1px;
   border: 1px solid rgba(90, 214, 196, 0.42);
   border-radius: 50%;
   background: #0d1714;
@@ -198,10 +198,10 @@ textarea:focus-visible {
 .avatar-mini::after {
   position: absolute;
   right: -1px;
-  bottom: 2px;
-  width: 8px;
-  height: 8px;
-  border: 2px solid #06100d;
+  bottom: 1px;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid #06100d;
   border-radius: 50%;
   background: #5ad6c4;
   content: "";
