@@ -4,6 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 107 implementation state: active on 2026-07-15 after Gate E acceptance. The focused
+  contract introduces stable mandate-scoped lineage, Manifest-bound versions, immutable Card
+  snapshots, fact-driven lifecycle decisions and a fixed-denominator research funnel. It must
+  make Manifest-only candidates visible without inventing Evidence/Paper facts and cannot add
+  BitPro, paper, live, order or capital mutation paths.
 - Sprint 106 implementation state: completed and production-verified on 2026-07-15.
   `research_os_golden_v2` fixes 26 cases into 2 `chat_answer`, 2 `tool_required`, 16
   `research_graph` and 6 `safety` cases. Structured intent/plan, bounded candidate
@@ -421,7 +426,8 @@
 
 ## Active Contract
 
-- Sprint 106 is completed; Sprint 107 StrategyCard Lifecycle & Research Funnel is next.
+- Sprint 107 StrategyCard Lifecycle & Research Funnel is active under
+  `docs/contracts/sprint-107-strategy-card-lifecycle-research-funnel.md`.
 
 ## Approved Follow-On Design
 

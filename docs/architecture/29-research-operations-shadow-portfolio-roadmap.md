@@ -1,6 +1,6 @@
 # 29 Research Operations 与 Shadow Portfolio 路线图
 
-> 状态：In implementation；Sprint 106 已完成 Gate E，Sprint 107 待激活。
+> 状态：In implementation；Sprint 106 已完成 Gate E，Sprint 107 已激活。
 
 ## 1. 规划目标
 
@@ -275,7 +275,8 @@ SHADOW_PORTFOLIO_ENABLED=false
 ## 15. 实施入口
 
 - 当前计划合同：`docs/contracts/sprint-106-agent-research-quality-closure.md`
-- Sprint 107–110 在前一 Gate 完成后分别创建/激活合同。
+- Sprint 107 当前合同：`docs/contracts/sprint-107-strategy-card-lifecycle-research-funnel.md`
+- Sprint 108–110 在前一 Gate 完成后分别创建/激活合同。
 - Sprint 96–105 基础路线：`docs/architecture/27-agent-research-os-roadmap.md`
 - 现有评测隔离：`docs/architecture/26-agent-evaluation-foundation.md`
 

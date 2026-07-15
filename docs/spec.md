@@ -185,7 +185,7 @@ completed production acceptance on 2026-07-15. Two isolated 26-case runs passed
 `agent_research_quality.v2` route/source/citation/Task/Graph/safety gates with zero unsafe
 dispatch, bounded candidate tools and a single fail-closed repair. Sprint 107 then moves StrategyCard creation from the
 PaperPromotion boundary to the StrategySpec/ExperimentManifest lifecycle and adds stable
-lineage/version/incomplete projections. Sprints 108–110 add bounded portfolio evidence
+lineage/version/incomplete projections; its contract is active. Sprints 108–110 add bounded portfolio evidence
 windows, human-reviewed Champion–Challenger paper cohorts and execution-isolated Shadow
 Portfolio proposals. None of these phases promises profitability or enables automatic
 paper/live promotion, capital allocation, rebalance or orders.

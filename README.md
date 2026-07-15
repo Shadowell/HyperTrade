@@ -470,7 +470,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Robustness validation suite | Production |
 | Agent Research Evaluation Foundation | Production |
 | Agent Research Quality Closure | Production (Sprint 106) |
-| StrategyCard V2 and Research Funnel | Next (Sprint 107) |
+| StrategyCard V2 and Research Funnel | In Development (Sprint 107) |
 | Portfolio Evidence Data Plane | Planned (Sprint 108) |
 | Champion–Challenger Paper Incubation | Planned (Sprint 109) |
 | Shadow Portfolio Governance | Planned (Sprint 110) |
