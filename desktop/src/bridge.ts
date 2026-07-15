@@ -77,13 +77,21 @@ export async function hideWindow(): Promise<void> {
 }
 
 async function previewRun(onEvent: (event: AgentStreamEvent) => void) {
-  onEvent({ event: "answer_delta", text: "已受理只读研究请求，正在验证证据。" });
+  onEvent({
+    event: "answer_delta",
+    text: "## 策略运行概览\n\n已受理只读研究请求，正在验证证据。"
+  });
   await delay(240);
   onEvent({ event: "evidence_ready", count: 3 });
   await delay(360);
   onEvent({
     event: "answer_delta",
-    text: "当前市场方向仍需结合最新行情确认。已识别波动扩张信号，但证据不足以支持交易执行。"
+    text: `1. **#304** BTC/ETH/SOL · VWAP 成交量分布趋势
+   - 标的：BTC、ETH、SOL
+   - 状态：\`running\`
+   - 当前收益：**2.80%**
+
+> 当前市场方向仍需结合最新行情确认，现有证据不足以支持交易执行。`
   });
   onEvent({
     event: "final",

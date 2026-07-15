@@ -14,6 +14,7 @@ Mission Runtime，呈现简洁、可验证、左右分明的研究对话。
 - React/TypeScript 对话面板和 Mission 公共 SSE 事件投影。
 - Rust 侧服务健康检查和 SSE 代理，WebView 不直接持有服务或交易凭据。
 - 用户消息靠右、HT 结论靠左；原创非人物产品图标，小尺寸仍清晰。
+- HT 输出以不执行原始 HTML 的 GFM 子集渲染；用户输入继续按纯文本显示。
 - macOS `.app` 本地构建、前端与 Rust 测试、Retina 逻辑尺寸验证。
 
 ## Out of scope
@@ -29,6 +30,7 @@ Mission Runtime，呈现简洁、可验证、左右分明的研究对话。
 - 一轮对话中用户问题显示在右侧，HT 欢迎语、流式结论、证据和错误显示在左侧。
 - 桌面端消费 `answer_delta`、`evidence_ready`、`warning`、`final` 和错误事件，不复制
   Mission 状态机或交易业务逻辑。
+- 标题、列表、强调、引用、代码和表格具有适合窄窗口的明确排版，Markdown 标记不直接暴露。
 - `pnpm check`、Tauri app bundle 构建和 `git diff --check` 通过。
 
 ## Verification

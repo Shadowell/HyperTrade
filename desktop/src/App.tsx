@@ -23,6 +23,7 @@ import {
   type AgentStreamEvent
 } from "./bridge";
 import { applyAgentEvent, eventActivity, type ChatMessage } from "./conversation";
+import AssistantMarkdown from "./AssistantMarkdown";
 
 type RuntimeStatus = "connecting" | "online" | "offline" | "running" | "error";
 
@@ -264,9 +265,17 @@ function App() {
                 {message.role === "user" ? "你的问题" : "HT 结论"}
                 {message.state === "streaming" && <span className="typing-mark">分析中</span>}
               </div>
-              <div className="message-copy">
-                {message.text || <span className="thinking-placeholder">正在读取可验证证据…</span>}
-              </div>
+              {message.text ? (
+                message.role === "assistant" ? (
+                  <AssistantMarkdown source={message.text} />
+                ) : (
+                  <div className="message-copy message-copy-plain">{message.text}</div>
+                )
+              ) : (
+                <div className="message-copy">
+                  <span className="thinking-placeholder">正在读取可验证证据…</span>
+                </div>
+              )}
               {typeof message.evidenceCount === "number" && (
                 <div className="evidence-chip">
                   <Database size={13} /> 已验证证据 {message.evidenceCount}

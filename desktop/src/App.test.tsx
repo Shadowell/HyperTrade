@@ -17,11 +17,12 @@ describe("HyperTrade desktop bot", () => {
     await screen.findByText("服务已连接");
 
     fireEvent.change(screen.getByLabelText("研究问题"), {
-      target: { value: "验证 BTC 波动风险" }
+      target: { value: "验证 **BTC** 波动风险" }
     });
     fireEvent.click(screen.getByRole("button", { name: "发送研究问题" }));
 
-    expect(await screen.findByText("验证 BTC 波动风险")).toBeInTheDocument();
+    expect(await screen.findByText("验证 **BTC** 波动风险")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "策略运行概览" })).toBeInTheDocument();
     expect(container.querySelector(".message-user")).toHaveTextContent("你的问题");
     expect(container.querySelector(".message-assistant")).toHaveTextContent("HT 结论");
   });

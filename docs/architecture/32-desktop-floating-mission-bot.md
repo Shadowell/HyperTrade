@@ -29,6 +29,8 @@ remain server-side. The client introduces no paper, live, order, approval or cap
   the active display scale factor so Retina displays do not halve the intended UI.
 - HT conclusions are left-aligned with a teal evidence rail. User questions are right-aligned with
   a restrained brass edge, preserving normal two-party conversation direction.
+- Assistant output renders sanitized GitHub-Flavored Markdown for headings, lists, emphasis, quotes,
+  code and tables. Raw HTML is not enabled, while user-authored messages remain plain text.
 - The product symbol is an original non-human precision-instrument mark designed to remain legible at
   34–52 pixels. It does not use a person, mascot or third-party chat-product likeness.
 
