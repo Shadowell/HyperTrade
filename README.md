@@ -444,8 +444,10 @@ contained no raw-series keys. Sprint 109 is the next active slice.
 
 Sprint 109 groups committed paper evidence only when market, symbols, timeframes, cost model,
 horizon and bucket are identical. Champion/Challenger/Watch outputs are expiring review proposals,
-not return rankings or execution instructions; production may correctly remain without a Champion
-until at least two comparable paper members exist.
+not return rankings or execution instructions. Production acceptance retained all three Cards but
+correctly returned `needs_data`, 0 comparable members and 0 proposals because no complete comparable
+paper cohort exists; rebuild was idempotent and paper/live counts did not change. Gate G is closed,
+and Sprint 110 Shadow Portfolio governance is the next implementation slice.
 
 ---
 
@@ -497,8 +499,8 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Agent Research Quality Closure | Production (Sprint 106) |
 | StrategyCard V2 and Research Funnel | Production (Sprint 107) |
 | Portfolio Evidence Data Plane | Production (Sprint 108) |
-| Champion–Challenger Paper Incubation | In Development (Sprint 109) |
-| Shadow Portfolio Governance | Planned (Sprint 110) |
+| Champion–Challenger Paper Incubation | Production (Sprint 109) |
+| Shadow Portfolio Governance | In Development (Sprint 110) |
 
 ### Planned (V3+)
 

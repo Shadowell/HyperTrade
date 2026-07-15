@@ -1,6 +1,6 @@
 # Sprint 109 - Champion–Challenger Paper Incubation
 
-> 状态：Active；2026-07-15 在 Sprint 108 组合证据验收后自动进入实施。
+> 状态：Completed；2026-07-15 通过本地、迁移与生产验收，Gate G 已关闭。
 
 ## Goal
 
@@ -104,3 +104,32 @@ Manual/production checks:
 - Gate G 只有在 cohort 可比性、人工决定和零 paper lifecycle dispatch 均验收后关闭。
 - Gate G 通过后才激活 Sprint 110；Shadow Portfolio 只能消费有效、未过期且来源版本明确的
   cohort/observation evidence，仍不得执行订单或资金动作。
+
+## Implementation Record
+
+- Alembic `0021_paper_cohorts` 新增 immutable `paper_cohort_snapshots` 与独立
+  `paper_cohort_label_decisions`；cohort key/version、source/content hash 与幂等键均由数据库
+  唯一约束保护，迁移完成 `head -> 0020 -> head` PostgreSQL 往返验证。
+- `PaperCohortService` 从 StrategyCard V2 固定分母开始，只读取已提交 Manifest、Card 与
+  `PortfolioObservationWindow` summary。market/symbol/timeframe/cost/horizon/bucket/policy 任一
+  不一致或 unknown 都拆组或拒绝，不会删除 intake 成员。
+- 服务端以 evidence、validation、data quality、decay、drawdown、volatility、regime coverage
+  的词典序门禁生成建议，return 仅为末级附属证据；不足两个可比成员时只允许 Watch。
+- 标签 proposal 带 policy hash、source refs 与 `valid_until`；accept/reject/hold 只写独立审计
+  事实，过期 proposal 拒绝决定，所有响应明确 execution/paper lifecycle 均未授权。
+- REST、CLI `/cohorts`、Textual Portfolio 与 Web Portfolio 均消费同一服务端投影；静态测试
+  阻止 cohort 模块导入 BitPro、paper lifecycle、live order 或 capital allocation 路径。
+
+## Acceptance Record
+
+- `./scripts/check.sh`：前端 lint、9 tests、build，Ruff，mypy 147 source files，514 Python
+  tests 全部通过；Sprint 109 focused suite 8 tests 通过。
+- 临时 PostgreSQL 验证 `upgrade head -> downgrade 0020 -> upgrade head`，最终 revision
+  `0021_paper_cohorts` 且两张表均存在。
+- 实现提交 `22dbc3c` 经 GitHub Actions workflow `29390025815` 部署；生产 SHA、API health、
+  Alembic head、Web Portfolio 200 与 API/worker error-log smoke 均通过。
+- 生产 cohort `pcoh_cbf6b383e7b448d7a36f` 绑定 window
+  `pwin_c23b2d48cfab40eeb3f9`：intake 3、comparable 0、proposal 0、status `needs_data`；
+  相同幂等键重放同一 id。
+- 验收前后 PaperPromotion 0、PaperReviewRequest 0、label decision 0、paper order 10、live
+  intent 1，证明 cohort 构建没有 paper/live/order/capital 副作用。

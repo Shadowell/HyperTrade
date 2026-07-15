@@ -1,6 +1,6 @@
 # 29 Research Operations 与 Shadow Portfolio 路线图
 
-> 状态：In implementation；Sprint 108 已完成组合证据验收，Sprint 109 已激活。
+> 状态：In implementation；Sprint 109 已完成 paper cohort 验收，Sprint 110 为下一阶段。
 
 ## 1. 规划目标
 
@@ -222,8 +222,12 @@ flowchart LR
 
 ### 9.3 实施状态
 
-- Sprint 109 合同已激活；只消费 committed Card/Paper/Observation summary，comparability 与
-  label proposal 在服务端确定。所有标签都需人工决定且有有效期，不能触发 paper/live 写入。
+- Sprint 109 已完成。`0021` 保存 immutable cohort snapshot 与独立人工 label decision；固定
+  Card denominator、完整 comparison key、source/content hash、版本和幂等约束均在服务端执行。
+- 标签排序先 evidence/validation/data quality/decay/drawdown/volatility/regime，再以 return 作为
+  末级附属证据；少于两个可比成员时只允许 Watch，过期 proposal 不能再决定。
+- 生产三 Card cohort 得到 0 comparable/0 proposal/`needs_data`，重放幂等；promotion、review、
+  decision、paper order 与 live intent 计数验证无 lifecycle/execution dispatch。Gate G 已关闭。
 
 ## 10. Sprint 110：Shadow Portfolio & Capital Governance
 
@@ -262,6 +266,8 @@ flowchart LR
 
 - 组合输入覆盖率、观察窗口和可比性可量化。
 - Paper cohort 只读运行并经过人工复核。
+- 状态：2026-07-15 已通过；bounded evidence、fixed denominator、exact comparability、expiring
+  review labels 与零 paper/live/order/capital dispatch 均完成生产验证。
 
 ### Gate H：Shadow Capital Governance（Sprint 110）
 

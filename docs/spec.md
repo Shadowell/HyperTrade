@@ -198,11 +198,13 @@ remain explicit unknowns and cannot trigger paper, live, order or capital action
 The production three-Card denominator retained two no-window candidates and one available bounded
 window; raw-series key audit and execution-side count comparisons passed.
 
-Sprint 109 is active under
+Sprint 109 completed production acceptance under
 `docs/contracts/sprint-109-champion-challenger-paper-incubation.md`. Cohorts consume committed
-Card/Paper/Observation summaries only, require exact comparison keys, retain every rejected/unknown
-candidate in the denominator, and make all expiring labels human-review facts with no paper/live/
-order/capital authority.
+Card/Manifest/Observation summaries only, require exact comparison keys, retain every rejected or
+unknown candidate in the denominator, and make all expiring labels human-review facts with no
+paper/live/order/capital authority. Production retained three Cards but returned 0 comparable
+members and 0 proposals, with idempotent replay and unchanged execution-side counts. Gate G is
+closed; Sprint 110 adds only execution-isolated Shadow Portfolio proposals and review facts.
 
 Sprint 107 implementation uses `ExperimentManifest` as the StrategyCard V2 identity boundary.
 Mandate-scoped lineages, Manifest-bound versions, immutable content-hashed snapshots and human
