@@ -35,6 +35,8 @@ def build_operator_response(
         if observation is None:
             continue
         unknowns.extend(item for item in observation.unknowns if item not in unknowns)
+        if attempt.capability_id.startswith("runtime."):
+            continue
         if observation.status == "succeeded" and _has_valid_provenance(observation):
             evidence.append(
                 OperatorEvidenceV1(
@@ -43,8 +45,8 @@ def build_operator_response(
                     artifact_refs=tuple(observation.artifact_refs[:3]),
                 )
             )
-        elif observation.status == "succeeded":
-            unknowns.append(f"{attempt.step_id} 未返回可验证来源。")
+        elif observation.status == "succeeded" and not observation.unknowns:
+            unknowns.append("读取结果未返回可验证来源。")
         elif observation.error_category:
             failure_categories.append(observation.error_category)
 

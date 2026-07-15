@@ -349,12 +349,20 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
             handler_key="market.summary",
             input_schema={
                 "type": "object",
-                "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 50}},
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                    "inst_id": {"type": "string", "minLength": 5, "maxLength": 64},
+                },
                 "additionalProperties": False,
             },
             output_schema={
                 "type": "object",
-                "properties": {"items": {"type": "array"}, "count": {"type": "integer"}},
+                "properties": {
+                    "items": {"type": "array"},
+                    "count": {"type": "integer"},
+                    "requested_inst_id": {"type": "string"},
+                    "found": {"type": "boolean"},
+                },
                 "required": ["items", "count"],
             },
         ),

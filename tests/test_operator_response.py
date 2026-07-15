@@ -89,6 +89,43 @@ def test_empty_search_sentinel_is_not_presented_as_evidence() -> None:
     assert response.next_actions
 
 
+def test_runtime_objective_and_market_no_match_cannot_make_a_completed_answer() -> None:
+    response = build_operator_response(
+        mission(),
+        (
+            StepAttemptV2(
+                attempt_id="sat_objective",
+                step_id="inspect_objective",
+                attempt=1,
+                status="succeeded",
+                capability_id="runtime.objective_inspection",
+                observation=StepObservationV2(
+                    status="succeeded",
+                    summary="Objective fingerprint was validated.",
+                    source_refs=("mission:mis_operator_response",),
+                ),
+            ),
+            StepAttemptV2(
+                attempt_id="sat_missing_market",
+                step_id="market_snapshot",
+                attempt=1,
+                status="succeeded",
+                capability_id="market.summary",
+                observation=StepObservationV2(
+                    status="succeeded",
+                    summary="No market snapshot was found.",
+                    source_refs=("market:no_matches",),
+                    unknowns=("未找到 MU-USDT-SWAP 的可验证行情。",),
+                ),
+            ),
+        ),
+    )
+
+    assert response.outcome == "needs_data"
+    assert not response.evidence
+    assert response.unknowns == ("未找到 MU-USDT-SWAP 的可验证行情。",)
+
+
 def test_blocked_and_failed_responses_require_a_safe_next_action() -> None:
     canceled = build_operator_response(mission(MissionStatus.CANCELED), ())
     failed = build_operator_response(mission(MissionStatus.FAILED), ())

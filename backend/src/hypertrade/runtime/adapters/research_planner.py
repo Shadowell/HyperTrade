@@ -8,6 +8,7 @@ own capability selection, permission scope and completion semantics.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from hashlib import sha256
 from typing import Any
@@ -195,12 +196,15 @@ def _steps_for_objective(objective: str) -> Sequence[PlanStepV2]:
     previous = "inspect_objective"
     for capability_id in _capabilities_for_objective(objective)[1:]:
         if capability_id == "market.summary":
+            arguments: dict[str, Any] = {"limit": 10}
+            if inst_id := _requested_market_instrument(objective):
+                arguments["inst_id"] = inst_id
             step = PlanStepV2(
                 step_id="market_snapshot",
                 title="Read the bounded current market summary",
                 depends_on=(previous,),
                 capability_id=capability_id,
-                arguments={"limit": 10},
+                arguments=arguments,
                 expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
             )
         elif capability_id == "rag.search":
@@ -362,6 +366,24 @@ def _input_schema_for(capability_id: str) -> dict[str, Any]:
     if capability_id == "market.summary":
         return {"limit": "integer 1..50"}
     return {"query": "string", "limit": "integer"}
+
+
+def _requested_market_instrument(objective: str) -> str | None:
+    """Normalize an explicit ticker without treating arbitrary prose as a symbol."""
+
+    for raw in re.findall(r"(?<![A-Z0-9])([A-Z0-9-]{2,32})(?![A-Z0-9])", objective.upper()):
+        token = raw.replace("-", "")
+        if token.endswith("USDTSWAP"):
+            base = token[: -len("USDTSWAP")]
+        elif token.endswith("USDT"):
+            base = token[: -len("USDT")]
+        elif token in {"BTC", "ETH", "SOL"}:
+            base = token
+        else:
+            continue
+        if len(base) >= 2 and base.isalnum():
+            return f"{base}-USDT-SWAP"
+    return None
 
 
 def _json_object(content: str) -> str:

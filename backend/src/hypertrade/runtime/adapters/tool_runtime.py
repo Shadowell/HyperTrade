@@ -45,6 +45,7 @@ class ToolResult:
     source_refs: tuple[str, ...]
     artifact_refs: tuple[str, ...] = ()
     unknowns: tuple[str, ...] = ()
+    public_summary: str = ""
 
 
 ToolHandler = Callable[
@@ -351,7 +352,7 @@ class GovernedToolExecutor:
             truncated=truncated,
         )
         await self.observations.append(observation, idempotency_key=request.idempotency_key)
-        return _step_observation(observation)
+        return _step_observation(observation, summary=result.public_summary)
 
     @staticmethod
     def _request(
@@ -473,8 +474,22 @@ def builtin_handlers(db: Database, *, knowledge_dir: str) -> dict[str, ToolHandl
         attempt: int,
     ) -> ToolResult:
         limit = int(arguments.get("limit", 10))
+        requested_inst_id = str(arguments.get("inst_id", "")).strip().upper()
 
         def read() -> list[dict[str, str]]:
+            repository = MarketRepository(db)
+            if requested_inst_id:
+                row = repository.get_ticker(requested_inst_id)
+                if row is None:
+                    return []
+                return [
+                    {
+                        "inst_id": row.inst_id,
+                        "last": str(row.last),
+                        "volume_ccy_24h": str(row.volume_ccy_24h),
+                        "change_utc0_pct": str(row.change_utc0_pct),
+                    }
+                ]
             return [
                 {
                     "inst_id": row.inst_id,
@@ -482,13 +497,49 @@ def builtin_handlers(db: Database, *, knowledge_dir: str) -> dict[str, ToolHandl
                     "volume_ccy_24h": str(row.volume_ccy_24h),
                     "change_utc0_pct": str(row.change_utc0_pct),
                 }
-                for row in MarketRepository(db).latest_tickers(limit=limit)
+                for row in repository.latest_tickers(limit=limit)
             ]
 
         items = await anyio.to_thread.run_sync(read, limiter=limiter)
+        found = bool(items)
+        if requested_inst_id and not found:
+            return ToolResult(
+                payload={
+                    "items": [],
+                    "count": 0,
+                    "requested_inst_id": requested_inst_id,
+                    "found": False,
+                },
+                source_refs=("market:no_matches",),
+                unknowns=(f"未找到 {requested_inst_id} 的可验证行情。",),
+                public_summary=f"未找到 {requested_inst_id} 的可验证行情。",
+            )
+        if not found:
+            return ToolResult(
+                payload={"items": [], "count": 0, "requested_inst_id": "", "found": False},
+                source_refs=("market:no_matches",),
+                unknowns=("行情库当前没有可验证快照。",),
+                public_summary="行情库当前没有可验证快照。",
+            )
+        if requested_inst_id:
+            item = items[0]
+            summary = (
+                f"{item['inst_id']} 最新价 {item['last']}，"
+                f"24h 变动 {item['change_utc0_pct']}%。"
+            )
+            source_refs = (f"hypertrade_db:market_tickers:{requested_inst_id}",)
+        else:
+            summary = f"已读取 {len(items)} 个最新合约行情快照。"
+            source_refs = ("hypertrade_db:market_tickers",)
         return ToolResult(
-            payload={"items": items, "count": len(items)},
-            source_refs=("hypertrade_db:market_tickers",),
+            payload={
+                "items": items,
+                "count": len(items),
+                "requested_inst_id": requested_inst_id,
+                "found": True,
+            },
+            source_refs=source_refs,
+            public_summary=summary,
         )
 
     async def rag_search(
@@ -518,6 +569,12 @@ def builtin_handlers(db: Database, *, knowledge_dir: str) -> dict[str, ToolHandl
             payload={"hits": payload, "count": len(payload)},
             source_refs=tuple(f"rag:{hit.source_path}#{hit.chunk_index}" for hit in hits)
             or ("rag:no_matches",),
+            unknowns=("未找到与本请求匹配的研究证据。",) if not hits else (),
+            public_summary=(
+                f"检索到 {len(payload)} 条受控研究证据。"
+                if payload
+                else "未找到与本请求匹配的研究证据。"
+            ),
         )
 
     async def memory_search(
@@ -546,6 +603,12 @@ def builtin_handlers(db: Database, *, knowledge_dir: str) -> dict[str, ToolHandl
         return ToolResult(
             payload={"items": items, "count": len(items)},
             source_refs=tuple(f"memory:{row.id}" for row in rows) or ("memory:no_matches",),
+            unknowns=("未找到可用的历史研究记忆。",) if not rows else (),
+            public_summary=(
+                f"检索到 {len(items)} 条受治理历史研究记忆。"
+                if items
+                else "未找到可用的历史研究记忆。"
+            ),
         )
 
     return {
@@ -595,13 +658,13 @@ def _redact(value: Any) -> Any:
 def _step_observation(
     observation: ToolObservationV2,
     *,
-    summary: str = "Capability completed with a schema-valid observation.",
+    summary: str = "",
 ) -> StepObservationV2:
     status = "succeeded" if observation.status in {"succeeded", "replayed"} else "failed"
     return StepObservationV2.model_validate(
         {
             "status": status,
-            "summary": summary,
+            "summary": summary or "Capability completed with a schema-valid observation.",
             "result": observation.result_preview,
             "source_refs": observation.source_refs,
             "artifact_refs": observation.artifact_refs,
