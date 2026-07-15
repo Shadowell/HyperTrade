@@ -25,6 +25,9 @@ _EXECUTION_TERMS = ("下单", "买入", "卖出", "开仓", "平仓", "执行", 
 _MAINNET_TERMS = ("主网", "实盘", "mainnet", "live")
 _APPROVAL_TERMS = ("未批准", "待批准", "批准", "approval", "approve")
 _STALE_TERMS = ("过期", "stale", "timeout", "超时")
+_IN_SAMPLE_TERMS = ("样本内", "in-sample", "insample")
+_OOS_TERMS = ("样本外", "oos", "out-of-sample", "out of sample")
+_CONFLICT_TERMS = ("冲突", "矛盾", "不一致", "conflict", "diverge")
 
 
 def classify_objective_safety(objective: str) -> ObjectiveSafety:
@@ -68,3 +71,19 @@ def _has_excessive_leverage(value: str) -> bool:
         if int(match.group(1)) >= 20:
             return True
     return False
+
+
+def requires_evidence_review(objective: str) -> bool:
+    """Identify a strategy-evidence conflict without blocking read-only research.
+
+    Unlike an order approval, a conflict between in-sample and out-of-sample
+    results still benefits from governed reads. The public answer must retain
+    that evidence but cannot present a promotion or risk-change conclusion.
+    """
+
+    lowered = objective.casefold()
+    return (
+        any(term in lowered for term in _IN_SAMPLE_TERMS)
+        and any(term in lowered for term in _OOS_TERMS)
+        and any(term in lowered for term in _CONFLICT_TERMS)
+    )

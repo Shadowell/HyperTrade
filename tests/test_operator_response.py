@@ -154,6 +154,31 @@ def test_stale_input_is_reported_as_a_data_gap_not_a_user_clarification() -> Non
     assert response.next_actions
 
 
+def test_conflicting_in_and_out_of_sample_evidence_requires_review() -> None:
+    response = build_operator_response(
+        mission(objective="当样本内收益与 OOS 结果冲突时，是否可推进策略"),
+        (
+            StepAttemptV2(
+                attempt_id="sat_conflict",
+                step_id="strategy_evidence",
+                attempt=1,
+                status="succeeded",
+                capability_id="strategy.performance_summary",
+                observation=StepObservationV2(
+                    status="succeeded",
+                    summary="策略回测摘要已读取。",
+                    source_refs=("hypertrade_db:backtest_runs:196",),
+                ),
+            ),
+        ),
+    )
+
+    assert response.outcome == "needs_review"
+    assert response.evidence
+    assert response.unknowns
+    assert response.next_actions
+
+
 def test_operator_answer_golden_catalog_and_fixtures_are_contract_compliant() -> None:
     suite = OperatorAnswerEvalSuite()
 

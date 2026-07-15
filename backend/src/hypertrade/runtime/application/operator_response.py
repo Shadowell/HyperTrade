@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from hypertrade.runtime.application.safety_intent import classify_objective_safety
+from hypertrade.runtime.application.safety_intent import (
+    classify_objective_safety,
+    requires_evidence_review,
+)
 from hypertrade.runtime.domain.models import (
     MissionProjection,
     MissionStatus,
@@ -31,6 +34,9 @@ def build_operator_response(
     evidence: list[OperatorEvidenceV1] = []
     safety = classify_objective_safety(mission.objective)
     unknowns = _unique((*mission.unknowns, *safety.unknowns))
+    evidence_review_required = requires_evidence_review(mission.objective)
+    if evidence_review_required:
+        unknowns.append("样本内与样本外结果的可比性和失效原因尚未完成独立复核。")
     failure_categories: list[str] = []
     for attempt in attempts:
         observation = attempt.observation
@@ -60,6 +66,7 @@ def build_operator_response(
         unknowns=visible_unknowns,
         failure_categories=failure_categories,
         input_is_data_gap=safety.disposition == "needs_data",
+        evidence_review_required=evidence_review_required,
     )
     return OperatorResponseV1(
         mission_id=mission.mission_id,
@@ -97,7 +104,15 @@ def _outcome(
     unknowns: tuple[str, ...],
     failure_categories: Sequence[str],
     input_is_data_gap: bool,
+    evidence_review_required: bool,
 ) -> tuple[str, str, str, tuple[str, ...]]:
+    if evidence_review_required:
+        return (
+            "needs_review",
+            "样本内与样本外证据存在冲突，当前不能据此推进策略或改变风险暴露。",
+            "not_assessed",
+            ("核对样本划分、成本口径和市场制度后，由策略负责人完成独立复核。",),
+        )
     if status == MissionStatus.COMPLETED and evidence and not unknowns:
         return (
             "completed",

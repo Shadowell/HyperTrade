@@ -75,6 +75,9 @@
 - Context compilation now distinguishes an embedded raw data array from a governed capability schema
   that merely declares `positions` or `orders`. This prevents a valid paper-summary Mission from
   failing before its read-only tool runs, while retaining the raw-series rejection boundary.
+- When in-sample and out-of-sample strategy evidence explicitly conflict, the public response now
+  preserves its governed evidence but returns `needs_review`: it neither promotes the strategy nor
+  changes risk exposure before an operator checks sample design, cost assumptions and regime fit.
 - Local CLI full-canary execution now creates only a Mission, and remote CLI sends an idempotency key
   for replay-safe API routing. Mission event SSE honours both `after` and `Last-Event-ID`. A separate
   disabled-by-default Mission worker now uses SQL lease claim/heartbeat/release and terminal lease
