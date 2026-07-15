@@ -18,6 +18,11 @@
 - Production intentionally enables Mission Runtime/worker, dynamic-team and the reviewed sandbox
   after these gates. Deployment workflow `29443605644` succeeded; API, worker, sandbox and PostgreSQL
   health checks passed. Source defaults remain fail-closed for fresh deployments.
+- Final completion audit reconciled the Sprint 111–115 QA and contract time-state with this Gate M
+  closure: source defaults remain fail-closed, while the verified production runtime is explicitly
+  enabled only within the reviewed Mission/sandbox boundaries.
+- The final post-audit `./scripts/check.sh` passed; the repository collected 642 Python tests, with
+  frontend lint, 9 frontend tests, production build, Ruff and strict mypy also passing.
 
 ## User-directed desktop floating bot — 2026-07-16
 

@@ -14,6 +14,8 @@ declared support boundary, and the production Mission worker, public stream, dig
   and cursor coverage.
 - Frontend lint passed; Vitest passed with 2 files / 9 tests; TypeScript/Vite production build passed.
 - Ruff passed after import/line normalization; strict mypy passed for 169 source files.
+- Final completion audit collected 642 Python tests; its post-audit `./scripts/check.sh` passed frontend
+  lint/test/build, Ruff, strict mypy and the full pytest suite.
 - Reopened cutover slice: a provider-backed, catalog-bounded planner now replaces the single-step
   Foundation planner in application composition. API chat canary coverage proves a 100% canary writes
   only a Mission and replays the same idempotency key without an `AgentTask`/`AgentRun` row.

@@ -2,8 +2,8 @@
 
 ## Verdict
 
-PASS for the local/CI contract; production activation remains deliberately fail-closed until the
-rootless container canary in Sprint 116.
+PASS. The local/CI contract and the rootless production canary are closed. Source defaults remain
+fail-closed; the production feature was enabled only after the Sprint 116 boundary checks passed.
 
 ## Contract review
 
@@ -25,7 +25,7 @@ rootless container canary in Sprint 116.
 
 ## Verification
 
-- `uv run pytest tests/test_strategy_sandbox.py tests/test_sandbox_isolation.py -q` -> **20 passed**.
+- `uv run pytest tests/test_strategy_sandbox.py tests/test_sandbox_isolation.py -q` -> **21 passed**.
 - `uv run ruff check backend tests` -> passed.
 - `uv run mypy backend/src` -> passed.
 - `git diff --check` -> passed.
@@ -34,13 +34,14 @@ rootless container canary in Sprint 116.
 
 ## Production status
 
-No production sandbox run or BitPro import was performed. The feature flag remains disabled by
-default. A production rollout must first provide a rootless Docker/OCI adapter with network-none,
-read-only filesystem, non-root UID, cgroup/pids limits, no host Docker socket and a canary escape
-suite. Until then, the API fails closed rather than claiming isolation.
+Sprint 116 verified the rootless service with `network=none`, read-only root, UID/GID `65532`, no
+Docker socket or provider/BitPro credentials, bounded PID/memory/CPU/tmpfs resources and an immutable
+image digest. A valid lint/test/limited-backtest run passed; network imports were rejected before
+execution; CPU and wall-time limits terminated adversarial candidates; and sandbox review recorded
+`external_write_performed=false`. No BitPro import, paper, live, order or capital action occurred.
 
-## Next
+## Follow-up
 
-Sprint 116 should implement the container deployment adapter and the professional Mission operator
-workspace (REST/SSE replay, plan/step/artifact ledger, pause/resume/steer/review) before deleting old
-runtime write paths.
+Keep the source defaults fail-closed and require the same canary evidence for any new deployment.
+Future work may add an explicit, separately governed BitPro import workflow; sandbox acceptance itself
+must remain a no-import proposal fact.

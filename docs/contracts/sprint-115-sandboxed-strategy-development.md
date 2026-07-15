@@ -1,7 +1,8 @@
 # Sprint 115 - Sandboxed Strategy Development
 
-> 状态：Completed locally；Gate L 的生产激活项保持 fail-closed，等待 Sprint 116 的 rootless
-> container deployment canary。
+> 状态：Completed；Gate L 的 rootless production canary 已于 2026-07-16 在 Sprint 116 关闭。
+> 源码默认仍 fail-closed；生产仅在 digest-bound isolated service 验证后显式启用，未开放任何
+> BitPro import、paper、live、order 或 capital mutation。
 
 ## Goal
 
@@ -45,7 +46,7 @@
 - review 精确绑定 import manifest；幂等且 append-only，accept 不触发外部写入。
 - 生产/预发布 APP_ENV 下拒绝宿主/API subprocess fallback；没有可用的 digest-bound sandbox service 时 API
   返回 503，而不是降级执行。
-- 全仓检查、migration 往返、production flag-off 和隔离 canary 通过。
+- 全仓检查、migration 往返、缺少 service 时的 production fail-closed 行为和隔离 canary 通过。
 
 ## Verification
 
@@ -59,13 +60,16 @@ Required scenarios: happy patch/test, path traversal, symlink, forbidden extensi
 network/Docker/package/shell denial, interpreter `-c` denial, timeout, output truncation, workspace
 quota, failed test, hash tamper, idempotent review, accept-no-import, SQL/API and restart projection.
 
-Focused acceptance completed locally: `19 passed`; Ruff and strict mypy passed. The subprocess
+Focused acceptance completed locally: `21 passed`; Ruff and strict mypy passed. The subprocess
 adapter now writes command output to a bounded temporary file, kills the complete process group on
-timeout, limits process count, records `output_bytes`, and keeps production/staging fail-closed.
-SQL projection includes `agent_sandbox_artifacts` and API rejects unknown Mission artifact refs.
+timeout, limits process count, records `output_bytes`, and keeps production/staging fail-closed when
+the isolated service is absent. SQL projection includes `agent_sandbox_artifacts` and API rejects
+unknown Mission artifact refs. Sprint 116 subsequently verified the production service's non-root,
+networkless/read-only boundary, static network-import denial, CPU-limit termination, wall-timeout
+termination and accept/reject review with `external_write_performed=false`.
 
 ## Handoff
 
-Gate L local contract is closed. Production activation still requires an isolated sandbox-service
-canary with network namespace denial, read-only filesystem, cgroup/pids limits and no Docker socket.
-Sprint 116 may add that deployment adapter and the operator UX, but cannot loosen the review boundary.
+Gate L is closed. The production canary verified network namespace denial, read-only filesystem,
+cgroup/pids limits and no Docker socket. Future changes may extend operator UX, but cannot loosen the
+review boundary or convert a review fact into an automatic import.
