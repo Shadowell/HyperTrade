@@ -143,3 +143,28 @@ Migration `0025_agent_context_artifacts` adds immutable context manifests, artif
 lineage relations. REST projections expose packs, artifacts and relations under the Mission. Before
 completion, every observation artifact ref must resolve to a current artifact in that Mission and an
 `artifact_kind_exists` criterion queries the index rather than trusting a model-written string.
+
+## Sprint 114 Bounded Multi-Agent Supervisor
+
+The Supervisor selects only version-controlled `RoleDefinitionV1` entries. The initial catalog has
+research lead, market analyst, evidence analyst and critic roles; every role permits only reviewed
+read capabilities and `read_only.v1`. Assignment identity is an idempotent hash of the team request
+and immutable work contract. Unknown roles/capabilities, permission mismatch, repeated identities,
+unknown dependencies and per-role concurrency excess fail before dispatch.
+
+Assignments form a DAG. Independent ready nodes execute in an AnyIO TaskGroup; dependent layers wait
+for their prerequisites. The maximum team is four. Before a node runs, the store atomically reserves
+tokens, tool calls, model calls and duration against canonical Mission usage plus every active sibling
+reservation. Success commits the reservation; timeout, failure or cancellation releases it under a
+shielded cleanup boundary. PostgreSQL locks the Mission projection during reservation.
+
+`HandoffV1` carries summary, claims, Context Pack/Artifact/source refs, unknowns and a replayable
+output hash. It cannot contain hidden transcript/private-reasoning markers and must cite one of its
+assigned Context Packs. Merge groups claims by key and exact value: one value is agreed, multiple
+values create an immutable `ConflictV1` and an explicit merge unknown. There is no majority vote or
+last-writer resolution.
+
+Migration `0026_agent_supervision` adds assignments, budget reservations, handoffs and conflicts.
+REST exposes the reviewed role catalog, team run and shared supervision projection. Team execution
+is disabled by default with `AGENT_DYNAMIC_TEAM_ENABLED=false`; enabling it does not add write,
+paper, live, order or capital capabilities.

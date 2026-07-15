@@ -1,6 +1,6 @@
 # Sprint 114 - Bounded Multi-Agent Supervisor
 
-> 状态：Active；Sprint 113 Gate J2 已于 2026-07-15 关闭。
+> 状态：Implemented / production acceptance pending；Sprint 113 Gate J2 已关闭。
 
 ## Goal
 

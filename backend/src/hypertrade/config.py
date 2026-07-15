@@ -78,6 +78,7 @@ class Settings(BaseSettings):
         le=100,
         alias="MISSION_RUNTIME_CANARY_PERCENT",
     )
+    dynamic_team_enabled: bool = Field(default=False, alias="AGENT_DYNAMIC_TEAM_ENABLED")
     research_triggers_enabled: bool = Field(default=False, alias="RESEARCH_TRIGGERS_ENABLED")
     research_trigger_poll_interval_seconds: float = Field(
         default=10.0,

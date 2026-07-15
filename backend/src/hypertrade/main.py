@@ -144,6 +144,13 @@ from hypertrade.runtime.adapters.context_engine import (
 from hypertrade.runtime.adapters.foundation import FoundationPlanner
 from hypertrade.runtime.adapters.memory_store import InMemoryMissionStore
 from hypertrade.runtime.adapters.sql_store import SqlAlchemyMissionStore
+from hypertrade.runtime.adapters.supervisor import (
+    BoundedSupervisor,
+    InMemorySupervisionStore,
+    RoleCatalog,
+    SqlSupervisionStore,
+    deterministic_worker,
+)
 from hypertrade.runtime.adapters.tool_runtime import (
     GovernedToolExecutor,
     InMemoryObservationStore,
@@ -157,6 +164,7 @@ from hypertrade.runtime.domain.capabilities import (
 )
 from hypertrade.runtime.domain.context import MissionArtifactCreateV1
 from hypertrade.runtime.domain.models import MissionCreate, SteeringEventV1
+from hypertrade.runtime.domain.supervision import TeamRunRequestV1
 from hypertrade.skills.lifecycle import (
     ApprovedSkillLoader,
     SkillApprovalV1,
@@ -358,6 +366,13 @@ def create_app(
         else SqlContextArtifactStore(database.url)
     )
     context_engine = ContextArtifactEngine(context_artifact_store)
+    supervision_store = (
+        InMemorySupervisionStore()
+        if database.url == "sqlite:///:memory:"
+        else SqlSupervisionStore(database.url)
+    )
+    role_catalog = RoleCatalog()
+    supervisor = BoundedSupervisor(supervision_store, role_catalog)
     tool_executor = GovernedToolExecutor(
         capability_catalog,
         builtin_handlers(database, knowledge_dir=str(app_settings.knowledge_dir)),
@@ -384,6 +399,7 @@ def create_app(
                 capability_catalog,
                 observation_store,
                 context_artifact_store,
+                supervision_store,
             ):
                 dispose = getattr(resource, "dispose", None)
                 if dispose is not None:
@@ -401,6 +417,8 @@ def create_app(
     app.state.tool_executor = tool_executor
     app.state.context_engine = context_engine
     app.state.context_artifact_store = context_artifact_store
+    app.state.supervisor = supervisor
+    app.state.supervision_store = supervision_store
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -981,6 +999,61 @@ def create_app(
         _: AdminUser,
     ) -> dict[str, Any]:
         return tool_executor.circuit.state(capability_id).model_dump(mode="json")
+
+    @app.get("/api/agent/roles")
+    async def list_agent_roles(_: AdminUser) -> dict[str, Any]:
+        return {"roles": [role.model_dump(mode="json") for role in role_catalog.list()]}
+
+    @app.post("/api/agent/missions/{mission_id}/team/run")
+    async def run_agent_team(
+        mission_id: str,
+        payload: TeamRunRequestV1,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        if not app_settings.dynamic_team_enabled:
+            raise HTTPException(status_code=503, detail="Dynamic team runtime is disabled")
+        try:
+            mission = await mission_store.get(mission_id)
+            packs = await context_artifact_store.list_packs(mission_id)
+            allowed_context_refs = {
+                f"context:{pack.context_pack_id}@{pack.manifest_hash}" for pack in packs
+            }
+            requested_context_refs = {
+                ref for item in payload.assignments for ref in item.context_pack_refs
+            }
+            if not requested_context_refs <= allowed_context_refs:
+                raise ValueError("assignment references an unknown Mission Context Pack")
+            merge = await supervisor.run(mission, payload, deterministic_worker())
+            await mission_store.append_event(
+                mission_id,
+                "team.completed",
+                actor="supervisor",
+                payload={
+                    "handoff_count": len(merge.handoff_refs),
+                    "conflict_count": len(merge.conflicts),
+                    "unknown_count": len(merge.unknowns),
+                },
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mission not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return merge.model_dump(mode="json")
+
+    @app.get("/api/agent/missions/{mission_id}/supervision")
+    async def get_agent_supervision(mission_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            await mission_store.get(mission_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mission not found") from exc
+        assignments = await supervision_store.assignments(mission_id)
+        handoffs = await supervision_store.handoffs(mission_id)
+        conflicts = await supervision_store.conflicts(mission_id)
+        return {
+            "assignments": [row.model_dump(mode="json") for row in assignments],
+            "handoffs": [row.model_dump(mode="json") for row in handoffs],
+            "conflicts": [row.model_dump(mode="json") for row in conflicts],
+        }
 
     @app.get("/api/agent/missions/{mission_id}/context-packs")
     async def list_agent_context_packs(mission_id: str, _: AdminUser) -> dict[str, Any]:

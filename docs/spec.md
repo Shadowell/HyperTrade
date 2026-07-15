@@ -254,6 +254,13 @@ external refs or bounded safe previews. Completion rejects forged, cross-Mission
 superseded artifact refs. Raw BitPro series, credentials, full transcripts and private reasoning are
 forbidden from both stores.
 
+Sprint 114 adds a bounded Multi-Agent Supervisor over four reviewed read-only roles. Independent
+assignment DAG nodes may run concurrently only after atomic token/tool/model/duration reservation;
+dependencies run in later layers and role/team concurrency is hard-limited. Handoffs are structured,
+source-bound and content-hashed. Contradictory claims create an immutable Conflict ledger and remain
+explicit unknowns in merge output. Dynamic teams are disabled by default and cannot add write,
+paper, live, order or capital permissions.
+
 Sprint 107 implementation uses `ExperimentManifest` as the StrategyCard V2 identity boundary.
 Mandate-scoped lineages, Manifest-bound versions, immutable content-hashed snapshots and human
 lifecycle decisions are projection facts in `0019`; they cannot edit source facts or authorize

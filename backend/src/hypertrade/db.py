@@ -446,6 +446,72 @@ class AgentArtifactRelation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class AgentAssignment(Base, TimestampMixin):
+    """Bounded supervisor work item; role and budget are immutable after dispatch."""
+
+    __tablename__ = "agent_assignments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("asgn"))
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    role_id: Mapped[str] = mapped_column(String(64), index=True)
+    objective: Mapped[str] = mapped_column(Text)
+    capability_id: Mapped[str] = mapped_column(String(160), index=True)
+    depends_on_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    context_pack_refs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    artifact_refs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    reservation_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+
+
+class AgentBudgetReservation(Base, TimestampMixin):
+    """Atomic reservation prevents parallel branches from oversubscribing Mission budget."""
+
+    __tablename__ = "agent_budget_reservations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("bres"))
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    assignment_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    tokens: Mapped[int] = mapped_column(Integer)
+    tool_calls: Mapped[int] = mapped_column(Integer)
+    model_calls: Mapped[int] = mapped_column(Integer)
+    duration_ms: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), default="reserved", index=True)
+
+
+class AgentHandoff(Base):
+    """Structured Agent output with refs and hash; hidden transcripts are never persisted."""
+
+    __tablename__ = "agent_handoffs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("hndf"))
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    assignment_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    role_id: Mapped[str] = mapped_column(String(64), index=True)
+    summary: Mapped[str] = mapped_column(Text)
+    claims_json: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    source_refs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    artifact_refs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    unknowns_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    output_hash: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentConflict(Base):
+    """Contradictory claims remain explicit until an evidence-bound resolution is recorded."""
+
+    __tablename__ = "agent_conflicts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("cnfl"))
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    claim_key: Mapped[str] = mapped_column(String(160), index=True)
+    values_json: Mapped[dict[str, list[str]]] = mapped_column(JSON, default=dict)
+    source_refs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(32), default="unresolved", index=True)
+    resolution: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class RagDocument(Base, TimestampMixin):
     __tablename__ = "rag_documents"
 

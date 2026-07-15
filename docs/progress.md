@@ -4,6 +4,13 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 114 implementation state: implementation and local acceptance complete on 2026-07-15;
+  production acceptance is pending. Four reviewed read-only roles, deterministic assignment DAGs,
+  AnyIO parallel execution, role concurrency limits, atomic token/tool/model/duration reservations,
+  timeout/cancel release, idempotent identities, structured hashed handoffs and conflict-preserving
+  merge are implemented. SQL ledgers, authenticated role/team/supervision APIs, disabled-by-default
+  `AGENT_DYNAMIC_TEAM_ENABLED` and migration `0026_agent_supervision` are included. Full checks passed
+  584 Python and 9 frontend tests.
 - Sprint 113 implementation state: completed and production-verified on 2026-07-15. Deterministic
   per-step Context Packs retain objective,
   constraints, permission, Plan and Step blocks, apply a hard token ledger, stable tier ordering,
