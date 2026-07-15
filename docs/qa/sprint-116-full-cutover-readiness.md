@@ -2,11 +2,11 @@
 
 ## Verdict
 
-**IN PROGRESS — completion audit reopened the Sprint.** The initial Mission workspace, readiness
-contract and fail-closed production sandbox wiring passed locally, but the audit found that the
-default chat API, local CLI/TUI and worker still use legacy `AgentKernel`/`AgentTask` write paths.
-That contradicts the full-cutover contract. The production canary also remains pending because no
-reviewed rootless Docker image/digest is available in this environment.
+**IN PROGRESS — implementation cutover is locally verified; operational Gate M remains open.** The
+completion audit found legacy default paths and reopened the Sprint. The current local slice routes
+the API/CLI/TUI/worker Mission surfaces through the canonical ledger and archives legacy write APIs
+when the canary reaches 100%. Production canaries remain pending because this environment has no
+reviewed rootless Docker image/digest or deployed worker recovery evidence.
 
 ## Evidence
 
@@ -21,11 +21,17 @@ reviewed rootless Docker image/digest is available in this environment.
 - Mission projections now build a public `OperatorResponseV1` solely from validated Mission facts.
   Its answer-first shape carries bounded provenance, explicit unknowns and safe next actions; a
   24-case public-answer catalog verifies contract shape and rejects runtime/tool-payload noise.
+- Local TUI acceptance covers Mission list/detail/plan/evidence/cursor/control projection; a full
+  canary rejects new `AgentTask` writes with HTTP 410. Public default-chat streaming emits bounded
+  `answer_delta`, `evidence_ready`, `warning` and `final` event types.
 
 ## Scope verified
 
 - React `/harness/missions` workspace uses Mission REST projections for list/detail/events and
   provides create/run/pause/resume/cancel/steer controls.
+- Local CLI/TUI Mission clients use stable Mission ids and `Last-Event-ID` cursor replay; a separate
+  disabled-by-default Mission worker owns SQL lease/heartbeat/release. At full canary, legacy task
+  worker and trigger loops are suppressed and legacy APIs stay readable but reject writes.
 - Readiness assertions fail if an unsafe dispatch or non-fail-closed write scope is reported.
 - Production/staging without `AGENT_STRATEGY_SANDBOX_IMAGE` constructs no host fallback and returns
   503 when the sandbox endpoint is called.
@@ -34,13 +40,10 @@ reviewed rootless Docker image/digest is available in this environment.
 
 ## Blocking scope still open
 
-- Migrate Textual task creation/control and default background scheduling to the canonical Mission
-  path; leave legacy Task/Run endpoints as historical read-only queries only. Local CLI full-canary
-  routing and a disabled-by-default SQL lease/heartbeat/release Mission worker are implemented and
-  locally covered, but the deployed worker canary has not run.
-- Replace buffered Mission stream output with event-cursor replay plus public `answer_delta` and
-  `evidence_ready` events. The answer catalog is a quality gate, not evidence that streaming is live.
 - Exercise Mission recovery/lease behavior through the deployed worker, not only synchronous API runs.
+- Subscribe public mission progress to worker-owned event delivery for long runs. The current stream
+  emits a prompt acceptance event immediately, then projects evidence and conclusion after inline
+  Mission execution; it is not yet a production worker-stream proof.
 - Run the pinned rootless sandbox image canary and record production health/migration evidence.
 
 ## Deferred operational gate

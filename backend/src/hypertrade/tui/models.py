@@ -29,6 +29,26 @@ class WorkbenchClient(Protocol):
         self, task_id: str, *, after: int = 0
     ) -> Any: ...
 
+    def list_agent_missions(self) -> list[dict[str, Any]]: ...
+
+    def create_agent_mission(self, objective: str) -> dict[str, Any]: ...
+
+    def run_agent_mission(self, mission_id: str) -> dict[str, Any]: ...
+
+    def get_agent_mission(self, mission_id: str) -> dict[str, Any]: ...
+
+    def list_agent_mission_events(
+        self, mission_id: str, *, after: int = 0
+    ) -> list[dict[str, Any]]: ...
+
+    def stream_agent_mission_events(
+        self, mission_id: str, *, after: int = 0
+    ) -> Any: ...
+
+    def control_agent_mission(
+        self, mission_id: str, action: str, *, reason: str
+    ) -> dict[str, Any]: ...
+
     def get_research_graph(self, task_id: str) -> dict[str, Any]: ...
 
     def list_experiment_manifests(self) -> list[dict[str, Any]]: ...
@@ -107,7 +127,16 @@ class WorkbenchClient(Protocol):
 
 
 TERMINAL_OR_IDLE_STATUSES = frozenset(
-    {"completed", "failed", "canceled", "paused", "retry_wait"}
+    {
+        "completed",
+        "failed",
+        "canceled",
+        "paused",
+        "retry_wait",
+        "budget_exhausted",
+        "waiting_input",
+        "waiting_approval",
+    }
 )
 
 
@@ -178,7 +207,11 @@ class WorkbenchStore:
         get_quality = getattr(self.client, "get_evals_status", None)
         self.state.quality = get_quality() if callable(get_quality) else {}
         self.state.sessions = self.client.list_agent_sessions()
-        self.state.tasks = self.client.list_agent_tasks()
+        list_missions = getattr(self.client, "list_agent_missions", None)
+        if callable(list_missions):
+            self.state.tasks = [self._mission_view(item) for item in list_missions()]
+        else:
+            self.state.tasks = self.client.list_agent_tasks()
         self.state.trigger_projection = self.client.list_research_triggers()
         self.state.trigger_fires = self.client.list_research_trigger_fires()
         self.state.memory_assertions = self.client.list_memory_assertions()
@@ -217,6 +250,19 @@ class WorkbenchStore:
         if task_id != self.state.selected_task_id:
             self.state.cursor = TaskEventCursor()
         self.state.selected_task_id = task_id
+        if self._mission_surface_enabled():
+            mission = self.client.get_agent_mission(task_id)
+            self.state.selected_task = self._mission_view(mission)
+            self.state.selected_session_id = ""
+            self.state.graph = self._mission_graph(mission)
+            self.state.evidence = self._mission_evidence(mission)
+            self.state.experiments = self.client.list_experiment_manifests()
+            self.state.validations = self.client.list_robustness_validations()
+            self.state.approvals = self.client.list_paper_promotions()
+            self.reconcile_events()
+            self.state.connection_status = "snapshot"
+            self.state.last_error = ""
+            return self.state
         self.state.selected_task = self.client.get_agent_task(task_id)
         self.state.selected_session_id = str(self.state.selected_task.get("session_id", ""))
         self.state.graph = {}
@@ -240,10 +286,15 @@ class WorkbenchStore:
         if not task_id:
             return 0
         accepted = 0
-        for event in self.client.list_agent_task_events(
-            task_id,
-            after=self.state.cursor.after,
-        ):
+        if self._mission_surface_enabled():
+            events = self.client.list_agent_mission_events(
+                task_id,
+                after=self.state.cursor.after,
+            )
+        else:
+            events = self.client.list_agent_task_events(task_id, after=self.state.cursor.after)
+        for event in events:
+            event = self._event_view(event)
             accepted += int(self.state.cursor.consume(event))
         return accepted
 
@@ -263,7 +314,13 @@ class WorkbenchStore:
             return self.state
         self.reconcile_events()
         # A REST snapshot is authoritative after a cursor gap or terminal SSE.
-        self.state.selected_task = self.client.get_agent_task(task_id)
+        if self._mission_surface_enabled():
+            mission = self.client.get_agent_mission(task_id)
+            self.state.selected_task = self._mission_view(mission)
+            self.state.graph = self._mission_graph(mission)
+            self.state.evidence = self._mission_evidence(mission)
+        else:
+            self.state.selected_task = self.client.get_agent_task(task_id)
         self.state.connection_status = "snapshot"
         return self.state
 
@@ -271,6 +328,17 @@ class WorkbenchStore:
         normalized = objective.strip()
         if not normalized:
             raise ValueError("Task objective is required")
+        if self._mission_surface_enabled():
+            mission = self.client.create_agent_mission(normalized)
+            mission_id = str(mission.get("mission_id", mission.get("id", "")))
+            if not mission_id:
+                raise ValueError("Mission response has no mission_id")
+            # TUI owns no local state machine: explicit server execution keeps
+            # the current deployment fail-closed when the runtime flag is off.
+            self.client.run_agent_mission(mission_id)
+            self.refresh_index()
+            self.select_task(mission_id)
+            return self.state.selected_task
         session = self.client.create_agent_session(normalized[:120])
         task = self.client.create_agent_task(str(session["id"]), normalized)
         self.refresh_index()
@@ -283,6 +351,17 @@ class WorkbenchStore:
         normalized = reason.strip()
         if not normalized:
             raise ValueError("Operator reason is required")
+        if self._mission_surface_enabled():
+            if action not in {"pause", "resume", "cancel"}:
+                raise ValueError(f"Unsupported Mission control: {action}")
+            result = self.client.control_agent_mission(
+                self.state.selected_task_id,
+                action,
+                reason=normalized,
+            )
+            self.state.selected_task = self._mission_view(result)
+            self.reconcile_events()
+            return result
         result = self.client.control_agent_task(
             self.state.selected_task_id,
             action,
@@ -291,6 +370,101 @@ class WorkbenchStore:
         self.state.selected_task = dict(result)
         self.reconcile_events()
         return result
+
+    def stream_selected_events(self, task_id: str, *, after: int) -> Any:
+        if self._mission_surface_enabled():
+            for event in self.client.stream_agent_mission_events(task_id, after=after):
+                yield self._event_view(event)
+            return
+        yield from self.client.stream_agent_task_events(task_id, after=after)
+
+    def _mission_surface_enabled(self) -> bool:
+        return all(
+            callable(getattr(self.client, name, None))
+            for name in (
+                "list_agent_missions",
+                "create_agent_mission",
+                "run_agent_mission",
+                "get_agent_mission",
+                "list_agent_mission_events",
+                "stream_agent_mission_events",
+                "control_agent_mission",
+            )
+        )
+
+    @staticmethod
+    def _mission_view(mission: dict[str, Any]) -> dict[str, Any]:
+        return {
+            **mission,
+            "id": str(mission.get("mission_id", mission.get("id", ""))),
+            "kind": "mission",
+            "objective": str(mission.get("objective", "")),
+            "budget": mission.get("budget", {}),
+            "usage": mission.get("usage", {}),
+            "session_id": "",
+        }
+
+    @staticmethod
+    def _event_view(event: dict[str, Any]) -> dict[str, Any]:
+        return {
+            **event,
+            "event": str(event.get("event", event.get("event_type", "mission_event"))),
+        }
+
+    @staticmethod
+    def _mission_graph(mission: dict[str, Any]) -> dict[str, Any]:
+        plans = mission.get("plans", [])
+        attempts = mission.get("attempts", [])
+        if not isinstance(plans, list) or not plans:
+            return {"nodes": []}
+        active = plans[-1] if isinstance(plans[-1], dict) else {}
+        steps = active.get("steps", []) if isinstance(active, dict) else []
+        rows = (
+            [item for item in attempts if isinstance(item, dict)]
+            if isinstance(attempts, list)
+            else []
+        )
+        nodes = []
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            step_id = str(step.get("step_id", ""))
+            matching = [item for item in rows if item.get("step_id") == step_id]
+            latest = matching[-1] if matching else {}
+            nodes.append(
+                {
+                    "node_key": step_id,
+                    "role_key": step.get("capability_id", ""),
+                    "attempt": latest.get("attempt", 0),
+                    "status": latest.get("status", "pending"),
+                }
+            )
+        return {"nodes": nodes}
+
+    @staticmethod
+    def _mission_evidence(mission: dict[str, Any]) -> list[dict[str, Any]]:
+        attempts = mission.get("attempts", [])
+        if not isinstance(attempts, list):
+            return []
+        evidence: list[dict[str, Any]] = []
+        for attempt in attempts:
+            if not isinstance(attempt, dict):
+                continue
+            observation = attempt.get("observation")
+            if not isinstance(observation, dict):
+                continue
+            refs = observation.get("source_refs", [])
+            if not isinstance(refs, list) or not refs:
+                continue
+            evidence.append(
+                {
+                    "id": attempt.get("attempt_id", ""),
+                    "evidence_type": "mission_observation",
+                    "lifecycle_status": observation.get("status", "unknown"),
+                    "refs": refs,
+                }
+            )
+        return evidence
 
     def control_trigger(
         self,

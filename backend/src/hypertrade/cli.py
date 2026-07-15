@@ -132,6 +132,26 @@ class AgentClient(Protocol):
 
     def create_agent_session(self, title: str) -> dict[str, Any]: ...
 
+    def list_agent_missions(self) -> list[dict[str, Any]]: ...
+
+    def create_agent_mission(self, objective: str) -> dict[str, Any]: ...
+
+    def run_agent_mission(self, mission_id: str) -> dict[str, Any]: ...
+
+    def get_agent_mission(self, mission_id: str) -> dict[str, Any]: ...
+
+    def list_agent_mission_events(
+        self, mission_id: str, *, after: int = 0
+    ) -> list[dict[str, Any]]: ...
+
+    def stream_agent_mission_events(
+        self, mission_id: str, *, after: int = 0
+    ) -> Iterator[dict[str, Any]]: ...
+
+    def control_agent_mission(
+        self, mission_id: str, action: str, *, reason: str
+    ) -> dict[str, Any]: ...
+
     def list_agent_tasks(self) -> list[dict[str, Any]]: ...
 
     def create_agent_task(
@@ -918,6 +938,89 @@ class AgentApiClient:
         return self._post_object(
             "/api/agent/sessions",
             {"title": title, "surface": "tui", "created_by": "tui_operator"},
+        )
+
+    def list_agent_missions(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/agent/missions", "missions")
+
+    def create_agent_mission(self, objective: str) -> dict[str, Any]:
+        payload = mission_request_for_prompt(
+            objective,
+            actor="tui_operator",
+            idempotency_key=new_id("tui_mission"),
+        ).model_dump(mode="json")
+        response = self.client.post(
+            self._url("/api/agent/missions"),
+            json=payload,
+            headers={"Idempotency-Key": str(payload["idempotency_key"])},
+        )
+        response.raise_for_status()
+        value = response.json()
+        if not isinstance(value, dict):
+            raise TypeError("Mission creation response must be a JSON object")
+        return value
+
+    def run_agent_mission(self, mission_id: str) -> dict[str, Any]:
+        return self._post_object(f"/api/agent/missions/{quote(mission_id, safe='')}/run", {})
+
+    def get_agent_mission(self, mission_id: str) -> dict[str, Any]:
+        return self._get_object(f"/api/agent/missions/{quote(mission_id, safe='')}")
+
+    def list_agent_mission_events(
+        self,
+        mission_id: str,
+        *,
+        after: int = 0,
+    ) -> list[dict[str, Any]]:
+        return self._get_list(
+            f"/api/agent/missions/{quote(mission_id, safe='')}/events?after={max(after, 0)}",
+            "events",
+        )
+
+    def stream_agent_mission_events(
+        self,
+        mission_id: str,
+        *,
+        after: int = 0,
+    ) -> Iterator[dict[str, Any]]:
+        cursor = max(after, 0)
+        with self.client.stream(
+            "GET",
+            self._url(
+                f"/api/agent/missions/{quote(mission_id, safe='')}/events/stream?after={cursor}"
+            ),
+            headers={"Last-Event-ID": str(cursor)},
+            timeout=_stream_timeout(config=self.config),
+        ) as response:
+            response.raise_for_status()
+            event_name = "message"
+            data_lines: list[str] = []
+            for line in response.iter_lines():
+                if line == "":
+                    if data_lines:
+                        yield _parse_sse_event(event_name, data_lines)
+                    event_name = "message"
+                    data_lines = []
+                    continue
+                if line.startswith("event:"):
+                    event_name = line.split(":", 1)[1].strip()
+                elif line.startswith("data:"):
+                    data_lines.append(line.split(":", 1)[1].strip())
+            if data_lines:
+                yield _parse_sse_event(event_name, data_lines)
+
+    def control_agent_mission(
+        self,
+        mission_id: str,
+        action: str,
+        *,
+        reason: str,
+    ) -> dict[str, Any]:
+        if action not in {"pause", "resume", "cancel"}:
+            raise ValueError(f"unsupported Mission action: {action}")
+        return self._post_object(
+            f"/api/agent/missions/{quote(mission_id, safe='')}/control",
+            {"action": action, "reason": reason},
         )
 
     def list_portfolio_assessments(self) -> list[dict[str, Any]]:
@@ -1715,6 +1818,97 @@ class LocalAgentClient:
                 )
             )
         )
+
+    def list_agent_missions(self) -> list[dict[str, Any]]:
+        async def list_rows() -> list[dict[str, Any]]:
+            _, store = await self._ensure_mission_runtime()
+            rows = await store.list(limit=100)
+            return [row.model_dump(mode="json") for row in rows]
+
+        return asyncio.run(list_rows())
+
+    def create_agent_mission(self, objective: str) -> dict[str, Any]:
+        async def create() -> dict[str, Any]:
+            runtime, _ = await self._ensure_mission_runtime()
+            mission = await runtime.create(
+                mission_request_for_prompt(
+                    objective,
+                    actor="tui_operator",
+                    idempotency_key=new_id("tui_mission"),
+                )
+            )
+            return mission.model_dump(mode="json")
+
+        return asyncio.run(create())
+
+    def run_agent_mission(self, mission_id: str) -> dict[str, Any]:
+        async def run() -> dict[str, Any]:
+            runtime, _ = await self._ensure_mission_runtime()
+            mission = await runtime.run(mission_id)
+            return mission.model_dump(mode="json")
+
+        return asyncio.run(run())
+
+    def get_agent_mission(self, mission_id: str) -> dict[str, Any]:
+        async def get() -> dict[str, Any]:
+            _, store = await self._ensure_mission_runtime()
+            mission = await store.get(mission_id)
+            plans = await store.plans(mission_id)
+            attempts = await store.attempts(mission_id)
+            return {
+                **mission.model_dump(mode="json"),
+                "plans": [plan.model_dump(mode="json") for plan in plans],
+                "attempts": [attempt.model_dump(mode="json") for attempt in attempts],
+            }
+
+        return asyncio.run(get())
+
+    def list_agent_mission_events(
+        self,
+        mission_id: str,
+        *,
+        after: int = 0,
+    ) -> list[dict[str, Any]]:
+        async def list_events() -> list[dict[str, Any]]:
+            _, store = await self._ensure_mission_runtime()
+            events = await store.events(mission_id, after=max(after, 0), limit=500)
+            return [event.model_dump(mode="json") for event in events]
+
+        return asyncio.run(list_events())
+
+    def stream_agent_mission_events(
+        self,
+        mission_id: str,
+        *,
+        after: int = 0,
+    ) -> Iterator[dict[str, Any]]:
+        for event in self.list_agent_mission_events(mission_id, after=after):
+            yield {"event": event.get("event_type", "mission_event"), **event}
+
+    def control_agent_mission(
+        self,
+        mission_id: str,
+        action: str,
+        *,
+        reason: str,
+    ) -> dict[str, Any]:
+        del reason
+
+        async def control() -> dict[str, Any]:
+            runtime, _ = await self._ensure_mission_runtime()
+            if action == "pause":
+                mission = await runtime.pause(mission_id, actor="tui_operator")
+            elif action == "resume":
+                mission = await runtime.resume(mission_id, actor="tui_operator")
+            elif action == "cancel":
+                mission = await runtime.cancel(mission_id, actor="tui_operator")
+            else:
+                raise ValueError(f"unsupported Mission action: {action}")
+            if action in {"pause", "cancel"}:
+                mission = await runtime.run(mission.mission_id)
+            return mission.model_dump(mode="json")
+
+        return asyncio.run(control())
 
     def list_agent_tasks(self) -> list[dict[str, Any]]:
         return [task_to_dict(row) for row in AgentTaskService(self.db).list_tasks(limit=100)]

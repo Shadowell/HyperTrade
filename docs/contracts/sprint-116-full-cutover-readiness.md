@@ -1,7 +1,8 @@
 # Sprint 116 - Full Cutover, Professional UX & Readiness
 
-> 状态：Active — completion audit reopened on 2026-07-16. Sprint 115 Gate L 的本地安全合同已关闭，
-> 但默认 chat/CLI/TUI/worker 尚未完成 Mission Runtime 切换，Gate M 不能宣称完成。
+> 状态：Active — 2026-07-16 completion audit reopened 后，Mission-first API/CLI/TUI/worker 的本地
+> 切换与 legacy-write archive 已实现。Gate M 仍不能宣称完成：生产 worker recovery、rootless sandbox
+> image canary 和隔离长任务证明尚未在本环境运行。
 
 ## Goal
 

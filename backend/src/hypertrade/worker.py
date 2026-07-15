@@ -467,11 +467,14 @@ async def main() -> None:
         tasks.append(paper_trading_loop(db))
     if settings.monitor_scheduler_enabled:
         tasks.append(monitor_scheduler_loop(db))
-    if settings.agent_task_worker_enabled:
+    full_mission_cutover = (
+        settings.mission_runtime_enabled and settings.mission_runtime_canary_percent >= 100
+    )
+    if settings.agent_task_worker_enabled and not full_mission_cutover:
         tasks.append(agent_task_worker_loop(db))
     if settings.mission_runtime_enabled and settings.mission_runtime_worker_enabled:
         tasks.append(mission_worker_loop(db))
-    if settings.research_triggers_enabled:
+    if settings.research_triggers_enabled and not full_mission_cutover:
         tasks.append(research_trigger_loop(db))
     await asyncio.gather(*tasks)
 

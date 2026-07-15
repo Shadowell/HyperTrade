@@ -128,6 +128,81 @@ class RecoveryClient:
         return {**self.get_agent_task(task_id), "status": "pause_requested"}
 
 
+class MissionRecoveryClient(RecoveryClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.mission_events = [
+            {"sequence": 1, "event_type": "mission_created", "actor": "operator"},
+            {"sequence": 2, "event_type": "plan_activated", "actor": "runtime"},
+        ]
+        self.mission_controls: list[tuple[str, str, str]] = []
+
+    def list_agent_missions(self) -> list[dict[str, Any]]:
+        return [self.get_agent_mission("mis_1")]
+
+    def create_agent_mission(self, objective: str) -> dict[str, Any]:
+        return {"mission_id": "mis_new", "objective": objective, "status": "draft"}
+
+    def run_agent_mission(self, mission_id: str) -> dict[str, Any]:
+        return {"mission_id": mission_id, "status": "completed"}
+
+    def get_agent_mission(self, mission_id: str) -> dict[str, Any]:
+        return {
+            "mission_id": mission_id,
+            "objective": "bounded Mission research",
+            "status": "running",
+            "usage": {"tokens": 100},
+            "budget": {"max_tokens": 1000},
+            "active_plan_version": 1,
+            "plans": [
+                {
+                    "steps": [
+                        {"step_id": "market", "capability_id": "market.summary"},
+                    ]
+                }
+            ],
+            "attempts": [
+                {
+                    "attempt_id": "sat_1",
+                    "step_id": "market",
+                    "attempt": 1,
+                    "status": "succeeded",
+                    "observation": {
+                        "status": "succeeded",
+                        "source_refs": ["market:BTC-USDT-SWAP"],
+                    },
+                }
+            ],
+        }
+
+    def list_agent_mission_events(
+        self,
+        mission_id: str,
+        *,
+        after: int = 0,
+    ) -> list[dict[str, Any]]:
+        assert mission_id.startswith("mis_")
+        return [item for item in self.mission_events if int(item["sequence"]) > after]
+
+    def stream_agent_mission_events(
+        self,
+        mission_id: str,
+        *,
+        after: int = 0,
+    ) -> Any:
+        return iter(self.list_agent_mission_events(mission_id, after=after))
+
+    def control_agent_mission(
+        self,
+        mission_id: str,
+        action: str,
+        *,
+        reason: str,
+    ) -> dict[str, Any]:
+        self.mission_controls.append((mission_id, action, reason))
+        return {**self.get_agent_mission(mission_id), "status": "pause_requested"}
+
+
 def test_cursor_deduplicates_replay_and_surfaces_gap() -> None:
     cursor = TaskEventCursor()
 
@@ -174,3 +249,26 @@ def test_control_requires_reason_and_delegates_to_server_client() -> None:
 
     assert result["status"] == "pause_requested"
     assert client.control_requests == [("task_1", "pause", "operator review")]
+
+
+def test_mission_capable_tui_uses_mission_ledger_and_cursor_events() -> None:
+    client = MissionRecoveryClient()
+    store = WorkbenchStore(client)
+
+    store.refresh_index()
+    state = store.select_task("mis_1")
+
+    assert state.tasks[0]["kind"] == "mission"
+    assert state.selected_task["id"] == "mis_1"
+    assert state.graph["nodes"][0]["node_key"] == "market"
+    assert state.evidence[0]["refs"] == ["market:BTC-USDT-SWAP"]
+    assert [event["event"] for event in state.cursor.events] == [
+        "mission_created",
+        "plan_activated",
+    ]
+    assert list(store.stream_selected_events("mis_1", after=2)) == []
+
+    result = store.control_selected("pause", "operator review")
+
+    assert result["status"] == "pause_requested"
+    assert client.mission_controls == [("mis_1", "pause", "operator review")]

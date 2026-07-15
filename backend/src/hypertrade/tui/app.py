@@ -25,7 +25,12 @@ from textual.widgets import (
     TextArea,
 )
 
-from hypertrade.tui.models import WorkbenchClient, WorkbenchState, WorkbenchStore
+from hypertrade.tui.models import (
+    TERMINAL_OR_IDLE_STATUSES,
+    WorkbenchClient,
+    WorkbenchState,
+    WorkbenchStore,
+)
 
 
 class TaskListItem(ListItem):
@@ -116,7 +121,7 @@ class ResearchWorkbenchApp(App[None]):
     """Read-mostly TUI; server APIs remain the only control authority."""
 
     TITLE = "HyperTrade Research Workbench"
-    SUB_TITLE = "durable tasks · evidence · validation · approvals"
+    SUB_TITLE = "durable missions · evidence · validation · approvals"
     BINDINGS = [
         Binding("ctrl+n", "new_task", "New task", priority=True),
         Binding("ctrl+p", "pause", "Pause", priority=True),
@@ -192,7 +197,7 @@ class ResearchWorkbenchApp(App[None]):
                 yield Static("—", id=f"metric-{metric_id}", classes="metric", markup=False)
         with Horizontal(id="workspace"):
             with Vertical(id="sessions-pane", classes="pane"):
-                yield Static("SESSIONS / TASKS", classes="pane-title", markup=False)
+                yield Static("MISSION LEDGER", classes="pane-title", markup=False)
                 yield ListView(id="task-list")
             with Vertical(id="center-pane", classes="pane"):
                 yield Static("RESEARCH GRAPH", classes="pane-title", markup=False)
@@ -281,9 +286,9 @@ class ResearchWorkbenchApp(App[None]):
                 "",
                 id="task-prompt",
                 soft_wrap=True,
-                placeholder="New bounded research/chat task objective (Ctrl+N)",
+                placeholder="New bounded research Mission objective (Ctrl+N)",
             )
-            yield Button("Create task", id="start-task", variant="primary")
+            yield Button("Create Mission", id="start-task", variant="primary")
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -315,7 +320,7 @@ class ResearchWorkbenchApp(App[None]):
         running = sum(str(item.get("status")) == "running" for item in tasks)
         review = sum(str(item.get("status")) == "awaiting_approval" for item in tasks)
         failed = sum(str(item.get("status")) == "failed" for item in tasks)
-        self.query_one("#metric-tasks", Static).update(f"TASKS\n{len(tasks)}")
+        self.query_one("#metric-tasks", Static).update(f"MISSIONS\n{len(tasks)}")
         self.query_one("#metric-running", Static).update(f"RUNNING\n{running}")
         self.query_one("#metric-review", Static).update(f"REVIEW\n{review}")
         self.query_one("#metric-failed", Static).update(f"FAILED\n{failed}")
@@ -373,7 +378,7 @@ class ResearchWorkbenchApp(App[None]):
     def follow_task_stream(self, task_id: str) -> None:
         self._stream_task_id = task_id
         try:
-            for event in self.client.stream_agent_task_events(
+            for event in self.store.stream_selected_events(
                 task_id,
                 after=self.store.state.cursor.after,
             ):
@@ -424,7 +429,7 @@ class ResearchWorkbenchApp(App[None]):
             return
         self.call_later(self._render_state, state)
         status = str(state.selected_task.get("status", ""))
-        if status not in {"completed", "failed", "canceled", "paused", "retry_wait"}:
+        if status not in TERMINAL_OR_IDLE_STATUSES:
             self.set_timer(1.0, lambda: self.follow_task_stream(task_id))
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
@@ -488,10 +493,11 @@ class ResearchWorkbenchApp(App[None]):
         self._request_control("pause")
 
     def action_resume_or_retry(self) -> None:
-        status = str(self.store.state.selected_task.get("status", ""))
+        selected = self.store.state.selected_task
+        status = str(selected.get("status", ""))
         if status == "paused":
             self._request_control("resume")
-        elif status in {"failed", "retry_wait"}:
+        elif selected.get("kind") != "mission" and status in {"failed", "retry_wait"}:
             self._request_control("retry")
         else:
             self.notify(
@@ -505,10 +511,10 @@ class ResearchWorkbenchApp(App[None]):
     def _request_control(self, action: str) -> None:
         task_id = self.store.state.selected_task_id
         if not task_id:
-            self.notify("Select a task first", severity="warning")
+            self.notify("Select a Mission first", severity="warning")
             return
         self.push_screen(
-            ControlConfirmScreen(action, task_id),
+            ControlConfirmScreen(action, task_id, resource_kind="mission"),
             lambda reason: self._apply_control(action, reason),
         )
 
@@ -771,26 +777,28 @@ class ResearchWorkbenchApp(App[None]):
     @staticmethod
     def _evidence_text(state: WorkbenchState) -> str:
         if not state.evidence:
-            return "No Evidence V2 records for the selected task."
+            return "No validated evidence for the selected Mission."
         lines = []
         for item in state.evidence[:80]:
             evidence_id = item.get("id", "")
             evidence_type = item.get("evidence_type", item.get("type", "evidence"))
             lifecycle = item.get("lifecycle_status", item.get("status", ""))
-            lines.append(f"{evidence_type} · {lifecycle}\n{evidence_id}")
+            refs = item.get("refs", [])
+            source_line = f"\n{' · '.join(str(ref) for ref in refs[:3])}" if refs else ""
+            lines.append(f"{evidence_type} · {lifecycle}\n{evidence_id}{source_line}")
         return "\n\n".join(lines)
 
     @staticmethod
     def _task_text(state: WorkbenchState) -> str:
         task = state.selected_task
         if not task:
-            return "No task"
+            return "No Mission"
         checkpoint = task.get("latest_checkpoint")
         error = task.get("error") if isinstance(task.get("error"), dict) else {}
         return (
-            f"{task.get('id')} · {task.get('kind')} · {task.get('status')}\n"
-            f"session={task.get('session_id', '')} resource="
-            f"{task.get('resource_type', '')}:{task.get('resource_id', '')}\n"
+            f"{task.get('id')} · Mission · {task.get('status')}\n"
+            f"plan={task.get('active_plan_version', 0)} current_step="
+            f"{task.get('current_step_id', '') or '-'}\n"
             f"objective: {task.get('objective', '')}\n"
             f"checkpoint: {json.dumps(checkpoint, ensure_ascii=False) if checkpoint else 'none'}\n"
             f"error: {json.dumps(error, ensure_ascii=False) if error else 'none'}"

@@ -256,3 +256,12 @@ transition or orderly exit. PostgreSQL uses `FOR UPDATE SKIP LOCKED`; local SQLi
 lease contention. A worker exception records only the bounded `worker_execution_failure` reason code
 and fails the Mission without storing provider/private error text. The worker remains disabled by
 default until the deployment canary verifies its process and recovery behaviour.
+
+Textual and Web are Mission projections rather than workflow authorities. The TUI prefers Mission
+list/detail/plan/attempt/event APIs and retains its legacy Task adapter only for an older server that
+does not expose the Mission contract. Browser chat creates a stable request idempotency key per
+submission; the default Mission stream sends a public acceptance `answer_delta` before execution,
+then bounded `evidence_ready`, answer `answer_delta`, `warning` and `final` events. Internal
+plan/tool events remain only on the authenticated Mission audit stream. At a 100% Mission canary,
+new AgentTask/ResearchGraph writes return HTTP 410 and legacy worker/trigger loops do not start;
+historical read endpoints remain available.

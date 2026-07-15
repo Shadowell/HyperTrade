@@ -489,6 +489,21 @@ def create_app(
         supplied = request.headers.get("Idempotency-Key", "").strip()
         return supplied[:128] if supplied else new_id("missionreq")
 
+    def legacy_agent_writes_disabled() -> bool:
+        """At 100% Mission rollout, old Task state is a read-only archive."""
+
+        return (
+            app_settings.mission_runtime_enabled
+            and app_settings.mission_runtime_canary_percent >= 100
+        )
+
+    def require_legacy_agent_write_enabled() -> None:
+        if legacy_agent_writes_disabled():
+            raise HTTPException(
+                status_code=410,
+                detail="Legacy AgentTask writes are disabled; create a Mission instead",
+            )
+
     async def run_prompt_as_mission(
         prompt: str,
         *,
@@ -1401,19 +1416,49 @@ def create_app(
             idempotency_key=idempotency_key,
         ):
             async def mission_stream() -> AsyncIterator[str]:
+                # Public stream events expose only the operator answer contract.
+                # Plan/tool telemetry stays in the Mission audit stream instead.
+                yield _format_sse(
+                    {
+                        "event": "answer_delta",
+                        "text": "已受理只读研究请求，正在验证证据。",
+                    }
+                )
                 try:
                     result = await run_prompt_as_mission(
                         payload.prompt,
                         actor="mission_stream",
                         idempotency_key=idempotency_key,
                     )
-                    for trace in result["trace_events"]:
+                    report = result.get("report_json", {})
+                    operator_response = (
+                        report.get("operator_response", {}) if isinstance(report, dict) else {}
+                    )
+                    if isinstance(operator_response, dict):
+                        evidence = operator_response.get("evidence", [])
+                        if isinstance(evidence, list):
+                            yield _format_sse(
+                                {
+                                    "event": "evidence_ready",
+                                    "mission_id": result["mission_id"],
+                                    "count": len(evidence),
+                                }
+                            )
+                        decision = operator_response.get("decision")
+                        if isinstance(decision, str) and decision:
+                            yield _format_sse(
+                                {
+                                    "event": "answer_delta",
+                                    "mission_id": result["mission_id"],
+                                    "text": decision,
+                                }
+                            )
+                    else:
                         yield _format_sse(
                             {
-                                "event": "mission_event",
+                                "event": "warning",
                                 "mission_id": result["mission_id"],
-                                "tool_name": trace["tool_name"],
-                                "status": trace["status"],
+                                "text": "研究已结束，但公开回答投影不可用。",
                             }
                         )
                     yield _format_sse(
@@ -1423,16 +1468,12 @@ def create_app(
                             "run": result,
                         }
                     )
-                except ValueError as exc:
+                except ValueError:
                     yield _format_sse(
                         {
-                            "event": "error",
-                            "error": {
-                                "code": "mission_runtime_error",
-                                "category": "mission",
-                                "retryable": False,
-                                "message": str(exc),
-                            },
+                            "event": "warning",
+                            "text": "研究运行未产生可验证结果。",
+                            "code": "mission_runtime_error",
                         }
                     )
 
@@ -1460,6 +1501,7 @@ def create_app(
 
     @app.post("/api/agent/sessions")
     def create_agent_session(payload: AgentSessionCreate, _: AdminUser) -> dict[str, Any]:
+        require_legacy_agent_write_enabled()
         return session_to_dict(AgentSessionService(database).create(payload))
 
     @app.get("/api/agent/sessions")
@@ -1484,6 +1526,7 @@ def create_app(
         payload: AgentTaskCreate,
         _: AdminUser,
     ) -> dict[str, Any]:
+        require_legacy_agent_write_enabled()
         try:
             row = AgentTaskService(database).create(
                 payload.model_copy(update={"session_id": session_id}),
@@ -1518,22 +1561,27 @@ def create_app(
 
     @app.post("/api/agent/tasks/{task_id}/pause")
     def pause_agent_task(task_id: str, payload: TaskControl, _: AdminUser) -> dict[str, Any]:
+        require_legacy_agent_write_enabled()
         return _task_control_or_http_error(database, task_id, "pause", payload)
 
     @app.post("/api/agent/tasks/{task_id}/resume")
     def resume_agent_task(task_id: str, payload: TaskControl, _: AdminUser) -> dict[str, Any]:
+        require_legacy_agent_write_enabled()
         return _task_control_or_http_error(database, task_id, "resume", payload)
 
     @app.post("/api/agent/tasks/{task_id}/cancel")
     def cancel_agent_task(task_id: str, payload: TaskControl, _: AdminUser) -> dict[str, Any]:
+        require_legacy_agent_write_enabled()
         return _task_control_or_http_error(database, task_id, "cancel", payload)
 
     @app.post("/api/agent/tasks/{task_id}/retry")
     def retry_agent_task(task_id: str, payload: TaskControl, _: AdminUser) -> dict[str, Any]:
+        require_legacy_agent_write_enabled()
         return _task_control_or_http_error(database, task_id, "retry", payload)
 
     @app.post("/api/agent/tasks/{task_id}/branch")
     def branch_agent_task(task_id: str, payload: TaskControl, _: AdminUser) -> dict[str, Any]:
+        require_legacy_agent_write_enabled()
         return _task_control_or_http_error(database, task_id, "branch", payload)
 
     @app.get("/api/agent/tasks/{task_id}/events")
@@ -1898,6 +1946,7 @@ def create_app(
 
     @app.post("/api/research/graphs")
     def create_research_graph(payload: ResearchGraphCreate, username: AdminUser) -> dict[str, Any]:
+        require_legacy_agent_write_enabled()
         try:
             return ResearchGraphTaskService(database).create(
                 payload, created_by=f"admin:{username}"
@@ -1923,6 +1972,7 @@ def create_app(
 
     @app.post("/api/research/graphs/{task_id}/run")
     def run_research_graph(task_id: str, _: AdminUser) -> dict[str, Any]:
+        require_legacy_agent_write_enabled()
         try:
             return research_graph_runtime().run(task_id)
         except httpx.TimeoutException as exc:
@@ -1996,6 +2046,7 @@ def create_app(
         payload: ResearchTriggerCreate,
         username: AdminUser,
     ) -> dict[str, Any]:
+        require_legacy_agent_write_enabled()
         try:
             return ResearchTriggerService(database, settings=app_settings).create(
                 payload,
@@ -2048,6 +2099,7 @@ def create_app(
         payload: TriggerEnabledPayload,
         username: AdminUser,
     ) -> dict[str, Any]:
+        require_legacy_agent_write_enabled()
         try:
             return ResearchTriggerService(database, settings=app_settings).set_enabled(
                 trigger_id,
@@ -2066,6 +2118,7 @@ def create_app(
         payload: TriggerEvent,
         username: AdminUser,
     ) -> dict[str, Any]:
+        require_legacy_agent_write_enabled()
         try:
             return ResearchTriggerService(database, settings=app_settings).fire(
                 trigger_id,

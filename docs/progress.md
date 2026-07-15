@@ -29,7 +29,7 @@
   plans, raw tool payloads, usage counters and private reasoning; empty-search sentinels are not
   treated as evidence. `operator_answer_golden_v1` supplies 24 deterministic public-answer cases
   across market, strategy, portfolio, execution, context and delivery cohorts. This is a local
-  quality contract only; public answer-delta streaming and worker-driven execution remain open.
+  quality contract only; deployed long-run worker streaming and production canary evidence remain open.
 - The first isolated operator-answer smoke exposed a false completion for an unavailable contract
   ticker. The Mission path now normalizes explicit market instruments, performs exact lookup rather
   than falling back to an unrelated summary, and returns `needs_data` with an explicit data gap when
@@ -42,6 +42,13 @@
   cleanup; local SQLite acceptance proves a competing worker cannot dispatch a leased Mission and
   that completion releases ownership. Textual migration, real-time public answer events and deployed
   worker/canary evidence remain open.
+- Textual now projects the Mission ledger first: its list, plan graph, evidence panel, token card,
+  control actions and replay cursor use the Mission APIs, while Task mode exists only as a fallback
+  for an older server that lacks those APIs. The default Web chat holds one browser-generated
+  idempotency key across retry, and its Mission canary stream sends public `answer_delta`,
+  `evidence_ready`, `warning` and `final` events without exposing plan/tool telemetry. At a 100%
+  Mission canary legacy Task/ResearchGraph writes return `410`; the worker suppresses legacy Task
+  and trigger loops, keeping historical reads available.
 
 ## Current Baseline
 

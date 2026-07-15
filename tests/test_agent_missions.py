@@ -422,9 +422,40 @@ def test_chat_canary_routes_to_mission_runtime_without_legacy_writes() -> None:
             json={"prompt": "研究 BTC 市场状态"},
         )
         assert streamed.status_code == 200
+        assert '"event": "answer_delta"' in streamed.text
+        assert '"event": "evidence_ready"' in streamed.text
         assert '"event": "final"' in streamed.text
         assert '"runtime": "mission_v2"' in streamed.text
 
     with database.session() as session:
         assert session.scalar(select(func.count()).select_from(AgentTask)) == 0
         assert session.scalar(select(func.count()).select_from(AgentRun)) == 0
+
+
+def test_full_mission_cutover_makes_legacy_task_writes_read_only() -> None:
+    database = Database("sqlite:///:memory:")
+    database.create_all()
+    settings = Settings(
+        DATABASE_URL="sqlite:///:memory:",
+        ADMIN_USERNAME="admin",
+        ADMIN_PASSWORD="secret",
+        SESSION_SECRET="mission-archive-test-secret",
+        MISSION_RUNTIME_ENABLED=True,
+        MISSION_RUNTIME_CANARY_PERCENT=100,
+    )
+    with TestClient(create_app(settings=settings, db=database)) as client:
+        assert client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "secret"},
+        ).status_code == 200
+        legacy = client.post(
+            "/api/agent/sessions",
+            json={"title": "legacy task should be archived"},
+        )
+        mission = client.post(
+            "/api/agent/missions",
+            json=mission_payload(idempotency_key="mission-archive-001").model_dump(mode="json"),
+        )
+
+    assert legacy.status_code == 410
+    assert mission.status_code == 200

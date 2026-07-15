@@ -25,6 +25,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from "react";
 import {
@@ -1174,6 +1175,7 @@ function App() {
   const [missionEvents, setMissionEvents] = useState<MissionEvent[]>([]);
   const [missionObjective, setMissionObjective] = useState("");
   const [missionBusy, setMissionBusy] = useState(false);
+  const activeRunIdempotencyKey = useRef("");
   const [harnessError, setHarnessError] = useState("");
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -1518,7 +1520,10 @@ function App() {
       const response = await fetch("/api/agent/missions", {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": createClientIdempotencyKey("web_mission")
+        },
         body: JSON.stringify({
           objective,
           success_criteria: [{ criterion_id: "validated", kind: "all_steps_validated", description: "所有步骤通过结构化证据验证" }]
@@ -1646,11 +1651,16 @@ function App() {
     setBusy(true);
     setAgentProgress([]);
     setRunObservability(null);
+    const idempotencyKey = activeRunIdempotencyKey.current || createClientIdempotencyKey("web_run");
+    activeRunIdempotencyKey.current = idempotencyKey;
     try {
       const response = await fetch("/api/agent/runs/stream", {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey
+        },
         body: JSON.stringify({ prompt })
       });
       if (response.ok && response.body) {
@@ -1660,6 +1670,7 @@ function App() {
         if (finalRun) {
           setRun(finalRun);
           await loadRunObservability(finalRun.id);
+          activeRunIdempotencyKey.current = "";
         }
         await refreshOverview();
         return;
@@ -1668,6 +1679,7 @@ function App() {
         const completedRun = (await response.json()) as AgentRun;
         setRun(completedRun);
         await loadRunObservability(completedRun.id);
+        activeRunIdempotencyKey.current = "";
         await refreshOverview();
       }
     } finally {
@@ -3996,10 +4008,19 @@ function isAgentRun(value: unknown): value is AgentRun {
 
 function formatAgentEvent(payload: Record<string, unknown>): string {
   const eventName = String(payload.event ?? "message");
+  const text = typeof payload.text === "string" ? payload.text.trim() : "";
+  if (text) {
+    return `${eventName} · ${text}`;
+  }
   const toolName = payload.tool_name ? ` ${String(payload.tool_name)}` : "";
   const status = payload.status ? ` ${String(payload.status)}` : "";
   const runId = payload.run_id ? ` ${String(payload.run_id)}` : "";
   return `${eventName}${toolName}${status}${runId}`.trim();
+}
+
+function createClientIdempotencyKey(prefix: string): string {
+  const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return `${prefix}_${random}`;
 }
 
 export default App;
