@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 from opentelemetry import trace
 
+from hypertrade.runtime.domain.context import ContextBudgetExceeded
 from hypertrade.runtime.domain.models import (
     TERMINAL_STATUSES,
     MissionCreate,
@@ -15,7 +16,13 @@ from hypertrade.runtime.domain.models import (
     SteeringEventV1,
     StepAttemptV2,
 )
-from hypertrade.runtime.ports import CapabilityPolicy, MissionPlanner, MissionStore, StepExecutor
+from hypertrade.runtime.ports import (
+    CapabilityPolicy,
+    MissionContextEngine,
+    MissionPlanner,
+    MissionStore,
+    StepExecutor,
+)
 
 _TRACER = trace.get_tracer("hypertrade.runtime")
 
@@ -33,11 +40,13 @@ class MissionRuntime:
         planner: MissionPlanner,
         executor: StepExecutor,
         policy: CapabilityPolicy,
+        context_engine: MissionContextEngine | None = None,
     ) -> None:
         self.store = store
         self.planner = planner
         self.executor = executor
         self.policy = policy
+        self.context_engine = context_engine
 
     async def create(self, payload: MissionCreate) -> MissionProjection:
         return await self.store.create(payload)
@@ -108,7 +117,23 @@ class MissionRuntime:
                 if row.status == "succeeded" and self._attempt_plan_version(row, plan)
             }
             if len(completed) == len(plan.steps):
-                if self._criteria_satisfied(mission, attempts):
+                observations = [
+                    row.observation
+                    for row in attempts
+                    if row.status == "succeeded" and row.observation is not None
+                ]
+                context_valid = (
+                    self.context_engine is None
+                    or await self.context_engine.validate_completion(mission, observations)
+                )
+                if (
+                    self._criteria_satisfied(
+                        mission,
+                        attempts,
+                        defer_artifact_criteria=self.context_engine is not None,
+                    )
+                    and context_valid
+                ):
                     return await self.store.transition(
                         mission.mission_id,
                         expected_version=mission.version,
@@ -158,6 +183,35 @@ class MissionRuntime:
             mission = await self.store.set_current_step(
                 mission.mission_id, expected_version=mission.version, step_id=ready.step_id
             )
+            if self.context_engine is not None:
+                try:
+                    context_pack = await self.context_engine.prepare(
+                        mission,
+                        plan,
+                        ready,
+                        count,
+                        attempts,
+                    )
+                except ContextBudgetExceeded:
+                    return await self.store.transition(
+                        mission.mission_id,
+                        expected_version=mission.version,
+                        target=MissionStatus.BUDGET_EXHAUSTED,
+                        actor="runtime",
+                        reason="context_budget_exhausted",
+                        terminal_summary="Required context exceeded the hard context budget.",
+                    )
+                await self.store.append_event(
+                    mission.mission_id,
+                    "context.compiled",
+                    actor="runtime",
+                    payload={
+                        "context_pack_id": context_pack.context_pack_id,
+                        "manifest_hash": context_pack.manifest_hash,
+                        "used_tokens": context_pack.ledger.used_tokens,
+                        "budget_tokens": context_pack.ledger.budget_tokens,
+                    },
+                )
             attempt = await self.store.start_attempt(mission.mission_id, plan.version, ready, count)
             with _TRACER.start_as_current_span("mission.step") as span:
                 span.set_attribute("mission.id", mission.mission_id)
@@ -357,6 +411,8 @@ class MissionRuntime:
     def _criteria_satisfied(
         mission: MissionProjection,
         attempts: Sequence[StepAttemptV2],
+        *,
+        defer_artifact_criteria: bool = False,
     ) -> bool:
         rows: list[StepAttemptV2] = list(attempts)
         observations = [
@@ -372,8 +428,10 @@ class MissionRuntime:
                 return False
             if criterion.kind == "minimum_sources" and source_count < int(criterion.expected):
                 return False
-            if criterion.kind == "artifact_kind_exists" and not any(
-                str(criterion.expected) in ref for ref in artifact_refs
+            if (
+                criterion.kind == "artifact_kind_exists"
+                and not defer_artifact_criteria
+                and not any(str(criterion.expected) in ref for ref in artifact_refs)
             ):
                 return False
             if (

@@ -91,9 +91,7 @@ class SqlObservationStore:
     async def dispose(self) -> None:
         await self.engine.dispose()
 
-    async def append(
-        self, observation: ToolObservationV2, *, idempotency_key: str = ""
-    ) -> None:
+    async def append(self, observation: ToolObservationV2, *, idempotency_key: str = "") -> None:
         async with self.sessions.begin() as session:
             session.add(
                 AgentToolObservation(

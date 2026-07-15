@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
+from hypertrade.runtime.domain.context import ContextPackV1
 from hypertrade.runtime.domain.models import (
     MissionCreate,
     MissionEventV1,
@@ -93,3 +94,20 @@ class StepExecutor(Protocol):
 
 class CapabilityPolicy(Protocol):
     def validate_step(self, step: PlanStepV2, permission_profile_ref: str) -> None: ...
+
+
+class MissionContextEngine(Protocol):
+    async def prepare(
+        self,
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+        prior_attempts: Sequence[StepAttemptV2],
+    ) -> ContextPackV1: ...
+
+    async def validate_completion(
+        self,
+        mission: MissionProjection,
+        observations: Sequence[StepObservationV2],
+    ) -> bool: ...

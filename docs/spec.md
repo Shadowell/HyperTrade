@@ -246,6 +246,14 @@ Execution validates schemas and permission scope before and after the adapter ca
 timeout/circuit recovery and stores only redacted/truncated SQL observations with provenance. The
 initial catalog remains read-only and changes no paper, live, order or capital permission.
 
+Sprint 113 compiles a deterministic, hard-budgeted Context Pack for every Mission Step and records
+stable include/drop decisions for each source. Objective, constraints, permission, Plan and Step
+contracts are mandatory; prior observations enter only as bounded summaries and provenance refs.
+The Mission Artifact Index binds content hashes, versions, producers, source relations and stable
+external refs or bounded safe previews. Completion rejects forged, cross-Mission, unavailable or
+superseded artifact refs. Raw BitPro series, credentials, full transcripts and private reasoning are
+forbidden from both stores.
+
 Sprint 107 implementation uses `ExperimentManifest` as the StrategyCard V2 identity boundary.
 Mandate-scoped lineages, Manifest-bound versions, immutable content-hashed snapshots and human
 lifecycle decisions are projection facts in `0019`; they cannot edit source facts or authorize

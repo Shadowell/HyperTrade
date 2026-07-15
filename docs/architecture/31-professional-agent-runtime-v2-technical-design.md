@@ -118,3 +118,28 @@ redacted/truncated preview, content hash, refs, taxonomy and timing. Raw connect
 credentials, prompts and private reasoning are excluded. The old foundation executor remains only
 as a Sprint 111 test fixture; the production Mission composition depends on the reviewed catalog and
 governed runtime.
+
+## Sprint 113 Context and Artifact Engine
+
+`ContextArtifactEngine.prepare` runs after capability policy validation and before a Step attempt is
+opened. It compiles a separate `AgentContextPackV1` for the exact Mission/Plan/Step/attempt identity.
+Required sources are the objective, constraints plus permission profile, Plan completion contract and
+Step contract. Prior validated observations enter as lower-tier optional sources containing only
+bounded summaries and refs, never raw results or a hidden transcript.
+
+The compiler uses a provider-independent UTF-8 estimator, stable required/tier/ref/hash ordering and
+a hard ledger. Required blocks cannot be dropped; if they do not fit, the Mission fails closed as
+`budget_exhausted`. Optional blocks record one explicit decision: selected, compacted, stale, budget,
+unsafe or duplicate. Compaction is deterministic and content-hash marked. Manifest hashes exclude
+wall-clock and random identifiers, so identical inputs, policy and budget replay identically.
+
+The Mission Artifact Index is metadata-first. `MissionArtifactV1` binds kind, version, producer,
+media type, size, content hash, source refs and a stable external URI or at most 32 KiB inline
+preview. Secret-bearing keys and raw candle/equity/return/order/trade/position fields fail validation.
+Same Mission/content hashes dedupe; a new version may atomically supersede a current artifact while
+retaining immutable `derived_from` and `supersedes` edges. Cross-Mission supersede is forbidden.
+
+Migration `0025_agent_context_artifacts` adds immutable context manifests, artifact metadata and
+lineage relations. REST projections expose packs, artifacts and relations under the Mission. Before
+completion, every observation artifact ref must resolve to a current artifact in that Mission and an
+`artifact_kind_exists` criterion queries the index rather than trusting a model-written string.

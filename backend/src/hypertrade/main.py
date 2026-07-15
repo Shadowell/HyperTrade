@@ -136,6 +136,11 @@ from hypertrade.runtime.adapters.capability_catalog import (
     SqlCapabilityCatalog,
     builtin_capabilities,
 )
+from hypertrade.runtime.adapters.context_engine import (
+    ContextArtifactEngine,
+    InMemoryContextArtifactStore,
+    SqlContextArtifactStore,
+)
 from hypertrade.runtime.adapters.foundation import FoundationPlanner
 from hypertrade.runtime.adapters.memory_store import InMemoryMissionStore
 from hypertrade.runtime.adapters.sql_store import SqlAlchemyMissionStore
@@ -150,6 +155,7 @@ from hypertrade.runtime.domain.capabilities import (
     CapabilityProposalV1,
     CapabilityReviewV1,
 )
+from hypertrade.runtime.domain.context import MissionArtifactCreateV1
 from hypertrade.runtime.domain.models import MissionCreate, SteeringEventV1
 from hypertrade.skills.lifecycle import (
     ApprovedSkillLoader,
@@ -346,6 +352,12 @@ def create_app(
         if database.url == "sqlite:///:memory:"
         else SqlObservationStore(database.url)
     )
+    context_artifact_store = (
+        InMemoryContextArtifactStore()
+        if database.url == "sqlite:///:memory:"
+        else SqlContextArtifactStore(database.url)
+    )
+    context_engine = ContextArtifactEngine(context_artifact_store)
     tool_executor = GovernedToolExecutor(
         capability_catalog,
         builtin_handlers(database, knowledge_dir=str(app_settings.knowledge_dir)),
@@ -356,6 +368,7 @@ def create_app(
         FoundationPlanner(),
         tool_executor,
         CatalogCapabilityPolicy(capability_catalog),
+        context_engine,
     )
 
     @asynccontextmanager
@@ -366,7 +379,12 @@ def create_app(
         try:
             yield
         finally:
-            for resource in (mission_store, capability_catalog, observation_store):
+            for resource in (
+                mission_store,
+                capability_catalog,
+                observation_store,
+                context_artifact_store,
+            ):
                 dispose = getattr(resource, "dispose", None)
                 if dispose is not None:
                     await dispose()
@@ -381,6 +399,8 @@ def create_app(
     app.state.mission_runtime = mission_runtime
     app.state.capability_catalog = capability_catalog
     app.state.tool_executor = tool_executor
+    app.state.context_engine = context_engine
+    app.state.context_artifact_store = context_artifact_store
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -961,6 +981,55 @@ def create_app(
         _: AdminUser,
     ) -> dict[str, Any]:
         return tool_executor.circuit.state(capability_id).model_dump(mode="json")
+
+    @app.get("/api/agent/missions/{mission_id}/context-packs")
+    async def list_agent_context_packs(mission_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            await mission_store.get(mission_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mission not found") from exc
+        rows = await context_artifact_store.list_packs(mission_id)
+        return {"context_packs": [row.model_dump(mode="json") for row in rows]}
+
+    @app.get("/api/agent/missions/{mission_id}/artifacts")
+    async def list_agent_mission_artifacts(mission_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            await mission_store.get(mission_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mission not found") from exc
+        rows = await context_artifact_store.list_artifacts(mission_id)
+        relations = await context_artifact_store.relations(mission_id)
+        return {
+            "artifacts": [row.model_dump(mode="json") for row in rows],
+            "relations": [row.model_dump(mode="json") for row in relations],
+        }
+
+    @app.post("/api/agent/missions/{mission_id}/artifacts")
+    async def register_agent_mission_artifact(
+        mission_id: str,
+        payload: MissionArtifactCreateV1,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            await mission_store.get(mission_id)
+            artifact = await context_artifact_store.register_artifact(mission_id, payload)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mission or artifact not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return artifact.model_dump(mode="json")
+
+    @app.get("/api/agent/missions/{mission_id}/artifacts/{artifact_id}")
+    async def get_agent_mission_artifact(
+        mission_id: str,
+        artifact_id: str,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            artifact = await context_artifact_store.artifact(mission_id, artifact_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Artifact not found") from exc
+        return artifact.model_dump(mode="json")
 
     @app.get("/api/agent/missions")
     async def list_agent_missions(_: AdminUser, limit: int = 50) -> dict[str, Any]:

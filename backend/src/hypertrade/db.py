@@ -373,6 +373,79 @@ class AgentCapabilityCircuit(Base, TimestampMixin):
     )
 
 
+class AgentContextPack(Base):
+    """Immutable, replayable per-step context manifest; no raw transcript is stored."""
+
+    __tablename__ = "agent_context_packs"
+    __table_args__ = (
+        UniqueConstraint(
+            "mission_id",
+            "plan_version",
+            "step_id",
+            "attempt",
+            name="uq_agent_context_attempt",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ctxp"))
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    plan_version: Mapped[int] = mapped_column(Integer)
+    step_id: Mapped[str] = mapped_column(String(64), index=True)
+    attempt: Mapped[int] = mapped_column(Integer)
+    policy_ref: Mapped[str] = mapped_column(String(128), index=True)
+    budget_tokens: Mapped[int] = mapped_column(Integer)
+    used_tokens: Mapped[int] = mapped_column(Integer)
+    manifest_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    decisions_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentMissionArtifact(Base):
+    """Mission-owned artifact metadata; large or raw data remains at a stable external ref."""
+
+    __tablename__ = "agent_mission_artifacts"
+    __table_args__ = (
+        UniqueConstraint("mission_id", "content_hash", name="uq_agent_mission_artifact_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("mart"))
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(240))
+    media_type: Mapped[str] = mapped_column(String(128))
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    external_ref: Mapped[str] = mapped_column(Text, default="")
+    inline_preview_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    producer_ref: Mapped[str] = mapped_column(String(300), index=True)
+    source_refs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    supersedes_artifact_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="current", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentArtifactRelation(Base):
+    """Immutable source/supersede edge used by artifact lineage and completion validation."""
+
+    __tablename__ = "agent_artifact_relations"
+    __table_args__ = (
+        UniqueConstraint(
+            "from_artifact_id",
+            "to_ref",
+            "relation_type",
+            name="uq_agent_artifact_relation",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("arel"))
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    from_artifact_id: Mapped[str] = mapped_column(String(32), index=True)
+    to_ref: Mapped[str] = mapped_column(Text)
+    relation_type: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class RagDocument(Base, TimestampMixin):
     __tablename__ = "rag_documents"
 
