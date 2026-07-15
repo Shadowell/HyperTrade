@@ -442,6 +442,11 @@ Production acceptance passed on Alembic `0020`: the fixed three-Card denominator
 available and two explicit no-window strategies, replay was idempotent, and persisted summaries
 contained no raw-series keys. Sprint 109 is the next active slice.
 
+Sprint 109 groups committed paper evidence only when market, symbols, timeframes, cost model,
+horizon and bucket are identical. Champion/Challenger/Watch outputs are expiring review proposals,
+not return rankings or execution instructions; production may correctly remain without a Champion
+until at least two comparable paper members exist.
+
 ---
 
 ## Deployment

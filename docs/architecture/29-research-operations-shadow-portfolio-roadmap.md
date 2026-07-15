@@ -1,6 +1,6 @@
 # 29 Research Operations 与 Shadow Portfolio 路线图
 
-> 状态：In implementation；Sprint 108 已完成组合证据验收，下一阶段为 Sprint 109。
+> 状态：In implementation；Sprint 108 已完成组合证据验收，Sprint 109 已激活。
 
 ## 1. 规划目标
 
@@ -219,6 +219,11 @@ flowchart LR
 - 不同观察口径不能被放进同一排名；
 - 衰减告警只能进入 review queue；
 - 没有 paper/live lifecycle 自动写调用。
+
+### 9.3 实施状态
+
+- Sprint 109 合同已激活；只消费 committed Card/Paper/Observation summary，comparability 与
+  label proposal 在服务端确定。所有标签都需人工决定且有有效期，不能触发 paper/live 写入。
 
 ## 10. Sprint 110：Shadow Portfolio & Capital Governance
 

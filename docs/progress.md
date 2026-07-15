@@ -4,6 +4,12 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 109 implementation state: active on 2026-07-15 after Sprint 108 evidence acceptance.
+  The contract builds immutable, versioned paper cohorts from committed Card/Paper/Observation
+  facts; comparability requires identical market/symbol/timeframe/cost/horizon/bucket and complete
+  source quality. Champion/Challenger/Watch are expiring human-review proposals only. Production
+  currently has no eligible multi-member cohort, which must remain needs_data without creating
+  paper state or execution effects.
 - Sprint 108 implementation state: completed and production-verified on 2026-07-15. The contract
   adds bounded, source-bound PortfolioObservationWindow/DataQuality summaries over BitPro MCP
   read contracts, integrates them into PortfolioAssessment, and exposes shared API/CLI/TUI/Web
