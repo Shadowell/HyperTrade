@@ -1,6 +1,6 @@
 # 29 Research Operations 与 Shadow Portfolio 路线图
 
-> 状态：In implementation；Sprint 109 已完成 paper cohort 验收，Sprint 110 为下一阶段。
+> 状态：Completed；Sprints 106–110 已于 2026-07-15 完成生产验收，Gate E–H 全部关闭。
 
 ## 1. 规划目标
 
@@ -251,10 +251,13 @@ flowchart LR
 
 ### 10.3 实施状态
 
-- Sprint 110 合同已激活：只消费 immutable cohort/window/Card/label decision，先固定 denominator
-  再判断 eligible；无 accepted comparable cohort 时保存 `needs_data` 且不生成 scenario。
-- 模板白名单、Decimal capped normalization、hypothetical cost/stress/impact 和独立人工 review
-  均在服务端实现；所有 UI/CLI 只读同一投影，禁止形成执行 payload。
+- Sprint 110 已完成：`0022` 保存 immutable proposal 与独立 review。服务先固定 cohort
+  denominator，再验证同 comparison group、未过期 proposal 和最新人工 accept；无 accepted
+  comparable cohort 时保存 `needs_data` 且不生成 scenario。
+- equal-weight、inverse-volatility、capped risk-budget proxy 使用同一 Decimal capped
+  normalization；依赖证据缺失或 cap 不可行即抑制模板，不进行收益优化或自动模板推荐。
+- API、CLI、Textual、Web 共用服务端 projection/review；hypothetical impact 无 exchange/account/
+  order payload。生产 3 intake/0 eligible/0 scenarios、幂等和零业务侧计数变化完成验收。
 
 ## 11. 阶段门禁
 
@@ -279,6 +282,8 @@ flowchart LR
 ### Gate H：Shadow Capital Governance（Sprint 110）
 
 - 假设方案与执行代码隔离，生产无法从 shadow proposal 触发资金或订单。
+- 状态：2026-07-15 已通过；模板/权重/证据门禁、hypothetical payload、独立人工 review 和零
+  paper/live/order/capital dispatch 均完成生产验证。
 
 ## 12. 共同成功指标
 
@@ -318,7 +323,7 @@ SHADOW_PORTFOLIO_ENABLED=false
 
 - 已完成合同：`docs/contracts/sprint-106-agent-research-quality-closure.md`
 - 已完成合同：`docs/contracts/sprint-107-strategy-card-lifecycle-research-funnel.md`
-- 当前实施入口：`docs/contracts/sprint-110-shadow-portfolio-capital-governance.md`。
+- 已完成合同：`docs/contracts/sprint-110-shadow-portfolio-capital-governance.md`。
 - Sprint 96–105 基础路线：`docs/architecture/27-agent-research-os-roadmap.md`
 - 现有评测隔离：`docs/architecture/26-agent-evaluation-foundation.md`
 

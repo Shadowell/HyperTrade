@@ -1,6 +1,6 @@
 # Sprint 110 - Shadow Portfolio & Capital Governance
 
-> 状态：Active；2026-07-15 在 Gate G 通过后自动进入实施。
+> 状态：Completed；2026-07-15 通过本地、迁移与生产验收，Gate H 已关闭。
 
 ## Goal
 
@@ -104,3 +104,34 @@ Manual/production checks:
 
 - Gate H 只有在权重/证据门禁、不可变 review 和零 execution dispatch 均通过生产验收后关闭。
 - Sprint 110 完成即结束 Sprint 106–110 路线；后续实盘资本治理不在本路线授权范围内。
+
+## Implementation Record
+
+- Alembic `0022_shadow_portfolios` 新增 immutable `shadow_portfolio_proposals` 与独立
+  `shadow_portfolio_review_decisions`；portfolio key/version、source/content hash 和 build/review
+  幂等键由数据库约束，PostgreSQL 完成 `head -> 0021 -> head` 往返。
+- `ShadowPortfolioService` 固定 cohort 全部成员为 denominator，仅接受同一个 comparison group
+  中 comparable、label proposal 未过期且最新人工决定为 accept 的成员；任何缺口保留 reason。
+- 三个服务端白名单模板共用 Decimal capped normalization。equal-weight、inverse-volatility 与
+  capped risk-budget proxy 按证据逐级启用；cap 不可行、跨 comparison group、缺 volatility/
+  capacity/liquidity 均 fail closed，不插入默认值。
+- scenario 固定 notional/cost/turnover/stress assumptions，所有 weight、cost、loss 为 Decimal
+  string；impact 不含 exchange/account/order type/client order id，所有层级强制 hypothetical 与
+  execution/capital/paper/order false，且没有自动模板推荐。
+- REST、CLI `/shadow`、Textual Portfolio 与 Web Portfolio 共用服务；accept/reject/hold 只写
+  expiring research review fact，新 proposal 不继承旧 review。
+
+## Acceptance Record
+
+- `./scripts/check.sh`：frontend lint、9 tests、build，Ruff，mypy 149 source files，523 Python
+  tests 全部通过；Sprint 110 focused suite 9 tests 通过。
+- 临时 PostgreSQL 验证 `upgrade head -> downgrade 0021 -> upgrade head`，最终 revision
+  `0022_shadow_portfolios` 且两张表存在。
+- 实现提交 `a855a8e` 经 workflow `29391103674` 部署；生产 SHA、health、Alembic head、四个
+  OpenAPI path、Web Portfolio 200、host CLI `/shadow list` 与 API/worker log smoke 均通过。
+- 生产 proposal `shpf_5bfd4d97d12646d8a303` 绑定 cohort
+  `pcoh_cbf6b383e7b448d7a36f` 和 window `pwin_c23b2d48cfab40eeb3f9`：intake 3、eligible 0、
+  scenarios 0、status `needs_data`；重放命中同一 id。
+- 持久化 JSON 无 exchange/account/order payload keys。验收前后 ShadowReview 0、
+  PaperPromotion 0、PaperReviewRequest 0、paper order 10、live intent 1；仅新增一个预期的
+  immutable hypothetical proposal。

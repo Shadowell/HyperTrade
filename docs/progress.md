@@ -4,12 +4,17 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 110 implementation state: active on 2026-07-15 after Gate G closed. The contract builds
-  immutable Shadow Portfolio research proposals from accepted, unexpired cohort labels and fixed
-  Card/window facts. Only equal-weight, evidence-complete inverse-volatility and capped risk-budget
-  proxy templates are allowed. Every scenario and order impact is hypothetical; human review cannot
-  allocate capital, create orders or change paper/live state. Production is expected to remain
-  `needs_data` with zero scenarios while no comparable accepted cohort exists.
+- Sprint 110 implementation state: completed and production-verified on 2026-07-15. Immutable
+  Shadow Portfolio proposals bind exact cohort/window/Card/label decision facts, retain a fixed
+  denominator and allow only equal-weight, evidence-complete inverse-volatility and capped risk-
+  budget proxy templates. Decimal cap normalization, fixed cost/stress assumptions, hypothetical
+  impacts and expiring research-only reviews are implemented across API, `/shadow`, Textual and Web.
+  PostgreSQL `head -> 0021 -> head` passed; full `./scripts/check.sh` passed frontend lint/9 tests/
+  build, Ruff, mypy over 149 source files and 523 Python tests. Commit `a855a8e` deployed through
+  workflow `29391103674`. Production proposal `shpf_5bfd4d97d12646d8a303` retained all three Cards
+  but correctly returned `needs_data`, 0 eligible and 0 scenarios; replay was idempotent and no
+  execution payload keys were persisted. Shadow review and paper lifecycle counts stayed 0, paper
+  orders stayed 10 and live intents stayed 1. Gate H and the Sprint 106–110 route are closed.
 - Sprint 109 implementation state: completed and production-verified on 2026-07-15. Immutable,
   versioned paper cohorts consume only committed Card/Manifest/Observation facts; exact comparison
   keys, a fixed Card denominator, multi-dimensional gates and expiring human labels prevent return-

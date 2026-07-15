@@ -9,6 +9,18 @@ HyperTrade 提供全面的 REST API，用于 Agent 驱动的加密货币交易�
 
 **API 文档**: 访问 `/docs` 查看交互式 Swagger 文档。
 
+## Paper Cohort 与 Shadow Portfolio
+
+- `POST/GET /api/portfolio/paper-cohorts` 构建或列出不可变策略比较快照。
+- `GET /api/portfolio/paper-cohorts/{id}` 与 `GET .../{left}/diff/{right}` 查询/对比 cohort。
+- `POST /api/portfolio/paper-cohorts/{id}/decisions` 写入有时效的人工标签复核。
+- `POST/GET /api/portfolio/shadow-portfolios` 构建或列出假设组合方案。
+- `GET /api/portfolio/shadow-portfolios/{id}` 与 `GET .../{left}/diff/{right}` 查询/对比方案。
+- `POST /api/portfolio/shadow-portfolios/{id}/reviews` 写入 scenario accept/reject/hold。
+
+以上端点都要求管理员会话。Cohort 决定与 Shadow 复核仅是审计事实，不是执行批准；Shadow
+响应恒定为 `hypothetical=true`，并明确 execution/capital/paper lifecycle/order 权限全部为 false。
+
 ## 认证
 
 大部分读取端点可公开访问。写入操作和特权操作需要管理员会话认证。

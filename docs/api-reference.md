@@ -33,6 +33,19 @@ Capture requests accept only bounds and Card selection, never client-supplied st
 payloads. Responses expose sample window, freshness, source hashes, quality gaps and Decimal strings;
 `raw_series_persisted=false` and `execution_authorized=false` are invariant.
 
+## Paper Cohorts and Shadow Portfolios
+
+- `POST/GET /api/portfolio/paper-cohorts` builds or lists immutable comparison snapshots.
+- `GET /api/portfolio/paper-cohorts/{id}` and `GET .../{left}/diff/{right}` inspect/diff a cohort.
+- `POST /api/portfolio/paper-cohorts/{id}/decisions` records an expiring label review.
+- `POST/GET /api/portfolio/shadow-portfolios` builds or lists hypothetical proposals.
+- `GET /api/portfolio/shadow-portfolios/{id}` and `GET .../{left}/diff/{right}` inspect/diff one.
+- `POST /api/portfolio/shadow-portfolios/{id}/reviews` records scenario accept/reject/hold.
+
+All endpoints require the administrator session. Cohort decisions and Shadow reviews are audit facts,
+not execution approvals. Shadow responses keep `hypothetical=true`, `execution_authorized=false`,
+`capital_authorized=false`, `paper_lifecycle_authorized=false`, and `orders_created=false`.
+
 ## Authentication
 
 Most read endpoints are publicly accessible. Write operations and privileged actions require admin session authentication.

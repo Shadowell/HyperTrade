@@ -447,7 +447,15 @@ horizon and bucket are identical. Champion/Challenger/Watch outputs are expiring
 not return rankings or execution instructions. Production acceptance retained all three Cards but
 correctly returned `needs_data`, 0 comparable members and 0 proposals because no complete comparable
 paper cohort exists; rebuild was idempotent and paper/live counts did not change. Gate G is closed,
-and Sprint 110 Shadow Portfolio governance is the next implementation slice.
+providing the governed input boundary used by Sprint 110.
+
+Sprint 110 turns accepted, unexpired cohort labels into immutable hypothetical portfolio scenarios.
+Only equal-weight, evidence-complete inverse-volatility and capped risk-budget proxy templates exist;
+weights are Decimal, capped and sum to one, while costs, stress tests and order impacts remain
+explicitly hypothetical. Human review records research intent only and cannot allocate capital or
+create orders. Production acceptance retained the three-Card denominator and correctly returned
+`needs_data`, 0 eligible members and 0 scenarios; idempotency, payload isolation and unchanged
+paper/live counts closed Gate H and the Sprint 106–110 roadmap.
 
 ---
 
@@ -500,7 +508,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | StrategyCard V2 and Research Funnel | Production (Sprint 107) |
 | Portfolio Evidence Data Plane | Production (Sprint 108) |
 | Champion–Challenger Paper Incubation | Production (Sprint 109) |
-| Shadow Portfolio Governance | In Development (Sprint 110) |
+| Shadow Portfolio Governance | Production (Sprint 110) |
 
 ### Planned (V3+)
 
