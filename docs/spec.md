@@ -177,6 +177,18 @@ pause/start strategies, promote to live, place orders, or overwrite historical f
 Production intentionally returned `needs_data` with an explicit unknown when no StrategyCard
 was available; it emitted no recommendation and no human review rather than inventing inputs.
 
+## Approved Post-Sprint-105 Research Operations Roadmap
+
+The approved planning sequence is documented in
+`docs/architecture/29-research-operations-shadow-portfolio-roadmap.md`. Implementation
+has not started. Sprint 106 first closes provider-backed routing/source/Task/Graph quality
+gaps with fixed cohort metrics. Sprint 107 then moves StrategyCard creation from the
+PaperPromotion boundary to the StrategySpec/ExperimentManifest lifecycle and adds stable
+lineage/version/incomplete projections. Sprints 108–110 add bounded portfolio evidence
+windows, human-reviewed Champion–Challenger paper cohorts and execution-isolated Shadow
+Portfolio proposals. None of these phases promises profitability or enables automatic
+paper/live promotion, capital allocation, rebalance or orders.
+
 ## V1 In Scope
 
 - Harness routing: sidebar destinations are independent, refreshable SPA paths

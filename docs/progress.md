@@ -4,6 +4,13 @@
 
 - Branch: `main`
 - Harness status: active
+- Planning state: Sprint 106–110 Research Operations and Shadow Portfolio roadmap is
+  documented and implementation has not started. Sprint 106 is the next planned contract,
+  but remains inactive until explicit operator approval. It fixes evaluation cohort semantics
+  and Agent routing/source/Task/Graph quality before any background research expansion.
+  Sprint 107 moves StrategyCard creation to the StrategySpec/ExperimentManifest lifecycle;
+  later sprints add bounded portfolio evidence, paper cohorts and hypothetical-only portfolio
+  proposals. No runtime flag or trading permission changed in this planning update.
 - Sprint 105 implementation state: completed and production-verified on 2026-07-15.
   Persisted `portfolio_assessment.v2` binds idempotency keys to canonical
   requests, consumes bounded StrategyCard/WorldState/paper/monitor/Evidence/governed
@@ -33,7 +40,7 @@
   Assertion was activated in production. Commit `d4d43bb` deployed in workflow
   `29363666735`; SHA/health/log/API/8-table checks passed. The production attestation
   secret remains absent, so forged import returned 409 and releases remain fail closed.
-  Sprint 105 Portfolio Strategy Lifecycle is next and active.
+  Sprint 105 Portfolio Strategy Lifecycle subsequently completed production acceptance.
 - Sprint 103 implementation state: completed and production-verified on 2026-07-15.
   The bounded slice adds
   disabled-by-default durable research triggers,
@@ -189,8 +196,8 @@
   contracts covering Sessions/Tasks, Evidence V2, the research graph,
   reproducible experiments, robustness validation, Agent evaluation, TUI,
   background triggers, governed Memory/Skills, and portfolio lifecycle review.
-  This activation does not change runtime, trading, paper, BitPro, provider,
-  deployment, or database behavior. Sprints 96–104 are completed; Sprint 105 is active.
+  This activation did not change runtime, trading, paper, BitPro, provider,
+  deployment, or database behavior. Sprints 96–105 are now completed.
 - Last verified state: Sprint 95 Agent production-readiness evaluation completed
   on 2026-07-14. The isolated API deterministic suite passed 14/14, but the
   real Codex Provider 24-case golden baseline stopped at case 11 with an
@@ -410,8 +417,9 @@
 
 ## Active Contract
 
-- Sprint 96 Agent Sessions and Task Control is active under
-  `docs/contracts/sprint-96-agent-sessions-task-control.md`.
+- No implementation contract is active. Sprint 106 is planned under
+  `docs/contracts/sprint-106-agent-research-quality-closure.md` and requires explicit
+  operator approval before development starts.
 
 ## Approved Follow-On Design
 

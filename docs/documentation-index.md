@@ -43,6 +43,7 @@
 - [Autonomous Strategy Research Institution](architecture/23-autonomous-strategy-research-institution.md)
 - [Agent Research OS Roadmap](architecture/27-agent-research-os-roadmap.md)
 - [Agent Research OS Technical Design](architecture/28-agent-research-os-technical-design.md)
+- [Research Operations and Shadow Portfolio Roadmap](architecture/29-research-operations-shadow-portfolio-roadmap.md)
 
 ### 知识库
 操作指南和最佳实践：
@@ -63,6 +64,7 @@
 - 各冲刺的详细交付范围和技术规格
 - [Sprint 81–84 Research Institution Plan](architecture/23-autonomous-strategy-research-institution.md#分期实施)
 - [Sprint 96–105 Agent Research OS Plan](architecture/27-agent-research-os-roadmap.md#6-分期路线)
+- [Sprint 106–110 Research Operations Plan](architecture/29-research-operations-shadow-portfolio-roadmap.md#5-分期计划)
 
 ---
 

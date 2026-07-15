@@ -462,10 +462,16 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Multi-Agent research graph V1 | Production |
 | Reproducible experiment ledger | Production |
 | Robustness validation suite | Production |
-| Agent Research Evaluation | In Progress |
+| Agent Research Evaluation Foundation | Production |
+| Agent Research Quality Closure | Planned (Sprint 106) |
+| StrategyCard V2 and Research Funnel | Planned (Sprint 107) |
+| Portfolio Evidence Data Plane | Planned (Sprint 108) |
+| Champion–Challenger Paper Incubation | Planned (Sprint 109) |
+| Shadow Portfolio Governance | Planned (Sprint 110) |
 
 ### Planned (V3+)
 
+- [Research Operations and Shadow Portfolio roadmap](docs/architecture/29-research-operations-shadow-portfolio-roadmap.md)
 - Custom strategy DSL
 - Multi-exchange support (Binance, Bybit)
 - Advanced risk modeling (VaR, CVaR)
