@@ -45,6 +45,7 @@
 - [Agent Research OS Technical Design](architecture/28-agent-research-os-technical-design.md)
 - [Research Operations and Shadow Portfolio Roadmap](architecture/29-research-operations-shadow-portfolio-roadmap.md)
 - [Professional Agent Runtime V2 Roadmap](architecture/30-professional-agent-runtime-v2-roadmap.md)
+- [Professional Agent Runtime V2 Technical Design](architecture/31-professional-agent-runtime-v2-technical-design.md)
 
 ### 知识库
 操作指南和最佳实践：

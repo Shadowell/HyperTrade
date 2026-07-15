@@ -1,6 +1,6 @@
 # Sprint 111 - Professional Agent Runtime Foundation
 
-> 状态：Draft；等待用户确认 Professional Agent Runtime V2 路线后激活。
+> 状态：Active；用户于 2026-07-15 授权连续完成 Sprint 111–116。
 
 ## Goal
 

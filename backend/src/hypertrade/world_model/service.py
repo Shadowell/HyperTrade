@@ -7,6 +7,7 @@ returns missing-data markers where a broader cross-asset feed is not wired yet.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -41,9 +42,16 @@ from hypertrade.world_model.schemas import WORLD_STATE_SCHEMA_VERSION, WorldStat
 class WorldModelService:
     """Assemble a source-bound read-only WorldState snapshot."""
 
-    def __init__(self, db: Database, *, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        db: Database,
+        *,
+        settings: Settings | None = None,
+        global_market_collector: Callable[[], dict[str, Any]] = collect_global_market,
+    ) -> None:
         self.db = db
         self.settings = settings or get_settings()
+        self.global_market_collector = global_market_collector
 
     def snapshot(self) -> WorldStatePayload:
         generated_at = utc_now().isoformat()
@@ -137,7 +145,7 @@ class WorldModelService:
 
         Replaces Sprint 71 fixture data with real yfinance data.
         """
-        global_data = collect_global_market()
+        global_data = self.global_market_collector()
 
         # Add missing data markers
         if global_data.get("missing_data"):
@@ -259,9 +267,7 @@ class WorldModelService:
         connector_payload = connectors.get("connectors", {})
         with self.db.session() as session:
             alerts = session.scalars(
-                select(MonitorAlertEvent)
-                .order_by(desc(MonitorAlertEvent.created_at))
-                .limit(10)
+                select(MonitorAlertEvent).order_by(desc(MonitorAlertEvent.created_at)).limit(10)
             ).all()
         recent_alerts = [
             {

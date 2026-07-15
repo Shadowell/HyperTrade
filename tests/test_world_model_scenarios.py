@@ -39,7 +39,20 @@ def _snapshot() -> dict[str, object]:
     db = Database("sqlite:///:memory:")
     db.create_all()
     _seed_market(db)
-    return WorldModelService(db, settings=_settings()).snapshot()
+    return WorldModelService(
+        db,
+        settings=_settings(),
+        global_market_collector=lambda: {
+            "risk_regime": "risk_off",
+            "volatility_regime": "elevated",
+            "dollar_pressure": "neutral",
+            "rates_pressure": "neutral",
+            "cross_asset_signal": "defensive",
+            "tickers": [],
+            "missing_data": ["^GSPC"],
+            "as_of": "2026-07-15T00:00:00+00:00",
+        },
+    ).snapshot()
 
 
 def test_world_model_snapshot_includes_deterministic_scenarios_and_decision() -> None:

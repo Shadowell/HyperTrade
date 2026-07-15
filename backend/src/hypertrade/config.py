@@ -71,6 +71,13 @@ class Settings(BaseSettings):
         alias="AGENT_TASK_POLL_INTERVAL_SECONDS",
     )
     agent_task_lease_seconds: int = Field(default=60, alias="AGENT_TASK_LEASE_SECONDS")
+    mission_runtime_enabled: bool = Field(default=False, alias="MISSION_RUNTIME_ENABLED")
+    mission_runtime_canary_percent: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        alias="MISSION_RUNTIME_CANARY_PERCENT",
+    )
     research_triggers_enabled: bool = Field(default=False, alias="RESEARCH_TRIGGERS_ENABLED")
     research_trigger_poll_interval_seconds: float = Field(
         default=10.0,

@@ -4,13 +4,15 @@
 
 - Branch: `main`
 - Harness status: active
-- Professional Agent Runtime V2 planning state: proposed on 2026-07-15; no implementation contract
-  is active. `docs/architecture/30-professional-agent-runtime-v2-roadmap.md` defines Sprints 111–116
-  retains proven domain facts, MCP contracts and safety policies but does not preserve weak
-  AgentKernel/Task OS/ResearchGraph internals for compatibility. The focused Sprint 111 draft builds
-  a clean async-native Mission core, cuts over one vertical ask path without dual writes, and deletes
-  the replaced legacy branch while keeping all current permissions. User review is required before
-  changing the draft contract to Active.
+- Sprint 111 implementation state: active on 2026-07-15. A clean `hypertrade.runtime` modular core,
+  frozen Mission/Plan/Observation contracts, bounded adaptive loop, optimistic event store,
+  async SQLAlchemy adapter, migration `0023_agent_missions`, OpenTelemetry spans and authenticated
+  Mission REST/SSE projection are implemented. The foundation canary is read-only and disabled by
+  default; successful observations require provenance and completion is derived from structured
+  criteria. New Missions do not write AgentTask/AgentRun. GitNexus mapped the old AgentKernel
+  cutover surface, and the shipped technical design records keep/rewrite/delete decisions. Focused
+  runtime/API/persistence tests pass; full repository and PostgreSQL production verification are
+  pending before Gate I closes.
 - Sprint 110 implementation state: completed and production-verified on 2026-07-15. Immutable
   Shadow Portfolio proposals bind exact cohort/window/Card/label decision facts, retain a fixed
   denominator and allow only equal-weight, evidence-complete inverse-volatility and capped risk-

@@ -215,7 +215,13 @@ retained three intake members but returned 0 eligible/0 scenarios because no acc
 cohort exists; repeated build was idempotent, persisted no execution payload keys and changed no
 paper/live counts. Gate H and the Sprint 106–110 research-operations route are closed.
 
-## Proposed Professional Agent Runtime V2 Roadmap
+## Active Professional Agent Runtime V2 Roadmap
+
+Sprint 111 entered implementation on 2026-07-15. The new `hypertrade.runtime` Mission core is an
+independent source of truth and does not dual-write legacy Task/Run state. Execution remains behind
+`MISSION_RUNTIME_ENABLED`, off by default, and the initial capability is read-only. The implemented
+technical boundary is documented in
+`docs/architecture/31-professional-agent-runtime-v2-technical-design.md`.
 
 The proposed Sprints 111–116 sequence is documented in
 `docs/architecture/30-professional-agent-runtime-v2-roadmap.md`. Existing AgentKernel, Task OS and

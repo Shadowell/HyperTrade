@@ -171,6 +171,115 @@ class TaskEvent(Base, TimestampMixin):
     redaction_version: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class AgentMission(Base, TimestampMixin):
+    """Canonical projection for the Professional Agent Runtime.
+
+    New missions never dual-write AgentTask or AgentRun.  The append-only event
+    stream below is the audit source; this row is a rebuildable read model.
+    """
+
+    __tablename__ = "agent_missions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("mis"))
+    objective: Mapped[str] = mapped_column(Text)
+    original_objective: Mapped[str] = mapped_column(Text)
+    success_criteria_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    constraints_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(32), default="draft", index=True)
+    budget_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    usage_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    permission_profile_ref: Mapped[str] = mapped_column(String(128), index=True)
+    context_policy_ref: Mapped[str] = mapped_column(String(128), index=True)
+    active_plan_version: Mapped[int] = mapped_column(Integer, default=0)
+    current_step_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    last_event_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    control_requested: Mapped[str] = mapped_column(String(32), default="", index=True)
+    terminal_summary: Mapped[str] = mapped_column(Text, default="")
+    unknowns_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    artifact_refs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_by: Mapped[str] = mapped_column(String(128), default="operator", index=True)
+    deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
+
+class AgentMissionEvent(Base):
+    """Append-only, cursor-addressable Mission event without private reasoning."""
+
+    __tablename__ = "agent_mission_events"
+    __table_args__ = (
+        UniqueConstraint("mission_id", "sequence", name="uq_agent_mission_event_sequence"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("mevt"))
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(96), index=True)
+    actor: Mapped[str] = mapped_column(String(128), default="runtime", index=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentPlanVersion(Base):
+    """Immutable plan version; replans append and never overwrite history."""
+
+    __tablename__ = "agent_plan_versions"
+    __table_args__ = (
+        UniqueConstraint("mission_id", "version", name="uq_agent_plan_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("plan"))
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    parent_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    plan_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentStepAttempt(Base):
+    """Append-only execution attempt for one immutable Mission plan step."""
+
+    __tablename__ = "agent_step_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "mission_id",
+            "plan_version",
+            "step_id",
+            "attempt",
+            name="uq_agent_step_attempt",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("sat"))
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    plan_version: Mapped[int] = mapped_column(Integer)
+    step_id: Mapped[str] = mapped_column(String(64), index=True)
+    attempt: Mapped[int] = mapped_column(Integer)
+    capability_id: Mapped[str] = mapped_column(String(160), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AgentSteeringEvent(Base):
+    """Immutable operator steer; applying it creates a new Plan version."""
+
+    __tablename__ = "agent_steering_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("steer"))
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    plan_version_before: Mapped[int] = mapped_column(Integer, default=0)
+    instruction: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str] = mapped_column(Text)
+    actor: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class RagDocument(Base, TimestampMixin):
     __tablename__ = "rag_documents"
 
@@ -1093,6 +1202,7 @@ class ResearchTriggerControl(Base, TimestampMixin):
 
 class Database:
     def __init__(self, url: str, *, echo: bool = False) -> None:
+        self.url = url
         connect_args: dict[str, Any] = {}
         engine_kwargs: dict[str, Any] = {}
         if url.startswith("sqlite"):

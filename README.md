@@ -99,6 +99,7 @@ HyperTrade is a self-hosted Agent runtime that connects LLM-powered reasoning wi
 | Monitoring & Alerts | Read-only monitors for paper strategies, connector health, library freshness | Production |
 | Evaluation Suite | Deterministic evals for tool choice, RAG, Memory, risk, report quality | Production |
 | Agent Task OS | Durable sessions, tasks, checkpoints, cursor events, controls, leases, and recovery | Production |
+| Professional Mission Runtime | Strict Mission/Plan/Step contracts, immutable events, hard budgets and safe-point controls | Foundation (Sprint 111) |
 | Research Triggers | Durable schedule/regime/drift/data/eval triggers with quotas, dedupe, and kill switch | Production (disabled by default) |
 | World Model | Portfolio state tracking and defensive action scheduling | Experimental |
 
@@ -509,12 +510,13 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Portfolio Evidence Data Plane | Production (Sprint 108) |
 | Champion–Challenger Paper Incubation | Production (Sprint 109) |
 | Shadow Portfolio Governance | Production (Sprint 110) |
-| Professional Agent Runtime V2 | Proposed (Sprints 111–116) |
+| Professional Agent Runtime V2 | In progress; Mission foundation implemented (Sprint 111) |
 
 ### Planned (V3+)
 
 - [Research Operations and Shadow Portfolio roadmap](docs/architecture/29-research-operations-shadow-portfolio-roadmap.md)
 - [Professional Agent Runtime V2 roadmap](docs/architecture/30-professional-agent-runtime-v2-roadmap.md)
+- [Professional Agent Runtime V2 technical design](docs/architecture/31-professional-agent-runtime-v2-technical-design.md)
 - Custom strategy DSL
 - Multi-exchange support (Binance, Bybit)
 - Advanced risk modeling (VaR, CVaR)

@@ -130,6 +130,15 @@ from hypertrade.research.triggers import (
     TriggerControlUpdate,
     TriggerEvent,
 )
+from hypertrade.runtime.adapters.foundation import (
+    FoundationExecutor,
+    FoundationPlanner,
+    ReadOnlyCapabilityPolicy,
+)
+from hypertrade.runtime.adapters.memory_store import InMemoryMissionStore
+from hypertrade.runtime.adapters.sql_store import SqlAlchemyMissionStore
+from hypertrade.runtime.application.service import MissionRuntime
+from hypertrade.runtime.domain.models import MissionCreate, SteeringEventV1
 from hypertrade.skills.lifecycle import (
     ApprovedSkillLoader,
     SkillApprovalV1,
@@ -228,6 +237,11 @@ class AgentRunPayload(BaseModel):
     evaluation_mode: bool = False
 
 
+class MissionControlPayload(BaseModel):
+    action: Literal["pause", "resume", "cancel"]
+    reason: str = Field(default="operator_control", max_length=500)
+
+
 class ProviderSelectionPayload(BaseModel):
     provider: str
     model: str = ""
@@ -305,12 +319,28 @@ def create_app(
 ) -> FastAPI:
     app_settings = settings or get_settings()
     database = db or Database(app_settings.database_url)
+    mission_store = (
+        InMemoryMissionStore()
+        if database.url == "sqlite:///:memory:"
+        else SqlAlchemyMissionStore(database.url)
+    )
+    mission_runtime = MissionRuntime(
+        mission_store,
+        FoundationPlanner(),
+        FoundationExecutor(),
+        ReadOnlyCapabilityPolicy(),
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if app_settings.database_url.startswith("sqlite"):
             database.create_all()
-        yield
+        try:
+            yield
+        finally:
+            dispose = getattr(mission_store, "dispose", None)
+            if dispose is not None:
+                await dispose()
 
     app = FastAPI(title="HyperTrade API", version="0.1.0", lifespan=lifespan)
     app.state.settings = app_settings
@@ -318,6 +348,8 @@ def create_app(
     app.state.active_chat_provider = app_settings.active_chat_provider
     app.state.active_chat_model = ""
     app.state.bitpro_adapter = bitpro_adapter
+    app.state.mission_store = mission_store
+    app.state.mission_runtime = mission_runtime
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -853,6 +885,113 @@ def create_app(
             idempotency_key=payload.idempotency_key,
             world_state=world_state,
         )
+
+    @app.post("/api/agent/missions")
+    async def create_agent_mission(payload: MissionCreate, _: AdminUser) -> dict[str, Any]:
+        mission = await mission_runtime.create(payload)
+        return mission.model_dump(mode="json")
+
+    @app.get("/api/agent/missions")
+    async def list_agent_missions(_: AdminUser, limit: int = 50) -> dict[str, Any]:
+        rows = await mission_store.list(limit=limit)
+        return {"missions": [row.model_dump(mode="json") for row in rows]}
+
+    @app.get("/api/agent/missions/{mission_id}")
+    async def get_agent_mission(mission_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            mission = await mission_store.get(mission_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mission not found") from exc
+        plans = await mission_store.plans(mission_id)
+        attempts = await mission_store.attempts(mission_id)
+        return {
+            **mission.model_dump(mode="json"),
+            "plans": [plan.model_dump(mode="json") for plan in plans],
+            "attempts": [attempt.model_dump(mode="json") for attempt in attempts],
+        }
+
+    @app.post("/api/agent/missions/{mission_id}/run")
+    async def run_agent_mission(mission_id: str, _: AdminUser) -> dict[str, Any]:
+        if not app_settings.mission_runtime_enabled:
+            raise HTTPException(
+                status_code=409,
+                detail="Mission Runtime is disabled by feature flag",
+            )
+        try:
+            mission = await mission_runtime.run(mission_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mission not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return mission.model_dump(mode="json")
+
+    @app.post("/api/agent/missions/{mission_id}/control")
+    async def control_agent_mission(
+        mission_id: str,
+        payload: MissionControlPayload,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            if payload.action == "pause":
+                mission = await mission_runtime.pause(mission_id, actor=username)
+            elif payload.action == "resume":
+                mission = await mission_runtime.resume(mission_id, actor=username)
+            else:
+                mission = await mission_runtime.cancel(mission_id, actor=username)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mission not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {**mission.model_dump(mode="json"), "reason": payload.reason}
+
+    @app.post("/api/agent/missions/{mission_id}/steer")
+    async def steer_agent_mission(
+        mission_id: str,
+        payload: SteeringEventV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        steer = payload.model_copy(update={"actor": username})
+        try:
+            mission = await mission_runtime.steer(mission_id, steer)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mission not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return mission.model_dump(mode="json")
+
+    @app.get("/api/agent/missions/{mission_id}/events")
+    async def list_agent_mission_events(
+        mission_id: str,
+        _: AdminUser,
+        after: int = 0,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        try:
+            events = await mission_store.events(mission_id, after=after, limit=limit)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mission not found") from exc
+        return {
+            "events": [event.model_dump(mode="json") for event in events],
+            "next_cursor": events[-1].sequence if events else after,
+        }
+
+    @app.get("/api/agent/missions/{mission_id}/events/stream")
+    async def stream_agent_mission_events(
+        mission_id: str,
+        _: AdminUser,
+        after: int = 0,
+    ) -> StreamingResponse:
+        async def replay() -> AsyncIterator[str]:
+            try:
+                events = await mission_store.events(mission_id, after=after, limit=1_000)
+            except KeyError:
+                yield "event: error\ndata: {\"error\":\"mission_not_found\"}\n\n"
+                return
+            for event in events:
+                payload = json.dumps(event.model_dump(mode="json"), ensure_ascii=False)
+                yield f"id: {event.sequence}\nevent: {event.event_type}\ndata: {payload}\n\n"
+
+        return StreamingResponse(replay(), media_type="text/event-stream")
 
     @app.post("/api/agent/runs")
     def create_run(payload: AgentRunPayload, request: Request) -> dict[str, Any]:

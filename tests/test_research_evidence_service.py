@@ -26,6 +26,8 @@ from hypertrade.research.source_refs import (
 )
 from hypertrade.strategy.evidence import StrategyEvidence
 
+TEST_OBSERVED_AT = datetime.now(UTC).replace(microsecond=0)
+
 
 def _db_with_trace() -> tuple[Database, str]:
     db = Database("sqlite:///:memory:")
@@ -53,12 +55,12 @@ def _fact(trace_id: str, *, claim: str = "BTC last price is 70000") -> FactEvide
                 source_type="tool",
                 source_id=trace_id,
                 tool_name="market_ticker",
-                observed_at=datetime(2026, 7, 14, 8, tzinfo=UTC),
+                observed_at=TEST_OBSERVED_AT,
             )
         ],
         confidence=Decimal("0.8"),
-        as_of=datetime(2026, 7, 14, 8, tzinfo=UTC),
-        valid_until=datetime(2026, 7, 15, 8, tzinfo=UTC),
+        as_of=TEST_OBSERVED_AT,
+        valid_until=TEST_OBSERVED_AT + timedelta(days=1),
         task_id="task_evidence",
         node_run_id="tnode_data",
         role_key="data_quality",
@@ -132,7 +134,7 @@ def test_inference_counter_graph_expiry_and_supersede_are_explicit() -> None:
             scope=EvidenceScope(symbols=["BTC"], timeframes=["1H"]),
             sources=[],
             confidence=Decimal("0.6"),
-            as_of=datetime(2026, 7, 14, 8, tzinfo=UTC),
+            as_of=TEST_OBSERVED_AT,
             task_id="task_evidence",
             node_run_id="tnode_regime",
             role_key="market_regime",
@@ -146,7 +148,7 @@ def test_inference_counter_graph_expiry_and_supersede_are_explicit() -> None:
             scope=EvidenceScope(symbols=["BTC"], timeframes=["1H"]),
             sources=[],
             confidence=Decimal("0.7"),
-            as_of=datetime(2026, 7, 14, 8, tzinfo=UTC),
+            as_of=TEST_OBSERVED_AT,
             task_id="task_evidence",
             node_run_id="tnode_bear",
             role_key="bear_case",
@@ -258,9 +260,10 @@ def test_evidence_api_has_public_reads_and_admin_only_mutation() -> None:
     payload = _fact(trace_id).model_dump(mode="json")
 
     assert client.post("/api/research/evidence", json=payload).status_code == 401
-    assert client.post(
-        "/api/auth/login", json={"username": "admin", "password": "secret"}
-    ).status_code == 200
+    assert (
+        client.post("/api/auth/login", json={"username": "admin", "password": "secret"}).status_code
+        == 200
+    )
     created = client.post("/api/research/evidence", json=payload)
     assert created.status_code == 200
     evidence_id = created.json()["id"]
@@ -308,9 +311,7 @@ def test_existing_artifact_adapters_emit_bounded_hashed_source_refs() -> None:
             variant_id="v1",
             status="evidence_recorded",
             strategy_key="source_strategy",
-            result_refs_json={
-                "locked_out_of_sample": {"job_id": "bt-1", "result_id": "result-1"}
-            },
+            result_refs_json={"locked_out_of_sample": {"job_id": "bt-1", "result_id": "result-1"}},
             metrics_json={"locked_out_of_sample": {"return_pct": "3.2"}},
         )
         session.add(experiment)
