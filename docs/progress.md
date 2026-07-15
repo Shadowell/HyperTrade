@@ -9,9 +9,12 @@
   `tool_required`, 16 `research_graph` and 6 `safety` cases. `ResearchIntentV2`,
   `ToolPlanV2`, bounded candidate intersection, one repair and the fail-closed V2 scorer
   are implemented. API/CLI/Textual/Web project aggregate results only. Focused backend
-  acceptance passed 145 tests; full `./scripts/check.sh` passed with frontend lint/9
-  tests/build, Ruff, mypy over 142 source files and all 484 Python tests. The implementation
-  commit, isolated provider double baseline and production verification remain pending.
+  acceptance passed. The first isolated baseline failed closed on a 90-second provider
+  timeout at case 2; no denominator was skipped. Authored eval intent now exposes zero tools
+  for chat or the single required tool for routed cases, and the collector uses a bounded,
+  configurable 300-second case timeout. Full `./scripts/check.sh` passes with frontend
+  lint/9 tests/build, Ruff, mypy over 142 source files and all 486 Python tests. The timeout
+  fix, isolated provider double baseline and final production verification remain pending.
   Sprint 107 moves StrategyCard creation to the StrategySpec/ExperimentManifest lifecycle;
   later sprints add bounded portfolio evidence, paper cohorts and hypothetical-only portfolio
   proposals. No runtime flag or trading permission changed in this implementation slice.

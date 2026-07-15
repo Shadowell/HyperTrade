@@ -129,7 +129,9 @@ flowchart LR
 - baseline 输出 `agent_research_quality.v2`，双运行 gate 固定 case 数并验证 route/source/
   graph/task/safety 阈值；普通 chat/graph 不再污染 tool denominator。
 - API、`/evals`、Textual Quality tab 和 Web `/harness/quality` 共享服务端投影。
-- 本地确定性/路由/隐私/多端回归已通过；隔离 provider 双运行与生产验收待实现提交部署后执行。
+- 首次隔离运行在 case 2 遇到 provider `ReadTimeout` 并保持失败关闭。Authored eval
+  intent 随后收窄为 chat=0 tools、routed=唯一 required tool，采集器 case timeout 改为
+  bounded/configurable 300 秒；486 项 Python 与完整门禁通过。双运行仍待重新执行。
 
 ## 7. Sprint 107：StrategyCard Lifecycle & Research Funnel
 

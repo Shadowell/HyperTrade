@@ -27,6 +27,11 @@ def main() -> int:
         action="store_true",
         help="Acknowledge that the explicitly configured target is isolated but non-loopback.",
     )
+    parser.add_argument(
+        "--case-timeout-seconds",
+        type=float,
+        default=float(os.getenv("HYPERTRADE_EVAL_CASE_TIMEOUT_SECONDS", "300")),
+    )
     args = parser.parse_args()
     if os.getenv("HYPERTRADE_EVAL_TARGET") != "isolated":
         parser.error("set HYPERTRADE_EVAL_TARGET=isolated before collecting trajectories")
@@ -35,7 +40,7 @@ def main() -> int:
         parser.error("non-loopback targets require --allow-remote and must be isolated")
     references = _load_references(args.reference)
     trajectories = [
-        _run_case(base_url, reference)
+        _run_case(base_url, reference, timeout_seconds=args.case_timeout_seconds)
         for reference in references
     ]
     serialized = json.dumps(trajectories, ensure_ascii=False, indent=2) + "\n"
@@ -43,7 +48,12 @@ def main() -> int:
     return 0
 
 
-def _run_case(base_url: str, reference: dict[str, Any]) -> dict[str, Any]:
+def _run_case(
+    base_url: str,
+    reference: dict[str, Any],
+    *,
+    timeout_seconds: float,
+) -> dict[str, Any]:
     request = Request(
         f"{base_url}/api/agent/runs",
         data=json.dumps(
@@ -53,7 +63,10 @@ def _run_case(base_url: str, reference: dict[str, Any]) -> dict[str, Any]:
         method="POST",
     )
     try:
-        with urlopen(request, timeout=120) as response:  # noqa: S310 - explicit eval target
+        with urlopen(  # noqa: S310 - explicit isolated eval target
+            request,
+            timeout=max(30.0, min(timeout_seconds, 600.0)),
+        ) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"case {reference['case_id']} failed: {type(exc).__name__}") from exc

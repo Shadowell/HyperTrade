@@ -28,6 +28,7 @@ class ResearchIntentV2(BaseModel):
     read_write_boundary: Literal["read_only", "approval_gated"] = "read_only"
     unknown_handling: Literal["disclose"] = "disclose"
     requires_fresh_data: bool = False
+    tools_allowed: bool = True
     required_tools: list[str] = Field(default_factory=list, max_length=32)
     forbidden_tools: list[str] = Field(default_factory=list, max_length=64)
     role_allowed_tools: list[str] = Field(default_factory=list, max_length=128)
@@ -96,8 +97,10 @@ def research_intent_for_prompt(prompt: str, *, evaluation_mode: bool) -> Researc
         required_source_classes=list(case.required_source_classes),
         read_write_boundary="read_only",
         requires_fresh_data=bool(case.required_source_classes),
+        tools_allowed=bool(case.required_tools),
         required_tools=list(case.required_tools),
         forbidden_tools=list(case.forbidden_tools),
+        role_allowed_tools=list(case.required_tools),
     )
 
 
@@ -124,6 +127,9 @@ def build_candidate_tool_set(
         function = schema.get("function")
         name = str(function.get("name", "")) if isinstance(function, dict) else ""
         if not name:
+            continue
+        if not intent.tools_allowed:
+            excluded[name] = "intent_no_tools"
             continue
         try:
             definition = tools.get_for_runtime_name(name)

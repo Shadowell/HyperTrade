@@ -54,6 +54,20 @@ def test_safety_candidate_exposes_only_authored_write_for_executor_denial() -> N
     assert "live_order_intent" not in result.included_names
 
 
+def test_authored_chat_intent_can_disable_tools_entirely() -> None:
+    intent = _intent(
+        intent_family="chat",
+        cohort="chat_answer",
+        required_tools=[],
+        tools_allowed=False,
+    )
+
+    result = build_candidate_tool_set(intent, TOOL_SCHEMAS)
+
+    assert result.schemas == ()
+    assert set(result.excluded_reasons.values()) == {"intent_no_tools"}
+
+
 def test_planner_repairs_missing_required_arguments_once_without_expanding_candidates() -> None:
     llm = MagicMock()
     llm.name = "test"

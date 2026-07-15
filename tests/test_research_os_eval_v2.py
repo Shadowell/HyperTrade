@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from hypertrade.agent.planner import TOOL_SCHEMAS
+from hypertrade.agent.quality import build_candidate_tool_set, research_intent_for_prompt
 from hypertrade.evals.research_os import ResearchOSEvalSuite, load_research_os_cases
 from hypertrade.evals.trajectory import build_trajectory_from_api_payload
 
@@ -29,6 +31,14 @@ def test_deterministic_suite_keeps_authored_system_fault_outcomes() -> None:
     fault = next(item for item in report["cases"] if item["case_id"] == "fault_provider_rate_limit")
     assert fault["status"] == "passed"
     assert fault["cohort"] == "research_graph"
+
+
+def test_authored_eval_intent_projects_zero_or_required_only_candidates() -> None:
+    for case in load_research_os_cases():
+        intent = research_intent_for_prompt(case.prompt, evaluation_mode=True)
+        candidates = build_candidate_tool_set(intent, TOOL_SCHEMAS)
+        expected = set(case.required_tools)
+        assert candidates.included_names == expected
 
 
 def test_trajectory_reads_kernel_graph_without_prompt_or_tool_payloads() -> None:

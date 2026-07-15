@@ -105,5 +105,8 @@ Manual/QA：
 - 2026-07-15：完成 V2 manifest、cohort scorer、structured intent/plan、bounded candidate
   intersection、single repair、double-run gate 及 API/CLI/TUI/Web 只读投影。
 - 本地 focused tests 及 `./scripts/check.sh` 已通过：frontend lint/9 tests/build、Ruff、
-  mypy（142 source files）和 484 Python tests。
+  mypy（142 source files）和 486 Python tests。
+- 首次隔离 baseline 在第 2 个 case 因 Codex `ReadTimeout` 返回 503；采集器未删除失败
+  case。后续修复把 authored eval 候选集收窄为 0/唯一 required tool，并将 case timeout
+  调整为 30–600 秒边界内可配置（默认 300 秒）。
 - 隔离 provider 双运行和生产 SHA/health/log 验收尚未执行，因此 Sprint 状态保持 Active。

@@ -124,7 +124,9 @@ export HYPERTRADE_EVAL_BASE_URL=http://127.0.0.1:4334
 
 The collection script defaults to loopback and requires `--allow-remote` for a
 non-loopback target. That acknowledgement and the explicit environment label do
-not weaken the isolated-target requirement.
+not weaken the isolated-target requirement. Each provider case uses a configurable
+`HYPERTRADE_EVAL_CASE_TIMEOUT_SECONDS` (default 300, clamped to 30–600) so the client
+timeout remains outside the reviewed provider timeout without allowing an unbounded wait.
 
 ## Golden Baseline
 
