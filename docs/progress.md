@@ -78,6 +78,10 @@
 - When in-sample and out-of-sample strategy evidence explicitly conflict, the public response now
   preserves its governed evidence but returns `needs_review`: it neither promotes the strategy nor
   changes risk exposure before an operator checks sample design, cost assumptions and regime fit.
+- Isolated `operator_answer_golden_v1` V5 completed with 20 passed, 0 failed and 4 explicitly
+  unsupported multi-turn context cases across 24 scenarios. The evaluator status is
+  `complete_with_declared_gaps`; its API, PostgreSQL, Docker network and synthetic facts remain
+  separate from production, and it forces the deterministic isolated planner.
 - Local CLI full-canary execution now creates only a Mission, and remote CLI sends an idempotency key
   for replay-safe API routing. Mission event SSE honours both `after` and `Last-Event-ID`. A separate
   disabled-by-default Mission worker now uses SQL lease claim/heartbeat/release and terminal lease
