@@ -1323,9 +1323,17 @@ def create_app(
     @app.get("/api/agent/missions/{mission_id}/events/stream")
     async def stream_agent_mission_events(
         mission_id: str,
+        request: Request,
         _: AdminUser,
         after: int = 0,
     ) -> StreamingResponse:
+        raw_last_event = request.headers.get("Last-Event-ID", "").strip()
+        if raw_last_event:
+            try:
+                after = max(after, int(raw_last_event))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="Invalid Last-Event-ID") from exc
+
         async def replay() -> AsyncIterator[str]:
             try:
                 events = await mission_store.events(mission_id, after=after, limit=1_000)

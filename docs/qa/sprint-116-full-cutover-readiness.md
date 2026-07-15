@@ -18,6 +18,9 @@ reviewed rootless Docker image/digest is available in this environment.
 - Reopened cutover slice: a provider-backed, catalog-bounded planner now replaces the single-step
   Foundation planner in application composition. API chat canary coverage proves a 100% canary writes
   only a Mission and replays the same idempotency key without an `AgentTask`/`AgentRun` row.
+- Mission projections now build a public `OperatorResponseV1` solely from validated Mission facts.
+  Its answer-first shape carries bounded provenance, explicit unknowns and safe next actions; a
+  24-case public-answer catalog verifies contract shape and rejects runtime/tool-payload noise.
 
 ## Scope verified
 
@@ -33,6 +36,8 @@ reviewed rootless Docker image/digest is available in this environment.
 
 - Migrate local CLI, Textual task creation and worker execution to the canonical Mission path; leave
   legacy Task/Run endpoints as historical read-only queries only.
+- Replace buffered Mission stream output with event-cursor replay plus public `answer_delta` and
+  `evidence_ready` events. The answer catalog is a quality gate, not evidence that streaming is live.
 - Exercise Mission recovery/lease behavior through the deployed worker, not only synchronous API runs.
 - Run the pinned rootless sandbox image canary and record production health/migration evidence.
 

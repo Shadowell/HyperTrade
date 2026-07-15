@@ -24,6 +24,12 @@
   create legacy `AgentTask`/`AgentRun` rows; create idempotency is content-bound and persisted in
   migration `0028_mission_delivery`. Focused Mission/planner checks pass locally; deployment and
   production canary remain pending.
+- Mission chat projections now expose a bounded `OperatorResponseV1`: answer-first conclusion,
+  source/artifact-bound evidence, explicit unknowns and safe next actions. The projection excludes
+  plans, raw tool payloads, usage counters and private reasoning; empty-search sentinels are not
+  treated as evidence. `operator_answer_golden_v1` supplies 24 deterministic public-answer cases
+  across market, strategy, portfolio, execution, context and delivery cohorts. This is a local
+  quality contract only; public answer-delta streaming and worker-driven execution remain open.
 
 ## Current Baseline
 

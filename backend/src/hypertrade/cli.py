@@ -9,6 +9,7 @@ LLM to plan first.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import atexit
 import getpass
 import json
@@ -77,6 +78,32 @@ from hypertrade.research.triggers import (
     TriggerControlUpdate,
     TriggerEvent,
 )
+from hypertrade.runtime.adapters.capability_catalog import (
+    CatalogCapabilityPolicy,
+    InMemoryCapabilityCatalog,
+    SqlCapabilityCatalog,
+    builtin_capabilities,
+)
+from hypertrade.runtime.adapters.context_engine import (
+    ContextArtifactEngine,
+    InMemoryContextArtifactStore,
+    SqlContextArtifactStore,
+)
+from hypertrade.runtime.adapters.memory_store import InMemoryMissionStore
+from hypertrade.runtime.adapters.research_planner import ProviderBackedResearchPlanner
+from hypertrade.runtime.adapters.sql_store import SqlAlchemyMissionStore
+from hypertrade.runtime.adapters.tool_runtime import (
+    GovernedToolExecutor,
+    InMemoryObservationStore,
+    SqlObservationStore,
+    builtin_handlers,
+)
+from hypertrade.runtime.application.entrypoint import (
+    is_mission_canary,
+    mission_request_for_prompt,
+    mission_run_projection,
+)
+from hypertrade.runtime.application.service import MissionRuntime
 from hypertrade.skills.lifecycle import SkillApprovalV1, SkillLifecycleService, SkillRollbackV1
 from hypertrade.strategy.experiment import StrategyExperimentService
 from hypertrade.strategy.library import StrategyLibraryService
@@ -836,7 +863,11 @@ class AgentApiClient:
         response.raise_for_status()
 
     def run_agent(self, prompt: str) -> dict[str, Any]:
-        response = self.client.post(self._url("/api/agent/runs"), json={"prompt": prompt})
+        response = self.client.post(
+            self._url("/api/agent/runs"),
+            json={"prompt": prompt},
+            headers={"Idempotency-Key": new_id("cli_run")},
+        )
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict):
@@ -848,6 +879,7 @@ class AgentApiClient:
             "POST",
             self._url("/api/agent/runs/stream"),
             json={"prompt": prompt},
+            headers={"Idempotency-Key": new_id("cli_stream")},
             timeout=_stream_timeout(config=self.config),
         ) as response:
             response.raise_for_status()
@@ -1525,11 +1557,22 @@ class LocalAgentClient:
         self.db = db or Database(self.settings.database_url)
         self.selected_provider = self.settings.active_chat_provider
         self.selected_provider_model = ""
+        self._mission_runtime: MissionRuntime | None = None
+        self._mission_store: InMemoryMissionStore | SqlAlchemyMissionStore | None = None
+        self._mission_catalog: InMemoryCapabilityCatalog | SqlCapabilityCatalog | None = None
+        self._mission_resources: tuple[object, ...] = ()
 
     def login(self) -> None:
         return None
 
     def run_agent(self, prompt: str) -> dict[str, Any]:
+        idempotency_key = new_id("local_mission")
+        if is_mission_canary(
+            enabled=self.settings.mission_runtime_enabled,
+            percent=self.settings.mission_runtime_canary_percent,
+            idempotency_key=idempotency_key,
+        ):
+            return asyncio.run(self._run_mission(prompt, idempotency_key=idempotency_key))
         kernel = AgentKernel(
             self.db,
             knowledge_dir=str(self.settings.knowledge_dir),
@@ -1542,6 +1585,27 @@ class LocalAgentClient:
         return _completed_run_to_dict(run)
 
     def run_agent_events(self, prompt: str) -> Iterator[dict[str, Any]]:
+        idempotency_key = new_id("local_mission")
+        if is_mission_canary(
+            enabled=self.settings.mission_runtime_enabled,
+            percent=self.settings.mission_runtime_canary_percent,
+            idempotency_key=idempotency_key,
+        ):
+            mission_run = asyncio.run(self._run_mission(prompt, idempotency_key=idempotency_key))
+            for trace in mission_run.get("trace_events", []):
+                if isinstance(trace, dict):
+                    yield {
+                        "event": "mission_event",
+                        "mission_id": mission_run.get("mission_id", ""),
+                        "tool_name": trace.get("tool_name", ""),
+                        "status": trace.get("status", ""),
+                    }
+            yield {
+                "event": "final",
+                "mission_id": mission_run.get("mission_id", ""),
+                "run": mission_run,
+            }
+            return
         events: list[dict[str, Any]] = []
         kernel = AgentKernel(
             self.db,
@@ -1551,14 +1615,63 @@ class LocalAgentClient:
             provider_model=self.selected_provider_model or None,
         )
         task = self._create_agent_task(prompt)
-        run = AgentTaskExecutor(self.db).execute_chat(
+        legacy_run = AgentTaskExecutor(self.db).execute_chat(
             task.id,
             kernel,
             prompt,
             external_event_sink=events.append,
         )
         yield from events
-        yield {"event": "final", "task_id": task.id, "run": _completed_run_to_dict(run)}
+        yield {"event": "final", "task_id": task.id, "run": _completed_run_to_dict(legacy_run)}
+
+    async def _run_mission(self, prompt: str, *, idempotency_key: str) -> dict[str, Any]:
+        runtime, store = await self._ensure_mission_runtime()
+        mission = await runtime.create(
+            mission_request_for_prompt(
+                prompt,
+                actor="local_cli",
+                idempotency_key=idempotency_key,
+            )
+        )
+        completed = await runtime.run(mission.mission_id)
+        return await mission_run_projection(completed, store)
+
+    async def _ensure_mission_runtime(
+        self,
+    ) -> tuple[MissionRuntime, InMemoryMissionStore | SqlAlchemyMissionStore]:
+        if self._mission_runtime is not None and self._mission_store is not None:
+            return self._mission_runtime, self._mission_store
+        in_memory = self.db.url == "sqlite:///:memory:"
+        store = InMemoryMissionStore() if in_memory else SqlAlchemyMissionStore(self.db.url)
+        catalog = InMemoryCapabilityCatalog() if in_memory else SqlCapabilityCatalog(self.db.url)
+        observations = InMemoryObservationStore() if in_memory else SqlObservationStore(self.db.url)
+        context_store = (
+            InMemoryContextArtifactStore()
+            if in_memory
+            else SqlContextArtifactStore(self.db.url)
+        )
+        await catalog.bootstrap(builtin_capabilities())
+        runtime = MissionRuntime(
+            store,
+            ProviderBackedResearchPlanner(
+                provider=ProviderRuntime(self.settings).get_chat_provider(
+                    selected=self.selected_provider,
+                    selected_model=self.selected_provider_model or None,
+                )
+            ),
+            GovernedToolExecutor(
+                catalog,
+                builtin_handlers(self.db, knowledge_dir=str(self.settings.knowledge_dir)),
+                observations=observations,
+            ),
+            CatalogCapabilityPolicy(catalog),
+            ContextArtifactEngine(context_store),
+        )
+        self._mission_runtime = runtime
+        self._mission_store = store
+        self._mission_catalog = catalog
+        self._mission_resources = (catalog, observations, context_store)
+        return runtime, store
 
     def list_tools(self) -> list[dict[str, Any]]:
         return [_tool_to_dict(tool) for tool in ToolRegistry.default().list_tools()]

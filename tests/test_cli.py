@@ -2902,14 +2902,49 @@ def test_local_agent_client_runs_kernel(tmp_path) -> None:
     assert restored["report_markdown"] == run["report_markdown"]
 
 
+def test_local_agent_client_routes_full_canary_to_mission_runtime(tmp_path) -> None:
+    from hypertrade.config import Settings
+    from hypertrade.db import AgentRun, AgentTask, Database
+    from sqlalchemy import func, select
+
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    client = LocalAgentClient(
+        settings=Settings(
+            DATABASE_URL="sqlite:///:memory:",
+            KNOWLEDGE_DIR=tmp_path,
+            DEEPSEEK_API_KEY="",
+            MISSION_RUNTIME_ENABLED=True,
+            MISSION_RUNTIME_CANARY_PERCENT=100,
+        ),
+        db=db,
+    )
+
+    run = client.run_agent("研究 BTC 市场状态和策略证据")
+
+    assert run["runtime"] == "mission_v2"
+    assert run["status"] == "completed"
+    assert run["trace_events"]
+    with db.session() as session:
+        assert session.scalar(select(func.count()).select_from(AgentTask)) == 0
+        assert session.scalar(select(func.count()).select_from(AgentRun)) == 0
+
+
 def test_api_client_logs_in_and_posts_agent_run() -> None:
-    seen: list[tuple[str, str, dict[str, Any]]] = []
+    seen: list[tuple[str, str, dict[str, Any], str]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = {}
         if request.content:
             payload = dict(httpx.Response(200, content=request.content).json())
-        seen.append((request.method, request.url.path, payload))
+        seen.append(
+            (
+                request.method,
+                request.url.path,
+                payload,
+                request.headers.get("Idempotency-Key", ""),
+            )
+        )
         if request.url.path == "/api/auth/login":
             return httpx.Response(200, json={"status": "ok"})
         return httpx.Response(
@@ -2937,10 +2972,9 @@ def test_api_client_logs_in_and_posts_agent_run() -> None:
     run = client.run_agent("hello")
 
     assert run["id"] == "run_api"
-    assert seen == [
-        ("POST", "/api/auth/login", {"username": "admin", "password": "secret"}),
-        ("POST", "/api/agent/runs", {"prompt": "hello"}),
-    ]
+    assert seen[0] == ("POST", "/api/auth/login", {"username": "admin", "password": "secret"}, "")
+    assert seen[1][:3] == ("POST", "/api/agent/runs", {"prompt": "hello"})
+    assert seen[1][3].startswith("cli_run_")
 
 
 def test_api_client_loads_one_persisted_run() -> None:

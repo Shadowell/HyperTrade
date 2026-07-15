@@ -7,10 +7,13 @@ AgentKernel, or ask a model to write the final completion status.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from hashlib import sha256
 from typing import Any
 
+from hypertrade.runtime.application.operator_response import (
+    build_operator_response,
+    render_operator_response,
+)
 from hypertrade.runtime.domain.models import (
     MissionCreate,
     MissionEventV1,
@@ -65,14 +68,16 @@ async def mission_run_projection(
     plans = await store.plans(mission.mission_id)
     attempts = await store.attempts(mission.mission_id)
     events = await store.events(mission.mission_id, after=0, limit=1_000)
+    operator_response = build_operator_response(mission, attempts)
     return {
         "id": mission.mission_id,
         "mission_id": mission.mission_id,
         "runtime": "mission_v2",
         "status": mission.status.value,
-        "report_markdown": _report_markdown(mission, attempts),
+        "report_markdown": render_operator_response(operator_response),
         "report_json": {
             "runtime": "mission_v2",
+            "operator_response": operator_response.model_dump(mode="json"),
             "mission": mission.model_dump(mode="json"),
             "plans": [plan.model_dump(mode="json") for plan in plans],
             "attempts": [_attempt_summary(attempt) for attempt in attempts],
@@ -134,31 +139,3 @@ def _event_trace(event: MissionEventV1) -> dict[str, Any]:
         "output_json": payload,
         "created_at": event.created_at.isoformat(),
     }
-
-
-def _report_markdown(mission: MissionProjection, attempts: Sequence[StepAttemptV2]) -> str:
-    lines = [
-        "# Mission Research Result",
-        "",
-        f"- Mission: `{mission.mission_id}`",
-        f"- Status: **{mission.status.value}**",
-        f"- Plan version: {mission.active_plan_version}",
-        f"- Tool calls: {mission.usage.tool_calls}",
-        "",
-        "## Validated observations",
-    ]
-    for attempt in attempts:
-        observation = attempt.observation
-        if observation is None:
-            continue
-        source_count = len(observation.source_refs) + len(observation.artifact_refs)
-        lines.append(
-            f"- `{attempt.step_id}` — {observation.status}; "
-            f"sources: {source_count}; {observation.summary}"
-        )
-    if mission.unknowns:
-        lines.extend(("", "## Explicit unknowns"))
-        lines.extend(f"- {item}" for item in mission.unknowns)
-    if mission.terminal_summary:
-        lines.extend(("", "## Runtime conclusion", mission.terminal_summary))
-    return "\n".join(lines)

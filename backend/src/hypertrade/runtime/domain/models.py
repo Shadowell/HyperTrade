@@ -240,6 +240,42 @@ class MissionProjection(StrictModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class OperatorEvidenceV1(StrictModel):
+    """A bounded, source-bound fact visible in an operator answer."""
+
+    summary: str = Field(min_length=1, max_length=480)
+    source_refs: tuple[str, ...] = Field(default=(), max_length=3)
+    artifact_refs: tuple[str, ...] = Field(default=(), max_length=3)
+
+    @model_validator(mode="after")
+    def require_provenance(self) -> OperatorEvidenceV1:
+        if not self.source_refs and not self.artifact_refs:
+            raise ValueError("operator evidence requires a source or artifact reference")
+        return self
+
+
+class OperatorResponseV1(StrictModel):
+    """Public answer projection; it deliberately excludes runtime internals and reasoning."""
+
+    schema_version: Literal["operator_response.v1"] = "operator_response.v1"
+    mission_id: str = Field(min_length=1, max_length=128)
+    outcome: Literal[
+        "completed",
+        "needs_data",
+        "needs_review",
+        "needs_clarification",
+        "blocked",
+        "failed",
+        "in_progress",
+    ]
+    decision: str = Field(min_length=1, max_length=600)
+    confidence: Literal["medium", "low", "not_assessed"]
+    evidence: tuple[OperatorEvidenceV1, ...] = Field(default=(), max_length=3)
+    unknowns: tuple[str, ...] = Field(default=(), max_length=3)
+    next_actions: tuple[str, ...] = Field(default=(), max_length=2)
+    context_refs: tuple[str, ...] = Field(default=(), max_length=4)
+
+
 class ReplanRequestV1(StrictModel):
     trigger: Literal[
         "capability_unavailable",

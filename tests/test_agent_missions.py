@@ -358,11 +358,28 @@ def test_mission_api_uses_new_tables_without_legacy_dual_write() -> None:
         mission_id = created.json()["mission_id"]
         completed = client.post(f"/api/agent/missions/{mission_id}/run")
         events = client.get(f"/api/agent/missions/{mission_id}/events")
+        first_sequence = events.json()["events"][0]["sequence"]
+        replay = client.get(
+            f"/api/agent/missions/{mission_id}/events/stream",
+            headers={"Last-Event-ID": str(first_sequence)},
+        )
+        invalid_cursor = client.get(
+            f"/api/agent/missions/{mission_id}/events/stream",
+            headers={"Last-Event-ID": "not-a-sequence"},
+        )
 
     assert completed.status_code == 200
     assert completed.json()["status"] == "completed"
     assert events.status_code == 200
     assert events.json()["next_cursor"] >= 1
+    assert replay.status_code == 200
+    replay_ids = [
+        int(line.removeprefix("id: "))
+        for line in replay.text.splitlines()
+        if line.startswith("id: ")
+    ]
+    assert replay_ids and min(replay_ids) > first_sequence
+    assert invalid_cursor.status_code == 400
     with database.session() as session:
         assert session.scalar(select(func.count()).select_from(AgentTask)) == 0
         assert session.scalar(select(func.count()).select_from(AgentRun)) == 0
