@@ -265,3 +265,9 @@ then bounded `evidence_ready`, answer `answer_delta`, `warning` and `final` even
 plan/tool events remain only on the authenticated Mission audit stream. At a 100% Mission canary,
 new AgentTask/ResearchGraph writes return HTTP 410 and legacy worker/trigger loops do not start;
 historical read endpoints remain available.
+
+If `MISSION_RUNTIME_WORKER_ENABLED` is true, `POST /missions/{id}/run` records no inline execution:
+the leased worker claims the durable Mission and the event stream tails its cursor until terminal.
+The default chat SSE follows that same Mission rather than creating a second in-process execution.
+The worker flag is independently disabled by default, so normal rollout remains explicit and
+fail-closed when no worker process is deployed.

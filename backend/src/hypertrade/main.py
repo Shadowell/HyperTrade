@@ -5,6 +5,7 @@ remote mode, tests) and the backend services. Endpoints stay thin: they validate
 HTTP input, call the Agent/tool service, and return redacted runtime state.
 """
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncIterator, Callable
@@ -174,7 +175,7 @@ from hypertrade.runtime.domain.capabilities import (
     CapabilityReviewV1,
 )
 from hypertrade.runtime.domain.context import MissionArtifactCreateV1
-from hypertrade.runtime.domain.models import MissionCreate, SteeringEventV1
+from hypertrade.runtime.domain.models import TERMINAL_STATUSES, MissionCreate, SteeringEventV1
 from hypertrade.runtime.domain.sandbox import ImportReviewV1, SandboxRequestV1
 from hypertrade.runtime.domain.supervision import TeamRunRequestV1
 from hypertrade.skills.lifecycle import (
@@ -504,20 +505,45 @@ def create_app(
                 detail="Legacy AgentTask writes are disabled; create a Mission instead",
             )
 
-    async def run_prompt_as_mission(
+    async def create_prompt_mission(
         prompt: str,
         *,
         actor: str,
         idempotency_key: str,
-    ) -> dict[str, Any]:
-        mission = await mission_runtime.create(
+    ) -> Any:
+        return await mission_runtime.create(
             mission_request_for_prompt(
                 prompt,
                 actor=actor,
                 idempotency_key=idempotency_key,
             )
         )
-        completed = await mission_runtime.run(mission.mission_id)
+
+    async def await_worker_mission(mission_id: str) -> Any:
+        """Follow the canonical event-backed projection; the worker owns dispatch."""
+
+        while True:
+            mission = await mission_store.get(mission_id)
+            if mission.status in TERMINAL_STATUSES:
+                return mission
+            await asyncio.sleep(0.25)
+
+    async def run_prompt_as_mission(
+        prompt: str,
+        *,
+        actor: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        mission = await create_prompt_mission(
+            prompt,
+            actor=actor,
+            idempotency_key=idempotency_key,
+        )
+        completed = (
+            await await_worker_mission(mission.mission_id)
+            if app_settings.mission_runtime_worker_enabled
+            else await mission_runtime.run(mission.mission_id)
+        )
         return await mission_run_projection(completed, mission_store)
 
     def get_bitpro_adapter() -> BitProApiAdapter:
@@ -1278,7 +1304,9 @@ def create_app(
                 detail="Mission Runtime is disabled by feature flag",
             )
         try:
-            mission = await mission_runtime.run(mission_id)
+            mission = await mission_store.get(mission_id)
+            if not app_settings.mission_runtime_worker_enabled:
+                mission = await mission_runtime.run(mission_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Mission not found") from exc
         except ValueError as exc:
@@ -1350,14 +1378,25 @@ def create_app(
                 raise HTTPException(status_code=400, detail="Invalid Last-Event-ID") from exc
 
         async def replay() -> AsyncIterator[str]:
-            try:
-                events = await mission_store.events(mission_id, after=after, limit=1_000)
-            except KeyError:
-                yield 'event: error\ndata: {"error":"mission_not_found"}\n\n'
-                return
-            for event in events:
-                payload = json.dumps(event.model_dump(mode="json"), ensure_ascii=False)
-                yield f"id: {event.sequence}\nevent: {event.event_type}\ndata: {payload}\n\n"
+            cursor = after
+            while True:
+                try:
+                    events = await mission_store.events(mission_id, after=cursor, limit=1_000)
+                    mission = await mission_store.get(mission_id)
+                except KeyError:
+                    yield 'event: error\ndata: {"error":"mission_not_found"}\n\n'
+                    return
+                for event in events:
+                    cursor = event.sequence
+                    payload = json.dumps(event.model_dump(mode="json"), ensure_ascii=False)
+                    yield f"id: {event.sequence}\nevent: {event.event_type}\ndata: {payload}\n\n"
+                if mission.status in TERMINAL_STATUSES:
+                    return
+                if await request.is_disconnected():
+                    return
+                if not events:
+                    yield ": heartbeat\n\n"
+                await asyncio.sleep(0.5)
 
         return StreamingResponse(replay(), media_type="text/event-stream")
 
@@ -1425,11 +1464,24 @@ def create_app(
                     }
                 )
                 try:
-                    result = await run_prompt_as_mission(
+                    mission = await create_prompt_mission(
                         payload.prompt,
                         actor="mission_stream",
                         idempotency_key=idempotency_key,
                     )
+                    yield _format_sse(
+                        {
+                            "event": "answer_delta",
+                            "mission_id": mission.mission_id,
+                            "text": "研究任务已登记，等待受治理执行。",
+                        }
+                    )
+                    completed = (
+                        await await_worker_mission(mission.mission_id)
+                        if app_settings.mission_runtime_worker_enabled
+                        else await mission_runtime.run(mission.mission_id)
+                    )
+                    result = await mission_run_projection(completed, mission_store)
                     report = result.get("report_json", {})
                     operator_response = (
                         report.get("operator_response", {}) if isinstance(report, dict) else {}

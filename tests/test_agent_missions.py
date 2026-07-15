@@ -459,3 +459,33 @@ def test_full_mission_cutover_makes_legacy_task_writes_read_only() -> None:
 
     assert legacy.status_code == 410
     assert mission.status_code == 200
+
+
+def test_mission_run_endpoint_leaves_dispatch_to_enabled_worker() -> None:
+    database = Database("sqlite:///:memory:")
+    database.create_all()
+    settings = Settings(
+        DATABASE_URL="sqlite:///:memory:",
+        ADMIN_USERNAME="admin",
+        ADMIN_PASSWORD="secret",
+        SESSION_SECRET="mission-worker-dispatch-test-secret",
+        MISSION_RUNTIME_ENABLED=True,
+        MISSION_RUNTIME_WORKER_ENABLED=True,
+    )
+    with TestClient(create_app(settings=settings, db=database)) as client:
+        assert client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "secret"},
+        ).status_code == 200
+        created = client.post(
+            "/api/agent/missions",
+            json=mission_payload(idempotency_key="worker-dispatch-001").model_dump(mode="json"),
+        )
+        assert created.status_code == 200
+        started = client.post(f"/api/agent/missions/{created.json()['mission_id']}/run")
+        detail = client.get(f"/api/agent/missions/{created.json()['mission_id']}")
+
+    assert started.status_code == 200
+    assert started.json()["status"] == "draft"
+    assert detail.status_code == 200
+    assert detail.json()["attempts"] == []

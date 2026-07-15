@@ -32,6 +32,9 @@ reviewed rootless Docker image/digest or deployed worker recovery evidence.
 - Local CLI/TUI Mission clients use stable Mission ids and `Last-Event-ID` cursor replay; a separate
   disabled-by-default Mission worker owns SQL lease/heartbeat/release. At full canary, legacy task
   worker and trigger loops are suppressed and legacy APIs stay readable but reject writes.
+- With the Mission worker flag enabled, API run requests enqueue into the Mission ledger and the
+  authenticated Mission SSE endpoint tails cursor events until terminal state; the API process does
+  not inline-dispatch that Mission.
 - Readiness assertions fail if an unsafe dispatch or non-fail-closed write scope is reported.
 - Production/staging without `AGENT_STRATEGY_SANDBOX_IMAGE` constructs no host fallback and returns
   503 when the sandbox endpoint is called.
@@ -42,8 +45,8 @@ reviewed rootless Docker image/digest or deployed worker recovery evidence.
 
 - Exercise Mission recovery/lease behavior through the deployed worker, not only synchronous API runs.
 - Subscribe public mission progress to worker-owned event delivery for long runs. The current stream
-  emits a prompt acceptance event immediately, then projects evidence and conclusion after inline
-  Mission execution; it is not yet a production worker-stream proof.
+  emits a prompt acceptance event immediately, then follows the worker-owned Mission before it
+  projects evidence and conclusion; it is not yet a production worker-stream proof.
 - Run the pinned rootless sandbox image canary and record production health/migration evidence.
 
 ## Deferred operational gate

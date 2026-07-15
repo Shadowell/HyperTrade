@@ -49,6 +49,10 @@
   `evidence_ready`, `warning` and `final` events without exposing plan/tool telemetry. At a 100%
   Mission canary legacy Task/ResearchGraph writes return `410`; the worker suppresses legacy Task
   and trigger loops, keeping historical reads available.
+- When `MISSION_RUNTIME_WORKER_ENABLED=true`, Mission run endpoints leave dispatch in the canonical
+  ledger for the SQL-leased worker instead of running inline in the API process. Authenticated
+  Mission SSE tails that cursor-backed event log until a terminal state, and default chat waits for
+  the worker outcome while preserving the public-only event boundary.
 
 ## Current Baseline
 
