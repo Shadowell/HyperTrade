@@ -282,6 +282,7 @@ class LoginPayload(BaseModel):
 class AgentRunPayload(BaseModel):
     prompt: str
     evaluation_mode: bool = False
+    evaluation_case_id: str = Field(default="", max_length=96)
 
 
 class MissionControlPayload(BaseModel):
@@ -521,14 +522,27 @@ def create_app(
         *,
         actor: str,
         idempotency_key: str,
+        evaluation_case_id: str = "",
     ) -> Any:
         return await mission_runtime.create(
             mission_request_for_prompt(
                 prompt,
                 actor=actor,
                 idempotency_key=idempotency_key,
+                evaluation_case_id=evaluation_case_id,
             )
         )
+
+    def evaluation_case_id(payload: AgentRunPayload) -> str:
+        """Allow deterministic fault fixtures only on the explicit isolated target."""
+
+        case_id = payload.evaluation_case_id.strip()
+        fixtures_disabled = (
+            not payload.evaluation_mode or not app_settings.operator_eval_fixtures_enabled
+        )
+        if case_id and fixtures_disabled:
+            raise HTTPException(status_code=409, detail="operator evaluation fixtures are disabled")
+        return case_id
 
     async def await_worker_mission(mission_id: str) -> Any:
         """Follow the canonical event-backed projection; the worker owns dispatch."""
@@ -567,11 +581,13 @@ def create_app(
         *,
         actor: str,
         idempotency_key: str,
+        evaluation_case_id: str = "",
     ) -> dict[str, Any]:
         mission = await create_prompt_mission(
             prompt,
             actor=actor,
             idempotency_key=idempotency_key,
+            evaluation_case_id=evaluation_case_id,
         )
         try:
             completed = (
@@ -1441,6 +1457,7 @@ def create_app(
     @app.post("/api/agent/runs")
     async def create_run(payload: AgentRunPayload, request: Request) -> dict[str, Any]:
         idempotency_key = mission_request_key(request)
+        fixture_case_id = evaluation_case_id(payload)
         if is_mission_canary(
             enabled=app_settings.mission_runtime_enabled,
             percent=app_settings.mission_runtime_canary_percent,
@@ -1451,6 +1468,7 @@ def create_app(
                     payload.prompt,
                     actor="mission_api",
                     idempotency_key=idempotency_key,
+                    evaluation_case_id=fixture_case_id,
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -1487,6 +1505,7 @@ def create_app(
     @app.post("/api/agent/runs/stream")
     async def stream_run(payload: AgentRunPayload, request: Request) -> StreamingResponse:
         idempotency_key = mission_request_key(request)
+        fixture_case_id = evaluation_case_id(payload)
         if is_mission_canary(
             enabled=app_settings.mission_runtime_enabled,
             percent=app_settings.mission_runtime_canary_percent,
@@ -1506,6 +1525,7 @@ def create_app(
                         payload.prompt,
                         actor="mission_stream",
                         idempotency_key=idempotency_key,
+                        evaluation_case_id=fixture_case_id,
                     )
                     yield _format_sse(
                         {

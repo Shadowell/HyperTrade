@@ -313,11 +313,10 @@ def _parse_provider_plan(
     if not isinstance(raw, dict):
         raise ValueError("planner response must be an object")
     raw_steps = raw.get("steps")
-    if not isinstance(raw_steps, list) or not raw_steps or len(raw_steps) > len(fallback.steps):
-        raise ValueError("planner response has invalid step count")
+    if not isinstance(raw_steps, list) or len(raw_steps) != len(fallback.steps):
+        raise ValueError("planner response must retain every deterministic baseline step")
     allowed = set(_capabilities_for_objective(mission.objective))
-    steps: list[PlanStepV2] = []
-    for item in raw_steps:
+    for item, baseline in zip(raw_steps, fallback.steps, strict=True):
         if not isinstance(item, dict):
             raise ValueError("planner step must be an object")
         capability_id = str(item.get("capability_id", ""))
@@ -326,38 +325,17 @@ def _parse_provider_plan(
         arguments = item.get("arguments", {})
         if not isinstance(arguments, dict):
             raise ValueError("planner step arguments must be an object")
-        steps.append(
-            PlanStepV2(
-                step_id=str(item.get("step_id", "")),
-                title=str(item.get("title", "")),
-                depends_on=tuple(str(value) for value in item.get("depends_on", [])),
-                capability_id=capability_id,
-                capability_version="1",
-                arguments=arguments,
-                expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
-                read_only=True,
-                requires_approval=False,
-            )
-        )
-    # The provider cannot change immutable identity, bounds or completion rules.
-    previous_ids = {step.step_id for step in previous.steps} if previous is not None else set()
-    step_ids = {step.step_id for step in steps}
-    return PlanV2(
-        plan_id=_plan_id(mission.mission_id, fallback.version),
-        version=fallback.version,
-        parent_version=previous.version if previous is not None else None,
-        goal_interpretation=str(raw.get("goal_interpretation", mission.objective))[:2_000],
-        assumptions=tuple(str(value)[:500] for value in raw.get("assumptions", [])[:12])
-        or fallback.assumptions,
-        completion_checks=tuple(item.criterion_id for item in mission.success_criteria),
-        steps=tuple(steps),
-        diff=PlanDiffV1(
-            kept=tuple(step.step_id for step in steps if step.step_id in previous_ids),
-            added=tuple(step.step_id for step in steps if step.step_id not in previous_ids),
-            removed=tuple(step_id for step_id in previous_ids if step_id not in step_ids),
-            reason_code=request.trigger if request is not None else "initial_plan",
-        ),
-    )
+        proposed_dependencies = tuple(str(value) for value in item.get("depends_on", []))
+        if (
+            str(item.get("step_id", "")) != baseline.step_id
+            or capability_id != baseline.capability_id
+            or proposed_dependencies != baseline.depends_on
+            or arguments != baseline.arguments
+        ):
+            raise ValueError("planner cannot alter deterministic step identity or arguments")
+    # A provider may be consulted, but catalog-derived dispatch remains immutable:
+    # no model output can omit, reorder, or retarget an approved data read.
+    return fallback
 
 
 def _input_schema_for(capability_id: str) -> dict[str, Any]:

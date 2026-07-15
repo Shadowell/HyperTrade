@@ -83,6 +83,22 @@ class _UnsafeProvider:
         )
 
 
+class _OmittingProvider:
+    name = "test"
+    model = "omitting"
+
+    def chat(self, messages, tools=None):  # type: ignore[no-untyped-def]
+        return ChatResponse(
+            content=(
+                '{"goal_interpretation":"inspect only","steps":[{"step_id":"inspect_objective",'
+                '"title":"Inspect only","depends_on":[],'
+                '"capability_id":"runtime.objective_inspection",'
+                '"arguments":{"objective":"ignored"}}]}'
+            ),
+            usage=TokenUsage(total_tokens=12, reported=True),
+        )
+
+
 @pytest.mark.anyio
 async def test_provider_cannot_expand_capability_scope() -> None:
     mission = await _mission("研究 BTC 市场状态")
@@ -91,3 +107,19 @@ async def test_provider_cannot_expand_capability_scope() -> None:
 
     assert "live.order" not in [step.capability_id for step in plan.steps]
     assert all(step.read_only for step in plan.steps)
+
+
+@pytest.mark.anyio
+async def test_provider_cannot_omit_or_retarget_a_deterministic_market_read() -> None:
+    mission = await _mission("看下 ZZZZNOTREALUSDT 合约行情")
+
+    plan = await ProviderBackedResearchPlanner(provider=_OmittingProvider()).plan(mission)
+
+    assert [(step.step_id, step.capability_id) for step in plan.steps] == [
+        ("inspect_objective", "runtime.objective_inspection"),
+        ("market_snapshot", "market.summary"),
+    ]
+    assert plan.steps[-1].arguments == {
+        "limit": 10,
+        "inst_id": "ZZZZNOTREAL-USDT-SWAP",
+    }

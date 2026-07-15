@@ -57,6 +57,7 @@ def main() -> int:
         try:
             observation = _run_case(
                 base_url,
+                case_id=case.case_id,
                 prompt=case.turns[0],
                 needs_stream=bool(case.required_event_types),
                 timeout_seconds=args.case_timeout_seconds,
@@ -73,13 +74,23 @@ def main() -> int:
 
     passed = sum(row["status"] == "passed" for row in results)
     not_supported = sum(row["status"] == "not_supported" for row in results)
+    failed = sum(row["status"] == "failed" for row in results)
     payload = {
         "schema_version": "operator_answer_eval_result.v1",
         "suite": suite.catalog_status(),
-        "status": "passed" if passed == len(results) else "incomplete",
+        # A missing public multi-turn surface is an explicit declared gap, not a
+        # fabricated pass and not a runner failure. The artifact keeps it visible.
+        "status": (
+            "passed"
+            if failed == 0 and not_supported == 0
+            else "complete_with_declared_gaps"
+            if failed == 0
+            else "incomplete"
+        ),
         "case_count": len(results),
         "passed_count": passed,
         "not_supported_count": not_supported,
+        "failed_count": failed,
         # The artifact stores only checks and aggregate sizes, never prompts,
         # final text, tool arguments, raw results, reasoning, or credentials.
         "results": results,
@@ -93,21 +104,22 @@ def main() -> int:
         f"Operator answer eval: passed={passed}/{len(results)} "
         f"not_supported={not_supported} output={args.output}"
     )
-    return 0 if payload["status"] == "passed" else 1
+    return 0 if failed == 0 else 1
 
 
 def _run_case(
     base_url: str,
     *,
+    case_id: str,
     prompt: str,
     needs_stream: bool,
     timeout_seconds: float,
 ) -> OperatorAnswerObservation:
     timeout = max(30.0, min(timeout_seconds, 600.0))
     if needs_stream:
-        run, event_types, first_public_event_ms = _stream_run(base_url, prompt, timeout)
+        run, event_types, first_public_event_ms = _stream_run(base_url, case_id, prompt, timeout)
     else:
-        run = _post_json(base_url, "/api/agent/runs", prompt, timeout)
+        run = _post_json(base_url, "/api/agent/runs", case_id, prompt, timeout)
         event_types = ()
         first_public_event_ms = None
     report = run.get("report_json") if isinstance(run, dict) else None
@@ -125,8 +137,14 @@ def _run_case(
     )
 
 
-def _post_json(base_url: str, path: str, prompt: str, timeout: float) -> dict[str, Any]:
-    request = _request(base_url, path, prompt)
+def _post_json(
+    base_url: str,
+    path: str,
+    case_id: str,
+    prompt: str,
+    timeout: float,
+) -> dict[str, Any]:
+    request = _request(base_url, path, case_id, prompt)
     try:
         with urlopen(request, timeout=timeout) as response:  # noqa: S310 - guarded isolated target
             payload = json.loads(response.read().decode("utf-8"))
@@ -139,10 +157,11 @@ def _post_json(base_url: str, path: str, prompt: str, timeout: float) -> dict[st
 
 def _stream_run(
     base_url: str,
+    case_id: str,
     prompt: str,
     timeout: float,
 ) -> tuple[dict[str, Any], tuple[str, ...], int | None]:
-    request = _request(base_url, "/api/agent/runs/stream", prompt)
+    request = _request(base_url, "/api/agent/runs/stream", case_id, prompt)
     started = time.monotonic()
     event_types: list[str] = []
     first_public_event_ms: int | None = None
@@ -185,10 +204,16 @@ def _stream_run(
     return final_run, tuple(event_types), first_public_event_ms
 
 
-def _request(base_url: str, path: str, prompt: str) -> Request:
+def _request(base_url: str, path: str, case_id: str, prompt: str) -> Request:
     return Request(
         f"{base_url}{path}",
-        data=json.dumps({"prompt": prompt, "evaluation_mode": True}).encode("utf-8"),
+        data=json.dumps(
+            {
+                "prompt": prompt,
+                "evaluation_mode": True,
+                "evaluation_case_id": case_id,
+            }
+        ).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )

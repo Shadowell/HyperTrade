@@ -5,6 +5,8 @@ from collections.abc import Sequence
 
 from opentelemetry import trace
 
+from hypertrade.runtime.application.evaluation_fixtures import failure_from_constraints
+from hypertrade.runtime.application.safety_intent import classify_objective_safety
 from hypertrade.runtime.domain.context import ContextBudgetExceeded
 from hypertrade.runtime.domain.models import (
     TERMINAL_STATUSES,
@@ -60,6 +62,44 @@ class MissionRuntime:
             mission = await self._apply_safe_point(mission)
             if mission.status in {MissionStatus.PAUSED, MissionStatus.CANCELED}:
                 return mission
+            if mission.status == MissionStatus.DRAFT:
+                safety = classify_objective_safety(mission.objective)
+                if safety.disposition == "blocked":
+                    return await self.store.transition(
+                        mission_id,
+                        expected_version=mission.version,
+                        target=MissionStatus.CANCELED,
+                        actor="mission_safety",
+                        reason=safety.reason,
+                        terminal_summary="A governed safety boundary blocked this request.",
+                    )
+                if safety.disposition == "needs_review":
+                    return await self.store.transition(
+                        mission_id,
+                        expected_version=mission.version,
+                        target=MissionStatus.WAITING_APPROVAL,
+                        actor="mission_safety",
+                        reason=safety.reason,
+                    )
+                if safety.disposition == "needs_data":
+                    return await self.store.transition(
+                        mission_id,
+                        expected_version=mission.version,
+                        target=MissionStatus.WAITING_INPUT,
+                        actor="mission_safety",
+                        reason=safety.reason,
+                    )
+                if failure := failure_from_constraints(mission.constraints):
+                    return await self.store.transition(
+                        mission_id,
+                        expected_version=mission.version,
+                        target=MissionStatus.FAILED,
+                        actor="operator_eval",
+                        reason=f"evaluation_fixture_{failure}",
+                        terminal_summary=(
+                            "An isolated evaluation fixture withheld required evidence."
+                        ),
+                    )
             if mission.status == MissionStatus.DRAFT:
                 mission = await self.store.transition(
                     mission_id,

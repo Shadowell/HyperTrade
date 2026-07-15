@@ -41,6 +41,9 @@ sandbox service and deployed worker recovery have been exercised.
   tags are rejected.
 - Configured sandbox service has no Docker socket, uses network `none`, a read-only root filesystem,
   dropped capabilities, non-root UID, bounded tmpfs and bounded resources.
+- Chat ingress is deterministic and Plan-free for a direct mainnet order request, approval-gated
+  Testnet execution and excessive leverage; isolated-only evaluator fixtures are denied by default
+  and terminalize without a provider or connector when explicitly enabled.
 
 ## Blocking scope still open
 

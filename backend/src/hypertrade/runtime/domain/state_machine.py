@@ -1,7 +1,13 @@
 from hypertrade.runtime.domain.models import TERMINAL_STATUSES, MissionStatus
 
 ALLOWED_TRANSITIONS: dict[MissionStatus, set[MissionStatus]] = {
-    MissionStatus.DRAFT: {MissionStatus.PLANNING, MissionStatus.CANCELED},
+    MissionStatus.DRAFT: {
+        MissionStatus.PLANNING,
+        MissionStatus.WAITING_APPROVAL,
+        MissionStatus.WAITING_INPUT,
+        MissionStatus.CANCELED,
+        MissionStatus.FAILED,
+    },
     MissionStatus.PLANNING: {
         MissionStatus.RUNNING,
         MissionStatus.WAITING_INPUT,

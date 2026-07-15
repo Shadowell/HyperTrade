@@ -44,7 +44,12 @@ resume、cancel 或 steer；系统不以模型文字宣称完成，不放宽 pap
 - 默认 Mission 回答不显示 Mission id、plan version、工具数或步骤清单；每个可见事实必须绑定 source/
   artifact ref，缺失数据时必须拒绝补全并给出一个具体的安全下一步。
 - `operator_answer_golden_v1` 至少 24 个场景；多轮指代和公开 answer/evidence stream 尚未支持时，
-  隔离评测必须明确报告 `not_supported`，不得计为通过。
+  隔离评测必须明确报告 `not_supported`，不得计为通过；无 supported case 失败时可返回
+  `complete_with_declared_gaps`，但 `passed_count` 不得包含这些 case。
+- mainnet execution、unapproved/Testnet execution、过高杠杆和明确 stale input 在 Plan 前进入
+  `blocked`、`waiting_approval` 或 `waiting_input`；不得调用 provider、connector 或写能力。
+- `evaluation_case_id` 只允许物理隔离目标且 `HYPERTRADE_OPERATOR_EVAL_FIXTURES_ENABLED=true`；生产
+  必须拒绝该入口，fixture 不得访问 provider、BitPro 或交易能力。
 - 生产 `AGENT_STRATEGY_SANDBOX_ENABLED` 默认关闭；无 digest-bound isolated sandbox service 时 HTTP
   503，不能执行宿主或 API subprocess。
 - README、技术架构、QA、progress 和 active contract 记录实际验证，不声称未做的部署/截图/生产 canary。

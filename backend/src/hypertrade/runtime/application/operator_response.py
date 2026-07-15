@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from hypertrade.runtime.application.safety_intent import classify_objective_safety
 from hypertrade.runtime.domain.models import (
     MissionProjection,
     MissionStatus,
@@ -28,7 +29,8 @@ def build_operator_response(
     """
 
     evidence: list[OperatorEvidenceV1] = []
-    unknowns = _unique(mission.unknowns)
+    safety = classify_objective_safety(mission.objective)
+    unknowns = _unique((*mission.unknowns, *safety.unknowns))
     failure_categories: list[str] = []
     for attempt in attempts:
         observation = attempt.observation

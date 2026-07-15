@@ -223,7 +223,17 @@ and private reasoning from the default terminal/Web answer. Runtime, tool, appro
 remain independently available as audited events. The isolated `operator_answer_golden_v1` evaluates
 market, strategy, portfolio, execution, context and delivery behavior; its retained artifacts contain
 only check outcomes and aggregate sizes. Missing conversation context or public answer-stream support
-is a visible `not_supported` result, never a pass.
+is a visible `not_supported` result, never a pass. A completed evaluator run may therefore report
+`complete_with_declared_gaps`: its exit status is successful only when no supported case failed, while
+the separate `not_supported_count` remains explicit and is not folded into `passed_count`.
+
+Before planning, a deterministic ingress classifier recognizes a narrow safety set: mainnet execution
+requests terminalize as blocked without a Plan; unapproved/Testnet execution and excessive leverage
+hold at `waiting_approval`; and explicitly stale inputs hold at `waiting_input`. The classifier is an
+audited permission boundary, never a natural-language execution mechanism. Only the physically isolated
+operator-evaluation target can enable `HYPERTRADE_OPERATOR_EVAL_FIXTURES_ENABLED`; two named fixture
+cases inject a bounded timeout/source-unavailable terminal state without a provider or connector call.
+Production rejects an `evaluation_case_id` and never enables that flag.
 
 Production sandbox activation is explicit. `AGENT_STRATEGY_SANDBOX_IMAGE` must name an immutable
 `repository@sha256:<64 lowercase hex>` image identity; the deployment script derives a

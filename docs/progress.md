@@ -10,6 +10,8 @@
   credential. This adds no paper/live/order/capital mutation path and does not replace `/harness`.
 - Conversation direction is explicit: HT conclusions and evidence stay left, while user questions
   sit right. The original non-human precision-instrument product symbol remains legible at 34–52px.
+- Assistant output now renders sanitized GFM headings, lists, emphasis, quotes, code and tables with
+  narrow-panel styling; raw HTML stays disabled and user questions remain plain text.
 - Local frontend/Rust checks, packaged `.app` build and strict ad-hoc signature verification are the
   acceptance boundary. No notarization, production distribution or Sprint 116 Gate M completion is
   claimed by this client work.
@@ -55,6 +57,12 @@
   requests and a broken public delivery path. Unexpected API/stream Mission failures now terminalize
   the Mission and emit a bounded warning plus `final` event rather than silently closing the public
   stream or leaving a ghost run. Repeat-baseline results remain pending after deployment.
+- The Mission ingress now classifies direct mainnet execution as blocked, approval-gated/Testnet
+  execution and excessive leverage as `waiting_approval`, and explicit stale input as
+  `waiting_input`, before a planner/provider/tool can run. The isolated evaluator can inject only
+  named timeout/source-unavailable fixtures behind an explicit disabled-by-default flag; production
+  rejects those fixture ids. A declared `not_supported` result no longer turns an otherwise clean
+  evaluator run into a synthetic failure, and remains excluded from `passed_count`.
 - Local CLI full-canary execution now creates only a Mission, and remote CLI sends an idempotency key
   for replay-safe API routing. Mission event SSE honours both `after` and `Last-Event-ID`. A separate
   disabled-by-default Mission worker now uses SQL lease claim/heartbeat/release and terminal lease

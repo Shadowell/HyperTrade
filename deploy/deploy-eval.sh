@@ -51,6 +51,13 @@ if [ ! -f "$SOURCE_DIR/backend/Dockerfile" ]; then
   exit 1
 fi
 
+# This target is physically isolated and has no paper/live execution path. The
+# flag admits only the two deterministic failure fixtures used by the public
+# answer evaluator; production never sets it.
+if ! grep -q '^HYPERTRADE_OPERATOR_EVAL_FIXTURES_ENABLED=' "$ENV_FILE"; then
+  printf '\nHYPERTRADE_OPERATOR_EVAL_FIXTURES_ENABLED=true\n' >> "$ENV_FILE"
+fi
+
 chmod 600 "$ENV_FILE"
 mkdir -p "$ROOT_DIR/data/postgres" "$ROOT_DIR/eval-artifacts"
 

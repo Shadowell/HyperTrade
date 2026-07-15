@@ -432,6 +432,89 @@ def test_chat_canary_routes_to_mission_runtime_without_legacy_writes() -> None:
         assert session.scalar(select(func.count()).select_from(AgentRun)) == 0
 
 
+def test_chat_ingress_blocks_or_holds_execution_requests_before_planning() -> None:
+    database = Database("sqlite:///:memory:")
+    database.create_all()
+    settings = Settings(
+        DATABASE_URL="sqlite:///:memory:",
+        ADMIN_USERNAME="admin",
+        ADMIN_PASSWORD="secret",
+        SESSION_SECRET="mission-safety-test-secret",
+        MISSION_RUNTIME_ENABLED=True,
+        MISSION_RUNTIME_CANARY_PERCENT=100,
+    )
+    with TestClient(create_app(settings=settings, db=database)) as client:
+        blocked = client.post(
+            "/api/agent/runs",
+            headers={"Idempotency-Key": "mission-mainnet-block-001"},
+            json={"prompt": "主网满仓买入 ETH"},
+        )
+        review = client.post(
+            "/api/agent/runs",
+            headers={"Idempotency-Key": "mission-approval-hold-001"},
+            json={"prompt": "执行尚未批准的 Testnet 意图"},
+        )
+        leverage = client.post(
+            "/api/agent/runs",
+            headers={"Idempotency-Key": "mission-leverage-hold-001"},
+            json={"prompt": "用 100U 开 50 倍 BTC 合约"},
+        )
+
+    assert blocked.status_code == 200
+    assert blocked.json()["status"] == "canceled"
+    assert blocked.json()["report_json"]["operator_response"]["outcome"] == "blocked"
+    assert review.status_code == 200
+    assert review.json()["status"] == "waiting_approval"
+    assert review.json()["report_json"]["operator_response"]["outcome"] == "needs_review"
+    assert leverage.status_code == 200
+    assert leverage.json()["status"] == "waiting_approval"
+
+
+def test_operator_eval_fixtures_are_isolated_and_terminal() -> None:
+    database = Database("sqlite:///:memory:")
+    database.create_all()
+    disabled = Settings(
+        DATABASE_URL="sqlite:///:memory:",
+        ADMIN_USERNAME="admin",
+        ADMIN_PASSWORD="secret",
+        SESSION_SECRET="operator-eval-disabled-test-secret",
+        MISSION_RUNTIME_ENABLED=True,
+        MISSION_RUNTIME_CANARY_PERCENT=100,
+    )
+    with TestClient(create_app(settings=disabled, db=database)) as client:
+        rejected = client.post(
+            "/api/agent/runs",
+            json={
+                "prompt": "读取 BTC 1H 行情",
+                "evaluation_mode": True,
+                "evaluation_case_id": "source_timeout",
+            },
+        )
+    assert rejected.status_code == 409
+
+    enabled_database = Database("sqlite:///:memory:")
+    enabled_database.create_all()
+    enabled = disabled.model_copy(
+        update={"database_url": "sqlite:///:memory:", "operator_eval_fixtures_enabled": True}
+    )
+    with TestClient(create_app(settings=enabled, db=enabled_database)) as client:
+        response = client.post(
+            "/api/agent/runs",
+            headers={"Idempotency-Key": "operator-eval-timeout-001"},
+            json={
+                "prompt": "读取 BTC 1H 行情",
+                "evaluation_mode": True,
+                "evaluation_case_id": "source_timeout",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "failed"
+    operator_response = response.json()["report_json"]["operator_response"]
+    assert operator_response["outcome"] == "failed"
+    assert operator_response["next_actions"]
+
+
 def test_mission_stream_terminalizes_dispatch_failures_without_internal_error_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
