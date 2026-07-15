@@ -168,3 +168,30 @@ Migration `0026_agent_supervision` adds assignments, budget reservations, handof
 REST exposes the reviewed role catalog, team run and shared supervision projection. Team execution
 is disabled by default with `AGENT_DYNAMIC_TEAM_ENABLED=false`; enabling it does not add write,
 paper, live, order or capital capabilities.
+
+## Sprint 115 Sandboxed Strategy Development
+
+The strategy sandbox is a separate, short-lived execution boundary below the Mission/Supervisor
+ports. `SandboxRequestV1` accepts only a succeeded assignment, exact Context Pack refs, optional
+current Mission Artifact refs, an in-memory file map and a fixed command union (`ruff`, `pytest`,
+`limited_backtest`). The domain validates path roots/extensions, Python syntax and known process/
+network/dynamic-execution hazards before any process starts.
+
+The local/CI adapter creates a mode-700 temporary workspace, clears inherited provider secrets,
+disables stdin, uses a bounded temporary output file, applies host resource limits and starts each
+command in its own process group. Timeout cleanup kills the group and the typed command ledger
+records status, exit code, duration, output bytes, preview hash and truncation. This fallback is not
+treated as a production security boundary.
+
+Every run produces a content-addressed `SandboxArtifactV1` ledger for source files, unified patch,
+command output and manifest metadata. The SQL projection stores only metadata/previews in
+`agent_sandbox_runs` and `agent_sandbox_artifacts`; the ephemeral workspace is discarded. Review
+facts bind the exact patch/artifact hash, target contract and idempotency key. Accept is an import
+proposal fact only: it does not apply a patch, call BitPro, create a strategy, start paper trading or
+submit an order. Replays with the same idempotency key must have identical canonical content.
+
+Production and staging instantiate the sandbox in fail-closed mode. If a rootless Docker/OCI adapter
+has not been configured, the authenticated API returns `503` instead of executing candidate code on
+the application host. The Sprint 116 deployment canary must provide network namespace denial,
+read-only filesystem, non-root UID, cgroup/pids limits, no secrets and no host Docker socket before
+the flag can be enabled.

@@ -1,6 +1,8 @@
 # 30 Professional Agent Runtime V2 路线图
 
-> 状态：Proposed；等待用户确认后再激活 Sprint 111，当前生产行为和权限不变。
+> 状态：Active through Sprint 115; Sprint 111–114 are production-verified, Sprint 115 is locally
+> closed with production fail-closed isolation, and Sprint 116 remains the final cutover/readiness
+> slice. Current production permissions remain unchanged.
 
 ## 1. 目标
 

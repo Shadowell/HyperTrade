@@ -223,7 +223,7 @@ independent source of truth and does not dual-write legacy Task/Run state. Execu
 technical boundary is documented in
 `docs/architecture/31-professional-agent-runtime-v2-technical-design.md`.
 
-The proposed Sprints 111–116 sequence is documented in
+The active Sprints 111–116 sequence is documented in
 `docs/architecture/30-professional-agent-runtime-v2-roadmap.md`. Existing AgentKernel, Task OS and
 fixed Research Graph internals are not compatibility constraints: proven domain facts, external
 contracts and safety policies remain, while weak orchestration/state/UI code may be replaced and

@@ -143,6 +143,11 @@ from hypertrade.runtime.adapters.context_engine import (
 )
 from hypertrade.runtime.adapters.foundation import FoundationPlanner
 from hypertrade.runtime.adapters.memory_store import InMemoryMissionStore
+from hypertrade.runtime.adapters.sandbox import (
+    InMemorySandboxStore,
+    SqlSandboxStore,
+    StrategySandbox,
+)
 from hypertrade.runtime.adapters.sql_store import SqlAlchemyMissionStore
 from hypertrade.runtime.adapters.supervisor import (
     BoundedSupervisor,
@@ -164,6 +169,7 @@ from hypertrade.runtime.domain.capabilities import (
 )
 from hypertrade.runtime.domain.context import MissionArtifactCreateV1
 from hypertrade.runtime.domain.models import MissionCreate, SteeringEventV1
+from hypertrade.runtime.domain.sandbox import ImportReviewV1, SandboxRequestV1
 from hypertrade.runtime.domain.supervision import TeamRunRequestV1
 from hypertrade.skills.lifecycle import (
     ApprovedSkillLoader,
@@ -373,6 +379,15 @@ def create_app(
     )
     role_catalog = RoleCatalog()
     supervisor = BoundedSupervisor(supervision_store, role_catalog)
+    sandbox_store = (
+        InMemorySandboxStore()
+        if database.url == "sqlite:///:memory:"
+        else SqlSandboxStore(database.url)
+    )
+    strategy_sandbox = StrategySandbox(
+        sandbox_store,
+        production=app_settings.app_env.casefold() in {"production", "staging"},
+    )
     tool_executor = GovernedToolExecutor(
         capability_catalog,
         builtin_handlers(database, knowledge_dir=str(app_settings.knowledge_dir)),
@@ -400,6 +415,7 @@ def create_app(
                 observation_store,
                 context_artifact_store,
                 supervision_store,
+                sandbox_store,
             ):
                 dispose = getattr(resource, "dispose", None)
                 if dispose is not None:
@@ -419,6 +435,8 @@ def create_app(
     app.state.context_artifact_store = context_artifact_store
     app.state.supervisor = supervisor
     app.state.supervision_store = supervision_store
+    app.state.strategy_sandbox = strategy_sandbox
+    app.state.sandbox_store = sandbox_store
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -1054,6 +1072,74 @@ def create_app(
             "handoffs": [row.model_dump(mode="json") for row in handoffs],
             "conflicts": [row.model_dump(mode="json") for row in conflicts],
         }
+
+    @app.post("/api/agent/missions/{mission_id}/sandbox-runs")
+    async def run_agent_strategy_sandbox(
+        mission_id: str,
+        payload: SandboxRequestV1,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        if not app_settings.strategy_sandbox_enabled:
+            raise HTTPException(status_code=503, detail="Strategy sandbox is disabled")
+        try:
+            await mission_store.get(mission_id)
+            assignments = await supervision_store.assignments(mission_id)
+            allowed_assignments = {
+                f"assignment:{row.assignment_id}"
+                for row in assignments
+                if row.status == "succeeded"
+            }
+            if payload.assignment_ref not in allowed_assignments:
+                raise ValueError("sandbox requires a succeeded Mission assignment")
+            packs = await context_artifact_store.list_packs(mission_id)
+            allowed_context_refs = {
+                f"context:{pack.context_pack_id}@{pack.manifest_hash}" for pack in packs
+            }
+            if not set(payload.context_pack_refs) <= allowed_context_refs:
+                raise ValueError("sandbox references an unknown Mission Context Pack")
+            artifacts = await context_artifact_store.list_artifacts(mission_id)
+            allowed_artifact_refs = {row.stable_ref for row in artifacts if row.status == "current"}
+            if not set(payload.source_artifact_refs) <= allowed_artifact_refs:
+                raise ValueError("sandbox references an unknown Mission Artifact")
+            run = await strategy_sandbox.run(mission_id, payload)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mission not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return run.model_dump(mode="json")
+
+    @app.get("/api/agent/missions/{mission_id}/sandbox-runs")
+    async def list_agent_strategy_sandbox_runs(mission_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            await mission_store.get(mission_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mission not found") from exc
+        runs = await sandbox_store.runs(mission_id)
+        reviews = await sandbox_store.reviews(mission_id)
+        return {
+            "runs": [row.model_dump(mode="json") for row in runs],
+            "reviews": [row.model_dump(mode="json") for row in reviews],
+        }
+
+    @app.post("/api/agent/missions/{mission_id}/sandbox-runs/{run_id}/review")
+    async def review_agent_strategy_sandbox_run(
+        mission_id: str,
+        run_id: str,
+        payload: ImportReviewV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        if not app_settings.strategy_sandbox_enabled:
+            raise HTTPException(status_code=503, detail="Strategy sandbox is disabled")
+        try:
+            run = await sandbox_store.get(mission_id, run_id)
+            review = await sandbox_store.review(run, payload, username)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Sandbox run not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return review.model_dump(mode="json")
 
     @app.get("/api/agent/missions/{mission_id}/context-packs")
     async def list_agent_context_packs(mission_id: str, _: AdminUser) -> dict[str, Any]:

@@ -512,6 +512,61 @@ class AgentConflict(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class AgentSandboxRun(Base):
+    """Auditable isolated run projection; workspace contents are not retained."""
+
+    __tablename__ = "agent_sandbox_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("sbox"))
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    assignment_ref: Mapped[str] = mapped_column(String(300), index=True)
+    context_pack_refs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    source_artifact_refs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    patch_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    commands_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    artifact_hash: Mapped[str] = mapped_column(String(64), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentSandboxArtifact(Base):
+    """Content-addressed metadata for an ephemeral sandbox output."""
+
+    __tablename__ = "agent_sandbox_artifacts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    sandbox_run_id: Mapped[str] = mapped_column(String(32), index=True)
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    path: Mapped[str] = mapped_column(String(300), default="")
+    media_type: Mapped[str] = mapped_column(String(128), default="application/octet-stream")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    preview: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentSandboxImportReview(Base):
+    """Human review fact only; acceptance is not an external BitPro import operation."""
+
+    __tablename__ = "agent_sandbox_import_reviews"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("srev"))
+    sandbox_run_id: Mapped[str] = mapped_column(String(32), index=True)
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    decision: Mapped[str] = mapped_column(String(32), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    patch_hash: Mapped[str] = mapped_column(String(64), index=True)
+    artifact_hash: Mapped[str] = mapped_column(String(64), index=True)
+    target_contract: Mapped[str] = mapped_column(String(128), index=True)
+    actor: Mapped[str] = mapped_column(String(128), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    external_write_performed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class RagDocument(Base, TimestampMixin):
     __tablename__ = "rag_documents"
 

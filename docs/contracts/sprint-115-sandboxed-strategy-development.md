@@ -1,6 +1,7 @@
 # Sprint 115 - Sandboxed Strategy Development
 
-> 状态：Active；Sprint 114 Gate K 已于 2026-07-15 关闭。
+> 状态：Completed locally；Gate L 的生产激活项保持 fail-closed，等待 Sprint 116 的 rootless
+> container deployment canary。
 
 ## Goal
 
@@ -19,6 +20,8 @@
 - 默认 network deny；禁止 shell string、curl/wget/nc/ssh、package install、Docker CLI/socket、
   interpreter `-c`、任意绝对路径和非白名单 executable。
 - unified diff、文件 hash、command/exit/duration/truncation ledger 和 artifact content hash。
+- source-file、patch、command-output 和 manifest 的 `SandboxArtifactV1` metadata ledger；workspace
+  内容不会留在主仓库或数据库。
 - lint、pytest 与 limited deterministic SDK/backtest contract；失败不得标为 validated。
 - Import manifest 绑定 Mission/assignment/context/artifact/patch/test hashes、target contract 和
   idempotency key；管理员 accept/reject append-only。Accept 仍仅为 proposal，不调用 BitPro。
@@ -38,6 +41,8 @@
 - patch 只能覆盖允许目录/扩展名，hash/diff 可重放，不能修改主仓库。
 - lint/test/backtest 全通过才产生 `validated` manifest；伪造 command result/hash 被拒绝。
 - review 精确绑定 import manifest；幂等且 append-only，accept 不触发外部写入。
+- 生产/预发布 APP_ENV 下拒绝宿主 subprocess fallback；没有 rootless container adapter 时 API
+  返回 503，而不是降级执行。
 - 全仓检查、migration 往返、production flag-off 和隔离 canary 通过。
 
 ## Verification
@@ -52,7 +57,13 @@ Required scenarios: happy patch/test, path traversal, symlink, forbidden extensi
 network/Docker/package/shell denial, interpreter `-c` denial, timeout, output truncation, workspace
 quota, failed test, hash tamper, idempotent review, accept-no-import, SQL/API and restart projection.
 
+Focused acceptance completed locally: `19 passed`; Ruff and strict mypy passed. The subprocess
+adapter now writes command output to a bounded temporary file, kills the complete process group on
+timeout, limits process count, records `output_bytes`, and keeps production/staging fail-closed.
+SQL projection includes `agent_sandbox_artifacts` and API rejects unknown Mission artifact refs.
+
 ## Handoff
 
-Gate L 通过后才激活 Sprint 116。最终 UX 只能提交受限 request、显示 ledger/diff/artifacts 并执行
-人工 review；不能提供越过 sandbox/approval 的隐藏入口。
+Gate L local contract is closed. Production activation still requires a rootless container canary
+with network namespace denial, read-only filesystem, cgroup/pids limits and no host Docker socket.
+Sprint 116 may add that deployment adapter and the operator UX, but cannot loosen the review boundary.

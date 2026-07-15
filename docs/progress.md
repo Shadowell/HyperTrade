@@ -2,6 +2,16 @@
 
 ## Current Baseline
 
+- Sprint 115 local acceptance completed on 2026-07-16. The strategy sandbox now validates exact
+  assignment/context/artifact provenance, emits content-addressed patch/source/command/manifest
+  metadata, persists `agent_sandbox_artifacts` through migration `0027_agent_sandbox`, bounds output
+  and process lifetime, kills timeout process groups, and rejects review idempotency-key tampering.
+  Production/staging fail closed with HTTP 503 until a rootless container adapter is configured;
+  no BitPro import or paper/live/order action is performed by review acceptance. Focused acceptance
+  passed 20 tests; Ruff and strict mypy passed. `./scripts/check.sh` passed frontend lint/test/build,
+  Ruff, mypy and 605 Python tests in 131.98s. Gate L is locally closed; Sprint 116 is the remaining
+  container-canary, Mission UX and readiness cutover.
+
 - Branch: `main`
 - Harness status: active
 - User-directed Operator Console/Codex sidecar is completed and
