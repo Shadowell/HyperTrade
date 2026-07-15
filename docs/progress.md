@@ -30,12 +30,17 @@
   treated as evidence. `operator_answer_golden_v1` supplies 24 deterministic public-answer cases
   across market, strategy, portfolio, execution, context and delivery cohorts. This is a local
   quality contract only; deployed long-run worker streaming and production canary evidence remain open.
-- The first isolated operator-answer smoke exposed a false completion for an unavailable contract
-  ticker. The Mission path now normalizes explicit market instruments, performs exact lookup rather
-  than falling back to an unrelated summary, and returns `needs_data` with an explicit data gap when
-  no verifiable ticker exists. Internal objective-inspection events are no longer public evidence;
-  focused response/planner/catalog/evaluation tests passed 20 cases. Full isolated baseline remains
-  pending after deployment.
+- The first isolated operator-answer smoke exposed insufficiently grounded ticker output. The Mission
+  path now normalizes explicit market instruments and performs exact lookup rather than falling back
+  to an unrelated summary; `MU-USDT-SWAP` was verified as a real isolated-market instrument, while a
+  synthetic unavailable ticker now returns `needs_data` with an explicit data gap. Internal
+  objective-inspection events are no longer public evidence; focused
+  response/planner/catalog/evaluation tests passed 20 cases.
+- The first isolated `operator_answer_golden_v1` baseline returned 5 passed, 15 failed and 4
+  unsupported cases. It exposed missing multi-turn context, evidence gaps across strategy/portfolio
+  requests and a broken public delivery path. Unexpected API/stream Mission failures now terminalize
+  the Mission and emit a bounded warning plus `final` event rather than silently closing the public
+  stream or leaving a ghost run. Repeat-baseline results remain pending after deployment.
 - Local CLI full-canary execution now creates only a Mission, and remote CLI sends an idempotency key
   for replay-safe API routing. Mission event SSE honours both `after` and `Last-Event-ID`. A separate
   disabled-by-default Mission worker now uses SQL lease claim/heartbeat/release and terminal lease

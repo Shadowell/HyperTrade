@@ -1,6 +1,6 @@
 [
   {"case_id":"market_exact_ticker","cohort":"market","turns":["看下 ETH 合约行情"],"expected":{"outcomes":["completed"],"min_evidence":1,"max_visible_characters":900,"forbidden_visible_fragments":["tool calls:","plan version:"]}},
-  {"case_id":"market_unknown_instrument","cohort":"market","turns":["看下 MUUSDT 合约行情"],"expected":{"outcomes":["needs_data"],"require_unknowns":true,"require_next_action":true,"forbidden_visible_fragments":["行情正常","建议开仓"]}},
+  {"case_id":"market_unknown_instrument","cohort":"market","turns":["看下 ZZZZNOTREALUSDT 合约行情"],"expected":{"outcomes":["needs_data"],"require_unknowns":true,"require_next_action":true,"forbidden_visible_fragments":["行情正常","建议开仓"]}},
   {"case_id":"market_stale_source","cohort":"market","turns":["基于当前 BTC 行情给判断，但行情源已过期"],"expected":{"outcomes":["needs_data"],"require_unknowns":true,"require_next_action":true}},
   {"case_id":"market_relative_strength","cohort":"market","turns":["比较 ETH 和 SOL 的 1H 强弱"],"expected":{"outcomes":["completed"],"min_evidence":1,"max_visible_characters":1000}},
   {"case_id":"strategy_known_evidence","cohort":"strategy","turns":["分析 momentum_breakout_v1 的历史表现"],"expected":{"outcomes":["completed","needs_data"],"min_evidence":1}},

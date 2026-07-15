@@ -7,6 +7,7 @@ HTTP input, call the Agent/tool service, and return redacted runtime state.
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -176,7 +177,12 @@ from hypertrade.runtime.domain.capabilities import (
     CapabilityReviewV1,
 )
 from hypertrade.runtime.domain.context import MissionArtifactCreateV1
-from hypertrade.runtime.domain.models import TERMINAL_STATUSES, MissionCreate, SteeringEventV1
+from hypertrade.runtime.domain.models import (
+    TERMINAL_STATUSES,
+    MissionCreate,
+    MissionStatus,
+    SteeringEventV1,
+)
 from hypertrade.runtime.domain.sandbox import ImportReviewV1, SandboxRequestV1
 from hypertrade.runtime.domain.supervision import TeamRunRequestV1
 from hypertrade.skills.lifecycle import (
@@ -196,6 +202,7 @@ from hypertrade.world_model.defensive_actions import DefensiveActionEngine
 from hypertrade.world_model.service import WorldModelService
 
 SESSION_COOKIE = "hypertrade_session"
+logger = logging.getLogger("hypertrade.main")
 
 
 class BitProApiAdapter(Protocol):
@@ -529,6 +536,29 @@ def create_app(
                 return mission
             await asyncio.sleep(0.25)
 
+    async def fail_mission_execution(mission_id: str) -> Any:
+        """Terminalize an API-owned failure so public delivery never leaves a ghost run.
+
+        The concrete exception is logged only on the server. The public projection
+        remains a bounded failure response without provider, tool, or stack details.
+        """
+
+        current = await mission_store.get(mission_id)
+        if current.status in TERMINAL_STATUSES:
+            return current
+        try:
+            return await mission_store.transition(
+                mission_id,
+                expected_version=current.version,
+                target=MissionStatus.FAILED,
+                actor="mission_delivery",
+                reason="mission_execution_failure",
+                terminal_summary="Mission execution failed before validated evidence was produced.",
+            )
+        except ValueError:
+            # A concurrent worker/control action may have terminalized the Mission.
+            return await mission_store.get(mission_id)
+
     async def run_prompt_as_mission(
         prompt: str,
         *,
@@ -540,11 +570,15 @@ def create_app(
             actor=actor,
             idempotency_key=idempotency_key,
         )
-        completed = (
-            await await_worker_mission(mission.mission_id)
-            if app_settings.mission_runtime_worker_enabled
-            else await mission_runtime.run(mission.mission_id)
-        )
+        try:
+            completed = (
+                await await_worker_mission(mission.mission_id)
+                if app_settings.mission_runtime_worker_enabled
+                else await mission_runtime.run(mission.mission_id)
+            )
+        except Exception:  # noqa: BLE001 - boundary must retain a terminal public projection
+            logger.exception("mission execution failed mission_id=%s", mission.mission_id)
+            completed = await fail_mission_execution(mission.mission_id)
         return await mission_run_projection(completed, mission_store)
 
     def get_bitpro_adapter() -> BitProApiAdapter:
@@ -1477,16 +1511,34 @@ def create_app(
                             "text": "研究任务已登记，等待受治理执行。",
                         }
                     )
-                    completed = (
-                        await await_worker_mission(mission.mission_id)
-                        if app_settings.mission_runtime_worker_enabled
-                        else await mission_runtime.run(mission.mission_id)
-                    )
+                    execution_failed = False
+                    try:
+                        completed = (
+                            await await_worker_mission(mission.mission_id)
+                            if app_settings.mission_runtime_worker_enabled
+                            else await mission_runtime.run(mission.mission_id)
+                        )
+                    except Exception:  # noqa: BLE001 - streaming must end in a safe final event
+                        logger.exception(
+                            "streamed mission failed mission_id=%s",
+                            mission.mission_id,
+                        )
+                        execution_failed = True
+                        completed = await fail_mission_execution(mission.mission_id)
                     result = await mission_run_projection(completed, mission_store)
                     report = result.get("report_json", {})
                     operator_response = (
                         report.get("operator_response", {}) if isinstance(report, dict) else {}
                     )
+                    if execution_failed:
+                        yield _format_sse(
+                            {
+                                "event": "warning",
+                                "mission_id": result["mission_id"],
+                                "code": "mission_execution_failure",
+                                "text": "研究执行未完成；当前仅返回安全失败结论。",
+                            }
+                        )
                     if isinstance(operator_response, dict):
                         evidence = operator_response.get("evidence", [])
                         if isinstance(evidence, list):
@@ -1521,7 +1573,7 @@ def create_app(
                             "run": result,
                         }
                     )
-                except ValueError:
+                except Exception:  # noqa: BLE001 - preserve an operator-safe stream boundary
                     yield _format_sse(
                         {
                             "event": "warning",
