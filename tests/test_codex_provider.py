@@ -273,3 +273,29 @@ def test_codex_provider_maps_tool_outputs_back_to_responses_input() -> None:
     } in captured["payload"]["input"]
     assert response.content == "# 市场归纳\n\n已基于工具结果完成。"
     assert response.tool_calls == []
+
+
+def test_codex_provider_retries_one_transient_server_failure(monkeypatch) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(520, request=request)
+        return httpx.Response(200, request=request, json={"output": []})
+
+    sleeps: list[float] = []
+    monkeypatch.setattr("hypertrade.providers.codex.time.sleep", sleeps.append)
+    provider = CodexResponsesChatProvider(
+        api_key="codex-secret-token",
+        base_url="https://chatgpt.test/backend-api/codex",
+        model="gpt-5.4",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    response = provider.chat([{"role": "user", "content": "bounded retry"}])
+
+    assert attempts == 2
+    assert sleeps == [0.25]
+    assert response.content == ""

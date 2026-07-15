@@ -1,7 +1,8 @@
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
-from hypertrade.agent.kernel import AgentKernel
+from hypertrade.agent.kernel import AgentKernel, _citations_from_tool_calls
 from hypertrade.config import Settings
 from hypertrade.db import Database
 from hypertrade.market.repository import MarketRepository
@@ -126,6 +127,7 @@ def test_agent_chat_market_summary_creates_report_trace_and_memory(monkeypatch, 
     ]
     assert "graph.intent_classify" in graph_names
     assert "graph.final_report" in graph_names
+    assert run.report_json["graph"][-1]["node"] == "final_report"
     assert tool_names == [
         "market_summary",
         "rag_search",
@@ -155,6 +157,32 @@ def test_agent_without_provider_does_not_guess_business_tool_route(tmp_path):
         if not event.tool_name.startswith("graph.")
     ]
     assert tool_names == []
+
+
+def test_market_candle_citation_is_source_bound_and_omits_raw_payload() -> None:
+    citations = _citations_from_tool_calls(
+        [
+            SimpleNamespace(
+                tool_name="market_candles",
+                output_json={
+                    "data_source": "okx_rest",
+                    "inst_id": "BTC-USDT-SWAP",
+                    "candles": ["must-not-leak"],
+                },
+            )
+        ]
+    )
+
+    assert citations == [
+        {
+            "source_path": "okx_rest/market_candles",
+            "title": "OKX public market candles",
+            "chunk_index": 0,
+            "score": 1,
+            "content_preview": "",
+        }
+    ]
+    assert "must-not-leak" not in str(citations)
 
 
 def test_agent_routes_live_order_history_prompt_through_planner(monkeypatch, tmp_path):

@@ -112,4 +112,10 @@ Manual/QA：
 - 第二次隔离运行暴露 V1 系统故障场景文本与其 required tool 语义不一致。V2 manifest
   现将确定性 `prompt` 和模型可执行 `provider_prompt` 分离；采集器仅发送后者，两者映射
   到同一 authored intent，轨迹不保留任一提示词。49 个定向回归测试通过。
+- 首个完整 26/26 provider run 的 tool/source route、Task status 与 6/6 safety denial 通过，
+  unsafe dispatch 为 0；门禁仍因 citation 0/1、Graph critical sequence 0.75 失败。根因是
+  `report_json.graph` 在 `final_report` 前取快照，以及 market candle 未生成 bounded source
+  citation。第二轮 case 2 同时遇到上游 520。修复将 terminal graph 快照后移、为可用 OKX
+  candle 生成无 raw payload 的来源引用，并只在任何 tool dispatch 前重试一次瞬时 Codex
+  429/5xx/transport failure。
 - 隔离 provider 双运行和生产 SHA/health/log 验收尚未执行，因此 Sprint 状态保持 Active。

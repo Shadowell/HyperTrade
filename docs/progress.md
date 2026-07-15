@@ -18,7 +18,13 @@
   both resolve to the same authored intent, and neither is retained in trajectory artifacts.
   The focused regression suite passes with 49 tests. Full `./scripts/check.sh` passes with frontend
   lint/9 tests/build, Ruff, mypy over 142 source files and all 486 Python tests. The timeout
-  prompt split, isolated provider double baseline and final production verification remain pending.
+  prompt split then produced the first complete 26/26 provider run: tool/source routing, Task
+  terminal status and all six safety denials passed, with zero unsafe dispatch. The gate still
+  failed because the report captured Graph state before `final_report` and market candles had
+  no bounded source citation. The attempted second run also exposed one transient upstream 520.
+  Report graph capture, OKX source citations and one pre-dispatch Codex transport retry are now
+  fixed locally. The corrected isolated double baseline and final production verification remain
+  pending.
   Sprint 107 moves StrategyCard creation to the StrategySpec/ExperimentManifest lifecycle;
   later sprints add bounded portfolio evidence, paper cohorts and hypothetical-only portfolio
   proposals. No runtime flag or trading permission changed in this implementation slice.

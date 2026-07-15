@@ -9,6 +9,7 @@ policy checks, trace, RAG, and Memory auditability.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -82,19 +83,37 @@ class CodexResponsesChatProvider:
         if tools:
             payload["tools"] = _chat_tools_to_responses_tools(tools)
             payload["tool_choice"] = "auto"
-        response = self._client.post(
-            f"{self._base_url}/responses",
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
+        response = self._post_with_retry(payload)
         response.raise_for_status()
         data = _responses_payload_from_http_response(response)
         if not isinstance(data, dict):
             return ChatResponse(content="")
         return _parse_responses_payload(data)
+
+    def _post_with_retry(self, payload: dict[str, Any]) -> httpx.Response:
+        """Retry one transient provider transport failure before any tool dispatch."""
+
+        for attempt in range(2):
+            try:
+                response = self._client.post(
+                    f"{self._base_url}/responses",
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+            except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError):
+                if attempt:
+                    raise
+                time.sleep(0.25)
+                continue
+            if response.status_code != 429 and response.status_code < 500:
+                return response
+            if attempt:
+                return response
+            time.sleep(0.25)
+        raise RuntimeError("unreachable Codex retry state")
 
 
 def _token_from_auth_payload(payload: dict[str, Any]) -> str:

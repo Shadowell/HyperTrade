@@ -285,3 +285,7 @@ SHADOW_PORTFOLIO_ENABLED=false
   comparison artifact 均不保存 prompt、arguments、raw output 或 private reasoning。
 - 两种 prompt 都解析为同一 authored `ResearchIntentV2`，所以候选集仍由 manifest、角色、
   mandate、connector 和治理策略共同约束，不能通过修改模型提示词扩大权限。
+- terminal Graph 以 `final_report` 节点提交后的 run state 为准，避免报告持有非终态快照；
+  market candle citation 只保存 `okx_rest/market_candles` 来源标识，不复制 candle payload。
+- Codex 对 429/5xx/连接超时只执行一次相同请求的 pre-dispatch transport retry；两次均失败
+  时仍失败关闭。该重试不执行工具、不改变候选集，也不等同于 planner schema repair。

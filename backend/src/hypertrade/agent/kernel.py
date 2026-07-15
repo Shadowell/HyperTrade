@@ -269,6 +269,9 @@ class AgentKernel:
             {"characters": len(report_markdown)},
             event_sink=event_sink,
         )
+        # Capture the graph only after final_report is committed; evaluation and
+        # operators must observe the same terminal sequence as the run state.
+        report_json["graph"] = self._get_run_state(run_id).get("graph", [])
         self._complete_run(run_id, report_markdown, report_json)
 
     def _complete_provider_unavailable(
@@ -2806,9 +2809,26 @@ def _citations_from_tool_calls(tool_calls: list[Any]) -> list[dict[str, Any]]:
     citations: list[dict[str, Any]] = []
     seen: set[tuple[str, int]] = set()
     for record in tool_calls:
-        if getattr(record, "tool_name", "") not in {"rag_search", "rag.search"}:
-            continue
+        tool_name = getattr(record, "tool_name", "")
         payload = getattr(record, "output_json", {})
+        if tool_name in {"market_candles", "market.candles"} and isinstance(payload, dict):
+            source = str(payload.get("data_source", ""))
+            if source and source not in {"unavailable", "unknown"}:
+                key = (f"{source}/market_candles", 0)
+                if key not in seen:
+                    seen.add(key)
+                    citations.append(
+                        {
+                            "source_path": key[0],
+                            "title": "OKX public market candles",
+                            "chunk_index": 0,
+                            "score": 1,
+                            "content_preview": "",
+                        }
+                    )
+            continue
+        if tool_name not in {"rag_search", "rag.search"}:
+            continue
         if not isinstance(payload, dict):
             continue
         hits = payload.get("hits", [])
