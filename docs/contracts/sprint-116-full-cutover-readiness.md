@@ -13,6 +13,8 @@ resume、cancel 或 steer；系统不以模型文字宣称完成，不放宽 pap
 
 - `/harness/missions` Mission workspace：列表、详情、Plan/Step/Artifact/Event/Budget panels。
 - Mission create/run/control/steer 与 cursor event replay；断线时 REST fallback，不能丢失审计事件。
+- 默认 chat API 的稳定 percentage canary：同一 idempotency key 必须始终命中同一 runtime；命中
+  Mission 后不得写入 `AgentTask` 或 `AgentRun`，响应从 Mission/Plan/Attempt/Event facts 投影。
 - 复用 Agent Flight Recorder 的 telemetry/card 视觉，不再维护第二套 Mission 状态机。
 - 长任务 deterministic readiness scenarios：provider/source/schema/lease/steer 故障、恢复、预算和安全门禁。
 - Sprint 115 rootless container adapter deployment contract；未配置时生产继续 fail-closed。
@@ -27,6 +29,8 @@ resume、cancel 或 steer；系统不以模型文字宣称完成，不放宽 pap
 ## Done means
 
 - Web/CLI/API 对同一 Mission 的 status、plan version、step state、usage、artifact refs 和 event cursor 一致。
+- `MISSION_RUNTIME_ENABLED=true` 且 `MISSION_RUNTIME_CANARY_PERCENT=100` 时，默认 API chat 只写
+  Mission 账本；重复同一 idempotency key 返回同一 Mission，内容不一致返回冲突。
 - create/run/control/steer 具备鉴权、理由、幂等和审计；SSE 支持 `after`/`Last-Event-ID` replay，
   断线不会产生第二次 step dispatch。
 - 至少 20 个 deterministic readiness cases 覆盖预算、恢复、stale source、provider/MCP failure、

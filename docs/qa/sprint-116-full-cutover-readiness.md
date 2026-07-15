@@ -2,9 +2,11 @@
 
 ## Verdict
 
-**PASS — local development gate.** The Mission workspace, readiness contract and fail-closed
-production sandbox wiring are implemented and verified locally. **Production canary pending**: no
-rootless Docker image/digest was available in this environment, so the production flag remains off.
+**IN PROGRESS — completion audit reopened the Sprint.** The initial Mission workspace, readiness
+contract and fail-closed production sandbox wiring passed locally, but the audit found that the
+default chat API, local CLI/TUI and worker still use legacy `AgentKernel`/`AgentTask` write paths.
+That contradicts the full-cutover contract. The production canary also remains pending because no
+reviewed rootless Docker image/digest is available in this environment.
 
 ## Evidence
 
@@ -13,6 +15,9 @@ rootless Docker image/digest was available in this environment, so the productio
   and cursor coverage.
 - Frontend lint passed; Vitest passed with 2 files / 9 tests; TypeScript/Vite production build passed.
 - Ruff passed after import/line normalization; strict mypy passed for 169 source files.
+- Reopened cutover slice: a provider-backed, catalog-bounded planner now replaces the single-step
+  Foundation planner in application composition. API chat canary coverage proves a 100% canary writes
+  only a Mission and replays the same idempotency key without an `AgentTask`/`AgentRun` row.
 
 ## Scope verified
 
@@ -23,6 +28,13 @@ rootless Docker image/digest was available in this environment, so the productio
   503 when the sandbox endpoint is called.
 - Configured container adapter has no host Docker socket, uses network `none`, read-only mounts,
   dropped capabilities, non-root UID and bounded resources.
+
+## Blocking scope still open
+
+- Migrate local CLI, Textual task creation and worker execution to the canonical Mission path; leave
+  legacy Task/Run endpoints as historical read-only queries only.
+- Exercise Mission recovery/lease behavior through the deployed worker, not only synchronous API runs.
+- Run the pinned rootless sandbox image canary and record production health/migration evidence.
 
 ## Deferred operational gate
 

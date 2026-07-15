@@ -79,6 +79,7 @@ class MissionCreate(StrictModel):
     permission_profile_ref: str = Field(default="read_only.v1", max_length=128)
     context_policy_ref: str = Field(default="mission_context.v1", max_length=128)
     created_by: str = Field(default="operator", min_length=1, max_length=128)
+    idempotency_key: str = Field(default="", max_length=128)
     deadline: datetime | None = None
 
     @model_validator(mode="after")
@@ -233,6 +234,7 @@ class MissionProjection(StrictModel):
     unknowns: tuple[str, ...] = ()
     artifact_refs: tuple[str, ...] = ()
     created_by: str
+    idempotency_key: str = ""
     deadline: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

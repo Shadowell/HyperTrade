@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from hashlib import sha256
 
@@ -32,6 +33,7 @@ class InMemoryMissionStore:
         self._attempts: dict[str, list[StepAttemptV2]] = {}
         self._events: dict[str, list[MissionEventV1]] = {}
         self._steers: dict[str, list[SteeringEventV1]] = {}
+        self._idempotency: dict[str, tuple[str, str]] = {}
         self._sequence = 0
 
     def _id(self, prefix: str) -> str:
@@ -40,6 +42,14 @@ class InMemoryMissionStore:
 
     async def create(self, payload: MissionCreate) -> MissionProjection:
         mission_id = self._id("mis")
+        idempotency_key = payload.idempotency_key or f"internal:{mission_id}"
+        request_hash = _request_hash(payload)
+        replay = self._idempotency.get(idempotency_key)
+        if replay is not None:
+            existing_id, existing_hash = replay
+            if existing_hash != request_hash:
+                raise ValueError("mission idempotency key is bound to different content")
+            return await self.get(existing_id)
         now = utc_now()
         projection = MissionProjection(
             mission_id=mission_id,
@@ -52,6 +62,7 @@ class InMemoryMissionStore:
             permission_profile_ref=payload.permission_profile_ref,
             context_policy_ref=payload.context_policy_ref,
             created_by=payload.created_by,
+            idempotency_key=idempotency_key,
             deadline=payload.deadline,
             created_at=now,
             updated_at=now,
@@ -61,6 +72,7 @@ class InMemoryMissionStore:
         self._attempts[mission_id] = []
         self._events[mission_id] = []
         self._steers[mission_id] = []
+        self._idempotency[idempotency_key] = (mission_id, request_hash)
         await self.append_event(
             mission_id,
             "mission_created",
@@ -68,6 +80,10 @@ class InMemoryMissionStore:
             payload={"objective_hash": sha256(payload.objective.encode()).hexdigest()},
         )
         return self._missions[mission_id]
+
+    async def by_idempotency(self, idempotency_key: str) -> MissionProjection | None:
+        replay = self._idempotency.get(idempotency_key)
+        return await self.get(replay[0]) if replay is not None else None
 
     async def get(self, mission_id: str) -> MissionProjection:
         try:
@@ -280,3 +296,9 @@ class InMemoryMissionStore:
             actor=steer.actor,
             payload={"instruction": steer.instruction, "reason": steer.reason},
         )
+
+
+def _request_hash(payload: MissionCreate) -> str:
+    return sha256(
+        json.dumps(payload.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()

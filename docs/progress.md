@@ -17,6 +17,13 @@
   migrate the default controlled entrypoint to Mission Runtime, retain legacy records as read-only
   history, then run the rootless-container and production canaries. No live/paper/order/capital
   permission was enabled.
+- The first reopened cutover slice is implemented locally: application composition now uses a
+  provider-backed but catalog-bounded research planner with deterministic fail-closed fallback.
+  `MISSION_RUNTIME_ENABLED` and a stable `MISSION_RUNTIME_CANARY_PERCENT` can route default API chat
+  into a canonical read-only Mission. Canary responses are projected from Mission facts and do not
+  create legacy `AgentTask`/`AgentRun` rows; create idempotency is content-bound and persisted in
+  migration `0028_mission_delivery`. Focused Mission/planner checks pass locally; deployment and
+  production canary remain pending.
 
 ## Current Baseline
 

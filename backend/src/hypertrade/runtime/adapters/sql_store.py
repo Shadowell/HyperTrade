@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -61,6 +62,8 @@ class SqlAlchemyMissionStore:
 
     async def create(self, payload: MissionCreate) -> MissionProjection:
         mission_id = new_id("mis")
+        idempotency_key = payload.idempotency_key or f"internal:{mission_id}"
+        request_hash = _request_hash(payload)
         row = AgentMission(
             id=mission_id,
             objective=payload.objective,
@@ -75,9 +78,18 @@ class SqlAlchemyMissionStore:
             permission_profile_ref=payload.permission_profile_ref,
             context_policy_ref=payload.context_policy_ref,
             created_by=payload.created_by,
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
             deadline=payload.deadline,
         )
         async with self.sessions.begin() as session:
+            replay = await session.scalar(
+                select(AgentMission).where(AgentMission.idempotency_key == idempotency_key)
+            )
+            if replay is not None:
+                if replay.request_hash != request_hash:
+                    raise ValueError("mission idempotency key is bound to different content")
+                return _projection(replay)
             session.add(row)
             await session.flush()
             await self._append_event(
@@ -88,6 +100,15 @@ class SqlAlchemyMissionStore:
                 {"objective_hash": sha256(payload.objective.encode()).hexdigest()},
             )
         return _projection(row)
+
+    async def by_idempotency(self, idempotency_key: str) -> MissionProjection | None:
+        if not idempotency_key:
+            return None
+        async with self.sessions() as session:
+            row = await session.scalar(
+                select(AgentMission).where(AgentMission.idempotency_key == idempotency_key)
+            )
+            return _projection(row) if row is not None else None
 
     async def get(self, mission_id: str) -> MissionProjection:
         async with self.sessions() as session:
@@ -384,6 +405,7 @@ def _projection(row: AgentMission) -> MissionProjection:
             "unknowns": row.unknowns_json,
             "artifact_refs": row.artifact_refs_json,
             "created_by": row.created_by,
+            "idempotency_key": row.idempotency_key,
             "deadline": row.deadline,
             "created_at": row.created_at,
             "updated_at": row.updated_at,
@@ -414,3 +436,9 @@ def _event(row: AgentMissionEvent) -> MissionEventV1:
         payload=row.payload_json,
         created_at=row.created_at,
     )
+
+
+def _request_hash(payload: MissionCreate) -> str:
+    return sha256(
+        json.dumps(payload.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()

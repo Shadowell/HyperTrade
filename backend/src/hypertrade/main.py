@@ -163,6 +163,11 @@ from hypertrade.runtime.adapters.tool_runtime import (
     SqlObservationStore,
     builtin_handlers,
 )
+from hypertrade.runtime.application.entrypoint import (
+    is_mission_canary,
+    mission_request_for_prompt,
+    mission_run_projection,
+)
 from hypertrade.runtime.application.service import MissionRuntime
 from hypertrade.runtime.domain.capabilities import (
     CapabilityProposalV1,
@@ -479,6 +484,26 @@ def create_app(
         return str(username)
 
     AdminUser = Annotated[str, Depends(require_admin)]
+
+    def mission_request_key(request: Request) -> str:
+        supplied = request.headers.get("Idempotency-Key", "").strip()
+        return supplied[:128] if supplied else new_id("missionreq")
+
+    async def run_prompt_as_mission(
+        prompt: str,
+        *,
+        actor: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        mission = await mission_runtime.create(
+            mission_request_for_prompt(
+                prompt,
+                actor=actor,
+                idempotency_key=idempotency_key,
+            )
+        )
+        completed = await mission_runtime.run(mission.mission_id)
+        return await mission_run_projection(completed, mission_store)
 
     def get_bitpro_adapter() -> BitProApiAdapter:
         if app.state.bitpro_adapter is None:
@@ -986,7 +1011,14 @@ def create_app(
         )
 
     @app.post("/api/agent/missions")
-    async def create_agent_mission(payload: MissionCreate, _: AdminUser) -> dict[str, Any]:
+    async def create_agent_mission(
+        payload: MissionCreate,
+        request: Request,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        header_key = request.headers.get("Idempotency-Key", "").strip()
+        if header_key:
+            payload = payload.model_copy(update={"idempotency_key": header_key[:128]})
         mission = await mission_runtime.create(payload)
         return mission.model_dump(mode="json")
 
@@ -1307,7 +1339,21 @@ def create_app(
         return StreamingResponse(replay(), media_type="text/event-stream")
 
     @app.post("/api/agent/runs")
-    def create_run(payload: AgentRunPayload, request: Request) -> dict[str, Any]:
+    async def create_run(payload: AgentRunPayload, request: Request) -> dict[str, Any]:
+        idempotency_key = mission_request_key(request)
+        if is_mission_canary(
+            enabled=app_settings.mission_runtime_enabled,
+            percent=app_settings.mission_runtime_canary_percent,
+            idempotency_key=idempotency_key,
+        ):
+            try:
+                return await run_prompt_as_mission(
+                    payload.prompt,
+                    actor="mission_api",
+                    idempotency_key=idempotency_key,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
         kernel = AgentKernel(
             database,
             knowledge_dir=str(app_settings.knowledge_dir),
@@ -1339,7 +1385,50 @@ def create_app(
         return _run_to_dict(run)
 
     @app.post("/api/agent/runs/stream")
-    def stream_run(payload: AgentRunPayload, request: Request) -> StreamingResponse:
+    async def stream_run(payload: AgentRunPayload, request: Request) -> StreamingResponse:
+        idempotency_key = mission_request_key(request)
+        if is_mission_canary(
+            enabled=app_settings.mission_runtime_enabled,
+            percent=app_settings.mission_runtime_canary_percent,
+            idempotency_key=idempotency_key,
+        ):
+            async def mission_stream() -> AsyncIterator[str]:
+                try:
+                    result = await run_prompt_as_mission(
+                        payload.prompt,
+                        actor="mission_stream",
+                        idempotency_key=idempotency_key,
+                    )
+                    for trace in result["trace_events"]:
+                        yield _format_sse(
+                            {
+                                "event": "mission_event",
+                                "mission_id": result["mission_id"],
+                                "tool_name": trace["tool_name"],
+                                "status": trace["status"],
+                            }
+                        )
+                    yield _format_sse(
+                        {
+                            "event": "final",
+                            "mission_id": result["mission_id"],
+                            "run": result,
+                        }
+                    )
+                except ValueError as exc:
+                    yield _format_sse(
+                        {
+                            "event": "error",
+                            "error": {
+                                "code": "mission_runtime_error",
+                                "category": "mission",
+                                "retryable": False,
+                                "message": str(exc),
+                            },
+                        }
+                    )
+
+            return StreamingResponse(mission_stream(), media_type="text/event-stream")
         task = _prepare_agent_task(
             database,
             prompt=payload.prompt,
@@ -1471,25 +1560,47 @@ def create_app(
         )
 
     @app.get("/api/agent/runs")
-    def list_runs() -> dict[str, list[dict[str, Any]]]:
+    async def list_runs() -> dict[str, list[dict[str, Any]]]:
         with database.session() as session:
             runs = session.scalars(
                 select(AgentRun).order_by(desc(AgentRun.created_at)).limit(25)
             ).all()
-            return {
-                "runs": [
-                    {
-                        "id": run.id,
-                        "prompt": run.prompt,
-                        "status": run.status,
-                        "created_at": run.created_at.isoformat(),
-                    }
-                    for run in runs
-                ]
+            legacy = [
+                {
+                    "id": run.id,
+                    "prompt": run.prompt,
+                    "status": run.status,
+                    "created_at": run.created_at.isoformat(),
+                    "runtime": "legacy",
+                }
+                for run in runs
+            ]
+        missions = await mission_store.list(limit=25)
+        mission_rows = [
+            {
+                "id": row.mission_id,
+                "prompt": row.objective,
+                "status": row.status.value,
+                "created_at": row.created_at.isoformat(),
+                "runtime": "mission_v2",
             }
+            for row in missions
+        ]
+        rows = sorted(
+            [*mission_rows, *legacy],
+            key=lambda row: row["created_at"],
+            reverse=True,
+        )
+        return {"runs": rows[:25]}
 
     @app.get("/api/agent/runs/{run_id}")
-    def get_run(run_id: str) -> dict[str, Any]:
+    async def get_run(run_id: str) -> dict[str, Any]:
+        if run_id.startswith("mis_"):
+            try:
+                mission = await mission_store.get(run_id)
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail="Mission not found") from exc
+            return await mission_run_projection(mission, mission_store)
         try:
             kernel = AgentKernel(
                 database,

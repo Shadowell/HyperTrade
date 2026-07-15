@@ -199,6 +199,8 @@ class AgentMission(Base, TimestampMixin):
     unknowns_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     artifact_refs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_by: Mapped[str] = mapped_column(String(128), default="operator", index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(

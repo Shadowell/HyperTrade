@@ -218,6 +218,40 @@ async def test_sql_store_survives_new_adapter_instance(tmp_path: Path) -> None:
     assert events[0].event_type == "mission_created"
 
 
+@pytest.mark.anyio
+async def test_mission_create_replays_only_the_same_idempotent_request() -> None:
+    store = InMemoryMissionStore()
+    payload = mission_payload(idempotency_key="mission-create-replay-001")
+
+    first = await store.create(payload)
+    replay = await store.create(payload)
+
+    assert replay.mission_id == first.mission_id
+    assert await store.by_idempotency("mission-create-replay-001") == first
+    with pytest.raises(ValueError, match="idempotency key"):
+        await store.create(payload.model_copy(update={"objective": "Different objective"}))
+
+
+@pytest.mark.anyio
+async def test_sql_mission_create_replays_only_the_same_idempotent_request(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'mission-idempotency.db'}"
+    Database(database_url).create_all()
+    store = SqlAlchemyMissionStore(database_url)
+    payload = mission_payload(idempotency_key="mission-sql-replay-001")
+    try:
+        first = await store.create(payload)
+        replay = await store.create(payload)
+
+        assert replay.mission_id == first.mission_id
+        found = await store.by_idempotency("mission-sql-replay-001")
+        assert found is not None
+        assert found.mission_id == first.mission_id
+        with pytest.raises(ValueError, match="idempotency key"):
+            await store.create(payload.model_copy(update={"objective": "Changed objective"}))
+    finally:
+        await store.dispose()
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -329,6 +363,51 @@ def test_mission_api_uses_new_tables_without_legacy_dual_write() -> None:
     assert completed.json()["status"] == "completed"
     assert events.status_code == 200
     assert events.json()["next_cursor"] >= 1
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(AgentTask)) == 0
+        assert session.scalar(select(func.count()).select_from(AgentRun)) == 0
+
+
+def test_chat_canary_routes_to_mission_runtime_without_legacy_writes() -> None:
+    database = Database("sqlite:///:memory:")
+    database.create_all()
+    settings = Settings(
+        DATABASE_URL="sqlite:///:memory:",
+        ADMIN_USERNAME="admin",
+        ADMIN_PASSWORD="secret",
+        SESSION_SECRET="mission-canary-test-secret",
+        MISSION_RUNTIME_ENABLED=True,
+        MISSION_RUNTIME_CANARY_PERCENT=100,
+    )
+    key = "mission-chat-canary-001"
+    with TestClient(create_app(settings=settings, db=database)) as client:
+        first = client.post(
+            "/api/agent/runs",
+            headers={"Idempotency-Key": key},
+            json={"prompt": "研究 BTC 市场状态和策略证据"},
+        )
+        replay = client.post(
+            "/api/agent/runs",
+            headers={"Idempotency-Key": key},
+            json={"prompt": "研究 BTC 市场状态和策略证据"},
+        )
+        assert first.status_code == 200
+        assert replay.status_code == 200
+        assert first.json()["runtime"] == "mission_v2"
+        assert first.json()["mission_id"] == replay.json()["mission_id"]
+        assert first.json()["status"] == "completed"
+        loaded = client.get(f"/api/agent/runs/{first.json()['id']}")
+        assert loaded.status_code == 200
+        assert loaded.json()["runtime"] == "mission_v2"
+        streamed = client.post(
+            "/api/agent/runs/stream",
+            headers={"Idempotency-Key": "mission-chat-stream-001"},
+            json={"prompt": "研究 BTC 市场状态"},
+        )
+        assert streamed.status_code == 200
+        assert '"event": "final"' in streamed.text
+        assert '"runtime": "mission_v2"' in streamed.text
+
     with database.session() as session:
         assert session.scalar(select(func.count()).select_from(AgentTask)) == 0
         assert session.scalar(select(func.count()).select_from(AgentRun)) == 0

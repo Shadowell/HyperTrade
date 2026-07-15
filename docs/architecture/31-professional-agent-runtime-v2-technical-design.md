@@ -30,10 +30,12 @@ POST mission -> draft -> planning -> PlanV2 validation -> running
 -> StepObservationV2 validation -> completion checks -> completed/waiting/failed
 ```
 
-The first executor is deliberately local and read-only: it validates the objective and safety
-boundary without a provider or external mutation. `MISSION_RUNTIME_ENABLED` gates execution and is
-off by default; create/list/get/event projections remain inspectable. Every successful observation
-requires a source or artifact ref. Model text alone cannot complete a Mission.
+The initial executor is read-only and catalog-governed. A provider may propose a transient strict
+plan, but unavailable or invalid provider output falls back to deterministic reviewed research steps;
+the provider never dispatches a capability. `MISSION_RUNTIME_ENABLED` plus a stable
+`MISSION_RUNTIME_CANARY_PERCENT` gate the default chat route, while create/list/get/event projections
+remain inspectable. Every successful observation requires a source or artifact ref. Model text alone
+cannot complete a Mission.
 
 Hard limits are schema-enforced and cannot be enlarged by a plan: three plan versions, twelve steps
 per version, two attempts per step and four model calls per step by default. Tool/token/duration
@@ -231,3 +233,9 @@ The reopened slice replaces the single-step `FoundationPlanner` in application c
 provider-backed, catalog-bounded research planner. Providers may propose transient JSON plans only;
 unavailable, malformed or over-scoped proposals fall back to a deterministic read-only plan. Neither
 path can introduce an unreviewed capability, a write scope, approval bypass or model-defined budget.
+
+The default chat API can now be moved by an explicit stable percentage canary. It turns the prompt
+into a canonical read-only Mission with a caller idempotency key, runs it through the Mission Runtime
+and returns a chat-compatible projection generated only from Mission/Plan/Attempt/Event facts. The
+new path never creates `AgentTask` or `AgentRun` rows. A temporary no-header request receives a new
+key; API clients that need retry semantics must send `Idempotency-Key`.
