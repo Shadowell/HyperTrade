@@ -438,6 +438,9 @@ Operators inspect or capture the same server projection through Web Portfolio, T
 `/api/portfolio/observation-windows*`, or CLI `/windows list|capture|show|diff`. PortfolioAssessment
 now references an immutable window id/content hash instead of independently interpreting monitor
 snapshots.
+Production acceptance passed on Alembic `0020`: the fixed three-Card denominator produced one
+available and two explicit no-window strategies, replay was idempotent, and persisted summaries
+contained no raw-series keys. Sprint 109 is the next active slice.
 
 ---
 
@@ -488,8 +491,8 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Agent Research Evaluation Foundation | Production |
 | Agent Research Quality Closure | Production (Sprint 106) |
 | StrategyCard V2 and Research Funnel | Production (Sprint 107) |
-| Portfolio Evidence Data Plane | In Development (Sprint 108) |
-| Champion–Challenger Paper Incubation | Planned (Sprint 109) |
+| Portfolio Evidence Data Plane | Production (Sprint 108) |
+| Champion–Challenger Paper Incubation | In Development (Sprint 109) |
 | Shadow Portfolio Governance | Planned (Sprint 110) |
 
 ### Planned (V3+)

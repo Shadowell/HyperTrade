@@ -1,6 +1,6 @@
 # Sprint 108 - Portfolio Evidence Data Plane
 
-> 状态：Active；2026-07-15 在 Gate F 通过后自动进入实施。
+> 状态：Completed；2026-07-15 完成本地、PostgreSQL 与生产验收。
 
 ## Goal
 
@@ -119,4 +119,10 @@ Manual/production checks:
   API、CLI `/windows`、Textual 和 Web Portfolio 使用同一服务投影。
 - 临时 PostgreSQL 通过全链升级、`0020 -> 0019 -> 0020` 和表存在性检查；完整
   `./scripts/check.sh` 通过 frontend lint/9 tests/build、Ruff、mypy（145 source files）与
-  506 Python tests。生产 migration/read-only smoke 尚待修复部署后的最终复验。
+  506 Python tests。
+- commits `c7dc2a0`/`57b67bd` 经 workflows `29388870334`/`29389087323` 部署；生产
+  `0020` capture 在 3 张 Card 中得到 1 available、2 no_window，重放幂等且原始序列键审计
+  为空。PaperPromotion/paper order/live intent 保持 0/10/1。
+- 生产 PortfolioAssessment 引用 final window，3 strategies/3 pairs 保持 14 unknown 和
+  `needs_data`，全部建议为 allocation/trading false。完整结论见
+  `docs/qa/sprint-108-portfolio-evidence-data-plane.md`。

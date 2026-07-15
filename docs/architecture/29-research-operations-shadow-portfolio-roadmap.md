@@ -1,6 +1,6 @@
 # 29 Research Operations 与 Shadow Portfolio 路线图
 
-> 状态：In implementation；Sprint 107 已完成 Gate F，Sprint 108 已激活。
+> 状态：In implementation；Sprint 108 已完成组合证据验收，下一阶段为 Sprint 109。
 
 ## 1. 规划目标
 
@@ -191,13 +191,16 @@ flowchart LR
 - 组合页能够区分“无策略”“有策略无窗口”“窗口不足”“证据可用”；
 - 没有从 evidence collection 到 BitPro/paper/live mutation 的路径。
 
-### 8.3 实施状态
+### 8.3 实施记录（已验收）
 
 - Sprint 108 合同已激活；实现只允许 bounded BitPro MCP read adapter、内存统计和 immutable
   summary persistence，禁止原始序列落库及任何 paper/live/order/capital dispatch。
 - `0020` 保存 window-level hash、quality、strategy/pairwise summary；原始点只在 capture 调用
   栈内存在。PortfolioAssessment 通过 window id/content hash 消费结果，不再独立解释 Monitor
   Snapshot。API、CLI、Textual 与 Web 只展示服务端 freshness/coverage/unknown 判定。
+- 生产 3-Card denominator 得到 1 available/2 no_window；重复 capture 幂等，原始序列键审计
+  为空，业务/执行表计数不变。Gate G 的 evidence/data-quality 部分通过，完整 Gate G 仍等待
+  Sprint 109 paper incubation 验收。
 
 ## 9. Sprint 109：Champion–Challenger Paper Incubation
 

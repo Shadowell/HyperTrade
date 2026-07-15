@@ -190,10 +190,13 @@ windows, human-reviewed Champion–Challenger paper cohorts and execution-isolat
 Portfolio proposals. None of these phases promises profitability or enables automatic
 paper/live promotion, capital allocation, rebalance or orders.
 
-Sprint 108 is active under `docs/contracts/sprint-108-portfolio-evidence-data-plane.md`.
+Sprint 108 completed production acceptance under
+`docs/contracts/sprint-108-portfolio-evidence-data-plane.md`.
 Observation windows use only bounded BitPro MCP reads and persist source-bound statistical/quality
 summaries, never complete equity/return/position/trade/order series. Missing or unhealthy sources
 remain explicit unknowns and cannot trigger paper, live, order or capital actions.
+The production three-Card denominator retained two no-window candidates and one available bounded
+window; raw-series key audit and execution-side count comparisons passed.
 
 Sprint 107 implementation uses `ExperimentManifest` as the StrategyCard V2 identity boundary.
 Mandate-scoped lineages, Manifest-bound versions, immutable content-hashed snapshots and human

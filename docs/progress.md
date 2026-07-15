@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 108 implementation state: active on 2026-07-15 after Gate F acceptance. The contract
+- Sprint 108 implementation state: completed and production-verified on 2026-07-15. The contract
   adds bounded, source-bound PortfolioObservationWindow/DataQuality summaries over BitPro MCP
   read contracts, integrates them into PortfolioAssessment, and exposes shared API/CLI/TUI/Web
   projections. Raw equity/return/position/trade/order series remain BitPro-owned; missing identity,
@@ -16,7 +16,10 @@
   Ruff, mypy over 145 source files and 506 Python tests. Initial production capture correctly
   preserved raw-series/execution boundaries but exposed an overall quality-classification issue;
   snapshot/curve failures are now isolated and curve failure wins as `source_unhealthy` instead of
-  `insufficient`. Final production acceptance is pending the fix deployment.
+  `insufficient`. Fix `57b67bd` deployed through workflow `29389087323`; final production capture
+  projected 1 available and 2 no-window strategies over a fixed 3-Card denominator, replayed
+  idempotently, and persisted no raw-series keys. Assessment consumption, Web route and logs passed;
+  PaperPromotion/paper-order/live-intent counts were unchanged. Sprint 109 activation is next.
 - Sprint 107 implementation state: completed and production-verified on 2026-07-15. The focused
   contract introduces stable mandate-scoped lineage, Manifest-bound versions, immutable Card
   snapshots, fact-driven lifecycle decisions and a fixed-denominator research funnel. It must
