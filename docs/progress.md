@@ -4,11 +4,14 @@
 
 - Branch: `main`
 - Harness status: active
-- User-directed sidecar change is active alongside Sprint 115 under
-  `docs/contracts/operator-console-codex-production-provider.md`. It only
-  reframes the CLI welcome surface and activates the existing Codex provider
-  through a server-local read-only secret; it does not alter the sandbox,
-  trading, approval, or mainnet boundaries.
+- User-directed Operator Console/Codex sidecar is completed and
+  production-verified on 2026-07-16 under
+  `docs/contracts/operator-console-codex-production-provider.md`. Commit
+  `d3b0e5a` passed full checks and deployment workflow `29431835985`; production
+  now defaults to `codex/gpt-5.4` using a server-local read-only auth mount.
+  API/worker mount and health checks passed, and an `evaluation_mode` read-only
+  ETH smoke completed with only market tools. The change does not alter the
+  Sprint 115 sandbox, trading, approval, or mainnet boundaries.
 - Sprint 114 implementation state: completed and production-verified on 2026-07-15. Four reviewed
   read-only roles, deterministic assignment DAGs,
   AnyIO parallel execution, role concurrency limits, atomic token/tool/model/duration reservations,
