@@ -4,6 +4,12 @@
 
 - Branch: `main`
 - Harness status: active
+- Sprint 110 implementation state: active on 2026-07-15 after Gate G closed. The contract builds
+  immutable Shadow Portfolio research proposals from accepted, unexpired cohort labels and fixed
+  Card/window facts. Only equal-weight, evidence-complete inverse-volatility and capped risk-budget
+  proxy templates are allowed. Every scenario and order impact is hypothetical; human review cannot
+  allocate capital, create orders or change paper/live state. Production is expected to remain
+  `needs_data` with zero scenarios while no comparable accepted cohort exists.
 - Sprint 109 implementation state: completed and production-verified on 2026-07-15. Immutable,
   versioned paper cohorts consume only committed Card/Manifest/Observation facts; exact comparison
   keys, a fixed Card denominator, multi-dimensional gates and expiring human labels prevent return-

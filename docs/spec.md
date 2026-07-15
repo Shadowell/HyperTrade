@@ -206,6 +206,12 @@ paper/live/order/capital authority. Production retained three Cards but returned
 members and 0 proposals, with idempotent replay and unchanged execution-side counts. Gate G is
 closed; Sprint 110 adds only execution-isolated Shadow Portfolio proposals and review facts.
 
+Sprint 110 is active under
+`docs/contracts/sprint-110-shadow-portfolio-capital-governance.md`. It consumes only immutable,
+accepted and unexpired cohort evidence; compares a fixed set of bounded templates; preserves all
+excluded members and unknowns; and makes every scenario/order impact explicitly hypothetical.
+Neither proposal build nor human review has paper, live, order or capital authority.
+
 Sprint 107 implementation uses `ExperimentManifest` as the StrategyCard V2 identity boundary.
 Mandate-scoped lineages, Manifest-bound versions, immutable content-hashed snapshots and human
 lifecycle decisions are projection facts in `0019`; they cannot edit source facts or authorize

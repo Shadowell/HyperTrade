@@ -249,6 +249,13 @@ flowchart LR
 - 人工 accept 只记录“同意继续研究/观察”，不能成为执行授权；
 - 是否进入实盘治理必须另立路线与合同。
 
+### 10.3 实施状态
+
+- Sprint 110 合同已激活：只消费 immutable cohort/window/Card/label decision，先固定 denominator
+  再判断 eligible；无 accepted comparable cohort 时保存 `needs_data` 且不生成 scenario。
+- 模板白名单、Decimal capped normalization、hypothetical cost/stress/impact 和独立人工 review
+  均在服务端实现；所有 UI/CLI 只读同一投影，禁止形成执行 payload。
+
 ## 11. 阶段门禁
 
 ### Gate E：Research Intelligence（Sprint 106）
@@ -311,7 +318,7 @@ SHADOW_PORTFOLIO_ENABLED=false
 
 - 已完成合同：`docs/contracts/sprint-106-agent-research-quality-closure.md`
 - 已完成合同：`docs/contracts/sprint-107-strategy-card-lifecycle-research-funnel.md`
-- Sprint 108 为下一实施入口；Sprint 109–110 在前一 Gate 完成后分别创建/激活合同。
+- 当前实施入口：`docs/contracts/sprint-110-shadow-portfolio-capital-governance.md`。
 - Sprint 96–105 基础路线：`docs/architecture/27-agent-research-os-roadmap.md`
 - 现有评测隔离：`docs/architecture/26-agent-evaluation-foundation.md`
 
