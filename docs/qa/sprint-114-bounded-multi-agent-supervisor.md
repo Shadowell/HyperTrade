@@ -2,8 +2,8 @@
 
 ## Verdict
 
-LOCAL PASS. Gate K requirements pass locally. Production migration, deployment, flag-off and
-read-only team canary remain before closure.
+PASS. Gate K requirements pass locally and in production. Dynamic team execution remains disabled;
+the deployed role catalog is reviewed and read-only.
 
 ## Contract Review
 
@@ -26,12 +26,16 @@ read-only team canary remain before closure.
 - `./scripts/check.sh`: frontend lint, 9 tests and build passed; Ruff and strict mypy passed over 167
   source files; all 584 Python tests passed.
 
-## Not Checked Yet
+## Production Acceptance
 
-- PostgreSQL `0026 -> 0025 -> 0026` migration round trip.
-- Deployed SHA, health, `AGENT_DYNAMIC_TEAM_ENABLED=False` and server-local read-only canary.
+- Workflow `29429962964` deployed SHA `acca038`; API health remained OK.
+- PostgreSQL `0026 -> 0025 -> 0026` passed, followed by API/worker restart and head verification.
+- Counts stayed `[AgentTask=4, AgentRun=153, AgentMission=0, Assignment=0, Handoff=0, Conflict=0]`.
+- `AGENT_DYNAMIC_TEAM_ENABLED=False` remained unchanged.
+- The server-local Role Catalog returned exactly critic, evidence analyst, market analyst and
+  research lead; all four allowed only `read_only.v1`.
 
 ## Next
 
-Complete production acceptance and close Gate K, then activate Sprint 115 Sandboxed Strategy
-Development. The sandbox must not inherit Supervisor process or credentials.
+Activate Sprint 115 Sandboxed Strategy Development. The sandbox must not inherit Supervisor process
+or credentials.
