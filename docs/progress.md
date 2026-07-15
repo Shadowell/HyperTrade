@@ -4,15 +4,17 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 111 implementation state: active on 2026-07-15. A clean `hypertrade.runtime` modular core,
+- Sprint 111 implementation state: completed and production-verified on 2026-07-15. A clean `hypertrade.runtime` modular core,
   frozen Mission/Plan/Observation contracts, bounded adaptive loop, optimistic event store,
   async SQLAlchemy adapter, migration `0023_agent_missions`, OpenTelemetry spans and authenticated
-  Mission REST/SSE projection are implemented. The foundation canary is read-only and disabled by
+  Mission REST/SSE projection are implemented. The foundation runtime is read-only and disabled by
   default; successful observations require provenance and completion is derived from structured
   criteria. New Missions do not write AgentTask/AgentRun. GitNexus mapped the old AgentKernel
-  cutover surface, and the shipped technical design records keep/rewrite/delete decisions. Focused
-  runtime/API/persistence tests pass; full repository and PostgreSQL production verification are
-  pending before Gate I closes.
+  cutover surface, and the shipped technical design records keep/rewrite/delete decisions. Full
+  `./scripts/check.sh` passed 547 Python and 9 frontend tests. SHA `6435110` deployed in workflow
+  `29425203712`; PostgreSQL `0023 -> 0022 -> 0023`, flag-off health and a direct read-only canary
+  passed. AgentTask/AgentRun counts remained 4/153 while only AgentMission changed, proving zero
+  legacy dual write. Gate I is closed; Sprint 112 Capability and Tool Runtime V2 is next.
 - Sprint 110 implementation state: completed and production-verified on 2026-07-15. Immutable
   Shadow Portfolio proposals bind exact cohort/window/Card/label decision facts, retain a fixed
   denominator and allow only equal-weight, evidence-complete inverse-volatility and capped risk-

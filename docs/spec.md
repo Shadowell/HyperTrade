@@ -217,7 +217,7 @@ paper/live counts. Gate H and the Sprint 106–110 research-operations route are
 
 ## Active Professional Agent Runtime V2 Roadmap
 
-Sprint 111 entered implementation on 2026-07-15. The new `hypertrade.runtime` Mission core is an
+Sprint 111 completed production acceptance on 2026-07-15. The new `hypertrade.runtime` Mission core is an
 independent source of truth and does not dual-write legacy Task/Run state. Execution remains behind
 `MISSION_RUNTIME_ENABLED`, off by default, and the initial capability is read-only. The implemented
 technical boundary is documented in

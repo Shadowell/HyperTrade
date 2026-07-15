@@ -1,6 +1,6 @@
 # Professional Agent Runtime V2 Technical Design
 
-> Implementation baseline: Sprint 111 active on 2026-07-15. This document records the architecture
+> Implementation baseline: Sprint 111 completed on 2026-07-15. This document records the architecture
 > that is actually shipped; the roadmap remains in `30-professional-agent-runtime-v2-roadmap.md`.
 
 ## Runtime Boundary

@@ -1,6 +1,6 @@
 # Sprint 111 - Professional Agent Runtime Foundation
 
-> 状态：Active；用户于 2026-07-15 授权连续完成 Sprint 111–116。
+> 状态：Completed；2026-07-15 通过 Gate I、本地全仓验收与生产 PostgreSQL 验证。
 
 ## Goal
 
@@ -124,6 +124,15 @@ Required deterministic scenarios:
 - Gate I 通过后才创建/激活 Sprint 112 focused contract。
 - Sprint 112 只能增强 capability/observation contract，不能放宽 Sprint 111 的 Mission 预算、
   plan validation、approval 或终止门禁。
+
+## Implementation Record
+
+- 新核心：`backend/src/hypertrade/runtime`，domain/application/ports/adapters 单向依赖。
+- 数据迁移：`0023_agent_missions`；生产 `0023 -> 0022 -> 0023` 通过。
+- API：Mission create/list/get/run/control/steer/cursor events/SSE；运行 flag 默认关闭。
+- 验收：`./scripts/check.sh` 通过 547 个 Python 测试和 9 个前端测试；QA 见
+  `docs/qa/sprint-111-professional-agent-runtime-foundation.md`。
+- 生产：SHA `6435110`、workflow `29425203712`、只读 canary 完成且旧 Task/Run 计数不变。
 
 ## Assumptions To Review
 
