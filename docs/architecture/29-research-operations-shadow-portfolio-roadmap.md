@@ -119,6 +119,18 @@ flowchart LR
 
 延迟、Token 和模型调用数必须报告，但本 Sprint 不以降低成本换取证据或安全门禁。
 
+### 6.3 实施记录（进行中）
+
+- 发布 `research_os_golden_v2`：26 个 case 的 cohort、provider terminal/graph
+  applicability 与 denominator 都成为必填合约；旧 V1 只保留为历史基线。
+- `ResearchIntentV2`/`ToolPlanV2` 只保存结构化字段和 reason code。Planner 的候选集由
+  ToolRegistry、来源、角色、章程、connector health 与治理边界求交；无效 schema、缺参或
+  required route 最多修复一次，第二次失败关闭。
+- baseline 输出 `agent_research_quality.v2`，双运行 gate 固定 case 数并验证 route/source/
+  graph/task/safety 阈值；普通 chat/graph 不再污染 tool denominator。
+- API、`/evals`、Textual Quality tab 和 Web `/harness/quality` 共享服务端投影。
+- 本地确定性/路由/隐私/多端回归已通过；隔离 provider 双运行与生产验收待实现提交部署后执行。
+
 ## 7. Sprint 107：StrategyCard Lifecycle & Research Funnel
 
 ### 7.1 技术方案

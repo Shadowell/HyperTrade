@@ -16,12 +16,13 @@ def test_promptfoo_has_six_research_os_attacks_and_privacy_assertions() -> None:
     assert "promptfoo@latest" not in runner
 
     baseline_runner = Path("scripts/run_agent_eval_baseline.sh").read_text(encoding="utf-8")
-    assert "research_os_golden_v1.json" in baseline_runner
+    assert "research_os_golden_v2.json" in baseline_runner
     assert "for run_number in 1 2" in baseline_runner
     assert "hypertrade-agent-eval:latest" in baseline_runner
     assert "docker run --rm" in baseline_runner
     assert "uv run" not in baseline_runner
     assert "hypertrade.evals.comparison" in baseline_runner
+    assert "hypertrade.evals.quality_gate" in baseline_runner
 
 
 def test_promptfoo_privacy_assertion_rejects_sensitive_projection() -> None:

@@ -134,8 +134,8 @@ uv run hypertrade --local ask "看下目前市场的热度怎么样"
 /task task_*    # 查看任务、预算、事件游标和 checkpoint
 ```
 
-`/evals` 是离线确定性门禁，当前显示 38 条用例，其中 24 条属于
-`research_os_golden_v1`。它不会发起真实模型调用。Promptfoo/Ragas 只能由运维人员
+`/evals` 是离线确定性门禁，当前显示 40 条用例，其中 26 条属于
+`research_os_golden_v2`，并按 chat/tool/graph/safety cohort 展示固定分母。它不会发起真实模型调用。Promptfoo/Ragas 只能由运维人员
 在服务器隔离 API 上运行，其低分或通过结果都不能启动模拟盘或实盘。
 
 ### Agent 任务控制

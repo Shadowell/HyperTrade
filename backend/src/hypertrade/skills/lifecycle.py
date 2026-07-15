@@ -29,7 +29,7 @@ from hypertrade.research.roles.definitions import ROLE_CATALOG, RoleDefinition
 from hypertrade.tools.registry import ToolRegistry
 
 SKILL_SCHEMA_VERSION = "skill_definition.v1"
-SKILL_EVAL_SUITE_VERSION = "research_os_golden_v1"
+SKILL_EVAL_SUITE_VERSION = "research_os_golden_v2"
 
 
 class SkillDefinitionV1(BaseModel):

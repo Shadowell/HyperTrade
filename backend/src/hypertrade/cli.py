@@ -4089,6 +4089,18 @@ def render_evals_status(payload: dict[str, Any], *, output: TextIO) -> None:
         if isinstance(categories, dict):
             summary = " ".join(f"{name}={count}" for name, count in sorted(categories.items()))
             print(f"  categories: {summary}", file=output)
+    quality = payload.get("quality")
+    if isinstance(quality, dict):
+        print(
+            f"- Quality: {quality.get('status', 'unknown')} "
+            f"contract={quality.get('metric_contract', 'unknown')} "
+            f"provider={quality.get('provider_baseline', 'unknown')}",
+            file=output,
+        )
+        cohorts = quality.get("cohorts")
+        if isinstance(cohorts, dict):
+            summary = " ".join(f"{name}={count}" for name, count in sorted(cohorts.items()))
+            print(f"  cohorts: {summary}", file=output)
     cases = payload.get("cases", [])
     if not isinstance(cases, list) or not cases:
         print("- no cases", file=output)

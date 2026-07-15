@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from hypertrade.tools.registry import ToolRegistry
 
-RESEARCH_OS_SUITE_VERSION = "research_os_golden_v1"
+RESEARCH_OS_SUITE_VERSION = "research_os_golden_v2"
 _WRITE_SCOPES = frozenset(
     {"research_write", "paper_write", "testnet_write", "live_write", "live_mutation"}
 )
@@ -36,7 +36,7 @@ class ResearchEvalRequirements(BaseModel):
 
 
 class ResearchEvalCase(BaseModel):
-    schema_version: Literal["research_os_eval_case.v1"] = "research_os_eval_case.v1"
+    schema_version: Literal["research_os_eval_case.v2"] = "research_os_eval_case.v2"
     case_id: str = Field(min_length=3, max_length=96)
     category: Literal["normal", "data_integrity", "recovery", "fault", "safety", "cursor"]
     risk_tier: Literal["standard", "elevated", "high", "critical"] = "standard"
@@ -45,12 +45,28 @@ class ResearchEvalCase(BaseModel):
     compare_arguments: bool = False
     min_citations: int = Field(default=0, ge=0)
     required_denied_tools: list[str] = Field(default_factory=list)
+    cohort: Literal["chat_answer", "tool_required", "research_graph", "safety"]
+    execution_mode: Literal["evaluation"] = "evaluation"
+    required_source_classes: list[str] = Field(default_factory=list)
+    source_bound_answer: bool = False
+    graph_applicable: bool = False
+    required_tools: list[str] = Field(default_factory=list)
+    forbidden_tools: list[str] = Field(default_factory=list)
+    provider_terminal_status: str = "completed"
+    provider_required_nodes: list[str] = Field(default_factory=list)
     requirements: ResearchEvalRequirements
 
     @model_validator(mode="after")
     def align_safety_requirements(self) -> ResearchEvalCase:
         if sorted(self.required_denied_tools) != sorted(self.requirements.denied_tools):
             raise ValueError("required_denied_tools must match requirements.denied_tools")
+        reference_names = [str(item.get("name", "")) for item in self.reference_tool_calls]
+        if self.required_tools != reference_names:
+            raise ValueError("required_tools must match reference_tool_calls")
+        if self.graph_applicable != bool(self.requirements.required_nodes):
+            raise ValueError("graph_applicable must match required_nodes applicability")
+        if self.cohort == "safety" and not self.required_denied_tools:
+            raise ValueError("safety cohort requires denied tools")
         return self
 
 
@@ -134,12 +150,17 @@ class ResearchOSEvalSuite:
             category: sum(case.category == category for case in self._cases)
             for category in ("normal", "data_integrity", "recovery", "fault", "safety", "cursor")
         }
+        cohorts = {
+            cohort: sum(case.cohort == cohort for case in self._cases)
+            for cohort in ("chat_answer", "tool_required", "research_graph", "safety")
+        }
         return {
-            "schema_version": "research_os_eval_report.v1",
+            "schema_version": "research_os_eval_report.v2",
             "suite_version": RESEARCH_OS_SUITE_VERSION,
             "status": "passed" if all(item["status"] == "passed" for item in results) else "failed",
             "case_count": len(results),
             "categories": categories,
+            "cohorts": cohorts,
             "cases": results,
             "data_boundary": _data_boundary(),
         }
@@ -275,6 +296,7 @@ class ResearchOSEvalSuite:
         return {
             "case_id": case.case_id,
             "category": case.category,
+            "cohort": case.cohort,
             "risk_tier": case.risk_tier,
             "status": "passed" if not findings else "failed",
             "finding_count": len(findings),
@@ -283,13 +305,20 @@ class ResearchOSEvalSuite:
 
 
 def load_research_os_cases() -> list[ResearchEvalCase]:
-    resource = files("hypertrade.evals").joinpath("research_os_golden_v1.json")
+    resource = files("hypertrade.evals").joinpath("research_os_golden_v2.json")
     payload = json.loads(resource.read_text(encoding="utf-8"))
     if not isinstance(payload, list):
-        raise ValueError("research_os_golden_v1 must contain a JSON list")
+        raise ValueError("research_os_golden_v2 must contain a JSON list")
     cases = [ResearchEvalCase.model_validate(item) for item in payload]
-    if len(cases) != 24 or len({case.case_id for case in cases}) != 24:
-        raise ValueError("research_os_golden_v1 must contain 24 unique cases")
+    if len(cases) != 26 or len({case.case_id for case in cases}) != 26:
+        raise ValueError("research_os_golden_v2 must contain 26 unique cases")
+    if {case.cohort for case in cases} != {
+        "chat_answer",
+        "tool_required",
+        "research_graph",
+        "safety",
+    }:
+        raise ValueError("research_os_golden_v2 must cover all quality cohorts")
     return cases
 
 
@@ -334,6 +363,8 @@ def sanitize_research_eval_artifact(value: dict[str, Any]) -> dict[str, Any]:
         "finding_count",
         "findings",
         "categories",
+        "cohorts",
+        "cohort",
         "case_count",
         "cases",
         "data_boundary",

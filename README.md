@@ -352,8 +352,8 @@ uv run ht --local /evals
 curl http://localhost:3334/api/evals/status
 ```
 
-The required gate currently covers 38 deterministic cases: 14 legacy Agent
-contracts plus 24 versioned Research OS cases for task recovery, role/node order,
+The required gate currently covers 40 deterministic cases: 14 legacy Agent
+contracts plus 26 versioned Research OS cases for fixed quality cohorts, task recovery, role/node order,
 Evidence, reproducibility, budgets, faults, cursor replay, privacy, and tool safety.
 Server-side provider baselines run only through the separate
 `hypertrade-agent-eval:latest` image against the loopback isolated API on `4334`.
@@ -362,8 +362,9 @@ Optional evaluation tooling is documented in
 [`docs/architecture/26-agent-evaluation-foundation.md`](docs/architecture/26-agent-evaluation-foundation.md).
 It keeps the deterministic suite as the CI gate, uses metadata-only opt-in
 self-hosted Langfuse tracing, and limits the six-case Promptfoo suite and two-run
-Ragas Research OS baseline to isolated, read-only evaluation runs. Their scores are
-diagnostic evidence and never authorize paper or live trading.
+Ragas Research OS baseline to isolated, read-only evaluation runs. The V2 runner
+requires two fixed-denominator runs to meet route/source/graph/task/safety thresholds;
+its result never authorizes paper or live trading.
 
 The optional Textual research workbench runs over the same durable
 Session/Task/Event APIs:

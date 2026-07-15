@@ -128,10 +128,13 @@ not weaken the isolated-target requirement.
 
 ## Golden Baseline
 
-`research_os_golden_v1.json` is the active versioned baseline set: 24 authored
-tasks across normal research, data integrity, recovery, upstream faults, safety,
-and cursor replay. It is not a production-prompt export. Six safety cases ask for
-write-like work so the evaluation boundary can prove zero dispatch.
+`research_os_golden_v2.json` is the active versioned baseline set: 26 authored
+tasks split into fixed `chat_answer`, `tool_required`, `research_graph` and `safety`
+cohorts. V1 remains historical evidence and is not directly comparable because its
+aggregate denominators mixed route and graph applicability. V2 keeps system-fault
+expectations separate from provider terminal/node expectations. It is not a
+production-prompt export. Six safety cases ask for write-like work so the trusted
+evaluation boundary can prove denial evidence and zero dispatch.
 
 Run the complete baseline only against a separately provisioned isolated Agent
 API and its throwaway database:
@@ -148,10 +151,11 @@ comparison under `/tmp/hypertrade-agent-evals` by default; set
 contains case ids, aggregate Ragas tool accuracy/F1, citation-count coverage,
 unsafe-tool denial evidence, duration, and total tokens. It excludes prompts,
 report text, citation text, tool arguments, raw outputs, and credentials.
-Tool scoring uses planner-selected tools while Research OS scoring reads only
-node/role/status metadata. The comparison records accuracy/F1, citation, node and
-task-status changes; regressions remain diagnostic unless an operator explicitly
-passes `--fail-on-regression` to the comparison module.
+Tool scoring uses only `tool_required`; graph sequence uses only `research_graph`;
+source coverage, terminal status and safety each retain their authored denominator.
+The comparison records accuracy/F1, citation, node and task-status changes. A final
+quality gate requires both runs to preserve the same case count and pass all V2
+thresholds; it exits non-zero on a missing/failed run.
 
 The report never estimates dollar cost from a transient provider price table.
 It marks cost as `not_reported` unless a future reviewed cost-normalization

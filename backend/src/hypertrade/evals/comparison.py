@@ -79,7 +79,7 @@ def compare_baselines(left: dict[str, Any], right: dict[str, Any]) -> dict[str, 
             }
         )
     return {
-        "schema_version": "research_os_baseline_comparison.v1",
+        "schema_version": "research_os_baseline_comparison.v2",
         "status": "regressed" if regression_count else "stable_or_improved",
         "left_case_count": len(left_cases),
         "right_case_count": len(right_cases),

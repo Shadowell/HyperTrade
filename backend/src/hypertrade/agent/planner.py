@@ -13,6 +13,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from hypertrade.agent.quality import (
+    CandidateToolSet,
+    ResearchIntentV2,
+    ToolPlanV2,
+    build_candidate_tool_set,
+    default_research_intent,
+    required_schema_fields,
+)
 from hypertrade.providers.chat import ChatProvider, ChatResponse, TokenUsage
 
 ToolExecutor = Callable[[str, dict[str, Any]], dict[str, Any]]
@@ -1100,6 +1108,13 @@ class PlannerResult:
     final_message: str
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
     model_calls: list[ModelCallRecord] = field(default_factory=list)
+    intent: ResearchIntentV2 | None = None
+    tool_plan: ToolPlanV2 | None = None
+    candidate_count: int = 0
+
+
+class PlannerValidationFailed(RuntimeError):
+    """The provider failed the single-repair structured planning contract."""
 
 
 class AgentPlanner:
@@ -1116,17 +1131,31 @@ class AgentPlanner:
         self._model_call_sink = model_call_sink
         self._tool_call_sink = tool_call_sink
 
-    def run(self, prompt: str, executor: ToolExecutor) -> PlannerResult:
+    def run(
+        self,
+        prompt: str,
+        executor: ToolExecutor,
+        *,
+        intent: ResearchIntentV2 | None = None,
+    ) -> PlannerResult:
+        active_intent = intent or default_research_intent(evaluation_mode=False)
+        candidates = build_candidate_tool_set(active_intent, TOOL_SCHEMAS)
+        schemas_by_name = {
+            str(schema["function"]["name"]): schema
+            for schema in candidates.schemas
+            if isinstance(schema.get("function"), dict)
+        }
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ]
         tool_calls: list[ToolCallRecord] = []
         model_calls: list[ModelCallRecord] = []
+        repair_count = 0
 
         for iteration in range(1, self.MAX_ITERATIONS + 1):
             started_at = time.monotonic()
-            response: ChatResponse = self._llm.chat(messages, tools=TOOL_SCHEMAS)
+            response: ChatResponse = self._llm.chat(messages, tools=list(candidates.schemas))
             model_call = ModelCallRecord(
                 iteration=iteration,
                 provider=_provider_label(self._llm, "name"),
@@ -1141,29 +1170,71 @@ class AgentPlanner:
                 self._model_call_sink(model_call)
 
             if not response.tool_calls:
+                missing_tools = sorted(
+                    set(active_intent.required_tools)
+                    - {record.tool_name for record in tool_calls}
+                )
+                if missing_tools:
+                    if repair_count >= 1:
+                        raise PlannerValidationFailed(
+                            "required source/tool route missing after one bounded repair"
+                        )
+                    repair_count += 1
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "PLANNER_REPAIR_REQUIRED: choose the required tool route from "
+                                "the unchanged bounded candidate set; missing="
+                                + ",".join(missing_tools)
+                            ),
+                        }
+                    )
+                    continue
+                plan = _tool_plan(
+                    tool_calls,
+                    candidates,
+                    required_args_present=True,
+                    repair_count=repair_count,
+                )
                 return PlannerResult(
                     final_message=response.content,
                     tool_calls=tool_calls,
                     model_calls=model_calls,
+                    intent=active_intent,
+                    tool_plan=plan,
+                    candidate_count=len(candidates.schemas),
                 )
 
-            assistant_msg: dict[str, Any] = {
-                "role": "assistant",
-                "content": response.content or "",
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.name,
-                            "arguments": json.dumps(tc.arguments),
-                        },
-                    }
-                    for tc in response.tool_calls
-                ],
-            }
-            if response.reasoning_content:
-                assistant_msg["reasoning_content"] = response.reasoning_content
+            validation_errors = _validate_provider_calls(response, candidates, schemas_by_name)
+            if validation_errors:
+                if repair_count >= 1:
+                    raise PlannerValidationFailed(
+                        "provider tool plan remained invalid after one bounded repair"
+                    )
+                repair_count += 1
+                messages.append(_assistant_tool_message(response))
+                for request in response.tool_calls:
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": request.id,
+                            "content": json.dumps(
+                                {
+                                    "status": "denied",
+                                    "error": {
+                                        "type": "plan_validation",
+                                        "codes": validation_errors,
+                                    },
+                                    "repair_count": repair_count,
+                                    "candidate_set_expanded": False,
+                                }
+                            ),
+                        }
+                    )
+                continue
+
+            assistant_msg = _assistant_tool_message(response)
             messages.append(assistant_msg)
 
             for tc in response.tool_calls:
@@ -1187,7 +1258,68 @@ class AgentPlanner:
             final_message="Planning loop reached max iterations.",
             tool_calls=tool_calls,
             model_calls=model_calls,
+            intent=active_intent,
+            tool_plan=_tool_plan(
+                tool_calls,
+                candidates,
+                required_args_present=True,
+                repair_count=repair_count,
+            ),
+            candidate_count=len(candidates.schemas),
         )
+
+
+def _assistant_tool_message(response: ChatResponse) -> dict[str, Any]:
+    message: dict[str, Any] = {
+        "role": "assistant",
+        "content": response.content or "",
+        "tool_calls": [
+            {
+                "id": call.id,
+                "type": "function",
+                "function": {
+                    "name": call.name,
+                    "arguments": json.dumps(call.arguments),
+                },
+            }
+            for call in response.tool_calls
+        ],
+    }
+    if response.reasoning_content:
+        message["reasoning_content"] = response.reasoning_content
+    return message
+
+
+def _validate_provider_calls(
+    response: ChatResponse,
+    candidates: CandidateToolSet,
+    schemas_by_name: dict[str, dict[str, Any]],
+) -> list[str]:
+    errors: set[str] = set()
+    for call in response.tool_calls:
+        if call.name not in candidates.included_names:
+            errors.add("tool_not_in_candidate_set")
+            continue
+        missing = required_schema_fields(schemas_by_name[call.name]) - set(call.arguments)
+        if missing:
+            errors.add("required_arguments_missing")
+    return sorted(errors)
+
+
+def _tool_plan(
+    records: list[ToolCallRecord],
+    candidates: CandidateToolSet,
+    *,
+    required_args_present: bool,
+    repair_count: int,
+) -> ToolPlanV2:
+    return ToolPlanV2(
+        selected_tools=[record.tool_name for record in records],
+        source_rationale_codes=list(candidates.source_rationale_codes),
+        required_args_present=required_args_present,
+        policy_projection="bounded",
+        repair_count=repair_count,
+    )
 
 
 def _provider_label(provider: Any, field_name: str) -> str:

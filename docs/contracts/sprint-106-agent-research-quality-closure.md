@@ -99,3 +99,11 @@ Manual/QA：
 - Gate E 通过后创建并激活 Sprint 107 合同，实施 StrategyCard V2、稳定 lineage/version、
   incomplete projection 和 research funnel。
 - Gate E 未通过时继续修复 Sprint 106，不启用后台研究或提前开发 Shadow Portfolio。
+
+## Implementation Record
+
+- 2026-07-15：完成 V2 manifest、cohort scorer、structured intent/plan、bounded candidate
+  intersection、single repair、double-run gate 及 API/CLI/TUI/Web 只读投影。
+- 本地 focused tests 及 `./scripts/check.sh` 已通过：frontend lint/9 tests/build、Ruff、
+  mypy（142 source files）和 484 Python tests。
+- 隔离 provider 双运行和生产 SHA/health/log 验收尚未执行，因此 Sprint 状态保持 Active。

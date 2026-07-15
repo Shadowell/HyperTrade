@@ -257,6 +257,13 @@ class ResearchWorkbenchApp(App[None]):
                     classes="detail",
                     markup=False,
                 )
+            with TabPane("Quality", id="tab-quality"):
+                yield Static(
+                    "No quality snapshot",
+                    id="quality-detail",
+                    classes="detail",
+                    markup=False,
+                )
         with Horizontal(id="prompt-row"):
             yield TextArea(
                 "",
@@ -337,6 +344,7 @@ class ResearchWorkbenchApp(App[None]):
         if not governance_input.value and pending:
             governance_input.value = str(pending[0].get("id", ""))
         self.query_one("#portfolio-detail", Static).update(self._portfolio_text(state))
+        self.query_one("#quality-detail", Static).update(self._quality_text(state))
         assessment_input = self.query_one("#portfolio-assessment-id", Input)
         recommendation_input = self.query_one("#portfolio-recommendation-id", Input)
         if state.portfolio_assessments:
@@ -782,4 +790,29 @@ class ResearchWorkbenchApp(App[None]):
                     f"{recommendation.get('action')} · "
                     f"card={recommendation.get('strategy_card_id') or '-'}"
                 )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _quality_text(state: WorkbenchState) -> str:
+        quality = state.quality.get("quality", {})
+        research_os = state.quality.get("research_os", {})
+        if not isinstance(quality, dict) or not quality:
+            return "No quality snapshot"
+        lines = [
+            f"{quality.get('status', 'unknown').upper()} · "
+            f"{quality.get('metric_contract', 'unknown')}",
+            f"suite={quality.get('suite_version', 'unknown')} · "
+            f"provider={quality.get('provider_baseline', 'unknown')}",
+        ]
+        cohorts = quality.get("cohorts", {})
+        if isinstance(cohorts, dict):
+            lines.append(
+                "COHORTS · "
+                + " · ".join(f"{name}={count}" for name, count in sorted(cohorts.items()))
+            )
+        if isinstance(research_os, dict):
+            lines.append(
+                f"DETERMINISTIC · {research_os.get('status', 'unknown')} · "
+                f"cases={research_os.get('case_count', 0)}"
+            )
         return "\n".join(lines)

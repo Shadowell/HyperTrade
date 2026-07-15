@@ -7,6 +7,8 @@ from typing import Any, Protocol
 
 
 class WorkbenchClient(Protocol):
+    def get_evals_status(self) -> dict[str, Any]: ...
+
     def list_agent_sessions(self) -> list[dict[str, Any]]: ...
 
     def create_agent_session(self, title: str) -> dict[str, Any]: ...
@@ -117,6 +119,7 @@ class TaskEventCursor:
 
 @dataclass
 class WorkbenchState:
+    quality: dict[str, Any] = field(default_factory=dict)
     sessions: list[dict[str, Any]] = field(default_factory=list)
     tasks: list[dict[str, Any]] = field(default_factory=list)
     selected_session_id: str = ""
@@ -146,6 +149,8 @@ class WorkbenchStore:
         self.state = WorkbenchState(selected_session_id=initial_session_id)
 
     def refresh_index(self) -> WorkbenchState:
+        get_quality = getattr(self.client, "get_evals_status", None)
+        self.state.quality = get_quality() if callable(get_quality) else {}
         self.state.sessions = self.client.list_agent_sessions()
         self.state.tasks = self.client.list_agent_tasks()
         self.state.trigger_projection = self.client.list_research_triggers()

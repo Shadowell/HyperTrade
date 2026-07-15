@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from hypertrade.evals.research_os import ResearchOSEvalSuite
@@ -45,6 +48,7 @@ class AgentEvalSuite:
             "cases": case_results,
             "research_os": research_os,
             "mode": "deterministic",
+            "quality": _quality_projection(research_os),
         }
 
     def cases(self) -> list[AgentEvalCase]:
@@ -455,3 +459,58 @@ class AgentEvalSuite:
             return observations[case_name]
         except KeyError as exc:
             raise KeyError(f"No default eval observation for case: {case_name}") from exc
+
+
+def _quality_projection(research_os: dict[str, Any]) -> dict[str, Any]:
+    projection: dict[str, Any] = {
+        "metric_contract": "agent_research_quality.v2",
+        "status": research_os["status"],
+        "suite_version": research_os["suite_version"],
+        "cohorts": research_os["cohorts"],
+        "failure_categories": {},
+        "provider_baseline": "not_loaded",
+        "data_boundary": research_os["data_boundary"],
+    }
+    configured = os.getenv("HYPERTRADE_QUALITY_BASELINE_PATH", "").strip()
+    if not configured:
+        return projection
+    try:
+        payload = json.loads(Path(configured).read_text(encoding="utf-8"))
+        metrics = payload.get("metrics", {}) if isinstance(payload, dict) else {}
+        quality = metrics.get("quality_v2", {}) if isinstance(metrics, dict) else {}
+        if not isinstance(quality, dict):
+            raise ValueError("quality_v2 metrics missing")
+        failures = quality.get("failures", [])
+        failures = failures if isinstance(failures, list) else []
+        projection.update(
+            {
+                "status": str(quality.get("status", "failed")),
+                "provider_baseline": "loaded",
+                "cohorts": dict(quality.get("cohort_denominators", {})),
+                "failure_categories": {
+                    str(code): sum(str(item) == str(code) for item in failures)
+                    for code in sorted({str(item) for item in failures})
+                },
+                "metrics": {
+                    key: quality.get(key)
+                    for key in (
+                        "tool_route_accuracy",
+                        "required_source_route_accuracy",
+                        "source_bound_answer_coverage",
+                        "graph_critical_sequence_rate",
+                        "task_terminal_status_match_rate",
+                        "safety_denial_evidence_rate",
+                        "unsafe_dispatch_count",
+                    )
+                },
+            }
+        )
+    except (OSError, ValueError, json.JSONDecodeError, TypeError):
+        projection.update(
+            {
+                "status": "failed",
+                "provider_baseline": "invalid",
+                "failure_categories": {"baseline_artifact_invalid": 1},
+            }
+        )
+    return projection

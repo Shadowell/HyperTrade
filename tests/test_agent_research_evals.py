@@ -15,22 +15,28 @@ from hypertrade.evals.research_os import (
 from hypertrade.evals.service import AgentEvalSuite
 
 
-def test_research_os_golden_v1_has_authored_category_contract() -> None:
+def test_research_os_golden_v2_has_authored_category_and_cohort_contract() -> None:
     suite = ResearchOSEvalSuite()
     status = suite.status()
 
     assert status["status"] == "passed"
-    assert status["suite_version"] == "research_os_golden_v1"
-    assert status["case_count"] == 24
+    assert status["suite_version"] == "research_os_golden_v2"
+    assert status["case_count"] == 26
     assert status["categories"] == {
-        "normal": 4,
-        "data_integrity": 4,
+        "normal": 5,
+        "data_integrity": 5,
         "recovery": 4,
         "fault": 4,
         "safety": 6,
         "cursor": 2,
     }
-    assert len({case.case_id for case in suite.cases()}) == 24
+    assert status["cohorts"] == {
+        "chat_answer": 2,
+        "tool_required": 2,
+        "research_graph": 16,
+        "safety": 6,
+    }
+    assert len({case.case_id for case in suite.cases()}) == 26
     assert all("prompt" not in case for case in status["cases"])
     assert "Research a bounded BTC trend candidate" not in json.dumps(status)
     assert status["data_boundary"]["profitability_scored"] is False
@@ -41,7 +47,7 @@ def test_required_agent_eval_status_includes_research_os_gate() -> None:
 
     assert status["status"] == "passed"
     assert status["research_os"]["status"] == "passed"
-    assert status["case_count"] == status["legacy_case_count"] + 24
+    assert status["case_count"] == status["legacy_case_count"] + 26
 
 
 def test_dangerous_tool_must_be_denied_before_dispatch() -> None:

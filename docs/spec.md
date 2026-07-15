@@ -182,7 +182,8 @@ was available; it emitted no recommendation and no human review rather than inve
 The approved planning sequence is documented in
 `docs/architecture/29-research-operations-shadow-portfolio-roadmap.md`. Sprint 106
 entered implementation on 2026-07-15 and first closes provider-backed routing/source/Task/Graph quality
-gaps with fixed cohort metrics. Sprint 107 then moves StrategyCard creation from the
+gaps with `agent_research_quality.v2`, 26 fixed cohort cases, bounded candidate tools and a
+single fail-closed repair. Sprint 107 then moves StrategyCard creation from the
 PaperPromotion boundary to the StrategySpec/ExperimentManifest lifecycle and adds stable
 lineage/version/incomplete projections. Sprints 108–110 add bounded portfolio evidence
 windows, human-reviewed Champion–Challenger paper cohorts and execution-isolated Shadow
@@ -192,8 +193,9 @@ paper/live promotion, capital allocation, rebalance or orders.
 ## V1 In Scope
 
 - Harness routing: sidebar destinations are independent, refreshable SPA paths
-  (`/harness`, `/harness/strategy`, `/harness/alerts`, `/harness/runs`,
-  `/harness/memory`, `/harness/rag`) rather than hash-scroll targets in one
+  (`/harness`, `/harness/strategy`, `/harness/portfolio`, `/harness/alerts`,
+  `/harness/runs`, `/harness/quality`, `/harness/memory`, `/harness/rag`) rather
+  than hash-scroll targets in one
   long workbench view.
 - Harness visual system: every routed workbench page uses a dark observability
   console with green-black surfaces, restrained grid texture, cyan runtime
@@ -562,7 +564,7 @@ paper/live promotion, capital allocation, rebalance or orders.
 - Agent can use `strategy_library_search` for strategy-library/history/next-experiment questions so prior local strategy experience comes from audited `strategy_knowledge` evidence instead of model recall.
 - New strategy evidence cards expose `schema_version=strategy_evidence.v1`, preserve decimal metrics as strings, keep source ids/boundaries visible, and let missing fields surface as `n/a` or empty values instead of inferred data.
 - Developer can run `/experiment iterate <prompt>` or call `strategy_experiment_plan` to produce bounded candidate variants from prior strategy-library evidence before any new paper/live promotion path.
-- Developer can run `/evals` and inspect deterministic Agent eval status for
+- Developer can run `/evals` or open `/harness/quality` and inspect server-scored Agent eval status for
   tool choice, source-of-truth usage, unsupported-claim guardrails,
   missing-data preservation, and compact report rendering.
 - `/evals` includes live BitPro routing guardrails for
@@ -575,9 +577,10 @@ paper/live promotion, capital allocation, rebalance or orders.
   isolated target with `evaluation_mode=true`, which denies every non-read
   Agent tool before dispatch.
 - Developer can run `./scripts/run_agent_eval_baseline.sh` only against an
-  explicitly labelled isolated API to collect the 24-case golden baseline. The
+  explicitly labelled isolated API to collect the 26-case V2 golden baseline twice. The
   generated report contains aggregate diagnostic metrics only and leaves cost as
-  unavailable when no reviewed normalized provider cost is reported.
+  unavailable when no reviewed normalized provider cost is reported. Fixed cohort
+  denominators and route/source/graph/task/safety thresholds fail the runner closed.
 - Operator can use `docs/knowledge/tool-usage-guide.md` to validate each Agent tool surface and follow related operational source-code comments.
 - Operator can review the BitPro tool-surface requirements before wiring external data, backtest, paper/simulation, or live-state APIs into Agent tools.
 - Operator can call BitPro read tools through HyperTrade API/Agent paths while every flow starts with `bitpro_capabilities` and `bitpro_health`.

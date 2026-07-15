@@ -5,11 +5,16 @@
 - Branch: `main`
 - Harness status: active
 - Sprint 106 implementation state: active on 2026-07-15 under explicit operator approval.
-  It fixes evaluation cohort semantics
-  and Agent routing/source/Task/Graph quality before any background research expansion.
+  `research_os_golden_v2` now separates 26 fixed cases into 2 `chat_answer`, 2
+  `tool_required`, 16 `research_graph` and 6 `safety` cases. `ResearchIntentV2`,
+  `ToolPlanV2`, bounded candidate intersection, one repair and the fail-closed V2 scorer
+  are implemented. API/CLI/Textual/Web project aggregate results only. Focused backend
+  acceptance passed 145 tests; full `./scripts/check.sh` passed with frontend lint/9
+  tests/build, Ruff, mypy over 142 source files and all 484 Python tests. The implementation
+  commit, isolated provider double baseline and production verification remain pending.
   Sprint 107 moves StrategyCard creation to the StrategySpec/ExperimentManifest lifecycle;
   later sprints add bounded portfolio evidence, paper cohorts and hypothetical-only portfolio
-  proposals. No runtime flag or trading permission changed in this planning update.
+  proposals. No runtime flag or trading permission changed in this implementation slice.
 - Sprint 105 implementation state: completed and production-verified on 2026-07-15.
   Persisted `portfolio_assessment.v2` binds idempotency keys to canonical
   requests, consumes bounded StrategyCard/WorldState/paper/monitor/Evidence/governed

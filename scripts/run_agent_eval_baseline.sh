@@ -24,7 +24,7 @@ esac
 
 output_dir="${HYPERTRADE_EVAL_OUTPUT_DIR:-/tmp/hypertrade-agent-evals}"
 runner_image="${HYPERTRADE_EVAL_RUNNER_IMAGE:-hypertrade-agent-eval:latest}"
-reference="/app/backend/src/hypertrade/evals/research_os_golden_v1.json"
+reference="/app/backend/src/hypertrade/evals/research_os_golden_v2.json"
 
 mkdir -p "$output_dir"
 output_dir="$(cd "$output_dir" && pwd)"
@@ -67,5 +67,8 @@ run_eval_python -m hypertrade.evals.comparison \
   --left "/eval-output/research-os-baseline-1.json" \
   --right "/eval-output/research-os-baseline-2.json" \
   --output "$comparison"
+run_eval_python -m hypertrade.evals.quality_gate \
+  "/eval-output/research-os-baseline-1.json" \
+  "/eval-output/research-os-baseline-2.json"
 
 echo "Baseline reports and comparison: $output_dir"

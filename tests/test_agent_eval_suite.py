@@ -24,8 +24,8 @@ def test_eval_suite_exposes_sprint_53_cases_with_contract_fields() -> None:
     }
     assert status["status"] == "passed"
     assert status["legacy_case_count"] == len(expected_cases)
-    assert status["research_os_case_count"] == 24
-    assert status["case_count"] == len(expected_cases) + 24
+    assert status["research_os_case_count"] == 26
+    assert status["case_count"] == len(expected_cases) + 26
     assert {case["name"] for case in status["cases"]} == expected_cases
 
     sprint_53_cases = {

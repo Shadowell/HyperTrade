@@ -21,7 +21,13 @@ def build_trajectory_from_api_payload(case_id: str, payload: dict[str, Any]) -> 
     planned_tool_names = _planned_tool_names(report.get("tool_calls"))
     trace_events = payload.get("trace_events")
     events = trace_events if isinstance(trace_events, list) else []
-    raw_nodes = payload.get("node_runs") or payload.get("nodes") or report.get("nodes")
+    raw_nodes = (
+        payload.get("node_runs")
+        or payload.get("nodes")
+        or report.get("nodes")
+        or report.get("graph")
+        or state.get("graph")
+    )
     nodes = raw_nodes if isinstance(raw_nodes, list) else []
     raw_evidence = payload.get("evidence") or report.get("evidence")
     evidence = raw_evidence if isinstance(raw_evidence, list) else []
@@ -65,7 +71,7 @@ def build_trajectory_from_api_payload(case_id: str, payload: dict[str, Any]) -> 
 def _safe_node(node: dict[str, Any]) -> dict[str, str | int]:
     attempt = node.get("attempt", 0)
     return {
-        "node_key": str(node.get("node_key", ""))[:80],
+        "node_key": str(node.get("node_key") or node.get("node") or "")[:80],
         "role_key": str(node.get("role_key", ""))[:80],
         "status": str(node.get("status", ""))[:32],
         "attempt": max(0, int(attempt)) if isinstance(attempt, int) else 0,

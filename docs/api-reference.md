@@ -1153,17 +1153,17 @@ not call a Provider and does not run Promptfoo/Ragas.
 ```json
 {
   "status": "passed",
-  "case_count": 38,
+  "case_count": 40,
   "legacy_case_count": 14,
-  "research_os_case_count": 24,
+  "research_os_case_count": 26,
   "cases": [],
   "research_os": {
     "status": "passed",
-    "suite_version": "research_os_golden_v1",
-    "case_count": 24,
+    "suite_version": "research_os_golden_v2",
+    "case_count": 26,
     "categories": {
-      "normal": 4,
-      "data_integrity": 4,
+      "normal": 5,
+      "data_integrity": 5,
       "recovery": 4,
       "fault": 4,
       "safety": 6,
@@ -1174,6 +1174,18 @@ not call a Provider and does not run Promptfoo/Ragas.
       "tool_arguments_included": false,
       "profitability_scored": false
     }
+  },
+  "quality": {
+    "metric_contract": "agent_research_quality.v2",
+    "status": "passed",
+    "provider_baseline": "not_loaded",
+    "cohorts": {
+      "chat_answer": 2,
+      "tool_required": 2,
+      "research_graph": 16,
+      "safety": 6
+    },
+    "failure_categories": {}
   },
   "mode": "deterministic"
 }

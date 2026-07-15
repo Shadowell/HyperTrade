@@ -39,6 +39,7 @@ type NavSection =
   | "portfolio"
   | "alerts"
   | "runs"
+  | "quality"
   | "memory"
   | "rag";
 
@@ -239,6 +240,19 @@ type EvalStatus = {
   case_count: number;
   cases: Array<{ name: string; status: string; expectation?: string }>;
   mode: string;
+  research_os?: {
+    status?: string;
+    suite_version?: string;
+    case_count?: number;
+  };
+  quality?: {
+    metric_contract?: string;
+    status?: string;
+    suite_version?: string;
+    provider_baseline?: string;
+    cohorts?: Record<string, number>;
+    failure_categories?: Record<string, number>;
+  };
 };
 
 type StrategyEvidence = {
@@ -1547,6 +1561,14 @@ function App() {
               {t.recentRuns}
             </a>
             <a
+              className={navItemClass("quality")}
+              href={sectionPath("quality")}
+              onClick={(event) => handleNavClick("quality", event)}
+            >
+              <CheckCircle2 size={16} />
+              {t.evals}
+            </a>
+            <a
               className={navItemClass("memory")}
               href={sectionPath("memory")}
               onClick={(event) => handleNavClick("memory", event)}
@@ -2235,6 +2257,93 @@ function App() {
             </div>
             </div>
           </section>
+
+          <section className="mt-5" hidden={activeSection !== "quality"}>
+            <RouteMetricStrip
+              label={t.pageMetrics}
+              metrics={[
+                {
+                  label: language === "zh" ? "总用例" : "Cases",
+                  value: formatMetricNumber(activeOverview.evals.case_count),
+                  tone: "signal"
+                },
+                {
+                  label: language === "zh" ? "确定性门禁" : "Deterministic gate",
+                  value: statusLabel(activeOverview.evals.research_os?.status),
+                  tone: activeOverview.evals.research_os?.status === "passed" ? "signal" : "danger"
+                },
+                {
+                  label: language === "zh" ? "Provider 基线" : "Provider baseline",
+                  value: activeOverview.evals.quality?.provider_baseline ?? "not_loaded",
+                  tone: "brass"
+                },
+                {
+                  label: language === "zh" ? "质量合约" : "Quality contract",
+                  value: activeOverview.evals.quality?.metric_contract ?? "n/a",
+                  tone: "violet"
+                }
+              ]}
+            />
+            <div className="mt-3 grid grid-cols-[0.9fr_1.1fr] gap-5 max-xl:grid-cols-1">
+              <div className="panel">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="section-title">
+                      {language === "zh" ? "Agent 研究质量" : "Agent research quality"}
+                    </h2>
+                    <p className="mt-1 text-sm text-ink/50">
+                      {language === "zh"
+                        ? "只读展示 cohort、口径版本和失败分类；评分逻辑由服务端统一执行。"
+                        : "Read-only cohorts, metric version, and failure classes scored by the server."}
+                    </p>
+                  </div>
+                  <CheckCircle2 className="text-signal" size={18} />
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 max-md:grid-cols-1">
+                  {Object.entries(activeOverview.evals.quality?.cohorts ?? {}).map(
+                    ([cohort, count]) => (
+                      <div className="operator-card operator-card-compact" data-tone="signal" key={cohort}>
+                        <span>{cohort}</span>
+                        <strong className="font-mono">{count}</strong>
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+              <div className="panel">
+                <div className="flex items-center justify-between gap-4">
+                  <h2 className="section-title">
+                    {language === "zh" ? "失败分类与边界" : "Failures and boundaries"}
+                  </h2>
+                  <AlertTriangle size={18} className="text-brass" />
+                </div>
+                <div className="mt-4 space-y-2">
+                  {Object.entries(activeOverview.evals.quality?.failure_categories ?? {}).length ? (
+                    Object.entries(activeOverview.evals.quality?.failure_categories ?? {}).map(
+                      ([failure, count]) => (
+                        <div className="operator-card status-row" data-tone="danger" key={failure}>
+                          <span className="font-mono text-xs">{failure}</span>
+                          <strong>{count}</strong>
+                        </div>
+                      )
+                    )
+                  ) : (
+                    <div className="empty-row">
+                      {language === "zh" ? "当前确定性门禁没有失败分类" : "No deterministic failures"}
+                    </div>
+                  )}
+                </div>
+                <div className="operator-card operator-card-compact mt-4" data-tone="brass">
+                  <span>{language === "zh" ? "生产边界" : "Production boundary"}</span>
+                  <strong>
+                    {language === "zh"
+                      ? "后台触发保持禁用；paper/live 权限未变化"
+                      : "Background triggers disabled; paper/live permissions unchanged"}
+                  </strong>
+                </div>
+              </div>
+            </div>
+          </section>
           {harnessError ? <div className="mt-3 text-sm text-danger">API {harnessError}</div> : null}
         </main>
       </div>
@@ -2291,6 +2400,7 @@ function activeSectionFromPath(): NavSection {
     section === "portfolio" ||
     section === "alerts" ||
     section === "runs" ||
+    section === "quality" ||
     section === "memory" ||
     section === "rag"
   ) {

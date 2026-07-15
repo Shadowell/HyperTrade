@@ -102,8 +102,7 @@ def _node_sequence_accuracy(
     reference: dict[str, Any],
     trajectory: dict[str, Any],
 ) -> float | None:
-    requirements = reference.get("requirements")
-    expected = requirements.get("required_nodes", []) if isinstance(requirements, dict) else []
+    expected = reference.get("provider_required_nodes", [])
     if not isinstance(expected, list) or not expected:
         return None
     research_os = trajectory.get("research_os")
@@ -132,10 +131,7 @@ def _task_status_match(
     reference: dict[str, Any],
     trajectory: dict[str, Any],
 ) -> bool | None:
-    requirements = reference.get("requirements")
-    expected = (
-        str(requirements.get("terminal_status", "")) if isinstance(requirements, dict) else ""
-    )
+    expected = str(reference.get("provider_terminal_status", ""))
     if not expected:
         return None
     research_os = trajectory.get("research_os")

@@ -28,6 +28,7 @@ from hypertrade.agent.planner import (
     ToolCallRecord,
     ToolExecutor,
 )
+from hypertrade.agent.quality import research_intent_for_prompt
 from hypertrade.backtest.service import BacktestService
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.bitpro.paper_monitor import BitProPaperMonitorService
@@ -106,6 +107,7 @@ class AgentKernel:
         settings = self._settings if self._settings is not None else get_settings()
         started_at = time.monotonic()
         run_id = self._create_run(prompt, execution_mode=self._execution_mode())
+        intent = research_intent_for_prompt(prompt, evaluation_mode=self.evaluation_mode)
         _emit(event_sink, {"event": "run_started", "run_id": run_id, "status": "running"})
         try:
             # The first two graph nodes are intentionally lightweight. They make
@@ -115,8 +117,16 @@ class AgentKernel:
                 "intent_classify",
                 {"prompt": prompt},
                 {
-                    "intent": "pending_llm_planner",
-                    "intent_source": "configured_chat_provider",
+                    "schema_version": intent.schema_version,
+                    "intent_family": intent.intent_family,
+                    "cohort": intent.cohort,
+                    "execution_mode": intent.execution_mode,
+                    "read_write_boundary": intent.read_write_boundary,
+                    "intent_source": (
+                        "authored_eval_contract"
+                        if self.evaluation_mode and intent.intent_family != "general"
+                        else "runtime_default"
+                    ),
                 },
                 event_sink=event_sink,
             )
@@ -134,6 +144,8 @@ class AgentKernel:
                 {
                     "planner": provider.name if provider else "provider_unavailable",
                     "model": provider.model if provider else "",
+                    "candidate_policy": "registry_connector_role_mandate_governance_intersection",
+                    "cohort": intent.cohort,
                 },
                 event_sink=event_sink,
             )
@@ -143,6 +155,7 @@ class AgentKernel:
                     prompt,
                     settings,
                     provider=provider,
+                    intent=intent,
                     event_sink=event_sink,
                 )
             else:
@@ -182,6 +195,7 @@ class AgentKernel:
         settings: Any,
         *,
         provider: Any | None = None,
+        intent: Any | None = None,
         event_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         llm = provider if provider is not None else self._get_chat_provider(settings)
@@ -198,7 +212,7 @@ class AgentKernel:
             tool_call_sink=lambda record: self._record_tool_call(run_id, record),
         )
         executor = self._build_executor(run_id, event_sink=event_sink)
-        result: PlannerResult = planner.run(prompt, executor)
+        result: PlannerResult = planner.run(prompt, executor, intent=intent)
 
         observability = _planner_observability(result, provider=llm.name, model=llm.model)
         self._set_run_observability(run_id, observability)
@@ -221,6 +235,17 @@ class AgentKernel:
             "citations": _citations_from_tool_calls(result.tool_calls),
             "graph": self._get_run_state(run_id).get("graph", []),
             "observability": observability,
+            "planning_quality": {
+                "intent_schema": result.intent.schema_version if result.intent else "unknown",
+                "plan_schema": result.tool_plan.schema_version if result.tool_plan else "unknown",
+                "cohort": result.intent.cohort if result.intent else "unknown",
+                "candidate_count": result.candidate_count,
+                "repair_count": result.tool_plan.repair_count if result.tool_plan else 0,
+                "policy_projection": (
+                    result.tool_plan.policy_projection if result.tool_plan else "unknown"
+                ),
+                "private_reasoning_stored": False,
+            },
             "disclaimer": "Research output only. Not investment advice.",
         }
         for record in result.tool_calls:

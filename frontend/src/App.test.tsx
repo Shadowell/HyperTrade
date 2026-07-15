@@ -298,7 +298,7 @@ test("renders harness observability from live overview", async () => {
   expect(screen.queryByText("策略实验室")).not.toBeInTheDocument();
   expect(screen.queryByText("实盘审批")).not.toBeInTheDocument();
   expect(screen.queryByText("行情工具")).not.toBeInTheDocument();
-  expect(screen.queryByText("智能体评测")).not.toBeInTheDocument();
+  expect(screen.getByText("智能体评测")).toBeInTheDocument();
   expect(screen.queryByText("完整回测")).not.toBeInTheDocument();
   expect(screen.queryByText("转发飞书")).not.toBeInTheDocument();
   expect(screen.queryByText("禁用")).not.toBeInTheDocument();
