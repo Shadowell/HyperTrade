@@ -192,11 +192,13 @@ facts bind the exact patch/artifact hash, target contract and idempotency key. A
 proposal fact only: it does not apply a patch, call BitPro, create a strategy, start paper trading or
 submit an order. Replays with the same idempotency key must have identical canonical content.
 
-Production and staging instantiate the sandbox in fail-closed mode. If a rootless Docker/OCI adapter
-has not been configured, the authenticated API returns `503` instead of executing candidate code on
-the application host. The Sprint 116 deployment canary must provide network namespace denial,
-read-only filesystem, non-root UID, cgroup/pids limits, no secrets and no host Docker socket before
-the flag can be enabled.
+Production and staging instantiate the sandbox in fail-closed mode. Candidate code is submitted over
+a Unix-domain socket to a distinct Compose service rather than executing in the API container. That
+service runs as UID/GID `65532`, has no network namespace, no provider secrets, no BitPro mount, no
+Docker socket, a read-only filesystem, a bounded tmpfs and cgroup/pids limits. It validates the file
+map again and creates a new temporary workspace per fixed command. If its immutable image digest or
+socket service is unavailable, the authenticated API returns `503` instead of executing a host/API
+subprocess.
 
 ## Sprint 116 Full Cutover, Professional UX & Readiness
 
@@ -223,14 +225,14 @@ market, strategy, portfolio, execution, context and delivery behavior; its retai
 only check outcomes and aggregate sizes. Missing conversation context or public answer-stream support
 is a visible `not_supported` result, never a pass.
 
-Production sandbox activation is explicit. `AGENT_STRATEGY_SANDBOX_IMAGE` must name a reviewed,
-immutable OCI image using `@sha256:<64 lowercase hex>`; tags, including `:latest`, are rejected.
-When `APP_ENV` is production/staging and that digest is absent or invalid, the API returns 503 and
-no host subprocess is started. When configured, `DockerSandboxRunner` invokes `docker run` with network
-`none`, read-only root filesystem, bounded tmpfs, dropped capabilities, `no-new-privileges`,
-non-root UID, cgroup memory/CPU/pid limits, read-only workspace/guard mounts and no Docker socket.
-The image still requires an operator canary proving rootless daemon configuration, secret absence
-and timeout/process-group cleanup before the feature flag is enabled.
+Production sandbox activation is explicit. `AGENT_STRATEGY_SANDBOX_IMAGE` must name an immutable
+`repository@sha256:<64 lowercase hex>` image identity; the deployment script derives a
+`local@sha256:...` identity from the reviewed service image. Tags, including `:latest`, are rejected.
+The API binds every UDS request to that digest, and the service rejects a mismatch. When
+`APP_ENV` is production/staging and the digest or service socket is absent, the API returns 503 and
+no host/API subprocess is started. The operator canary must still prove the deployed service has no
+network, secret, BitPro or Docker-socket access and that resource/timeout cleanup is enforced before
+the feature flag is enabled.
 
 The initial Sprint 116 UI/readiness implementation passed its local checks, but a subsequent
 completion audit reopened the Sprint: the default chat API, local CLI/TUI and worker still retain

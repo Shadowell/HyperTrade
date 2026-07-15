@@ -99,7 +99,7 @@ HyperTrade is a self-hosted Agent runtime that connects LLM-powered reasoning wi
 | Monitoring & Alerts | Read-only monitors for paper strategies, connector health, library freshness | Production |
 | Evaluation Suite | Deterministic evals for tool choice, RAG, Memory, risk, report quality | Production |
 | Agent Task OS | Durable sessions, tasks, checkpoints, cursor events, controls, leases, and recovery | Production |
-| Professional Mission Runtime | Strict Mission/Plan/Step contracts, immutable events, hard budgets, safe-point controls, catalog-bounded planning and Mission-first CLI/TUI/Web projections | Local cutover ready; production canary pending |
+| Professional Mission Runtime | Strict Mission/Plan/Step contracts, immutable events, hard budgets, safe-point controls, catalog-bounded planning, Mission-first CLI/TUI/Web projections, and an isolated strategy sandbox service | Local cutover ready; production worker and sandbox canaries pending |
 | Research Triggers | Durable schedule/regime/drift/data/eval triggers with quotas, dedupe, and kill switch | Production (disabled by default) |
 | World Model | Portfolio state tracking and defensive action scheduling | Experimental |
 
@@ -510,7 +510,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Portfolio Evidence Data Plane | Production (Sprint 108) |
 | Champion–Challenger Paper Incubation | Production (Sprint 109) |
 | Shadow Portfolio Governance | Production (Sprint 110) |
-| Professional Agent Runtime V2 | Local Sprint 116 cutover implemented; production worker/rootless-sandbox canaries pending |
+| Professional Agent Runtime V2 | Local Sprint 116 cutover implemented; production worker/isolated-sandbox canaries pending |
 
 ### Planned (V3+)
 

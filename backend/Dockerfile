@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS runtime
+FROM ghcr.io/astral-sh/uv@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -31,5 +31,15 @@ FROM runtime AS agent-eval
 COPY scripts ./scripts
 
 RUN uv sync --frozen --no-dev --extra agent-evals
+
+# The sandbox is a distinct non-root process image. It includes the fixed
+# lint/test toolchain but never receives provider credentials or a Docker socket.
+FROM runtime AS sandbox
+
+RUN uv sync --frozen
+
+USER 65532:65532
+
+CMD ["python", "-m", "hypertrade.sandbox_service"]
 
 FROM runtime AS production

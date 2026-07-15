@@ -5,8 +5,8 @@
 **IN PROGRESS — implementation cutover is locally verified; operational Gate M remains open.** The
 completion audit found legacy default paths and reopened the Sprint. The current local slice routes
 the API/CLI/TUI/worker Mission surfaces through the canonical ledger and archives legacy write APIs
-when the canary reaches 100%. Production canaries remain pending because this environment has no
-reviewed rootless Docker image/digest or deployed worker recovery evidence.
+when the canary reaches 100%. Production canaries remain pending until the digest-bound isolated
+sandbox service and deployed worker recovery have been exercised.
 
 ## Evidence
 
@@ -36,10 +36,11 @@ reviewed rootless Docker image/digest or deployed worker recovery evidence.
   authenticated Mission SSE endpoint tails cursor events until terminal state; the API process does
   not inline-dispatch that Mission.
 - Readiness assertions fail if an unsafe dispatch or non-fail-closed write scope is reported.
-- Production/staging without an immutable `AGENT_STRATEGY_SANDBOX_IMAGE` digest constructs no host
-  fallback and returns 503 when the sandbox endpoint is called; mutable image tags are rejected.
-- Configured container adapter has no host Docker socket, uses network `none`, read-only mounts,
-  dropped capabilities, non-root UID and bounded resources.
+- Production/staging without an immutable `AGENT_STRATEGY_SANDBOX_IMAGE` digest and UDS sandbox service
+  constructs no host/API fallback and returns 503 when the sandbox endpoint is called; mutable image
+  tags are rejected.
+- Configured sandbox service has no Docker socket, uses network `none`, a read-only root filesystem,
+  dropped capabilities, non-root UID, bounded tmpfs and bounded resources.
 
 ## Blocking scope still open
 
@@ -47,11 +48,11 @@ reviewed rootless Docker image/digest or deployed worker recovery evidence.
 - Subscribe public mission progress to worker-owned event delivery for long runs. The current stream
   emits a prompt acceptance event immediately, then follows the worker-owned Mission before it
   projects evidence and conclusion; it is not yet a production worker-stream proof.
-- Run the pinned rootless sandbox image canary and record production health/migration evidence.
+- Run the digest-bound isolated sandbox-service canary and record production health/migration evidence.
 
 ## Deferred operational gate
 
-Run a deployment canary with a pinned reviewed rootless image. Verify network denial, secret absence,
-resource/timeout termination, digest capture and migration/rollback before setting
+Run a deployment canary with the digest-bound isolated sandbox service. Verify network denial, secret
+absence, resource/timeout termination, digest capture and migration/rollback before setting
 `AGENT_STRATEGY_SANDBOX_ENABLED=true`. Do not enable paper/live/order/capital actions as part of
 this canary.

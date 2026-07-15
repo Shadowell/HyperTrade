@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     dynamic_team_enabled: bool = Field(default=False, alias="AGENT_DYNAMIC_TEAM_ENABLED")
     strategy_sandbox_enabled: bool = Field(default=False, alias="AGENT_STRATEGY_SANDBOX_ENABLED")
     strategy_sandbox_image: str = Field(default="", alias="AGENT_STRATEGY_SANDBOX_IMAGE")
+    strategy_sandbox_socket_path: str = Field(
+        default="/run/hypertrade-sandbox/runner.sock",
+        alias="AGENT_STRATEGY_SANDBOX_SOCKET_PATH",
+    )
     research_triggers_enabled: bool = Field(default=False, alias="RESEARCH_TRIGGERS_ENABLED")
     research_trigger_poll_interval_seconds: float = Field(
         default=10.0,

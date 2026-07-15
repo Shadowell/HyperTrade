@@ -1,8 +1,8 @@
 # Sprint 116 - Full Cutover, Professional UX & Readiness
 
 > 状态：Active — 2026-07-16 completion audit reopened 后，Mission-first API/CLI/TUI/worker 的本地
-> 切换与 legacy-write archive 已实现。Gate M 仍不能宣称完成：生产 worker recovery、rootless sandbox
-> image canary 和隔离长任务证明尚未在本环境运行。
+> 切换与 legacy-write archive 已实现。Gate M 仍不能宣称完成：生产 worker recovery、digest-bound
+> isolated sandbox-service canary 和隔离长任务证明尚未在本环境运行。
 
 ## Goal
 
@@ -22,7 +22,8 @@ resume、cancel 或 steer；系统不以模型文字宣称完成，不放宽 pap
   工具和审批状态作为独立审计/事件面，不能混入默认结论。
 - 隔离 `operator_answer_golden_v1`：覆盖市场、策略、组合、执行、上下文和交付场景；真实运行产物
   只能保留 case 级通过/失败、长度和聚合计数，不能保存提示、回答正文、工具参数、原始结果或凭据。
-- Sprint 115 rootless container adapter deployment contract；未配置时生产继续 fail-closed。
+- Sprint 115 digest-bound isolated sandbox service deployment contract；未配置或 IPC 不可用时生产继续
+  fail-closed。
 - 旧 Mission 写路径审计、feature flag/canary、README/architecture/progress/QA 更新。
 
 ## Out of scope
@@ -44,8 +45,8 @@ resume、cancel 或 steer；系统不以模型文字宣称完成，不放宽 pap
   artifact ref，缺失数据时必须拒绝补全并给出一个具体的安全下一步。
 - `operator_answer_golden_v1` 至少 24 个场景；多轮指代和公开 answer/evidence stream 尚未支持时，
   隔离评测必须明确报告 `not_supported`，不得计为通过。
-- 生产 `AGENT_STRATEGY_SANDBOX_ENABLED` 默认关闭；无 rootless container adapter 时 HTTP 503，
-  不能执行宿主 subprocess。
+- 生产 `AGENT_STRATEGY_SANDBOX_ENABLED` 默认关闭；无 digest-bound isolated sandbox service 时 HTTP
+  503，不能执行宿主或 API subprocess。
 - README、技术架构、QA、progress 和 active contract 记录实际验证，不声称未做的部署/截图/生产 canary。
 
 ## Verification

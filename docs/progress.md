@@ -22,14 +22,14 @@
 - Added deterministic professional readiness coverage with 26 cases and explicit failure checks for
   unsafe dispatch and write-scope bypass. Focused Mission/sandbox/readiness tests passed 43 cases;
   frontend lint, 9 frontend tests, TypeScript build, Ruff and strict mypy passed.
-- Added an explicit `DockerSandboxRunner` contract and `AGENT_STRATEGY_SANDBOX_IMAGE`. Production and
-  staging remain fail-closed (503) without a configured rootless image; no production canary is
-  claimed in this local run.
+- Replaced the unusable API-side Docker runner with a digest-bound Unix-socket sandbox service.
+  Production/staging remain fail-closed (503) unless the non-root, networkless service and its immutable
+  image digest are both available; no production sandbox canary is claimed in this local run.
 - Completion audit found that the default `/api/agent/runs`, local CLI, Textual task creation and
   worker still execute/write through legacy `AgentKernel`/`AgentTask`. The prior UI/readiness result
   is therefore insufficient for the roadmap's full-cutover requirement. Sprint 116 is active again:
   migrate the default controlled entrypoint to Mission Runtime, retain legacy records as read-only
-  history, then run the rootless-container and production canaries. No live/paper/order/capital
+  history, then run the isolated-sandbox-service and production canaries. No live/paper/order/capital
   permission was enabled.
 - The first reopened cutover slice is implemented locally: application composition now uses a
   provider-backed but catalog-bounded research planner with deterministic fail-closed fallback.
@@ -82,7 +82,7 @@
   assignment/context/artifact provenance, emits content-addressed patch/source/command/manifest
   metadata, persists `agent_sandbox_artifacts` through migration `0027_agent_sandbox`, bounds output
   and process lifetime, kills timeout process groups, and rejects review idempotency-key tampering.
-  Production/staging fail closed with HTTP 503 until a rootless container adapter is configured;
+  Production/staging fail closed with HTTP 503 until an isolated sandbox service is configured;
   no BitPro import or paper/live/order action is performed by review acceptance. Focused acceptance
   passed 20 tests; Ruff and strict mypy passed. `./scripts/check.sh` passed frontend lint/test/build,
   Ruff, mypy and 605 Python tests in 131.98s. Gate L is locally closed; Sprint 116 is the remaining

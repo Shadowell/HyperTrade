@@ -10,10 +10,41 @@ if [ ! -f "$ROOT_DIR/.env" ]; then
   exit 1
 fi
 
-mkdir -p "$ROOT_DIR/data/postgres" "$ROOT_DIR/logs" "$ROOT_DIR/workspace/strategies" "$ROOT_DIR/deploy"
+mkdir -p \
+  "$ROOT_DIR/data/postgres" \
+  "$ROOT_DIR/logs" \
+  "$ROOT_DIR/workspace/strategies" \
+  "$ROOT_DIR/workspace/sandbox-ipc" \
+  "$ROOT_DIR/deploy"
+chown 65532:65532 "$ROOT_DIR/workspace/sandbox-ipc"
+chmod 0750 "$ROOT_DIR/workspace/sandbox-ipc"
 
-echo "[deploy] building api, worker, and optional TUI client images"
-docker compose build api worker cli
+echo "[deploy] building api, worker, sandbox, and optional TUI client images"
+docker compose build api worker sandbox cli
+
+# The service image is built from this reviewed release. Persist its immutable
+# local content digest so the API and sandbox reject mismatched IPC requests.
+sandbox_image_id="$(docker image inspect hypertrade-sandbox:latest --format '{{.Id}}')"
+sandbox_digest="local@${sandbox_image_id}"
+python3 - "$ROOT_DIR/.env" "$sandbox_digest" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+digest = sys.argv[2]
+lines = path.read_text(encoding="utf-8").splitlines()
+updated = False
+result: list[str] = []
+for line in lines:
+    if line.startswith("AGENT_STRATEGY_SANDBOX_IMAGE="):
+        result.append(f"AGENT_STRATEGY_SANDBOX_IMAGE={digest}")
+        updated = True
+    else:
+        result.append(line)
+if not updated:
+    result.append(f"AGENT_STRATEGY_SANDBOX_IMAGE={digest}")
+path.write_text("\n".join(result) + "\n", encoding="utf-8")
+PY
 
 echo "[deploy] starting postgres"
 docker compose up -d postgres
@@ -22,7 +53,7 @@ echo "[deploy] running database migrations"
 docker compose run --rm api alembic upgrade head
 
 echo "[deploy] starting app services"
-docker compose up -d api worker
+docker compose up -d sandbox api worker
 
 echo "[deploy] installing host cli wrapper"
 install -m 755 "$ROOT_DIR/deploy/hypertrade-host-cli" /usr/local/bin/hypertrade

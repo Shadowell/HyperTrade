@@ -36,6 +36,9 @@ services:
       - "127.0.0.1:3334:3334"
     volumes:
       - ${BITPRO_HOST_DATA_DIR:-/opt/bitpro/data}:/bitpro-data:ro
+      # This is an IPC directory containing only the sandbox UDS. It is not a
+      # Docker socket and the API mount is read-only.
+      - ${AGENT_STRATEGY_SANDBOX_SOCKET_DIR:-/opt/hypertrade/workspace/sandbox-ipc}:/run/hypertrade-sandbox:ro
     secrets:
       - source: codex_auth
         target: hypertrade_codex_auth
@@ -43,6 +46,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      sandbox:
+        condition: service_started
     networks:
       - hypertrade
 
@@ -73,6 +78,35 @@ services:
         condition: service_healthy
     networks:
       - hypertrade
+
+  sandbox:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: sandbox
+    image: hypertrade-sandbox:latest
+    container_name: hypertrade-sandbox
+    restart: unless-stopped
+    command: ["python", "-m", "hypertrade.sandbox_service"]
+    # The service accepts only API-owned Unix-socket requests. It has no
+    # network namespace, provider secret, BitPro volume or Docker socket.
+    network_mode: "none"
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    mem_limit: 256m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m
+    environment:
+      SANDBOX_SOCKET_PATH: /run/hypertrade-sandbox/runner.sock
+      SANDBOX_IMAGE_DIGEST: ${AGENT_STRATEGY_SANDBOX_IMAGE:-}
+    volumes:
+      - ${AGENT_STRATEGY_SANDBOX_SOCKET_DIR:-/opt/hypertrade/workspace/sandbox-ipc}:/run/hypertrade-sandbox:rw
 
   cli:
     profiles: ["cli"]

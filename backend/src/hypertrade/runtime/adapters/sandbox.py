@@ -5,7 +5,6 @@ import difflib
 import os
 import re
 import resource
-import shutil
 import signal
 import subprocess
 import sys
@@ -21,6 +20,7 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 import anyio
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -251,7 +251,7 @@ class SqlSandboxStore(InMemorySandboxStore):
 
 
 class StrategySandbox:
-    """Ephemeral local/CI adapter; production remains flag-off without rootless isolation."""
+    """Ephemeral local/CI adapter; production delegates to isolated IPC service."""
 
     def __init__(
         self,
@@ -269,7 +269,7 @@ class StrategySandbox:
     async def run(self, mission_id: str, request: SandboxRequestV1) -> SandboxRunV1:
         if self.production and self.runner is None:
             raise RuntimeError(
-                "strategy sandbox requires a configured rootless Docker adapter in production"
+                "strategy sandbox requires a configured isolated sandbox service in production"
             )
         files = _validate_files(request.files)
         patch = _patch_manifest(files)
@@ -356,126 +356,128 @@ class StrategySandbox:
     ) -> SandboxCommandResultV1:
         if self.runner is not None:
             return self.runner.execute(command, workspace, guard, self.command_timeout_seconds)
-        argv = _command_argv(command, workspace, guard)
-        started = time.monotonic()
-        env = {
-            "HOME": str(workspace / ".home"),
-            "PATH": "",
-            "PYTHONPATH": str(guard),
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
-            "HYPERTRADE_SANDBOX": "1",
-            "NO_PROXY": "*",
-        }
-        output_file = tempfile.TemporaryFile()  # noqa: SIM115 - closed after bounded read below
-        process: subprocess.Popen[bytes] | None = None
-        try:
-            process = subprocess.Popen(
-                argv,
-                cwd=workspace,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=output_file,
-                stderr=subprocess.STDOUT,
-                preexec_fn=_resource_limits,
-                start_new_session=True,
-            )
-            try:
-                exit_code = process.wait(timeout=self.command_timeout_seconds)
-                status = "passed" if exit_code == 0 else "failed"
-            except subprocess.TimeoutExpired:
-                _terminate_process_group(process)
-                exit_code = None
-                status = "timeout"
-                output_file.seek(0, os.SEEK_END)
-                output_file.write(b"\n[TIMEOUT]")
-        except (OSError, ValueError) as exc:
-            if process is not None:
-                _terminate_process_group(process)
-            output_file.write(f"\n[DENIED] {exc}".encode())
-            status = "denied"
-            exit_code = None
-        finally:
-            output_file.seek(0, os.SEEK_END)
-            output_bytes = output_file.tell()
-            output_file.seek(0)
-        output_hash = _hash_stream(output_file)
-        output_file.seek(0)
-        output = output_file.read(_MAX_OUTPUT_BYTES + 1)
-        output_file.close()
-        duration_ms = int((time.monotonic() - started) * 1_000)
-        preview = output[:_MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
-        return SandboxCommandResultV1(
-            name=command.name,
-            argv=tuple(_public_argv(command)),
-            status=status,
-            exit_code=exit_code,
-            duration_ms=duration_ms,
-            output_preview=preview,
-            output_hash=output_hash,
-            output_bytes=output_bytes,
-            truncated=len(output) > _MAX_OUTPUT_BYTES,
+        return _execute_local_command(command, workspace, guard, self.command_timeout_seconds)
+
+
+def _execute_local_command(
+    command: SandboxCommandV1,
+    workspace: Path,
+    guard: Path,
+    timeout_seconds: float,
+) -> SandboxCommandResultV1:
+    """Execute one fixed command in local CI or the isolated service."""
+
+    argv = _command_argv(command, workspace, guard)
+    started = time.monotonic()
+    env = {
+        "HOME": str(workspace / ".home"),
+        "PATH": "",
+        "PYTHONPATH": str(guard),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "HYPERTRADE_SANDBOX": "1",
+        "NO_PROXY": "*",
+    }
+    output_file = tempfile.TemporaryFile()  # noqa: SIM115 - closed after bounded read below
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        process = subprocess.Popen(
+            argv,
+            cwd=workspace,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=output_file,
+            stderr=subprocess.STDOUT,
+            preexec_fn=_resource_limits,
+            start_new_session=True,
         )
+        try:
+            exit_code = process.wait(timeout=timeout_seconds)
+            status = "passed" if exit_code == 0 else "failed"
+        except subprocess.TimeoutExpired:
+            _terminate_process_group(process)
+            exit_code = None
+            status = "timeout"
+            output_file.seek(0, os.SEEK_END)
+            output_file.write(b"\n[TIMEOUT]")
+    except (OSError, ValueError) as exc:
+        if process is not None:
+            _terminate_process_group(process)
+        output_file.write(f"\n[DENIED] {exc}".encode())
+        status = "denied"
+        exit_code = None
+    finally:
+        output_file.seek(0, os.SEEK_END)
+        output_bytes = output_file.tell()
+        output_file.seek(0)
+    output_hash = _hash_stream(output_file)
+    output_file.seek(0)
+    output = output_file.read(_MAX_OUTPUT_BYTES + 1)
+    output_file.close()
+    duration_ms = int((time.monotonic() - started) * 1_000)
+    preview = output[:_MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
+    return SandboxCommandResultV1(
+        name=command.name,
+        argv=tuple(_public_argv(command)),
+        status=status,
+        exit_code=exit_code,
+        duration_ms=duration_ms,
+        output_preview=preview,
+        output_hash=output_hash,
+        output_bytes=output_bytes,
+        truncated=len(output) > _MAX_OUTPUT_BYTES,
+    )
 
 
-class DockerSandboxRunner:
-    """Rootless Docker/OCI runner; no host Docker socket is mounted by this adapter."""
+class UdsSandboxRunner:
+    """Submit source only to the distinct non-root sandbox over a Unix socket."""
 
-    def __init__(self, image: str) -> None:
-        self.image = image.strip()
-        if not is_pinned_oci_image(self.image):
+    def __init__(self, image_digest: str, socket_path: str) -> None:
+        self.image_digest = image_digest.strip()
+        self.socket_path = socket_path.strip()
+        if not is_pinned_oci_image(self.image_digest):
             raise ValueError("production sandbox image must be pinned by sha256 digest")
+        if not self.socket_path.startswith("/"):
+            raise ValueError("sandbox socket path must be absolute")
 
     def execute(
         self, command: SandboxCommandV1, workspace: Path, guard: Path, timeout_seconds: float
     ) -> SandboxCommandResultV1:
-        docker = shutil.which("docker")
-        if not docker or not self.image:
-            raise RuntimeError("rootless Docker sandbox runner is unavailable")
-        argv = [
-            docker,
-            "run",
-            "--rm",
-            "--network",
-            "none",
-            "--read-only",
-            "--tmpfs",
-            "/tmp:rw,nosuid,nodev,noexec,size=64m",
-            "--cap-drop=ALL",
-            "--security-opt",
-            "no-new-privileges",
-            "--pids-limit",
-            "32",
-            "--memory",
-            "256m",
-            "--cpus",
-            "1",
-            "--user",
-            "65532:65532",
-            "--mount",
-            f"type=bind,src={workspace},dst=/workspace,readonly",
-            "--mount",
-            f"type=bind,src={guard},dst=/guard,readonly",
-            "--workdir",
-            "/workspace",
-            "--env",
-            "HOME=/tmp",
-            "--env",
-            "PYTHONDONTWRITEBYTECODE=1",
-            "--env",
-            "PYTHONPATH=/guard",
-            "--env",
-            "HYPERTRADE_SANDBOX=1",
-            self.image,
-            *_container_argv(command, workspace),
-        ]
-        return _run_bounded_process(command, argv, timeout_seconds)
+        del guard  # The service creates an independent guard and workspace.
+        transport = httpx.HTTPTransport(uds=self.socket_path)
+        try:
+            with httpx.Client(
+                transport=transport,
+                base_url="http://hypertrade-sandbox",
+                timeout=httpx.Timeout(timeout_seconds + 5.0),
+            ) as client:
+                response = client.post(
+                    "/v1/commands",
+                    json={
+                        "image_digest": self.image_digest,
+                        "files": _workspace_files(workspace),
+                        "command": command.model_dump(mode="json"),
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+                response.raise_for_status()
+                return SandboxCommandResultV1.model_validate(response.json())
+        except (httpx.HTTPError, ValueError) as exc:
+            raise RuntimeError("isolated sandbox service is unavailable") from exc
 
 
 def is_pinned_oci_image(image: str) -> bool:
     """Only immutable OCI images are eligible for a production sandbox canary."""
 
     return bool(_OCI_DIGEST_IMAGE.fullmatch(image.strip()))
+
+
+def _workspace_files(workspace: Path) -> dict[str, str]:
+    files: dict[str, str] = {}
+    for path in sorted(workspace.rglob("*")):
+        if path.is_file():
+            files[path.relative_to(workspace).as_posix()] = path.read_text(encoding="utf-8")
+    return _validate_files(files)
 
 
 def _validate_files(files: dict[str, str]) -> dict[str, str]:
@@ -564,76 +566,6 @@ def _command_argv(command: SandboxCommandV1, workspace: Path, guard: Path) -> li
     if not strategies:
         raise ValueError("limited backtest requires a Python strategy file")
     return [sys.executable, str(guard / "limited_backtest.py"), str(strategies[0])]
-
-
-def _container_argv(command: SandboxCommandV1, workspace: Path) -> list[str]:
-    if command.name == "ruff":
-        return [
-            "python",
-            "-m",
-            "ruff",
-            "check",
-            "/workspace/strategies",
-            "/workspace/tests",
-            *command.args,
-        ]
-    if command.name == "pytest":
-        return ["python", "-m", "pytest", "-q", "/workspace/tests", *command.args]
-    strategies = sorted((workspace / "strategies").glob("*.py"))
-    if not strategies:
-        raise ValueError("limited backtest requires a Python strategy file")
-    relative_path = strategies[0].relative_to(workspace)
-    return ["python", "/guard/limited_backtest.py", f"/workspace/{relative_path}"]
-
-
-def _run_bounded_process(
-    command: SandboxCommandV1, argv: list[str], timeout_seconds: float
-) -> SandboxCommandResultV1:
-    started = time.monotonic()
-    output_file = tempfile.TemporaryFile()  # noqa: SIM115 - closed after bounded read below
-    process: subprocess.Popen[bytes] | None = None
-    status: str
-    exit_code: int | None
-    try:
-        process = subprocess.Popen(
-            argv,
-            stdin=subprocess.DEVNULL,
-            stdout=output_file,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-        try:
-            exit_code = process.wait(timeout=timeout_seconds)
-            status = "passed" if exit_code == 0 else "failed"
-        except subprocess.TimeoutExpired:
-            _terminate_process_group(process)
-            status = "timeout"
-            exit_code = None
-            output_file.write(b"\n[TIMEOUT]")
-    except (OSError, ValueError) as exc:
-        if process is not None:
-            _terminate_process_group(process)
-        output_file.write(f"\n[DENIED] {exc}".encode())
-        status = "denied"
-        exit_code = None
-    output_file.seek(0)
-    output_bytes = output_file.seek(0, os.SEEK_END)
-    output_file.seek(0)
-    output_hash = _hash_stream(output_file)
-    output_file.seek(0)
-    output = output_file.read(_MAX_OUTPUT_BYTES + 1)
-    output_file.close()
-    return SandboxCommandResultV1(
-        name=command.name,
-        argv=tuple(_public_argv(command)),
-        status=status,
-        exit_code=exit_code,
-        duration_ms=int((time.monotonic() - started) * 1_000),
-        output_preview=output[:_MAX_OUTPUT_BYTES].decode("utf-8", errors="replace"),
-        output_hash=output_hash,
-        output_bytes=output_bytes,
-        truncated=len(output) > _MAX_OUTPUT_BYTES,
-    )
 
 
 def _public_argv(command: SandboxCommandV1) -> list[str]:

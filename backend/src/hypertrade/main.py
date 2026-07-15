@@ -146,10 +146,10 @@ from hypertrade.runtime.adapters.context_engine import (
 from hypertrade.runtime.adapters.memory_store import InMemoryMissionStore
 from hypertrade.runtime.adapters.research_planner import ProviderBackedResearchPlanner
 from hypertrade.runtime.adapters.sandbox import (
-    DockerSandboxRunner,
     InMemorySandboxStore,
     SqlSandboxStore,
     StrategySandbox,
+    UdsSandboxRunner,
     is_pinned_oci_image,
 )
 from hypertrade.runtime.adapters.sql_store import SqlAlchemyMissionStore
@@ -401,7 +401,10 @@ def create_app(
     )
     production_sandbox = app_settings.app_env.casefold() in {"production", "staging"}
     sandbox_runner = (
-        DockerSandboxRunner(app_settings.strategy_sandbox_image)
+        UdsSandboxRunner(
+            app_settings.strategy_sandbox_image,
+            app_settings.strategy_sandbox_socket_path,
+        )
         if production_sandbox and is_pinned_oci_image(app_settings.strategy_sandbox_image)
         else None
     )
