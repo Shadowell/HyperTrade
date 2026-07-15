@@ -8,9 +8,11 @@ from hypertrade.config import Settings
 from hypertrade.db import Database
 from hypertrade.main import create_app
 from hypertrade.runtime.adapters.sandbox import (
+    DockerSandboxRunner,
     InMemorySandboxStore,
     SqlSandboxStore,
     StrategySandbox,
+    is_pinned_oci_image,
 )
 from hypertrade.runtime.domain.sandbox import ImportReviewV1, SandboxRequestV1
 
@@ -125,6 +127,15 @@ async def test_production_rejects_host_subprocess_fallback() -> None:
     sandbox = StrategySandbox(InMemorySandboxStore(), production=True)
     with pytest.raises(RuntimeError, match="rootless Docker"):
         await sandbox.run("mis_production", request())
+
+
+def test_production_sandbox_image_requires_an_immutable_digest() -> None:
+    pinned = "registry.example/hypertrade-sandbox@sha256:" + "a" * 64
+
+    assert is_pinned_oci_image(pinned)
+    assert not is_pinned_oci_image("registry.example/hypertrade-sandbox:latest")
+    with pytest.raises(ValueError, match="sha256"):
+        DockerSandboxRunner("registry.example/hypertrade-sandbox:latest")
 
 
 @pytest.mark.anyio

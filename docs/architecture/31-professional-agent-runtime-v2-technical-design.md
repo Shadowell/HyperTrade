@@ -223,13 +223,14 @@ market, strategy, portfolio, execution, context and delivery behavior; its retai
 only check outcomes and aggregate sizes. Missing conversation context or public answer-stream support
 is a visible `not_supported` result, never a pass.
 
-Production sandbox activation is explicit. `AGENT_STRATEGY_SANDBOX_IMAGE` selects a reviewed image;
-when `APP_ENV` is production/staging and the image is absent, the API returns 503 and no host
-subprocess is started. When configured, `DockerSandboxRunner` invokes `docker run` with network
+Production sandbox activation is explicit. `AGENT_STRATEGY_SANDBOX_IMAGE` must name a reviewed,
+immutable OCI image using `@sha256:<64 lowercase hex>`; tags, including `:latest`, are rejected.
+When `APP_ENV` is production/staging and that digest is absent or invalid, the API returns 503 and
+no host subprocess is started. When configured, `DockerSandboxRunner` invokes `docker run` with network
 `none`, read-only root filesystem, bounded tmpfs, dropped capabilities, `no-new-privileges`,
 non-root UID, cgroup memory/CPU/pid limits, read-only workspace/guard mounts and no Docker socket.
-The image still requires an operator canary proving rootless daemon configuration, image digest
-pinning, secret absence and timeout/process-group cleanup before the feature flag is enabled.
+The image still requires an operator canary proving rootless daemon configuration, secret absence
+and timeout/process-group cleanup before the feature flag is enabled.
 
 The initial Sprint 116 UI/readiness implementation passed its local checks, but a subsequent
 completion audit reopened the Sprint: the default chat API, local CLI/TUI and worker still retain

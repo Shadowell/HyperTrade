@@ -149,6 +149,7 @@ from hypertrade.runtime.adapters.sandbox import (
     InMemorySandboxStore,
     SqlSandboxStore,
     StrategySandbox,
+    is_pinned_oci_image,
 )
 from hypertrade.runtime.adapters.sql_store import SqlAlchemyMissionStore
 from hypertrade.runtime.adapters.supervisor import (
@@ -394,7 +395,7 @@ def create_app(
     production_sandbox = app_settings.app_env.casefold() in {"production", "staging"}
     sandbox_runner = (
         DockerSandboxRunner(app_settings.strategy_sandbox_image)
-        if production_sandbox and app_settings.strategy_sandbox_image
+        if production_sandbox and is_pinned_oci_image(app_settings.strategy_sandbox_image)
         else None
     )
     strategy_sandbox = StrategySandbox(

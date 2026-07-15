@@ -53,6 +53,9 @@
   ledger for the SQL-leased worker instead of running inline in the API process. Authenticated
   Mission SSE tails that cursor-backed event log until a terminal state, and default chat waits for
   the worker outcome while preserving the public-only event boundary.
+- Production/staging sandbox configuration now accepts only an immutable reviewed OCI image in
+  `repository@sha256:<64 lowercase hex>` form. A tag or missing digest leaves the runner unavailable,
+  so the enabled endpoint remains fail-closed with HTTP 503 and can never execute a host subprocess.
 
 ## Current Baseline
 

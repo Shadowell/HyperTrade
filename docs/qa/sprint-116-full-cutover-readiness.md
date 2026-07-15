@@ -36,8 +36,8 @@ reviewed rootless Docker image/digest or deployed worker recovery evidence.
   authenticated Mission SSE endpoint tails cursor events until terminal state; the API process does
   not inline-dispatch that Mission.
 - Readiness assertions fail if an unsafe dispatch or non-fail-closed write scope is reported.
-- Production/staging without `AGENT_STRATEGY_SANDBOX_IMAGE` constructs no host fallback and returns
-  503 when the sandbox endpoint is called.
+- Production/staging without an immutable `AGENT_STRATEGY_SANDBOX_IMAGE` digest constructs no host
+  fallback and returns 503 when the sandbox endpoint is called; mutable image tags are rejected.
 - Configured container adapter has no host Docker socket, uses network `none`, read-only mounts,
   dropped capabilities, non-root UID and bounded resources.
 

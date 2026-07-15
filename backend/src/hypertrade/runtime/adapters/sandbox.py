@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import difflib
 import os
+import re
 import resource
 import shutil
 import signal
@@ -51,6 +52,7 @@ _FORBIDDEN_IMPORTS = {
 }
 _MAX_WORKSPACE_BYTES = 262_144
 _MAX_OUTPUT_BYTES = 16_384
+_OCI_DIGEST_IMAGE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 
 
 class SandboxStore(Protocol):
@@ -421,6 +423,8 @@ class DockerSandboxRunner:
 
     def __init__(self, image: str) -> None:
         self.image = image.strip()
+        if not is_pinned_oci_image(self.image):
+            raise ValueError("production sandbox image must be pinned by sha256 digest")
 
     def execute(
         self, command: SandboxCommandV1, workspace: Path, guard: Path, timeout_seconds: float
@@ -466,6 +470,12 @@ class DockerSandboxRunner:
             *_container_argv(command, workspace),
         ]
         return _run_bounded_process(command, argv, timeout_seconds)
+
+
+def is_pinned_oci_image(image: str) -> bool:
+    """Only immutable OCI images are eligible for a production sandbox canary."""
+
+    return bool(_OCI_DIGEST_IMAGE.fullmatch(image.strip()))
 
 
 def _validate_files(files: dict[str, str]) -> dict[str, str]:
