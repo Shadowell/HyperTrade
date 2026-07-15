@@ -325,6 +325,12 @@ live-order-intent counts.
 - Sprint 13 live OKX candle input for Backtrader backtests.
 - Sprint 14 Agent acceptance tests for tool selection, traceability, RAG, Memory, strategy research, backtesting, and output quality.
 - Sprint 15 deterministic CLI market shortcuts and clearer Agent run status display.
+- User-directed Operator Console: CLI welcome output prioritizes selected
+  provider/model, explicit Mainnet blocking, natural-language research tasks,
+  and status/review/approval controls instead of a catalog of tool shortcuts or
+  paper mutations. The production deployment can select Codex using a
+  server-local read-only OAuth secret without changing the project-level local
+  default or committing credentials.
 - Sprint 16 structured CLI report rendering that prefers JSON/trace payloads over raw Markdown when possible.
 - Sprint 17 Rich CLI renderer for terminal panels/tables with plain text fallback.
 - Sprint 77 CLI Flight Recorder: `HYPERTRADE_TRACE=summary|full` renders

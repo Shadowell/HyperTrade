@@ -45,6 +45,14 @@ selected candidate through the same deterministic slash-command handler. HyperTr
 still uses the standard readline input boundary here, so live per-keystroke dropdown
 navigation is a future TUI enhancement rather than part of the current CLI loop.
 
+The interactive welcome screen is an **Operator Console**, not a tool catalog. It presents
+the current provider/model, the research workspace, the paper/Testnet approval boundary,
+and an explicit Mainnet block before guiding the operator to natural-language research
+tasks. The welcome screen shows only control-plane entries (`/status`, `/tasks`, `/runs`,
+`/live intents`, `/model`, and `/help`). Deterministic market shortcuts and paper-trading
+lifecycle changes remain available through `/help`, but are intentionally absent from the
+first-run surface.
+
 - `/help`, `/status`, `/model`, `/providers`
 - `/tools`, `/runs`, `/run <run_id>`, `/memory`
 - `/strategy`, `/backtests`
@@ -143,6 +151,11 @@ registry 描述：
 候选会带稳定编号；输入编号即可把该候选交给同一套确定性 slash-command handler 执行。这里仍然
 基于标准 readline 输入边界，因此每个按键实时刷新的下拉式命令面板属于后续 TUI 增强，而不是
 当前 CLI loop 的职责。
+
+交互欢迎页是 **Operator Console**，不是工具目录。它显示当前 Provider/模型、研究工作域、
+模拟盘/Testnet 审批边界以及明确的 Mainnet 阻断状态，并首先引导自然语言研究任务。首页只显示
+`/status`、`/tasks`、`/runs`、`/live intents`、`/model` 和 `/help` 等控制面入口。
+确定性行情快捷命令和模拟盘生命周期修改仍可从 `/help` 使用，但不会出现在首次操作界面。
 
 - `/help`、`/status`、`/model`、`/providers`
 - `/tools`、`/runs`、`/run <run_id>`、`/memory`

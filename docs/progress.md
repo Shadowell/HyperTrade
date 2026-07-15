@@ -4,6 +4,11 @@
 
 - Branch: `main`
 - Harness status: active
+- User-directed sidecar change is active alongside Sprint 115 under
+  `docs/contracts/operator-console-codex-production-provider.md`. It only
+  reframes the CLI welcome surface and activates the existing Codex provider
+  through a server-local read-only secret; it does not alter the sandbox,
+  trading, approval, or mainnet boundaries.
 - Sprint 114 implementation state: completed and production-verified on 2026-07-15. Four reviewed
   read-only roles, deterministic assignment DAGs,
   AnyIO parallel execution, role concurrency limits, atomic token/tool/model/duration reservations,

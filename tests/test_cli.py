@@ -1708,13 +1708,21 @@ def test_render_run_structured_output_renders_bitpro_paper_monitor_snapshot(
     assert "warning/pnl_drop: total_pnl_pct dropped by -2.5%" in output
 
 
-def test_welcome_banner_does_not_repeat_fixed_risk_warning() -> None:
+def test_welcome_banner_prioritizes_tasks_and_operator_controls() -> None:
     output = StringIO()
 
     render_welcome_banner(client=FakeAgentClient(), output=output)
 
     rendered = output.getvalue()
-    assert "HyperTrade" in rendered
+    assert "HyperTrade / Operator Console" in rendered
+    assert "deepseek / deepseek-v4-flash" in rendered
+    assert "START WITH A TASK" in rendered
+    assert "OPERATOR CONTROLS" in rendered
+    assert "MAINNET  BLOCKED" in rendered
+    assert "/tasks" in rendered
+    assert "/live intents" in rendered
+    assert "/paper close" not in rendered
+    assert "Exact ticker shortcut" not in rendered
     assert "风险提示：本工具输出仅用于研究辅助，不构成投资建议。" not in rendered
     assert "Research only. Not investment advice." not in rendered
 
@@ -2695,7 +2703,7 @@ def test_bare_command_starts_chat_loop(capsys) -> None:
     assert client.logged_in is True
     assert client.prompts == ["请做行情归纳"]
     output = capsys.readouterr().out
-    assert "HyperTrade CLI chat" in output
+    assert "HyperTrade / Operator Console" in output
     assert "Run:" not in output
     assert "Tools:" not in output
     assert "# CLI Report" in output
@@ -2720,7 +2728,7 @@ def test_chat_continues_after_remote_stream_disconnect(capsys) -> None:
 
     assert exit_code == 0
     assert client.prompts == ["看下ETH行情"]
-    assert prompts == ["hypertrade> ", "hypertrade> "]
+    assert prompts == ["ht[research]> ", "ht[research]> "]
     output = capsys.readouterr().out
     assert "Remote API connection failed" in output
 

@@ -2353,7 +2353,7 @@ def run_chat(
     history = configure_interactive_history(enabled=input_fn is input and sys.stdin.isatty())
     while True:
         try:
-            prompt = input_fn("hypertrade> ").strip()
+            prompt = input_fn("ht[research]> ").strip()
         except (EOFError, KeyboardInterrupt):
             print("", file=output)
             return
@@ -2372,50 +2372,82 @@ def run_chat(
 
 def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
     color = _banner_colors(output)
+    provider, model = _welcome_model_label(client)
+    divider = f"{color['border']}{'─' * 72}{color['reset']}"
+    print("", file=output)
+    print(f"{color['title']}HyperTrade / Operator Console{color['reset']}", file=output)
     print(
-        f"{color['border']}╔══════════════════════════════════════════════════════════════╗{color['reset']}",
+        f"{color['subtitle']}Research, evidence, and governed execution{color['reset']}",
+        file=output,
+    )
+    print(divider, file=output)
+    print(
+        f"{color['label']}MODEL{color['reset']}  {color['value']}{provider} / {model}"
+        f"{color['reset']}    {color['label']}WORKSPACE{color['reset']}"
+        f"  {color['value']}RESEARCH{color['reset']}",
         file=output,
     )
     print(
-        f"{color['border']}║{color['reset']}"
-        f"{color['title']}                         HyperTrade                          "
-        f"{color['reset']}"
-        f"{color['border']}║{color['reset']}",
+        f"{color['label']}EXECUTION{color['reset']}  {color['warning']}PAPER + TESTNET GATED"
+        f"{color['reset']}    {color['label']}MAINNET{color['reset']}"
+        f"  {color['error']}BLOCKED{color['reset']}",
+        file=output,
+    )
+    print(divider, file=output)
+    print(f"{color['section']}START WITH A TASK{color['reset']}", file=output)
+    print(
+        f"  {color['value']}研究 ETH 的趋势策略，限定 1H 数据并要求样本外验证。{color['reset']}",
         file=output,
     )
     print(
-        f"{color['border']}║{color['reset']}"
-        f"{color['subtitle']}   A crypto trading agent for market research and execution   "
-        f"{color['reset']}"
-        f"{color['border']}║{color['reset']}",
+        f"  {color['value']}查看 momentum_breakout 的模拟盘证据，并给出是否需要人工复核。"
+        f"{color['reset']}",
+        file=output,
+    )
+    print(f"{color['section']}OPERATOR CONTROLS{color['reset']}", file=output)
+    print(
+        f"  {color['cmd']}/status{color['reset']}        Runtime, risk, and session status",
         file=output,
     )
     print(
-        f"{color['border']}╚══════════════════════════════════════════════════════════════╝{color['reset']}",
-        file=output,
-    )
-    print(f"{color['section']}Quick Start{color['reset']}", file=output)
-    print(f"{color['cmd']}- /status{color['reset']}        Runtime and session status", file=output)
-    print(f"{color['cmd']}- /tools{color['reset']}         Registered tool catalog", file=output)
-    print(f"{color['cmd']}- /price ETH{color['reset']}     Exact ticker shortcut", file=output)
-    print(f"{color['cmd']}- /compare ETH SOL{color['reset']} Relative strength", file=output)
-    print(f"{color['cmd']}- /paper status{color['reset']}  Paper trading state", file=output)
-    print(f"{color['cmd']}- /paper close ETH{color['reset']} Close paper position", file=output)
-    print(f"{color['cmd']}- /live intents{color['reset']} Pending order approvals", file=output)
-    print(f"{color['cmd']}- /research ...{color['reset']}  Create strategy research", file=output)
-    print(
-        f"{color['cmd']}- /backtest{color['reset']}      Run backtest from latest research",
+        f"  {color['cmd']}/tasks{color['reset']}         Active workflows and safe-point controls",
         file=output,
     )
     print(
-        f"{color['cmd']}- /help{color['reset']}          Show full slash command list",
+        f"  {color['cmd']}/runs{color['reset']}          Recent research outputs"
+        " and trace entry points",
+        file=output,
+    )
+    print(
+        f"  {color['cmd']}/live intents{color['reset']}  Approval queue for Testnet intents",
+        file=output,
+    )
+    print(
+        f"  {color['cmd']}/model{color['reset']}         Inspect or change this session's provider",
+        file=output,
+    )
+    print(
+        f"  {color['cmd']}/help{color['reset']}          Full operator command inventory",
         file=output,
     )
     print("", file=output)
     print(
-        f"{color['muted']}HyperTrade CLI chat. Type exit, quit, or :q to leave.{color['reset']}",
+        f"{color['muted']}Use natural language for research. "
+        f"Type exit, quit, or :q to leave.{color['reset']}",
         file=output,
     )
+
+
+def _welcome_model_label(client: AgentClient) -> tuple[str, str]:
+    """Read only the selected provider label; a banner must not block chat on status failure."""
+
+    try:
+        status = client.get_model_status()
+    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+        return ("provider", "unavailable")
+    provider = str(status.get("default_provider") or "provider").strip() or "provider"
+    model = str(status.get("model") or "unavailable").strip() or "unavailable"
+    return (provider, model)
 
 
 def _banner_colors(output: TextIO) -> dict[str, str]:
@@ -2430,6 +2462,8 @@ def _banner_colors(output: TextIO) -> dict[str, str]:
         "label": colors["label"],
         "value": colors["value"],
         "muted": colors["muted"],
+        "warning": colors["warning"],
+        "error": colors["error"],
     }
 
 

@@ -15,6 +15,18 @@ Provider records expose:
 
 Secrets are read only from environment variables or server `.env`.
 
+## Production Codex Activation
+
+The project-level default remains DeepSeek so a new local deployment does not
+depend on a ChatGPT OAuth session. A production operator may instead set
+`ACTIVE_CHAT_PROVIDER=codex` and `CODEX_MODEL=gpt-5.4` in the server-only
+`/opt/hypertrade/.env`. Docker Compose reads the server-local
+`CODEX_AUTH_SOURCE_PATH` and mounts it into only the API and worker as the
+read-only `hypertrade_codex_auth` secret. The container receives only
+`CODEX_AUTH_JSON=/run/secrets/hypertrade_codex_auth`; neither the OAuth content
+nor a token is copied into Git, CI, or the environment file. If no source path
+is configured, Compose mounts an empty fallback and Codex remains unavailable.
+
 ## Sprint 25 Update
 
 ProviderRuntime now routes actual chat/planner calls through a `ChatProvider` protocol.
@@ -73,6 +85,17 @@ Provider 状态包含：
 - 支持会话级模型选择时的 model options
 - enabled/missing 状态
 - default 标记
+
+## 生产 Codex 启用
+
+项目级默认值仍是 DeepSeek，因此新的本地部署不依赖 ChatGPT OAuth 会话。生产
+操作员可以只在服务器的 `/opt/hypertrade/.env` 设置
+`ACTIVE_CHAT_PROVIDER=codex` 和 `CODEX_MODEL=gpt-5.4`。Docker Compose 从服务器
+本地的 `CODEX_AUTH_SOURCE_PATH` 读取认证文件，并且只以只读
+`hypertrade_codex_auth` secret 挂载给 API 和 worker。容器只接收
+`CODEX_AUTH_JSON=/run/secrets/hypertrade_codex_auth`；OAuth 内容和 token 都不会
+复制到 Git、CI 或环境文件。未配置 source path 时，Compose 只挂载空 fallback，
+Codex 保持不可用。
 
 密钥只从环境变量或服务器 `.env` 读取。
 
