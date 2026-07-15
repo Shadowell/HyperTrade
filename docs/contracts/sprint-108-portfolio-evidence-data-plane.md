@@ -108,6 +108,8 @@ Manual/production checks:
   质量报告、策略与 pairwise 统计，不保存 equity/return/position/trade/order 序列。
 - `PortfolioEvidenceService` 只暴露 health、paper snapshot、bounded equity curve read adapter；
   Manifest-only Card 仍计入 denominator，缺 paper identity 时不 dispatch BitPro read。
+- snapshot 与 curve 读取独立失败关闭：snapshot 缺失不遮蔽可用 curve，curve 失败会把策略及
+  无任何 available 策略的总体质量标为 `source_unhealthy`，不误报为样本不足。
 - UTC/bucket/horizon 归一化、Decimal returns/volatility/drawdown/correlation、freshness、样本数、
   source digest 和 unknown reason 均在服务端计算；capacity/liquidity/risk contribution 缺事实
   时保持 unknown。
@@ -117,4 +119,4 @@ Manual/production checks:
   API、CLI `/windows`、Textual 和 Web Portfolio 使用同一服务投影。
 - 临时 PostgreSQL 通过全链升级、`0020 -> 0019 -> 0020` 和表存在性检查；完整
   `./scripts/check.sh` 通过 frontend lint/9 tests/build、Ruff、mypy（145 source files）与
-  505 Python tests。生产 migration/read-only smoke 尚待部署。
+  506 Python tests。生产 migration/read-only smoke 尚待修复部署后的最终复验。

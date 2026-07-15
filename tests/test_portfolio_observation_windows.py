@@ -214,6 +214,51 @@ def test_unhealthy_source_and_invalid_points_do_not_create_metrics(
     assert adapter.curve_calls == []
 
 
+def test_snapshot_failure_does_not_block_curve_but_curve_failure_is_unhealthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    monkeypatch.setattr(StrategyCardService, "list", lambda _: [_card("partial", "402")])
+
+    class SnapshotFailureAdapter(ReadAdapter):
+        def paper_snapshot(
+            self, *, strategy_id: int | None = None, instance_id: str | None = None
+        ) -> dict[str, Any]:
+            raise RuntimeError("snapshot unavailable")
+
+    partial = PortfolioEvidenceService(
+        db,
+        adapter=SnapshotFailureAdapter(
+            {402: _curve([100, 101, 103, 102, 105, 107, 106, 109])}
+        ),
+    ).capture(_payload(), actor="test", now=NOW)
+
+    assert partial["status"] == "available"
+    assert partial["strategies"][0]["sample_count"] == 7
+    assert "bitpro_snapshot_read_failed:RuntimeError" in partial["strategies"][0][
+        "unknown_reasons"
+    ]
+
+    class CurveFailureAdapter(ReadAdapter):
+        def paper_equity_curve(
+            self, *, strategy_id: int | None = None, sample_limit: int = 50
+        ) -> dict[str, Any]:
+            raise RuntimeError("curve unavailable")
+
+    failed = PortfolioEvidenceService(
+        db,
+        adapter=CurveFailureAdapter({402: []}),
+    ).capture(
+        _payload(key="portfolio-window-key-curve-failure"),
+        actor="test",
+        now=NOW,
+    )
+
+    assert failed["status"] == "source_unhealthy"
+    assert failed["strategies"][0]["status"] == "source_unhealthy"
+
+
 def test_evidence_module_exposes_no_mutation_adapter_surface() -> None:
     source = (
         Path(__file__).parents[1]

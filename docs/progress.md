@@ -13,7 +13,10 @@
   summary persistence, Decimal/UTC statistics, source/quality idempotency, PortfolioAssessment
   window references and shared API/CLI/Textual/Web projections are implemented. PostgreSQL full
   chain and `0020 -> 0019 -> 0020` pass. Full `./scripts/check.sh` passes frontend lint/9 tests/build,
-  Ruff, mypy over 145 source files and 505 Python tests; production acceptance is pending.
+  Ruff, mypy over 145 source files and 506 Python tests. Initial production capture correctly
+  preserved raw-series/execution boundaries but exposed an overall quality-classification issue;
+  snapshot/curve failures are now isolated and curve failure wins as `source_unhealthy` instead of
+  `insufficient`. Final production acceptance is pending the fix deployment.
 - Sprint 107 implementation state: completed and production-verified on 2026-07-15. The focused
   contract introduces stable mandate-scoped lineage, Manifest-bound versions, immutable Card
   snapshots, fact-driven lifecycle decisions and a fixed-denominator research funnel. It must

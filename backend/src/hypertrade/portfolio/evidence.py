@@ -250,6 +250,9 @@ class PortfolioEvidenceService:
         if strategy_id is not None and source_healthy:
             try:
                 snapshot = dict(self.adapter.paper_snapshot(strategy_id=strategy_id))
+            except Exception as exc:  # no connector payload or exception is persisted
+                unknowns.append(f"bitpro_snapshot_read_failed:{type(exc).__name__}")
+            try:
                 curve = dict(
                     self.adapter.paper_equity_curve(
                         strategy_id=strategy_id,
@@ -257,7 +260,7 @@ class PortfolioEvidenceService:
                     )
                 )
             except Exception as exc:  # no connector payload or exception is persisted
-                unknowns.append(f"bitpro_read_failed:{type(exc).__name__}")
+                unknowns.append(f"bitpro_curve_read_failed:{type(exc).__name__}")
 
         curve_hash = _hash(curve)
         snapshot_hash = _hash(snapshot)
@@ -288,7 +291,7 @@ class PortfolioEvidenceService:
         if strategy_id is None:
             status = "no_window"
         elif not source_healthy or any(
-            value.startswith("bitpro_read_failed") for value in unknowns
+            value.startswith("bitpro_curve_read_failed") for value in unknowns
         ):
             status = "source_unhealthy"
         elif freshness == "stale":
@@ -381,11 +384,12 @@ def _quality(
     identity_count = sum(bool(row["bitpro_strategy_id"]) for row in summaries)
     fetched_count = sum(row["status"] not in {"no_window", "source_unhealthy"} for row in summaries)
     available = sum(row["status"] == "available" for row in summaries)
+    source_unhealthy = sum(row["status"] == "source_unhealthy" for row in summaries)
     stale = sum(row["status"] == "stale" for row in summaries)
     insufficient = sum(row["status"] == "insufficient" for row in summaries)
     if denominator == 0:
         status = "no_cards"
-    elif not source_healthy:
+    elif not source_healthy or (source_unhealthy and not available):
         status = "source_unhealthy"
     elif identity_count == 0:
         status = "no_window"
