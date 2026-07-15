@@ -20,6 +20,7 @@ class FakeWorkbenchClient:
         self.trigger_controls: list[tuple[str, str, str]] = []
         self.governance_controls: list[tuple[str, str, str]] = []
         self.portfolio_reviews: list[tuple[str, str, str, str]] = []
+        self.window_captures = 0
 
     def list_agent_sessions(self) -> list[dict[str, Any]]:
         return [{"id": "sess_1", "title": "TUI session", "status": "active"}]
@@ -197,6 +198,23 @@ class FakeWorkbenchClient:
                 ],
             }
         ]
+
+    def list_portfolio_observation_windows(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "pwin_1",
+                "status": "available",
+                "quality": {
+                    "coverage_ratio": "0.50000000",
+                    "available_count": 1,
+                    "denominator": 2,
+                },
+            }
+        ]
+
+    def capture_portfolio_observation_window(self) -> dict[str, Any]:
+        self.window_captures += 1
+        return self.list_portfolio_observation_windows()[0]
 
     def list_strategy_cards(self) -> list[dict[str, Any]]:
         return [

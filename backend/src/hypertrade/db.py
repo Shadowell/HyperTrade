@@ -394,6 +394,30 @@ class StrategyLifecycleReview(Base, TimestampMixin):
     decided_by: Mapped[str] = mapped_column(String(128), index=True)
 
 
+class PortfolioObservationWindow(Base, TimestampMixin):
+    """Immutable bounded statistics; raw BitPro time series are never persisted here."""
+
+    __tablename__ = "portfolio_observation_windows"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("pwin"))
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    policy_version: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    horizon_days: Mapped[int] = mapped_column(Integer, index=True)
+    bucket_minutes: Mapped[int] = mapped_column(Integer, index=True)
+    window_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    source_hash: Mapped[str] = mapped_column(String(64), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    source_refs_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    quality_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    strategy_summaries_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    pairwise_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
 class Job(Base, TimestampMixin):
     __tablename__ = "jobs"
 

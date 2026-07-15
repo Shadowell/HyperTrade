@@ -44,6 +44,8 @@ from hypertrade.db import AgentRun, Database, TraceEvent, new_id
 from hypertrade.evals.service import AgentEvalSuite
 from hypertrade.memory.governance import MemoryAssertionReviewV1, MemoryAssertionService
 from hypertrade.memory.service import MemoryService
+from hypertrade.portfolio.evidence import PortfolioEvidenceService
+from hypertrade.portfolio.evidence_schemas import PortfolioObservationCaptureV1
 from hypertrade.portfolio.lifecycle import (
     PortfolioAssessmentRequestV2,
     PortfolioAssessmentService,
@@ -182,6 +184,16 @@ class AgentClient(Protocol):
     ) -> dict[str, Any]: ...
 
     def list_portfolio_assessments(self) -> list[dict[str, Any]]: ...
+
+    def list_portfolio_observation_windows(self) -> list[dict[str, Any]]: ...
+
+    def capture_portfolio_observation_window(self) -> dict[str, Any]: ...
+
+    def get_portfolio_observation_window(self, window_id: str) -> dict[str, Any]: ...
+
+    def diff_portfolio_observation_windows(
+        self, left_id: str, right_id: str
+    ) -> dict[str, Any]: ...
 
     def create_portfolio_assessment(self) -> dict[str, Any]: ...
 
@@ -377,6 +389,10 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     (
         "/portfolio-v2 list|assess|show|diff|review",
         "Inspect bounded portfolio lifecycle assessments and record human review.",
+    ),
+    (
+        "/windows list|capture|show|diff",
+        "Inspect bounded PortfolioObservationWindow data-quality evidence.",
     ),
     ("/rag <query>", "Search project and trading knowledge chunks."),
     ("/evals", "Show deterministic Agent eval status."),
@@ -815,6 +831,28 @@ class AgentApiClient:
 
     def list_portfolio_assessments(self) -> list[dict[str, Any]]:
         return self._get_list("/api/portfolio/assessments", "items")
+
+    def list_portfolio_observation_windows(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/portfolio/observation-windows", "items")
+
+    def capture_portfolio_observation_window(self) -> dict[str, Any]:
+        return self._post_object(
+            "/api/portfolio/observation-windows",
+            {"idempotency_key": new_id("cli_window")},
+        )
+
+    def get_portfolio_observation_window(self, window_id: str) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/portfolio/observation-windows/{quote(window_id, safe='')}"
+        )
+
+    def diff_portfolio_observation_windows(
+        self, left_id: str, right_id: str
+    ) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/portfolio/observation-windows/{quote(left_id, safe='')}"
+            f"/diff/{quote(right_id, safe='')}"
+        )
 
     def create_portfolio_assessment(self) -> dict[str, Any]:
         return self._post_object(
@@ -1682,6 +1720,31 @@ class LocalAgentClient:
     def list_portfolio_assessments(self) -> list[dict[str, Any]]:
         return PortfolioAssessmentService(self.db).list_assessments()
 
+    def _portfolio_evidence_service(self) -> PortfolioEvidenceService:
+        from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
+
+        return PortfolioEvidenceService(
+            self.db,
+            adapter=BitProToolAdapter(BitProMcpClient(settings=self.settings)),
+        )
+
+    def list_portfolio_observation_windows(self) -> list[dict[str, Any]]:
+        return self._portfolio_evidence_service().list()
+
+    def capture_portfolio_observation_window(self) -> dict[str, Any]:
+        return self._portfolio_evidence_service().capture(
+            PortfolioObservationCaptureV1(idempotency_key=new_id("cli_window")),
+            actor="cli_operator",
+        )
+
+    def get_portfolio_observation_window(self, window_id: str) -> dict[str, Any]:
+        return self._portfolio_evidence_service().get(window_id)
+
+    def diff_portfolio_observation_windows(
+        self, left_id: str, right_id: str
+    ) -> dict[str, Any]:
+        return self._portfolio_evidence_service().diff(left_id, right_id)
+
     def create_portfolio_assessment(self) -> dict[str, Any]:
         return PortfolioAssessmentService(self.db).assess(
             PortfolioAssessmentRequestV2(idempotency_key=new_id("cli_portfolio")),
@@ -2303,6 +2366,8 @@ def handle_slash_command(
         handle_skill_command(command, client=client, output=output)
     elif name in {"/portfolio-v2", "/pv2"}:
         handle_portfolio_v2_command(command, client=client, output=output)
+    elif name in {"/windows", "/observation-windows"}:
+        handle_portfolio_window_command(command, client=client, output=output)
     elif name == "/rag":
         handle_rag_command(command, client=client, output=output)
     elif name in {"/evals", "/eval"}:
@@ -3957,6 +4022,52 @@ def handle_skill_command(
         "rollback <active_release_id> <target_release_id> [reason]",
         file=output,
     )
+
+
+def handle_portfolio_window_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split()
+    action = parts[1].lower() if len(parts) > 1 else "list"
+    if action == "list":
+        rows = client.list_portfolio_observation_windows()
+        print("Portfolio observation windows:", file=output)
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:30]:
+            quality = row.get("quality", {})
+            quality = quality if isinstance(quality, dict) else {}
+            print(
+                f"- {row.get('id')} [{row.get('status')}] "
+                f"cards={quality.get('denominator', 0)} "
+                f"available={quality.get('available_count', 0)} "
+                f"coverage={quality.get('coverage_ratio', '0')} "
+                f"window={row.get('horizon_days')}d/{row.get('bucket_minutes')}m",
+                file=output,
+            )
+        return
+    if action == "capture":
+        row = client.capture_portfolio_observation_window()
+        quality = row.get("quality", {})
+        quality = quality if isinstance(quality, dict) else {}
+        print(
+            f"Observation window {row.get('id')} [{row.get('status')}] "
+            f"coverage={quality.get('coverage_ratio', '0')} raw_series=false",
+            file=output,
+        )
+        return
+    if action == "show" and len(parts) == 3:
+        row = client.get_portfolio_observation_window(parts[2])
+        print(json.dumps(row, ensure_ascii=False, indent=2), file=output)
+        return
+    if action == "diff" and len(parts) == 4:
+        row = client.diff_portfolio_observation_windows(parts[2], parts[3])
+        print(json.dumps(row, ensure_ascii=False, indent=2), file=output)
+        return
+    print("Usage: /windows list|capture|show <window_id>|diff <left> <right>", file=output)
 
 
 def handle_portfolio_v2_command(

@@ -69,6 +69,10 @@ class WorkbenchClient(Protocol):
 
     def list_portfolio_assessments(self) -> list[dict[str, Any]]: ...
 
+    def list_portfolio_observation_windows(self) -> list[dict[str, Any]]: ...
+
+    def capture_portfolio_observation_window(self) -> dict[str, Any]: ...
+
     def create_portfolio_assessment(self) -> dict[str, Any]: ...
 
     def review_portfolio_recommendation(
@@ -136,6 +140,7 @@ class WorkbenchState:
     skill_proposals: list[dict[str, Any]] = field(default_factory=list)
     skill_releases: list[dict[str, Any]] = field(default_factory=list)
     portfolio_assessments: list[dict[str, Any]] = field(default_factory=list)
+    portfolio_observation_windows: list[dict[str, Any]] = field(default_factory=list)
     strategy_cards: list[dict[str, Any]] = field(default_factory=list)
     research_funnel: dict[str, Any] = field(default_factory=dict)
     cursor: TaskEventCursor = field(default_factory=TaskEventCursor)
@@ -161,6 +166,10 @@ class WorkbenchStore:
         self.state.skill_proposals = self.client.list_skill_proposals()
         self.state.skill_releases = self.client.list_skill_releases()
         self.state.portfolio_assessments = self.client.list_portfolio_assessments()
+        list_windows = getattr(self.client, "list_portfolio_observation_windows", None)
+        self.state.portfolio_observation_windows = (
+            list_windows() if callable(list_windows) else []
+        )
         list_cards = getattr(self.client, "list_strategy_cards", None)
         self.state.strategy_cards = list_cards() if callable(list_cards) else []
         get_funnel = getattr(self.client, "get_research_funnel", None)
@@ -331,6 +340,13 @@ class WorkbenchStore:
     def create_portfolio_assessment(self) -> dict[str, Any]:
         result = self.client.create_portfolio_assessment()
         self.state.portfolio_assessments = self.client.list_portfolio_assessments()
+        return result
+
+    def capture_portfolio_observation_window(self) -> dict[str, Any]:
+        result = self.client.capture_portfolio_observation_window()
+        self.state.portfolio_observation_windows = (
+            self.client.list_portfolio_observation_windows()
+        )
         return result
 
     def review_portfolio(

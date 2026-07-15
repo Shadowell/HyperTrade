@@ -11,6 +11,7 @@ from hypertrade.db import (
     Database,
     PaperPromotion,
     PortfolioAssessment,
+    PortfolioObservationWindow,
     ResearchExperimentEvidence,
     ResearchMandate,
 )
@@ -21,6 +22,64 @@ from hypertrade.portfolio.lifecycle import (
     PortfolioAssessmentService,
 )
 from sqlalchemy import select
+
+
+def _seed_window(
+    db: Database,
+    *,
+    left: str,
+    right: str,
+    status: str,
+    correlation: str | None,
+    sample_count: int,
+    unknown_reason: str = "",
+) -> str:
+    with db.session() as session:
+        row = PortfolioObservationWindow(
+            schema_version="portfolio_observation_window.v1",
+            policy_version="portfolio_evidence_policy.v1",
+            status="available" if status == "available" else "insufficient",
+            horizon_days=30,
+            bucket_minutes=60,
+            window_start=datetime(2026, 7, 1, tzinfo=UTC),
+            window_end=datetime(2026, 7, 2, tzinfo=UTC),
+            request_hash=f"request-{left}-{right}",
+            source_hash=f"source-{left}-{right}",
+            content_hash=f"content-{left}-{right}",
+            idempotency_key=f"window-{left}-{right}",
+            source_refs_json={},
+            quality_json={"status": status, "coverage_ratio": "1.00000000"},
+            strategy_summaries_json=[
+                {
+                    "card_id": card_id,
+                    "status": status,
+                    "metrics": {
+                        "max_drawdown_pct": "2.00000000",
+                        "capacity": "unknown",
+                        "liquidity": "unknown",
+                        "risk_contribution": "unknown",
+                    },
+                }
+                for card_id in (left, right)
+            ],
+            pairwise_json=[
+                {
+                    "left_card_id": left,
+                    "right_card_id": right,
+                    "status": status,
+                    "correlation": correlation,
+                    "sample_count": sample_count,
+                    "sample_start": "2026-07-01T01:00:00+00:00" if sample_count else None,
+                    "sample_end": "2026-07-01T07:00:00+00:00" if sample_count else None,
+                    "unknown_reason": unknown_reason,
+                    "source_hashes": ["curve-left", "curve-right"],
+                }
+            ],
+            created_by="test",
+        )
+        session.add(row)
+        session.flush()
+        return row.id
 
 
 def _seed_strategy(
@@ -131,6 +190,14 @@ def test_bounded_aligned_correlation_and_shared_exposure_persist_only_summary() 
         strategy_id=102,
         equities=["200", "202", "206", "204", "210", "214", "212", "218"],
     )
+    window_id = _seed_window(
+        db,
+        left=left,
+        right=right,
+        status="available",
+        correlation="1.00000000",
+        sample_count=7,
+    )
 
     assessment = PortfolioAssessmentService(db).assess(
         PortfolioAssessmentRequestV2(
@@ -138,6 +205,7 @@ def test_bounded_aligned_correlation_and_shared_exposure_persist_only_summary() 
             max_series_points=8,
             min_aligned_returns=6,
             idempotency_key="portfolio-correlation-001",
+            observation_window_id=window_id,
         ),
         actor="admin",
         world_state=_world_state(),
@@ -145,7 +213,7 @@ def test_bounded_aligned_correlation_and_shared_exposure_persist_only_summary() 
 
     pair = assessment["pairwise"][0]
     assert pair["correlation_status"] == "available"
-    assert pair["correlation"] == 1.0
+    assert pair["correlation"] == "1.00000000"
     assert pair["sample_count"] == 7
     assert pair["shared_exposures"] == {
         "symbols": ["BTC"],
@@ -185,11 +253,21 @@ def test_insufficient_or_misaligned_series_remains_unknown_without_fake_number()
         equities=["100", "99", "98"],
         start=datetime(2026, 7, 3, tzinfo=UTC),
     )
+    window_id = _seed_window(
+        db,
+        left=left,
+        right=right,
+        status="unknown",
+        correlation=None,
+        sample_count=0,
+        unknown_reason="insufficient_aligned_returns",
+    )
 
     assessment = PortfolioAssessmentService(db).assess(
         PortfolioAssessmentRequestV2(
             strategy_card_ids=[left, right],
             idempotency_key="portfolio-unknown-001",
+            observation_window_id=window_id,
         ),
         actor="admin",
         world_state=_world_state(),

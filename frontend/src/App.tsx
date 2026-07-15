@@ -241,6 +241,22 @@ type PortfolioAssessment = {
   recommendations: PortfolioRecommendation[];
 };
 
+type PortfolioObservationWindow = {
+  id: string;
+  status: string;
+  horizon_days: number;
+  bucket_minutes: number;
+  quality: {
+    denominator: number;
+    available_count: number;
+    coverage_ratio: string;
+    gaps: string[];
+  };
+  strategies: Array<Record<string, unknown>>;
+  pairwise: Array<Record<string, unknown>>;
+  raw_series_persisted: boolean;
+};
+
 type RagHit = {
   source_path: string;
   title: string;
@@ -561,6 +577,10 @@ const copy = {
     portfolioAssessments: "历史评估",
     portfolioUnknowns: "未知项",
     portfolioPairs: "策略对",
+    observationWindows: "观察窗口",
+    windowCoverage: "窗口覆盖率",
+    captureWindow: "采集只读窗口",
+    noObservationWindows: "暂无组合观察窗口",
     hold: "暂缓",
     noPortfolioAssessments: "暂无组合评估",
     initialCash: "初始资金",
@@ -783,6 +803,10 @@ const copy = {
     portfolioAssessments: "Assessment History",
     portfolioUnknowns: "Unknowns",
     portfolioPairs: "Strategy Pairs",
+    observationWindows: "Observation Windows",
+    windowCoverage: "Window Coverage",
+    captureWindow: "Capture Read-only Window",
+    noObservationWindows: "No portfolio observation windows",
     hold: "Hold",
     noPortfolioAssessments: "No portfolio assessments",
     initialCash: "Initial Cash",
@@ -1079,6 +1103,9 @@ function App() {
   const [skillReleases, setSkillReleases] = useState<SkillRelease[]>([]);
   const [governanceReason, setGovernanceReason] = useState("");
   const [portfolioAssessments, setPortfolioAssessments] = useState<PortfolioAssessment[]>([]);
+  const [portfolioObservationWindows, setPortfolioObservationWindows] = useState<
+    PortfolioObservationWindow[]
+  >([]);
   const [portfolioReason, setPortfolioReason] = useState("");
   const [ragQuery, setRagQuery] = useState("risk");
   const [ragHits, setRagHits] = useState<RagHit[]>([]);
@@ -1219,15 +1246,16 @@ function App() {
 
   const portfolioRouteMetrics = useMemo<RouteMetric[]>(() => {
     const latest = portfolioAssessments[0];
+    const latestWindow = portfolioObservationWindows[0];
     return [
       {
-        label: t.portfolioAssessments,
-        value: formatMetricNumber(portfolioAssessments.length),
+        label: t.observationWindows,
+        value: formatMetricNumber(portfolioObservationWindows.length),
         tone: "signal"
       },
       {
-        label: t.strategyCount,
-        value: formatMetricNumber(latest?.strategies.length ?? 0),
+        label: t.windowCoverage,
+        value: latestWindow?.quality.coverage_ratio ?? "0.00000000",
         tone: "violet"
       },
       {
@@ -1241,7 +1269,7 @@ function App() {
         tone: "danger"
       }
     ];
-  }, [portfolioAssessments, t]);
+  }, [portfolioAssessments, portfolioObservationWindows, t]);
 
   const refreshMemoryItems = useCallback(async (query = "") => {
     const path = query ? `/api/memory?query=${encodeURIComponent(query)}` : "/api/memory";
@@ -1337,6 +1365,16 @@ function App() {
     setPortfolioAssessments(Array.isArray(payload.items) ? payload.items : []);
   }, []);
 
+  const refreshPortfolioObservationWindows = useCallback(async () => {
+    const response = await fetch("/api/portfolio/observation-windows", { credentials: "include" });
+    if (!response.ok) {
+      setPortfolioObservationWindows([]);
+      return;
+    }
+    const payload = (await response.json()) as { items?: PortfolioObservationWindow[] };
+    setPortfolioObservationWindows(Array.isArray(payload.items) ? payload.items : []);
+  }, []);
+
   const refreshOverview = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -1349,6 +1387,7 @@ function App() {
         await refreshMonitorAlerts();
         await refreshGovernance();
         await refreshPortfolioAssessments();
+        await refreshPortfolioObservationWindows();
         setHarnessError("");
         return;
       }
@@ -1361,6 +1400,7 @@ function App() {
     refreshMemoryItems,
     refreshMonitorAlerts,
     refreshPortfolioAssessments,
+    refreshPortfolioObservationWindows,
     refreshStrategyCards,
     refreshStrategyLibrary
   ]);
@@ -1493,6 +1533,18 @@ function App() {
     });
     if (response.ok) {
       await refreshPortfolioAssessments();
+    }
+  }
+
+  async function handlePortfolioWindowCapture() {
+    const response = await fetch("/api/portfolio/observation-windows", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idempotency_key: `web_portfolio_window_${Date.now()}` })
+    });
+    if (response.ok) {
+      await refreshPortfolioObservationWindows();
     }
   }
 
@@ -2085,7 +2137,9 @@ function App() {
             <RouteMetricStrip label={t.pageMetrics} metrics={portfolioRouteMetrics} />
             <PortfolioLifecyclePanel
               assessments={portfolioAssessments}
+              observationWindows={portfolioObservationWindows}
               onAssess={handlePortfolioAssessment}
+              onCapture={handlePortfolioWindowCapture}
               onReview={handlePortfolioReview}
               reason={portfolioReason}
               setReason={setPortfolioReason}
@@ -2535,16 +2589,20 @@ type MemoryActivityInsight = {
 
 function PortfolioLifecyclePanel({
   assessments,
+  observationWindows,
   reason,
   setReason,
   onAssess,
+  onCapture,
   onReview,
   t
 }: {
   assessments: PortfolioAssessment[];
+  observationWindows: PortfolioObservationWindow[];
   reason: string;
   setReason: (value: string) => void;
   onAssess: () => Promise<void>;
+  onCapture: () => Promise<void>;
   onReview: (
     assessmentId: string,
     recommendationId: string,
@@ -2565,6 +2623,27 @@ function PortfolioLifecyclePanel({
             <Layers3 size={16} />
             {t.runPortfolioAssessment}
           </button>
+        </div>
+        <div className="mt-4 grid grid-cols-[auto_1fr] gap-3 max-sm:grid-cols-1">
+          <button className="icon-button justify-center" onClick={() => void onCapture()} type="button">
+            <Activity size={15} />
+            {t.captureWindow}
+          </button>
+          {observationWindows[0] ? (
+            <div className="operator-card operator-card-compact" data-tone="signal">
+              <span>
+                {observationWindows[0].status} · {observationWindows[0].horizon_days}d/
+                {observationWindows[0].bucket_minutes}m · raw_series=false
+              </span>
+              <strong className="font-mono">
+                {t.windowCoverage}: {observationWindows[0].quality.coverage_ratio} · available=
+                {observationWindows[0].quality.available_count}/
+                {observationWindows[0].quality.denominator}
+              </strong>
+            </div>
+          ) : (
+            <div className="empty-row">{t.noObservationWindows}</div>
+          )}
         </div>
         <input
           aria-label={t.governanceReason}
@@ -2619,7 +2698,27 @@ function PortfolioLifecyclePanel({
         )}
       </section>
       <section className="panel">
-        <h2 className="section-title">{t.portfolioAssessments}</h2>
+        <h2 className="section-title">{t.observationWindows}</h2>
+        <div className="mt-4 space-y-2">
+          {observationWindows.length === 0 ? (
+            <div className="empty-row">{t.noObservationWindows}</div>
+          ) : (
+            observationWindows.slice(0, 6).map((window) => (
+              <div className="operator-card block" data-tone="signal" key={window.id}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs">{window.id}</span>
+                  <span className="text-xs text-signal">{statusLabel(window.status)}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-ink/55">
+                  <span>{window.quality.available_count}/{window.quality.denominator} available</span>
+                  <span>{window.quality.coverage_ratio} coverage</span>
+                  <span>{window.pairwise.length} pairs</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <h2 className="section-title mt-5">{t.portfolioAssessments}</h2>
         <div className="mt-4 space-y-2">
           {assessments.length === 0 ? (
             <div className="empty-row">{t.noPortfolioAssessments}</div>

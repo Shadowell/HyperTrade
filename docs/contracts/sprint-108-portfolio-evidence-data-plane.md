@@ -101,3 +101,20 @@ Manual/production checks:
   Champion–Challenger paper cohort。
 - 若 BitPro read contract 无法提供时间/身份/point limit 等必要字段，记录 dependency 并保持
   unknown，不扩张为数据库访问或执行权限。
+
+## Implementation Record
+
+- `0020_portfolio_windows` 新增单一 immutable summary 表；保存 request/source/content hash、
+  质量报告、策略与 pairwise 统计，不保存 equity/return/position/trade/order 序列。
+- `PortfolioEvidenceService` 只暴露 health、paper snapshot、bounded equity curve read adapter；
+  Manifest-only Card 仍计入 denominator，缺 paper identity 时不 dispatch BitPro read。
+- UTC/bucket/horizon 归一化、Decimal returns/volatility/drawdown/correlation、freshness、样本数、
+  source digest 和 unknown reason 均在服务端计算；capacity/liquidity/risk contribution 缺事实
+  时保持 unknown。
+- 同一 request/source/quality projection 重用既有窗口；来源或质量变化才追加行。capture time
+  仅为审计元数据，不能制造定时 snapshot 风暴。
+- PortfolioAssessment 改为引用 observation window id/content hash，旧 assessment 保持不可变；
+  API、CLI `/windows`、Textual 和 Web Portfolio 使用同一服务投影。
+- 临时 PostgreSQL 通过全链升级、`0020 -> 0019 -> 0020` 和表存在性检查；完整
+  `./scripts/check.sh` 通过 frontend lint/9 tests/build、Ruff、mypy（145 source files）与
+  505 Python tests。生产 migration/read-only smoke 尚待部署。

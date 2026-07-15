@@ -9,7 +9,11 @@
   read contracts, integrates them into PortfolioAssessment, and exposes shared API/CLI/TUI/Web
   projections. Raw equity/return/position/trade/order series remain BitPro-owned; missing identity,
   unhealthy/stale sources, insufficient alignment and zero variance fail closed. No paper/live/
-  order/capital mutation is permitted.
+  order/capital mutation is permitted. Migration `0020`, strict capture/quality schemas, immutable
+  summary persistence, Decimal/UTC statistics, source/quality idempotency, PortfolioAssessment
+  window references and shared API/CLI/Textual/Web projections are implemented. PostgreSQL full
+  chain and `0020 -> 0019 -> 0020` pass. Full `./scripts/check.sh` passes frontend lint/9 tests/build,
+  Ruff, mypy over 145 source files and 505 Python tests; production acceptance is pending.
 - Sprint 107 implementation state: completed and production-verified on 2026-07-15. The focused
   contract introduces stable mandate-scoped lineage, Manifest-bound versions, immutable Card
   snapshots, fact-driven lifecycle decisions and a fixed-denominator research funnel. It must

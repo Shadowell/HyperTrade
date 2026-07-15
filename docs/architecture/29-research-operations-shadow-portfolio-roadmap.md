@@ -195,6 +195,9 @@ flowchart LR
 
 - Sprint 108 合同已激活；实现只允许 bounded BitPro MCP read adapter、内存统计和 immutable
   summary persistence，禁止原始序列落库及任何 paper/live/order/capital dispatch。
+- `0020` 保存 window-level hash、quality、strategy/pairwise summary；原始点只在 capture 调用
+  栈内存在。PortfolioAssessment 通过 window id/content hash 消费结果，不再独立解释 Monitor
+  Snapshot。API、CLI、Textual 与 Web 只展示服务端 freshness/coverage/unknown 判定。
 
 ## 9. Sprint 109：Champion–Challenger Paper Incubation
 

@@ -247,6 +247,7 @@ class ResearchWorkbenchApp(App[None]):
                 with Horizontal(id="portfolio-actions"):
                     yield Input(placeholder="Assessment ID", id="portfolio-assessment-id")
                     yield Input(placeholder="Recommendation ID", id="portfolio-recommendation-id")
+                    yield Button("Capture", id="portfolio-capture")
                     yield Button("Assess", id="portfolio-assess", variant="primary")
                     yield Button("Accept", id="portfolio-accept", variant="success")
                     yield Button("Hold", id="portfolio-hold", variant="warning")
@@ -439,6 +440,9 @@ class ResearchWorkbenchApp(App[None]):
         if button_id == "portfolio-assess":
             self._create_portfolio_assessment()
             return
+        if button_id == "portfolio-capture":
+            self._capture_portfolio_observation_window()
+            return
         if button_id.startswith("portfolio-"):
             self._request_portfolio_review(button_id.removeprefix("portfolio-"))
             return
@@ -591,6 +595,15 @@ class ResearchWorkbenchApp(App[None]):
             self.notify(f"Assessment failed: {type(exc).__name__}", severity="error")
             return
         self.notify(f"Assessment created: {result.get('id', 'unknown')}")
+        self.call_later(self._render_state, self.store.state)
+
+    def _capture_portfolio_observation_window(self) -> None:
+        try:
+            result = self.store.capture_portfolio_observation_window()
+        except Exception as exc:
+            self.notify(f"Window capture failed: {type(exc).__name__}", severity="error")
+            return
+        self.notify(f"Window captured: {result.get('id', 'unknown')}")
         self.call_later(self._render_state, self.store.state)
 
     def _request_portfolio_review(self, decision: str) -> None:
@@ -783,6 +796,18 @@ class ResearchWorkbenchApp(App[None]):
         stages = funnel.get("stages", {})
         if isinstance(stages, dict) and stages:
             lines.append(" · ".join(f"{key}={value}" for key, value in stages.items()))
+        lines.append("\nOBSERVATION WINDOWS")
+        for window in state.portfolio_observation_windows[:5]:
+            quality = window.get("quality", {})
+            quality = quality if isinstance(quality, dict) else {}
+            lines.append(
+                f"WINDOW · {window.get('id')} · {window.get('status')} · "
+                f"coverage={quality.get('coverage_ratio', '0')} · "
+                f"available={quality.get('available_count', 0)}/"
+                f"{quality.get('denominator', 0)}"
+            )
+        if not state.portfolio_observation_windows:
+            lines.append("No observation windows")
         for card in state.strategy_cards[:10]:
             version = card.get("version", {})
             version = version if isinstance(version, dict) else {}

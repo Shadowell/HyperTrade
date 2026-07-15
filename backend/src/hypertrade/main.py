@@ -74,6 +74,8 @@ from hypertrade.memory.governance import (
 from hypertrade.memory.service import MemoryService
 from hypertrade.monitoring import MonitorService
 from hypertrade.paper.service import PaperTradingService
+from hypertrade.portfolio.evidence import PortfolioEvidenceService
+from hypertrade.portfolio.evidence_schemas import PortfolioObservationCaptureV1
 from hypertrade.portfolio.lifecycle import (
     PortfolioAssessmentRequestV2,
     PortfolioAssessmentService,
@@ -624,6 +626,52 @@ def create_app(
             return PortfolioAssessmentService(database).assess(payload, actor=username)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/portfolio/observation-windows")
+    def capture_portfolio_observation_window(
+        payload: PortfolioObservationCaptureV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return PortfolioEvidenceService(
+                database,
+                adapter=get_bitpro_adapter(),
+            ).capture(payload, actor=username)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/portfolio/observation-windows")
+    def list_portfolio_observation_windows(_: AdminUser) -> dict[str, Any]:
+        return {
+            "items": PortfolioEvidenceService(
+                database,
+                adapter=get_bitpro_adapter(),
+            ).list()
+        }
+
+    @app.get("/api/portfolio/observation-windows/{window_id}")
+    def get_portfolio_observation_window(window_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return PortfolioEvidenceService(
+                database,
+                adapter=get_bitpro_adapter(),
+            ).get(window_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Observation window not found") from exc
+
+    @app.get("/api/portfolio/observation-windows/{left_id}/diff/{right_id}")
+    def diff_portfolio_observation_windows(
+        left_id: str,
+        right_id: str,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return PortfolioEvidenceService(
+                database,
+                adapter=get_bitpro_adapter(),
+            ).diff(left_id, right_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Observation window not found") from exc
 
     @app.get("/api/portfolio/assessments")
     def list_portfolio_assessments(_: AdminUser) -> dict[str, Any]:

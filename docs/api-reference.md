@@ -21,6 +21,18 @@ All endpoints require the administrator session. Reconcile and decisions can wri
 StrategyCard projection/audit tables; no endpoint authorizes BitPro, paper, live, order or capital
 mutation.
 
+## Portfolio Observation Windows
+
+- `POST /api/portfolio/observation-windows` captures bounded read-only BitPro evidence.
+- `GET /api/portfolio/observation-windows` lists immutable summary windows.
+- `GET /api/portfolio/observation-windows/{window_id}` returns one quality/statistics projection.
+- `GET /api/portfolio/observation-windows/{left_id}/diff/{right_id}` compares window status and
+  coverage.
+
+Capture requests accept only bounds and Card selection, never client-supplied statistics or source
+payloads. Responses expose sample window, freshness, source hashes, quality gaps and Decimal strings;
+`raw_series_persisted=false` and `execution_authorized=false` are invariant.
+
 ## Authentication
 
 Most read endpoints are publicly accessible. Write operations and privileged actions require admin session authentication.

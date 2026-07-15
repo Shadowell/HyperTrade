@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import statistics
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from itertools import combinations
 from typing import Any, Literal
@@ -14,9 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import desc, select
 
 from hypertrade.db import (
-    BitProPaperMonitorSnapshot,
     Database,
     PortfolioAssessment,
+    PortfolioObservationWindow,
     StrategyLifecycleReview,
     utc_now,
 )
@@ -45,6 +44,7 @@ class PortfolioAssessmentRequestV2(BaseModel):
     alignment_bucket_minutes: Literal[5, 15, 30, 60, 240, 1440] = 60
     valid_for_minutes: int = Field(default=60, ge=5, le=1_440)
     idempotency_key: str = Field(min_length=8, max_length=128)
+    observation_window_id: str = Field(default="", max_length=32)
 
     @model_validator(mode="after")
     def valid_bounds(self) -> PortfolioAssessmentRequestV2:
@@ -99,9 +99,12 @@ class PortfolioAssessmentService:
             missing_cards = sorted(wanted - {str(card.get("card_id")) for card in cards})
         else:
             missing_cards = []
-        strategy_rows, unknowns = self._strategy_rows(cards, state)
+        observation_window = self._observation_window(payload.observation_window_id)
+        strategy_rows, unknowns = self._strategy_rows(cards, state, observation_window)
         unknowns.extend(f"strategy_card.{card_id}.missing" for card_id in missing_cards)
-        pairwise = self._pairwise(cards, payload)
+        pairwise = self._pairwise(cards, payload, observation_window)
+        if observation_window is None:
+            unknowns.append("portfolio.observation_window_unavailable")
         for pair in pairwise:
             if pair["correlation_status"] != "available":
                 unknowns.append(
@@ -143,6 +146,15 @@ class PortfolioAssessmentService:
                     for card in cards
                     for assertion_id in card.get("memory_assertion_ids", [])
                 }
+            ),
+            "observation_window_id": (
+                observation_window.id if observation_window is not None else ""
+            ),
+            "observation_window_content_hash": (
+                observation_window.content_hash if observation_window is not None else ""
+            ),
+            "observation_window_status": (
+                observation_window.status if observation_window is not None else "unavailable"
             ),
         }
         content = {
@@ -281,12 +293,23 @@ class PortfolioAssessmentService:
         self,
         cards: list[dict[str, Any]],
         world_state: dict[str, Any],
+        observation_window: PortfolioObservationWindow | None,
     ) -> tuple[list[dict[str, Any]], list[str]]:
         regime = str(dict(world_state.get("global_market", {})).get("risk_regime", "unknown"))
+        observation_rows = {
+            str(row.get("card_id")): row
+            for row in (
+                observation_window.strategy_summaries_json
+                if observation_window is not None
+                else []
+            )
+        }
         rows: list[dict[str, Any]] = []
         unknowns: list[str] = []
         for card in cards:
             card_id = str(card["card_id"])
+            observation = observation_rows.get(card_id)
+            observation_metrics = dict(observation.get("metrics", {})) if observation else {}
             lifecycle = _lifecycle_status(str(card.get("paper_status", "unknown")))
             declared = [str(value) for value in card.get("declared_regime_fit", [])]
             regime_fit = (
@@ -296,11 +319,11 @@ class PortfolioAssessmentService:
             )
             if regime_fit == "unknown":
                 unknowns.append(f"strategy.{card_id}.regime_fit")
-            drawdown = card.get("drawdown", "unknown")
+            drawdown = observation_metrics.get("max_drawdown_pct", card.get("drawdown", "unknown"))
             if _decimal(drawdown) is None:
                 unknowns.append(f"strategy.{card_id}.drawdown")
-            capacity = card.get("capacity", "unknown")
-            liquidity = card.get("liquidity", "unknown")
+            capacity = observation_metrics.get("capacity", card.get("capacity", "unknown"))
+            liquidity = observation_metrics.get("liquidity", card.get("liquidity", "unknown"))
             if capacity == "unknown":
                 unknowns.append(f"strategy.{card_id}.capacity")
             if liquidity == "unknown":
@@ -318,105 +341,92 @@ class PortfolioAssessmentService:
                     "factor_exposures": list(card.get("strategy_category", [])),
                     "direction_exposure": card.get("direction_exposure", "unknown"),
                     "drawdown_pct": drawdown,
-                    "risk_contribution": "unknown",
+                    "risk_contribution": observation_metrics.get(
+                        "risk_contribution", "unknown"
+                    ),
                     "capacity": capacity,
                     "liquidity": liquidity,
                     "decay_status": _decay_status(card),
                     "coverage_flags": list(card.get("coverage_flags", [])),
                     "source_refs": dict(card.get("source_refs", {})),
                     "memory_assertion_ids": list(card.get("memory_assertion_ids", [])),
+                    "observation_window_id": (
+                        observation_window.id if observation_window is not None else ""
+                    ),
+                    "observation_status": (
+                        observation.get("status", "unavailable")
+                        if observation is not None
+                        else "unavailable"
+                    ),
                 }
             )
-            unknowns.append(f"strategy.{card_id}.risk_contribution")
+            if observation_metrics.get("risk_contribution", "unknown") == "unknown":
+                unknowns.append(f"strategy.{card_id}.risk_contribution")
+            if observation is None:
+                unknowns.append(f"strategy.{card_id}.observation_window")
         return rows, unknowns
 
     def _pairwise(
         self,
         cards: list[dict[str, Any]],
         payload: PortfolioAssessmentRequestV2,
+        observation_window: PortfolioObservationWindow | None,
     ) -> list[dict[str, Any]]:
-        series = {
-            str(card["card_id"]): self._bounded_returns(
-                str(card.get("bitpro_strategy_id", "")),
-                max_points=payload.max_series_points,
-                bucket_minutes=payload.alignment_bucket_minutes,
+        observed_pairs = {
+            frozenset((str(row.get("left_card_id")), str(row.get("right_card_id")))): row
+            for row in (
+                observation_window.pairwise_json if observation_window is not None else []
             )
-            for card in cards
         }
         rows: list[dict[str, Any]] = []
         for left, right in combinations(cards, 2):
             left_id = str(left["card_id"])
             right_id = str(right["card_id"])
-            left_returns, left_snapshot_ids = series[left_id]
-            right_returns, right_snapshot_ids = series[right_id]
-            common = sorted(set(left_returns) & set(right_returns))
-            correlation: float | None = None
-            reason = ""
-            if len(common) < payload.min_aligned_returns:
-                reason = "insufficient_aligned_returns"
-            else:
-                left_values = [left_returns[key] for key in common]
-                right_values = [right_returns[key] for key in common]
-                try:
-                    correlation = max(
-                        -1.0,
-                        min(1.0, statistics.correlation(left_values, right_values)),
-                    )
-                except statistics.StatisticsError:
-                    reason = "zero_variance_or_invalid_series"
+            source = observed_pairs.get(frozenset((left_id, right_id)))
+            reason = "observation_window_unavailable"
+            if observation_window is not None and (
+                observation_window.bucket_minutes != payload.alignment_bucket_minutes
+            ):
+                reason = "observation_window_bucket_mismatch"
+                source = None
+            elif source is not None:
+                reason = str(source.get("unknown_reason", ""))
+            correlation = source.get("correlation") if source is not None else None
+            available = source is not None and source.get("status") == "available"
             exposures = _shared_exposures(left, right)
             rows.append(
                 {
                     "left_card_id": left_id,
                     "right_card_id": right_id,
-                    "correlation_status": "available" if correlation is not None else "unknown",
-                    "correlation": round(correlation, 6) if correlation is not None else None,
-                    "sample_count": len(common),
-                    "sample_start": common[0] if common else None,
-                    "sample_end": common[-1] if common else None,
+                    "correlation_status": "available" if available else "unknown",
+                    "correlation": correlation if available else None,
+                    "sample_count": int(source.get("sample_count", 0)) if source else 0,
+                    "sample_start": source.get("sample_start") if source else None,
+                    "sample_end": source.get("sample_end") if source else None,
                     "alignment_bucket_minutes": payload.alignment_bucket_minutes,
                     "unknown_reason": reason,
                     "shared_exposures": exposures,
-                    "source_snapshot_ids": sorted(
-                        set(left_snapshot_ids + right_snapshot_ids)
+                    "source_snapshot_ids": (
+                        [
+                            observation_window.id,
+                            *[str(value) for value in source.get("source_hashes", [])],
+                        ]
+                        if observation_window is not None and source is not None
+                        else []
                     ),
                 }
             )
         return rows
 
-    def _bounded_returns(
-        self,
-        strategy_id: str,
-        *,
-        max_points: int,
-        bucket_minutes: int,
-    ) -> tuple[dict[str, float], list[str]]:
-        if not strategy_id:
-            return {}, []
+    def _observation_window(self, window_id: str) -> PortfolioObservationWindow | None:
         with self.db.session() as session:
-            rows = list(
-                reversed(
-                    session.scalars(
-                        select(BitProPaperMonitorSnapshot)
-                        .where(BitProPaperMonitorSnapshot.scope_key == strategy_id)
-                        .order_by(desc(BitProPaperMonitorSnapshot.created_at))
-                        .limit(max_points)
-                    ).all()
-                )
+            if window_id:
+                return session.get(PortfolioObservationWindow, window_id)
+            return session.scalar(
+                select(PortfolioObservationWindow)
+                .order_by(desc(PortfolioObservationWindow.created_at))
+                .limit(1)
             )
-        levels: dict[str, Decimal] = {}
-        for row in rows:
-            equity = _decimal(dict(row.metrics_json).get("latest_equity"))
-            if equity is None:
-                continue
-            levels[_bucket(row.created_at, bucket_minutes)] = equity
-        returns: dict[str, float] = {}
-        previous: Decimal | None = None
-        for key, equity in sorted(levels.items()):
-            if previous is not None and previous != 0:
-                returns[key] = float((equity / previous) - Decimal(1))
-            previous = equity
-        return returns, [row.id for row in rows]
 
     def _world_state(self) -> dict[str, Any]:
         # Local import prevents the legacy WorldState scheduler from depending
@@ -490,8 +500,8 @@ def _recommendations(
             )
         )
     for pair in pairwise:
-        correlation = pair.get("correlation")
-        if isinstance(correlation, (int, float)) and abs(float(correlation)) >= 0.8:
+        correlation = _decimal(pair.get("correlation"))
+        if correlation is not None and abs(correlation) >= Decimal("0.8"):
             pair_ids = [pair["left_card_id"], pair["right_card_id"]]
             evidence_refs = list(pair.get("source_snapshot_ids", []))
             for card_id in pair_ids:
@@ -503,7 +513,7 @@ def _recommendations(
                     "request_risk_budget_review",
                     strategy_card_id="",
                     reason=(
-                        f"High absolute correlation ({float(correlation):.3f}) across "
+                        f"High absolute correlation ({correlation:.3f}) across "
                         f"{pair['sample_count']} aligned returns; request human review only."
                     ),
                     pair_ids=pair_ids,
@@ -610,15 +620,6 @@ def _shared_exposures(left: dict[str, Any], right: dict[str, Any]) -> dict[str, 
             set(left.get("strategy_category", [])) & set(right.get("strategy_category", []))
         ),
     }
-
-
-def _bucket(value: datetime, minutes: int) -> str:
-    aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-    minute = (aware.minute // minutes) * minutes if minutes < 60 else 0
-    if minutes >= 60:
-        hours = max(1, minutes // 60)
-        aware = aware.replace(hour=(aware.hour // hours) * hours)
-    return aware.replace(minute=minute, second=0, microsecond=0).isoformat()
 
 
 def _decimal(value: Any) -> Decimal | None:

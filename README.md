@@ -434,6 +434,10 @@ Sprint 108 builds bounded PortfolioObservationWindow and data-quality summaries 
 BitPro MCP read contracts. HyperTrade stores source refs and statistics only—not complete equity,
 return, position, trade, or order series—and missing/stale inputs remain explicit unknowns. The
 data plane cannot start paper, place live orders, or change capital.
+Operators inspect or capture the same server projection through Web Portfolio, Textual, REST
+`/api/portfolio/observation-windows*`, or CLI `/windows list|capture|show|diff`. PortfolioAssessment
+now references an immutable window id/content hash instead of independently interpreting monitor
+snapshots.
 
 ---
 
