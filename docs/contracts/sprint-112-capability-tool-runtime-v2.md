@@ -1,6 +1,6 @@
 # Sprint 112 - Capability and Tool Runtime V2
 
-> 状态：Implemented / production acceptance pending；Sprint 111 Gate I 已关闭。
+> 状态：Completed；Gate J1 于 2026-07-15 关闭。
 
 ## Goal
 

@@ -4,14 +4,17 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 112 implementation state: implementation and local acceptance complete on 2026-07-15;
-  production acceptance is pending. A reviewed/versioned Capability Catalog, contract/policy hashes,
+- Sprint 112 implementation state: completed and production-verified on 2026-07-15. A
+  reviewed/versioned Capability Catalog, contract/policy hashes,
   pending-only discovery proposals, idempotent administrator reviews, JSON-Schema preflight/output
   validation, deterministic error taxonomy, timeout/circuit handling and bounded/redacted SQL tool
   observations now govern the Mission path. Four built-in read capabilities are active; no discovery,
   paper, live, order or capital permission is auto-enabled. Focused acceptance passed 40 tests. The
   full suite exposed and corrected an unrelated StrategyCard snapshot reconciliation race; the race
-  test passed ten consecutive runs.
+  test passed ten consecutive runs. SHA `e364ee9` deployed in workflow `29427572167`; PostgreSQL
+  `0024 -> 0023 -> 0024`, health and flag-off checks passed. Production exposed exactly four reviewed
+  read capabilities and zero proposals/observations; AgentTask/AgentRun/Mission counts were unchanged.
+  Gate J1 is closed and Sprint 113 Context and Artifact Engine is active.
 - Sprint 111 implementation state: completed and production-verified on 2026-07-15. A clean `hypertrade.runtime` modular core,
   frozen Mission/Plan/Observation contracts, bounded adaptive loop, optimistic event store,
   async SQLAlchemy adapter, migration `0023_agent_missions`, OpenTelemetry spans and authenticated

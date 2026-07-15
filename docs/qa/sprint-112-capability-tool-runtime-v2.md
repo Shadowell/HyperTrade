@@ -2,8 +2,8 @@
 
 ## Verdict
 
-LOCAL PASS. The implementation satisfies Gate J1 locally. Production migration, flag-off and
-read-only canary checks remain required before the gate is closed.
+PASS. The implementation satisfies Gate J1 locally and in production. The Mission execution flag
+remains off and all active capabilities remain reviewed and read-only.
 
 ## Contract Review
 
@@ -34,12 +34,18 @@ read-only canary checks remain required before the gate is closed.
   retained. Its index was stale to the previous baseline, so the result is advisory rather than a
   complete new-module graph.
 
-## Not Checked Yet
+## Production Acceptance
 
-- PostgreSQL `0024 -> 0023 -> 0024` migration round trip.
-- Deployed SHA, health, runtime flag state and production read-only canary.
+- Deployment workflow `29427572167` succeeded at SHA `e364ee9`; API health returned OK.
+- PostgreSQL reached `0024_agent_capabilities`; `0024 -> 0023 -> 0024` passed, followed by API/worker
+  restart and health verification.
+- Counts before and after the migration round trip remained
+  `[AgentTask=4, AgentRun=153, AgentMission=0, active capabilities=4, proposals=0, observations=0]`.
+- `MISSION_RUNTIME_ENABLED=False` remained unchanged.
+- Authenticated Capability API returned exactly four `reviewed` / `read` definitions and a closed
+  `market.summary` circuit. No discovered or write capability was activated.
 
 ## Next
 
-Deploy and execute the remaining production checks. Close Gate J1 only after those pass; then
-activate Sprint 113 Context and Artifact Engine.
+Activate Sprint 113 Context and Artifact Engine. It must preserve all Capability hashes, provenance,
+permission and bounded-observation constraints from this Sprint.
