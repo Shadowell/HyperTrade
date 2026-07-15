@@ -430,6 +430,11 @@ Production acceptance passed on Alembic `0019`: three historical Manifests produ
 three versions and three immutable snapshots, repeated reconcile was idempotent, and no paper or
 execution-side count changed. Gate F is closed; Sprint 108 is the next active slice.
 
+Sprint 108 builds bounded PortfolioObservationWindow and data-quality summaries from approved
+BitPro MCP read contracts. HyperTrade stores source refs and statistics only—not complete equity,
+return, position, trade, or order series—and missing/stale inputs remain explicit unknowns. The
+data plane cannot start paper, place live orders, or change capital.
+
 ---
 
 ## Deployment

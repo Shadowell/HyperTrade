@@ -1,6 +1,6 @@
 # 29 Research Operations 与 Shadow Portfolio 路线图
 
-> 状态：In implementation；Sprint 107 已完成 Gate F，下一阶段为 Sprint 108。
+> 状态：In implementation；Sprint 107 已完成 Gate F，Sprint 108 已激活。
 
 ## 1. 规划目标
 
@@ -190,6 +190,11 @@ flowchart LR
 - 时间错位、样本不足、零方差和来源不健康均失败关闭；
 - 组合页能够区分“无策略”“有策略无窗口”“窗口不足”“证据可用”；
 - 没有从 evidence collection 到 BitPro/paper/live mutation 的路径。
+
+### 8.3 实施状态
+
+- Sprint 108 合同已激活；实现只允许 bounded BitPro MCP read adapter、内存统计和 immutable
+  summary persistence，禁止原始序列落库及任何 paper/live/order/capital dispatch。
 
 ## 9. Sprint 109：Champion–Challenger Paper Incubation
 
