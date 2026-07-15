@@ -57,7 +57,10 @@ def _run_case(
     request = Request(
         f"{base_url}/api/agent/runs",
         data=json.dumps(
-            {"prompt": str(reference["prompt"]), "evaluation_mode": True}
+            {
+                "prompt": str(reference.get("provider_prompt") or reference["prompt"]),
+                "evaluation_mode": True,
+            }
         ).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -80,8 +83,8 @@ def _load_references(path: Path) -> list[dict[str, Any]]:
     if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
         raise ValueError("reference must contain a JSON list of objects")
     for item in payload:
-        if not item.get("case_id") or not item.get("prompt"):
-            raise ValueError("each reference case needs case_id and prompt")
+        if not item.get("case_id") or not item.get("prompt") or not item.get("provider_prompt"):
+            raise ValueError("each V2 reference case needs case_id, prompt, and provider_prompt")
     return [dict(item) for item in payload]
 
 

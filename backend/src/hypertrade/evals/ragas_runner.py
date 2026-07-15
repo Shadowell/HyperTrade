@@ -50,7 +50,9 @@ async def score_trajectories(
             include_arguments=include_arguments,
         )
         messages: list[Any] = [
-            HumanMessage(content=str(reference.get("prompt", ""))),
+            HumanMessage(
+                content=str(reference.get("provider_prompt") or reference.get("prompt", ""))
+            ),
             AIMessage(content="", tool_calls=observed),
         ]
         accuracy = await ToolCallAccuracy().ascore(

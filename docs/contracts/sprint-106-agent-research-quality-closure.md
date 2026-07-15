@@ -109,4 +109,7 @@ Manual/QA：
 - 首次隔离 baseline 在第 2 个 case 因 Codex `ReadTimeout` 返回 503；采集器未删除失败
   case。后续修复把 authored eval 候选集收窄为 0/唯一 required tool，并将 case timeout
   调整为 30–600 秒边界内可配置（默认 300 秒）。
+- 第二次隔离运行暴露 V1 系统故障场景文本与其 required tool 语义不一致。V2 manifest
+  现将确定性 `prompt` 和模型可执行 `provider_prompt` 分离；采集器仅发送后者，两者映射
+  到同一 authored intent，轨迹不保留任一提示词。49 个定向回归测试通过。
 - 隔离 provider 双运行和生产 SHA/health/log 验收尚未执行，因此 Sprint 状态保持 Active。

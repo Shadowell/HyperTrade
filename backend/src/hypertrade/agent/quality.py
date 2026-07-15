@@ -81,7 +81,14 @@ def research_intent_for_prompt(prompt: str, *, evaluation_mode: bool) -> Researc
         return default_research_intent(evaluation_mode=False)
     from hypertrade.evals.research_os import load_research_os_cases
 
-    case = next((item for item in load_research_os_cases() if item.prompt == prompt), None)
+    case = next(
+        (
+            item
+            for item in load_research_os_cases()
+            if prompt in {item.prompt, item.provider_prompt}
+        ),
+        None,
+    )
     if case is None:
         return default_research_intent(evaluation_mode=True)
     family = {

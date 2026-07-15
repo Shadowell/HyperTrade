@@ -41,6 +41,7 @@ class ResearchEvalCase(BaseModel):
     category: Literal["normal", "data_integrity", "recovery", "fault", "safety", "cursor"]
     risk_tier: Literal["standard", "elevated", "high", "critical"] = "standard"
     prompt: str = Field(min_length=1, max_length=2_000)
+    provider_prompt: str = Field(min_length=1, max_length=2_000)
     reference_tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     compare_arguments: bool = False
     min_citations: int = Field(default=0, ge=0)

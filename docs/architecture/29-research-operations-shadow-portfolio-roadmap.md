@@ -276,3 +276,12 @@ SHADOW_PORTFOLIO_ENABLED=false
 - Sprint 107–110 在前一 Gate 完成后分别创建/激活合同。
 - Sprint 96–105 基础路线：`docs/architecture/27-agent-research-os-roadmap.md`
 - 现有评测隔离：`docs/architecture/26-agent-evaluation-foundation.md`
+
+## 16. Sprint 106 实施记录
+
+- `research_os_golden_v2` 使用固定 26-case denominator，并将 authored/system scenario
+  与 provider route instruction 分为 `prompt`、`provider_prompt` 两个必填字段。
+- provider prompt 只用于隔离 API 请求和工具调用评分；sanitized trajectory、质量摘要和
+  comparison artifact 均不保存 prompt、arguments、raw output 或 private reasoning。
+- 两种 prompt 都解析为同一 authored `ResearchIntentV2`，所以候选集仍由 manifest、角色、
+  mandate、connector 和治理策略共同约束，不能通过修改模型提示词扩大权限。
