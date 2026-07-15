@@ -72,6 +72,9 @@
   and Testnet intent summaries. The isolated evaluator seeds one idempotent synthetic fact for each
   surface after migrations, guarded by `HYPERTRADE_EVAL_TARGET=isolated` plus `APP_ENV=evaluation`;
   production receives neither the seeder nor any paper/order/approval call.
+- Context compilation now distinguishes an embedded raw data array from a governed capability schema
+  that merely declares `positions` or `orders`. This prevents a valid paper-summary Mission from
+  failing before its read-only tool runs, while retaining the raw-series rejection boundary.
 - Local CLI full-canary execution now creates only a Mission, and remote CLI sends an idempotency key
   for replay-safe API routing. Mission event SSE honours both `after` and `Last-Event-ID`. A separate
   disabled-by-default Mission worker now uses SQL lease claim/heartbeat/release and terminal lease

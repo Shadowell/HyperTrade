@@ -612,8 +612,16 @@ def _unsafe_value(value: object) -> bool:
 
 
 def _unsafe_source(content: str) -> bool:
-    lowered = content.casefold()
-    return any(f'"{key}"' in lowered for key in _RAW_SERIES_KEYS)
+    """Reject embedded raw series, but retain trusted capability-schema metadata.
+
+    A plan step legitimately declares output fields such as ``positions`` and
+    ``orders``. Those declarations are not raw tool payloads. The context
+    boundary only rejects a field when it actually embeds an array of raw
+    records, so a governed read cannot fail before its tool is invoked.
+    """
+
+    keys = "|".join(re.escape(key) for key in sorted(_RAW_SERIES_KEYS))
+    return bool(re.search(rf'"(?:{keys})"\s*:\s*\[', content, flags=re.IGNORECASE))
 
 
 def _redact_text(text: str) -> str:

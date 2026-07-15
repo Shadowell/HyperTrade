@@ -112,6 +112,23 @@ def test_optional_raw_series_is_dropped_and_secret_assignment_is_redacted() -> N
     assert pack.decisions[1].reason == "unsafe_content"
 
 
+def test_required_capability_schema_with_series_named_fields_is_allowed() -> None:
+    pack = compile_sources(
+        (
+            source(
+                "step:paper_summary",
+                '{"expected_output_schema":{"properties":{"positions":{"type":"array"},'
+                '"orders":{"type":"array"}}}}',
+                required=True,
+                tier=1,
+            ),
+        )
+    )
+
+    assert pack.decisions[0].included is True
+    assert pack.decisions[0].reason == "required"
+
+
 def test_context_source_refuses_wrong_content_hash() -> None:
     with pytest.raises(ValidationError, match="hash mismatch"):
         source("evidence:bad", "content", content_hash="0" * 64)
