@@ -2364,7 +2364,7 @@ def run_chat(
     history = configure_interactive_history(enabled=input_fn is input and sys.stdin.isatty())
     while True:
         try:
-            prompt = input_fn("ht[research]> ").strip()
+            prompt = input_fn("ht> ").strip()
         except (EOFError, KeyboardInterrupt):
             print("", file=output)
             return
@@ -6387,7 +6387,12 @@ def _has_structured_market_tool_output(trace_events: list[Any]) -> bool:
     for event in trace_events:
         if not isinstance(event, dict):
             continue
-        if event.get("tool_name") in supported_tools and isinstance(event.get("output_json"), dict):
+        payload = event.get("output_json")
+        if (
+            event.get("tool_name") in supported_tools
+            and isinstance(payload, dict)
+            and payload.get("found", True)
+        ):
             return True
     return False
 

@@ -2402,6 +2402,43 @@ def test_run_stream_shows_thinking_animation_for_tty() -> None:
     assert "# CLI Report" not in rendered
 
 
+def test_run_stream_preserves_final_report_when_market_symbol_is_not_found(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("HYPERTRADE_RENDERER", "rich")
+
+    class MissingMarketClient:
+        def run_agent_events(self, prompt: str):
+            yield {"event": "run_started", "run_id": "run_missing_market"}
+            yield {"event": "run_completed", "run_id": "run_missing_market"}
+            yield {
+                "event": "final",
+                "run": {
+                    "id": "run_missing_market",
+                    "status": "completed",
+                    "report_markdown": (
+                        "## 结果\n\n"
+                        "未找到 MUUSDT-USDT-SWAP；请确认 OKX 标准合约代码。"
+                    ),
+                    "trace_events": [
+                        {
+                            "tool_name": "market_ticker",
+                            "status": "completed",
+                            "output_json": {"found": False},
+                        }
+                    ],
+                },
+            }
+
+    output = TtyStringIO()
+
+    render_run_stream(MissingMarketClient(), "看下 MUUSDT 合约的行情", output=output)
+
+    rendered = output.getvalue()
+    assert "Agent: completed (run_missing_market)" in rendered
+    assert "未找到 MUUSDT-USDT-SWAP；请确认 OKX 标准合约代码。" in rendered
+
+
 def test_evals_renderer_summarizes_research_os_without_dumping_cases() -> None:
     output = StringIO()
 
@@ -2758,7 +2795,7 @@ def test_chat_continues_after_remote_stream_disconnect(capsys) -> None:
 
     assert exit_code == 0
     assert client.prompts == ["看下ETH行情"]
-    assert prompts == ["ht[research]> ", "ht[research]> "]
+    assert prompts == ["ht> ", "ht> "]
     output = capsys.readouterr().out
     assert "Remote API connection failed" in output
 

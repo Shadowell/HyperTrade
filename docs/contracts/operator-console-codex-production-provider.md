@@ -19,6 +19,9 @@ environment file.
 - Keep local readline history best-effort: an invalid, inaccessible, or
   directory-valued history path must not prevent an interactive session from
   starting, completing commands, or recalling commands in the current session.
+- Preserve the final Agent conclusion when a market tool returns no matching
+  instrument or empty data; an empty structured-tool renderer must never hide
+  the operator-facing explanation and next-step guidance.
 - Add a read-only Docker Compose secret mount for a server-local Codex auth
   file to the API and worker; an empty fallback must leave Codex unavailable
   rather than exposing a secret or weakening the default local setup.
@@ -48,6 +51,8 @@ environment file.
 - Focused CLI and deployment configuration tests, then `./scripts/check.sh`.
 - Focused CLI coverage for a directory-valued history path that skips disk
   persistence while retaining interactive completion and in-session history.
+- A streamed market query with `found=false` still renders its final Agent
+  explanation in both terminal animation and Rich rendering paths.
 - `docker compose config -q` with no Codex source path and with the
   server-local source path.
 - After deployment, verify `/api/harness/overview` reports `codex/gpt-5.4` as
