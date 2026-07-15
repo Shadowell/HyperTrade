@@ -4,9 +4,9 @@
 
 ## 1. 目标
 
-把 HyperTrade 已有的 AgentKernel、Session/Task OS、LangGraph、ToolRegistry、MCP、Memory、
-Evidence、Experiment、评测和操作界面，统一为一个能够长期完成开放式交易研究目标的专业
-Agent Runtime。
+在 HyperTrade 内建立一个现代、内聚、可长期维护的专业 Agent Runtime。现有实现不构成必须
+兼容的内部标准：只保留已经证明可靠的领域事实、外部合同、安全策略和数据；AgentKernel、
+Session/Task OS、固定 Research Graph、客户端与 UI 中不合理的结构允许直接重构、替换和删除。
 
 目标用户只需要描述研究任务，例如：
 
@@ -33,8 +33,25 @@ Agent Runtime。
 | Evaluation | Golden V2、provider baseline、Ragas、安全门禁 | 缺少跨长任务的目标完成、恢复、上下文和协作基准 |
 | Sandbox | Skill 隔离评测、工具审批、执行风险门禁 | 缺少策略代码研发专用的短生命周期隔离工作区 |
 
-结论：当前 HT 是治理良好的领域工作流系统，专业 Agent V2 的重点不是再增加一个模型或
-重写所有服务，而是增加统一的 Mission/Plan/Observation/Replan 控制层。
+结论：当前 HT 是治理良好的领域工作流系统，但 Agent 核心不应继续通过兼容层叠加功能。
+Professional Runtime 采用新的内聚核心和分阶段垂直切换；每完成一个替代切片就删除对应旧
+路径，避免长期双运行时、双状态机和 `legacy/compat/v2` 分支成为新的历史包袱。
+
+## 2.1 保留、重构与删除原则
+
+| 分类 | 对象 | 决策 |
+|---|---|---|
+| 保留 | Evidence、Manifest、StrategyCard、Experiment、审批/风险事实 | 已验证的领域事实与审计记录 |
+| 保留 | MCP、BitPro/OKX 外部稳定合同 | 作为 ports/adapters 重新接入，不复制业务逻辑 |
+| 保留 | ToolPolicy、Approval、idempotency、安全测试 | 权限不可因重构弱化 |
+| 可重构 | PostgreSQL schema、Task/Checkpoint/Event 模型 | 允许迁移到统一 Mission event model |
+| 可替换 | AgentKernel、Planner、TaskExecutor、ResearchGraph 顶层编排 | 新 Runtime 达到切片门禁后删除旧调用路径 |
+| 可替换 | CLI/Web/TUI client projection | 统一 Mission API，不维持永久双接口 |
+| 删除 | 重复状态、固定流程兼容分支、失去调用者的 helper/adapter | 每个 Sprint 设置 deletion budget |
+| 只读归档 | 历史 Run/Task/Trace | 保留审计查询，不允许新 Runtime 双写旧表 |
+
+判断标准不是“以前投入很多”，而是正确性、可测试性、内聚性、可观测性、安全边界和未来
+维护成本。没有事实证明有价值的旧实现，不作为新架构约束。
 
 ## 3. 目标用户工作流
 
@@ -63,22 +80,28 @@ flowchart TD
 
 ## 4. 核心架构原则
 
-1. PostgreSQL 是 Mission、Plan、Step、Event、Checkpoint 的 canonical source；LangGraph 只
-   负责执行状态图，不成为业务事实源。
-2. 不保存模型 private chain-of-thought。只保存结构化 reason code、短 decision summary、
+1. 采用模块化单体与 ports-and-adapters：`runtime/domain` 不依赖 FastAPI、SQLAlchemy、具体
+   provider、MCP 或交易服务；application 只依赖 port protocol，adapter 承担基础设施转换。
+2. PostgreSQL Mission event log 与 projection 是新 Runtime 的 canonical source；LangGraph
+   只负责执行状态图，不成为业务事实源。
+3. 不保存模型 private chain-of-thought。只保存结构化 reason code、短 decision summary、
    source refs、tool observations 和状态转换依据。
-3. 每次模型/工具调用前原子预留 Token、时间、工具调用和并发预算；失败也计入用量。
-4. Replan 不是无限重试：默认最多 3 个 Plan versions、每版最多 12 步、每步最多 2 次
+4. 每次模型/工具调用前原子预留 Token、时间、工具调用和并发预算；失败也计入用量。
+5. Replan 不是无限重试：默认最多 3 个 Plan versions、每版最多 12 步、每步最多 2 次
    attempt；合同可收紧但不能由模型扩大。
-5. 写工具、外部副作用、paper/live/capital 操作继续由既有 ToolPolicy/Approval/Risk gate 决定；
+6. 写工具、外部副作用、paper/live/capital 操作继续由既有 ToolPolicy/Approval/Risk gate 决定；
    Planner 和 Supervisor 不能授予权限。
-6. Tool、Memory、RAG、Evidence 和 Artifact 输入均使用版本/内容哈希；不可复现或过期来源
+7. Tool、Memory、RAG、Evidence 和 Artifact 输入均使用版本/内容哈希；不可复现或过期来源
    显式变成 unknown。
-7. 只读、独立且预算允许的步骤可并行；写步骤、共享状态步骤和人审步骤串行。
-8. 结束必须基于结构化完成条件和验证结果，不以模型声称“完成”为准。
-9. 当前固定 Research Graph 保留为受治理的子工作流；V2 调度它，而不是复制其业务逻辑。
-10. 不引入 Celery/Redis/Temporal 第二套任务真相源；继续使用现有 asyncio worker、PostgreSQL
-    lease、heartbeat 和 outbox/event 模式。达到跨服务规模瓶颈后再单独评估 Temporal。
+8. 只读、独立且预算允许的步骤可并行；写步骤、共享状态步骤和人审步骤串行。
+9. 结束必须基于结构化完成条件和验证结果，不以模型声称“完成”为准。
+10. 固定 Research Graph 只作为迁移期 adapter；动态团队达到能力/安全等价后删除其顶层编排，
+    可复用的角色、schema 和工具下沉到新 ports，不保留永久 legacy runtime。
+11. 不引入 Celery/Redis/Temporal 第二套任务真相源；新 Runtime 使用 async SQLAlchemy/
+    psycopg、PostgreSQL lease/outbox 和 AnyIO structured concurrency。达到跨服务规模瓶颈后
+    再以数据决定是否采用 Temporal。
+12. 不双写新旧状态。迁移使用一次性 backfill 或只读历史 adapter；新 Mission 只写新模型。
+13. 每个 Sprint 同时交付新增能力、迁移切片和旧代码删除清单，禁止只增不减。
 
 ## 5. 目标组件
 
@@ -86,7 +109,7 @@ flowchart TD
 flowchart LR
   UI["CLI / Textual / Web / REST-SSE"] --> CONTROL["Mission Control API"]
   CONTROL --> STORE["PostgreSQL Mission Store"]
-  WORKER["asyncio Mission Worker"] --> STORE
+  WORKER["AnyIO Mission Worker"] --> STORE
   WORKER --> LOOP["Adaptive Agent Loop"]
   LOOP --> PLANNER["Structured Planner / Replanner"]
   LOOP --> CONTEXT["Context Compiler"]
@@ -94,7 +117,7 @@ flowchart LR
   LOOP --> VALIDATOR["Observation Validator"]
   EXECUTOR --> REGISTRY["Capability + Tool Registry"]
   REGISTRY --> MCP["MCP / BitPro / Read APIs"]
-  REGISTRY --> GRAPH["Existing Research Graph"]
+  REGISTRY --> GRAPH["Migration-only Research Graph Adapter"]
   CONTEXT --> MEMORY["Memory / RAG / Evidence"]
   VALIDATOR --> ARTIFACT["Mission Artifact Index"]
   LOOP --> TEAM["Bounded Multi-Agent Supervisor"]
@@ -139,7 +162,8 @@ capability id。Step attempt 单独记录，retry 不覆盖前一次 observation
 
 ### 5.3 Adaptive Agent Loop
 
-使用 LangGraph `StateGraph` 表达以下稳定控制拓扑：
+使用 LangGraph `StateGraph` 表达以下稳定控制拓扑，但放在新 `hypertrade/runtime` 内，不继续
+扩展当前 AgentKernel 单体：
 
 ```text
 load_mission -> compile_context -> select_next_step -> approval_check
@@ -242,10 +266,11 @@ unavailable，不由模型补造。
 
 | 层 | 选择 | 原因 |
 |---|---|---|
-| Runtime | Python、LangGraph `StateGraph`、现有 AgentKernel | 复用固定安全拓扑与领域服务 |
+| Architecture | 模块化单体、DDD-lite、ports-and-adapters | 新核心不依赖 UI、ORM 或 provider 细节 |
+| Runtime | Python、LangGraph `StateGraph`、AnyIO | async-native structured concurrency 与固定安全拓扑 |
 | Contracts | Pydantic v2、JSON Schema、Decimal/UTC | 严格输入输出和跨界面一致性 |
-| Canonical State | PostgreSQL、SQLAlchemy、Alembic | 现有任务/审计事实源，支持事务和租约 |
-| Worker | asyncio、`TaskGroup`、现有 DB lease/heartbeat | 不引入第二套队列；支持有界并行 |
+| Canonical State | PostgreSQL JSONB/event tables、SQLAlchemy Async、Alembic | 事务事件、projection、lease 和 outbox |
+| Worker | AnyIO TaskGroup、DB lease/heartbeat | 不引入第二套队列；支持取消域和有界并行 |
 | Tools | MCP + ToolRegistry + reviewed Capability Catalog | 动态发现与生产 allowlist 分离 |
 | Context | 自定义 Context Compiler + Memory/RAG/Evidence | 领域来源和审计要求不能交给通用框架猜测 |
 | Vector Search | pgvector | 复用现有 RAG/Memory 存储 |
@@ -253,40 +278,44 @@ unavailable，不由模型补造。
 | Sandbox | Rootless Docker/受限容器 + ephemeral workspace | 隔离生成代码和测试副作用 |
 | Streaming | FastAPI SSE + cursor events | 复用现有 CLI/Web/TUI 进度协议 |
 | UX | Rich CLI、Textual、React/TypeScript | 现有三种 operator surfaces |
-| Telemetry | 现有 trace events 先统一 semantic schema；再导出 OpenTelemetry | 避免第一阶段同时替换观测系统 |
+| Telemetry | OpenTelemetry semantic spans + bounded domain events | 从第一条新 Runtime 路径就可观测 |
 | Evaluation | pytest golden suites、isolated provider baseline、Ragas/Promptfoo | 覆盖确定性门禁和模型波动 |
 
-明确不在首阶段引入 AutoGen/CrewAI。它们会形成第二套 Agent/Memory/Tool 状态；HT 已有领域
-Task OS 和治理层。Temporal、Kafka、Redis/Celery、Kubernetes 只在现有 PostgreSQL lease 和
-Docker Compose 出现有证据的规模瓶颈后另行决策。
+明确不引入 AutoGen/CrewAI 作为新核心，它们会再次形成框架主导的 Agent/Memory/Tool 状态。
+旧 Task OS 也不因已经存在而自动保留；新 Mission event model 验收后，旧表转为只读历史并
+删除新写入路径。Temporal、Kafka、Redis/Celery、Kubernetes 只在 PostgreSQL lease 和 Docker
+Compose 出现有证据的规模瓶颈后另行决策。
 
 ## 7. Sprint 路线
 
 | Sprint | 主题 | 核心交付 | 门禁 |
 |---|---|---|---|
-| 111 | Mission Control & Adaptive Loop | Mission、Plan versions、Step attempts、bounded replan、steer | Gate I |
+| 111 | Runtime Foundation & Mission Loop | 新内核、Mission event model、bounded replan、首条垂直切换 | Gate I |
 | 112 | Capability & Tool Runtime V2 | reviewed capability catalog、typed observation、恢复策略 | Gate J1 |
 | 113 | Context & Artifact Engine | context pack、token ledger、compaction、mission artifact index | Gate J2 |
 | 114 | Bounded Multi-Agent Supervisor | 动态分工、并行、handoff、critic merge | Gate K |
 | 115 | Sandboxed Strategy Development | 受限工作区、patch/test artifact、人工导入门禁 | Gate L |
-| 116 | Professional UX & Readiness Benchmark | Mission UI、steer/replay、长任务基准和发布门禁 | Gate M |
+| 116 | Full Cutover, UX & Readiness | Mission UI、长任务基准、旧 Runtime 删除和发布门禁 | Gate M |
 
-### 7.1 Sprint 111：Mission Control & Adaptive Loop
+### 7.1 Sprint 111：Runtime Foundation & Mission Loop
 
-具体技术：Pydantic Mission/Plan/Replan contracts、PostgreSQL event/version tables、LangGraph
-固定 adaptive topology、optimistic locking、现有 Task checkpoint/lease、SSE cursor events。
+具体技术：`hypertrade/runtime` 模块化核心、domain/application/ports/adapters 分层、Pydantic
+Mission/Plan/Replan contracts、async SQLAlchemy、PostgreSQL event/projection、AnyIO worker、
+LangGraph 固定 adaptive topology、OpenTelemetry、optimistic locking 和 SSE cursor events。
 
-范围：单 Mission、现有工具和固定 Research Graph 作为 Step executor；最多 3 个 Plan versions、
-12 steps/version、2 attempts/step。实现用户 steer、plan diff、完成条件 Validator、预算耗尽和
-失败关闭。不做动态 tool discovery、Context Pack、动态多 Agent 或 sandbox。
+范围：先做架构 fitness audit，把组件标记 keep/rewrite/delete；然后完成一个开放只读研究 Mission
+的端到端新路径。现有工具通过 port adapter 接入，但新 Mission 不写旧 Task/Run 状态。最多
+3 个 Plan versions、12 steps/version、2 attempts/step。新路径验收后，默认 ask/canary 切到新
+Runtime，并删除被替代的 AgentKernel/TaskExecutor 分支，而不是保留永久 fallback。
 
 ### 7.2 Sprint 112：Capability & Tool Runtime V2
 
 具体技术：Capability Catalog Pydantic/JSON Schema、MCP capability snapshot、contract hash、
 ToolObservationV2、error taxonomy、preflight、circuit state、idempotency binding、policy validator。
 
-范围：把现有 ToolRegistry 和 BitPro MCP 投影为 reviewed catalog；Planner 只引用 capability id；
-对 timeout/rate/source/contract 错误使用确定性恢复矩阵。发现的新工具默认 pending，不自动启用。
+范围：把可用的 ToolRegistry/MCP adapter 迁移为新 port；Planner 只引用 capability id；对
+timeout/rate/source/contract 错误使用确定性恢复矩阵。验收后删除 legacy planner tool mapping、
+重复 local/remote invocation 逻辑；发现的新工具默认 pending，不自动启用。
 
 ### 7.3 Sprint 113：Context & Artifact Engine
 
@@ -294,15 +323,16 @@ ToolObservationV2、error taxonomy、preflight、circuit state、idempotency bin
 summarizer、pgvector retrieval、Artifact Index、content hash、source/supersede relation。
 
 范围：每 Step 独立编译 context；记录保留/丢弃原因；完整聊天和 raw artifacts 不入 prompt。
-最终报告强制引用 mission artifacts。评测 token 降幅、关键约束保留率和 citation coverage。
+最终报告强制引用 mission artifacts。验收后删除 AgentKernel 内分散的 prompt/context 拼装路径。
 
 ### 7.4 Sprint 114：Bounded Multi-Agent Supervisor
 
-具体技术：Role Catalog、Assignment/Handoff/Merge contracts、`asyncio.TaskGroup`、现有 atomic
+具体技术：Role Catalog、Assignment/Handoff/Merge contracts、AnyIO TaskGroup、atomic
 budget reservations、PostgreSQL node/attempt events、Critic schema 和 conflict ledger。
 
 范围：Supervisor 可在白名单角色中选择最多 4 个并行只读 assignments；写步骤串行。合并保留
-冲突和少数证据，不做自由对话群、无限辩论或角色自我复制。
+冲突和少数证据。达到固定 Research Graph 质量/安全等价后，下沉可复用角色并删除其顶层固定
+DAG，不做自由对话群、无限辩论或角色自我复制。
 
 ### 7.5 Sprint 115：Sandboxed Strategy Development
 
@@ -312,13 +342,14 @@ unified diff、pytest/SDK contract tests、artifact hash、approval-bound import
 范围：只允许策略模板与测试文件；生成 patch 后运行 lint/test/limited backtest，展示 diff，人工
 批准后才能交给 BitPro 的稳定导入接口。无 shell 出网、无秘密、无 Docker socket、无交易权限。
 
-### 7.6 Sprint 116：Professional UX & Readiness Benchmark
+### 7.6 Sprint 116：Full Cutover, Professional UX & Readiness
 
 具体技术：FastAPI REST/SSE cursor、Textual tree/timeline、React Mission workspace、event replay、
 golden long-horizon scenarios、fault injection、isolated provider matrix、OpenTelemetry exporter。
 
 范围：统一展示 Mission/Plan/Step/Artifact/Budget；用户可 pause/resume/cancel/steer/approve；构建
-与 Hermes/TradingAgents/Claude Code 工作方式相对应但面向 HT 领域的自有任务集，不复制其实现。
+与 Hermes/TradingAgents/Claude Code 工作方式相对应但面向 HT 领域的自有任务集。完成所有入口
+切换、历史数据只读归档、旧 API deprecation 和 AgentKernel/legacy runtime 删除，不复制其实现。
 
 ## 8. 发布门禁
 
@@ -328,6 +359,8 @@ golden long-horizon scenarios、fault injection、isolated provider matrix、Ope
 - pause/cancel/steer 在安全点生效，重启从 checkpoint 恢复；
 - 循环、预算、步骤和 attempt 上限不能被模型扩大；
 - 至少 20 个确定性 scenario 中无越权 dispatch、无无限循环、无虚假 completed。
+- 新 Runtime domain 层无 FastAPI/SQLAlchemy/provider/MCP concrete imports；新 Mission 不双写旧表。
+- 首条 canary 路径不再调用旧 AgentKernel，替代代码有明确删除 diff，而不是新增兼容包装。
 
 ### Gate J：Tool + Context Integrity（Sprint 112–113）
 
@@ -357,6 +390,7 @@ golden long-horizon scenarios、fault injection、isolated provider matrix、Ope
 - fault injection 覆盖 provider、MCP、DB lease、schema、source stale 和用户 steer；
 - CLI/TUI/Web 对同一 Mission 投影一致，运行可 replay；
 - 生产 feature flag 默认关闭，通过 canary 后才按管理员明确动作启用。
+- 所有新入口切换完成，旧 runtime 无生产调用者；历史只读查询保留，旧写路径和兼容层删除。
 
 ## 9. 核心评测指标
 
@@ -374,7 +408,7 @@ golden long-horizon scenarios、fault injection、isolated provider matrix、Ope
 
 ## 10. 数据模型与 API 方向
 
-建议按 Sprint 逐步新增而不是一次创建所有表：
+建议按 Sprint 逐步新增。新 Runtime 采用事件表 + 读 projection，不复制旧 Task 状态：
 
 ```text
 0023: agent_missions, agent_plan_versions, agent_step_attempts, agent_steering_events
@@ -384,9 +418,9 @@ golden long-horizon scenarios、fault injection、isolated provider matrix、Ope
 0027: sandbox_runs, sandbox_artifacts, sandbox_import_reviews
 ```
 
-API 前缀建议统一为 `/api/agent/missions`：create/list/get、plan/diff、events/stream、control、steer、
-artifacts、assignments。现有 `/api/agent/tasks` 保持兼容；Mission 是长期目标聚合，Task 继续作为
-具体执行单元，避免迁移期间双写含义不清。
+API 前缀统一为 `/api/agent/missions`：create/list/get、plan/diff、events/stream、control、steer、
+artifacts、assignments。现有 `/api/agent/tasks` 仅保留历史读取窗口，禁止双写；客户端迁移完成
+后删除旧写端点。Mission/Step 是新运行时的唯一工作状态，不再维护 Mission→旧 Task 镜像。
 
 ## 11. Feature Flags 与部署
 
@@ -407,7 +441,7 @@ live/capital 权限、严格预算和单并发；provider benchmark 继续在隔
 - 不构建无限自主、无限 Token、无限 Agent 或无终止条件的循环；
 - 不保存或展示模型 private chain-of-thought；
 - 不让模型动态扩大 tool/role/permission/budget；
-- 不以 AutoGen/CrewAI 替换现有 canonical Task OS；
+- 不因为“兼容”保留两套 canonical Task OS 或永久 legacy adapter；
 - 不允许生成代码直接进入生产或 BitPro；
 - 不因为专业 Agent Runtime 而开放 mainnet、自动 paper promotion 或自动资本配置；
 - 不宣称完成此路线即可稳定盈利。
