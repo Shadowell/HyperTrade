@@ -181,9 +181,9 @@ was available; it emitted no recommendation and no human review rather than inve
 
 The approved planning sequence is documented in
 `docs/architecture/29-research-operations-shadow-portfolio-roadmap.md`. Sprint 106
-entered implementation on 2026-07-15 and first closes provider-backed routing/source/Task/Graph quality
-gaps with `agent_research_quality.v2`, 26 fixed cohort cases, bounded candidate tools and a
-single fail-closed repair. Sprint 107 then moves StrategyCard creation from the
+completed production acceptance on 2026-07-15. Two isolated 26-case runs passed
+`agent_research_quality.v2` route/source/citation/Task/Graph/safety gates with zero unsafe
+dispatch, bounded candidate tools and a single fail-closed repair. Sprint 107 then moves StrategyCard creation from the
 PaperPromotion boundary to the StrategySpec/ExperimentManifest lifecycle and adds stable
 lineage/version/incomplete projections. Sprints 108–110 add bounded portfolio evidence
 windows, human-reviewed Champion–Challenger paper cohorts and execution-isolated Shadow

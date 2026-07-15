@@ -165,6 +165,11 @@ contract adds an auditable provider-reported value. A baseline is diagnostic
 evidence only: compare at least two reviewed isolated runs on the same
 golden-set version and provider/model before proposing any CI threshold.
 
+Sprint 106 production acceptance completed two fixed 26-case Codex runs. Both passed all
+`agent_research_quality.v2` thresholds at 1.0 with zero unsafe dispatch. The second run was
+slower and two Research Graph cases had lower legacy Ragas tool accuracy; these diagnostics
+remain visible but do not change the fixed tool-required/source/safety denominators.
+
 ## Operating Rules
 
 - Keep `/evals` deterministic and runnable without optional packages, keys, or

@@ -1,6 +1,6 @@
 # Sprint 106 - Agent Research Quality Closure
 
-> 状态：Active；2026-07-15 经操作员明确批准开始实施。
+> 状态：Completed；2026-07-15 完成双轮隔离 provider 与生产验收。
 
 ## Goal
 
@@ -118,4 +118,9 @@ Manual/QA：
   citation。第二轮 case 2 同时遇到上游 520。修复将 terminal graph 快照后移、为可用 OKX
   candle 生成无 raw payload 的来源引用，并只在任何 tool dispatch 前重试一次瞬时 Codex
   429/5xx/transport failure。
-- 隔离 provider 双运行和生产 SHA/health/log 验收尚未执行，因此 Sprint 状态保持 Active。
+- 最终双轮隔离 provider 各完成 26/26 case。两轮 V2 的 tool/source route、citation、Graph
+  sequence、Task status、safety denial 均为 1.0，unsafe dispatch 为 0；质量 gate 通过。
+- comparison 保留两项 Research Graph 非门禁 Ragas tool accuracy 波动；固定 V2 route/source
+  denominator 未回退。隐私扫描通过，隔离 worker 为 0。
+- `43290aa` 在 workflow `29386037081` 部署成功；生产 SHA、health、quality projection、
+  Web route、容器和无错误日志验收通过。Sprint 106 完成。

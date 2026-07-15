@@ -4,30 +4,17 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 106 implementation state: active on 2026-07-15 under explicit operator approval.
-  `research_os_golden_v2` now separates 26 fixed cases into 2 `chat_answer`, 2
-  `tool_required`, 16 `research_graph` and 6 `safety` cases. `ResearchIntentV2`,
-  `ToolPlanV2`, bounded candidate intersection, one repair and the fail-closed V2 scorer
-  are implemented. API/CLI/Textual/Web project aggregate results only. Focused backend
-  acceptance passed. The first isolated baseline failed closed on a 90-second provider
-  timeout at case 2; no denominator was skipped. Authored eval intent now exposes zero tools
-  for chat or the single required tool for routed cases, and the collector uses a bounded,
-  configurable 300-second case timeout. A subsequent real-provider run exposed a legacy
-  authored scenario whose prose did not identify its required read route. V2 now separates
-  deterministic `prompt` from explicit `provider_prompt`; only the latter reaches the model,
-  both resolve to the same authored intent, and neither is retained in trajectory artifacts.
-  The focused regression suite passes with 49 tests. Full `./scripts/check.sh` passes with frontend
-  lint/9 tests/build, Ruff, mypy over 142 source files and all 486 Python tests. The timeout
-  prompt split then produced the first complete 26/26 provider run: tool/source routing, Task
-  terminal status and all six safety denials passed, with zero unsafe dispatch. The gate still
-  failed because the report captured Graph state before `final_report` and market candles had
-  no bounded source citation. The attempted second run also exposed one transient upstream 520.
-  Report graph capture, OKX source citations and one pre-dispatch Codex transport retry are now
-  fixed locally. The corrected isolated double baseline and final production verification remain
-  pending.
-  Sprint 107 moves StrategyCard creation to the StrategySpec/ExperimentManifest lifecycle;
-  later sprints add bounded portfolio evidence, paper cohorts and hypothetical-only portfolio
-  proposals. No runtime flag or trading permission changed in this implementation slice.
+- Sprint 106 implementation state: completed and production-verified on 2026-07-15.
+  `research_os_golden_v2` fixes 26 cases into 2 `chat_answer`, 2 `tool_required`, 16
+  `research_graph` and 6 `safety` cases. Structured intent/plan, bounded candidate
+  intersection, one repair and fail-closed V2 scoring are implemented. Two isolated provider
+  runs completed 26/26 cases and both passed route/source/citation/Graph/Task/safety at 1.0
+  with zero unsafe dispatch. Artifacts retained no prompt, arguments, raw output, credentials
+  or reasoning; two non-gating Ragas tool-accuracy decreases remain visible as model variability.
+  Full `./scripts/check.sh` passed with frontend lint/9 tests/build, Ruff, mypy over 142 source
+  files and 489 Python tests. Commit `43290aa` deployed in workflow `29386037081`; production
+  SHA, health, quality/Web projections, containers and logs passed. Gate E is closed; Sprint
+  107 activation is next. Triggers remain disabled and no paper/live/capital permission changed.
 - Sprint 105 implementation state: completed and production-verified on 2026-07-15.
   Persisted `portfolio_assessment.v2` binds idempotency keys to canonical
   requests, consumes bounded StrategyCard/WorldState/paper/monitor/Evidence/governed
@@ -434,8 +421,7 @@
 
 ## Active Contract
 
-- Sprint 106 Agent Research Quality Closure is active under
-  `docs/contracts/sprint-106-agent-research-quality-closure.md`.
+- Sprint 106 is completed; Sprint 107 StrategyCard Lifecycle & Research Funnel is next.
 
 ## Approved Follow-On Design
 

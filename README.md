@@ -366,6 +366,11 @@ Ragas Research OS baseline to isolated, read-only evaluation runs. The V2 runner
 requires two fixed-denominator runs to meet route/source/graph/task/safety thresholds;
 its result never authorizes paper or live trading.
 
+Sprint 106 production acceptance passed two isolated 26-case runs with 100% V2
+route/source/citation/Graph/Task/safety gates and zero unsafe dispatch. Aggregate artifacts
+remain prompt-, argument-, raw-output-, credential- and reasoning-free; provider variability
+and latency remain diagnostic evidence, not a trading authorization.
+
 The optional Textual research workbench runs over the same durable
 Session/Task/Event APIs:
 
@@ -464,8 +469,8 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Reproducible experiment ledger | Production |
 | Robustness validation suite | Production |
 | Agent Research Evaluation Foundation | Production |
-| Agent Research Quality Closure | In Development (Sprint 106) |
-| StrategyCard V2 and Research Funnel | Planned (Sprint 107) |
+| Agent Research Quality Closure | Production (Sprint 106) |
+| StrategyCard V2 and Research Funnel | Next (Sprint 107) |
 | Portfolio Evidence Data Plane | Planned (Sprint 108) |
 | Champion–Challenger Paper Incubation | Planned (Sprint 109) |
 | Shadow Portfolio Governance | Planned (Sprint 110) |

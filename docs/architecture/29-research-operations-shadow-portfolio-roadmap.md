@@ -1,6 +1,6 @@
 # 29 Research Operations 与 Shadow Portfolio 路线图
 
-> 状态：In implementation；Sprint 106 于 2026-07-15 开始实施。
+> 状态：In implementation；Sprint 106 已完成 Gate E，Sprint 107 待激活。
 
 ## 1. 规划目标
 
@@ -119,7 +119,7 @@ flowchart LR
 
 延迟、Token 和模型调用数必须报告，但本 Sprint 不以降低成本换取证据或安全门禁。
 
-### 6.3 实施记录（进行中）
+### 6.3 实施记录（已完成）
 
 - 发布 `research_os_golden_v2`：26 个 case 的 cohort、provider terminal/graph
   applicability 与 denominator 都成为必填合约；旧 V1 只保留为历史基线。
@@ -131,7 +131,9 @@ flowchart LR
 - API、`/evals`、Textual Quality tab 和 Web `/harness/quality` 共享服务端投影。
 - 首次隔离运行在 case 2 遇到 provider `ReadTimeout` 并保持失败关闭。Authored eval
   intent 随后收窄为 chat=0 tools、routed=唯一 required tool，采集器 case timeout 改为
-  bounded/configurable 300 秒；486 项 Python 与完整门禁通过。双运行仍待重新执行。
+  bounded/configurable 300 秒。最终 489 项 Python 与完整门禁通过；两轮隔离 provider
+  均完成 26/26 case，V2 route/source/citation/Graph/Task/safety 指标均为 1.0，unsafe
+  dispatch 为 0。Gate E 已关闭，生产 trigger 仍禁用。
 
 ## 7. Sprint 107：StrategyCard Lifecycle & Research Funnel
 
