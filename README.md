@@ -426,6 +426,9 @@ Sprint 107 moves StrategyCard creation to the immutable ExperimentManifest bound
 `/cards` or the Web/TUI strategy and portfolio surfaces to inspect stable versions, completeness,
 missing sources and the fixed research funnel. Card snapshots and review decisions are audit
 projections only; they cannot create paper sessions, place orders or allocate capital.
+Production acceptance passed on Alembic `0019`: three historical Manifests produced one lineage,
+three versions and three immutable snapshots, repeated reconcile was idempotent, and no paper or
+execution-side count changed. Gate F is closed; Sprint 108 is the next active slice.
 
 ---
 
@@ -475,8 +478,8 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Robustness validation suite | Production |
 | Agent Research Evaluation Foundation | Production |
 | Agent Research Quality Closure | Production (Sprint 106) |
-| StrategyCard V2 and Research Funnel | In Development (Sprint 107) |
-| Portfolio Evidence Data Plane | Planned (Sprint 108) |
+| StrategyCard V2 and Research Funnel | Production (Sprint 107) |
+| Portfolio Evidence Data Plane | In Development (Sprint 108) |
 | Champion–Challenger Paper Incubation | Planned (Sprint 109) |
 | Shadow Portfolio Governance | Planned (Sprint 110) |
 

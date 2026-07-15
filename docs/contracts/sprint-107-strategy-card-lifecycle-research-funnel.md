@@ -1,6 +1,6 @@
 # Sprint 107 - StrategyCard Lifecycle & Research Funnel
 
-> 状态：Active；2026-07-15 在 Gate E 通过后自动进入实施。
+> 状态：Completed；2026-07-15 完成本地、PostgreSQL 与生产验收，Gate F 关闭。
 
 ## Goal
 
@@ -106,4 +106,9 @@ Manual/production checks:
   服务端 lifecycle/completeness/missing fields，不在客户端复算。
 - 临时 PostgreSQL 已通过全链升级、`0019 -> 0018 -> 0019` 和四表存在性检查。
 - 完整 `./scripts/check.sh` 通过：frontend lint/9 tests/build、Ruff、mypy（143 source
-  files）及 497 Python tests。生产迁移/backfill/read smoke 尚待部署后执行。
+  files）及 497 Python tests。
+- commit `14d686e` 经 workflow `29387796135` 部署；生产 Alembic 为 `0019`。3 个历史
+  Manifest 确定性回填为 1 lineage、3 version、3 snapshot，连续两次 reconcile 未增加
+  snapshot；V2 Card 与 funnel denominator 均为 3。
+- 回填前后 PaperPromotion=0、paper orders=10、live order intents=1；Web strategy route、
+  API health 与日志通过。完整结论见 `docs/qa/sprint-107-strategy-card-lifecycle-research-funnel.md`。

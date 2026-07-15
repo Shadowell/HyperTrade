@@ -4,7 +4,7 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 107 implementation state: active on 2026-07-15 after Gate E acceptance. The focused
+- Sprint 107 implementation state: completed and production-verified on 2026-07-15. The focused
   contract introduces stable mandate-scoped lineage, Manifest-bound versions, immutable Card
   snapshots, fact-driven lifecycle decisions and a fixed-denominator research funnel. It must
   make Manifest-only candidates visible without inventing Evidence/Paper facts and cannot add
@@ -14,7 +14,11 @@
   and human decisions write a separate idempotent audit fact. API, `/cards` CLI, Textual Portfolio
   and Web strategy metrics share the service projection. PostgreSQL `0018 -> 0019 -> 0018 ->
   0019` passes. Full `./scripts/check.sh` passes with frontend lint/9 tests/build, Ruff, mypy
-  over 143 source files and 497 Python tests; production acceptance is pending.
+  over 143 source files and 497 Python tests. Commit `14d686e` deployed through workflow
+  `29387796135`; Alembic reached `0019`. Three production Manifests reconciled to one lineage,
+  three stable versions and three snapshots; repeated reconcile was idempotent and the V2 Card
+  count matched the funnel denominator. PaperPromotion, paper-order and live-order-intent counts
+  were unchanged. Gate F is closed; Sprint 108 activation is next.
 - Sprint 106 implementation state: completed and production-verified on 2026-07-15.
   `research_os_golden_v2` fixes 26 cases into 2 `chat_answer`, 2 `tool_required`, 16
   `research_graph` and 6 `safety` cases. Structured intent/plan, bounded candidate

@@ -1,6 +1,6 @@
 # 29 Research Operations 与 Shadow Portfolio 路线图
 
-> 状态：In implementation；Sprint 106 已完成 Gate E，Sprint 107 已激活。
+> 状态：In implementation；Sprint 107 已完成 Gate F，下一阶段为 Sprint 108。
 
 ## 1. 规划目标
 
@@ -159,7 +159,7 @@ flowchart LR
 - PortfolioAssessment 不再因为缺少 PaperPromotion 而看不到所有研究候选；
 - 不新增自动 paper/live/资金动作。
 
-### 7.3 实施记录（进行中）
+### 7.3 实施记录（已验收）
 
 - `0019_strategy_card_v2` 持久化 mandate-scoped lineage、Manifest version、immutable
   snapshot 与独立 lifecycle decision；数据库唯一约束负责身份/版本/幂等边界。
@@ -167,6 +167,9 @@ flowchart LR
   的 legacy promotion Card 只作为 compat/unknown 投影，不进入 V2 funnel denominator。
 - FastAPI、CLI `/cards`、Textual Portfolio 和 Web strategy metrics 消费同一服务结果；
   projection 模块不导入 BitPro、Paper service、Live 或订单 adapter。
+- 生产 `0019` 将 3 个 Manifest 回填为 1 lineage、3 version、3 immutable snapshot；重复
+  reconcile 不新增 snapshot，Card 数等于 fixed denominator。Gate F 验收期间 PaperPromotion、
+  paper order 和 live order intent 计数均未变化。
 
 ## 8. Sprint 108：Portfolio Evidence Data Plane
 
@@ -237,6 +240,7 @@ flowchart LR
 
 - 研究候选从 Manifest 开始拥有稳定 lineage/version/Card。
 - incomplete/rejected 候选可见，历史事实不被 Card 覆盖。
+- 状态：2026-07-15 已通过；生产回填、幂等、来源隔离和零执行副作用均验证。
 
 ### Gate G：Portfolio Evidence & Incubation（Sprint 108–109）
 
@@ -283,9 +287,9 @@ SHADOW_PORTFOLIO_ENABLED=false
 
 ## 15. 实施入口
 
-- 当前计划合同：`docs/contracts/sprint-106-agent-research-quality-closure.md`
-- Sprint 107 当前合同：`docs/contracts/sprint-107-strategy-card-lifecycle-research-funnel.md`
-- Sprint 108–110 在前一 Gate 完成后分别创建/激活合同。
+- 已完成合同：`docs/contracts/sprint-106-agent-research-quality-closure.md`
+- 已完成合同：`docs/contracts/sprint-107-strategy-card-lifecycle-research-funnel.md`
+- Sprint 108 为下一实施入口；Sprint 109–110 在前一 Gate 完成后分别创建/激活合同。
 - Sprint 96–105 基础路线：`docs/architecture/27-agent-research-os-roadmap.md`
 - 现有评测隔离：`docs/architecture/26-agent-evaluation-foundation.md`
 
