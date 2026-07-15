@@ -15,11 +15,15 @@ from hypertrade.runtime.domain.models import (
 )
 
 
-def mission(status: MissionStatus = MissionStatus.COMPLETED) -> MissionProjection:
+def mission(
+    status: MissionStatus = MissionStatus.COMPLETED,
+    *,
+    objective: str = "Inspect a read-only market fact",
+) -> MissionProjection:
     return MissionProjection(
         mission_id="mis_operator_response",
-        objective="Inspect a read-only market fact",
-        original_objective="Inspect a read-only market fact",
+        objective=objective,
+        original_objective=objective,
         success_criteria=(
             SuccessCriterionV1(
                 criterion_id="validated",
@@ -134,6 +138,20 @@ def test_blocked_and_failed_responses_require_a_safe_next_action() -> None:
     assert canceled.next_actions
     assert failed.outcome == "failed"
     assert failed.next_actions
+
+
+def test_stale_input_is_reported_as_a_data_gap_not_a_user_clarification() -> None:
+    response = build_operator_response(
+        mission(
+            MissionStatus.WAITING_INPUT,
+            objective="基于当前 BTC 行情给判断，但行情源已过期",
+        ),
+        (),
+    )
+
+    assert response.outcome == "needs_data"
+    assert response.unknowns
+    assert response.next_actions
 
 
 def test_operator_answer_golden_catalog_and_fixtures_are_contract_compliant() -> None:

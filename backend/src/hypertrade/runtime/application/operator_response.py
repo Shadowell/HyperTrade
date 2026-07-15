@@ -59,6 +59,7 @@ def build_operator_response(
         evidence=visible_evidence,
         unknowns=visible_unknowns,
         failure_categories=failure_categories,
+        input_is_data_gap=safety.disposition == "needs_data",
     )
     return OperatorResponseV1(
         mission_id=mission.mission_id,
@@ -95,6 +96,7 @@ def _outcome(
     evidence: tuple[OperatorEvidenceV1, ...],
     unknowns: tuple[str, ...],
     failure_categories: Sequence[str],
+    input_is_data_gap: bool,
 ) -> tuple[str, str, str, tuple[str, ...]]:
     if status == MissionStatus.COMPLETED and evidence and not unknowns:
         return (
@@ -118,6 +120,13 @@ def _outcome(
             ("由有权限的操作员复核并决定是否批准。",),
         )
     if status == MissionStatus.WAITING_INPUT:
+        if input_is_data_gap:
+            return (
+                "needs_data",
+                "请求依赖的数据来源或新鲜度未获验证，当前不能给出交易判断。",
+                "not_assessed",
+                _data_action(unknowns),
+            )
         return (
             "needs_clarification",
             "当前缺少继续判断所需的信息或确认，不能给出可执行结论。",
