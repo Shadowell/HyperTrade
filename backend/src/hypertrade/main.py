@@ -130,14 +130,26 @@ from hypertrade.research.triggers import (
     TriggerControlUpdate,
     TriggerEvent,
 )
-from hypertrade.runtime.adapters.foundation import (
-    FoundationExecutor,
-    FoundationPlanner,
-    ReadOnlyCapabilityPolicy,
+from hypertrade.runtime.adapters.capability_catalog import (
+    CatalogCapabilityPolicy,
+    InMemoryCapabilityCatalog,
+    SqlCapabilityCatalog,
+    builtin_capabilities,
 )
+from hypertrade.runtime.adapters.foundation import FoundationPlanner
 from hypertrade.runtime.adapters.memory_store import InMemoryMissionStore
 from hypertrade.runtime.adapters.sql_store import SqlAlchemyMissionStore
+from hypertrade.runtime.adapters.tool_runtime import (
+    GovernedToolExecutor,
+    InMemoryObservationStore,
+    SqlObservationStore,
+    builtin_handlers,
+)
 from hypertrade.runtime.application.service import MissionRuntime
+from hypertrade.runtime.domain.capabilities import (
+    CapabilityProposalV1,
+    CapabilityReviewV1,
+)
 from hypertrade.runtime.domain.models import MissionCreate, SteeringEventV1
 from hypertrade.skills.lifecycle import (
     ApprovedSkillLoader,
@@ -324,23 +336,40 @@ def create_app(
         if database.url == "sqlite:///:memory:"
         else SqlAlchemyMissionStore(database.url)
     )
+    capability_catalog = (
+        InMemoryCapabilityCatalog()
+        if database.url == "sqlite:///:memory:"
+        else SqlCapabilityCatalog(database.url)
+    )
+    observation_store = (
+        InMemoryObservationStore()
+        if database.url == "sqlite:///:memory:"
+        else SqlObservationStore(database.url)
+    )
+    tool_executor = GovernedToolExecutor(
+        capability_catalog,
+        builtin_handlers(database, knowledge_dir=str(app_settings.knowledge_dir)),
+        observations=observation_store,
+    )
     mission_runtime = MissionRuntime(
         mission_store,
         FoundationPlanner(),
-        FoundationExecutor(),
-        ReadOnlyCapabilityPolicy(),
+        tool_executor,
+        CatalogCapabilityPolicy(capability_catalog),
     )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if app_settings.database_url.startswith("sqlite"):
             database.create_all()
+        await capability_catalog.bootstrap(builtin_capabilities())
         try:
             yield
         finally:
-            dispose = getattr(mission_store, "dispose", None)
-            if dispose is not None:
-                await dispose()
+            for resource in (mission_store, capability_catalog, observation_store):
+                dispose = getattr(resource, "dispose", None)
+                if dispose is not None:
+                    await dispose()
 
     app = FastAPI(title="HyperTrade API", version="0.1.0", lifespan=lifespan)
     app.state.settings = app_settings
@@ -350,6 +379,8 @@ def create_app(
     app.state.bitpro_adapter = bitpro_adapter
     app.state.mission_store = mission_store
     app.state.mission_runtime = mission_runtime
+    app.state.capability_catalog = capability_catalog
+    app.state.tool_executor = tool_executor
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -747,9 +778,7 @@ def create_app(
         username: AdminUser,
     ) -> dict[str, Any]:
         try:
-            return ShadowPortfolioService(database).review(
-                proposal_id, payload, actor=username
-            )
+            return ShadowPortfolioService(database).review(proposal_id, payload, actor=username)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Shadow proposal not found") from exc
         except ValueError as exc:
@@ -891,6 +920,48 @@ def create_app(
         mission = await mission_runtime.create(payload)
         return mission.model_dump(mode="json")
 
+    @app.get("/api/agent/capabilities")
+    async def list_agent_capabilities(_: AdminUser) -> dict[str, Any]:
+        rows = await capability_catalog.list_active()
+        return {"capabilities": [row.model_dump(mode="json") for row in rows]}
+
+    @app.get("/api/agent/capability-proposals")
+    async def list_agent_capability_proposals(_: AdminUser) -> dict[str, Any]:
+        rows = await capability_catalog.list_proposals()
+        return {"proposals": [row.model_dump(mode="json") for row in rows]}
+
+    @app.post("/api/agent/capability-proposals")
+    async def propose_agent_capability(
+        payload: CapabilityProposalV1,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        proposal = await capability_catalog.propose(payload)
+        return proposal.model_dump(mode="json")
+
+    @app.post("/api/agent/capability-proposals/{proposal_id}/review")
+    async def review_agent_capability(
+        proposal_id: str,
+        payload: CapabilityReviewV1,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            proposal = await capability_catalog.review(
+                proposal_id,
+                payload.model_copy(update={"actor": username}),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Capability proposal not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return proposal.model_dump(mode="json")
+
+    @app.get("/api/agent/capabilities/{capability_id}/circuit")
+    async def get_agent_capability_circuit(
+        capability_id: str,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        return tool_executor.circuit.state(capability_id).model_dump(mode="json")
+
     @app.get("/api/agent/missions")
     async def list_agent_missions(_: AdminUser, limit: int = 50) -> dict[str, Any]:
         rows = await mission_store.list(limit=limit)
@@ -985,7 +1056,7 @@ def create_app(
             try:
                 events = await mission_store.events(mission_id, after=after, limit=1_000)
             except KeyError:
-                yield "event: error\ndata: {\"error\":\"mission_not_found\"}\n\n"
+                yield 'event: error\ndata: {"error":"mission_not_found"}\n\n'
                 return
             for event in events:
                 payload = json.dumps(event.model_dump(mode="json"), ensure_ascii=False)
@@ -1465,9 +1536,7 @@ def create_app(
         return graph_topology_projection()
 
     @app.post("/api/research/graphs")
-    def create_research_graph(
-        payload: ResearchGraphCreate, username: AdminUser
-    ) -> dict[str, Any]:
+    def create_research_graph(payload: ResearchGraphCreate, username: AdminUser) -> dict[str, Any]:
         try:
             return ResearchGraphTaskService(database).create(
                 payload, created_by=f"admin:{username}"
@@ -1519,9 +1588,7 @@ def create_app(
         payload: ExperimentRegister, username: AdminUser
     ) -> dict[str, Any]:
         try:
-            return ExperimentLedgerService(database).register(
-                payload, actor=f"admin:{username}"
-            )
+            return ExperimentLedgerService(database).register(payload, actor=f"admin:{username}")
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
@@ -1541,20 +1608,14 @@ def create_app(
     @app.get("/api/research/experiments/{fingerprint}/executions")
     def list_research_experiment_executions(fingerprint: str) -> dict[str, Any]:
         try:
-            return {
-                "items": ExperimentLedgerService(database).executions(fingerprint)
-            }
+            return {"items": ExperimentLedgerService(database).executions(fingerprint)}
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Experiment not found") from exc
 
     @app.get("/api/research/experiments/{fingerprint}/diff/{other_fingerprint}")
-    def diff_research_experiments(
-        fingerprint: str, other_fingerprint: str
-    ) -> dict[str, Any]:
+    def diff_research_experiments(fingerprint: str, other_fingerprint: str) -> dict[str, Any]:
         try:
-            return ExperimentLedgerService(database).diff(
-                fingerprint, other_fingerprint
-            )
+            return ExperimentLedgerService(database).diff(fingerprint, other_fingerprint)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Experiment not found") from exc
 
@@ -2102,9 +2163,7 @@ def create_app(
             "items": SkillLifecycleService(
                 database,
                 attestation_secret=app_settings.skill_eval_attestation_secret,
-            ).list_releases(
-                active_only=active_only
-            )
+            ).list_releases(active_only=active_only)
         }
 
     @app.post("/api/skills/releases/{release_id}/rollback")

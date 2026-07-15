@@ -348,29 +348,43 @@ class StrategyCardService:
     def _append_snapshot(self, version_id: str, *, actor: str) -> dict[str, Any]:
         card = self._project(version_id)
         content_hash = _hash(card)
-        with self.db.session() as session:
-            existing = session.scalar(
-                select(StrategyCardSnapshot).where(
-                    StrategyCardSnapshot.version_id == version_id,
-                    StrategyCardSnapshot.content_hash == content_hash,
+        try:
+            with self.db.session() as session:
+                existing = session.scalar(
+                    select(StrategyCardSnapshot).where(
+                        StrategyCardSnapshot.version_id == version_id,
+                        StrategyCardSnapshot.content_hash == content_hash,
+                    )
                 )
-            )
-            if existing is None:
-                row = StrategyCardSnapshot(
-                    card_id=card["card_id"],
-                    lineage_id=card["lineage"]["id"],
-                    version_id=version_id,
-                    schema_version="strategy_card.v2",
-                    lifecycle_status=card["lifecycle_status"],
-                    completeness_score=Decimal(card["completeness_score"]),
-                    content_hash=content_hash,
-                    card_json=card,
-                    created_by=actor,
+                if existing is None:
+                    row = StrategyCardSnapshot(
+                        card_id=card["card_id"],
+                        lineage_id=card["lineage"]["id"],
+                        version_id=version_id,
+                        schema_version="strategy_card.v2",
+                        lifecycle_status=card["lifecycle_status"],
+                        completeness_score=Decimal(card["completeness_score"]),
+                        content_hash=content_hash,
+                        card_json=card,
+                        created_by=actor,
+                    )
+                    session.add(row)
+                    session.flush()
+                    return _snapshot_to_dict(row)
+                return _snapshot_to_dict(existing)
+        except IntegrityError:
+            # Concurrent ledger reconciliation can project identical card content.
+            # The unique key is the serialization point; return the committed winner.
+            with self.db.session() as session:
+                winner = session.scalar(
+                    select(StrategyCardSnapshot).where(
+                        StrategyCardSnapshot.version_id == version_id,
+                        StrategyCardSnapshot.content_hash == content_hash,
+                    )
                 )
-                session.add(row)
-                session.flush()
-                return _snapshot_to_dict(row)
-            return _snapshot_to_dict(existing)
+                if winner is None:
+                    raise
+                return _snapshot_to_dict(winner)
 
     def _project(self, version_id: str) -> dict[str, Any]:
         assertions = MemoryAssertionService(self.db).active_for_prompt(limit=100)

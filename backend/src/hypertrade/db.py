@@ -227,9 +227,7 @@ class AgentPlanVersion(Base):
     """Immutable plan version; replans append and never overwrite history."""
 
     __tablename__ = "agent_plan_versions"
-    __table_args__ = (
-        UniqueConstraint("mission_id", "version", name="uq_agent_plan_version"),
-    )
+    __table_args__ = (UniqueConstraint("mission_id", "version", name="uq_agent_plan_version"),)
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("plan"))
     mission_id: Mapped[str] = mapped_column(String(32), index=True)
@@ -278,6 +276,101 @@ class AgentSteeringEvent(Base):
     reason: Mapped[str] = mapped_column(Text)
     actor: Mapped[str] = mapped_column(String(128), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentCapabilitySnapshot(Base, TimestampMixin):
+    """Versioned reviewed capability; discovery cannot write this table directly."""
+
+    __tablename__ = "agent_capability_snapshots"
+    __table_args__ = (
+        UniqueConstraint("capability_id", "version", name="uq_agent_capability_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("caps"))
+    capability_id: Mapped[str] = mapped_column(String(160), index=True)
+    version: Mapped[str] = mapped_column(String(32))
+    review_status: Mapped[str] = mapped_column(String(32), index=True)
+    health: Mapped[str] = mapped_column(String(32), index=True)
+    contract_hash: Mapped[str] = mapped_column(String(64), index=True)
+    policy_hash: Mapped[str] = mapped_column(String(64), index=True)
+    definition_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    reviewed_by: Mapped[str] = mapped_column(String(128), default="")
+    review_reason: Mapped[str] = mapped_column(Text, default="")
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fresh_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
+
+class AgentCapabilityProposal(Base, TimestampMixin):
+    """Untrusted discovered capability pending an explicit administrator decision."""
+
+    __tablename__ = "agent_capability_proposals"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("capp"))
+    capability_id: Mapped[str] = mapped_column(String(160), index=True)
+    version: Mapped[str] = mapped_column(String(32))
+    discovered_from: Mapped[str] = mapped_column(Text)
+    discovery_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    definition_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(32), default="pending_review", index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(128), default="discovery", index=True)
+
+
+class AgentCapabilityReview(Base):
+    """Append-only idempotent review fact for one proposal."""
+
+    __tablename__ = "agent_capability_reviews"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("capr"))
+    proposal_id: Mapped[str] = mapped_column(String(32), index=True)
+    decision: Mapped[str] = mapped_column(String(32), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    actor: Mapped[str] = mapped_column(String(128), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentToolObservation(Base):
+    """Bounded validated tool outcome; raw results and credentials are excluded."""
+
+    __tablename__ = "agent_tool_observations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("tobs"))
+    request_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    step_id: Mapped[str] = mapped_column(String(64), index=True)
+    capability_id: Mapped[str] = mapped_column(String(160), index=True)
+    capability_version: Mapped[str] = mapped_column(String(32))
+    contract_hash: Mapped[str] = mapped_column(String(64), index=True)
+    policy_hash: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    result_preview_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    result_hash: Mapped[str] = mapped_column(String(64), default="", index=True)
+    source_refs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    artifact_refs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    unknowns_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    error_category: Mapped[str] = mapped_column(String(32), default="", index=True)
+    retry_action: Mapped[str] = mapped_column(String(32), default="none", index=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), default="", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentCapabilityCircuit(Base, TimestampMixin):
+    """Persistent circuit projection for restart-safe connector protection."""
+
+    __tablename__ = "agent_capability_circuits"
+
+    capability_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    state: Mapped[str] = mapped_column(String(32), default="closed", index=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retry_after: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
 
 
 class RagDocument(Base, TimestampMixin):
@@ -436,9 +529,7 @@ class SkillRelease(Base, TimestampMixin):
     """Immutable approved definition; status changes only reflect active pointer history."""
 
     __tablename__ = "skill_releases"
-    __table_args__ = (
-        UniqueConstraint("skill_key", "version", name="uq_skill_release_version"),
-    )
+    __table_args__ = (UniqueConstraint("skill_key", "version", name="uq_skill_release_version"),)
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("skrel"))
     skill_key: Mapped[str] = mapped_column(String(96), index=True)

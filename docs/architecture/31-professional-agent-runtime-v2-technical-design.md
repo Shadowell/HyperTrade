@@ -79,3 +79,42 @@ OpenTelemetry spans start at `mission.run` and `mission.step` with mission, plan
 identifiers only. Prompts, raw provider output, credentials and private reasoning are excluded.
 Mission cursor events carry bounded summaries, refs and error taxonomy. Paper/live/order/capital
 permissions are unchanged and the foundation policy accepts only `read_only.v1`.
+
+## Sprint 112 Capability and Tool Runtime
+
+Mission V2 no longer dispatches a planner-supplied tool name directly. Every `PlanStepV2` resolves
+`capability_id@version` through an in-process projection of the reviewed catalog. The snapshot binds
+the input/output JSON Schemas, source owner, handler key, side-effect class, approval requirement,
+idempotency rule, timeout, result bound, health/freshness, contract hash and policy hash. Unknown,
+pending, rejected, stale or unhealthy definitions fail before a handler call.
+
+```text
+PlanStepV2
+  -> reviewed CapabilitySnapshotV1
+  -> permission/approval/side-effect/hash preflight
+  -> input JSON Schema
+  -> timeout + circuit + idempotency boundary
+  -> adapter
+  -> output JSON Schema
+  -> bounded/redacted ToolObservationV2
+  -> StepObservationV2
+```
+
+`SqlCapabilityCatalog` persists snapshots, discovery proposals and append-only idempotent reviews.
+Discovery from MCP/OpenAPI is represented only as `pending_review`; it cannot enter the active map
+until an authenticated administrator reviews the exact definition. Code-owned built-ins are
+reconciled on startup and currently expose only objective inspection, market summary, RAG search and
+Memory search as read capabilities.
+
+`GovernedToolExecutor` is the single dispatch boundary. It validates JSON Schema, requires matching
+contract/policy hashes, denies writes to read-only Missions, applies a bounded timeout, opens
+per-capability circuits for repeated transport failures, and replays required idempotency keys
+without a second handler call. The recovery taxonomy separates contract, permission, timeout,
+rate-limit, source, unsafe and unknown failures; text errors cannot be treated as success.
+
+Migration `0024_agent_capabilities` adds catalog snapshots, proposals, review facts, bounded tool
+observations and circuit projections. Production uses `SqlObservationStore`; it persists only a
+redacted/truncated preview, content hash, refs, taxonomy and timing. Raw connector output,
+credentials, prompts and private reasoning are excluded. The old foundation executor remains only
+as a Sprint 111 test fixture; the production Mission composition depends on the reviewed catalog and
+governed runtime.

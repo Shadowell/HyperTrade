@@ -238,6 +238,14 @@ Sprint includes an explicit legacy deletion budget. The roadmap is planning-only
 paper/live/order/capital permission changes. Professional Agent capability means controllable,
 recoverable and evidence-backed goal execution, not unrestricted autonomy or profitability.
 
+Sprint 112 replaces direct Mission tool dispatch with a reviewed, versioned Capability Catalog and
+`ToolObservationV2` boundary. Definitions bind JSON Schemas, source owner, health/freshness, side
+effects, approvals, idempotency, timeout, result bounds and contract/policy hashes. Discovery creates
+pending proposals only; authenticated idempotent administrator review is required before activation.
+Execution validates schemas and permission scope before and after the adapter call, applies bounded
+timeout/circuit recovery and stores only redacted/truncated SQL observations with provenance. The
+initial catalog remains read-only and changes no paper, live, order or capital permission.
+
 Sprint 107 implementation uses `ExperimentManifest` as the StrategyCard V2 identity boundary.
 Mandate-scoped lineages, Manifest-bound versions, immutable content-hashed snapshots and human
 lifecycle decisions are projection facts in `0019`; they cannot edit source facts or authorize

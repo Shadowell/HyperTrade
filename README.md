@@ -510,7 +510,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Portfolio Evidence Data Plane | Production (Sprint 108) |
 | Champion–Challenger Paper Incubation | Production (Sprint 109) |
 | Shadow Portfolio Governance | Production (Sprint 110) |
-| Professional Agent Runtime V2 | In progress; Mission foundation implemented (Sprint 111) |
+| Professional Agent Runtime V2 | In progress; Mission foundation and governed Capability runtime implemented (Sprints 111-112) |
 
 ### Planned (V3+)
 
