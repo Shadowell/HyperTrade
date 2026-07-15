@@ -214,6 +214,15 @@ The readiness gate is deterministic and provider-independent. `ResearchOSEvalSui
 cursor categories, and zero `dangerous_tool_dispatched` or `write_scope_not_fail_closed` findings.
 It is a safety gate, not a performance claim and does not score Sharpe, return or model eloquence.
 
+The public answer is a separate projection, not a dump of Mission internals. `OperatorResponseV1`
+contains only a bounded decision, confidence, source/artifact-bound evidence, explicit unknowns and
+safe next actions. It excludes Mission ids, plan versions, tool counts, raw result payloads, prompts
+and private reasoning from the default terminal/Web answer. Runtime, tool, approval and recovery state
+remain independently available as audited events. The isolated `operator_answer_golden_v1` evaluates
+market, strategy, portfolio, execution, context and delivery behavior; its retained artifacts contain
+only check outcomes and aggregate sizes. Missing conversation context or public answer-stream support
+is a visible `not_supported` result, never a pass.
+
 Production sandbox activation is explicit. `AGENT_STRATEGY_SANDBOX_IMAGE` selects a reviewed image;
 when `APP_ENV` is production/staging and the image is absent, the API returns 503 and no host
 subprocess is started. When configured, `DockerSandboxRunner` invokes `docker run` with network

@@ -230,7 +230,11 @@ contracts and safety policies remain, while weak orchestration/state/UI code may
 deleted. The new runtime adds a durable Mission aggregate, immutable Plan versions,
 validated Step observations, bounded adaptive replanning, reviewed capability discovery, compiled
 Context Packs, a Mission Artifact Index, bounded multi-Agent supervision, sandboxed strategy
-development and long-horizon readiness evaluation.
+development and long-horizon readiness evaluation. Sprint 116 also defines a compact public
+`OperatorResponseV1` and an isolated output-evaluation catalog: user-facing answers carry only
+conclusion, confidence, provenance-bound evidence, explicit gaps and a safe next action. Internal
+Mission/Plan/tool telemetry remains an audited drill-down, not default chat content; model prompts,
+answers, tool arguments and raw results are never retained in output-evaluation artifacts.
 
 Migration uses vertical cutover without dual writes; historical runs remain read-only, and every
 Sprint includes an explicit legacy deletion budget. The roadmap is planning-only until explicitly approved. The first draft contract is
