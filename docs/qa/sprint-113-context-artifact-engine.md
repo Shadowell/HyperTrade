@@ -2,8 +2,8 @@
 
 ## Verdict
 
-LOCAL PASS. Gate J2 requirements pass locally. Production migration, SHA/health, flag-off and
-read-only canary verification remain before closure.
+PASS. Gate J2 requirements pass locally and in production. Mission execution remains disabled and
+the production canary was deterministic and read-only.
 
 ## Contract Review
 
@@ -25,12 +25,16 @@ read-only canary verification remain before closure.
 - `./scripts/check.sh`: frontend lint, 9 tests and build passed; Ruff and strict mypy passed over 165
   source files; all 574 Python tests passed.
 
-## Not Checked Yet
+## Production Acceptance
 
-- PostgreSQL `0025 -> 0024 -> 0025` migration round trip.
-- Deployed SHA, API health, disabled Mission execution flag and production read-only projection.
+- Workflow `29428834737` deployed SHA `3277d46`; API health remained OK.
+- PostgreSQL `0025 -> 0024 -> 0025` passed, followed by API/worker restart and head verification.
+- Counts stayed `[AgentTask=4, AgentRun=153, AgentMission=0, ContextPack=0, Artifact=0, Relation=0]`.
+- `MISSION_RUNTIME_ENABLED=False` remained unchanged.
+- A server-local read-only compiler canary included its required source, used six estimated tokens
+  and reproduced the exact same manifest hash on a second isolated compile.
 
 ## Next
 
-Complete production acceptance, close Gate J2, then activate Sprint 114 Bounded Multi-Agent
-Supervisor. Handoffs may carry only Context Pack and Artifact refs.
+Activate Sprint 114 Bounded Multi-Agent Supervisor. Handoffs may carry only Context Pack and
+Artifact refs.

@@ -1,6 +1,6 @@
 # Sprint 113 - Context and Artifact Engine
 
-> 状态：Implemented / production acceptance pending；Sprint 112 Gate J1 已关闭。
+> 状态：Completed；Gate J2 于 2026-07-15 关闭。
 
 ## Goal
 

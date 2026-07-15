@@ -4,13 +4,16 @@
 
 - Branch: `main`
 - Harness status: active
-- Sprint 113 implementation state: implementation and local acceptance complete on 2026-07-15;
-  production acceptance is pending. Deterministic per-step Context Packs retain objective,
+- Sprint 113 implementation state: completed and production-verified on 2026-07-15. Deterministic
+  per-step Context Packs retain objective,
   constraints, permission, Plan and Step blocks, apply a hard token ledger, stable tier ordering,
   bounded extractive compaction and explicit stale/budget/duplicate/unsafe drop decisions. The
   Mission Artifact Index adds content-bound dedupe, versions, stable refs, derived-from/supersede
   relations and forged-ref completion refusal. SQL persistence, authenticated APIs and migration
   `0025_agent_context_artifacts` are implemented. Full checks passed 574 Python and 9 frontend tests.
+  Workflow `29428834737` deployed SHA `3277d46`; PostgreSQL `0025 -> 0024 -> 0025`, health and
+  flag-off checks passed. Production counts remained unchanged and a repeated read-only compiler
+  canary produced the same manifest hash. Gate J2 is closed; Sprint 114 is active.
 - Sprint 112 implementation state: completed and production-verified on 2026-07-15. A
   reviewed/versioned Capability Catalog, contract/policy hashes,
   pending-only discovery proposals, idempotent administrator reviews, JSON-Schema preflight/output
