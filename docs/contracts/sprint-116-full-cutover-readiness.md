@@ -1,6 +1,7 @@
 # Sprint 116 - Full Cutover, Professional UX & Readiness
 
-> 状态：Completed locally; Gate M production canary remains pending. Sprint 115 Gate L 的本地安全合同已关闭。
+> 状态：Active — completion audit reopened on 2026-07-16. Sprint 115 Gate L 的本地安全合同已关闭，
+> 但默认 chat/CLI/TUI/worker 尚未完成 Mission Runtime 切换，Gate M 不能宣称完成。
 
 ## Goal
 

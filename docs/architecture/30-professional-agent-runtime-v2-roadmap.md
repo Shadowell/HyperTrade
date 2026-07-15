@@ -1,8 +1,8 @@
 # 30 Professional Agent Runtime V2 路线图
 
-> 状态：Active through Sprint 116 local development acceptance; Sprint 111–114 are production-verified,
-> Sprint 115–116 are locally closed with production fail-closed isolation, and the Gate M operational
-> canary remains pending. Current production permissions remain unchanged.
+> 状态：Sprint 111–114 已完成生产验证；Sprint 115 仅在本地关闭且生产 fail-closed。2026-07-16
+> completion audit 重新打开 Sprint 116：默认 chat/CLI/TUI/worker 仍有 legacy AgentKernel 写路径，
+> 因此 Gate M 的全面切换与 operational canary 均未完成。当前生产权限保持不变。
 
 ## 1. 目标
 

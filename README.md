@@ -99,7 +99,7 @@ HyperTrade is a self-hosted Agent runtime that connects LLM-powered reasoning wi
 | Monitoring & Alerts | Read-only monitors for paper strategies, connector health, library freshness | Production |
 | Evaluation Suite | Deterministic evals for tool choice, RAG, Memory, risk, report quality | Production |
 | Agent Task OS | Durable sessions, tasks, checkpoints, cursor events, controls, leases, and recovery | Production |
-| Professional Mission Runtime | Strict Mission/Plan/Step contracts, immutable events, hard budgets and safe-point controls | Production foundation (Sprint 111) |
+| Professional Mission Runtime | Strict Mission/Plan/Step contracts, immutable events, hard budgets, safe-point controls and a catalog-bounded research planner | Cutover in progress (Sprints 111–116) |
 | Research Triggers | Durable schedule/regime/drift/data/eval triggers with quotas, dedupe, and kill switch | Production (disabled by default) |
 | World Model | Portfolio state tracking and defensive action scheduling | Experimental |
 

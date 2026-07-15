@@ -1,6 +1,6 @@
 # Progress Log
 
-## Sprint 116 local acceptance — 2026-07-16
+## Sprint 116 completion audit reopened — 2026-07-16
 
 - Added the Mission workspace to the Web research surface. It projects server-owned Mission
   list/detail/Plan/Step/Event/Budget/Artifact state and exposes audited create/run/pause/resume/
@@ -11,8 +11,11 @@
 - Added an explicit `DockerSandboxRunner` contract and `AGENT_STRATEGY_SANDBOX_IMAGE`. Production and
   staging remain fail-closed (503) without a configured rootless image; no production canary is
   claimed in this local run.
-- Sprint 116 development gate is locally closed. Gate M operational canary remains the only next
-  release action; historical AgentTask/AgentRun reads remain intact and no live/paper/order/capital
+- Completion audit found that the default `/api/agent/runs`, local CLI, Textual task creation and
+  worker still execute/write through legacy `AgentKernel`/`AgentTask`. The prior UI/readiness result
+  is therefore insufficient for the roadmap's full-cutover requirement. Sprint 116 is active again:
+  migrate the default controlled entrypoint to Mission Runtime, retain legacy records as read-only
+  history, then run the rootless-container and production canaries. No live/paper/order/capital
   permission was enabled.
 
 ## Current Baseline

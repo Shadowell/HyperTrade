@@ -141,8 +141,8 @@ from hypertrade.runtime.adapters.context_engine import (
     InMemoryContextArtifactStore,
     SqlContextArtifactStore,
 )
-from hypertrade.runtime.adapters.foundation import FoundationPlanner
 from hypertrade.runtime.adapters.memory_store import InMemoryMissionStore
+from hypertrade.runtime.adapters.research_planner import ProviderBackedResearchPlanner
 from hypertrade.runtime.adapters.sandbox import (
     DockerSandboxRunner,
     InMemorySandboxStore,
@@ -401,9 +401,15 @@ def create_app(
         builtin_handlers(database, knowledge_dir=str(app_settings.knowledge_dir)),
         observations=observation_store,
     )
+    # A provider may propose a plan but never gains dispatch authority. The
+    # fallback is deterministic and the catalog remains the pre-dispatch gate.
     mission_runtime = MissionRuntime(
         mission_store,
-        FoundationPlanner(),
+        ProviderBackedResearchPlanner(
+            provider=ProviderRuntime(app_settings).get_chat_provider(
+                selected=app_settings.active_chat_provider,
+            )
+        ),
         tool_executor,
         CatalogCapabilityPolicy(capability_catalog),
         context_engine,

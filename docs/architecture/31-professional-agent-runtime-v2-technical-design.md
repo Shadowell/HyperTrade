@@ -220,6 +220,14 @@ non-root UID, cgroup memory/CPU/pid limits, read-only workspace/guard mounts and
 The image still requires an operator canary proving rootless daemon configuration, image digest
 pinning, secret absence and timeout/process-group cleanup before the feature flag is enabled.
 
-Local Sprint 116 acceptance is closed for code, UI and deterministic evaluation. The production
-canary is an operational release gate and remains disabled until deployment evidence is collected;
-this is not represented as a successful production claim.
+The initial Sprint 116 UI/readiness implementation passed its local checks, but a subsequent
+completion audit reopened the Sprint: the default chat API, local CLI/TUI and worker still retain
+legacy AgentKernel/AgentTask write paths. The next cutover slice replaces that controlled entrypoint
+with a Mission projection while keeping historical legacy records read-only. The production canary
+remains disabled until deployment evidence is collected; it is not represented as a successful
+production claim.
+
+The reopened slice replaces the single-step `FoundationPlanner` in application composition with a
+provider-backed, catalog-bounded research planner. Providers may propose transient JSON plans only;
+unavailable, malformed or over-scoped proposals fall back to a deterministic read-only plan. Neither
+path can introduce an unreviewed capability, a write scope, approval bypass or model-defined budget.
