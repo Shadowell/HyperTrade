@@ -1,8 +1,8 @@
 # 30 Professional Agent Runtime V2 路线图
 
-> 状态：Active through Sprint 115; Sprint 111–114 are production-verified, Sprint 115 is locally
-> closed with production fail-closed isolation, and Sprint 116 remains the final cutover/readiness
-> slice. Current production permissions remain unchanged.
+> 状态：Active through Sprint 116 local development acceptance; Sprint 111–114 are production-verified,
+> Sprint 115–116 are locally closed with production fail-closed isolation, and the Gate M operational
+> canary remains pending. Current production permissions remain unchanged.
 
 ## 1. 目标
 

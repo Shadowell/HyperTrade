@@ -1,5 +1,20 @@
 # Progress Log
 
+## Sprint 116 local acceptance — 2026-07-16
+
+- Added the Mission workspace to the Web research surface. It projects server-owned Mission
+  list/detail/Plan/Step/Event/Budget/Artifact state and exposes audited create/run/pause/resume/
+  cancel/steer controls; it does not maintain a client-side workflow truth source.
+- Added deterministic professional readiness coverage with 26 cases and explicit failure checks for
+  unsafe dispatch and write-scope bypass. Focused Mission/sandbox/readiness tests passed 43 cases;
+  frontend lint, 9 frontend tests, TypeScript build, Ruff and strict mypy passed.
+- Added an explicit `DockerSandboxRunner` contract and `AGENT_STRATEGY_SANDBOX_IMAGE`. Production and
+  staging remain fail-closed (503) without a configured rootless image; no production canary is
+  claimed in this local run.
+- Sprint 116 development gate is locally closed. Gate M operational canary remains the only next
+  release action; historical AgentTask/AgentRun reads remain intact and no live/paper/order/capital
+  permission was enabled.
+
 ## Current Baseline
 
 - Sprint 115 local acceptance completed on 2026-07-16. The strategy sandbox now validates exact

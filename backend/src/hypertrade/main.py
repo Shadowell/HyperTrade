@@ -144,6 +144,7 @@ from hypertrade.runtime.adapters.context_engine import (
 from hypertrade.runtime.adapters.foundation import FoundationPlanner
 from hypertrade.runtime.adapters.memory_store import InMemoryMissionStore
 from hypertrade.runtime.adapters.sandbox import (
+    DockerSandboxRunner,
     InMemorySandboxStore,
     SqlSandboxStore,
     StrategySandbox,
@@ -384,9 +385,16 @@ def create_app(
         if database.url == "sqlite:///:memory:"
         else SqlSandboxStore(database.url)
     )
+    production_sandbox = app_settings.app_env.casefold() in {"production", "staging"}
+    sandbox_runner = (
+        DockerSandboxRunner(app_settings.strategy_sandbox_image)
+        if production_sandbox and app_settings.strategy_sandbox_image
+        else None
+    )
     strategy_sandbox = StrategySandbox(
         sandbox_store,
-        production=app_settings.app_env.casefold() in {"production", "staging"},
+        production=production_sandbox,
+        runner=sandbox_runner,
     )
     tool_executor = GovernedToolExecutor(
         capability_catalog,

@@ -35,6 +35,7 @@ import {
 type Language = "zh" | "en";
 type NavSection =
   | "harness"
+  | "missions"
   | "strategy"
   | "portfolio"
   | "alerts"
@@ -123,6 +124,22 @@ type StrategyResearchSummary = {
   spec_json: Record<string, unknown>;
   created_at: string;
 };
+
+type MissionProjection = {
+  mission_id: string;
+  objective: string;
+  status: string;
+  active_plan_version?: number;
+  current_step_id?: string;
+  usage?: { tokens?: number; tool_calls?: number; step_attempts?: number; duration_ms?: number };
+  budget?: { max_tokens?: number; max_tool_calls?: number; max_attempts_per_step?: number };
+  plans?: Array<{ version: number; steps?: Array<{ step_id: string; title: string; capability_id: string }> }>;
+  attempts?: Array<{ step_id: string; status: string; observation?: { summary?: string } }>;
+  artifact_refs?: string[];
+  unknowns?: string[];
+};
+
+type MissionEvent = { sequence: number; event_type: string; actor?: string; payload?: Record<string, unknown>; created_at?: string };
 
 type StrategyCardProjection = {
   card_id: string;
@@ -489,6 +506,18 @@ const copy = {
   zh: {
     product: "HyperTrade",
     harness: "工作台",
+    missions: "Mission 工作流",
+    missionObjective: "研究目标",
+    missionCreate: "创建 Mission",
+    missionRun: "运行",
+    missionPause: "暂停",
+    missionResume: "恢复",
+    missionCancel: "取消",
+    missionSteer: "Steer",
+    missionPlan: "计划与步骤",
+    missionEvents: "事件时间线",
+    missionEvidence: "证据与未知",
+    missionNoData: "暂无 Mission；创建一个受治理的研究任务。",
     market: "行情摘要",
     providers: "模型提供方",
     tools: "工具调用链路",
@@ -720,6 +749,18 @@ const copy = {
   en: {
     product: "HyperTrade",
     harness: "Harness",
+    missions: "Mission Workflow",
+    missionObjective: "Research Objective",
+    missionCreate: "Create Mission",
+    missionRun: "Run",
+    missionPause: "Pause",
+    missionResume: "Resume",
+    missionCancel: "Cancel",
+    missionSteer: "Steer",
+    missionPlan: "Plan & Steps",
+    missionEvents: "Event Timeline",
+    missionEvidence: "Evidence & Unknowns",
+    missionNoData: "No Missions yet; create a governed research task.",
     market: "Market Summary",
     providers: "Provider",
     tools: "Tool Call Trace",
@@ -1128,6 +1169,11 @@ function App() {
   const [prompt, setPrompt] = useState(copy.zh.prompt);
   const [run, setRun] = useState<AgentRun>(seedRun);
   const [overview, setOverview] = useState<HarnessOverview | null>(null);
+  const [missions, setMissions] = useState<MissionProjection[]>([]);
+  const [selectedMission, setSelectedMission] = useState<MissionProjection | null>(null);
+  const [missionEvents, setMissionEvents] = useState<MissionEvent[]>([]);
+  const [missionObjective, setMissionObjective] = useState("");
+  const [missionBusy, setMissionBusy] = useState(false);
   const [harnessError, setHarnessError] = useState("");
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -1435,6 +1481,92 @@ function App() {
     setShadowPortfolios(Array.isArray(payload.items) ? payload.items : []);
   }, []);
 
+  const refreshMissions = useCallback(async (missionId = "") => {
+    const response = await fetch("/api/agent/missions", { credentials: "include" });
+    if (!response.ok) {
+      setMissions([]);
+      return;
+    }
+    const payload = (await response.json()) as { missions?: MissionProjection[] };
+    const rows = Array.isArray(payload.missions) ? payload.missions : [];
+    setMissions(rows);
+    const selected = rows.find((row) => row.mission_id === missionId) ?? rows[0] ?? null;
+    if (!selected) {
+      setSelectedMission(null);
+      setMissionEvents([]);
+      return;
+    }
+    const detailResponse = await fetch(`/api/agent/missions/${encodeURIComponent(selected.mission_id)}`, {
+      credentials: "include"
+    });
+    const detail = detailResponse.ok ? ((await detailResponse.json()) as MissionProjection) : selected;
+    setSelectedMission(detail);
+    const eventsResponse = await fetch(`/api/agent/missions/${encodeURIComponent(selected.mission_id)}/events?after=0`, {
+      credentials: "include"
+    });
+    if (eventsResponse.ok) {
+      const eventPayload = (await eventsResponse.json()) as { events?: MissionEvent[] };
+      setMissionEvents(Array.isArray(eventPayload.events) ? eventPayload.events : []);
+    }
+  }, []);
+
+  const createMission = useCallback(async () => {
+    const objective = missionObjective.trim();
+    if (!objective) return;
+    setMissionBusy(true);
+    try {
+      const response = await fetch("/api/agent/missions", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          objective,
+          success_criteria: [{ criterion_id: "validated", kind: "all_steps_validated", description: "所有步骤通过结构化证据验证" }]
+        })
+      });
+      if (response.ok) {
+        const created = (await response.json()) as MissionProjection;
+        setMissionObjective("");
+        await refreshMissions(created.mission_id);
+      }
+    } finally {
+      setMissionBusy(false);
+    }
+  }, [missionObjective, refreshMissions]);
+
+  const runMissionAction = useCallback(async (action: "run" | "pause" | "resume" | "cancel") => {
+    if (!selectedMission) return;
+    setMissionBusy(true);
+    try {
+      await fetch(`/api/agent/missions/${encodeURIComponent(selectedMission.mission_id)}/${action === "run" ? "run" : "control"}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: action === "run" ? undefined : JSON.stringify({ action, reason: "operator_mission_workspace" })
+      });
+      await refreshMissions(selectedMission.mission_id);
+    } finally {
+      setMissionBusy(false);
+    }
+  }, [refreshMissions, selectedMission]);
+
+  const steerMission = useCallback(async () => {
+    if (!selectedMission || !missionObjective.trim()) return;
+    setMissionBusy(true);
+    try {
+      await fetch(`/api/agent/missions/${encodeURIComponent(selectedMission.mission_id)}/steer`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instruction: missionObjective.trim(), reason: "operator_mission_workspace", actor: "operator" })
+      });
+      setMissionObjective("");
+      await refreshMissions(selectedMission.mission_id);
+    } finally {
+      setMissionBusy(false);
+    }
+  }, [missionObjective, refreshMissions, selectedMission]);
+
   const refreshOverview = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -1450,6 +1582,7 @@ function App() {
         await refreshPortfolioObservationWindows();
         await refreshPaperCohorts();
         await refreshShadowPortfolios();
+        await refreshMissions();
         setHarnessError("");
         return;
       }
@@ -1464,6 +1597,7 @@ function App() {
     refreshPortfolioAssessments,
     refreshPortfolioObservationWindows,
     refreshPaperCohorts,
+    refreshMissions,
     refreshShadowPortfolios,
     refreshStrategyCards,
     refreshStrategyLibrary
@@ -1744,6 +1878,14 @@ function App() {
             >
               <TerminalSquare size={16} />
               {t.harness}
+            </a>
+            <a
+              className={navItemClass("missions")}
+              href={sectionPath("missions")}
+              onClick={(event) => handleNavClick("missions", event)}
+            >
+              <Activity size={16} />
+              {t.missions}
             </a>
             <a
               className={navItemClass("strategy")}
@@ -2047,6 +2189,83 @@ function App() {
             loading={busy || observabilityLoading}
           />
           </div>
+
+          <section className="mt-5" hidden={activeSection !== "missions"}>
+            <div className="panel">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brass">MISSION / TASK OS</div>
+                  <h2 className="mt-2 text-2xl font-semibold">{t.missions}</h2>
+                  <p className="mt-1 text-sm text-ink/55">{t.missionObjective}、Plan、Evidence 和控制事件在同一条可回放时间线上。</p>
+                </div>
+                <span className="rounded border border-signal/25 bg-signal/10 px-2 py-1 text-xs text-signal">read-only / governed</span>
+              </div>
+              <div className="mt-4 grid grid-cols-[1fr_auto] gap-2 max-md:grid-cols-1">
+                <input
+                  className="field-light"
+                  onChange={(event) => setMissionObjective(event.target.value)}
+                  placeholder={t.missionObjective}
+                  value={missionObjective}
+                />
+                <button className="icon-button justify-center" disabled={missionBusy} onClick={() => void (selectedMission ? steerMission() : createMission())} type="button">
+                  <Sparkles size={14} />
+                  {selectedMission ? t.missionSteer : t.missionCreate}
+                </button>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-[260px_1fr] gap-5 max-lg:grid-cols-1">
+              <div className="panel">
+                <div className="section-title">MISSIONS</div>
+                <div className="mt-3 space-y-2">
+                  {missions.length === 0 ? <div className="empty-row">{t.missionNoData}</div> : missions.map((mission) => (
+                    <button
+                      className={`operator-card w-full text-left ${selectedMission?.mission_id === mission.mission_id ? "border-signal/45" : ""}`}
+                      data-tone={mission.status === "failed" ? "danger" : "signal"}
+                      key={mission.mission_id}
+                      onClick={() => void refreshMissions(mission.mission_id)}
+                      type="button"
+                    >
+                      <strong className="block truncate font-mono text-xs">{mission.mission_id}</strong>
+                      <span className="mt-1 block truncate text-sm text-ink/70">{mission.objective}</span>
+                      <span className="mt-2 inline-flex rounded border border-ink/15 px-2 py-0.5 text-[11px] text-ink/55">{statusLabel(mission.status)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-5">
+                {selectedMission ? (
+                  <>
+                    <div className="grid grid-cols-4 gap-3 max-md:grid-cols-2">
+                      <div className="operator-card" data-tone="signal"><span>STATUS</span><strong>{statusLabel(selectedMission.status)}</strong></div>
+                      <div className="operator-card" data-tone="brass"><span>PLAN</span><strong>v{selectedMission.active_plan_version ?? 0}</strong></div>
+                      <div className="operator-card" data-tone="violet"><span>TOKENS</span><strong>{formatMetricNumber(selectedMission.usage?.tokens ?? 0)}</strong></div>
+                      <div className="operator-card" data-tone="signal"><span>TOOLS</span><strong>{formatMetricNumber(selectedMission.usage?.tool_calls ?? 0)}</strong></div>
+                    </div>
+                    <div className="panel">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <h3 className="section-title">{t.missionPlan}</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedMission.status === "draft" || selectedMission.status === "paused" ? <button className="icon-button" disabled={missionBusy} onClick={() => void runMissionAction(selectedMission.status === "draft" ? "run" : "resume")} type="button">{selectedMission.status === "draft" ? t.missionRun : t.missionResume}</button> : null}
+                          {selectedMission.status === "running" ? <button className="icon-button" disabled={missionBusy} onClick={() => void runMissionAction("pause")} type="button">{t.missionPause}</button> : null}
+                          {!['completed', 'failed', 'canceled', 'budget_exhausted'].includes(selectedMission.status) ? <button className="icon-button border-danger/30 text-danger" disabled={missionBusy} onClick={() => void runMissionAction("cancel")} type="button">{t.missionCancel}</button> : null}
+                        </div>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {(selectedMission.plans?.at(-1)?.steps ?? []).map((step) => {
+                          const attempt = selectedMission.attempts?.find((item) => item.step_id === step.step_id);
+                          return <div className="operator-card operator-card-compact" data-tone={attempt?.status === "succeeded" ? "signal" : "brass"} key={step.step_id}><div className="flex items-center justify-between gap-3"><strong className="font-mono text-sm">{step.step_id}</strong><span className="text-xs text-ink/50">{statusLabel(attempt?.status ?? "pending")}</span></div><div className="mt-1 text-sm text-ink/70">{step.title}</div><div className="mt-1 text-xs text-ink/45">{step.capability_id}</div></div>;
+                        })}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-5 max-lg:grid-cols-1">
+                      <div className="panel"><h3 className="section-title">{t.missionEvents}</h3><div className="mt-3 max-h-64 space-y-2 overflow-auto">{missionEvents.length === 0 ? <div className="empty-row">—</div> : missionEvents.map((event) => <div className="trace-row" key={event.sequence}><span className="font-mono text-xs text-brass">#{event.sequence}</span><span className="text-sm">{event.event_type}</span><span className="ml-auto text-xs text-ink/45">{event.actor ?? "runtime"}</span></div>)}</div></div>
+                      <div className="panel"><h3 className="section-title">{t.missionEvidence}</h3><div className="mt-3 space-y-2 text-sm"><div className="mini-block"><span>Artifact refs</span><strong>{formatMetricNumber(selectedMission.artifact_refs?.length ?? 0)}</strong></div><div className="mini-block"><span>Unknowns</span><strong>{formatMetricNumber(selectedMission.unknowns?.length ?? 0)}</strong></div><div className="text-xs text-ink/45">{(selectedMission.unknowns ?? []).join(" · ") || "No unknowns recorded"}</div></div></div>
+                    </div>
+                  </>
+                ) : <div className="panel empty-row">{t.missionNoData}</div>}
+              </div>
+            </div>
+          </section>
 
           <section className="mt-5" hidden={activeSection !== "strategy"}>
             <RouteMetricStrip label={t.pageMetrics} metrics={strategyRouteMetrics} />
@@ -2620,6 +2839,7 @@ function activeSectionFromPath(): NavSection {
   }
   const section = window.location.pathname.split("/").filter(Boolean).at(-1) ?? "harness";
   if (
+    section === "missions" ||
     section === "strategy" ||
     section === "portfolio" ||
     section === "alerts" ||

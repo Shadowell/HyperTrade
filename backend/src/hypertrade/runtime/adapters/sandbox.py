@@ -4,6 +4,7 @@ import ast
 import difflib
 import os
 import resource
+import shutil
 import signal
 import subprocess
 import sys
@@ -66,6 +67,12 @@ class SandboxStore(Protocol):
     ) -> ImportReviewFactV1: ...
 
     async def reviews(self, mission_id: str) -> Sequence[ImportReviewFactV1]: ...
+
+
+class SandboxRunner(Protocol):
+    def execute(
+        self, command: SandboxCommandV1, workspace: Path, guard: Path, timeout_seconds: float
+    ) -> SandboxCommandResultV1: ...
 
 
 class InMemorySandboxStore:
@@ -250,13 +257,15 @@ class StrategySandbox:
         *,
         command_timeout_seconds: float = 20.0,
         production: bool = False,
+        runner: SandboxRunner | None = None,
     ) -> None:
         self.store = store
         self.command_timeout_seconds = command_timeout_seconds
         self.production = production
+        self.runner = runner
 
     async def run(self, mission_id: str, request: SandboxRequestV1) -> SandboxRunV1:
-        if self.production:
+        if self.production and self.runner is None:
             raise RuntimeError(
                 "strategy sandbox requires a configured rootless Docker adapter in production"
             )
@@ -343,6 +352,8 @@ class StrategySandbox:
     def _execute(
         self, command: SandboxCommandV1, workspace: Path, guard: Path
     ) -> SandboxCommandResultV1:
+        if self.runner is not None:
+            return self.runner.execute(command, workspace, guard, self.command_timeout_seconds)
         argv = _command_argv(command, workspace, guard)
         started = time.monotonic()
         env = {
@@ -403,6 +414,58 @@ class StrategySandbox:
             output_bytes=output_bytes,
             truncated=len(output) > _MAX_OUTPUT_BYTES,
         )
+
+
+class DockerSandboxRunner:
+    """Rootless Docker/OCI runner; no host Docker socket is mounted by this adapter."""
+
+    def __init__(self, image: str) -> None:
+        self.image = image.strip()
+
+    def execute(
+        self, command: SandboxCommandV1, workspace: Path, guard: Path, timeout_seconds: float
+    ) -> SandboxCommandResultV1:
+        docker = shutil.which("docker")
+        if not docker or not self.image:
+            raise RuntimeError("rootless Docker sandbox runner is unavailable")
+        argv = [
+            docker,
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--read-only",
+            "--tmpfs",
+            "/tmp:rw,nosuid,nodev,noexec,size=64m",
+            "--cap-drop=ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--pids-limit",
+            "32",
+            "--memory",
+            "256m",
+            "--cpus",
+            "1",
+            "--user",
+            "65532:65532",
+            "--mount",
+            f"type=bind,src={workspace},dst=/workspace,readonly",
+            "--mount",
+            f"type=bind,src={guard},dst=/guard,readonly",
+            "--workdir",
+            "/workspace",
+            "--env",
+            "HOME=/tmp",
+            "--env",
+            "PYTHONDONTWRITEBYTECODE=1",
+            "--env",
+            "PYTHONPATH=/guard",
+            "--env",
+            "HYPERTRADE_SANDBOX=1",
+            self.image,
+            *_container_argv(command, workspace),
+        ]
+        return _run_bounded_process(command, argv, timeout_seconds)
 
 
 def _validate_files(files: dict[str, str]) -> dict[str, str]:
@@ -491,6 +554,76 @@ def _command_argv(command: SandboxCommandV1, workspace: Path, guard: Path) -> li
     if not strategies:
         raise ValueError("limited backtest requires a Python strategy file")
     return [sys.executable, str(guard / "limited_backtest.py"), str(strategies[0])]
+
+
+def _container_argv(command: SandboxCommandV1, workspace: Path) -> list[str]:
+    if command.name == "ruff":
+        return [
+            "python",
+            "-m",
+            "ruff",
+            "check",
+            "/workspace/strategies",
+            "/workspace/tests",
+            *command.args,
+        ]
+    if command.name == "pytest":
+        return ["python", "-m", "pytest", "-q", "/workspace/tests", *command.args]
+    strategies = sorted((workspace / "strategies").glob("*.py"))
+    if not strategies:
+        raise ValueError("limited backtest requires a Python strategy file")
+    relative_path = strategies[0].relative_to(workspace)
+    return ["python", "/guard/limited_backtest.py", f"/workspace/{relative_path}"]
+
+
+def _run_bounded_process(
+    command: SandboxCommandV1, argv: list[str], timeout_seconds: float
+) -> SandboxCommandResultV1:
+    started = time.monotonic()
+    output_file = tempfile.TemporaryFile()  # noqa: SIM115 - closed after bounded read below
+    process: subprocess.Popen[bytes] | None = None
+    status: str
+    exit_code: int | None
+    try:
+        process = subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=output_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        try:
+            exit_code = process.wait(timeout=timeout_seconds)
+            status = "passed" if exit_code == 0 else "failed"
+        except subprocess.TimeoutExpired:
+            _terminate_process_group(process)
+            status = "timeout"
+            exit_code = None
+            output_file.write(b"\n[TIMEOUT]")
+    except (OSError, ValueError) as exc:
+        if process is not None:
+            _terminate_process_group(process)
+        output_file.write(f"\n[DENIED] {exc}".encode())
+        status = "denied"
+        exit_code = None
+    output_file.seek(0)
+    output_bytes = output_file.seek(0, os.SEEK_END)
+    output_file.seek(0)
+    output_hash = _hash_stream(output_file)
+    output_file.seek(0)
+    output = output_file.read(_MAX_OUTPUT_BYTES + 1)
+    output_file.close()
+    return SandboxCommandResultV1(
+        name=command.name,
+        argv=tuple(_public_argv(command)),
+        status=status,
+        exit_code=exit_code,
+        duration_ms=int((time.monotonic() - started) * 1_000),
+        output_preview=output[:_MAX_OUTPUT_BYTES].decode("utf-8", errors="replace"),
+        output_hash=output_hash,
+        output_bytes=output_bytes,
+        truncated=len(output) > _MAX_OUTPUT_BYTES,
+    )
 
 
 def _public_argv(command: SandboxCommandV1) -> list[str]:

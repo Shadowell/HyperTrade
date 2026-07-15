@@ -195,3 +195,31 @@ has not been configured, the authenticated API returns `503` instead of executin
 the application host. The Sprint 116 deployment canary must provide network namespace denial,
 read-only filesystem, non-root UID, cgroup/pids limits, no secrets and no host Docker socket before
 the flag can be enabled.
+
+## Sprint 116 Full Cutover, Professional UX & Readiness
+
+Sprint 116 closes the local development slice with one server-owned Mission projection consumed by
+the React operator workspace. The workspace lives at `/harness/missions` and reuses the existing
+operator-card/Flight Recorder visual language. It lists Missions, selects a detail, and projects
+status, plan versions, step attempts, budget usage, artifact/unknown counts and cursor events.
+Create, run, pause, resume, cancel and steer actions call authenticated Mission REST endpoints;
+after every mutation the client reloads detail and events from the server. This keeps UI state from
+becoming a second workflow state machine. The current implementation uses the REST `after=0` replay
+path; the existing SSE stream remains the live upgrade path and reconnect fallback.
+
+The readiness gate is deterministic and provider-independent. `ResearchOSEvalSuite` has a dedicated
+`test_professional_agent_readiness.py` contract asserting at least 20 cases, recovery/fault/safety/
+cursor categories, and zero `dangerous_tool_dispatched` or `write_scope_not_fail_closed` findings.
+It is a safety gate, not a performance claim and does not score Sharpe, return or model eloquence.
+
+Production sandbox activation is explicit. `AGENT_STRATEGY_SANDBOX_IMAGE` selects a reviewed image;
+when `APP_ENV` is production/staging and the image is absent, the API returns 503 and no host
+subprocess is started. When configured, `DockerSandboxRunner` invokes `docker run` with network
+`none`, read-only root filesystem, bounded tmpfs, dropped capabilities, `no-new-privileges`,
+non-root UID, cgroup memory/CPU/pid limits, read-only workspace/guard mounts and no Docker socket.
+The image still requires an operator canary proving rootless daemon configuration, image digest
+pinning, secret absence and timeout/process-group cleanup before the feature flag is enabled.
+
+Local Sprint 116 acceptance is closed for code, UI and deterministic evaluation. The production
+canary is an operational release gate and remains disabled until deployment evidence is collected;
+this is not represented as a successful production claim.
