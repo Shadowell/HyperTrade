@@ -463,7 +463,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Reproducible experiment ledger | Production |
 | Robustness validation suite | Production |
 | Agent Research Evaluation Foundation | Production |
-| Agent Research Quality Closure | Planned (Sprint 106) |
+| Agent Research Quality Closure | In Development (Sprint 106) |
 | StrategyCard V2 and Research Funnel | Planned (Sprint 107) |
 | Portfolio Evidence Data Plane | Planned (Sprint 108) |
 | Champion–Challenger Paper Incubation | Planned (Sprint 109) |

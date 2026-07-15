@@ -1,6 +1,6 @@
 # Sprint 106 - Agent Research Quality Closure
 
-> 状态：Planned；等待操作员明确批准后激活，不包含实现变更。
+> 状态：Active；2026-07-15 经操作员明确批准开始实施。
 
 ## Goal
 
@@ -99,4 +99,3 @@ Manual/QA：
 - Gate E 通过后创建并激活 Sprint 107 合同，实施 StrategyCard V2、稳定 lineage/version、
   incomplete projection 和 research funnel。
 - Gate E 未通过时继续修复 Sprint 106，不启用后台研究或提前开发 Shadow Portfolio。
-

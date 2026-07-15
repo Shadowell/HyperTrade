@@ -180,8 +180,8 @@ was available; it emitted no recommendation and no human review rather than inve
 ## Approved Post-Sprint-105 Research Operations Roadmap
 
 The approved planning sequence is documented in
-`docs/architecture/29-research-operations-shadow-portfolio-roadmap.md`. Implementation
-has not started. Sprint 106 first closes provider-backed routing/source/Task/Graph quality
+`docs/architecture/29-research-operations-shadow-portfolio-roadmap.md`. Sprint 106
+entered implementation on 2026-07-15 and first closes provider-backed routing/source/Task/Graph quality
 gaps with fixed cohort metrics. Sprint 107 then moves StrategyCard creation from the
 PaperPromotion boundary to the StrategySpec/ExperimentManifest lifecycle and adds stable
 lineage/version/incomplete projections. Sprints 108–110 add bounded portfolio evidence

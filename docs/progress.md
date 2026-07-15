@@ -4,9 +4,8 @@
 
 - Branch: `main`
 - Harness status: active
-- Planning state: Sprint 106–110 Research Operations and Shadow Portfolio roadmap is
-  documented and implementation has not started. Sprint 106 is the next planned contract,
-  but remains inactive until explicit operator approval. It fixes evaluation cohort semantics
+- Sprint 106 implementation state: active on 2026-07-15 under explicit operator approval.
+  It fixes evaluation cohort semantics
   and Agent routing/source/Task/Graph quality before any background research expansion.
   Sprint 107 moves StrategyCard creation to the StrategySpec/ExperimentManifest lifecycle;
   later sprints add bounded portfolio evidence, paper cohorts and hypothetical-only portfolio
@@ -417,9 +416,8 @@
 
 ## Active Contract
 
-- No implementation contract is active. Sprint 106 is planned under
-  `docs/contracts/sprint-106-agent-research-quality-closure.md` and requires explicit
-  operator approval before development starts.
+- Sprint 106 Agent Research Quality Closure is active under
+  `docs/contracts/sprint-106-agent-research-quality-closure.md`.
 
 ## Approved Follow-On Design
 

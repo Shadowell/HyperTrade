@@ -1,6 +1,6 @@
 # 29 Research Operations 与 Shadow Portfolio 路线图
 
-> 状态：Approved planning；Sprint 106–110 尚未开始实施。
+> 状态：In implementation；Sprint 106 于 2026-07-15 开始实施。
 
 ## 1. 规划目标
 
@@ -262,4 +262,3 @@ SHADOW_PORTFOLIO_ENABLED=false
 - Sprint 107–110 在前一 Gate 完成后分别创建/激活合同。
 - Sprint 96–105 基础路线：`docs/architecture/27-agent-research-os-roadmap.md`
 - 现有评测隔离：`docs/architecture/26-agent-evaluation-foundation.md`
-
