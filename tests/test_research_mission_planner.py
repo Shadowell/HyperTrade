@@ -99,6 +99,19 @@ async def test_memory_source_question_uses_memory_without_an_unrelated_rag_gap()
 
 
 @pytest.mark.anyio
+async def test_missing_memory_query_never_falls_back_to_unrelated_rag() -> None:
+    mission = await _mission("记忆里没有记录的策略表现如何")
+
+    plan = await DeterministicResearchPlanner().plan(mission)
+
+    assert [step.capability_id for step in plan.steps] == [
+        "runtime.objective_inspection",
+        "memory.search",
+        "strategy.performance_summary",
+    ]
+
+
+@pytest.mark.anyio
 async def test_replan_removes_the_failed_data_step_and_preserves_audit_diff() -> None:
     mission = await _mission("Research BTC market strategy evidence")
     planner = DeterministicResearchPlanner()

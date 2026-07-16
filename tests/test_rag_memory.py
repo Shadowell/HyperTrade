@@ -87,3 +87,16 @@ def test_rag_public_projection_rejects_late_mentions_in_operator_guides():
     )
 
     assert _focus_rag_hits([guide, evidence], query="momentum_breakout_v1") == [evidence]
+
+
+def test_rag_public_projection_rejects_vector_only_single_term_matches():
+    unrelated = RagHit(
+        source_path="docs/knowledge/tool-usage-guide.md",
+        title="HyperTrade 工具运维指南",
+        chunk_index=0,
+        content="仅包含运维命令。",
+        score=0.8,
+        content_preview="仅包含运维命令。",
+    )
+
+    assert _focus_rag_hits([unrelated], query="火星套利") == []

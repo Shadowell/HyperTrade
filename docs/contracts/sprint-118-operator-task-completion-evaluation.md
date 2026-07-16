@@ -71,6 +71,9 @@ HYPERTRADE_EVAL_TARGET=isolated ./scripts/run_operator_task_completion_eval.sh
   某些“有哪些证据”回答虽包含策略标识，但把工具运维指南混入结论，仍不满足“只输出有用信息”。新增
   `forbidden_decision`、复合证据结论完整性及 RAG 片段前部精确命中门禁；修复后须运行新的全量 `round7`。
   未放宽任何既有断言，本合同保持 Active。
+- `round7` 在上述门禁下执行为 98/100、2 条 P0：单词查询仍错误接受纯向量近似命中，且“记忆里没有记录”
+  仍同时读取无关 RAG，覆盖了记忆缺口。这两项均属于 R3/R6 真实失败，已修复为单词词项必需命中和缺失记忆
+  专用路由；必须用新的完整 `round8` 验证，不能将 `round7` 的 98/100 作为关闭依据。
 
 ## Handoff
 

@@ -1294,7 +1294,12 @@ def _focus_rag_hits(hits: Sequence[RagHit], *, query: str) -> list[RagHit]:
         return [
             hit for hit in hits if all(term in hit.content.casefold() for term in terms)
         ]
-    return list(hits)
+    term = terms[0]
+    return [
+        hit
+        for hit in hits
+        if term in hit.title.casefold() or term in hit.content.casefold()
+    ]
 
 
 def _paper_summary_text(

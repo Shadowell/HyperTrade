@@ -210,6 +210,8 @@ def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
             return (*capabilities, "memory.search")
         if "历史记忆" in lowered:
             return (*capabilities, "memory.search")
+        if "记忆" in lowered and "没有记录" in lowered:
+            return (*capabilities, "memory.search", "strategy.performance_summary")
         if "知识库里有" in lowered:
             return (*capabilities, "rag.search")
         if _market_lookup_requested(lowered):
