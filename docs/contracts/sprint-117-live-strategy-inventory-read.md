@@ -1,6 +1,6 @@
 # Sprint 117 — BitPro Live Strategy Inventory Read
 
-> 状态：Active — 2026-07-16。
+> 状态：Completed — 2026-07-16。
 
 ## Goal
 
@@ -44,6 +44,16 @@ uv run pytest tests/test_research_mission_planner.py tests/test_capability_catal
 
 Production smoke sequence: `bitpro_capabilities` → `bitpro_health` → `live_strategies`; report only
 contract version, source health, aggregate count and field coverage.
+
+## Acceptance record
+
+- Local `./scripts/check.sh` passed frontend lint/test/build, Ruff, strict mypy and the Python suite;
+  focused routing/catalog/runtime/operator-response tests and desktop test/build also passed.
+- Deployment workflow `29462538867` completed successfully for commit `44f2cae`.
+- Production health returned `ok`. The exact Chinese request completed through the Mission stream with
+  `answer_delta → evidence_ready → final`; its public result had one verified BitPro evidence group,
+  20 BitPro strategy source references, 20 visible inventory rows and no unknowns. No strategy text,
+  raw response, credential or account data was recorded in this acceptance note.
 
 ## Handoff
 
