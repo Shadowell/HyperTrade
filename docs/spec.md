@@ -245,6 +245,11 @@ queries follow the MCP capabilities/health/live-strategies read chain and return
 operator list; they cannot create/approve/execute an order or change paper state. Isolated evaluator
 facts are synthetic, post-migration and explicitly environment-gated; they are never seeded in production.
 
+Sprint 118 replaces contract-only public-answer readiness claims with a 100-task operator-completion
+gate. The gate tests the actual user-visible answer, source category, context resolution, safety and
+final desktop delivery in a physically separate evaluation target. A declared unsupported multi-turn
+task, an empty generic conclusion or an ungrounded data gap is a failed task, not a passing safety result.
+
 Migration uses vertical cutover without dual writes; historical runs remain read-only, and every
 Sprint includes an explicit legacy deletion budget. The roadmap is planning-only until explicitly approved. The first draft contract is
 `docs/contracts/sprint-111-professional-agent-loop-v2.md`; no feature flag is enabled and no current
