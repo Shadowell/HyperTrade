@@ -1,6 +1,6 @@
 # Sprint 118 — 100 条操作者任务完成评测与修复闭环
 
-> 状态：Active — 输出聚焦修复，`round7` 待执行，2026-07-16。
+> 状态：Closed — `round8` 100/100，P0=0，P1=0，2026-07-16。
 
 ## Goal
 
@@ -74,6 +74,10 @@ HYPERTRADE_EVAL_TARGET=isolated ./scripts/run_operator_task_completion_eval.sh
 - `round7` 在上述门禁下执行为 98/100、2 条 P0：单词查询仍错误接受纯向量近似命中，且“记忆里没有记录”
   仍同时读取无关 RAG，覆盖了记忆缺口。这两项均属于 R3/R6 真实失败，已修复为单词词项必需命中和缺失记忆
   专用路由；必须用新的完整 `round8` 验证，不能将 `round7` 的 98/100 作为关闭依据。
+- 新鲜 `round8` 在所有既有及新增门禁下完整执行 100 条：100/100 通过、P0=0、P1=0。此前发现的 RAG
+  运维噪声、纯向量近似命中、记忆缺口覆盖、复合证据结论不完整、模拟盘异常/策略归属缺口均直接验证通过；
+  未放宽任何断言。本合同关闭，逐项最终证据见
+  `docs/qa/sprint-118-operator-task-completion-evaluation.md`。
 
 ## Handoff
 

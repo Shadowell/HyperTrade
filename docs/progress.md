@@ -38,6 +38,11 @@
 - `round7` 在强化门禁下为 98/100、2 条 P0：知识库单词查询接受了纯向量近似噪声，且“记忆里没有记录”仍会
   让无关 RAG 证据抢占结论。评测没有被放宽；已要求单词词项实际出现，并让无记录的记忆查询只走 Memory +
   回测缺口读取。全量 `./scripts/check.sh`（660 passed）和 28 条定向回归通过，待部署后执行新的完整 `round8`。
+- `round8` 已在重建后的独立 loopback-only 服务完整执行：100/100 通过、P0=0、P1=0，且没有空回答。
+  结论必须包含任务相关事实、不得出现工具运维指南/内网 URL；“有哪些证据”结论同时覆盖 RAG、Memory 和
+  回测证据。GitHub Actions `29469938306`、隔离服务健康检查和全量 `./scripts/check.sh`（660 passed）均通过。
+  Sprint 118 已关闭；完整 100 条可见输出、断言、修复归因与范围限制见
+  `docs/qa/sprint-118-operator-task-completion-evaluation.md`。
 
 ## Sprint 117 — BitPro 实盘策略清单只读 — 2026-07-16
 
