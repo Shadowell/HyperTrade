@@ -1,6 +1,6 @@
 # Sprint 120 — 任意明确合约标的的精确行情交付
 
-> 状态：Active — 2026-07-16。
+> 状态：Closed — 2026-07-16。
 
 ## Goal
 
@@ -42,4 +42,11 @@ HYPERTRADE_EVAL_TARGET=isolated ./scripts/run_operator_task_completion_eval.sh
 
 ## Handoff
 
-待实现与验证后填写。
+已完成：模型受限意图提取只可绑定用户原文中的完整标的 token；服务端仍独占受审查能力、只读范围、依赖和
+权限决策。`看下 LAB 的价格` 在生产 Codex Provider 上返回 `LAB-USDT-SWAP` 的最新价和可追溯行情来源，
+不再降级为“已读取 10 个最新合约行情快照”。
+
+新鲜 `./scripts/check.sh` 完成：pytest 674 passed；保留 2 个既有、与本 Sprint 无关的 OKX coroutine
+warning。专用隔离评测镜像重建后，`operator_task_completion.v1` 100/100 passed、P0=0、P1=0；产物中的
+`m03_exact_lab` 结论为 `LAB-USDT-SWAP` 最新价，确认不是旧 `SOL` 案例回放。GitHub 部署工作流
+`29507590520` 成功，生产 API 健康检查通过。没有新增下单、策略、资金或主网权限。

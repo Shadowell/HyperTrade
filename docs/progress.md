@@ -9,8 +9,12 @@
   无效、不可用、虚构或部分匹配（例如从 `ETHEREUM` 提取 `ETH`）会回退至受控解析。
 - 新增真实中文输入的存在/缺失交付回归，并将隔离 100 条任务集的单标的行情案例替换为 `LAB`。局部回归
   22 passed；新鲜 `./scripts/check.sh` 完成，frontend lint/test/build、Ruff 和严格 mypy 通过，pytest
-  674 passed（另有 2 个既有、与本 Sprint 无关的 OKX coroutine warnings）。隔离部署、完整 100 条复跑和
-  生产只读验收仍待完成；Sprint 保持 Active。
+  674 passed（另有 2 个既有、与本 Sprint 无关的 OKX coroutine warnings）。
+- 已排除一次旧评测镜像误报：该镜像仍运行 `m03_exact_sol`，即使 100/100 也不能作为本 Sprint 验收。使用
+  当前提交重建隔离专用评测镜像后，`operator_task_completion.v1` 100/100 passed、P0=0、P1=0；产物确认
+  `m03_exact_lab` 的结论为 `LAB-USDT-SWAP` 最新价。GitHub 部署 `29507590520` 成功，生产健康检查通过；
+  服务器 Codex Provider 的只读验收也返回 LAB 的精确价格和 `hypertrade_db:market_tickers:LAB-USDT-SWAP`
+  来源，没有输出无关快照计数。Sprint 120 关闭，未增加订单、策略、资金或主网权限。
 
 ## Sprint 119 — 生产流终态恢复与实盘策略排名诚实性 — 2026-07-16
 
