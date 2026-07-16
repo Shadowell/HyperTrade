@@ -639,7 +639,6 @@ def builtin_handlers(
         return ToolResult(
             payload={"items": [item], "count": 1},
             source_refs=(f"hypertrade_db:market_tickers:{inst_id}",),
-            unknowns=("单一时点的资金费率和持仓量不足以判断后续方向。",),
             public_summary=(
                 f"{item['inst_id']} 1H 趋势：{item['trend']}；区间收益 {item['return_pct']}%。"
             ),
@@ -678,6 +677,7 @@ def builtin_handlers(
         return ToolResult(
             payload={"items": [item], "count": 1},
             source_refs=(f"hypertrade_db:market_tickers:{inst_id}",),
+            unknowns=("单一时点的资金费率和持仓量不足以判断后续方向。",),
             public_summary=(
                 f"{inst_id} 资金费率 {item['funding_rate']}，持仓量变化 "
                 f"{item['open_interest_change_pct']}%。"
