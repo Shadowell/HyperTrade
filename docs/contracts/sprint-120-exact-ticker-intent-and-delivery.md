@@ -1,0 +1,43 @@
+# Sprint 120 — 任意明确合约标的的精确行情交付
+
+> 状态：Active — 2026-07-16。
+
+## Goal
+
+让操作者的明确单标的行情问题（例如“看下 LAB 的价格”）始终走精确合约查询：存在时交付该标的价格，
+不存在时交付该标的的数据缺口；绝不能降级为无关的全市场快照计数。
+
+## In Scope
+
+- 扩展 Mission 的受控标的识别，使明确的裸符号、`USDT` 和 `USDT-SWAP` 写法统一为 OKX
+  `BASE-USDT-SWAP` 查询。
+- 保留概览问题的 `market.summary` 行为；不把英文自然语言、报价币或市场术语误作标的。
+- 对精确标的存在与不存在两条路径分别增加规划、工具和公开结论回归。
+- 将该真实故障写入独立评测集，验证结论含用户请求的标的和价格或该标的的数据缺口。
+
+## Out of Scope
+
+- 新增交易所、现货/币本位合约、自动刷新或任何订单、策略、资金变更。
+- 根据名称、近似匹配或无关快照猜测价格。
+- 重新设计完整回答流或外部 BitPro MCP 契约。
+
+## Done Means
+
+- `看下 LAB 的价格` 的计划参数为 `inst_id=LAB-USDT-SWAP`，不读取泛化快照作为答案。
+- 有该快照时公开结论包含 `LAB-USDT-SWAP` 与“最新价”；没有时为 `needs_data`，明确说明
+  `LAB-USDT-SWAP` 未找到并提供下一步。
+- `现在合约市场整体怎么样` 继续是概览查询，不产生虚构标的。
+
+## Verification
+
+```bash
+./scripts/check.sh
+HYPERTRADE_EVAL_TARGET=isolated ./scripts/run_operator_task_completion_eval.sh
+```
+
+部署后执行只读验收：`ht ask '看下 LAB 的价格'`。若生产行情库没有 LAB，则应返回明确的
+`LAB-USDT-SWAP` 数据缺口；若存在，则应返回其最新价。两种情况下都不得出现“已读取 10 个最新合约行情快照”。
+
+## Handoff
+
+待实现与验证后填写。
