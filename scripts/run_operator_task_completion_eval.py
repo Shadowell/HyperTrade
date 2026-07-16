@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from hypertrade.evals.task_completion import (
     TASK_COMPLETION_SUITE_VERSION,
@@ -36,6 +37,11 @@ def main() -> int:
     )
     parser.add_argument("--allow-failures", action="store_true")
     parser.add_argument(
+        "--run-id",
+        default="",
+        help="Unique evaluation round identifier; defaults to a fresh value for each full rerun.",
+    )
+    parser.add_argument(
         "--case-timeout-seconds",
         type=float,
         default=float(os.getenv("HYPERTRADE_EVAL_CASE_TIMEOUT_SECONDS", "30")),
@@ -52,11 +58,15 @@ def main() -> int:
     if catalog["status"] != "ready":
         raise RuntimeError("operator task completion catalog is invalid")
     results: list[dict[str, Any]] = []
+    # A prior round must never replay a historical Mission through a reused
+    # idempotency key. The case id remains a separate fixture selector, while
+    # this run id makes every whole-suite retest execute the current deployment.
+    run_id = str(args.run_id).strip() or uuid4().hex[:16]
     timeout = max(10.0, min(args.case_timeout_seconds, 120.0))
     for case in suite.cases():
         started = time.monotonic()
         try:
-            observation = _run_case(base_url, case, timeout)
+            observation = _run_case(base_url, case, timeout, run_id=run_id)
             result = suite.evaluate(case, observation)
             result["visible_excerpt"] = _excerpt(observation.visible_text)
             result["duration_ms"] = int((time.monotonic() - started) * 1_000)
@@ -80,6 +90,7 @@ def main() -> int:
         "schema_version": "operator_task_completion_result.v1",
         "suite_version": TASK_COMPLETION_SUITE_VERSION,
         "suite": catalog,
+        "run_id": run_id,
         "status": "passed" if not failed else "failed",
         "case_count": len(results),
         "passed_count": len(results) - len(failed),
@@ -104,6 +115,8 @@ def _run_case(
     base_url: str,
     case: TaskCompletionCase,
     timeout: float,
+    *,
+    run_id: str,
 ) -> TaskCompletionObservation:
     final_run: dict[str, Any] | None = None
     event_types: tuple[str, ...] = ()
@@ -115,6 +128,7 @@ def _run_case(
             prompt=prompt,
             prior_turns=case.turns[: turn_index - 1],
             turn_index=turn_index,
+            run_id=run_id,
             timeout=timeout,
         )
     if final_run is None:
@@ -167,6 +181,7 @@ def _stream_run(
     prompt: str,
     prior_turns: tuple[str, ...],
     turn_index: int,
+    run_id: str,
     timeout: float,
 ) -> tuple[dict[str, Any], tuple[str, ...], int | None]:
     request = Request(
@@ -181,7 +196,7 @@ def _stream_run(
         ).encode(),
         headers={
             "Content-Type": "application/json",
-            "Idempotency-Key": f"task-completion-{case_id}-{turn_index}",
+            "Idempotency-Key": f"task-completion-{run_id}-{case_id}-{turn_index}",
         },
         method="POST",
     )

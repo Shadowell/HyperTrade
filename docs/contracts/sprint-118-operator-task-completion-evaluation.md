@@ -57,6 +57,8 @@ HYPERTRADE_EVAL_TARGET=isolated ./scripts/run_operator_task_completion_eval.sh
   多轮上下文、歧义澄清、数据缺口与安全终态。它不增加写权限、不使用生产账户或生产策略正文。
 - 每轮必须重新执行固定的全部 100 条任务，保留失败断言与修复归因。只有完整重跑达到 100/100、P0/P1
   均为 0，才可将本合同关闭。
+- 运行器的幂等键必须包含评测轮次和任务回合；任务 id 仅用于选择合成 fixture。否则重跑可能重放历史
+  Mission，属于评测基础设施 P0，不得把旧结果归因于当前代码。
 
 ## Handoff
 
