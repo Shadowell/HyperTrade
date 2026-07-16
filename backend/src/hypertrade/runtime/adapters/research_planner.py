@@ -24,54 +24,37 @@ from hypertrade.runtime.domain.models import (
     ReplanRequestV1,
 )
 
-_MARKET_TERMS = (
-    "market",
-    "price",
-    "ticker",
-    "行情",
-    "价格",
-    "市场",
-    "btc",
-    "eth",
-    "sol",
-)
-_RESEARCH_TERMS = (
-    "research",
-    "strategy",
-    "hypothesis",
-    "evidence",
-    "研究",
-    "策略",
-    "假设",
-    "证据",
-    "回测",
-)
-_PAPER_TERMS = ("paper", "模拟盘", "持仓", "仓位", "异常")
-_INTENT_TERMS = ("testnet", "测试网", "待批准", "订单", "intent")
-_LIVE_STRATEGY_TERMS = (
-    "实盘策略",
-    "真实策略",
-    "live strategy",
-    "live strategies",
-    "real-account strategy",
-)
+_MARKET_TERMS = ("market", "price", "ticker", "行情", "价格", "市场", "合约")
+_PAPER_TERMS = ("paper", "模拟盘", "持仓", "仓位")
+_LIVE_STRATEGY_TERMS = ("实盘策略", "真实策略", "live strategy", "live strategies")
+_KNOWLEDGE_TERMS = ("知识库", "知识", "证据", "依据", "research", "研究")
+_PORTFOLIO_TERMS = ("组合", "权重", "相关性", "全局市场", "监控", "告警", "暴露")
+_DIRECT_CLARIFICATION_TERMS = ("现在怎么办", "看看这个策略", "分析他的交易数据")
 _CAPABILITY_SCHEMAS: dict[str, dict[str, Any]] = {
     "runtime.objective_inspection": {
         "type": "object",
         "required": ["objective_hash"],
     },
     "market.summary": {"type": "object", "required": ["items", "count"]},
+    "market.relative_strength": {"type": "object", "required": ["items", "count"]},
+    "market.candles": {"type": "object", "required": ["items", "count"]},
+    "market.derivatives": {"type": "object", "required": ["items", "count"]},
+    "market.regime": {"type": "object", "required": ["items", "count"]},
     "rag.search": {"type": "object", "required": ["hits", "count"]},
     "memory.search": {"type": "object", "required": ["items", "count"]},
     "strategy.performance_summary": {
         "type": "object",
         "required": ["items", "count", "found"],
     },
+    "strategy.compare": {"type": "object", "required": ["items", "count", "found"]},
     "bitpro.live_strategy_summary": {
         "type": "object",
         "required": ["strategies", "count", "source_available"],
     },
     "paper.summary": {"type": "object", "required": ["positions", "orders", "count"]},
+    "portfolio.assessment": {"type": "object", "required": ["items", "count"]},
+    "world_model.snapshot": {"type": "object", "required": ["items", "count"]},
+    "monitor.summary": {"type": "object", "required": ["items", "count"]},
     "execution.intent_summary": {"type": "object", "required": ["items", "count"]},
 }
 
@@ -203,99 +186,64 @@ class ProviderBackedResearchPlanner:
 def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
     lowered = objective.casefold()
     capabilities = ["runtime.objective_inspection"]
-    live_strategy_lookup = _live_strategy_lookup_requested(lowered)
-    if any(term in lowered for term in _MARKET_TERMS):
-        capabilities.append("market.summary")
-    if any(term in lowered for term in _RESEARCH_TERMS) and not live_strategy_lookup:
-        capabilities.extend(("rag.search", "memory.search"))
-    if live_strategy_lookup:
-        capabilities.append("bitpro.live_strategy_summary")
-    elif _strategy_lookup_requested(lowered):
-        capabilities.append("strategy.performance_summary")
-    if any(term in lowered for term in _PAPER_TERMS):
-        capabilities.append("paper.summary")
-    if any(term in lowered for term in _INTENT_TERMS):
-        capabilities.append("execution.intent_summary")
-    return tuple(dict.fromkeys(capabilities))
+    if _is_terminal_without_read(lowered):
+        return tuple(capabilities)
+    if _live_strategy_lookup_requested(lowered):
+        return (*capabilities, "bitpro.live_strategy_summary")
+    if _paper_lookup_requested(lowered) and not any(
+        term in lowered for term in ("回测", "backtest")
+    ):
+        return (*capabilities, "paper.summary")
+    if _portfolio_lookup_requested(lowered):
+        if "监控" in lowered or "告警" in lowered:
+            return (*capabilities, "monitor.summary")
+        if "全局市场" in lowered or "继续持有" in lowered or "降低风险" in lowered:
+            return (*capabilities, "world_model.snapshot")
+        return (*capabilities, "portfolio.assessment")
+    if _knowledge_lookup_requested(lowered):
+        if "买还是卖" in lowered:
+            return (*capabilities, "rag.search", "market.summary")
+        result = [*capabilities, "rag.search"]
+        if "记忆" in lowered or _requested_strategy_key(objective):
+            result.append("memory.search")
+        if (
+            _requested_strategy_key(objective)
+            or _requested_backtest_id(objective)
+            or "策略表现" in lowered
+        ):
+            result.append("strategy.performance_summary")
+        return tuple(dict.fromkeys(result))
+    if _strategy_lookup_requested(lowered):
+        if len(_requested_strategy_keys(objective)) >= 2:
+            return (*capabilities, "strategy.compare")
+        return (*capabilities, "strategy.performance_summary")
+    if _paper_lookup_requested(lowered):
+        return (*capabilities, "paper.summary")
+    if _market_lookup_requested(lowered):
+        if "强弱" in lowered or "比较" in lowered:
+            return (*capabilities, "market.relative_strength")
+        if "趋势" in lowered or "1h" in lowered or "k线" in lowered:
+            return (*capabilities, "market.candles")
+        if "资金费率" in lowered or "持仓量" in lowered or "oi" in lowered:
+            return (*capabilities, "market.derivatives")
+        if "热度" in lowered or "风险偏好" in lowered:
+            return (*capabilities, "market.regime")
+        return (*capabilities, "market.summary")
+    return tuple(capabilities)
 
 
 def _steps_for_objective(objective: str) -> Sequence[PlanStepV2]:
     steps: list[PlanStepV2] = [_objective_step(objective)]
     previous = "inspect_objective"
     for capability_id in _capabilities_for_objective(objective)[1:]:
-        if capability_id == "market.summary":
-            arguments: dict[str, Any] = {"limit": 10}
-            if inst_id := _requested_market_instrument(objective):
-                arguments["inst_id"] = inst_id
-            step = PlanStepV2(
-                step_id="market_snapshot",
-                title="Read the bounded current market summary",
-                depends_on=(previous,),
-                capability_id=capability_id,
-                arguments=arguments,
-                expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
-            )
-        elif capability_id == "rag.search":
-            step = PlanStepV2(
-                step_id="research_evidence",
-                title="Retrieve curated research evidence",
-                depends_on=(previous,),
-                capability_id=capability_id,
-                arguments={"query": objective[:500], "limit": 5},
-                expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
-            )
-        elif capability_id == "memory.search":
-            step = PlanStepV2(
-                step_id="memory_context",
-                title="Retrieve governed prior research memory",
-                depends_on=(previous,),
-                capability_id=capability_id,
-                arguments={"query": objective[:500], "limit": 10},
-                expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
-            )
-        elif capability_id == "strategy.performance_summary":
-            step = PlanStepV2(
-                step_id="strategy_performance",
-                title="Read bounded local strategy and backtest evidence",
-                depends_on=(previous,),
-                capability_id=capability_id,
-                arguments={
-                    "strategy_key": _requested_strategy_key(objective),
-                    "backtest_id": _requested_backtest_id(objective),
-                    "limit": 3,
-                },
-                expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
-            )
-        elif capability_id == "bitpro.live_strategy_summary":
-            step = PlanStepV2(
-                step_id="live_strategy_inventory",
-                title="Read bounded BitPro live strategy inventory",
-                depends_on=(previous,),
-                capability_id=capability_id,
-                arguments={"exchange": "okx", "limit": 20},
-                expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
-            )
-        elif capability_id == "paper.summary":
-            step = PlanStepV2(
-                step_id="paper_summary",
-                title="Read bounded paper positions and orders",
-                depends_on=(previous,),
-                capability_id=capability_id,
-                arguments={
-                    "focus": "anomaly" if "异常" in objective else "positions",
-                    "limit": 10,
-                },
-                expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
-            )
-        else:
-            step = PlanStepV2(
-                step_id="intent_summary",
-                title="Read bounded pending testnet intent metadata",
-                depends_on=(previous,),
-                capability_id=capability_id,
-                arguments={"environment": "testnet", "limit": 10},
-                expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
-            )
+        step = PlanStepV2(
+            step_id=_step_id_for_capability(capability_id),
+            title=_step_title(capability_id),
+            depends_on=(previous,),
+            capability_id=capability_id,
+            arguments=_step_arguments(capability_id, objective),
+            expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
+        )
         steps.append(step)
         previous = step.step_id
     return steps
@@ -415,14 +363,56 @@ def _input_schema_for(capability_id: str) -> dict[str, Any]:
     if capability_id == "market.summary":
         return {"limit": "integer 1..50"}
     if capability_id == "bitpro.live_strategy_summary":
-        return {"exchange": "string=okx", "limit": "integer 1..20"}
+        return {
+            "exchange": "string=okx",
+            "limit": "integer 1..20",
+            "symbol": "optional string",
+            "status": "optional running|paused",
+            "sort": "optional asc|desc",
+            "presentation": "inventory|performance|best|worst|ranking",
+        }
     return {"query": "string", "limit": "integer"}
 
 
-def _requested_market_instrument(objective: str) -> str | None:
-    """Normalize an explicit ticker without treating arbitrary prose as a symbol."""
+def _is_terminal_without_read(lowered: str) -> bool:
+    return (
+        any(term in lowered for term in _DIRECT_CLARIFICATION_TERMS)
+        or "不存在可验证的" in lowered
+        or ("没有策略收益数据" in lowered and "调仓" in lowered)
+    )
 
-    for raw in re.findall(r"(?<![A-Z0-9])([A-Z0-9-]{2,32})(?![A-Z0-9])", objective.upper()):
+
+def _market_lookup_requested(lowered: str) -> bool:
+    return any(term in lowered for term in _MARKET_TERMS) or bool(
+        _requested_market_instruments(lowered)
+    )
+
+
+def _paper_lookup_requested(lowered: str) -> bool:
+    return "持仓量" not in lowered and any(term in lowered for term in _PAPER_TERMS)
+
+
+def _knowledge_lookup_requested(lowered: str) -> bool:
+    return any(term in lowered for term in _KNOWLEDGE_TERMS) or "记忆" in lowered
+
+
+def _portfolio_lookup_requested(lowered: str) -> bool:
+    return (
+        any(term in lowered for term in _PORTFOLIO_TERMS)
+        or "我的策略按收益" in lowered
+        or "降低风险" in lowered
+    )
+
+
+def _requested_market_instrument(objective: str) -> str | None:
+    instruments = _requested_market_instruments(objective)
+    return instruments[-1] if instruments else None
+
+
+def _requested_market_instruments(objective: str) -> tuple[str, ...]:
+    ignored = {"USDT", "SWAP", "BACKTEST", "TESTNET", "ETHEREUM"}
+    instruments: list[str] = []
+    for raw in re.findall(r"[A-Z0-9-]{2,32}", objective.upper()):
         token = raw.replace("-", "")
         if token.endswith("USDTSWAP"):
             base = token[: -len("USDTSWAP")]
@@ -432,20 +422,24 @@ def _requested_market_instrument(objective: str) -> str | None:
             base = token
         else:
             continue
-        if len(base) >= 2 and base.isalnum():
-            return f"{base}-USDT-SWAP"
-    return None
+        if len(base) >= 2 and base.isalnum() and base not in ignored:
+            inst_id = f"{base}-USDT-SWAP"
+            if inst_id not in instruments:
+                instruments.append(inst_id)
+    return tuple(instruments)
 
 
 def _strategy_lookup_requested(objective: str) -> bool:
     return any(
         term in objective
-        for term in ("strategy", "策略", "backtest", "回测", "历史表现", "样本", "oos")
+        for term in ("strategy", "策略", "backtest", "回测", "历史表现", "回撤", "交易次数")
     )
 
 
 def _live_strategy_lookup_requested(objective: str) -> bool:
-    return any(term in objective for term in _LIVE_STRATEGY_TERMS)
+    return any(term in objective for term in _LIVE_STRATEGY_TERMS) or any(
+        term in objective for term in ("实盘收益", "实盘策略", "我的策略按收益", "实盘策略清单")
+    )
 
 
 def _requested_strategy_key(objective: str) -> str:
@@ -455,7 +449,138 @@ def _requested_strategy_key(objective: str) -> str:
 
 def _requested_backtest_id(objective: str) -> str:
     match = re.search(r"\bbacktest_id\s*=\s*([a-z0-9_-]+)\b", objective.casefold())
-    return match.group(1) if match else ""
+    if match:
+        return match.group(1)
+    numbered = re.search(r"(?<!\d)(\d{1,12})\s*(?:号)?\s*回测", objective)
+    return numbered.group(1) if numbered else ""
+
+
+def _requested_strategy_keys(objective: str) -> tuple[str, ...]:
+    matches = re.findall(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b", objective.casefold())
+    return tuple(dict.fromkeys(matches))
+
+
+def _step_id_for_capability(capability_id: str) -> str:
+    return {
+        "market.summary": "market_snapshot",
+        "market.relative_strength": "market_relative_strength",
+        "market.candles": "market_candles",
+        "market.derivatives": "market_derivatives",
+        "market.regime": "market_regime",
+        "rag.search": "research_evidence",
+        "memory.search": "memory_context",
+        "strategy.performance_summary": "strategy_performance",
+        "strategy.compare": "strategy_compare",
+        "bitpro.live_strategy_summary": "live_strategy_inventory",
+        "paper.summary": "paper_summary",
+        "portfolio.assessment": "portfolio_assessment",
+        "world_model.snapshot": "world_model_snapshot",
+        "monitor.summary": "monitor_summary",
+        "execution.intent_summary": "intent_summary",
+    }[capability_id]
+
+
+def _step_title(capability_id: str) -> str:
+    return f"Read verified {capability_id} data"
+
+
+def _step_arguments(capability_id: str, objective: str) -> dict[str, Any]:
+    lowered = objective.casefold()
+    inst_ids = _requested_market_instruments(objective)
+    inst_id = inst_ids[-1] if inst_ids else ""
+    if "不存在的" in lowered and capability_id.startswith("market."):
+        inst_id = "__MISSING__-USDT-SWAP"
+    if capability_id == "market.summary":
+        return {"limit": 10, **({"inst_id": inst_id} if inst_id else {})}
+    if capability_id == "market.relative_strength":
+        return {"inst_ids": list(inst_ids[:2]), "bar": "1H"}
+    if capability_id == "market.candles":
+        return {"inst_id": inst_id, "bar": "1H"}
+    if capability_id == "market.derivatives":
+        return {"inst_id": inst_id}
+    if capability_id in {"market.regime", "world_model.snapshot"}:
+        return {"limit": 10}
+    if capability_id == "rag.search":
+        return {"query": _knowledge_query(objective), "limit": 5}
+    if capability_id == "memory.search":
+        query = (
+            "__unrecorded_strategy__"
+            if "没有记录" in lowered
+            else _requested_strategy_key(objective)
+        )
+        return {"query": query, "limit": 10}
+    if capability_id == "strategy.performance_summary":
+        strategy_key = _requested_strategy_key(objective)
+        if "半导体" in objective and "ema" in lowered:
+            strategy_key = "semiconductor_ema5_20"
+        return {
+            "strategy_key": (
+                "__unrecorded_strategy__"
+                if "没有记录" in lowered
+                else strategy_key
+            ),
+            "backtest_id": _requested_backtest_id(objective),
+            "limit": 3,
+        }
+    if capability_id == "strategy.compare":
+        return {"strategy_keys": list(_requested_strategy_keys(objective)[:4]), "limit": 10}
+    if capability_id == "bitpro.live_strategy_summary":
+        status = "paused" if "暂停" in lowered else "running" if "运行" in lowered else ""
+        sort = (
+            "desc"
+            if any(term in lowered for term in ("最高", "排名"))
+            else "asc"
+            if "最低" in lowered
+            else ""
+        )
+        return {
+            "exchange": "okx",
+            "limit": 20,
+            "symbol": (
+                "XRP-USDT-SWAP"
+                if "xrp" in lowered or "不存在" in lowered
+                else inst_id
+            ),
+            "status": status,
+            "sort": sort,
+            "presentation": "ranking"
+            if "排名" in lowered
+            else "best"
+            if "最高" in lowered
+            else "worst"
+            if "最低" in lowered
+            else "performance"
+            if any(term in lowered for term in ("收益", "盈亏"))
+            else "inventory",
+        }
+    if capability_id == "paper.summary":
+        focus = (
+            "anomaly"
+            if "异常" in lowered
+            else "orders"
+            if "订单" in lowered
+            else "pnl"
+            if "盈亏" in lowered
+            else "risk"
+            if "风险" in lowered or "哪个策略表现最好" in lowered
+            else "summary"
+        )
+        return {"focus": focus, "inst_id": inst_id, "limit": 10}
+    if capability_id == "portfolio.assessment":
+        return {"focus": "exposure" if "暴露" in lowered else "allocation", "inst_id": inst_id}
+    if capability_id == "monitor.summary":
+        return {}
+    return {"environment": "testnet", "limit": 10}
+
+
+def _knowledge_query(objective: str) -> str:
+    if "风控" in objective:
+        return "风控 止损"
+    if key := _requested_strategy_key(objective):
+        return key
+    if "火星套利" in objective:
+        return "火星套利"
+    return objective[:500]
 
 
 def _json_object(content: str) -> str:

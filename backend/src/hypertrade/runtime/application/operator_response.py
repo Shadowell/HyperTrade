@@ -68,14 +68,32 @@ def build_operator_response(
 
     visible_evidence = tuple(evidence[:_MAX_VISIBLE_EVIDENCE])
     visible_unknowns = tuple(_unique(unknowns)[:_MAX_VISIBLE_UNKNOWNS])
-    outcome, decision, confidence, next_actions = _outcome(
-        mission.status,
-        evidence=visible_evidence,
-        unknowns=visible_unknowns,
-        failure_categories=failure_categories,
-        input_is_data_gap=safety.disposition == "needs_data",
-        evidence_review_required=evidence_review_required,
-    )
+    clarification_options = _clarification_options(mission.constraints)
+    outcome: str
+    decision: str
+    confidence: str
+    next_actions: tuple[str, ...]
+    if clarification_options or _objective_needs_clarification(mission.objective):
+        outcome = "needs_clarification"
+        options = "、".join(clarification_options) or "要分析的标的、策略或回测编号"
+        decision = f"需要先确认对象：请指定 {options}。"
+        confidence = "not_assessed"
+        next_actions = (f"请回复要分析的具体对象：{options}。",)
+    elif safety.disposition != "normal":
+        outcome, decision, confidence, next_actions = _safety_outcome(safety)
+    else:
+        outcome, decision, confidence, next_actions = _outcome(
+            mission.status,
+            evidence=visible_evidence,
+            unknowns=visible_unknowns,
+            failure_categories=failure_categories,
+            input_is_data_gap=False,
+            evidence_review_required=evidence_review_required,
+        )
+        if visible_evidence and outcome in {"completed", "needs_data"}:
+            # The first evidence item is the task-specific, validated projection
+            # selected by the planner. It replaces generic completion boilerplate.
+            decision = visible_evidence[0].summary
     return OperatorResponseV1(
         mission_id=mission.mission_id,
         outcome=outcome,
@@ -84,6 +102,11 @@ def build_operator_response(
         evidence=visible_evidence,
         unknowns=visible_unknowns,
         next_actions=next_actions,
+        context_refs=tuple(
+            constraint
+            for constraint in mission.constraints
+            if constraint.startswith("conversation:")
+        ),
     )
 
 
@@ -190,7 +213,7 @@ def _outcome(
         )
     return (
         "needs_data",
-        "没有获得可验证证据，当前不能给出交易判断。",
+        "缺少完成本次查询所需的可验证数据。",
         "not_assessed",
         _data_action(unknowns),
     )
@@ -198,8 +221,49 @@ def _outcome(
 
 def _data_action(unknowns: tuple[str, ...]) -> tuple[str, ...]:
     if unknowns:
-        return (f"补充或确认后再判断：{unknowns[0]}。",)
-    return ("补充可验证的数据来源后再判断。",)
+        return (f"补充或确认后再继续：{unknowns[0]}。",)
+    return ("补充可验证的数据来源后再继续。",)
+
+
+def _safety_outcome(safety: object) -> tuple[str, str, str, tuple[str, ...]]:
+    disposition = getattr(safety, "disposition", "normal")
+    reason = getattr(safety, "reason", "")
+    if disposition == "blocked":
+        decision = (
+            "不能显示凭证、Token 或私钥。"
+            if reason == "secret_disclosure_request_blocked"
+            else "不能执行该请求：它超出只读研究权限，未执行任何交易、策略或资金变更。"
+        )
+        return "blocked", decision, "not_assessed", ("如需继续，请提交只读研究问题。",)
+    if disposition == "needs_review":
+        return (
+            "needs_review",
+            "该操作需要独立的风险与人工复核，当前不会自动执行。",
+            "not_assessed",
+            ("由有权限的操作员复核并决定是否批准。",),
+        )
+    return (
+        "needs_data",
+        "当前请求缺少可验证的前提数据，不能据此形成结论。",
+        "not_assessed",
+        ("补充可验证数据或改为只读事实查询后再继续。",),
+    )
+
+
+def _clarification_options(constraints: tuple[str, ...]) -> tuple[str, ...]:
+    for constraint in constraints:
+        if constraint.startswith("clarification_options:"):
+            return tuple(item for item in constraint.partition(":")[2].split("|") if item)
+    return ()
+
+
+def _objective_needs_clarification(objective: str) -> bool:
+    lowered = objective.casefold()
+    return (
+        any(term in lowered for term in ("分析他的交易数据", "看看这个策略", "现在怎么办"))
+        or ("这个 backtest" in lowered and not any(char.isdigit() for char in lowered))
+        or ("既要 btc 又要 eth" in lowered and "他的结果" in lowered)
+    )
 
 
 def _failure_label(category: str) -> str:

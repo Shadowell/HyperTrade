@@ -367,6 +367,86 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
             },
         ),
         CapabilityDefinitionV1(
+            capability_id="market.relative_strength",
+            title="Market relative strength",
+            description="Compare bounded verified market change fields for named instruments.",
+            source_owner="hypertrade.market",
+            handler_key="market.relative_strength",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "inst_ids": {"type": "array", "minItems": 2, "maxItems": 4},
+                    "bar": {"type": "string", "enum": ["1H"]},
+                },
+                "required": ["inst_ids", "bar"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"items": {"type": "array"}, "count": {"type": "integer"}},
+                "required": ["items", "count"],
+            },
+        ),
+        CapabilityDefinitionV1(
+            capability_id="market.candles",
+            title="Market trend summary",
+            description="Read a bounded verified candle-derived trend summary for one instrument.",
+            source_owner="hypertrade.market",
+            handler_key="market.candles",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "inst_id": {"type": "string", "minLength": 5, "maxLength": 64},
+                    "bar": {"type": "string", "enum": ["1H"]},
+                },
+                "required": ["inst_id", "bar"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"items": {"type": "array"}, "count": {"type": "integer"}},
+                "required": ["items", "count"],
+            },
+        ),
+        CapabilityDefinitionV1(
+            capability_id="market.derivatives",
+            title="Market derivatives summary",
+            description=(
+                "Read bounded verified funding and open-interest fields for one instrument."
+            ),
+            source_owner="hypertrade.market",
+            handler_key="market.derivatives",
+            input_schema={
+                "type": "object",
+                "properties": {"inst_id": {"type": "string", "minLength": 5, "maxLength": 64}},
+                "required": ["inst_id"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"items": {"type": "array"}, "count": {"type": "integer"}},
+                "required": ["items", "count"],
+            },
+        ),
+        CapabilityDefinitionV1(
+            capability_id="market.regime",
+            title="Market regime summary",
+            description="Summarize bounded verified market breadth and risk-preference inputs.",
+            source_owner="hypertrade.market",
+            handler_key="market.regime",
+            input_schema={
+                "type": "object",
+                "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 50}},
+                "required": ["limit"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"items": {"type": "array"}, "count": {"type": "integer"}},
+                "required": ["items", "count"],
+            },
+        ),
+        CapabilityDefinitionV1(
             capability_id="rag.search",
             title="RAG search",
             description="Search curated knowledge and return source-bound bounded hits.",
@@ -433,6 +513,31 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
             },
         ),
         CapabilityDefinitionV1(
+            capability_id="strategy.compare",
+            title="Strategy performance comparison",
+            description="Compare bounded local backtest summaries without strategy mutation.",
+            source_owner="hypertrade.strategy",
+            handler_key="strategy.compare",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "strategy_keys": {"type": "array", "minItems": 2, "maxItems": 4},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+                },
+                "required": ["strategy_keys", "limit"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "items": {"type": "array"},
+                    "count": {"type": "integer"},
+                    "found": {"type": "boolean"},
+                },
+                "required": ["items", "count", "found"],
+            },
+        ),
+        CapabilityDefinitionV1(
             capability_id="bitpro.live_strategy_summary",
             title="BitPro live strategy inventory",
             description=(
@@ -445,6 +550,13 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
                 "properties": {
                     "exchange": {"type": "string", "enum": ["okx"]},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "symbol": {"type": "string", "maxLength": 64},
+                    "status": {"type": "string", "enum": ["", "running", "paused"]},
+                    "sort": {"type": "string", "enum": ["", "asc", "desc"]},
+                    "presentation": {
+                        "type": "string",
+                        "enum": ["inventory", "performance", "best", "worst", "ranking"],
+                    },
                 },
                 "required": ["exchange", "limit"],
                 "additionalProperties": False,
@@ -469,7 +581,11 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
             input_schema={
                 "type": "object",
                 "properties": {
-                    "focus": {"type": "string", "enum": ["positions", "anomaly"]},
+                    "focus": {
+                        "type": "string",
+                        "enum": ["positions", "anomaly", "orders", "pnl", "risk", "summary"],
+                    },
+                    "inst_id": {"type": "string", "maxLength": 64},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 20},
                 },
                 "additionalProperties": False,
@@ -482,6 +598,62 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
                     "count": {"type": "integer"},
                 },
                 "required": ["positions", "orders", "count"],
+            },
+        ),
+        CapabilityDefinitionV1(
+            capability_id="portfolio.assessment",
+            title="Portfolio evidence assessment",
+            description="Read only the bounded portfolio evidence needed to identify data gaps.",
+            source_owner="hypertrade.portfolio",
+            handler_key="portfolio.assessment",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "focus": {"type": "string", "enum": ["allocation", "exposure"]},
+                    "inst_id": {"type": "string", "maxLength": 64},
+                },
+                "required": ["focus", "inst_id"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"items": {"type": "array"}, "count": {"type": "integer"}},
+                "required": ["items", "count"],
+            },
+        ),
+        CapabilityDefinitionV1(
+            capability_id="world_model.snapshot",
+            title="World model snapshot",
+            description=(
+                "Read a bounded current market-state snapshot without making a portfolio decision."
+            ),
+            source_owner="hypertrade.market",
+            handler_key="world_model.snapshot",
+            input_schema={
+                "type": "object",
+                "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 50}},
+                "required": ["limit"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"items": {"type": "array"}, "count": {"type": "integer"}},
+                "required": ["items", "count"],
+            },
+        ),
+        CapabilityDefinitionV1(
+            capability_id="monitor.summary",
+            title="Monitoring summary",
+            description=(
+                "Read bounded monitoring state; missing alert evidence stays an explicit data gap."
+            ),
+            source_owner="hypertrade.monitoring",
+            handler_key="monitor.summary",
+            input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            output_schema={
+                "type": "object",
+                "properties": {"items": {"type": "array"}, "count": {"type": "integer"}},
+                "required": ["items", "count"],
             },
         ),
         CapabilityDefinitionV1(

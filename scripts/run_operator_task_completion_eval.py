@@ -113,6 +113,7 @@ def _run_case(
             base_url,
             case_id=case.case_id,
             prompt=prompt,
+            prior_turns=case.turns[: turn_index - 1],
             turn_index=turn_index,
             timeout=timeout,
         )
@@ -164,6 +165,7 @@ def _stream_run(
     *,
     case_id: str,
     prompt: str,
+    prior_turns: tuple[str, ...],
     turn_index: int,
     timeout: float,
 ) -> tuple[dict[str, Any], tuple[str, ...], int | None]:
@@ -174,6 +176,7 @@ def _stream_run(
                 "prompt": prompt,
                 "evaluation_mode": True,
                 "evaluation_case_id": case_id,
+                "prior_turns": list(prior_turns),
             }
         ).encode(),
         headers={

@@ -1,6 +1,6 @@
 # Sprint 118 — 100 条操作者任务完成评测与修复闭环
 
-> 状态：Active — 2026-07-16。
+> 状态：Active — 修复轮次 1，2026-07-16。
 
 ## Goal
 
@@ -48,6 +48,15 @@ HYPERTRADE_EVAL_TARGET=isolated ./scripts/run_operator_task_completion_eval.sh
 
 验证目标必须为独立的 loopback-only `hypertrade-eval` 服务；报告同时校验 API 的最终回答和桌面
 客户端对同一 `report_markdown` 的最终呈现。
+
+## Baseline and repair protocol
+
+- 基线在独立 `hypertrade-eval` 服务实际执行了全部 100 条任务：37/100 通过，63 条 P0，0 条 P1。
+  该结果否定任何“专业操作者任务完成”表述，且不能通过修改任务断言来消除。
+- 修复轮次 1 只处理可复现的确定性根因：按意图路由受审查只读能力、合成事实投影、逐笔来源、受控
+  多轮上下文、歧义澄清、数据缺口与安全终态。它不增加写权限、不使用生产账户或生产策略正文。
+- 每轮必须重新执行固定的全部 100 条任务，保留失败断言与修复归因。只有完整重跑达到 100/100、P0/P1
+  均为 0，才可将本合同关闭。
 
 ## Handoff
 

@@ -24,7 +24,8 @@ from hypertrade.db import (
     RagChunk,
     RagDocument,
 )
-from sqlalchemy import select
+from hypertrade.rag.service import RagService
+from sqlalchemy import delete
 
 
 def main() -> int:
@@ -33,22 +34,32 @@ def main() -> int:
         raise SystemExit("operator-answer fixtures require the isolated evaluation target")
     database = Database(settings.database_url)
     with database.session() as session:
+        # This is a dedicated isolated fixture store. Clearing its market rows
+        # makes unknown-instrument cases deterministic across repeated runs.
+        session.execute(delete(MarketTicker))
         for inst_id, last, volume, change in (
             ("BTC-USDT-SWAP", "65000", "25000000", "1.8"),
             ("ETH-USDT-SWAP", "3025", "18000000", "2.4"),
             ("SOL-USDT-SWAP", "145", "9000000", "-0.8"),
         ):
-            if session.scalar(select(MarketTicker).where(MarketTicker.inst_id == inst_id)) is None:
-                session.add(
-                    MarketTicker(
-                        inst_id=inst_id,
-                        inst_type="SWAP",
-                        last=Decimal(last),
-                        volume_ccy_24h=Decimal(volume),
-                        change_utc0_pct=Decimal(change),
-                        raw={"fixture": "operator_task_completion.v1"},
-                    )
+            base = inst_id.partition("-")[0]
+            session.add(
+                MarketTicker(
+                    inst_id=inst_id,
+                    inst_type="SWAP",
+                    last=Decimal(last),
+                    volume_ccy_24h=Decimal(volume),
+                    change_utc0_pct=Decimal(change),
+                    raw={
+                        "fixture": "operator_task_completion.v1",
+                        "change_1h_pct": {"BTC": "1.2", "ETH": "0.9", "SOL": "-0.4"}[base],
+                        "trend_1h": {"BTC": "上涨", "ETH": "上涨", "SOL": "震荡"}[base],
+                        "return_1h_pct": {"BTC": "1.2", "ETH": "0.9", "SOL": "-0.4"}[base],
+                        "funding_rate": "0.0100%" if base == "ETH" else "0.0050%",
+                        "open_interest_change_pct": "3.5" if base == "ETH" else "1.0",
+                    },
                 )
+            )
         if session.get(BacktestRun, "196") is None:
             session.add(
                 BacktestRun(
@@ -137,27 +148,62 @@ def main() -> int:
                     execution_json={},
                 )
             )
-        if session.get(RagDocument, "eval_rag_risk") is None:
-            session.add(
-                RagDocument(
-                    id="eval_rag_risk",
-                    source_path="eval://risk-controls",
-                    content_hash="eval-risk-controls-v1",
-                    title="隔离评测风控规则",
-                )
+        risk_content = "风控规则：每笔交易应先定义止损，单笔风险不得超过预设阈值。"
+        document = session.get(RagDocument, "eval_rag_risk")
+        if document is None:
+            document = RagDocument(
+                id="eval_rag_risk",
+                source_path="eval://risk-controls",
+                content_hash="eval-risk-controls-v1",
+                title="隔离评测风控规则",
             )
-            session.add(
-                RagChunk(
-                    id="eval_rag_risk_chunk",
-                    document_id="eval_rag_risk",
-                    source_path="eval://risk-controls",
-                    title="隔离评测风控规则",
-                    chunk_index=0,
-                    content="风控规则：每笔交易应先定义止损，单笔风险不得超过预设阈值。",
-                    embedding_json=[],
-                    embedding_vector=[],
-                )
+            session.add(document)
+        else:
+            document.content_hash = "eval-risk-controls-v1"
+            document.title = "隔离评测风控规则"
+        session.execute(delete(RagChunk).where(RagChunk.document_id == "eval_rag_risk"))
+        session.add(
+            RagChunk(
+                id="eval_rag_risk_chunk",
+                document_id="eval_rag_risk",
+                source_path="eval://risk-controls",
+                title="隔离评测风控规则",
+                chunk_index=0,
+                content=risk_content,
+                embedding_json=RagService._deterministic_embedding(risk_content),
+                embedding_vector=RagService._deterministic_embedding(risk_content, dimensions=1024),
             )
+        )
+        momentum_content = (
+            "momentum_breakout_v1 研究证据：趋势过滤与回撤控制需要一起进行样本外验证。"
+        )
+        momentum_document = session.get(RagDocument, "eval_rag_momentum")
+        if momentum_document is None:
+            momentum_document = RagDocument(
+                id="eval_rag_momentum",
+                source_path="eval://momentum-breakout",
+                content_hash="eval-momentum-breakout-v1",
+                title="隔离评测动量策略证据",
+            )
+            session.add(momentum_document)
+        else:
+            momentum_document.content_hash = "eval-momentum-breakout-v1"
+            momentum_document.title = "隔离评测动量策略证据"
+        session.execute(delete(RagChunk).where(RagChunk.document_id == "eval_rag_momentum"))
+        session.add(
+            RagChunk(
+                id="eval_rag_momentum_chunk",
+                document_id="eval_rag_momentum",
+                source_path="eval://momentum-breakout",
+                title="隔离评测动量策略证据",
+                chunk_index=0,
+                content=momentum_content,
+                embedding_json=RagService._deterministic_embedding(momentum_content),
+                embedding_vector=RagService._deterministic_embedding(
+                    momentum_content, dimensions=1024
+                ),
+            )
+        )
         if session.get(MemoryItem, "eval_memory_momentum") is None:
             session.add(
                 MemoryItem(

@@ -249,6 +249,13 @@ Sprint 118 replaces contract-only public-answer readiness claims with a 100-task
 gate. The gate tests the actual user-visible answer, source category, context resolution, safety and
 final desktop delivery in a physically separate evaluation target. A declared unsupported multi-turn
 task, an empty generic conclusion or an ungrounded data gap is a failed task, not a passing safety result.
+The runtime receives at most eight prior *user* turns through the Agent API and resolves references only
+when an unambiguous bounded context is available; it records a hash-only conversation reference and never
+treats prior assistant output as evidence. Deterministic capability handlers project only the exact operator
+facts needed for the request (for example return, drawdown and trade count for a backtest, or status and
+PnL for a live strategy). Missing records, unavailable sources and unavailable order detail remain explicit
+data gaps with a next action, rather than a generic “completed” result. These response projections stay
+read-only and preserve the catalog’s source provenance and execution isolation.
 
 Migration uses vertical cutover without dual writes; historical runs remain read-only, and every
 Sprint includes an explicit legacy deletion budget. The roadmap is planning-only until explicitly approved. The first draft contract is

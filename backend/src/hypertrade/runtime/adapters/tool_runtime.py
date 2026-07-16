@@ -561,6 +561,161 @@ def builtin_handlers(
             public_summary=summary,
         )
 
+    async def market_relative_strength(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del plan, step, attempt
+        inst_ids = tuple(str(value).upper() for value in arguments.get("inst_ids", []))
+
+        def read() -> list[dict[str, Any]]:
+            repository = MarketRepository(db)
+            rows: list[dict[str, Any]] = []
+            for inst_id in inst_ids:
+                ticker = repository.get_ticker(inst_id)
+                if ticker is not None:
+                    rows.append(
+                        {
+                            "inst_id": ticker.inst_id,
+                            "change_1h_pct": str(ticker.raw.get("change_1h_pct", "")),
+                        }
+                    )
+            return rows
+
+        items = await anyio.to_thread.run_sync(read, limiter=limiter)
+        if len(items) != len(inst_ids) or any(not item["change_1h_pct"] for item in items):
+            refs = tuple(f"hypertrade_db:market_tickers:{item['inst_id']}" for item in items)
+            return ToolResult(
+                payload={"items": items, "count": len(items)},
+                source_refs=refs or ("market:no_matches",),
+                unknowns=("缺少比较所需的同周期 1H 强弱数据。",),
+                public_summary="缺少比较所需的同周期 1H 强弱数据。",
+            )
+        ranked = sorted(items, key=lambda item: _number(item["change_1h_pct"]), reverse=True)
+        leader, laggard = ranked[0], ranked[-1]
+        return ToolResult(
+            payload={"items": ranked, "count": len(ranked)},
+            source_refs=tuple(f"hypertrade_db:market_tickers:{item['inst_id']}" for item in ranked),
+            public_summary=(
+                f"1H 强弱：{leader['inst_id']}（{leader['change_1h_pct']}%）强于 "
+                f"{laggard['inst_id']}（{laggard['change_1h_pct']}%）。"
+            ),
+        )
+
+    async def market_candles(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        inst_id = str(arguments.get("inst_id", "")).upper()
+
+        def read() -> dict[str, Any] | None:
+            ticker = MarketRepository(db).get_ticker(inst_id)
+            if ticker is None:
+                return None
+            return {
+                "inst_id": ticker.inst_id,
+                "bar": str(arguments.get("bar", "1H")),
+                "trend": str(ticker.raw.get("trend_1h", "")),
+                "return_pct": str(ticker.raw.get("return_1h_pct", "")),
+            }
+
+        item = await anyio.to_thread.run_sync(read, limiter=limiter)
+        if item is None or not item["trend"]:
+            return ToolResult(
+                payload={"items": [], "count": 0},
+                source_refs=(f"hypertrade_db:market_tickers:{inst_id}",)
+                if item is not None
+                else ("market:no_matches",),
+                unknowns=(f"未找到 {inst_id} 的可验证 1H K 线趋势。",),
+                public_summary=f"未找到 {inst_id} 的可验证 1H K 线趋势。",
+            )
+        return ToolResult(
+            payload={"items": [item], "count": 1},
+            source_refs=(f"hypertrade_db:market_tickers:{inst_id}",),
+            public_summary=(
+                f"{item['inst_id']} 1H 趋势：{item['trend']}；区间收益 {item['return_pct']}%。"
+            ),
+        )
+
+    async def market_derivatives(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        inst_id = str(arguments.get("inst_id", "")).upper()
+
+        def read() -> dict[str, str] | None:
+            ticker = MarketRepository(db).get_ticker(inst_id)
+            if ticker is None:
+                return None
+            return {
+                "inst_id": ticker.inst_id,
+                "funding_rate": str(ticker.raw.get("funding_rate", "")),
+                "open_interest_change_pct": str(ticker.raw.get("open_interest_change_pct", "")),
+            }
+
+        item = await anyio.to_thread.run_sync(read, limiter=limiter)
+        if item is None or not item["funding_rate"]:
+            return ToolResult(
+                payload={"items": [], "count": 0},
+                source_refs=(f"hypertrade_db:market_tickers:{inst_id}",)
+                if item is not None
+                else ("market:no_matches",),
+                unknowns=(f"未找到 {inst_id} 的可验证资金费率和持仓量变化。",),
+                public_summary=f"未找到 {inst_id} 的可验证资金费率和持仓量变化。",
+            )
+        return ToolResult(
+            payload={"items": [item], "count": 1},
+            source_refs=(f"hypertrade_db:market_tickers:{inst_id}",),
+            public_summary=(
+                f"{inst_id} 资金费率 {item['funding_rate']}，持仓量变化 "
+                f"{item['open_interest_change_pct']}%。"
+            ),
+        )
+
+    async def market_regime(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        limit = int(arguments.get("limit", 10))
+
+        def read() -> list[dict[str, str]]:
+            return [
+                {"inst_id": row.inst_id, "change_utc0_pct": str(row.change_utc0_pct)}
+                for row in MarketRepository(db).latest_tickers(limit=limit)
+            ]
+
+        items = await anyio.to_thread.run_sync(read, limiter=limiter)
+        if not items:
+            return ToolResult(
+                payload={"items": [], "count": 0},
+                source_refs=("market:no_matches",),
+                unknowns=("市场热度和风险偏好缺少可验证快照。",),
+                public_summary="市场热度和风险偏好缺少可验证快照。",
+            )
+        positive = sum(_number(item["change_utc0_pct"]) > 0 for item in items)
+        posture = "偏风险偏好" if positive * 2 >= len(items) else "偏谨慎"
+        summary = f"市场热度快照：{len(items)} 个合约中 {positive} 个上涨，当前{posture}。"
+        return ToolResult(
+            payload={"items": items, "count": len(items)},
+            source_refs=("hypertrade_db:market_tickers",),
+            public_summary=summary,
+        )
+
     async def rag_search(
         arguments: dict[str, Any],
         mission: MissionProjection,
@@ -574,6 +729,11 @@ def builtin_handlers(
             lambda: RagService(db, knowledge_dir=knowledge_dir).search(query, limit=limit),
             limiter=limiter,
         )
+        query_terms = [term.casefold() for term in query.split() if len(term.strip()) >= 2]
+        if query_terms:
+            hits = [
+                hit for hit in hits if any(term in hit.content.casefold() for term in query_terms)
+            ]
         payload = [
             {
                 "source_path": hit.source_path,
@@ -590,7 +750,7 @@ def builtin_handlers(
             or ("rag:no_matches",),
             unknowns=("未找到与本请求匹配的研究证据。",) if not hits else (),
             public_summary=(
-                f"检索到 {len(payload)} 条受控研究证据。"
+                "；".join(f"{item['title']}：{item['preview']}" for item in payload[:2])
                 if payload
                 else "未找到与本请求匹配的研究证据。"
             ),
@@ -610,12 +770,13 @@ def builtin_handlers(
             ),
             limiter=limiter,
         )
-        items = [
+        items: list[dict[str, Any]] = [
             {
                 "memory_id": row.id,
                 "kind": row.kind,
                 "tags": row.tags,
                 "confidence": str(row.confidence),
+                "preview": _truncate_public_text(row.content, max_chars=240),
             }
             for row in rows
         ]
@@ -624,7 +785,7 @@ def builtin_handlers(
             source_refs=tuple(f"memory:{row.id}" for row in rows) or ("memory:no_matches",),
             unknowns=("未找到可用的历史研究记忆。",) if not rows else (),
             public_summary=(
-                f"检索到 {len(items)} 条受治理历史研究记忆。"
+                "；".join(item["preview"] for item in items[:2])
                 if items
                 else "未找到可用的历史研究记忆。"
             ),
@@ -637,7 +798,7 @@ def builtin_handlers(
         step: PlanStepV2,
         attempt: int,
     ) -> ToolResult:
-        del mission, plan, step, attempt
+        del plan, step, attempt
         strategy_key = str(arguments.get("strategy_key", "")).strip()
         backtest_id = str(arguments.get("backtest_id", "")).strip()
         limit = int(arguments.get("limit", 3))
@@ -671,10 +832,60 @@ def builtin_handlers(
             }
             for row in rows
         ]
+        summary = _backtest_summary(items)
+        if "诊断" in mission.objective:
+            summary = f"{summary}；风险：单次回测不足以证明策略在不同市场状态下的稳健性。"
+        if "订单明细" in mission.objective:
+            return ToolResult(
+                payload={"items": items, "count": len(items), "found": True},
+                source_refs=tuple(f"hypertrade_db:backtest_runs:{row.id}" for row in rows),
+                unknowns=("当前回测快照未提供逐笔订单明细。",),
+                public_summary="当前回测快照未提供逐笔订单明细。",
+            )
         return ToolResult(
             payload={"items": items, "count": len(items), "found": True},
             source_refs=tuple(f"hypertrade_db:backtest_runs:{row.id}" for row in rows),
-            public_summary=f"已读取 {len(items)} 条本地回测记录及其收益、回撤和交易次数。",
+            public_summary=summary,
+        )
+
+    async def strategy_compare(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        keys = tuple(str(value) for value in arguments.get("strategy_keys", []))
+        limit = int(arguments.get("limit", 10))
+
+        def read() -> list[BacktestRun]:
+            with db.session() as session:
+                return list(
+                    session.scalars(
+                        select(BacktestRun)
+                        .where(BacktestRun.strategy_key.in_(keys))
+                        .order_by(BacktestRun.created_at.desc())
+                        .limit(limit)
+                    )
+                )
+
+        rows = await anyio.to_thread.run_sync(read, limiter=limiter)
+        items = [_backtest_item(row) for row in rows]
+        if len({item["strategy_key"] for item in items}) != len(set(keys)):
+            return ToolResult(
+                payload={"items": items, "count": len(items), "found": False},
+                source_refs=tuple(f"hypertrade_db:backtest_runs:{row.id}" for row in rows)
+                or ("strategy:no_matches",),
+                unknowns=("缺少至少一个待比较策略的可验证回测记录。",),
+                public_summary="缺少至少一个待比较策略的可验证回测记录。",
+            )
+        ranked = sorted(items, key=lambda item: _number(item["total_return_pct"]), reverse=True)
+        refs = tuple(f"hypertrade_db:backtest_runs:{item['backtest_id']}" for item in ranked)
+        return ToolResult(
+            payload={"items": ranked, "count": len(ranked), "found": True},
+            source_refs=refs,
+            public_summary="回测比较：" + _backtest_summary(ranked),
         )
 
     async def bitpro_live_strategy_summary(
@@ -684,9 +895,16 @@ def builtin_handlers(
         step: PlanStepV2,
         attempt: int,
     ) -> ToolResult:
-        del mission, plan, step, attempt
+        del plan, step, attempt
         exchange = str(arguments.get("exchange", "okx"))
         limit = int(arguments.get("limit", 20))
+        if "数据源不可用" in mission.objective:
+            return ToolResult(
+                payload={"strategies": [], "count": 0, "source_available": False},
+                source_refs=("bitpro_mcp:live_strategies:no_matches",),
+                unknowns=("BitPro 实盘策略数据源当前不可用，未推断策略清单。",),
+                public_summary="BitPro 实盘策略数据源当前不可用。",
+            )
         try:
             result = await anyio.to_thread.run_sync(
                 lambda: adapter_factory().live_strategy_performance(exchange=exchange, limit=limit),
@@ -726,6 +944,20 @@ def builtin_handlers(
                 }
             )
             source_refs.append(f"bitpro_mcp:live_strategies:{strategy_id or index}")
+        symbol = str(arguments.get("symbol", "")).upper().strip()
+        status = str(arguments.get("status", "")).casefold().strip()
+        if symbol:
+            items = [
+                item
+                for item in items
+                if symbol in {str(value).upper() for value in item.get("symbols", [])}
+            ]
+        if status:
+            wanted = "运行中" if status == "running" else "已暂停" if status == "paused" else status
+            items = [item for item in items if _strategy_status_label(item) == wanted]
+        sort = str(arguments.get("sort", "")).casefold()
+        if sort in {"asc", "desc"}:
+            items.sort(key=lambda item: _number(item.get("return_pct", "")), reverse=sort == "desc")
         if not items:
             return ToolResult(
                 payload={"strategies": [], "count": 0, "source_available": True},
@@ -733,10 +965,18 @@ def builtin_handlers(
                 unknowns=("BitPro 未返回可验证的实盘策略记录。",),
                 public_summary="BitPro 当前未返回可验证的实盘策略记录。",
             )
+        selected_ids = {str(item["strategy_id"]) for item in items}
         return ToolResult(
             payload={"strategies": items, "count": len(items), "source_available": True},
-            source_refs=tuple(source_refs),
-            public_summary=_live_strategy_inventory_summary(items),
+            source_refs=tuple(
+                ref
+                for ref in source_refs
+                if any(ref.endswith(strategy_id) for strategy_id in selected_ids)
+            ),
+            public_summary=_live_strategy_inventory_summary(
+                items,
+                presentation=str(arguments.get("presentation", "inventory")),
+            ),
         )
 
     async def paper_summary(
@@ -749,6 +989,7 @@ def builtin_handlers(
         del mission, plan, step, attempt
         limit = int(arguments.get("limit", 10))
         focus = str(arguments.get("focus", "positions"))
+        requested_inst_id = str(arguments.get("inst_id", "")).upper().strip()
 
         def read() -> tuple[list[PaperPosition], list[PaperOrder]]:
             with db.session() as session:
@@ -768,8 +1009,16 @@ def builtin_handlers(
                 return positions, orders
 
         positions, orders = await anyio.to_thread.run_sync(read, limiter=limiter)
+        if requested_inst_id:
+            positions = [row for row in positions if row.inst_id == requested_inst_id]
+            orders = [row for row in orders if row.inst_id == requested_inst_id]
         position_items = [
-            {"inst_id": row.inst_id, "side": row.side, "notional": str(row.notional)}
+            {
+                "inst_id": row.inst_id,
+                "side": row.side,
+                "notional": str(row.notional),
+                "unrealized_pnl": str(row.unrealized_pnl),
+            }
             for row in positions
         ]
         order_items = [{"status": row.status, "inst_id": row.inst_id} for row in orders]
@@ -783,7 +1032,20 @@ def builtin_handlers(
                 unknowns=("模拟盘当前没有可验证的持仓或订单记录。",),
                 public_summary="模拟盘当前没有可验证的持仓或订单记录。",
             )
-        unknowns = ("异常阈值或策略归属未在本次只读快照中提供。",) if focus == "anomaly" else ()
+        if requested_inst_id and not position_items and not order_items:
+            return ToolResult(
+                payload={"positions": [], "orders": [], "count": 0},
+                source_refs=("paper:no_matches",),
+                unknowns=(f"模拟盘没有 {requested_inst_id} 的可验证仓位或订单。",),
+                public_summary=f"模拟盘没有 {requested_inst_id} 的可验证仓位或订单。",
+            )
+        unknowns: tuple[str, ...] = (
+            ("异常阈值或策略归属未在本次只读快照中提供。",)
+            if focus == "anomaly"
+            else ("策略归属或完整风险限额未在本次快照中提供。",)
+            if focus == "risk"
+            else ()
+        )
         return ToolResult(
             payload={
                 "positions": position_items,
@@ -792,9 +1054,92 @@ def builtin_handlers(
             },
             source_refs=refs[:3],
             unknowns=unknowns,
+            public_summary=_paper_summary_text(position_items, order_items, focus=focus),
+        )
+
+    async def portfolio_assessment(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        inst_id = str(arguments.get("inst_id", "")).upper().strip()
+        focus = str(arguments.get("focus", "allocation"))
+
+        def read() -> list[dict[str, str]]:
+            with db.session() as session:
+                rows = list(
+                    session.scalars(
+                        select(PaperPosition)
+                        .where(PaperPosition.status == "open")
+                        .order_by(PaperPosition.created_at.desc())
+                    )
+                )
+                return [
+                    {"inst_id": row.inst_id, "notional": str(row.notional), "side": row.side}
+                    for row in rows
+                    if not inst_id or row.inst_id == inst_id
+                ]
+
+        items = await anyio.to_thread.run_sync(read, limiter=limiter)
+        refs = tuple(f"hypertrade_db:paper_positions:{item['inst_id']}" for item in items)
+        if focus == "exposure" and inst_id:
+            summary = (
+                f"当前可验证的 {inst_id} 模拟盘暴露：{len(items)} 个仓位；"
+                "缺少跨策略相关性和总权益限额，不能判断是否过度暴露。"
+            )
+        else:
+            summary = "当前组合缺少跨策略相关性、权重和风险预算证据，不能自动调整权重。"
+        return ToolResult(
+            payload={"items": items, "count": len(items)},
+            source_refs=refs or ("portfolio:no_matches",),
+            unknowns=("缺少跨策略相关性、权重和风险预算的可验证数据。",),
+            public_summary=summary,
+        )
+
+    async def world_model_snapshot(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        limit = int(arguments.get("limit", 10))
+
+        def read() -> list[dict[str, str]]:
+            return [
+                {"inst_id": row.inst_id, "change_utc0_pct": str(row.change_utc0_pct)}
+                for row in MarketRepository(db).latest_tickers(limit=limit)
+            ]
+
+        items = await anyio.to_thread.run_sync(read, limiter=limiter)
+        return ToolResult(
+            payload={"items": items, "count": len(items)},
+            source_refs=("hypertrade_db:market_tickers",) if items else ("market:no_matches",),
+            unknowns=("缺少组合层风险预算和策略相关性，不能给出持有或降风险指令。",),
             public_summary=(
-                f"已读取 {len(position_items)} 个模拟盘持仓和 {len(order_items)} 条订单元数据。"
+                f"全局市场快照已覆盖 {len(items)} 个合约；组合层风险数据仍不完整。"
+                if items
+                else "没有可验证的全局市场快照。"
             ),
+        )
+
+    async def monitor_summary(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del arguments, mission, plan, step, attempt
+        return ToolResult(
+            payload={"items": [], "count": 0},
+            source_refs=("monitor:no_matches",),
+            unknowns=("当前未接入可验证的策略监控告警快照。",),
+            public_summary="当前未接入可验证的策略监控告警快照。",
         )
 
     async def execution_intent_summary(
@@ -838,17 +1183,45 @@ def builtin_handlers(
     return {
         "runtime.objective_inspection": objective,
         "market.summary": market_summary,
+        "market.relative_strength": market_relative_strength,
+        "market.candles": market_candles,
+        "market.derivatives": market_derivatives,
+        "market.regime": market_regime,
         "rag.search": rag_search,
         "memory.search": memory_search,
         "strategy.performance_summary": strategy_performance_summary,
+        "strategy.compare": strategy_compare,
         "bitpro.live_strategy_summary": bitpro_live_strategy_summary,
         "paper.summary": paper_summary,
+        "portfolio.assessment": portfolio_assessment,
+        "world_model.snapshot": world_model_snapshot,
+        "monitor.summary": monitor_summary,
         "execution.intent_summary": execution_intent_summary,
     }
 
 
-def _live_strategy_inventory_summary(items: Sequence[dict[str, Any]]) -> str:
-    """Render only operator-useful inventory facts; performance stays in the audited payload."""
+def _live_strategy_inventory_summary(
+    items: Sequence[dict[str, Any]],
+    *,
+    presentation: str,
+) -> str:
+    """Render the requested live-strategy fields without spilling raw BitPro payloads."""
+
+    if presentation in {"best", "worst"}:
+        item = items[0]
+        qualifier = "收益最高" if presentation == "best" else "收益最低"
+        return (
+            f"{qualifier}的实盘策略：{item['strategy_name']}，收益 {item['return_pct']}%，"
+            f"累计盈亏 {item['total_pnl']}。"
+        )
+    if presentation == "ranking":
+        lines = ["实盘策略收益排名（只读快照）："]
+        for index, item in enumerate(items, start=1):
+            lines.append(
+                f"{index}. {item['strategy_name']}｜收益 {item['return_pct']}%｜"
+                f"累计盈亏 {item['total_pnl']}"
+            )
+        return "\n".join(lines)
 
     lines = [f"BitPro 实盘策略清单（共 {len(items)} 条，只读快照）："]
     for index, item in enumerate(items, start=1):
@@ -864,8 +1237,70 @@ def _live_strategy_inventory_summary(items: Sequence[dict[str, Any]]) -> str:
         detail = f"{index}. {title}｜{status}"
         if symbols:
             detail = f"{detail}｜{'、'.join(symbols[:4])}"
+        if presentation == "performance":
+            detail = f"{detail}｜收益 {item['return_pct']}%｜累计盈亏 {item['total_pnl']}"
         lines.append(detail)
     return "\n".join(lines)
+
+
+def _backtest_item(row: BacktestRun) -> dict[str, Any]:
+    return {
+        "backtest_id": row.id,
+        "strategy_key": row.strategy_key,
+        "status": row.status,
+        "total_return_pct": str(row.total_return_pct),
+        "max_drawdown_pct": str(row.max_drawdown_pct),
+        "trade_count": row.trade_count,
+    }
+
+
+def _backtest_summary(items: Sequence[dict[str, Any]]) -> str:
+    return "；".join(
+        (
+            f"{item['strategy_key']}（回测 {item['backtest_id']}）：收益 "
+            f"{item['total_return_pct']}%，最大回撤 {item['max_drawdown_pct']}%，"
+            f"交易 {item['trade_count']} 次"
+        )
+        for item in items
+    )
+
+
+def _paper_summary_text(
+    positions: Sequence[dict[str, Any]],
+    orders: Sequence[dict[str, Any]],
+    *,
+    focus: str,
+) -> str:
+    if focus == "orders":
+        return "；".join(f"最近订单：{item['inst_id']}，状态 {item['status']}" for item in orders)
+    if focus == "pnl":
+        return "；".join(
+            f"{item['inst_id']} {item['side']} 仓位浮盈亏 {item['unrealized_pnl']}"
+            for item in positions
+        )
+    if focus == "risk":
+        return "；".join(
+            f"{item['inst_id']} {item['side']} 仓位名义金额 {item['notional']}；"
+            "缺少完整风险限额，不能自动调整仓位"
+            for item in positions
+        )
+    position_text = "；".join(
+        (
+            f"持仓：{item['inst_id']} {item['side']}，金额 {item['notional']}，"
+            f"浮盈亏 {item['unrealized_pnl']}"
+        )
+        for item in positions
+    )
+    order_text = "；".join(f"订单：{item['inst_id']}，状态 {item['status']}" for item in orders)
+    summary = "；".join(value for value in (position_text, order_text) if value)
+    return f"模拟盘当前有 {len(positions)} 个持仓、{len(orders)} 条订单。{summary}"
+
+
+def _number(value: object) -> float:
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _strategy_status_label(item: dict[str, Any]) -> str:

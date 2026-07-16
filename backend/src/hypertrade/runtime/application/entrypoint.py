@@ -10,6 +10,7 @@ from __future__ import annotations
 from hashlib import sha256
 from typing import Any
 
+from hypertrade.runtime.application.conversation_context import resolve_operator_turn
 from hypertrade.runtime.application.evaluation_fixtures import fixture_constraint
 from hypertrade.runtime.application.operator_response import (
     build_operator_response,
@@ -31,10 +32,12 @@ def mission_request_for_prompt(
     actor: str,
     idempotency_key: str,
     evaluation_case_id: str = "",
+    prior_turns: tuple[str, ...] = (),
 ) -> MissionCreate:
     """Normalize an untrusted chat prompt into a read-only Mission contract."""
 
-    normalized = prompt.strip()
+    resolved = resolve_operator_turn(prompt=prompt, prior_turns=prior_turns)
+    normalized = resolved.objective
     constraints = [
         "Research-only read scope.",
         "No paper, live, order or capital mutation.",
@@ -42,6 +45,10 @@ def mission_request_for_prompt(
     ]
     if fixture := fixture_constraint(evaluation_case_id):
         constraints.append(fixture)
+    if resolved.context_ref:
+        constraints.append(resolved.context_ref)
+    if resolved.clarification_options:
+        constraints.append("clarification_options:" + "|".join(resolved.clarification_options))
     return MissionCreate(
         objective=normalized,
         success_criteria=(

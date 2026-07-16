@@ -283,6 +283,7 @@ class AgentRunPayload(BaseModel):
     prompt: str
     evaluation_mode: bool = False
     evaluation_case_id: str = Field(default="", max_length=96)
+    prior_turns: list[str] = Field(default_factory=list, max_length=8)
 
 
 class MissionControlPayload(BaseModel):
@@ -542,6 +543,7 @@ def create_app(
         actor: str,
         idempotency_key: str,
         evaluation_case_id: str = "",
+        prior_turns: tuple[str, ...] = (),
     ) -> Any:
         return await mission_runtime.create(
             mission_request_for_prompt(
@@ -549,6 +551,7 @@ def create_app(
                 actor=actor,
                 idempotency_key=idempotency_key,
                 evaluation_case_id=evaluation_case_id,
+                prior_turns=prior_turns,
             )
         )
 
@@ -601,12 +604,14 @@ def create_app(
         actor: str,
         idempotency_key: str,
         evaluation_case_id: str = "",
+        prior_turns: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         mission = await create_prompt_mission(
             prompt,
             actor=actor,
             idempotency_key=idempotency_key,
             evaluation_case_id=evaluation_case_id,
+            prior_turns=prior_turns,
         )
         try:
             completed = (
@@ -1488,6 +1493,7 @@ def create_app(
                     actor="mission_api",
                     idempotency_key=idempotency_key,
                     evaluation_case_id=fixture_case_id,
+                    prior_turns=tuple(payload.prior_turns),
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -1530,6 +1536,7 @@ def create_app(
             percent=app_settings.mission_runtime_canary_percent,
             idempotency_key=idempotency_key,
         ):
+
             async def mission_stream() -> AsyncIterator[str]:
                 # Public stream events expose only the operator answer contract.
                 # Plan/tool telemetry stays in the Mission audit stream instead.
@@ -1545,6 +1552,7 @@ def create_app(
                         actor="mission_stream",
                         idempotency_key=idempotency_key,
                         evaluation_case_id=fixture_case_id,
+                        prior_turns=tuple(payload.prior_turns),
                     )
                     yield _format_sse(
                         {
