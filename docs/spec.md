@@ -269,6 +269,14 @@ candidate; a strategy inventory without those values is an explicit data gap, ne
 The visible `OperatorResponseV1.decision` remains bounded independently from longer evidence, so a valid
 inventory cannot break the public delivery contract.
 
+Sprint 120 adds a hybrid semantic-ingress boundary for free-form Mission requests. The configured model
+first returns a small structured intent with any explicitly named market symbol; the server then verifies
+that symbol is present as a full user token, normalizes it to the reviewed OKX swap format, and keeps the
+existing catalog-selected read capability, dependency graph and permission profile immutable. Invalid,
+unavailable or invented model entities fall back to deterministic parsing. A named symbol must produce
+either its own price/provenance or a symbol-specific data gap; a generic market snapshot count is never a
+valid substitute.
+
 Migration uses vertical cutover without dual writes; historical runs remain read-only, and every
 Sprint includes an explicit legacy deletion budget. The roadmap is planning-only until explicitly approved. The first draft contract is
 `docs/contracts/sprint-111-professional-agent-loop-v2.md`; no feature flag is enabled and no current

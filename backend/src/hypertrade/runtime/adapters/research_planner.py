@@ -25,6 +25,27 @@ from hypertrade.runtime.domain.models import (
 )
 
 _MARKET_TERMS = ("market", "price", "ticker", "行情", "价格", "市场", "合约")
+_MARKET_SYMBOL_STOPWORDS = frozenset(
+    {
+        "BACKTEST",
+        "CONTRACT",
+        "CRYPTO",
+        "FUTURES",
+        "MARKET",
+        "OKX",
+        "PERPETUAL",
+        "PRICE",
+        "SWAP",
+        "TESTNET",
+        "TICKER",
+        "USD",
+        "USDT",
+    }
+)
+_BARE_MARKET_SYMBOL = re.compile(
+    r"(?<![A-Z0-9])([A-Z][A-Z0-9]{1,19})\s*(?:的\s*)?(?:价格|行情|合约|永续)",
+    re.IGNORECASE,
+)
 _PAPER_TERMS = ("paper", "模拟盘", "持仓", "仓位")
 _LIVE_STRATEGY_TERMS = ("实盘策略", "真实策略", "live strategy", "live strategies")
 _KNOWLEDGE_TERMS = ("知识库", "知识", "证据", "依据", "research", "研究")
@@ -130,9 +151,11 @@ class DeterministicResearchPlanner:
 class ProviderBackedResearchPlanner:
     """Use a provider only to propose a plan inside a fixed trusted envelope.
 
-    Provider output is transient and never stored. Invalid, unavailable or
-    over-scoped proposals fall back to the deterministic planner; the runtime
-    does not turn a model parse failure into an executable tool request.
+    Provider output is transient and never stored. The model first extracts a
+    constrained semantic intent; the policy envelope then validates entities
+    against the user text and maps them to reviewed read capabilities. Invalid,
+    unavailable or over-scoped output falls back to deterministic parsing; the
+    runtime does not turn a model parse failure into an executable tool request.
     """
 
     def __init__(
@@ -172,13 +195,7 @@ class ProviderBackedResearchPlanner:
                 self.provider.chat,
                 _planner_messages(mission, fallback, previous, request),
             )
-            return _parse_provider_plan(
-                response.content,
-                mission=mission,
-                fallback=fallback,
-                previous=previous,
-                request=request,
-            )
+            return _apply_provider_intent(response.content, mission=mission, fallback=fallback)
         except Exception:  # noqa: BLE001 - untrusted provider boundary falls back safely
             return fallback
 
@@ -309,14 +326,17 @@ def _planner_messages(
         }
         for capability_id in _capabilities_for_objective(mission.objective)
     ]
+    allowed_capabilities = [str(item["capability_id"]) for item in allowed]
     instruction = {
         "role": "system",
         "content": (
-            "Return JSON only. Propose a bounded read-only research plan. "
-            "Use only listed capabilities, no new ids, no write operation, no approval, "
-            "and no more steps than the fallback. Return keys goal_interpretation, "
-            "assumptions and steps. "
-            "Every step has step_id, title, depends_on, capability_id and arguments."
+            "Return JSON only. Extract the user's semantic intent; do not propose a plan, tool, "
+            "permission or action. Return exactly {\"intent\": {\"kind\": string, "
+            "\"assets\": [string]}}. For a one-symbol current-price request, use kind "
+            "\"market_quote\" and copy the symbol exactly from the user message. Otherwise use "
+            "a descriptive kind and an empty assets array when no explicit asset was requested. "
+            "Never invent an asset, never infer a trade action, and never include text outside "
+            "JSON."
         ),
     }
     user = {
@@ -325,16 +345,7 @@ def _planner_messages(
             {
                 "objective": mission.objective,
                 "constraints": list(mission.constraints),
-                "allowed_capabilities": allowed,
-                "fallback_plan": {
-                    "steps": [step.model_dump(mode="json") for step in fallback.steps]
-                },
-                "previous_plan": (
-                    [step.model_dump(mode="json") for step in previous.steps]
-                    if previous is not None
-                    else []
-                ),
-                "replan_request": request.model_dump(mode="json") if request else None,
+                "allowed_read_capabilities": allowed_capabilities,
             },
             ensure_ascii=False,
         ),
@@ -342,40 +353,45 @@ def _planner_messages(
     return [instruction, user]
 
 
-def _parse_provider_plan(
+def _apply_provider_intent(
     content: str,
     *,
     mission: MissionProjection,
     fallback: PlanV2,
-    previous: PlanV2 | None,
-    request: ReplanRequestV1 | None,
 ) -> PlanV2:
+    """Use a validated model entity only inside the existing read-only envelope."""
+
     raw = json.loads(_json_object(content))
     if not isinstance(raw, dict):
-        raise ValueError("planner response must be an object")
-    raw_steps = raw.get("steps")
-    if not isinstance(raw_steps, list) or len(raw_steps) != len(fallback.steps):
-        raise ValueError("planner response must retain every deterministic baseline step")
-    allowed = set(_capabilities_for_objective(mission.objective))
-    for item, baseline in zip(raw_steps, fallback.steps, strict=True):
-        if not isinstance(item, dict):
-            raise ValueError("planner step must be an object")
-        capability_id = str(item.get("capability_id", ""))
-        if capability_id not in allowed:
-            raise ValueError("planner selected an unreviewed capability")
-        arguments = item.get("arguments", {})
-        if not isinstance(arguments, dict):
-            raise ValueError("planner step arguments must be an object")
-        proposed_dependencies = tuple(str(value) for value in item.get("depends_on", []))
-        if (
-            str(item.get("step_id", "")) != baseline.step_id
-            or capability_id != baseline.capability_id
-            or proposed_dependencies != baseline.depends_on
-            or arguments != baseline.arguments
-        ):
-            raise ValueError("planner cannot alter deterministic step identity or arguments")
-    # A provider may be consulted, but catalog-derived dispatch remains immutable:
-    # no model output can omit, reorder, or retarget an approved data read.
+        raise ValueError("intent response must be an object")
+    intent = raw.get("intent")
+    if not isinstance(intent, dict) or str(intent.get("kind", "")) != "market_quote":
+        return fallback
+    assets = intent.get("assets")
+    if not isinstance(assets, list) or len(assets) != 1 or not isinstance(assets[0], str):
+        return fallback
+    inst_id = _validated_provider_market_instrument(assets[0], mission.objective)
+    if inst_id is None:
+        return fallback
+    for step in fallback.steps:
+        if step.capability_id == "market.summary":
+            # The model only supplies a user-verbatim entity. This immutable plan
+            # already chose the reviewed read capability, scope and dependencies.
+            arguments = {**step.arguments, "inst_id": inst_id}
+            return fallback.model_copy(
+                update={
+                    "steps": tuple(
+                        item.model_copy(update={"arguments": arguments})
+                        if item.step_id == step.step_id
+                        else item
+                        for item in fallback.steps
+                    ),
+                    "assumptions": (
+                        *fallback.assumptions,
+                        "Provider-extracted market symbol was validated against the objective.",
+                    ),
+                }
+            )
     return fallback
 
 
@@ -440,23 +456,59 @@ def _requested_market_instrument(objective: str) -> str | None:
 
 
 def _requested_market_instruments(objective: str) -> tuple[str, ...]:
-    ignored = {"USDT", "SWAP", "BACKTEST", "TESTNET", "ETHEREUM"}
     instruments: list[str] = []
-    for raw in re.findall(r"[A-Z0-9-]{2,32}", objective.upper()):
-        token = raw.replace("-", "")
-        if token.endswith("USDTSWAP"):
-            base = token[: -len("USDTSWAP")]
-        elif token.endswith("USDT"):
-            base = token[: -len("USDT")]
-        elif token in {"BTC", "ETH", "SOL"}:
-            base = token
-        else:
-            continue
-        if len(base) >= 2 and base.isalnum() and base not in ignored:
-            inst_id = f"{base}-USDT-SWAP"
-            if inst_id not in instruments:
-                instruments.append(inst_id)
+
+    def append(raw: str, *, allow_bare: bool = False) -> None:
+        inst_id = _market_instrument_from_token(raw, allow_bare=allow_bare)
+        if inst_id and inst_id not in instruments:
+            instruments.append(inst_id)
+
+    for raw in re.findall(r"[A-Z0-9][A-Z0-9_-]{1,31}", objective.upper()):
+        append(raw)
+    # A free-form prompt like “看下 LAB 的价格” has no quote suffix. Accept a
+    # bare symbol only when adjacent to an explicit market noun; generic prose
+    # such as “当前市场怎么样” remains an all-market summary.
+    for match in _BARE_MARKET_SYMBOL.finditer(objective):
+        append(match.group(1), allow_bare=True)
     return tuple(instruments)
+
+
+def _validated_provider_market_instrument(asset: str, objective: str) -> str | None:
+    """Accept a model entity only when it is a verbatim, explicit user symbol."""
+
+    raw = asset.strip()
+    if not raw or not re.fullmatch(r"[A-Za-z0-9_/-]{2,32}", raw):
+        return None
+    # Do not let an untrusted provider add an instrument that was absent from the
+    # operator objective. A token boundary rejects a partial hallucination such
+    # as extracting ETH from the unrelated word ETHEREUM.
+    if not re.search(
+        rf"(?<![A-Z0-9]){re.escape(raw)}(?![A-Z0-9])",
+        objective,
+        flags=re.IGNORECASE,
+    ):
+        return None
+    return _market_instrument_from_token(raw, allow_bare=True)
+
+
+def _market_instrument_from_token(raw: str, *, allow_bare: bool = False) -> str | None:
+    token = re.sub(r"[-_/]", "", raw).upper()
+    if token.endswith("USDTSWAP"):
+        base = token[: -len("USDTSWAP")]
+    elif token.endswith("USDT"):
+        base = token[: -len("USDT")]
+    elif allow_bare or token in {"BTC", "ETH", "SOL"}:
+        base = token
+    else:
+        return None
+    if (
+        len(base) < 2
+        or len(base) > 20
+        or not base.isalnum()
+        or base in _MARKET_SYMBOL_STOPWORDS
+    ):
+        return None
+    return f"{base}-USDT-SWAP"
 
 
 def _strategy_lookup_requested(objective: str) -> bool:

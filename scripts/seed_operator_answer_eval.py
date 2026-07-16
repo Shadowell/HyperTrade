@@ -41,6 +41,7 @@ def main() -> int:
             ("BTC-USDT-SWAP", "65000", "25000000", "1.8"),
             ("ETH-USDT-SWAP", "3025", "18000000", "2.4"),
             ("SOL-USDT-SWAP", "145", "9000000", "-0.8"),
+            ("LAB-USDT-SWAP", "0.48", "1200000", "3.2"),
         ):
             base = inst_id.partition("-")[0]
             session.add(
@@ -52,9 +53,24 @@ def main() -> int:
                     change_utc0_pct=Decimal(change),
                     raw={
                         "fixture": "operator_task_completion.v1",
-                        "change_1h_pct": {"BTC": "1.2", "ETH": "0.9", "SOL": "-0.4"}[base],
-                        "trend_1h": {"BTC": "上涨", "ETH": "上涨", "SOL": "震荡"}[base],
-                        "return_1h_pct": {"BTC": "1.2", "ETH": "0.9", "SOL": "-0.4"}[base],
+                        "change_1h_pct": {
+                            "BTC": "1.2",
+                            "ETH": "0.9",
+                            "SOL": "-0.4",
+                            "LAB": "0.6",
+                        }[base],
+                        "trend_1h": {
+                            "BTC": "上涨",
+                            "ETH": "上涨",
+                            "SOL": "震荡",
+                            "LAB": "上涨",
+                        }[base],
+                        "return_1h_pct": {
+                            "BTC": "1.2",
+                            "ETH": "0.9",
+                            "SOL": "-0.4",
+                            "LAB": "0.6",
+                        }[base],
                         "funding_rate": "0.0100%" if base == "ETH" else "0.0050%",
                         "open_interest_change_pct": "3.5" if base == "ETH" else "1.0",
                     },

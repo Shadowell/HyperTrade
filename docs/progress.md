@@ -1,5 +1,17 @@
 # Progress Log
 
+## Sprint 120 — 任意明确合约标的的精确行情交付 — 2026-07-16
+
+- 已复现并定位 `看下 LAB 的价格` 的根因：Mission 的确定性解析只接受 BTC/ETH/SOL 裸符号，导致
+  `LAB` 未被绑定为 `LAB-USDT-SWAP`，随后把全市场 10 条快照计数投影为用户结论。
+- Mission Provider 现先提取受限结构化意图。服务端仅在模型标的以完整 token 出现在用户原文、且可规范化为
+  OKX USDT 永续时，才把它绑定进原有的只读 `market.summary` 步骤；能力、权限、依赖关系均不可由模型修改。
+  无效、不可用、虚构或部分匹配（例如从 `ETHEREUM` 提取 `ETH`）会回退至受控解析。
+- 新增真实中文输入的存在/缺失交付回归，并将隔离 100 条任务集的单标的行情案例替换为 `LAB`。局部回归
+  22 passed；新鲜 `./scripts/check.sh` 完成，frontend lint/test/build、Ruff 和严格 mypy 通过，pytest
+  674 passed（另有 2 个既有、与本 Sprint 无关的 OKX coroutine warnings）。隔离部署、完整 100 条复跑和
+  生产只读验收仍待完成；Sprint 保持 Active。
+
 ## Sprint 119 — 生产流终态恢复与实盘策略排名诚实性 — 2026-07-16
 
 - 生产只读复现确认了 P0：`ht ask '看下我最好的实盘策略是哪个？'` 输出

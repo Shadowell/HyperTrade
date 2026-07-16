@@ -102,6 +102,26 @@ async def test_best_live_strategy_synonym_uses_a_ranked_performance_read() -> No
 
 
 @pytest.mark.anyio
+async def test_bare_explicit_market_symbol_uses_an_exact_ticker_read() -> None:
+    mission = await _mission("看下 LAB 的价格")
+
+    plan = await DeterministicResearchPlanner().plan(mission)
+
+    assert plan.steps[-1].capability_id == "market.summary"
+    assert plan.steps[-1].arguments == {"limit": 10, "inst_id": "LAB-USDT-SWAP"}
+
+
+@pytest.mark.anyio
+async def test_market_overview_does_not_turn_market_language_into_a_symbol() -> None:
+    mission = await _mission("现在合约市场整体怎么样")
+
+    plan = await DeterministicResearchPlanner().plan(mission)
+
+    assert plan.steps[-1].capability_id == "market.summary"
+    assert plan.steps[-1].arguments == {"limit": 10}
+
+
+@pytest.mark.anyio
 async def test_memory_source_question_uses_memory_without_an_unrelated_rag_gap() -> None:
     mission = await _mission("历史策略记忆的来源是什么")
 
@@ -179,6 +199,30 @@ class _OmittingProvider:
         )
 
 
+class _MarketQuoteProvider:
+    name = "test"
+    model = "semantic-intent"
+
+    def chat(self, messages, tools=None):  # type: ignore[no-untyped-def]
+        del messages, tools
+        return ChatResponse(
+            content='{"intent":{"kind":"market_quote","assets":["LAB"]}}',
+            usage=TokenUsage(total_tokens=12, reported=True),
+        )
+
+
+class _InventedMarketQuoteProvider:
+    name = "test"
+    model = "semantic-intent"
+
+    def chat(self, messages, tools=None):  # type: ignore[no-untyped-def]
+        del messages, tools
+        return ChatResponse(
+            content='{"intent":{"kind":"market_quote","assets":["ETH"]}}',
+            usage=TokenUsage(total_tokens=12, reported=True),
+        )
+
+
 @pytest.mark.anyio
 async def test_provider_cannot_expand_capability_scope() -> None:
     mission = await _mission("研究 BTC 市场状态")
@@ -203,3 +247,38 @@ async def test_provider_cannot_omit_or_retarget_a_deterministic_market_read() ->
         "limit": 10,
         "inst_id": "ZZZZNOTREAL-USDT-SWAP",
     }
+
+
+@pytest.mark.anyio
+async def test_provider_semantic_intent_can_bind_a_user_verbatim_market_symbol() -> None:
+    mission = await _mission("Show LAB price")
+
+    plan = await ProviderBackedResearchPlanner(provider=_MarketQuoteProvider()).plan(mission)
+
+    assert plan.steps[-1].capability_id == "market.summary"
+    assert plan.steps[-1].arguments == {"limit": 10, "inst_id": "LAB-USDT-SWAP"}
+    assert plan.assumptions[-1].startswith("Provider-extracted market symbol")
+
+
+@pytest.mark.anyio
+async def test_provider_cannot_invent_market_symbol_absent_from_objective() -> None:
+    mission = await _mission("Show LAB price")
+
+    plan = await ProviderBackedResearchPlanner(
+        provider=_InventedMarketQuoteProvider()
+    ).plan(mission)
+
+    # The deterministic route remains a generic summary; provider ETH is
+    # discarded because it is not a standalone symbol in the objective.
+    assert plan.steps[-1].arguments == {"limit": 10}
+
+
+@pytest.mark.anyio
+async def test_provider_cannot_extract_a_partial_market_symbol_from_a_word() -> None:
+    mission = await _mission("Show ETHEREUM price")
+
+    plan = await ProviderBackedResearchPlanner(
+        provider=_InventedMarketQuoteProvider()
+    ).plan(mission)
+
+    assert plan.steps[-1].arguments == {"limit": 10}
