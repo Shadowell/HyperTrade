@@ -988,7 +988,7 @@ def builtin_handlers(
         step: PlanStepV2,
         attempt: int,
     ) -> ToolResult:
-        del mission, plan, step, attempt
+        del plan, step, attempt
         limit = int(arguments.get("limit", 10))
         focus = str(arguments.get("focus", "positions"))
         requested_inst_id = str(arguments.get("inst_id", "")).upper().strip()
@@ -1048,6 +1048,12 @@ def builtin_handlers(
             if focus == "risk"
             else ()
         )
+        if focus == "anomaly":
+            summary = "当前模拟盘快照未提供异常阈值或策略归属，无法判断是否存在异常。"
+        elif "哪个策略表现最好" in mission.objective:
+            summary = "当前模拟盘快照未提供策略归属和策略收益，无法判断哪个策略表现最好。"
+        else:
+            summary = _paper_summary_text(position_items, order_items, focus=focus)
         return ToolResult(
             payload={
                 "positions": position_items,
@@ -1056,7 +1062,7 @@ def builtin_handlers(
             },
             source_refs=refs[:3],
             unknowns=unknowns,
-            public_summary=_paper_summary_text(position_items, order_items, focus=focus),
+            public_summary=summary,
         )
 
     async def portfolio_assessment(

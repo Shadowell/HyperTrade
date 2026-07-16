@@ -82,6 +82,7 @@ def test_empty_search_sentinel_is_not_presented_as_evidence() -> None:
                     status="succeeded",
                     summary="No matching evidence was found.",
                     source_refs=("rag:no_matches",),
+                    unknowns=("No matching evidence was found.",),
                 ),
             ),
         ),
@@ -91,6 +92,7 @@ def test_empty_search_sentinel_is_not_presented_as_evidence() -> None:
     assert not response.evidence
     assert response.unknowns
     assert response.next_actions
+    assert response.decision == "No matching evidence was found."
 
 
 def test_live_strategy_inventory_lists_each_bounded_strategy_without_raw_source_noise() -> None:

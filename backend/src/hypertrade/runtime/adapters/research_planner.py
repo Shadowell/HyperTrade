@@ -206,6 +206,10 @@ def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
     if _knowledge_lookup_requested(lowered):
         if "记忆" in lowered and "来源" in lowered:
             return (*capabilities, "memory.search")
+        if "历史记忆" in lowered:
+            return (*capabilities, "memory.search")
+        if "知识库里有" in lowered:
+            return (*capabilities, "rag.search")
         if _market_lookup_requested(lowered):
             capabilities.append(_market_capability(lowered))
         if "买还是卖" in lowered:

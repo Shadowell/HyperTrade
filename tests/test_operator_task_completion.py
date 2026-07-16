@@ -89,3 +89,34 @@ def test_multiturn_task_requires_a_real_context_reference() -> None:
     assert result["status"] == "failed"
     assert "conversation_context" in result["failed_checks"]
     assert "R4" in result["remediation_ids"]
+
+
+def test_task_completion_can_require_relevant_text_in_the_decision_field() -> None:
+    suite = OperatorTaskCompletionSuite()
+    case = next(item for item in suite.cases() if item.case_id == "r02_memory_strategy")
+    response = OperatorResponseV1(
+        mission_id="mis_memory",
+        outcome="completed",
+        decision="已读取通用知识库说明。",
+        confidence="medium",
+        evidence=(
+            OperatorEvidenceV1(
+                summary="momentum_breakout_v1 的历史经验。",
+                source_refs=("memory:eval_memory_momentum",),
+            ),
+        ),
+    )
+
+    result = suite.evaluate(
+        case,
+        TaskCompletionObservation(
+            response=response,
+            visible_text="## 结论\n已读取通用知识库说明。\n\nmomentum_breakout_v1 的历史经验。",
+            capability_ids=("memory.search",),
+            source_refs=("memory:eval_memory_momentum",),
+        ),
+    )
+
+    assert result["status"] == "failed"
+    assert "decision_facts" in result["failed_checks"]
+    assert "R3" in result["remediation_ids"]

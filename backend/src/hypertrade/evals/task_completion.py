@@ -38,6 +38,7 @@ class TaskCompletionCase:
     expected_outcomes: tuple[str, ...]
     required_capabilities: tuple[str, ...] = ()
     required_visible: tuple[str, ...] = ()
+    required_decision: tuple[str, ...] = ()
     required_source_prefixes: tuple[str, ...] = ()
     forbidden_visible: tuple[str, ...] = ()
     fixture: str = ""
@@ -105,6 +106,11 @@ class OperatorTaskCompletionSuite:
             and response.outcome in case.expected_outcomes,
             "requested_facts": all(
                 fragment.casefold() in lowered for fragment in case.required_visible
+            ),
+            "decision_facts": response is not None
+            and all(
+                fragment.casefold() in response.decision.casefold()
+                for fragment in case.required_decision
             ),
             "capability_route": set(case.required_capabilities).issubset(
                 set(observation.capability_ids)
@@ -214,6 +220,7 @@ def _case_from_payload(payload: object) -> TaskCompletionCase:
         expected_outcomes=outcomes,
         required_capabilities=_strings(expected, "required_capabilities"),
         required_visible=_strings(expected, "required_visible"),
+        required_decision=_strings(expected, "required_decision"),
         required_source_prefixes=_strings(expected, "required_source_prefixes"),
         forbidden_visible=_strings(expected, "forbidden_visible"),
         fixture=_optional_text(expected, "fixture"),
@@ -237,6 +244,7 @@ def _remediation_ids(failed_checks: tuple[str, ...]) -> list[str]:
         "capability_route": "R1",
         "source_provenance": "R2",
         "requested_facts": "R3",
+        "decision_facts": "R3",
         "decision_first": "R3",
         "visible_length": "R3",
         "no_forbidden_output": "R3",

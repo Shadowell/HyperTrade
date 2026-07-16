@@ -106,6 +106,10 @@ def build_operator_response(
             # The first evidence item is the task-specific, validated projection
             # selected by the planner. It replaces generic completion boilerplate.
             decision = visible_evidence[0].summary
+        elif not visible_evidence and visible_unknowns and outcome == "needs_data":
+            # An empty search should name the exact missing record, not replace
+            # it with a generic completion phrase that hides the user's target.
+            decision = visible_unknowns[0]
         if visible_evidence and _objective_requests_next_steps(mission.objective):
             decision = "下一步：基于已验证证据补齐样本外区间、交易成本和失效条件，再形成研究结论。"
             next_actions = ("下一步：运行独立样本外验证，并记录成本和失效条件。",)
