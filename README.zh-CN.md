@@ -19,6 +19,10 @@ Mission：版本化计划、有界步骤、证据、预算、操作员控制与�
 模型可以提出工作，但不能自行增加权限、伪造证据或授权交易。HyperTrade 是受控的研究闭环，不是
 无人值守的交易机器人；它不承诺盈利，也不构成投资建议。
 
+> **成熟度说明：** 已审核的交易研究能力和部分只读 Mission 请求已经部署，但 HyperTrade 目前还不是
+> 完整的专业通用 Agent Runtime。真实审计确认仍有 Run/Task/Mission 兼容路径、各端会话历史差异和无法
+> 完整重建 projection 的事件记录。固定 100 题通过是有界回归证据，不是整体“生产级 Agent”认证。
+
 ![HyperTrade 架构](docs/assets/hypertrade-architecture.svg)
 
 **核心能力**：
@@ -30,9 +34,9 @@ Mission：版本化计划、有界步骤、证据、预算、操作员控制与�
 - 🔗 通过 MCP 适配器集成 BitPro
 - 💾 RAG 知识检索和审计的 Memory 系统
 
-> 📖 从[系统架构](docs/architecture/33-system-architecture.md)开始，了解当前 Mission Runtime、
-> 数据边界、安全模型和部署拓扑；[可视化架构图](docs/architecture/19-hypertrade-architecture-diagram.md)
-> 适合快速讨论系统分层。
+> 📖 [当前系统快照](docs/architecture/33-system-architecture.md)说明已交付边界；
+> [真实审计与目标架构](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md)
+> 说明 canonical Thread/Turn、状态机、权限、多 Agent、交易安全和垂直切换。
 
 ---
 
@@ -131,9 +135,9 @@ Agent 运行时 (Kernel, Planner, Tool Executor)
 - 数据库：PostgreSQL 14+ with pgvector（或 SQLite）
 - 基础设施：Docker Compose, Nginx, GitHub Actions
 
-当前工作流以 PostgreSQL 中的服务端 Mission 账本为准。Web、CLI、TUI 和桌面伴侣只投影 REST/SSE
-状态；经过审核的 Capability Catalog 与风险策略仍是唯一的工具调用授权边界。详见
-[完整系统架构](docs/architecture/33-system-architecture.md)。
+Mission 是当前新式研究任务的目标账本，但自然语言入口仍有旧 Run/Task 兼容分支，Web、CLI、TUI 和
+桌面也尚未共享服务端 Thread/Turn 历史。经过审核的 Capability Catalog 与风险策略仍是工具授权边界；
+下一步从 Remote CLI 开始垂直切换，不做永久双写。
 
 ---
 
@@ -142,7 +146,8 @@ Agent 运行时 (Kernel, Planner, Tool Executor)
 | 文档 | 链接 |
 |------|------|
 | **完整 README** | [README.md](README.md) |
-| **系统架构** | [docs/architecture/33-system-architecture.md](docs/architecture/33-system-architecture.md) |
+| **目标架构** | [docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md) |
+| **当前系统快照** | [docs/architecture/33-system-architecture.md](docs/architecture/33-system-architecture.md) |
 | **API 参考** | [docs/api-reference.zh-CN.md](docs/api-reference.zh-CN.md) |
 | **用户手册** | [docs/user-manual.zh-CN.md](docs/user-manual.zh-CN.md) |
 | **开发者指南** | [docs/developer-guide.zh-CN.md](docs/developer-guide.zh-CN.md) |
@@ -201,7 +206,7 @@ sudo -u hypertrade ./deploy/deploy.sh
 
 ## 许可证
 
-**私有仓库** - 保留所有权利。
+本项目采用 [MIT License](LICENSE)。
 
 仅供研究使用。不构成投资建议。
 

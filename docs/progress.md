@@ -1,5 +1,25 @@
 # Progress Log
 
+## 下一代专业 Agent Runtime 真实审计与 Sprint 121 提案 — 2026-07-16
+
+- 完成以真实代码、测试、数据库模型、运行事件和只读代表性请求为依据的 Agent 架构审计。审计确认当前
+  同时存在 `AgentRun`/`AgentTask`/`AgentMission` 状态和写路径；Remote CLI/Web 没有 server-owned Thread，
+  Desktop 只提交最近用户文本，Local CLI 仍可回退 AgentKernel。现有 Mission event 不覆盖全部 projection
+  更新，不能确定性重建；ContextPack 和 BoundedSupervisor 也未接入默认专业执行闭环。
+- 真实只读验证保留了系统已有价值：`看下 LAB 的价格` 精确返回来源绑定行情；“最好的实盘策略”在缺少
+  可比较收益时诚实返回数据缺口；主网满仓请求在工具前阻断。真实 CLI 两轮“比较两个策略”→“后者最大
+  回撤”则错误回答前者，证明固定 100 题通过不能替代真实跨端 Thread 语义。
+- 对照 Hermes Agent、OpenCode、Codex app-server 和 TradingAgents 的公开架构后，确定 HyperTrade 应保留
+  BitPro/交易证据/Capability/安全边界，采用 canonical Thread/Turn/Item、参数级 allow/ask/deny、事件 reducer、
+  typed Delegation、独立 Evidence/Risk verifier 和 outcome-reviewed learning；不复制代码，也不让 LLM 投票
+  成为交易授权。
+- 新增 [目标架构](architecture/34-next-generation-agent-runtime-audit-and-target-design.md)，包含三项根因、
+  真实执行图、Keep/Rewrite/Delete、比较矩阵、目标拓扑、Mission/Turn/Step/Attempt/ToolCall/Approval/
+  Delegation 状态机、核心 Schema、权限、交易安全、故障评测和无永久双写的垂直切换。
+- [Sprint 121](contracts/sprint-121-canonical-thread-turn-protocol.md) 状态为 Proposed：只迁移 Remote CLI
+  ask/chat，要求服务端 Thread/Turn/Item、可重放 event/reducer、SSE 恢复、正确两轮指代和 legacy Run/Task
+  行增量为零。尚未实现该合同，也未增加 paper、Testnet、live、order 或 capital 权限。
+
 ## Sprint 120 — 任意明确合约标的的精确行情交付 — 2026-07-16
 
 - 已复现并定位 `看下 LAB 的价格` 的根因：Mission 的确定性解析只接受 BTC/ETH/SOL 裸符号，导致

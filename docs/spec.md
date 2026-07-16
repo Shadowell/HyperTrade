@@ -6,9 +6,44 @@ HyperTrade is a crypto trading agent for market research and execution. V1 focus
 
 HyperTrade 是一个面向行情研究与执行的加密交易 Agent。V1 重点是稳定 Agent 能力：Provider 配置、Tool Call、RAG、Memory、Trace、行情采集、Connector 能力发现、风控门禁、Testnet 执行、BitPro 策略生命周期编排和面向操作员的 Harness。
 
+> Maturity correction (2026-07-16): the reviewed trading-research capabilities and selected read-only
+> Mission paths are usable, but the system is not yet a complete professional general Agent runtime.
+> Real-code and real-request audit found concurrent Run/Task/Mission protocols, client-owned conversation
+> history, incomplete event replay, and Supervisor/Approval/Context components that are not fully connected
+> to the default loop. The target and cutover contract are defined in
+> [architecture/34](architecture/34-next-generation-agent-runtime-audit-and-target-design.md); fixed-suite
+> 100/100 results are bounded regression evidence, not an overall production-grade certification.
+
 BitPro is treated as the base trading-system platform: it owns market/reference data, strategy storage, backtest execution, metrics, paper/simulation runtime, and future live execution. HyperTrade is the Agent control and research layer: it discovers BitPro capabilities, reads/writes through MCP tools only, generates and validates `BaseStrategy` code, starts BitPro-owned backtests, inspects real evidence, and promotes only passing candidates into paper simulation. HyperTrade must not copy BitPro business logic or bypass BitPro risk boundaries.
 
 BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储、回测执行、指标、模拟盘运行和未来实盘执行。HyperTrade 作为 Agent 控制与研发层：通过 MCP 发现 BitPro 能力，只经由 MCP 工具读写，生成并校验 `BaseStrategy` 策略，启动 BitPro 负责的回测，基于真实证据迭代，并且只把通过门禁的候选策略推进到模拟盘。HyperTrade 不复制 BitPro 业务逻辑，也不绕过 BitPro 风险边界。
+
+## Canonical Agent Runtime Target
+
+The next runtime uses a server-owned `Thread → Turn → Item` interaction protocol and links long-running
+`Mission → PlanVersion → Step → Attempt → ToolCall` work explicitly. Commands append versioned domain
+events; deterministic reducers build projections; clients never submit synthesized prior turns or maintain
+a second completion state machine.
+
+The professional loop is: intake and safety classification → context compilation → plan proposal → reviewed
+capability resolution → deterministic policy and approval → dispatch → schema/provenance validation →
+Evidence ledger → independent completion verification → bounded replan or response. Models may propose plans,
+arguments and prose; they cannot grant permissions, validate their own evidence, reconcile unknown side effects,
+or declare terminal completion.
+
+Tool policy resolves `allow | ask | deny` using capability/version, structured arguments, symbol, account,
+environment, path/resource, role, budget and context. Deny cannot be overridden by approval. Research,
+backtest, paper, Testnet, live-read and live-write permissions use distinct identities and deployments; live-write
+capabilities and credentials remain physically absent.
+
+Multi-agent execution is an optional bounded Delegation DAG, not a default conversation group. Delegations carry
+typed objectives, evidence/artifact inputs, a capability subset, budget, deadline and output schema. Independent
+evidence and risk verifiers validate handoffs, and conflicting claims remain visible instead of being removed by a
+majority vote.
+
+Delivery follows vertical cutover with no permanent dual writes. Sprint 121 first migrates Remote CLI ask/chat to
+the canonical protocol and requires correct real two-turn entity resolution, deterministic event replay, SSE
+recovery, zero false completion and zero legacy Run/Task writes. Web, Desktop and TUI migrate in later slices.
 
 ## Users
 

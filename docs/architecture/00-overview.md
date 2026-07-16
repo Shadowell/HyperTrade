@@ -2,9 +2,13 @@
 
 ## Start here / 从这里开始
 
-- [33 System Architecture](33-system-architecture.md) is the canonical current system entry point:
-  Mission Runtime, control/data planes, trust boundaries, lifecycle, safety, deployment, and
-  contributor decisions.
+- [34 Next-Generation Agent Runtime Audit and Target Design](34-next-generation-agent-runtime-audit-and-target-design.md)
+  is the evidence-driven gap assessment and approved direction for the canonical Thread/Turn protocol,
+  professional control loop, state machines, tool governance, multi-agent research, trading safety,
+  evaluation gates and vertical cutover.
+- [33 System Architecture](33-system-architecture.md) is the current implementation snapshot. It explains
+  the delivered Mission Runtime and boundaries, including known protocol and replay limitations; it is not
+  the target-completion claim.
 - [19 Visual Architecture Map](19-hypertrade-architecture-diagram.md) is the concise layer diagram
   for product discussion.
 - [30 Professional Agent Runtime V2 Roadmap](30-professional-agent-runtime-v2-roadmap.md) explains
@@ -27,5 +31,6 @@ unknown rather than becoming an inferred recommendation.
 
 - Product scope and acceptance: [Product Spec](../spec.md)
 - Current verified state: [Progress Log](../progress.md)
-- Active delivery boundary: [Sprint contracts](../contracts/)
+- Next proposed delivery boundary: [Sprint 121 — Canonical Thread/Turn Protocol](../contracts/sprint-121-canonical-thread-turn-protocol.md)
+- All delivery contracts: [Sprint contracts](../contracts/)
 - Deployment and operational procedures: [Runbooks](../runbooks/)

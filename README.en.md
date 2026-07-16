@@ -21,6 +21,12 @@ Models can propose work, but they cannot grant permissions, invent evidence, or 
 HyperTrade is a controlled research loop—not an unattended trading bot—and it does not promise
 profitability or provide investment advice.
 
+> **Maturity note:** reviewed trading-research capabilities and selected read-only Mission requests are
+> deployed, but HyperTrade is not yet a complete professional general Agent runtime. A real-code audit found
+> Run/Task/Mission compatibility paths, surface-specific conversation history, and an event log that cannot
+> reconstruct every projection. A fixed 100-task pass is bounded regression evidence, not an overall
+> production-grade certification.
+
 **Key Capabilities**:
 - 🤖 Natural language interaction with automatic tool selection
 - 📊 Real-time OKX market data and technical analysis
@@ -30,8 +36,9 @@ profitability or provide investment advice.
 - 🔗 BitPro integration via MCP adapter
 - 💾 RAG knowledge retrieval and audited Memory system
 
-> Start with the [System Architecture](docs/architecture/33-system-architecture.md) for the current
-> Mission Runtime, data boundaries, safety model, and deployment topology.
+> Use the [current implementation snapshot](docs/architecture/33-system-architecture.md) for delivered
+> boundaries and the [real-code audit and target design](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md)
+> for the canonical Thread/Turn protocol, state machines, permissions, multi-agent model and cutover.
 
 ---
 
@@ -130,9 +137,10 @@ Data Layer (PostgreSQL/SQLite, OKX, BitPro)
 - Database: PostgreSQL 14+ with pgvector (or SQLite)
 - Infrastructure: Docker Compose, Nginx, GitHub Actions
 
-The current operator workflow uses a server-owned Mission ledger in PostgreSQL. Web, CLI, TUI, and the
-desktop companion are REST/SSE projections; the reviewed capability catalog and risk policy remain the
-only tool-dispatch authority. See the [complete architecture](docs/architecture/33-system-architecture.md).
+Mission is the intended record for newer research work, but natural-language entry points still include
+legacy Run/Task compatibility and the surfaces do not yet share a durable server-side Thread/Turn history.
+The reviewed capability catalog and risk policy remain the tool-dispatch authority. Migration starts with
+the Remote CLI as a vertical slice and does not use permanent dual writes.
 
 ---
 
@@ -141,7 +149,8 @@ only tool-dispatch authority. See the [complete architecture](docs/architecture/
 | Document | Link |
 |----------|------|
 | **Complete README** | [README.md](README.md) |
-| **System Architecture** | [docs/architecture/33-system-architecture.md](docs/architecture/33-system-architecture.md) |
+| **Target Architecture** | [docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md) |
+| **Current System Snapshot** | [docs/architecture/33-system-architecture.md](docs/architecture/33-system-architecture.md) |
 | **API Reference** | [docs/api-reference.md](docs/api-reference.md) |
 | **User Manual** | [docs/user-manual.md](docs/user-manual.md) |
 | **Developer Guide** | [docs/developer-guide.md](docs/developer-guide.md) |
@@ -200,7 +209,7 @@ See [Developer Guide](docs/developer-guide.md) for details.
 
 ## License
 
-**Private Repository** - All rights reserved.
+Released under the [MIT License](LICENSE).
 
 Research purposes only. No investment advice.
 

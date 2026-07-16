@@ -1,7 +1,9 @@
 # 33 HyperTrade 系统架构
 
-> 状态：当前系统架构事实入口（2026-07-16）。本文件说明已交付的系统边界和运行方式；
-> 路线图与逐 Sprint 设计分别见 [30 Professional Agent Runtime V2 路线图](30-professional-agent-runtime-v2-roadmap.md)
+> 状态：当前实现快照（2026-07-16），不是下一代架构完成声明。真实代码和运行审计确认当前仍有
+> Run/Task/Mission 双路径、客户端上下文差异和不完整事件重放；目标架构与切换计划见
+> [34 下一代专业 Agent Runtime](34-next-generation-agent-runtime-audit-and-target-design.md)。历史路线图与
+> 逐 Sprint 设计见 [30 Professional Agent Runtime V2 路线图](30-professional-agent-runtime-v2-roadmap.md)
 > 和 [31 Professional Agent Runtime V2 技术设计](31-professional-agent-runtime-v2-technical-design.md)。
 
 ## 1. 系统定位
@@ -25,16 +27,18 @@ HyperTrade 只能通过稳定的 MCP/API 合同使用 BitPro。它不直接读�
 
 ## 2. 架构原则
 
-1. **Mission 是新的工作真相源。** 每次研究由可持久化的 Mission、不可变 Plan 版本、Step attempt
-   与事件流表示；历史 AgentTask/AgentRun 仅保留只读审计查询。
+1. **Mission 是研究任务的目标真相源，但当前还不是完整交互协议。** 每次新式研究由可持久化的 Mission、
+   不可变 Plan 版本和 Step attempt 表示；不过默认自然语言入口、Local CLI 和部分 surface 仍保留
+   AgentTask/AgentRun/AgentKernel 兼容分支。Thread/Turn/Item 尚未成为服务端唯一真相源。
 2. **模型不能扩大权限。** 模型只可提出受 schema 限制的计划或输入；Capability Catalog、Tool Policy、
    Approval 与风险门禁在调用前后独立验证。
 3. **结论必须可追溯。** 默认操作员答案只显示结论、置信度、证据、未知项和安全下一步。模型文字、
    工具原始输出或“我已完成”的声明本身不能完成 Mission。
 4. **数据不足时显式失败。** stale、不可用、冲突、超预算或未审批状态会成为 `waiting_input`、
    `waiting_approval`、`needs_review` 或受分类的失败，绝不由模型补造事实。
-5. **客户端只投影服务端状态。** Web、CLI、Textual TUI 和桌面伴侣共享 REST/SSE Mission 合同，不各自
-   实现第二套任务状态机。
+5. **目标原则是客户端只投影服务端状态，但当前尚未完全满足。** 各端都能消费 REST/SSE 结果；不过
+   Remote CLI/Web 未建立服务端 Thread，Desktop 会提交最近用户文本，Local CLI/TUI 仍有本地/legacy
+   fallback。统一 surface 投影属于 architecture 34 的 vertical cutover。
 6. **副作用最小化。** 当前 Mission Catalog 只暴露受治理的读取能力；任何后续 paper、Testnet 或
    live 写能力仍须独立的审批、幂等、风险和产品合同。
 
@@ -131,9 +135,10 @@ sequenceDiagram
   C-->>O: 公共答案或审计事件
 ~~~
 
-Mission 事件和 projection 在同一个数据库事务中更新。Worker 以 PostgreSQL lease/heartbeat 领取可执行
-Mission；竞态、重复请求和 SSE 断线不会产生第二次 Step dispatch。默认硬上限由服务端 schema 强制：
-Plan 版本、Step、attempt、模型调用、工具调用、token 与持续时间都不能由模型增加。
+Mission 的部分事件和 projection 在同一个数据库事务中更新。Worker 以 PostgreSQL lease/heartbeat 领取
+可执行 Mission，默认硬上限由服务端 schema 强制。当前 event log 没有覆盖 usage、current step 等全部
+projection 更新，也缺少完整 aggregate version/payload，因此不能仅靠事件确定性重建 Mission；SSE 重放
+只代表已记录事件的 cursor replay。下一代协议必须通过离线 reducer hash 门禁后才可称为 event-sourced。
 
 ## 6. 研究与数据流
 
@@ -162,7 +167,7 @@ HyperTrade 不持久化 BitPro 的完整蜡烛、权益、交易、订单或持�
 | 权限 | read-only Mission profile、Capability side-effect 分类、Tool Policy、Approval/Risk gate | 缺少匹配权限或批准时拒绝 dispatch |
 | 输入与输出 | Pydantic v2 + JSON Schema、policy/contract hash、来源绑定 | schema 或来源不匹配时记录分类失败 |
 | 预算与并发 | 事务性 token/tool/model/duration reservation、AnyIO bounded concurrency | 无剩余预算时停止或形成降级交付 |
-| 审计与重放 | append-only events、content hash、idempotency、SSE cursor | 重试重放同一事实，不覆盖历史 |
+| 审计与重放 | 部分 append-only Mission events、idempotency、SSE cursor | 已记录事件可 cursor replay；完整 projection 尚不可从 event 重建 |
 | 数据保护 | redaction、结果大小限制、metadata-first artifacts | 不保存凭据、原始工具结果、完整 prompt 或私有推理 |
 | 策略代码 | UDS isolated sandbox、非 root、无网络、只读根、无 Docker socket、资源限制、digest 绑定 | socket/digest 不可用时生产返回 503，绝不回退到 API/宿主子进程 |
 | 评测 | 独立 API、数据库、网络和合成事实；生产禁用 fixture | 评测产物不进入生产事实，也不授予交易权限 |
@@ -172,9 +177,10 @@ HyperTrade 不持久化 BitPro 的完整蜡烛、权益、交易、订单或持�
 
 ## 8. 部署与运行模型
 
-生产使用 Docker Compose、Nginx 与 GitHub Actions 的 `main` 分支部署流程。PostgreSQL 是 Mission
-存储、event log、lease 和 projection 的唯一工作状态源；没有 Celery、Redis、Kafka 或第二套任务队列。
-Alembic 迁移在服务启动前执行，`/api/health`、容器健康检查和部署 smoke 用于确认服务状态。
+生产使用 Docker Compose、Nginx 与 GitHub Actions 的 `main` 分支部署流程。PostgreSQL 同时保存 Mission
+存储/event/lease/projection 和 legacy AgentRun/AgentTask/Session 表；它是单一数据库，不等于单一领域
+状态模型。当前没有 Celery、Redis、Kafka 或第二套任务队列。Alembic 迁移在服务启动前执行，
+`/api/health`、容器健康检查和部署 smoke 用于确认服务状态。
 
 重要运行约定：
 

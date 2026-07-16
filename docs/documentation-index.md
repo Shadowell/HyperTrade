@@ -35,7 +35,8 @@
 ### 架构文档
 详细的系统架构和设计文档：
 - [Architecture Overview](architecture/) - 架构概览目录
-- [System Architecture](architecture/33-system-architecture.md) - 系统上下文、Mission Runtime、控制/数据平面、信任边界、安全与部署
+- [Next-Generation Agent Runtime Audit and Target Design](architecture/34-next-generation-agent-runtime-audit-and-target-design.md) - 真实执行审计、目标协议、完整状态机、Schema、权限、多 Agent、交易安全、评测与切换路线
+- [System Architecture](architecture/33-system-architecture.md) - 当前实现快照、Mission Runtime、控制/数据平面、信任边界、安全与部署
 - [System Architecture Diagram](architecture/19-hypertrade-architecture-diagram.md)
 - [Tool Calling Design](architecture/04-tool-calling.md)
 - [Agent Graph Runtime](architecture/12-agent-graph-langgraph-runtime.md)
@@ -69,6 +70,7 @@
 - [Sprint 96–105 Agent Research OS Plan](architecture/27-agent-research-os-roadmap.md#6-分期路线)
 - [Sprint 106–110 Research Operations Plan](architecture/29-research-operations-shadow-portfolio-roadmap.md#5-分期计划)
 - [Sprint 111–116 Professional Agent Runtime V2 Plan](architecture/30-professional-agent-runtime-v2-roadmap.md#7-sprint-路线)
+- [Sprint 121 Canonical Thread/Turn Protocol](contracts/sprint-121-canonical-thread-turn-protocol.md) - Remote CLI 首个垂直切换合同（Proposed）
 
 ---
 

@@ -1,7 +1,7 @@
 # HyperTrade
 
 <p align="center">
-  <strong>Production-Grade Agent Runtime for Crypto Trading Research & Execution</strong>
+  <strong>Governed Agent Runtime for Evidence-Driven Crypto Trading Research</strong>
 </p>
 
 <p align="center">
@@ -11,13 +11,13 @@
   <a href="#"><img src="https://img.shields.io/badge/React-18+-61DAFB.svg" alt="React" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.0+-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14+-4169E1.svg" alt="PostgreSQL" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/status-production--verified-success.svg" alt="Status" /></a>
+  <a href="docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md"><img src="https://img.shields.io/badge/status-canonical_protocol_hardening-orange.svg" alt="Status" /></a>
 </p>
 
 <p align="center">
   <a href="README.zh-CN.md">中文文档</a> ·
   <a href="README.en.md">English Summary</a> ·
-  <a href="docs/architecture/33-system-architecture.md">Architecture</a> ·
+  <a href="docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md">Target Architecture</a> ·
   <a href="docs/documentation-index.md">Documentation</a> ·
   <a href="docs/api-reference.md">API</a> ·
   <a href="docs/user-manual.md">User Manual</a> ·
@@ -40,9 +40,14 @@ question to evidence-backed strategy iteration—not an unattended trading bot.
 ![HyperTrade Architecture](docs/assets/hypertrade-architecture.svg)
 
 > 📖 Start with the [System Architecture](docs/architecture/33-system-architecture.md), then use the
-> [visual architecture map](docs/architecture/19-hypertrade-architecture-diagram.md) and the
-> [Professional Runtime technical design](docs/architecture/31-professional-agent-runtime-v2-technical-design.md)
-> for implementation detail.
+> [real-code audit and target design](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md)
+> to distinguish the current implementation from the canonical Thread/Turn architecture being built.
+
+> **Maturity note:** reviewed trading-research capabilities and selected read-only Mission requests are
+> deployed, but HyperTrade is not yet a complete professional general Agent runtime. The current system still
+> contains Run/Task/Mission compatibility paths, surface-specific conversation history and an event log that
+> cannot reconstruct every projection. The fixed 100-task suite is useful regression evidence, not an overall
+> production-grade certification.
 
 ### What HyperTrade Owns—and What It Does Not
 
@@ -83,14 +88,13 @@ flowchart LR
   C --> B["Isolated strategy sandbox<br/>digest-bound UDS"]
 ~~~
 
-The Mission ledger in PostgreSQL is the canonical workflow state. Web, CLI, Textual TUI and the
-desktop client are server-state projections; an SSE cursor lets them reconnect without creating a
-second task state machine. Each step compiles a bounded Context Pack, executes only reviewed
-capabilities, validates source/artifact provenance, and records either a verified observation,
-explicit unknown, recoverable failure, or a bounded replan.
+Mission is the intended research-workflow record, but the current natural-language surfaces still include
+legacy Run/Task compatibility and do not yet share a durable Thread/Turn history. Reviewed capabilities,
+bounded observations, SQL leases and SSE Mission events are implemented; complete event reduction,
+cross-surface context, Approval and Supervisor integration are target work rather than finished claims.
 
-See the [complete system architecture](docs/architecture/33-system-architecture.md) for the data
-flow, trust boundaries, deployment model and contributor rules.
+See the [current implementation snapshot](docs/architecture/33-system-architecture.md) and the
+[evidence-driven target architecture](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md).
 
 ### Technology Stack
 
@@ -108,21 +112,21 @@ flow, trust boundaries, deployment model and contributor rules.
 
 | Capability | Description | Status |
 |-----------|-------------|--------|
-| Natural Language | Free-form prompts routed to LLM planner with automatic tool selection | Production |
-| Tool Calling | Registry-based execution with scope, approval, and idempotency enforcement | Production |
-| Market Intelligence | OKX SWAP tickers, candles, funding, OI, relative strength indicators | Production |
-| Global Market | Cross-asset regime classification (equities, volatility, FX, rates) | Production |
-| RAG | pgvector-backed citation search over knowledge documents | Production |
-| Memory | Audited observations with tags, confidence scoring, and importance weighting | Production |
-| Strategy Research | Backtrader backtests, multi-variant experiments, evidence library | Production |
-| BitPro Integration | MCP adapter for strategy lifecycle, backtest diagnostics, paper monitoring | Production |
-| Paper Trading | Simulated execution with full lifecycle controls | Production |
-| Testnet Execution | Approval-gated OKX Testnet orders with risk validation | Production |
-| Monitoring & Alerts | Read-only monitors for paper strategies, connector health, library freshness | Production |
-| Evaluation Suite | Deterministic evals for tool choice, RAG, Memory, risk, report quality | Production |
-| Agent Task OS | Durable sessions, tasks, checkpoints, cursor events, controls, leases, and recovery | Production |
-| Professional Mission Runtime | Strict Mission/Plan/Step contracts, immutable events, hard budgets, safety-classified ingress, catalog-bounded market/strategy/paper/Testnet reads, Mission-first CLI/TUI/Web projections, and an isolated strategy sandbox service | Production verified: Mission V2 full cutover; read-only sandbox and worker canaries passed |
-| Research Triggers | Durable schedule/regime/drift/data/eval triggers with quotas, dedupe, and kill switch | Production (disabled by default) |
+| Natural Language | Free-form prompts with bounded planning and tool selection | Bounded coverage; canonical Thread/Turn pending |
+| Tool Calling | Reviewed registry, scope, schema and idempotency enforcement | Read catalog deployed; Mission approval loop incomplete |
+| Market Intelligence | OKX SWAP tickers, candles, funding, OI, relative strength indicators | Delivered read capability |
+| Global Market | Cross-asset regime classification (equities, volatility, FX, rates) | Delivered read capability |
+| RAG | pgvector-backed citation search over knowledge documents | Delivered |
+| Memory | Audited observations with tags, confidence scoring, and importance weighting | Delivered; reviewed learning target pending |
+| Strategy Research | Backtrader backtests, multi-variant experiments, evidence library | Delivered research workflows |
+| BitPro Integration | MCP adapter for strategy lifecycle, backtest diagnostics, paper monitoring | Delivered governed contracts |
+| Paper Trading | Simulated execution with lifecycle controls | Existing operator paths; not canonical Mission write |
+| Testnet Execution | Approval-gated OKX Testnet orders with risk validation | Existing gated path; mainnet blocked |
+| Monitoring & Alerts | Read-only monitors for paper strategies, connector health, library freshness | Delivered |
+| Evaluation Suite | Fixed cohorts for tools, sources, safety and response quality | 100-task regression passes; fault/cross-surface gaps remain |
+| Agent Task OS | Sessions/tasks/checkpoints plus newer Mission lifecycle | Legacy-compatible; canonical replacement planned |
+| Professional Mission Runtime | Mission/Plan/Step/Attempt, budgets, read capabilities, SQL worker and sandbox | Selected read-only paths deployed; not end-to-end canonical |
+| Research Triggers | Durable schedule/regime/drift/data/eval triggers with quotas, dedupe, and kill switch | Disabled by default |
 | World Model | Portfolio state tracking and defensive action scheduling | Experimental |
 
 ---
@@ -514,7 +518,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 
 ## Roadmap
 
-### Current (V2)
+### Current implementation state
 
 | Initiative | Status |
 |-----------|--------|
@@ -522,9 +526,9 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Global Market — cross-asset regime classification | Production |
 | Vide Coding (opus-4.6) provider | Production |
 | Enhanced output formatting | Complete |
-| Agent Session and Task OS | Production |
+| Agent Session and Task OS | Legacy-compatible; canonical Thread/Turn replacement proposed |
 | Research Evidence V2 contract | Production |
-| Multi-Agent research graph V1 | Production |
+| Multi-Agent research graph V1 | Contracts/tests delivered; not in default Mission loop |
 | Reproducible experiment ledger | Production |
 | Robustness validation suite | Production |
 | Agent Research Evaluation Foundation | Production |
@@ -533,10 +537,12 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Portfolio Evidence Data Plane | Production (Sprint 108) |
 | Champion–Challenger Paper Incubation | Production (Sprint 109) |
 | Shadow Portfolio Governance | Production (Sprint 110) |
-| Professional Agent Runtime V2 | Sprint 116 completed: Mission V2 is the production default; legacy writes are archived |
+| Professional Agent Runtime V2 | Read-only Mission paths deployed; real audit found remaining legacy writes/protocol gaps |
 
 ### Planned (V3+)
 
+- [Next-Generation Agent Runtime audit and target design](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md)
+- [Sprint 121 canonical Thread/Turn vertical cutover](docs/contracts/sprint-121-canonical-thread-turn-protocol.md)
 - [Research Operations and Shadow Portfolio roadmap](docs/architecture/29-research-operations-shadow-portfolio-roadmap.md)
 - [Professional Agent Runtime V2 roadmap](docs/architecture/30-professional-agent-runtime-v2-roadmap.md)
 - [Professional Agent Runtime V2 technical design](docs/architecture/31-professional-agent-runtime-v2-technical-design.md)
