@@ -93,6 +93,45 @@ def test_empty_search_sentinel_is_not_presented_as_evidence() -> None:
     assert response.next_actions
 
 
+def test_live_strategy_inventory_lists_each_bounded_strategy_without_raw_source_noise() -> None:
+    response = build_operator_response(
+        mission(objective="我的实盘策略有哪些"),
+        (
+            StepAttemptV2(
+                attempt_id="sat_live_inventory",
+                step_id="live_strategy_inventory",
+                attempt=1,
+                status="succeeded",
+                capability_id="bitpro.live_strategy_summary",
+                observation=StepObservationV2(
+                    status="succeeded",
+                    summary=(
+                        "BitPro 实盘策略清单（共 2 条，只读快照）：\n"
+                        "1. BTC 趋势跟踪｜运行中｜BTC/USDT:USDT\n"
+                        "2. ETH 均值回归｜已暂停｜ETH/USDT:USDT"
+                    ),
+                    source_refs=(
+                        "bitpro_mcp:live_strategies:101",
+                        "bitpro_mcp:live_strategies:102",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    visible = render_operator_response(response)
+
+    assert response.outcome == "completed"
+    assert response.evidence[0].source_refs == (
+        "bitpro_mcp:live_strategies:101",
+        "bitpro_mcp:live_strategies:102",
+    )
+    assert "BTC 趋势跟踪" in visible
+    assert "ETH 均值回归" in visible
+    assert "bitpro_mcp:live_strategies:101" not in visible
+    assert "BitPro MCP（每条策略均可追溯）" in visible
+
+
 def test_runtime_objective_and_market_no_match_cannot_make_a_completed_answer() -> None:
     response = build_operator_response(
         mission(),

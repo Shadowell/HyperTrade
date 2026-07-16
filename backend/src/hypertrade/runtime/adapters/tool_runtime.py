@@ -15,6 +15,7 @@ from jsonschema.validators import validator_for
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from hypertrade.bitpro.mcp import BitProMcpError, BitProToolAdapter
 from hypertrade.db import (
     AgentToolObservation,
     BacktestRun,
@@ -58,6 +59,12 @@ class ToolResult:
 ToolHandler = Callable[
     [dict[str, Any], MissionProjection, PlanV2, PlanStepV2, int], Awaitable[ToolResult]
 ]
+
+
+class LiveStrategyReader(Protocol):
+    """The narrow external read required by the Mission strategy inventory capability."""
+
+    def live_strategy_performance(self, *, exchange: str, limit: int) -> dict[str, Any]: ...
 
 
 class ObservationStore(Protocol):
@@ -453,8 +460,14 @@ class GovernedToolExecutor:
         return _step_observation(observation, summary=summary)
 
 
-def builtin_handlers(db: Database, *, knowledge_dir: str) -> dict[str, ToolHandler]:
+def builtin_handlers(
+    db: Database,
+    *,
+    knowledge_dir: str,
+    bitpro_adapter_factory: Callable[[], LiveStrategyReader] | None = None,
+) -> dict[str, ToolHandler]:
     limiter = anyio.CapacityLimiter(8)
+    adapter_factory = bitpro_adapter_factory or BitProToolAdapter
 
     async def objective(
         arguments: dict[str, Any],
@@ -664,6 +677,68 @@ def builtin_handlers(db: Database, *, knowledge_dir: str) -> dict[str, ToolHandl
             public_summary=f"已读取 {len(items)} 条本地回测记录及其收益、回撤和交易次数。",
         )
 
+    async def bitpro_live_strategy_summary(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        exchange = str(arguments.get("exchange", "okx"))
+        limit = int(arguments.get("limit", 20))
+        try:
+            result = await anyio.to_thread.run_sync(
+                lambda: adapter_factory().live_strategy_performance(exchange=exchange, limit=limit),
+                limiter=limiter,
+            )
+        except BitProMcpError:
+            return ToolResult(
+                payload={"strategies": [], "count": 0, "source_available": False},
+                source_refs=("bitpro_mcp:live_strategies:no_matches",),
+                unknowns=("BitPro 实盘策略数据源当前不可用，未推断策略清单。",),
+                public_summary="BitPro 实盘策略数据源当前不可用。",
+            )
+
+        # BitPro remains the source of truth: only this bounded diagnostic projection
+        # crosses the Mission boundary; raw strategy payloads are never persisted or rendered.
+        raw_rows = result.get("strategies", []) if isinstance(result, dict) else []
+        rows = raw_rows if isinstance(raw_rows, list) else []
+        items: list[dict[str, Any]] = []
+        source_refs: list[str] = []
+        for index, raw in enumerate(rows[:limit], start=1):
+            if not isinstance(raw, dict):
+                continue
+            strategy_id = str(raw.get("strategy_id") or "").strip()
+            items.append(
+                {
+                    "strategy_id": strategy_id,
+                    "strategy_name": str(raw.get("strategy_name") or ""),
+                    "status": str(raw.get("status") or ""),
+                    "workspace_status": str(raw.get("workspace_status") or ""),
+                    "symbols": list(raw.get("symbols", []))
+                    if isinstance(raw.get("symbols"), list)
+                    else [],
+                    "return_pct": str(raw.get("return_pct") or ""),
+                    "total_pnl": str(raw.get("total_pnl") or ""),
+                    "deployment_status": str(raw.get("deployment_status") or ""),
+                    "updated_at": str(raw.get("updated_at") or ""),
+                }
+            )
+            source_refs.append(f"bitpro_mcp:live_strategies:{strategy_id or index}")
+        if not items:
+            return ToolResult(
+                payload={"strategies": [], "count": 0, "source_available": True},
+                source_refs=("bitpro_mcp:live_strategies:no_matches",),
+                unknowns=("BitPro 未返回可验证的实盘策略记录。",),
+                public_summary="BitPro 当前未返回可验证的实盘策略记录。",
+            )
+        return ToolResult(
+            payload={"strategies": items, "count": len(items), "source_available": True},
+            source_refs=tuple(source_refs),
+            public_summary=_live_strategy_inventory_summary(items),
+        )
+
     async def paper_summary(
         arguments: dict[str, Any],
         mission: MissionProjection,
@@ -766,9 +841,57 @@ def builtin_handlers(db: Database, *, knowledge_dir: str) -> dict[str, ToolHandl
         "rag.search": rag_search,
         "memory.search": memory_search,
         "strategy.performance_summary": strategy_performance_summary,
+        "bitpro.live_strategy_summary": bitpro_live_strategy_summary,
         "paper.summary": paper_summary,
         "execution.intent_summary": execution_intent_summary,
     }
+
+
+def _live_strategy_inventory_summary(items: Sequence[dict[str, Any]]) -> str:
+    """Render only operator-useful inventory facts; performance stays in the audited payload."""
+
+    lines = [f"BitPro 实盘策略清单（共 {len(items)} 条，只读快照）："]
+    for index, item in enumerate(items, start=1):
+        strategy_id = str(item.get("strategy_id") or "").strip()
+        name = _truncate_public_text(str(item.get("strategy_name") or "").strip(), max_chars=96)
+        title = name or f"未命名策略 #{strategy_id or index}"
+        status = _strategy_status_label(item)
+        symbols = [
+            _truncate_public_text(str(value).strip(), max_chars=32)
+            for value in item.get("symbols", [])
+            if str(value).strip()
+        ]
+        detail = f"{index}. {title}｜{status}"
+        if symbols:
+            detail = f"{detail}｜{'、'.join(symbols[:4])}"
+        lines.append(detail)
+    return "\n".join(lines)
+
+
+def _strategy_status_label(item: dict[str, Any]) -> str:
+    values = (
+        str(item.get("workspace_status") or "").strip(),
+        str(item.get("status") or "").strip(),
+        str(item.get("deployment_status") or "").strip(),
+    )
+    normalized = _truncate_public_text(
+        next((value for value in values if value), "状态未返回"), max_chars=48
+    )
+    return {
+        "active": "运行中",
+        "running": "运行中",
+        "paused": "已暂停",
+        "stopped": "已停止",
+        "inactive": "未启用",
+        "deployed": "已部署",
+    }.get(normalized.casefold(), normalized)
+
+
+def _truncate_public_text(value: str, *, max_chars: int) -> str:
+    normalized = " ".join(value.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return f"{normalized[: max_chars - 1].rstrip()}…"
 
 
 def _validate_schema(schema: dict[str, Any], payload: dict[str, Any]) -> None:

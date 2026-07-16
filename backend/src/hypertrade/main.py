@@ -416,7 +416,13 @@ def create_app(
     )
     tool_executor = GovernedToolExecutor(
         capability_catalog,
-        builtin_handlers(database, knowledge_dir=str(app_settings.knowledge_dir)),
+        builtin_handlers(
+            database,
+            knowledge_dir=str(app_settings.knowledge_dir),
+            bitpro_adapter_factory=lambda: BitProToolAdapter(
+                BitProMcpClient(settings=app_settings)
+            ),
+        ),
         observations=observation_store,
     )
     # A provider may propose a plan but never gains dispatch authority. The

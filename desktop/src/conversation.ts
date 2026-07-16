@@ -34,7 +34,9 @@ export function applyAgentEvent(
     const finalProjection = readFinalProjection(payload.run);
     return {
       ...message,
-      text: appendDistinct(message.text, finalProjection.text),
+      // The final server projection is the auditable answer. Replace transient
+      // progress text so an operator sees the actual strategy facts, not a status line.
+      text: finalProjection.text || message.text,
       unknowns: finalProjection.unknowns,
       state: "complete"
     };
@@ -95,7 +97,7 @@ function readFinalProjection(run: unknown): { text: string; unknowns: string[] }
   const unknowns = Array.isArray(operatorResponse.unknowns)
     ? operatorResponse.unknowns.filter((item): item is string => typeof item === "string")
     : [];
-  return { text: decision || report, unknowns };
+  return { text: report || decision, unknowns };
 }
 
 function appendDistinct(current: string, next: string) {

@@ -243,8 +243,8 @@ class MissionProjection(StrictModel):
 class OperatorEvidenceV1(StrictModel):
     """A bounded, source-bound fact visible in an operator answer."""
 
-    summary: str = Field(min_length=1, max_length=480)
-    source_refs: tuple[str, ...] = Field(default=(), max_length=3)
+    summary: str = Field(min_length=1, max_length=4_000)
+    source_refs: tuple[str, ...] = Field(default=(), max_length=20)
     artifact_refs: tuple[str, ...] = Field(default=(), max_length=3)
 
     @model_validator(mode="after")

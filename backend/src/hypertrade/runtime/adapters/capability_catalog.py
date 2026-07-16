@@ -433,6 +433,34 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
             },
         ),
         CapabilityDefinitionV1(
+            capability_id="bitpro.live_strategy_summary",
+            title="BitPro live strategy inventory",
+            description=(
+                "Read bounded BitPro live strategy state and performance metadata without mutation."
+            ),
+            source_owner="bitpro.mcp",
+            handler_key="bitpro.live_strategy_summary",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "exchange": {"type": "string", "enum": ["okx"]},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                },
+                "required": ["exchange", "limit"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "strategies": {"type": "array"},
+                    "count": {"type": "integer"},
+                    "source_available": {"type": "boolean"},
+                },
+                "required": ["strategies", "count", "source_available"],
+            },
+            max_result_bytes=12_000,
+        ),
+        CapabilityDefinitionV1(
             capability_id="paper.summary",
             title="Paper portfolio summary",
             description="Read bounded paper position/order metadata without paper mutation.",

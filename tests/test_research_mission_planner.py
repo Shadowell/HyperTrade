@@ -62,6 +62,19 @@ async def test_planner_adds_read_summaries_for_paper_and_testnet_queries() -> No
 
 
 @pytest.mark.anyio
+async def test_live_strategy_inventory_uses_bitpro_without_generic_retrieval() -> None:
+    mission = await _mission("我的实盘策略有哪些")
+
+    plan = await DeterministicResearchPlanner().plan(mission)
+
+    assert [step.capability_id for step in plan.steps] == [
+        "runtime.objective_inspection",
+        "bitpro.live_strategy_summary",
+    ]
+    assert plan.steps[-1].arguments == {"exchange": "okx", "limit": 20}
+
+
+@pytest.mark.anyio
 async def test_replan_removes_the_failed_data_step_and_preserves_audit_diff() -> None:
     mission = await _mission("Research BTC market strategy evidence")
     planner = DeterministicResearchPlanner()

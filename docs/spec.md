@@ -240,9 +240,10 @@ Mission/Plan/tool telemetry remains an audited drill-down, not default chat cont
 answers, tool arguments and raw results are never retained in output-evaluation artifacts.
 
 The reviewed Mission read catalog includes market, RAG/Memory, local strategy/backtest performance,
-paper portfolio and pending Testnet intent summaries. These reads are bounded and source-bound;
-they cannot create/approve/execute an order or change paper state. Isolated evaluator facts are
-synthetic, post-migration and explicitly environment-gated; they are never seeded in production.
+BitPro live-strategy inventory, paper portfolio and pending Testnet intent summaries. BitPro inventory
+queries follow the MCP capabilities/health/live-strategies read chain and return a bounded, source-bound
+operator list; they cannot create/approve/execute an order or change paper state. Isolated evaluator
+facts are synthetic, post-migration and explicitly environment-gated; they are never seeded in production.
 
 Migration uses vertical cutover without dual writes; historical runs remain read-only, and every
 Sprint includes an explicit legacy deletion budget. The roadmap is planning-only until explicitly approved. The first draft contract is

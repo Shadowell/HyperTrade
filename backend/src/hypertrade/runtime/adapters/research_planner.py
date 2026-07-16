@@ -48,6 +48,13 @@ _RESEARCH_TERMS = (
 )
 _PAPER_TERMS = ("paper", "模拟盘", "持仓", "仓位", "异常")
 _INTENT_TERMS = ("testnet", "测试网", "待批准", "订单", "intent")
+_LIVE_STRATEGY_TERMS = (
+    "实盘策略",
+    "真实策略",
+    "live strategy",
+    "live strategies",
+    "real-account strategy",
+)
 _CAPABILITY_SCHEMAS: dict[str, dict[str, Any]] = {
     "runtime.objective_inspection": {
         "type": "object",
@@ -59,6 +66,10 @@ _CAPABILITY_SCHEMAS: dict[str, dict[str, Any]] = {
     "strategy.performance_summary": {
         "type": "object",
         "required": ["items", "count", "found"],
+    },
+    "bitpro.live_strategy_summary": {
+        "type": "object",
+        "required": ["strategies", "count", "source_available"],
     },
     "paper.summary": {"type": "object", "required": ["positions", "orders", "count"]},
     "execution.intent_summary": {"type": "object", "required": ["items", "count"]},
@@ -192,11 +203,14 @@ class ProviderBackedResearchPlanner:
 def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
     lowered = objective.casefold()
     capabilities = ["runtime.objective_inspection"]
+    live_strategy_lookup = _live_strategy_lookup_requested(lowered)
     if any(term in lowered for term in _MARKET_TERMS):
         capabilities.append("market.summary")
-    if any(term in lowered for term in _RESEARCH_TERMS):
+    if any(term in lowered for term in _RESEARCH_TERMS) and not live_strategy_lookup:
         capabilities.extend(("rag.search", "memory.search"))
-    if _strategy_lookup_requested(lowered):
+    if live_strategy_lookup:
+        capabilities.append("bitpro.live_strategy_summary")
+    elif _strategy_lookup_requested(lowered):
         capabilities.append("strategy.performance_summary")
     if any(term in lowered for term in _PAPER_TERMS):
         capabilities.append("paper.summary")
@@ -250,6 +264,15 @@ def _steps_for_objective(objective: str) -> Sequence[PlanStepV2]:
                     "backtest_id": _requested_backtest_id(objective),
                     "limit": 3,
                 },
+                expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
+            )
+        elif capability_id == "bitpro.live_strategy_summary":
+            step = PlanStepV2(
+                step_id="live_strategy_inventory",
+                title="Read bounded BitPro live strategy inventory",
+                depends_on=(previous,),
+                capability_id=capability_id,
+                arguments={"exchange": "okx", "limit": 20},
                 expected_output_schema=_CAPABILITY_SCHEMAS[capability_id],
             )
         elif capability_id == "paper.summary":
@@ -391,6 +414,8 @@ def _input_schema_for(capability_id: str) -> dict[str, Any]:
         return {"objective": "string"}
     if capability_id == "market.summary":
         return {"limit": "integer 1..50"}
+    if capability_id == "bitpro.live_strategy_summary":
+        return {"exchange": "string=okx", "limit": "integer 1..20"}
     return {"query": "string", "limit": "integer"}
 
 
@@ -417,6 +442,10 @@ def _strategy_lookup_requested(objective: str) -> bool:
         term in objective
         for term in ("strategy", "策略", "backtest", "回测", "历史表现", "样本", "oos")
     )
+
+
+def _live_strategy_lookup_requested(objective: str) -> bool:
+    return any(term in objective for term in _LIVE_STRATEGY_TERMS)
 
 
 def _requested_strategy_key(objective: str) -> str:

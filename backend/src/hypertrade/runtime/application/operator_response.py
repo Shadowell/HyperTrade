@@ -46,10 +46,18 @@ def build_operator_response(
         if attempt.capability_id.startswith("runtime."):
             continue
         if observation.status == "succeeded" and _has_valid_provenance(observation):
+            is_live_strategy_inventory = attempt.capability_id == "bitpro.live_strategy_summary"
             evidence.append(
                 OperatorEvidenceV1(
-                    summary=_compact(observation.summary),
-                    source_refs=tuple(observation.source_refs[:3]),
+                    summary=_compact(
+                        observation.summary,
+                        max_chars=3_600 if is_live_strategy_inventory else 360,
+                    ),
+                    source_refs=tuple(
+                        observation.source_refs[:20]
+                        if is_live_strategy_inventory
+                        else observation.source_refs[:3]
+                    ),
                     artifact_refs=tuple(observation.artifact_refs[:3]),
                 )
             )
@@ -86,8 +94,10 @@ def render_operator_response(response: OperatorResponseV1) -> str:
     if response.evidence:
         lines.extend(("", "## 已验证证据"))
         for item in response.evidence:
-            refs = (*item.source_refs, *item.artifact_refs)
-            lines.append(f"- {item.summary}（来源：{'；'.join(refs)}）")
+            if _is_live_strategy_inventory(item):
+                lines.extend((item.summary, f"_来源：{_source_label(item)}_"))
+            else:
+                lines.append(f"- {item.summary}（来源：{_source_label(item)}）")
     if response.unknowns:
         lines.extend(("", "## 未验证或数据缺口"))
         lines.extend(f"- {item}" for item in response.unknowns)
@@ -209,11 +219,24 @@ def _has_valid_provenance(observation: StepObservationV2) -> bool:
     return any(not ref.endswith(":no_matches") for ref in refs)
 
 
-def _compact(value: str) -> str:
-    normalized = " ".join(value.split())
-    if len(normalized) <= 360:
+def _source_label(item: OperatorEvidenceV1) -> str:
+    refs = (*item.source_refs, *item.artifact_refs)
+    if refs and all(ref.startswith("bitpro_mcp:live_strategies:") for ref in refs):
+        return "BitPro MCP（每条策略均可追溯）"
+    return "；".join(refs)
+
+
+def _is_live_strategy_inventory(item: OperatorEvidenceV1) -> bool:
+    return bool(item.source_refs) and all(
+        ref.startswith("bitpro_mcp:live_strategies:") for ref in item.source_refs
+    )
+
+
+def _compact(value: str, *, max_chars: int = 360) -> str:
+    normalized = "\n".join(" ".join(line.split()) for line in value.splitlines()).strip()
+    if len(normalized) <= max_chars:
         return normalized
-    return f"{normalized[:357].rstrip()}…"
+    return f"{normalized[: max_chars - 3].rstrip()}…"
 
 
 def _unique(values: Sequence[str]) -> list[str]:

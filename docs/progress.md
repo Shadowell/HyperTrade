@@ -1,5 +1,17 @@
 # Progress Log
 
+## Sprint 117 — BitPro 实盘策略清单只读 — 2026-07-16
+
+- Mission 对“我的实盘策略有哪些”等实盘策略清单问题新增经过审查的
+  `bitpro.live_strategy_summary` 只读能力。该路由跳过 RAG、Memory 和本地回测，按 BitPro
+  capabilities → health → live-strategies 契约读取有界的真实策略快照；无结果或数据源不可用时
+  只返回明确数据缺口，不推断策略。
+- 最终公开回答完整呈现最多 20 条策略的名称、运行状态和标的，并保留逐条 BitPro MCP 可追溯来源。
+  收益、损益和更新时间仍在受审计的有界载荷中，避免把不必要的诊断字段堆到操作员首屏。
+- 桌面客户端最终事件现在优先渲染服务端完整的受审计报告，而不是只保留通用“结论”字段；这修复了
+  已验证策略清单在 UI 中被丢弃、只剩空泛状态文案的问题。定向 Python、类型、桌面测试和构建已通过；
+  全量检查与生产只读冒烟待本次变更推送后完成。
+
 ## Project architecture and public documentation refresh — 2026-07-16
 
 - Added [System Architecture](architecture/33-system-architecture.md) as the canonical reader entry
