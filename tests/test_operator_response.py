@@ -134,6 +134,33 @@ def test_live_strategy_inventory_lists_each_bounded_strategy_without_raw_source_
     assert "BitPro MCP（每条策略均可追溯）" in visible
 
 
+def test_long_inventory_cannot_overflow_the_public_decision_contract() -> None:
+    summary = "BitPro 实盘策略清单：" + "；".join(
+        f"策略 {index} 状态运行中" for index in range(1, 80)
+    )
+    response = build_operator_response(
+        mission(objective="我的实盘策略有哪些"),
+        (
+            StepAttemptV2(
+                attempt_id="sat_long_inventory",
+                step_id="live_strategy_inventory",
+                attempt=1,
+                status="succeeded",
+                capability_id="bitpro.live_strategy_summary",
+                observation=StepObservationV2(
+                    status="succeeded",
+                    summary=summary,
+                    source_refs=("bitpro_mcp:live_strategies:101",),
+                ),
+            ),
+        ),
+    )
+
+    assert len(response.decision) <= 600
+    assert response.decision.endswith("…")
+    assert response.evidence[0].summary.startswith("BitPro 实盘策略清单")
+
+
 def test_runtime_objective_and_market_no_match_cannot_make_a_completed_answer() -> None:
     response = build_operator_response(
         mission(),

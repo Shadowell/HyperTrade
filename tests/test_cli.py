@@ -2402,6 +2402,52 @@ def test_run_stream_shows_thinking_animation_for_tty() -> None:
     assert "# CLI Report" not in rendered
 
 
+def test_run_stream_recovers_a_durable_terminal_report_after_sse_eof() -> None:
+    class RecoveringClient:
+        def run_agent_events(self, prompt: str):
+            del prompt
+            yield {"event": "answer_delta", "mission_id": "mis_recovered", "text": "已受理"}
+
+        def get_run(self, run_id: str) -> dict[str, Any]:
+            assert run_id == "mis_recovered"
+            return {
+                "id": run_id,
+                "status": "completed",
+                "report_markdown": "## 结论\n已从持久化 Mission 恢复最终报告。",
+                "trace_events": [],
+            }
+
+    output = StringIO()
+
+    render_run_stream(RecoveringClient(), "看下我最好的实盘策略是哪个？", output=output)
+
+    rendered = output.getvalue()
+    assert "Recovered final report (mis_recovered)" in rendered
+    assert "已从持久化 Mission 恢复最终报告" in rendered
+    assert "Run stream ended without final report" not in rendered
+
+
+def test_run_stream_reports_a_typed_terminal_failure_when_recovery_is_unavailable() -> None:
+    class FailedStreamClient:
+        def run_agent_events(self, prompt: str):
+            del prompt
+            yield {"event": "answer_delta", "mission_id": "mis_failed", "text": "已受理"}
+            yield {"event": "warning", "code": "mission_runtime_error"}
+
+        def get_run(self, run_id: str) -> dict[str, Any]:
+            raise KeyError(run_id)
+
+    output = StringIO()
+
+    render_run_stream(FailedStreamClient(), "看下我最好的实盘策略是哪个？", output=output)
+
+    rendered = output.getvalue()
+    assert "mission_runtime_error" in rendered
+    assert "mis_failed" in rendered
+    assert "请执行 /runs 查看状态后重试" in rendered
+    assert "Run stream ended without final report" not in rendered
+
+
 def test_run_stream_preserves_final_report_when_market_symbol_is_not_found(
     monkeypatch,
 ) -> None:

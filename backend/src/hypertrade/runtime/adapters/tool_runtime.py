@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from hashlib import sha256
+from math import isfinite
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -956,6 +957,22 @@ def builtin_handlers(
         sort = str(arguments.get("sort", "")).casefold()
         if sort in {"asc", "desc"}:
             items.sort(key=lambda item: _number(item.get("return_pct", "")), reverse=sort == "desc")
+        presentation = str(arguments.get("presentation", "inventory"))
+        if presentation in {"best", "worst", "ranking", "performance"} and any(
+            _number_or_none(item.get("return_pct")) is None for item in items
+        ):
+            # A strategy inventory is not a performance ranking. Treat absent
+            # return data as a data gap so the public answer never guesses a
+            # winner from source order or turns a blank return into zero.
+            return ToolResult(
+                payload={"strategies": [], "count": 0, "source_available": True},
+                source_refs=("bitpro_mcp:live_strategies:no_matches",),
+                unknowns=(
+                    "BitPro 返回了实盘策略记录，但未提供可比较的逐策略收益率；"
+                    "无法确定表现最佳或最差的策略。",
+                ),
+                public_summary="BitPro 未返回可比较的实盘收益数据，无法完成策略排名。",
+            )
         if not items:
             return ToolResult(
                 payload={"strategies": [], "count": 0, "source_available": True},
@@ -973,7 +990,7 @@ def builtin_handlers(
             ),
             public_summary=_live_strategy_inventory_summary(
                 items,
-                presentation=str(arguments.get("presentation", "inventory")),
+                presentation=presentation,
             ),
         )
 
@@ -1338,6 +1355,14 @@ def _number(value: object) -> float:
         return float(str(value))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _number_or_none(value: object) -> float | None:
+    try:
+        number = float(str(value))
+    except (TypeError, ValueError):
+        return None
+    return number if isfinite(number) else None
 
 
 def _strategy_status_label(item: dict[str, Any]) -> str:

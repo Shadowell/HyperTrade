@@ -87,6 +87,21 @@ async def test_live_strategy_inventory_uses_bitpro_without_generic_retrieval() -
 
 
 @pytest.mark.anyio
+async def test_best_live_strategy_synonym_uses_a_ranked_performance_read() -> None:
+    mission = await _mission("看下我最好的实盘策略是哪个？")
+
+    plan = await DeterministicResearchPlanner().plan(mission)
+
+    assert plan.steps[-1].capability_id == "bitpro.live_strategy_summary"
+    assert plan.steps[-1].arguments == {
+        "exchange": "okx",
+        "limit": 20,
+        "sort": "desc",
+        "presentation": "best",
+    }
+
+
+@pytest.mark.anyio
 async def test_memory_source_question_uses_memory_without_an_unrelated_rag_gap() -> None:
     mission = await _mission("历史策略记忆的来源是什么")
 

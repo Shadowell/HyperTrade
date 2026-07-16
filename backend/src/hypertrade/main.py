@@ -1540,6 +1540,7 @@ def create_app(
             async def mission_stream() -> AsyncIterator[str]:
                 # Public stream events expose only the operator answer contract.
                 # Plan/tool telemetry stays in the Mission audit stream instead.
+                mission_id = ""
                 yield _format_sse(
                     {
                         "event": "answer_delta",
@@ -1554,6 +1555,7 @@ def create_app(
                         evaluation_case_id=fixture_case_id,
                         prior_turns=tuple(payload.prior_turns),
                     )
+                    mission_id = mission.mission_id
                     yield _format_sse(
                         {
                             "event": "answer_delta",
@@ -1624,11 +1626,22 @@ def create_app(
                         }
                     )
                 except Exception:  # noqa: BLE001 - preserve an operator-safe stream boundary
+                    logger.exception("streamed mission terminal projection failed")
                     yield _format_sse(
                         {
                             "event": "warning",
                             "text": "研究运行未产生可验证结果。",
                             "code": "mission_runtime_error",
+                        }
+                    )
+                    # A public stream is not complete until it has a terminal
+                    # event. Do not leak the exception, but give every client a
+                    # renderable failed projection instead of an ambiguous EOF.
+                    yield _format_sse(
+                        {
+                            "event": "final",
+                            "mission_id": mission_id,
+                            "run": _stream_failure_projection(run_id=mission_id),
                         }
                     )
 
@@ -2828,12 +2841,30 @@ def _agent_run_sse(
                     "error": exc.error,
                 }
             )
+            events.put(
+                {
+                    "event": "final",
+                    "task_id": exc.task_id,
+                    "run": _stream_failure_projection(run_id=exc.task_id),
+                }
+            )
         except TaskControlInterrupted as exc:
             events.put(
                 {
                     "event": "task_controlled",
                     "task_id": exc.task_id,
                     "status": exc.status,
+                }
+            )
+            events.put(
+                {
+                    "event": "final",
+                    "task_id": exc.task_id,
+                    "run": _stream_failure_projection(
+                        run_id=exc.task_id,
+                        status=exc.status,
+                        decision="任务已停止，当前没有可交付的研究结论。",
+                    ),
                 }
             )
         except Exception as exc:  # noqa: BLE001 - preserve a typed stream boundary
@@ -2849,6 +2880,13 @@ def _agent_run_sse(
                     },
                 }
             )
+            events.put(
+                {
+                    "event": "final",
+                    "task_id": task_id,
+                    "run": _stream_failure_projection(run_id=task_id),
+                }
+            )
         finally:
             events.put(None)
 
@@ -2858,6 +2896,43 @@ def _agent_run_sse(
         if event is None:
             break
         yield _format_sse(event)
+
+
+def _stream_failure_projection(
+    *,
+    run_id: str = "",
+    status: str = "failed",
+    decision: str = "研究运行未产生可验证结果。",
+) -> dict[str, Any]:
+    """Return a bounded public terminal payload when a stream cannot project a run."""
+
+    identifier = run_id or "stream_unavailable"
+    next_action = "请稍后重试；若问题持续，请通过 /runs 提供运行编号。"
+    report_markdown = f"## 结论\n{decision}\n\n## 下一步\n- {next_action}"
+    return {
+        "id": identifier,
+        "mission_id": run_id,
+        "runtime": "stream_boundary",
+        "status": status,
+        "report_markdown": report_markdown,
+        "report_json": {
+            "runtime": "stream_boundary",
+            "operator_response": {
+                "schema_version": "operator_response.v1",
+                "mission_id": identifier,
+                "outcome": "failed",
+                "decision": decision,
+                "confidence": "not_assessed",
+                "evidence": [],
+                "unknowns": ["最终结果投影失败，未将未验证信息作为结论。"],
+                "next_actions": [next_action],
+                "context_refs": [],
+            },
+        },
+        "run_state_json": {"status": status, "stream_terminal": True},
+        "trace_events": [],
+        "legacy_run": False,
+    }
 
 
 def _prepare_agent_task(

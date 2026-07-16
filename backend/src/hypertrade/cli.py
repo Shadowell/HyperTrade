@@ -7204,12 +7204,18 @@ def render_run_stream(
         return
     final_run: dict[str, Any] | None = None
     stream_failed = False
+    terminal_error: dict[str, str] | None = None
+    stream_run_ids: list[str] = []
     animator.start("Thinking")
     try:
         for event in events:
             if not isinstance(event, dict):
                 continue
             event_name = str(event.get("event", "message"))
+            for key in ("mission_id", "task_id", "run_id"):
+                value = str(event.get(key) or "").strip()
+                if value and value not in stream_run_ids:
+                    stream_run_ids.append(value)
             if event_name == "run_started":
                 if _show_full_progress():
                     animator.print_line(
@@ -7290,17 +7296,14 @@ def render_run_stream(
                 animator.update("Generating final report")
                 if isinstance(event.get("run"), dict):
                     final_run = dict(event["run"])
-            elif event_name == "final" and isinstance(event.get("run"), dict):
-                animator.update("Rendering final report")
-                final_run = dict(event["run"])
-            elif event_name == "error":
-                animator.print_line(
-                    _status_line(
-                        f"Run failed: {event.get('error', 'unknown error')}",
-                        "error",
-                        output=output,
-                    )
-                )
+            elif event_name == "final":
+                if isinstance(event.get("run"), dict):
+                    animator.update("Rendering final report")
+                    final_run = dict(event["run"])
+                else:
+                    terminal_error = _stream_terminal_error(event)
+            elif event_name == "error" or (event_name == "warning" and event.get("code")):
+                terminal_error = _stream_terminal_error(event)
     except httpx.HTTPError as exc:
         stream_failed = True
         animator.print_line(_status_line(_format_remote_api_error(exc), "error", output=output))
@@ -7308,14 +7311,76 @@ def render_run_stream(
         animator.stop()
     if stream_failed:
         return
+    recovered_run_id = ""
+    if final_run is None:
+        final_run, recovered_run_id = _recover_stream_final_run(client, stream_run_ids)
+        if final_run is not None:
+            print(
+                _status_line(
+                    f"Recovered final report ({recovered_run_id}).",
+                    "warning",
+                    output=output,
+                ),
+                file=output,
+            )
     if final_run is not None:
         print("", file=output)
         render_run(final_run, output=output)
     else:
         print(
-            _paint("Run stream ended without final report.", "warning", output=output),
+            _paint(
+                _stream_terminal_error_message(terminal_error, stream_run_ids),
+                "warning",
+                output=output,
+            ),
             file=output,
         )
+
+
+def _stream_terminal_error(event: dict[str, Any]) -> dict[str, str]:
+    """Keep terminal error output actionable without exposing internal failures."""
+
+    error = event.get("error")
+    if isinstance(error, dict):
+        code = str(error.get("code") or "stream_runtime_error")
+    else:
+        code = str(event.get("code") or "stream_runtime_error")
+    return {"code": code[:96]}
+
+
+def _recover_stream_final_run(
+    client: AgentClient,
+    run_ids: Sequence[str],
+) -> tuple[dict[str, Any] | None, str]:
+    """Read the durable run projection after an SSE EOF before declaring loss."""
+
+    terminal_statuses = {"completed", "failed", "canceled", "cancelled", "budget_exhausted"}
+    for run_id in reversed(run_ids):
+        try:
+            candidate = client.get_run(run_id)
+        except (httpx.HTTPError, KeyError, TypeError, ValueError):
+            continue
+        if not isinstance(candidate, dict):
+            continue
+        if str(candidate.get("status") or "").casefold() in terminal_statuses:
+            return candidate, run_id
+    return None, ""
+
+
+def _stream_terminal_error_message(
+    error: dict[str, str] | None,
+    run_ids: Sequence[str],
+) -> str:
+    reference = run_ids[-1] if run_ids else "unavailable"
+    if error is not None:
+        return (
+            f"本次运行未生成最终报告（{error['code']}），跟踪编号：{reference}。"
+            "请执行 /runs 查看状态后重试。"
+        )
+    return (
+        f"流式连接在最终报告前结束，跟踪编号：{reference}。"
+        "请执行 /runs 查看状态后重试。"
+    )
 
 
 def _status_line(text: str, style: str, *, output: TextIO) -> str:

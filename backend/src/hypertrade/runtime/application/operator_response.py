@@ -119,6 +119,10 @@ def build_operator_response(
         if visible_evidence and _objective_requests_next_steps(mission.objective):
             decision = "下一步：基于已验证证据补齐样本外区间、交易成本和失效条件，再形成研究结论。"
             next_actions = ("下一步：运行独立样本外验证，并记录成本和失效条件。",)
+    # The public schema has a strict decision bound. Evidence may legitimately
+    # be longer (for example, a requested strategy inventory), but a verbose
+    # source projection must never make the entire Mission delivery fail.
+    decision = _compact(decision, max_chars=600)
     return OperatorResponseV1(
         mission_id=mission.mission_id,
         outcome=outcome,

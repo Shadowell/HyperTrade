@@ -558,9 +558,9 @@ def _step_arguments(capability_id: str, objective: str) -> dict[str, Any]:
         status = "paused" if "暂停" in lowered else "running" if "运行" in lowered else ""
         sort = (
             "desc"
-            if any(term in lowered for term in ("最高", "排名"))
+            if any(term in lowered for term in ("最高", "最好", "最佳", "排名"))
             else "asc"
-            if "最低" in lowered
+            if any(term in lowered for term in ("最低", "最差"))
             else ""
         )
         result: dict[str, Any] = {
@@ -574,9 +574,9 @@ def _step_arguments(capability_id: str, objective: str) -> dict[str, Any]:
             "ranking"
             if "排名" in lowered
             else "best"
-            if "最高" in lowered
+            if any(term in lowered for term in ("最高", "最好", "最佳"))
             else "worst"
-            if "最低" in lowered
+            if any(term in lowered for term in ("最低", "最差"))
             else "performance"
             if any(term in lowered for term in ("收益", "盈亏"))
             else "inventory"

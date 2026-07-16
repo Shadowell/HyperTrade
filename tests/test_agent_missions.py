@@ -671,6 +671,39 @@ def test_mission_stream_terminalizes_dispatch_failures_without_internal_error_te
     assert "private provider failure detail" not in streamed.text
 
 
+def test_mission_stream_terminalizes_projection_failures_without_internal_error_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = Database("sqlite:///:memory:")
+    database.create_all()
+    settings = Settings(
+        DATABASE_URL="sqlite:///:memory:",
+        ADMIN_USERNAME="admin",
+        ADMIN_PASSWORD="secret",
+        SESSION_SECRET="mission-stream-projection-failure-test-secret",
+        MISSION_RUNTIME_ENABLED=True,
+        MISSION_RUNTIME_CANARY_PERCENT=100,
+    )
+    app = create_app(settings=settings, db=database)
+
+    async def fail_projection(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise RuntimeError("private projection failure detail")
+
+    monkeypatch.setattr("hypertrade.main.mission_run_projection", fail_projection)
+    with TestClient(app) as client:
+        streamed = client.post(
+            "/api/agent/runs/stream",
+            headers={"Idempotency-Key": "mission-stream-projection-failure-001"},
+            json={"prompt": "读取 BTC 行情"},
+        )
+
+    assert streamed.status_code == 200
+    assert '"event": "warning"' in streamed.text
+    assert '"event": "final"' in streamed.text
+    assert '"status": "failed"' in streamed.text
+    assert "private projection failure detail" not in streamed.text
+
+
 def test_full_mission_cutover_makes_legacy_task_writes_read_only() -> None:
     database = Database("sqlite:///:memory:")
     database.create_all()

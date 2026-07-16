@@ -1,5 +1,15 @@
 # Progress Log
 
+## Sprint 119 — 生产流终态恢复与实盘策略排名诚实性 — 2026-07-16
+
+- 生产只读复现确认了 P0：`ht ask '看下我最好的实盘策略是哪个？'` 输出
+  `Run stream ended without final report.`。服务端日志显示 Codex 调用 HTTP 200、Mission worker
+  `completed`，但最终投影因 `OperatorResponseV1.decision` 超过 600 字符而异常；外层 SSE 仅发送
+  `warning`，没有 `final`。此前隔离 100/100 没有覆盖这一生产 BitPro 数据形态和投影失败路径，不能据此
+  宣称生产专业级。
+- 本 Sprint 已开始：修复必须覆盖可比较收益缺失、同义意图路由、所有流失败分支的 `final` 和 CLI 的持久化
+  终态恢复。生产验收尚未完成。
+
 ## Sprint 118 — 100 条操作者任务完成评测与修复闭环 — 2026-07-16
 
 - 已启动独立的 100 条真实操作者任务评测。它替代只看 Mission 契约/安全的旧 public-answer

@@ -259,6 +259,16 @@ PnL for a live strategy). Missing records, unavailable sources and unavailable o
 data gaps with a next action, rather than a generic “completed” result. These response projections stay
 read-only and preserve the catalog’s source provenance and execution isolation.
 
+Sprint 119 adds a production delivery hardening gate after a real `ht` Mission completed in the worker
+but lost its terminal response during public projection. Every `/api/agent/runs/stream` path must emit a
+bounded, renderable `final` event even when a terminal projection or legacy execution fails; it must not
+expose the underlying exception. If a CLI receives an unexpected EOF after a durable Mission/Run/Task id,
+it reads the server-owned final projection before reporting a typed, traceable failure. Live-strategy
+requests using “best/worst/ranking/performance” require numeric, comparable `return_pct` values for every
+candidate; a strategy inventory without those values is an explicit data gap, never a list-order ranking.
+The visible `OperatorResponseV1.decision` remains bounded independently from longer evidence, so a valid
+inventory cannot break the public delivery contract.
+
 Migration uses vertical cutover without dual writes; historical runs remain read-only, and every
 Sprint includes an explicit legacy deletion budget. The roadmap is planning-only until explicitly approved. The first draft contract is
 `docs/contracts/sprint-111-professional-agent-loop-v2.md`; no feature flag is enabled and no current
