@@ -59,6 +59,8 @@ HYPERTRADE_EVAL_TARGET=isolated ./scripts/run_operator_task_completion_eval.sh
   均为 0，才可将本合同关闭。
 - 运行器的幂等键必须包含评测轮次和任务回合；任务 id 仅用于选择合成 fixture。否则重跑可能重放历史
   Mission，属于评测基础设施 P0，不得把旧结果归因于当前代码。
+- 当前真实复测轮次（`round3`）为 93/100，7 条 P0 均已列入修复轮次 2：市场快照的方向边界、回测晋级
+  复核、研究下一步、记忆来源专用读取、买卖指令复核及缺少收益数据时的调仓语义。未放宽任何任务断言。
 
 ## Handoff
 

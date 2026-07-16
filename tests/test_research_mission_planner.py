@@ -75,6 +75,18 @@ async def test_live_strategy_inventory_uses_bitpro_without_generic_retrieval() -
 
 
 @pytest.mark.anyio
+async def test_memory_source_question_uses_memory_without_an_unrelated_rag_gap() -> None:
+    mission = await _mission("历史策略记忆的来源是什么")
+
+    plan = await DeterministicResearchPlanner().plan(mission)
+
+    assert [step.capability_id for step in plan.steps] == [
+        "runtime.objective_inspection",
+        "memory.search",
+    ]
+
+
+@pytest.mark.anyio
 async def test_replan_removes_the_failed_data_step_and_preserves_audit_diff() -> None:
     mission = await _mission("Research BTC market strategy evidence")
     planner = DeterministicResearchPlanner()

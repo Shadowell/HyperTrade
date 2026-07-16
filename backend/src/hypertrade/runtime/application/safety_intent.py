@@ -63,6 +63,12 @@ def classify_objective_safety(objective: str) -> ObjectiveSafety:
             reason="guaranteed_return_request_rejected",
             unknowns=("不存在可验证的无风险盈利策略。",),
         )
+    if "调仓建议" in lowered and "没有策略收益数据" in lowered:
+        return ObjectiveSafety(
+            disposition="needs_data",
+            reason="allocation_advice_missing_evidence",
+            unknowns=("缺少策略收益、回撤、相关性和风险预算数据，不能形成调仓建议。",),
+        )
     execution_requested = any(term in lowered for term in _EXECUTION_TERMS)
     if execution_requested and any(term in lowered for term in _MAINNET_TERMS):
         return ObjectiveSafety(

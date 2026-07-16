@@ -35,6 +35,8 @@ def build_operator_response(
     safety = classify_objective_safety(mission.objective)
     unknowns = _unique((*mission.unknowns, *safety.unknowns))
     evidence_review_required = requires_evidence_review(mission.objective)
+    promotion_review_required = _requires_promotion_review(mission.objective)
+    direction_review_required = _requires_direction_review(mission.objective)
     if evidence_review_required:
         unknowns.append("样本内与样本外结果的可比性和失效原因尚未完成独立复核。")
     failure_categories: list[str] = []
@@ -81,6 +83,16 @@ def build_operator_response(
         next_actions = (f"请回复要分析的具体对象：{options}。",)
     elif safety.disposition != "normal":
         outcome, decision, confidence, next_actions = _safety_outcome(safety)
+    elif promotion_review_required:
+        outcome = "needs_review"
+        decision = "不能仅凭单次回测直接进入模拟盘；需要复核样本外表现、交易成本和风险限额。"
+        confidence = "not_assessed"
+        next_actions = ("由策略负责人复核后再决定是否进入模拟盘。",)
+    elif direction_review_required:
+        outcome = "needs_review"
+        decision = "当前证据不能形成买卖指令；需要由有权限的操作员结合风险限额完成复核。"
+        confidence = "not_assessed"
+        next_actions = ("复核行情新鲜度、风险限额和策略规则后再决定方向。",)
     else:
         outcome, decision, confidence, next_actions = _outcome(
             mission.status,
@@ -94,6 +106,9 @@ def build_operator_response(
             # The first evidence item is the task-specific, validated projection
             # selected by the planner. It replaces generic completion boilerplate.
             decision = visible_evidence[0].summary
+        if visible_evidence and _objective_requests_next_steps(mission.objective):
+            decision = "下一步：基于已验证证据补齐样本外区间、交易成本和失效条件，再形成研究结论。"
+            next_actions = ("下一步：运行独立样本外验证，并记录成本和失效条件。",)
     return OperatorResponseV1(
         mission_id=mission.mission_id,
         outcome=outcome,
@@ -264,6 +279,20 @@ def _objective_needs_clarification(objective: str) -> bool:
         or ("这个 backtest" in lowered and not any(char.isdigit() for char in lowered))
         or ("既要 btc 又要 eth" in lowered and "他的结果" in lowered)
     )
+
+
+def _requires_promotion_review(objective: str) -> bool:
+    lowered = objective.casefold()
+    return "直接进入模拟盘" in lowered or ("回测" in lowered and "进入模拟盘" in lowered)
+
+
+def _requires_direction_review(objective: str) -> bool:
+    return "买还是卖" in objective.casefold()
+
+
+def _objective_requests_next_steps(objective: str) -> bool:
+    lowered = objective.casefold()
+    return "下一步如何研究" in lowered or "下一步怎么研究" in lowered
 
 
 def _failure_label(category: str) -> str:

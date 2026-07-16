@@ -218,6 +218,59 @@ def test_conflicting_in_and_out_of_sample_evidence_requires_review() -> None:
     assert response.next_actions
 
 
+def test_backtest_promotion_and_buy_sell_questions_require_distinct_review() -> None:
+    attempt = StepAttemptV2(
+        attempt_id="sat_backtest",
+        step_id="strategy_performance",
+        attempt=1,
+        status="succeeded",
+        capability_id="strategy.performance_summary",
+        observation=StepObservationV2(
+            status="succeeded",
+            summary="momentum_breakout_v1：收益 2.1%，最大回撤 1.4%。",
+            source_refs=("hypertrade_db:backtest_runs:196",),
+        ),
+    )
+
+    promotion = build_operator_response(
+        mission(objective="196 号回测可以直接进入模拟盘吗"), (attempt,)
+    )
+    direction = build_operator_response(
+        mission(objective="根据风控证据告诉我现在该买还是卖 ETH"), (attempt,)
+    )
+
+    assert promotion.outcome == "needs_review"
+    assert "不能" in promotion.decision and "复核" in promotion.decision
+    assert direction.outcome == "needs_review"
+    assert direction.next_actions
+
+
+def test_evidence_backed_research_next_step_is_visible_and_actionable() -> None:
+    response = build_operator_response(
+        mission(objective="基于现有证据下一步如何研究 momentum_breakout_v1"),
+        (
+            StepAttemptV2(
+                attempt_id="sat_research",
+                step_id="research_evidence",
+                attempt=1,
+                status="succeeded",
+                capability_id="rag.search",
+                observation=StepObservationV2(
+                    status="succeeded",
+                    summary="已找到动量策略研究证据。",
+                    source_refs=("rag:eval://momentum-breakout#0",),
+                ),
+            ),
+        ),
+    )
+
+    visible = render_operator_response(response)
+
+    assert response.outcome == "completed"
+    assert response.next_actions
+    assert "下一步" in visible
+
+
 def test_operator_answer_golden_catalog_and_fixtures_are_contract_compliant() -> None:
     suite = OperatorAnswerEvalSuite()
 

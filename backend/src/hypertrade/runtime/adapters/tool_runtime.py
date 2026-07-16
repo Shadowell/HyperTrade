@@ -639,6 +639,7 @@ def builtin_handlers(
         return ToolResult(
             payload={"items": [item], "count": 1},
             source_refs=(f"hypertrade_db:market_tickers:{inst_id}",),
+            unknowns=("单一时点的资金费率和持仓量不足以判断后续方向。",),
             public_summary=(
                 f"{item['inst_id']} 1H 趋势：{item['trend']}；区间收益 {item['return_pct']}%。"
             ),
@@ -713,6 +714,7 @@ def builtin_handlers(
         return ToolResult(
             payload={"items": items, "count": len(items)},
             source_refs=("hypertrade_db:market_tickers",),
+            unknowns=("市场热度快照不包含跨市场资金流和组合风险预算。",),
             public_summary=summary,
         )
 

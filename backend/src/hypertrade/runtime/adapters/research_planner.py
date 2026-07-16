@@ -193,7 +193,10 @@ def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
     if _paper_lookup_requested(lowered) and not any(
         term in lowered for term in ("回测", "backtest")
     ):
-        return (*capabilities, "paper.summary")
+        capabilities.append("paper.summary")
+        if _execution_intent_lookup_requested(lowered):
+            capabilities.append("execution.intent_summary")
+        return tuple(capabilities)
     if _portfolio_lookup_requested(lowered):
         if "监控" in lowered or "告警" in lowered:
             return (*capabilities, "monitor.summary")
@@ -201,15 +204,22 @@ def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
             return (*capabilities, "world_model.snapshot")
         return (*capabilities, "portfolio.assessment")
     if _knowledge_lookup_requested(lowered):
+        if "记忆" in lowered and "来源" in lowered:
+            return (*capabilities, "memory.search")
+        if _market_lookup_requested(lowered):
+            capabilities.append(_market_capability(lowered))
         if "买还是卖" in lowered:
-            return (*capabilities, "rag.search", "market.summary")
+            capabilities.append("rag.search")
+            return tuple(dict.fromkeys(capabilities))
         result = [*capabilities, "rag.search"]
-        if "记忆" in lowered or _requested_strategy_key(objective):
+        strategy_requested = _strategy_lookup_requested(lowered)
+        if "记忆" in lowered or _requested_strategy_key(objective) or strategy_requested:
             result.append("memory.search")
         if (
             _requested_strategy_key(objective)
             or _requested_backtest_id(objective)
             or "策略表现" in lowered
+            or strategy_requested
         ):
             result.append("strategy.performance_summary")
         return tuple(dict.fromkeys(result))
@@ -220,16 +230,20 @@ def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
     if _paper_lookup_requested(lowered):
         return (*capabilities, "paper.summary")
     if _market_lookup_requested(lowered):
-        if "强弱" in lowered or "比较" in lowered:
-            return (*capabilities, "market.relative_strength")
-        if "趋势" in lowered or "1h" in lowered or "k线" in lowered:
-            return (*capabilities, "market.candles")
-        if "资金费率" in lowered or "持仓量" in lowered or "oi" in lowered:
-            return (*capabilities, "market.derivatives")
-        if "热度" in lowered or "风险偏好" in lowered:
-            return (*capabilities, "market.regime")
-        return (*capabilities, "market.summary")
+        return (*capabilities, _market_capability(lowered))
     return tuple(capabilities)
+
+
+def _market_capability(lowered: str) -> str:
+    if "强弱" in lowered or "比较" in lowered:
+        return "market.relative_strength"
+    if "趋势" in lowered or "1h" in lowered or "k线" in lowered:
+        return "market.candles"
+    if "资金费率" in lowered or "持仓量" in lowered or "oi" in lowered:
+        return "market.derivatives"
+    if "热度" in lowered or "风险偏好" in lowered:
+        return "market.regime"
+    return "market.summary"
 
 
 def _steps_for_objective(objective: str) -> Sequence[PlanStepV2]:
@@ -392,6 +406,14 @@ def _paper_lookup_requested(lowered: str) -> bool:
     return "持仓量" not in lowered and any(term in lowered for term in _PAPER_TERMS)
 
 
+def _execution_intent_lookup_requested(lowered: str) -> bool:
+    return (
+        "testnet" in lowered
+        or "测试网" in lowered
+        or ("订单" in lowered and any(term in lowered for term in ("批准", "审批", "待")))
+    )
+
+
 def _knowledge_lookup_requested(lowered: str) -> bool:
     return any(term in lowered for term in _KNOWLEDGE_TERMS) or "记忆" in lowered
 
@@ -533,17 +555,15 @@ def _step_arguments(capability_id: str, objective: str) -> dict[str, Any]:
             if "最低" in lowered
             else ""
         )
-        return {
+        result: dict[str, Any] = {
             "exchange": "okx",
             "limit": 20,
-            "symbol": (
-                "XRP-USDT-SWAP"
-                if "xrp" in lowered or "不存在" in lowered
-                else inst_id
-            ),
-            "status": status,
-            "sort": sort,
-            "presentation": "ranking"
+        }
+        symbol = (
+            "XRP-USDT-SWAP" if "xrp" in lowered or "不存在" in lowered else inst_id
+        )
+        presentation = (
+            "ranking"
             if "排名" in lowered
             else "best"
             if "最高" in lowered
@@ -551,8 +571,17 @@ def _step_arguments(capability_id: str, objective: str) -> dict[str, Any]:
             if "最低" in lowered
             else "performance"
             if any(term in lowered for term in ("收益", "盈亏"))
-            else "inventory",
-        }
+            else "inventory"
+        )
+        if symbol:
+            result["symbol"] = symbol
+        if status:
+            result["status"] = status
+        if sort:
+            result["sort"] = sort
+        if presentation != "inventory":
+            result["presentation"] = presentation
+        return result
     if capability_id == "paper.summary":
         focus = (
             "anomaly"
