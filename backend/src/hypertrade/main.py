@@ -414,14 +414,27 @@ def create_app(
         production=production_sandbox,
         runner=sandbox_runner,
     )
+    # Evaluation fixtures are an explicit, environment-gated read source.  A
+    # production process cannot select them even if its feature flag is set.
+    from hypertrade.runtime.application.evaluation_fixtures import (
+        IsolatedLiveStrategyFixtureAdapter,
+        operator_eval_fixture_enabled,
+    )
+
+    def mission_bitpro_adapter() -> Any:
+        if operator_eval_fixture_enabled(
+            app_env=app_settings.app_env,
+            enabled=app_settings.operator_eval_fixtures_enabled,
+        ):
+            return IsolatedLiveStrategyFixtureAdapter()
+        return BitProToolAdapter(BitProMcpClient(settings=app_settings))
+
     tool_executor = GovernedToolExecutor(
         capability_catalog,
         builtin_handlers(
             database,
             knowledge_dir=str(app_settings.knowledge_dir),
-            bitpro_adapter_factory=lambda: BitProToolAdapter(
-                BitProMcpClient(settings=app_settings)
-            ),
+            bitpro_adapter_factory=mission_bitpro_adapter,
         ),
         observations=observation_store,
     )
