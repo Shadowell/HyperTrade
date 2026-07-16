@@ -109,7 +109,13 @@ def build_operator_response(
         elif not visible_evidence and visible_unknowns and outcome == "needs_data":
             # An empty search should name the exact missing record, not replace
             # it with a generic completion phrase that hides the user's target.
-            decision = visible_unknowns[0]
+            decision = _decision_unknown(mission.objective, visible_unknowns)
+        if visible_evidence and _objective_requests_evidence(mission.objective):
+            # A plural evidence question needs the bounded evidence set in the
+            # conclusion, not only whichever capability happened to run first.
+            decision = "可验证证据：" + "；".join(
+                _compact(item.summary, max_chars=180) for item in visible_evidence
+            )
         if visible_evidence and _objective_requests_next_steps(mission.objective):
             decision = "下一步：基于已验证证据补齐样本外区间、交易成本和失效条件，再形成研究结论。"
             next_actions = ("下一步：运行独立样本外验证，并记录成本和失效条件。",)
@@ -240,7 +246,7 @@ def _outcome(
 
 def _data_action(unknowns: tuple[str, ...]) -> tuple[str, ...]:
     if unknowns:
-        return (f"补充或确认后再继续：{unknowns[0]}。",)
+        return (f"补充或确认后再继续：{unknowns[0].rstrip('。！？')}。",)
     return ("补充可验证的数据来源后再继续。",)
 
 
@@ -297,6 +303,26 @@ def _requires_direction_review(objective: str) -> bool:
 def _objective_requests_next_steps(objective: str) -> bool:
     lowered = objective.casefold()
     return "下一步如何研究" in lowered or "下一步怎么研究" in lowered
+
+
+def _objective_requests_evidence(objective: str) -> bool:
+    lowered = objective.casefold()
+    return "哪些证据" in lowered or "证据支持" in lowered
+
+
+def _decision_unknown(objective: str, unknowns: tuple[str, ...]) -> str:
+    """Select the missing fact that answers the user's named data surface."""
+
+    lowered = objective.casefold()
+    if "记忆" in lowered:
+        for item in unknowns:
+            if "记忆" in item:
+                return item
+    if "知识库" in lowered:
+        for item in unknowns:
+            if "研究证据" in item:
+                return item
+    return unknowns[0]
 
 
 def _failure_label(category: str) -> str:

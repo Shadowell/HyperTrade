@@ -62,6 +62,18 @@ async def test_planner_adds_read_summaries_for_paper_and_testnet_queries() -> No
 
 
 @pytest.mark.anyio
+async def test_planner_reads_testnet_intents_without_unrelated_paper_state() -> None:
+    mission = await _mission("查看待批准的 Testnet 订单")
+
+    plan = await DeterministicResearchPlanner().plan(mission)
+
+    assert [step.capability_id for step in plan.steps] == [
+        "runtime.objective_inspection",
+        "execution.intent_summary",
+    ]
+
+
+@pytest.mark.anyio
 async def test_live_strategy_inventory_uses_bitpro_without_generic_retrieval() -> None:
     mission = await _mission("我的实盘策略有哪些")
 

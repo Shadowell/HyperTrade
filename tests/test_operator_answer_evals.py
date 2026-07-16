@@ -98,7 +98,8 @@ def test_mission_operator_response_refuses_to_fill_missing_evidence() -> None:
     assert response.outcome == "needs_data"
     assert response.confidence == "not_assessed"
     assert response.next_actions
-    assert "不能给出交易判断" in markdown
+    assert "MUUSDT 不存在可验证行情。" in markdown
+    assert "不能给出交易判断" not in markdown
 
 
 def _mission(

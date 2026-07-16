@@ -30,6 +30,11 @@
 - 首个 `round5` 达到 100/100 后，人工审阅暴露出评测只检查“可见正文”而非“结论字段”的相关性缺口：
   个别知识/模拟盘任务会在结论中先呈现无关内容。已为任务集增加 `required_decision` 断言，并修复历史记忆、
   空 RAG、异常/策略表现数据缺口的直达结论；Sprint 保持 Active，等待新的全量执行。
+- 严格 `round6` 已在重建后的独立 loopback-only 评测服务完整执行：100/100 通过、P0=0、P1=0。该轮将
+  `decision_facts` 纳入硬门禁，确认目标答案直接出现在 `operator_response.decision`，而不是仅出现于证据段。
+  但人工复核仍发现某些“有哪些证据”结论混入工具运维指南，故没有关闭 Sprint。已新增 `forbidden_decision`、
+  复合证据结论完整性、RAG 片段前部精确命中和记忆缺口优先选择；同时修复数据缺口双句号。`./scripts/check.sh`、
+  25 条定向 Python 回归和 `desktop/pnpm check` 将在新的隔离服务部署后作为 `round7` 前门禁；当前 Sprint 保持 Active。
 
 ## Sprint 117 — BitPro 实盘策略清单只读 — 2026-07-16
 

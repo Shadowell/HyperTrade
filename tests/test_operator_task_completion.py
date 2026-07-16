@@ -120,3 +120,34 @@ def test_task_completion_can_require_relevant_text_in_the_decision_field() -> No
     assert result["status"] == "failed"
     assert "decision_facts" in result["failed_checks"]
     assert "R3" in result["remediation_ids"]
+
+
+def test_task_completion_rejects_internal_guidance_in_the_decision_field() -> None:
+    suite = OperatorTaskCompletionSuite()
+    case = next(item for item in suite.cases() if item.case_id == "r01_rag_risk")
+    response = OperatorResponseV1(
+        mission_id="mis_rag_noise",
+        outcome="completed",
+        decision="风控规则：先定义止损。HyperTrade 工具运维指南：/rag 风控。",
+        confidence="medium",
+        evidence=(
+            OperatorEvidenceV1(
+                summary="风控规则：先定义止损。",
+                source_refs=("rag:eval://risk-controls#0",),
+            ),
+        ),
+    )
+
+    result = suite.evaluate(
+        case,
+        TaskCompletionObservation(
+            response=response,
+            visible_text="## 结论\n风控规则：先定义止损。HyperTrade 工具运维指南：/rag 风控。",
+            capability_ids=("rag.search",),
+            source_refs=("rag:eval://risk-controls#0",),
+        ),
+    )
+
+    assert result["status"] == "failed"
+    assert "no_forbidden_decision" in result["failed_checks"]
+    assert "R3" in result["remediation_ids"]

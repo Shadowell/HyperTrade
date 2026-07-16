@@ -190,6 +190,8 @@ def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
         return tuple(capabilities)
     if _live_strategy_lookup_requested(lowered):
         return (*capabilities, "bitpro.live_strategy_summary")
+    if _execution_intent_lookup_requested(lowered) and not _paper_lookup_requested(lowered):
+        return (*capabilities, "execution.intent_summary")
     if _paper_lookup_requested(lowered) and not any(
         term in lowered for term in ("回测", "backtest")
     ):

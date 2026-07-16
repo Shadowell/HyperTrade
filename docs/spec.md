@@ -249,6 +249,8 @@ Sprint 118 replaces contract-only public-answer readiness claims with a 100-task
 gate. The gate tests the actual user-visible answer, source category, context resolution, safety and
 final desktop delivery in a physically separate evaluation target. A declared unsupported multi-turn
 task, an empty generic conclusion or an ungrounded data gap is a failed task, not a passing safety result.
+For tasks that declare a target decision fact, the fact must appear in `OperatorResponseV1.decision`
+itself; evidence-body keywords cannot satisfy a conclusion-relevance assertion.
 The runtime receives at most eight prior *user* turns through the Agent API and resolves references only
 when an unambiguous bounded context is available; it records a hash-only conversation reference and never
 treats prior assistant output as evidence. Deterministic capability handlers project only the exact operator

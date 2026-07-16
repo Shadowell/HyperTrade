@@ -26,7 +26,7 @@ from hypertrade.db import (
 )
 from hypertrade.market.repository import MarketRepository
 from hypertrade.memory.service import MemoryService
-from hypertrade.rag.service import RagService
+from hypertrade.rag.service import RagHit, RagService
 from hypertrade.runtime.adapters.capability_catalog import (
     CapabilityUnavailable,
     InMemoryCapabilityCatalog,
@@ -731,11 +731,7 @@ def builtin_handlers(
             lambda: RagService(db, knowledge_dir=knowledge_dir).search(query, limit=limit),
             limiter=limiter,
         )
-        query_terms = [term.casefold() for term in query.split() if len(term.strip()) >= 2]
-        if query_terms:
-            hits = [
-                hit for hit in hits if any(term in hit.content.casefold() for term in query_terms)
-            ]
+        hits = _focus_rag_hits(hits, query=query)
         payload = [
             {
                 "source_path": hit.source_path,
@@ -1271,6 +1267,34 @@ def _backtest_summary(items: Sequence[dict[str, Any]]) -> str:
         )
         for item in items
     )
+
+
+def _focus_rag_hits(hits: Sequence[RagHit], *, query: str) -> list[RagHit]:
+    """Keep the public answer anchored to the queried evidence, not tool docs.
+
+    The audit trace retains the capability call, while this projection rejects a
+    vector-only near match that mentions an exact strategy key hundreds of
+    characters after an unrelated operator manual opening.
+    """
+
+    terms = tuple(term.casefold() for term in query.split() if len(term.strip()) >= 2)
+    if not terms:
+        return list(hits)
+    exact_terms = tuple(term for term in terms if "_" in term)
+    if exact_terms:
+        return [
+            hit
+            for hit in hits
+            if any(
+                term in hit.title.casefold() or term in hit.content[:480].casefold()
+                for term in exact_terms
+            )
+        ]
+    if len(terms) > 1:
+        return [
+            hit for hit in hits if all(term in hit.content.casefold() for term in terms)
+        ]
+    return list(hits)
 
 
 def _paper_summary_text(

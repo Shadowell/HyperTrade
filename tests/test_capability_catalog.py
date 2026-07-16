@@ -77,10 +77,11 @@ def test_capability_api_keeps_discovery_pending_until_admin_review() -> None:
         reviewed_active = client.get("/api/agent/capabilities")
 
     assert active.status_code == proposal.status_code == reviewed.status_code == 200
-    assert len(active.json()["capabilities"]) == 8
-    assert len(pending_active.json()["capabilities"]) == 8
+    builtin_count = len(builtin_capabilities())
+    assert len(active.json()["capabilities"]) == builtin_count
+    assert len(pending_active.json()["capabilities"]) == builtin_count
     assert reviewed.json()["status"] == "approved"
-    assert len(reviewed_active.json()["capabilities"]) == 9
+    assert len(reviewed_active.json()["capabilities"]) == builtin_count + 1
 
 
 @pytest.mark.anyio
@@ -90,7 +91,7 @@ async def test_builtins_are_reviewed_versioned_and_hash_bound() -> None:
 
     rows = await catalog.list_active()
 
-    assert len(rows) == 8
+    assert len(rows) == len(builtin_capabilities())
     assert all(row.review_status == "reviewed" for row in rows)
     assert all(row.executable() for row in rows)
     assert all(row.contract_hash == row.definition.contract_hash() for row in rows)
@@ -187,7 +188,7 @@ async def test_sql_catalog_persists_reviewed_snapshot_and_proposal(tmp_path: Pat
     proposals = await second.list_proposals()
     await second.dispose()
 
-    assert len(rows) == 8
+    assert len(rows) == len(builtin_capabilities())
     assert proposals[0].proposal_id == proposal.proposal_id
     assert proposals[0].status == "pending_review"
 
