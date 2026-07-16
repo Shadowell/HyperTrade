@@ -24,9 +24,18 @@ async fn stream_agent(
     api_base: String,
     prompt: String,
     idempotency_key: String,
+    prior_turns: Vec<String>,
     on_event: Channel<Value>,
 ) -> Result<(), String> {
-    api::stream_agent(&client, &api_base, &prompt, &idempotency_key, on_event).await
+    api::stream_agent(
+        &client,
+        &api_base,
+        &prompt,
+        &idempotency_key,
+        &prior_turns,
+        on_event,
+    )
+    .await
 }
 
 #[tauri::command]

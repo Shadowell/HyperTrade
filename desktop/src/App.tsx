@@ -106,6 +106,13 @@ function App() {
 
     const messageSeed = createId("message");
     const assistantId = `${messageSeed}_assistant`;
+    // Only prior user questions are sent to the governed resolver. Assistant
+    // output is never treated as source evidence or supplied as hidden context.
+    const priorTurns = messages
+      .filter((item) => item.role === "user")
+      .map((item) => item.text.trim())
+      .filter(Boolean)
+      .slice(-8);
     setMessages((items) => [
       ...items,
       { id: `${messageSeed}_user`, role: "user", text: cleanPrompt, state: "complete" },
@@ -116,7 +123,7 @@ function App() {
     setActivity("正在建立 Mission");
 
     try {
-      await runAgent(apiBase, cleanPrompt, createId("desktop_run"), (event) => {
+      await runAgent(apiBase, cleanPrompt, createId("desktop_run"), priorTurns, (event) => {
         handleAgentEvent(assistantId, event);
       });
       setStatus("online");

@@ -26,4 +26,19 @@ describe("HyperTrade desktop bot", () => {
     expect(container.querySelector(".message-user")).toHaveTextContent("你的问题");
     expect(container.querySelector(".message-assistant")).toHaveTextContent("HT 结论");
   });
+
+  it("keeps prior user questions in the desktop conversation", async () => {
+    const { container } = render(<App />);
+    await screen.findByText("服务已连接");
+
+    const composer = screen.getByLabelText("研究问题");
+    fireEvent.change(composer, { target: { value: "先看 ETH 行情" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送研究问题" }));
+    await screen.findByText("研究完成");
+    fireEvent.change(composer, { target: { value: "它的风险是什么" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送研究问题" }));
+
+    expect(container.querySelectorAll(".message-user")).toHaveLength(2);
+    expect(screen.getByText("它的风险是什么")).toBeInTheDocument();
+  });
 });

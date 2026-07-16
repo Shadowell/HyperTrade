@@ -41,6 +41,7 @@ export async function runAgent(
   apiBase: string,
   prompt: string,
   idempotencyKey: string,
+  priorTurns: string[],
   onEvent: (event: AgentStreamEvent) => void
 ): Promise<void> {
   if (!isTauriRuntime()) {
@@ -54,6 +55,7 @@ export async function runAgent(
     apiBase,
     prompt,
     idempotencyKey,
+    priorTurns,
     onEvent: onEventChannel
   });
 }

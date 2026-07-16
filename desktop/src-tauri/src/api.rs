@@ -6,6 +6,7 @@ use tauri::ipc::Channel;
 use url::Url;
 
 const MAX_PROMPT_LENGTH: usize = 8_000;
+const MAX_PRIOR_TURNS: usize = 8;
 const MAX_SSE_BUFFER: usize = 1_048_576;
 
 #[derive(Serialize)]
@@ -59,15 +60,16 @@ pub async fn stream_agent(
     api_base: &str,
     prompt: &str,
     idempotency_key: &str,
+    prior_turns: &[String],
     on_event: Channel<Value>,
 ) -> Result<(), String> {
-    validate_run_input(prompt, idempotency_key)?;
+    validate_run_input(prompt, idempotency_key, prior_turns)?;
     let endpoint = api_endpoint(api_base, "api/agent/runs/stream")?;
     let response = client
         .post(endpoint)
         .header(header::ACCEPT, "text/event-stream")
         .header("Idempotency-Key", idempotency_key)
-        .json(&json!({ "prompt": prompt }))
+        .json(&json!({ "prompt": prompt, "prior_turns": prior_turns }))
         .send()
         .await
         .map_err(|_| "无法连接 HyperTrade Mission 流".to_string())?;
@@ -139,7 +141,11 @@ fn api_endpoint(api_base: &str, path: &str) -> Result<Url, String> {
         .map_err(|_| "无法构造 HyperTrade API 地址".to_string())
 }
 
-fn validate_run_input(prompt: &str, idempotency_key: &str) -> Result<(), String> {
+fn validate_run_input(
+    prompt: &str,
+    idempotency_key: &str,
+    prior_turns: &[String],
+) -> Result<(), String> {
     let prompt = prompt.trim();
     if prompt.is_empty() {
         return Err("研究问题不能为空".to_string());
@@ -154,6 +160,13 @@ fn validate_run_input(prompt: &str, idempotency_key: &str) -> Result<(), String>
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'));
     if !valid_key {
         return Err("研究请求幂等键无效".to_string());
+    }
+    if prior_turns.len() > MAX_PRIOR_TURNS
+        || prior_turns
+            .iter()
+            .any(|turn| turn.trim().is_empty() || turn.chars().count() > MAX_PROMPT_LENGTH)
+    {
+        return Err("历史用户问题格式无效".to_string());
     }
     Ok(())
 }
@@ -259,7 +272,8 @@ mod tests {
     fn rejects_unbounded_frames_and_invalid_idempotency_keys() {
         let mut decoder = SseDecoder::default();
         assert!(decoder.push(&vec![b'x'; MAX_SSE_BUFFER + 1]).is_err());
-        assert!(validate_run_input("research", "bad key with spaces").is_err());
-        assert!(validate_run_input("", "desktop_run_1").is_err());
+        assert!(validate_run_input("research", "bad key with spaces", &[]).is_err());
+        assert!(validate_run_input("", "desktop_run_1", &[]).is_err());
+        assert!(validate_run_input("research", "desktop_run_1", &["x".repeat(8_001)]).is_err());
     }
 }
