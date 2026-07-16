@@ -151,6 +151,7 @@ async def test_live_strategy_ranking_requires_numeric_returns() -> None:
     assert observation.status == "succeeded"
     assert observation.source_refs == ("bitpro_mcp:live_strategies:no_matches",)
     assert observation.unknowns == (
-        "BitPro 返回了实盘策略记录，但未提供可比较的逐策略收益率；无法确定表现最佳或最差的策略。",
+        "BitPro 返回了 1 条实盘策略记录，但未提供可比较的逐策略收益率；"
+        "无法确定表现最佳或最差的策略。",
     )
     assert observation.result == {"strategies": [], "count": 0, "source_available": True}

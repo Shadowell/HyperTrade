@@ -161,6 +161,35 @@ def test_long_inventory_cannot_overflow_the_public_decision_contract() -> None:
     assert response.evidence[0].summary.startswith("BitPro 实盘策略清单")
 
 
+def test_data_gap_repeated_in_the_decision_is_not_rendered_twice() -> None:
+    data_gap = "BitPro 未提供可比较的逐策略收益率，无法确定表现最佳策略。"
+    response = build_operator_response(
+        mission(),
+        (
+            StepAttemptV2(
+                attempt_id="sat_return_gap",
+                step_id="live_strategy_inventory",
+                attempt=1,
+                status="succeeded",
+                capability_id="bitpro.live_strategy_summary",
+                observation=StepObservationV2(
+                    status="succeeded",
+                    summary="BitPro 未返回可比较的实盘收益数据。",
+                    source_refs=("bitpro_mcp:live_strategies:no_matches",),
+                    unknowns=(data_gap,),
+                ),
+            ),
+        ),
+    )
+
+    visible = render_operator_response(response)
+
+    assert response.decision == data_gap
+    assert visible.count(data_gap) == 1
+    assert "## 未验证或数据缺口" not in visible
+    assert "return_pct、total_pnl 和统计截止时间" in visible
+
+
 def test_runtime_objective_and_market_no_match_cannot_make_a_completed_answer() -> None:
     response = build_operator_response(
         mission(),

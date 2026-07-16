@@ -968,7 +968,7 @@ def builtin_handlers(
                 payload={"strategies": [], "count": 0, "source_available": True},
                 source_refs=("bitpro_mcp:live_strategies:no_matches",),
                 unknowns=(
-                    "BitPro 返回了实盘策略记录，但未提供可比较的逐策略收益率；"
+                    f"BitPro 返回了 {len(items)} 条实盘策略记录，但未提供可比较的逐策略收益率；"
                     "无法确定表现最佳或最差的策略。",
                 ),
                 public_summary="BitPro 未返回可比较的实盘收益数据，无法完成策略排名。",

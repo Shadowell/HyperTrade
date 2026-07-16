@@ -150,9 +150,10 @@ def render_operator_response(response: OperatorResponseV1) -> str:
                 lines.extend((item.summary, f"_来源：{_source_label(item)}_"))
             else:
                 lines.append(f"- {item.summary}（来源：{_source_label(item)}）")
-    if response.unknowns:
+    visible_unknowns = tuple(item for item in response.unknowns if item != response.decision)
+    if visible_unknowns:
         lines.extend(("", "## 未验证或数据缺口"))
-        lines.extend(f"- {item}" for item in response.unknowns)
+        lines.extend(f"- {item}" for item in visible_unknowns)
     if response.next_actions:
         lines.extend(("", "## 下一步"))
         lines.extend(f"- {item}" for item in response.next_actions)
@@ -249,6 +250,8 @@ def _outcome(
 
 
 def _data_action(unknowns: tuple[str, ...]) -> tuple[str, ...]:
+    if any("逐策略收益率" in item for item in unknowns):
+        return ("请补齐 BitPro 每条策略的 return_pct、total_pnl 和统计截止时间后再比较。",)
     if unknowns:
         return (f"补充或确认后再继续：{unknowns[0].rstrip('。！？')}。",)
     return ("补充可验证的数据来源后再继续。",)
