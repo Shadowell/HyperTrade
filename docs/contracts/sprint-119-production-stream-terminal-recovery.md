@@ -1,6 +1,6 @@
 # Sprint 119 — 生产流终态恢复与实盘策略排名诚实性
 
-> 状态：Active — 2026-07-16。
+> 状态：Closed — 2026-07-16。
 
 ## Goal
 
@@ -39,5 +39,9 @@ HYPERTRADE_EVAL_TARGET=isolated ./scripts/run_operator_task_completion_eval.sh
 
 ## Handoff
 
-完成本 Sprint 后，重新以真实生产只读链路验证这一任务；在通过前不得将受控 100/100 解释为生产 Agent
-已达到专业级。
+验证完成：生产 `ht ask '看下我最好的实盘策略是哪个？'` 在 Codex Provider 和真实 BitPro 策略
+数据上返回受控终态；由于 20 条记录没有可比较的收益字段，最终回答明确说明不能确定最佳/最差策略，
+并要求补齐 `return_pct`、`total_pnl` 与统计截止时间。它没有输出旧的 EOF 文案，也没有按列表顺序猜测。
+
+`./scripts/check.sh` 完成：667 tests passed；独立 `hypertrade-eval` 固定任务集完成：100/100、P0=0、P1=0。
+这证明本 Sprint 的流终态和受控任务集通过；它不构成盈利能力、自动化交易或所有真实数据源完整性的声明。

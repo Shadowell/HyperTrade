@@ -7,8 +7,14 @@
   `completed`，但最终投影因 `OperatorResponseV1.decision` 超过 600 字符而异常；外层 SSE 仅发送
   `warning`，没有 `final`。此前隔离 100/100 没有覆盖这一生产 BitPro 数据形态和投影失败路径，不能据此
   宣称生产专业级。
-- 本 Sprint 已开始：修复必须覆盖可比较收益缺失、同义意图路由、所有流失败分支的 `final` 和 CLI 的持久化
-  终态恢复。生产验收尚未完成。
+- 修复已覆盖可比较收益缺失、同义意图路由、所有流失败分支的 `final` 和 CLI 的持久化终态恢复。生产部署
+  `1b9b116` 修复了根因，随后 `b59925e` 去除了重复的数据缺口段落；两个 GitHub 部署工作流均成功。
+  生产只读复验使用服务器 Codex Provider 和真实 BitPro 返回，最终输出：BitPro 返回 20 条策略记录、缺少
+  可比较逐策略收益率，因此不能确定最佳/最差；下一步明确要求 `return_pct`、`total_pnl` 与统计截止时间。
+  没有旧 EOF 文案、没有编造排名、没有写入交易状态。
+- 新鲜全量 `./scripts/check.sh` 已完成：frontend lint/test/build、Ruff、严格 mypy 通过，pytest 667 passed。
+  隔离 `hypertrade-eval` 重建后运行固定 `operator_task_completion.v1`：100/100 passed、P0=0、P1=0。
+  Sprint 119 关闭；这只验证本次终态交付与受控任务，不再把它表述为盈利或自动交易能力。
 
 ## Sprint 118 — 100 条操作者任务完成评测与修复闭环 — 2026-07-16
 
