@@ -44,6 +44,18 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "paper_events": {"method": "GET", "path": "/live/events"},
     "paper_equity_curve": {"method": "GET", "path": "/live/equity_curve"},
     "paper_snapshot": {"method": "GET", "path": "/live/paper_snapshot"},
+    "strategy_return_series": {
+        "method": "GET",
+        "path": "/strategy-evidence/return-series",
+    },
+    "strategy_return_matrix": {
+        "method": "GET",
+        "path": "/strategy-evidence/aligned-return-matrix",
+    },
+    "strategy_execution_quality": {
+        "method": "GET",
+        "path": "/strategy-evidence/execution-quality",
+    },
     "live_strategies": {"method": "GET", "path": "/live/strategies"},
     "live_preflight": {"method": "POST", "path": "/live/promote/preflight"},
     "trading_balance": {"method": "GET", "path": "/trading/accounts/balance"},
@@ -362,6 +374,24 @@ class BitProToolAdapter:
             "health": health,
             "tool_calls": self.last_tool_calls,
         }
+
+    def strategy_return_series(self, **parameters: Any) -> dict[str, Any]:
+        """Read one bounded BitPro-owned return-series page without recalculating PnL."""
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(self._call("strategy_return_series", dict(parameters)))
+
+    def strategy_return_matrix(self, **parameters: Any) -> dict[str, Any]:
+        """Read a BitPro-owned aligned matrix; HyperTrade validates the frozen contract."""
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(self._call("strategy_return_matrix", dict(parameters)))
+
+    def strategy_execution_quality(self, **parameters: Any) -> dict[str, Any]:
+        """Read bounded execution-quality evidence with no order or strategy mutation."""
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(self._call("strategy_execution_quality", dict(parameters)))
 
     def market_klines(
         self,

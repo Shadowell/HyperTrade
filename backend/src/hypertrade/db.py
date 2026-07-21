@@ -1030,6 +1030,25 @@ class PortfolioObservationWindow(Base, TimestampMixin):
     created_by: Mapped[str] = mapped_column(String(128), index=True)
 
 
+class BitProStrategyEvidenceRecord(Base):
+    """Validated BitPro evidence reference; source time-series remain external."""
+
+    __tablename__ = "bitpro_strategy_evidence_records"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("bpse"))
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    evidence_type: Mapped[str] = mapped_column(String(48), index=True)
+    source_layer: Mapped[str] = mapped_column(String(24), default="", index=True)
+    source_id: Mapped[str] = mapped_column(String(128), default="", index=True)
+    source_hash: Mapped[str] = mapped_column(String(80), default="", index=True)
+    content_hash: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    summary_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    refs_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class PaperCohortSnapshot(Base, TimestampMixin):
     """Immutable comparability and label proposal projection over committed facts."""
 

@@ -89,8 +89,10 @@ parameters, data/cost window, regime, metrics, Evidence/Artifact, Mission Comple
 or observation-window facts. Corrections append new hash-bound records. `LessonCandidateV1` keeps support,
 opposition, unknowns, scope, regime, confidence method and validity visible; only an independently reviewed active
 Lesson is context-eligible. The ledger does not auto-approve Memory, Skill, strategy or portfolio policy and does
-not run research or mutate trading state. Sprint 126 will extend BitPro's stable read contract for aligned strategy
-returns and execution-quality evidence.
+not run research or mutate trading state. Sprint 126 extends BitPro's stable read contract with versioned,
+cost-aware and bounded return series, fixed-denominator aligned matrices and execution-quality evidence.
+HyperTrade validates versions, hashes, UTC ordering, future/duplicate points, cost completeness and comparability
+before persisting summaries and source references only; it never copies raw series or BitPro business logic.
 
 ## Users
 

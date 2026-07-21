@@ -7,6 +7,14 @@
   `StrategyExecutionQualityV1` 稳定只读合同，并在 HyperTrade 侧实现严格 schema/hash/time/cost/source 验证。
 - HyperTrade 只持久化 bounded summaries、content/source hash 与 refs，不直连 BitPro DB、不复制完整收益、订单、
   成交或账户历史。本 Sprint 不创建、启动、暂停或交易任何策略。
+- BitPro 已实现三类只读 MCP/API producer：固定 backtest/paper 来源层、成本口径、UTC 时间、分页以及
+  500 点/20 成员上限；来源未具备时明确 unavailable，不生成替代数据。
+- HyperTrade 已实现 fail-closed 消费者和 migration `0034`：未知版本、hash 不符、乱序/重复/未来点、缺失成本、
+  denominator 漂移或无缺失原因均被拒绝；数据库只保存 summary/hash/ref，不保存 points 或 matrix rows。
+- 双侧定向回归通过：HyperTrade 17 tests，BitPro 24 tests。HyperTrade 完整 `./scripts/check.sh` 通过：
+  frontend 15 tests/build、Ruff、严格 mypy（194 source files）与 Python 741 tests（保留 2 个既有 OKX
+  coroutine warnings）；BitPro 标准 `./scripts/check.sh` 通过。BitPro PR/合并、双侧部署与生产只读 canary
+  完成后关闭 Sprint 126 Gate。
 
 ## Sprint 125 — Reviewed Strategy Outcome Ledger 已完成 — 2026-07-21
 

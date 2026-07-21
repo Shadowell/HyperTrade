@@ -137,6 +137,15 @@ class BitProConnector:
             "paper_dashboard": self._execute_paper_dashboard,
             "paper_events": self._execute_paper_events,
             "paper_equity_curve": self._execute_paper_equity_curve,
+            "strategy_return_series": lambda params: self.adapter.strategy_return_series(
+                **params
+            ),
+            "strategy_return_matrix": lambda params: self.adapter.strategy_return_matrix(
+                **params
+            ),
+            "strategy_execution_quality": (
+                lambda params: self.adapter.strategy_execution_quality(**params)
+            ),
             "trading_positions": self._execute_trading_positions,
         }
 
@@ -222,6 +231,9 @@ def _tool_descriptions() -> dict[str, str]:
         "paper_dashboard": "Read BitPro paper/simulation dashboard state.",
         "paper_events": "Read BitPro paper/simulation events.",
         "paper_equity_curve": "Read BitPro paper/simulation equity curve.",
+        "strategy_return_series": "Read a versioned bounded strategy return series.",
+        "strategy_return_matrix": "Read an aligned strategy return matrix.",
+        "strategy_execution_quality": "Read bounded strategy execution-quality evidence.",
         "trading_positions": "Read BitPro live positions for diagnostics.",
     }
 
