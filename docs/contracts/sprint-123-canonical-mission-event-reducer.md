@@ -1,6 +1,6 @@
 # Sprint 123 — Canonical Mission Event Reducer and Completion Proof
 
-> 状态：Active — Sprint 122 Gate 已关闭，正在实施 Mission event reducer 与 CompletionProof。
+> 状态：Complete — 实现、全量验证、生产部署与只读 replay/hash canary 已关闭 Gate。
 > 目标架构：[34 下一代专业 Agent Runtime](../architecture/34-next-generation-agent-runtime-audit-and-target-design.md)。
 
 ## Goal
@@ -70,12 +70,16 @@ Run/Task 写入和任何交易 mutation。
 - 独立 `CompletionProofV1` 已接入 Mission terminal transition 与 Thread delivery；无当前 passing proof 不得完成。
 - reducer/replay/proof/worker fault、Alembic 及既有 Mission/Thread 回归测试通过；完整 `./scripts/check.sh` 通过，
   包含 frontend 15 tests/build、Ruff、严格 mypy 与 Python 699 tests（保留 2 个既有 OKX coroutine warnings）。
-- 生产部署、只读 replay/hash canary 与 legacy/trading mutation 前后计数仍待本 Sprint Gate 执行。
+- 实现提交 `30e5b6e` 与 lease/hash 修复 `c33f8e5` 均已部署；最终流水线 `29815455839` 成功。
 - 首次生产 canary 捕获 terminal transition 后 ORM lease 清理覆盖 reducer `updated_at`，导致在线/离线 hash
   不一致；已将 lease 清理移到 projection 持久化前，并补充带 fencing lease 的 SQL 回归测试。修复后的完整
-  `./scripts/check.sh` 再次通过，待重新部署复验。
+  `./scripts/check.sh` 再次通过。
+- 修复后新建只读 Mission `mis_640f994776654f14a704`：17 个 V2 events 连续重放，online/offline hash 均为
+  `fb26c8ec831a281f2e7637f83f932427a5e97259c44847e9af1d923f39a7666a`；CompletionProof 通过且版本绑定，
+  completed 终态恰好一次，cursor 末端无重复。计划仅含只读 inspection/market capability。
+- canary 前后 legacy task、live intent、paper position/fill 可见记录 ID 不变；最新 50 条 Mission 中 33 条
+  历史记录保持 `legacy_non_replayable`，没有伪造历史事件。
 
 ## Handoff
 
 Sprint 124 在该事件与完成语义上实现 Approval、write-ahead dispatch、effect_unknown 和 reconciliation。
-在 Sprint 123 完成前，任何长期 Outcome 都不能把当前 Mission projection 当作可重放真相。

@@ -1,6 +1,6 @@
 # Progress Log
 
-## Sprint 123 — Canonical Mission Event Reducer 已启动 — 2026-07-21
+## Sprint 123 — Canonical Mission Event Reducer 已完成 — 2026-07-21
 
 - Sprint 122 的实现、部署与生产浏览器 Gate 已关闭，Sprint 123 合同正式进入 Active。
 - 代码审计确认当前 Mission projection 仍不是 event-sourced：`update_usage`、`set_current_step` 直接更新 read
@@ -18,7 +18,13 @@
 - 首次生产只读 canary 的 17 个 V2 event、CompletionProof、单终态和只读 capability 均正确，但 hash Gate
   发现 SQL terminal transition 清理 lease 后 `TimestampMixin.onupdate` 覆盖 reducer `updated_at`。已调整为在
   projection 持久化前清理 operational lease，并让 SQL replay 测试使用真实 fencing lease；完整检查再次以
-  frontend 15 tests/build、Ruff、严格 mypy、Python 699 tests 通过，等待重部署。
+  frontend 15 tests/build、Ruff、严格 mypy、Python 699 tests 通过。
+- 实现提交 `30e5b6e`、修复提交 `c33f8e5` 已由流水线 `29815455839` 完成最终部署。修复后生产只读 Mission
+  `mis_640f994776654f14a704` 的 17 个 V2 events 离线/在线 hash 同为
+  `fb26c8ec831a281f2e7637f83f932427a5e97259c44847e9af1d923f39a7666a`；CompletionProof 当前且通过、单一
+  completed 终态、cursor 末端无重复，计划仅使用 inspection 与 market 只读 capability。
+- canary 前后 legacy task、live intent、paper position/fill 可见记录 ID 不变；历史 Mission 继续标记
+  `legacy_non_replayable`。Sprint 123 Gate 已关闭，下一实施合同为 Sprint 124 Approval 与 effect reconciliation。
 
 ## Sprint 122 — Canonical Web Thread/Turn 已完成 — 2026-07-21
 
