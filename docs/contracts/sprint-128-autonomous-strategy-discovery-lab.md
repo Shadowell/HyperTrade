@@ -1,6 +1,6 @@
 # Sprint 128 — Autonomous Strategy Discovery Lab
 
-> 状态：Active — Sprint 127 Gate 已关闭，开始实现有界、可证伪的全新策略发现流程。
+> 状态：Completed — 实现、全量检查、双次部署与真实 BitPro discovery canary 已于 2026-07-21 关闭。
 
 ## Goal
 

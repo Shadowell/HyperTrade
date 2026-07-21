@@ -1,6 +1,6 @@
 # Sprint 129 — Unified Strategy Validation Funnel
 
-> 状态：Proposed；依赖 Sprint 127–128 完成。
+> 状态：Active — Sprint 127–128 Gate 已关闭，开始实现统一 Research Quarantine 与验证漏斗。
 
 ## Goal
 

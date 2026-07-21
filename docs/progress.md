@@ -1,6 +1,12 @@
 # Progress Log
 
-## Sprint 128 — Autonomous Strategy Discovery Lab 已启动 — 2026-07-21
+## Sprint 129 — Unified Strategy Validation Funnel 已启动 — 2026-07-21
+
+- Sprint 127–128 的候选生成、生产部署与真实 BitPro discovery Gate 已关闭，Sprint 129 合同进入 Active。
+- 本 Sprint 将把已有策略进化候选与全新策略候选放入同一个 Research Quarantine，以冻结的 V2 policy 执行
+  locked OOS、walk-forward、成本、regime、参数稳定性、多重测试和独立 verifier 门禁；不启动 Paper/Live。
+
+## Sprint 128 — Autonomous Strategy Discovery Lab 已完成 — 2026-07-21
 
 - Sprint 127 的实现、全量检查、数据库迁移和生产健康 Gate 已关闭，Sprint 128 合同进入 Active。
 - 本 Sprint 将在无 parent strategy 的有界 mandate 下，把真实 evidence 固化为 MarketPhenomenon 与不可后改的
@@ -16,7 +22,15 @@
   随后注册独立 ExperimentManifest/StrategyVersion。migration `0036` 与认证只读 discovery queue API 已实现。
   当前定向与相邻回归 27 passed，Alembic 单 head 为 `0036`；修正可比策略范围后的完整
   `./scripts/check.sh` 通过（frontend 15 tests，Python 766 tests，Ruff、mypy 198 source files）。实现提交
-  `faf2a35` 已由工作流 `29825692451` 部署并完成 `0035 -> 0036`、服务健康和 SHA Gate；新颖性修正待部署。
+  `faf2a35` 与新颖性范围修正 `e10e967` 分别由工作流 `29825692451`、`29826342836` 成功部署；生产完成
+  `0035 -> 0036`、服务健康和 SHA Gate。
+- 真实生产 canary 从 BitPro 读取 BTC 永续 4H K 线 120 根，保存 snapshot hash `3b6d8213a6bcc040...` 与
+  Evidence `evi_2b0b3b161c4740c4b334`。v1 因缺少明确止损/止盈被 BitPro sandbox 正确保留为
+  `sandbox_failed`；修正但不放宽门禁的 hypothesis v2 形成 run `disc_75bd813fddc94a6a9da6`、candidate
+  `dcand_677dd99028724cb6b092`、Manifest `expm_34ff05373aa94a3484c2`、StrategyVersion
+  `sver_d8d5fb148b184cd297b1` 与 BitPro dynamic DB strategy `310`。回读确认 strategy `stopped`、
+  `research_candidate=true`、`paper_enabled=false`、`live_enabled=false`，未调用 Paper/Live/order/capital。
+  Sprint 128 Gate 已关闭；canary 仅证明流程和边界，不宣称策略有效或未来盈利。
 
 ## Sprint 127 — Existing Strategy Evolution Engine 已完成 — 2026-07-21
 
