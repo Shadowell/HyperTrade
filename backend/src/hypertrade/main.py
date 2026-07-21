@@ -101,6 +101,7 @@ from hypertrade.research.evidence_schemas import (
     EvidenceSupersedeRequest,
     ResearchEvidenceInput,
 )
+from hypertrade.research.evolution import StrategyEvolutionService
 from hypertrade.research.experiment_ledger import ExperimentLedgerService
 from hypertrade.research.experiment_schemas import ExperimentRegister
 from hypertrade.research.graph import (
@@ -896,6 +897,17 @@ def create_app(
     @app.get("/api/research/strategy-cards")
     def list_strategy_cards(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
         return {"items": StrategyCardService(database).list()}
+
+    @app.get("/api/research/evolution-runs")
+    def list_strategy_evolution_runs(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+        return {"items": StrategyEvolutionService(database).list()}
+
+    @app.get("/api/research/evolution-runs/{run_id}")
+    def get_strategy_evolution_run(run_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return StrategyEvolutionService(database).get(run_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Strategy evolution run not found") from exc
 
     @app.get("/api/research/strategy-cards/funnel")
     def strategy_card_funnel(_: AdminUser) -> dict[str, Any]:

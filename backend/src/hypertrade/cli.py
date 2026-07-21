@@ -311,6 +311,10 @@ class AgentClient(Protocol):
 
     def get_research_funnel(self) -> dict[str, Any]: ...
 
+    def list_strategy_evolution_runs(self) -> list[dict[str, Any]]: ...
+
+    def get_strategy_evolution_run(self, run_id: str) -> dict[str, Any]: ...
+
     def list_monitors(self) -> list[dict[str, Any]]: ...
 
     def run_monitor(self, monitor_id: str) -> dict[str, Any]: ...
@@ -518,6 +522,7 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("/rag <query>", "Search project and trading knowledge chunks."),
     ("/evals", "Show deterministic Agent eval status."),
     ("/cards", "Show StrategyCard V2 candidates and the fixed research funnel."),
+    ("/evolution list|show <run_id>", "Inspect read-only existing-strategy candidates."),
     ("/monitors", "List configured read-only monitors."),
     ("/monitor run <monitor_id>", "Run one monitor manually and persist alerts."),
     ("/alerts", "List recent monitor alert events."),
@@ -605,6 +610,7 @@ SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
         "cancel",
     ),
     "/research-graph": ("topology", "list", "show"),
+    "/evolution": ("list", "show"),
     "/ledger": ("list", "show", "diff"),
     "/validations": ("list", "show"),
     "/triggers": ("list", "fires", "enable", "disable", "run", "kill"),
@@ -1477,6 +1483,14 @@ class AgentApiClient:
 
     def get_research_funnel(self) -> dict[str, Any]:
         return self._get_object("/api/research/strategy-cards/funnel")
+
+    def list_strategy_evolution_runs(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/research/evolution-runs", "items")
+
+    def get_strategy_evolution_run(self, run_id: str) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/research/evolution-runs/{quote(run_id, safe='')}"
+        )
 
     def list_monitors(self) -> list[dict[str, Any]]:
         return self._get_list("/api/monitors", "items")
@@ -2411,6 +2425,16 @@ class LocalAgentClient:
     def get_research_funnel(self) -> dict[str, Any]:
         return StrategyCardService(self.db).funnel()
 
+    def list_strategy_evolution_runs(self) -> list[dict[str, Any]]:
+        from hypertrade.research.evolution import StrategyEvolutionService
+
+        return StrategyEvolutionService(self.db).list()
+
+    def get_strategy_evolution_run(self, run_id: str) -> dict[str, Any]:
+        from hypertrade.research.evolution import StrategyEvolutionService
+
+        return StrategyEvolutionService(self.db).get(run_id)
+
     def list_monitors(self) -> list[dict[str, Any]]:
         from hypertrade.monitoring import MonitorService
 
@@ -3045,6 +3069,8 @@ def handle_slash_command(
             client.get_research_funnel(),
             output=output,
         )
+    elif name == "/evolution":
+        handle_strategy_evolution_command(command, client=client, output=output)
     elif name == "/monitors":
         render_monitors(client.list_monitors(), output=output)
     elif name == "/monitor":
@@ -4395,6 +4421,50 @@ def handle_research_graph_command(
             f"evidence={len(output_ref.get('evidence_ids', []))}",
             file=output,
         )
+
+
+def handle_strategy_evolution_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split()
+    action = parts[1].lower() if len(parts) > 1 else "list"
+    if action == "list":
+        rows = client.list_strategy_evolution_runs()
+        print("Strategy evolution runs:", file=output)
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:20]:
+            assessment = dict(row.get("assessment", {}))
+            usage = dict(row.get("usage", {}))
+            print(
+                f"- {row.get('id')} [{row.get('status')}] "
+                f"decay={assessment.get('classification', 'unknown')} "
+                f"accepted={usage.get('accepted', 0)} rejected={usage.get('rejected', 0)}",
+                file=output,
+            )
+        return
+    if action == "show" and len(parts) == 3:
+        row = client.get_strategy_evolution_run(parts[2])
+        assessment = dict(row.get("assessment", {}))
+        print(
+            f"Strategy evolution {row.get('id', parts[2])} [{row.get('status')}] "
+            f"decay={assessment.get('classification', 'unknown')}",
+            file=output,
+        )
+        for candidate in row.get("candidates", []):
+            print(
+                f"- {str(candidate.get('fingerprint', ''))[:16]} "
+                f"[{candidate.get('status')}] kind={candidate.get('proposal_kind')} "
+                f"version={candidate.get('candidate_version_id') or 'none'} "
+                f"rejections={','.join(candidate.get('rejection_reasons', [])) or 'none'}",
+                file=output,
+            )
+        print("- execution_authorized=false", file=output)
+        return
+    print("Usage: /evolution list|show <run_id>", file=output)
 
 
 def handle_experiment_ledger_command(

@@ -94,6 +94,14 @@ cost-aware and bounded return series, fixed-denominator aligned matrices and exe
 HyperTrade validates versions, hashes, UTC ordering, future/duplicate points, cost completeness and comparability
 before persisting summaries and source references only; it never copies raw series or BitPro business logic.
 
+Sprint 127 consumes only settled Strategy Outcomes and fresh Sprint 126 evidence to evolve an existing immutable
+strategy version. A bounded `EvolutionMandateV1` constrains parameters, declared rule slots, scope, trials,
+candidates, model/tool calls, wall time and deterministic seed. Actionable decay requires multiple settled facts;
+single losses, stale evidence, unknown effects and data gaps remain review-only. Accepted candidates clone the
+parent ExperimentManifest into a distinct queued experiment and same-lineage StrategyVersion, while rejected,
+duplicate and budget-exhausted proposals remain auditable. The engine has no BitPro, paper, live, order or capital
+adapter, and its API/CLI surfaces are read-only.
+
 ## Users
 
 - Operator running audited agent research and execution workflows.

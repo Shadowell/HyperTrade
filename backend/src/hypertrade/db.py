@@ -1579,6 +1579,44 @@ class StrategyLessonReview(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class StrategyEvolutionRun(Base):
+    """Auditable bounded proposal run; it grants no execution authority."""
+
+    __tablename__ = "strategy_evolution_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("evol"))
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    parent_version_id: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    mandate_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    assessment_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    usage_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class StrategyEvolutionCandidate(Base):
+    """Immutable accepted/rejected candidate; no BitPro or trading payload is stored."""
+
+    __tablename__ = "strategy_evolution_candidates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ecand"))
+    run_id: Mapped[str] = mapped_column(String(32), index=True)
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    parent_version_id: Mapped[str] = mapped_column(String(32), index=True)
+    candidate_version_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    manifest_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    experiment_execution_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    proposal_kind: Mapped[str] = mapped_column(String(24), index=True)
+    candidate_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class StrategyLineage(Base, TimestampMixin):
     """Stable mandate-scoped strategy identity; never stores mutable evidence."""
 

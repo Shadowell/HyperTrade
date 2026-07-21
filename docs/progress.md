@@ -5,6 +5,16 @@
 - Sprint 126 的 BitPro 时序/执行质量合同、双侧部署与真实 paper 只读 Gate 已关闭，Sprint 127 合同进入 Active。
 - 本 Sprint 只为已有策略提出预算受限、可复现、不可变的参数/规则候选与实验注册；不从零发现新策略，不自动
   启动 Paper/Live，不修改运行中版本，也不授予 order/capital 权限。
+- 已实现 `EvolutionMandateV1`、`StrategyDecayAssessmentV1`、`StrategyCandidateVersionV1` 与有界 evolution
+  ledger：至少两个已结算 Outcome 才能触发；performance decay、regime mismatch、execution drift、data quality
+  和 unknown 明确分离，单次亏损、过期/缺失 BitPro evidence 或范围扩张均 fail closed。
+- 参数/规则候选受 StrategySpec 与 mandate 双重边界、candidate/trial/model/tool/wall budget、deterministic seed、
+  immutable code ref、sandbox/dependency Gate 和 fingerprint 去重约束。接受的候选克隆父 Manifest 并注册独立
+  Experiment/StrategyVersion；父版本 hash 不变，拒绝/重复/预算耗尽均保留，且没有 BitPro/Paper/Live/order/
+  capital adapter 路径。
+- migration `0035` 新增 evolution run/candidate ledger；认证后的 API 与 `/evolution list|show` CLI 只读投影候选
+  diff、lineage、unknown 和验证状态，不提供批准或执行动作。当前 Sprint 定向与相邻回归 30 passed；完整
+  `./scripts/check.sh` 通过（frontend 15 tests，Python 752 tests，Ruff、mypy 196 source files），部署待执行。
 
 ## Sprint 126 — BitPro Strategy Time-Series and Execution Evidence Contract 已完成 — 2026-07-21
 

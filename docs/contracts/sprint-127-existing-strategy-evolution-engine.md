@@ -57,7 +57,7 @@ uv run pytest tests/test_strategy_decay_assessment.py -q
 uv run pytest tests/test_strategy_evolution_engine.py -q
 uv run pytest tests/test_strategy_candidate_versions.py -q
 uv run pytest tests/test_strategy_sandbox.py tests/test_experiment_ledger.py -q
-uv run pytest tests/test_agent_tool_policy.py -q
+uv run pytest tests/test_research_roles.py -q
 ./scripts/check.sh
 git diff --check
 ```
