@@ -231,12 +231,13 @@ List all registered Agent tools with their policies.
 
 ## Canonical Agent Threads and Turns
 
-Remote `ht ask/chat` 使用认证后的 `/api/agent/v1/threads` 协议。Thread 是对话聚合，Turn 是一次输入到终态，
+Remote `ht ask/chat` 与 Web natural-language workspace 使用认证后的 `/api/agent/v1/threads` 协议。Thread 是对话聚合，Turn 是一次输入到终态，
 Item 是 user message、tool progress、evidence 或 agent message 的公开投影；长期研究工作仍由显式关联的 Mission
 执行。客户端不得提交 `prior_turns`。
 
 - `POST /api/agent/v1/threads`：创建 durable 或 ephemeral Thread。
 - `GET /api/agent/v1/threads/{thread_id}`：读取 bounded Thread/Turn/Item projection。
+- `POST /api/agent/v1/threads/{thread_id}/archive`：在没有 active Turn 时幂等归档 Thread；归档后只读。
 - `POST /api/agent/v1/threads/{thread_id}/turns`：提交 `input + client_message_id` 并开始 Turn。
 - `GET /api/agent/v1/threads/{thread_id}/turns/{turn_id}`：读取 Turn 终态及其 Items。
 - `GET /api/agent/v1/threads/{thread_id}/events?after=`：按 cursor 重放 versioned events。
@@ -244,7 +245,8 @@ Item 是 user message、tool progress、evidence 或 agent message 的公开投�
 - `POST /api/agent/v1/threads/{thread_id}/turns/{turn_id}/interrupt`：幂等中断非终态 Turn。
 
 相同 Thread 内，`client_message_id` 与请求内容绑定：相同内容重试返回原 Turn，不同内容返回 HTTP 409。
-正常 SSE EOF 前必须出现唯一的 `turn.completed|failed|cancelled|expired`；Remote CLI 会把无终态 EOF 视为协议错误。
+正常 SSE EOF 前必须出现唯一的 `turn.completed|failed|cancelled|expired`；Remote CLI 与 Web 会把无终态 EOF
+视为协议错误并从最后 cursor 恢复。`waiting_input` / `waiting_approval` 是持久暂停状态，不投影为 completed。
 
 ## Legacy Agent Sessions, Tasks and Runs
 
@@ -290,8 +292,8 @@ Each committed event includes an SSE `id` equal to its Task sequence.
 
 ## Legacy Agent Runs
 
-`/api/agent/runs` 暂时保留给尚未迁移的 Web/Desktop/TUI/Local surface 和历史读取。Remote `ht ask/chat`
-不再调用或双写该接口；新的集成应使用 canonical Thread/Turn API。
+`/api/agent/runs` 暂时保留给 Desktop/TUI/Local surface 和 Web legacy history 读取。Remote `ht ask/chat` 与
+Web natural-language workspace 不再调用或双写该接口；新的集成应使用 canonical Thread/Turn API。
 
 ### POST /agent/runs
 
@@ -1448,7 +1450,8 @@ No rate limiting is currently enforced, but it's recommended to:
 
 ## WebSocket Support
 
-WebSocket support is not currently implemented. Use the Server-Sent Events (SSE) streaming endpoint `/api/agent/runs/stream` for real-time updates.
+WebSocket support is not currently implemented. New natural-language clients use canonical Thread SSE at
+`/api/agent/v1/threads/{thread_id}/events/stream`; `/api/agent/runs/stream` is legacy compatibility only.
 
 ---
 

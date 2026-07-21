@@ -56,14 +56,16 @@ typed objectives, evidence/artifact inputs, a capability subset, budget, deadlin
 evidence and risk verifiers validate handoffs, and conflicting claims remain visible instead of being removed by a
 majority vote.
 
-Delivery follows vertical cutover with no permanent dual writes. Sprint 121 first migrates Remote CLI ask/chat to
+Delivery follows vertical cutover with no permanent dual writes. Sprint 121 migrated Remote CLI ask/chat to
 the canonical protocol and requires correct real two-turn entity resolution, deterministic event replay, SSE
-recovery, zero false completion and zero legacy Run/Task writes. Web, Desktop and TUI migrate in later slices.
+recovery, zero false completion and zero legacy Run/Task writes. Sprint 122 migrates the Web natural-language
+workspace to the same server projection; Desktop and TUI remain later slices.
 
-Sprint 121 implementation now provides the Remote CLI vertical slice: authenticated Thread/Turn/Item REST/SSE,
+Sprint 121 provides the Remote CLI vertical slice: authenticated Thread/Turn/Item REST/SSE,
 content-bound client idempotency, deterministic in-memory/SQL replay, worker fencing, server-owned follow-up
-resolution and explicit read-only Mission links. Production canary acceptance remains required before the Sprint
-is closed; Web/Desktop/TUI/Local CLI and legacy historical reads are unchanged.
+resolution and explicit read-only Mission links. Sprint 122 now adds Web Thread restore/archive, cursor reconnect,
+canonical Item/Evidence/unknown rendering and explicit legacy-history separation without Web Run/Task writes.
+Desktop/TUI/Local CLI and legacy historical reads remain unchanged pending later slices.
 
 ## Users
 

@@ -45,7 +45,8 @@ question to evidence-backed strategy iteration—not an unattended trading bot.
 
 > **Maturity note:** reviewed trading-research capabilities and selected read-only Mission requests are
 > deployed, but HyperTrade is not yet a complete professional general Agent runtime. Remote `ht ask/chat` now
-> use a server-owned Thread/Turn/Item event protocol; Web, Desktop, TUI and local compatibility paths still
+> use a server-owned Thread/Turn/Item event protocol; the Web natural-language workspace uses the same protocol,
+> while Desktop, TUI and local compatibility paths still
 > contain Run/Task/Mission differences. The fixed 100-task suite is useful regression evidence, not an overall
 > production-grade certification.
 
@@ -88,9 +89,9 @@ flowchart LR
   C --> B["Isolated strategy sandbox<br/>digest-bound UDS"]
 ~~~
 
-Mission is the intended research-workflow record. Remote CLI natural-language requests use canonical
+Mission is the intended research-workflow record. Remote CLI and Web natural-language requests use canonical
 Thread/Turn/Item events, deterministic projection replay and cursor-resumable SSE without writing legacy
-Run/Task rows. Web, Desktop, TUI and local compatibility paths are not migrated yet; cross-surface cutover,
+Run/Task rows. Desktop, TUI and local compatibility paths are not migrated yet; remaining cross-surface cutover,
 Approval and Supervisor integration remain target work rather than finished claims.
 
 See the [current implementation snapshot](docs/architecture/33-system-architecture.md) and the
@@ -112,7 +113,7 @@ See the [current implementation snapshot](docs/architecture/33-system-architectu
 
 | Capability | Description | Status |
 |-----------|-------------|--------|
-| Natural Language | Free-form prompts with bounded planning and tool selection | Remote CLI canonical; other surfaces pending |
+| Natural Language | Free-form prompts with bounded planning and tool selection | Remote CLI and Web canonical; other surfaces pending |
 | Tool Calling | Reviewed registry, scope, schema and idempotency enforcement | Read catalog deployed; Mission approval loop incomplete |
 | Market Intelligence | OKX SWAP tickers, candles, funding, OI, relative strength indicators | Delivered read capability |
 | Global Market | Cross-asset regime classification (equities, volatility, FX, rates) | Delivered read capability |
@@ -255,7 +256,7 @@ uv run hypertrade --local ask "看下目前市场的热度怎么样"
 ### API Access
 
 ```bash
-# Streaming agent run
+# Legacy run stream (read compatibility; new clients use canonical Threads)
 curl -N -X POST http://localhost:3334/api/agent/runs/stream \
   -H "Content-Type: application/json" \
   -d '{"prompt":"请做行情归纳"}'
@@ -527,7 +528,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Global Market — cross-asset regime classification | Production |
 | Vide Coding (opus-4.6) provider | Production |
 | Enhanced output formatting | Complete |
-| Agent Session and Task OS | Remote CLI canonical Thread/Turn implemented; other surfaces legacy-compatible |
+| Agent Session and Task OS | Remote CLI and Web canonical Thread/Turn implemented; other surfaces legacy-compatible |
 | Research Evidence V2 contract | Production |
 | Multi-Agent research graph V1 | Contracts/tests delivered; not in default Mission loop |
 | Reproducible experiment ledger | Production |
@@ -544,6 +545,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 
 - [Next-Generation Agent Runtime audit and target design](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md)
 - [Sprint 121 canonical Thread/Turn vertical cutover](docs/contracts/sprint-121-canonical-thread-turn-protocol.md)
+- [Sprint 122 Web canonical Thread/Turn cutover](docs/contracts/sprint-122-canonical-thread-turn-web-cutover.md)
 - [Research Operations and Shadow Portfolio roadmap](docs/architecture/29-research-operations-shadow-portfolio-roadmap.md)
 - [Professional Agent Runtime V2 roadmap](docs/architecture/30-professional-agent-runtime-v2-roadmap.md)
 - [Professional Agent Runtime V2 technical design](docs/architecture/31-professional-agent-runtime-v2-technical-design.md)

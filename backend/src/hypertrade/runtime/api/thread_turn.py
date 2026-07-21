@@ -64,6 +64,19 @@ def build_thread_turn_router(
             service.ensure_scheduled(thread_id, snapshot.thread.active_turn_id)
         return _snapshot_payload(snapshot)
 
+    @router.post("/{thread_id}/archive")
+    async def archive_thread(
+        thread_id: str,
+        username: str = Depends(require_admin),
+    ) -> dict[str, object]:
+        try:
+            snapshot = await service.archive(thread_id, actor=username)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Thread not found") from exc
+        except ThreadProtocolError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return _snapshot_payload(snapshot)
+
     @router.post("/{thread_id}/turns", status_code=202)
     async def start_turn(
         thread_id: str,

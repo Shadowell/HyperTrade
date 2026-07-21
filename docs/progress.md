@@ -1,5 +1,24 @@
 # Progress Log
 
+## Sprint 122 — Canonical Web Thread/Turn 实现待生产验收 — 2026-07-21
+
+- Web Harness natural-language workspace 已从 `/api/agent/runs/stream` 切换到 Sprint 121 的 canonical
+  Thread/Turn/Item API；浏览器只保存 `thread_id + cursor`，不提交 `prior_turns`，刷新或重新打开后从服务端
+  projection 恢复消息、resolved refs、工具、Evidence、unknown 与终态。
+- 新增 Web canonical 协议客户端与 cursor SSE parser；tool、evidence、answer 三个断线位置均按
+  `Last-Event-ID` 恢复并去重，网络 EOF 不作为完成。`waiting_input` / `waiting_approval` 会停止当前流并刷新
+  持久暂停状态；409 内容冲突保持明确语义。
+- 新增幂等 `POST /api/agent/v1/threads/{thread_id}/archive`；active Turn 期间拒绝归档，归档 Thread 不接受新
+  Turn。Web 支持恢复、归档和新建 Thread；旧 Agent Run 列表仍可读取，但明确标记为 Legacy 只读历史。
+- Web E2E 验证恢复已有 Thread 后提交“后者最大回撤多少”，仅发送 `input + client_message_id`，并展示服务端
+  resolved `mean_reversion_v1`；没有调用 legacy Run stream。后端合同测试确认归档与自然语言流程不写
+  `AgentRun` / `AgentTask`。
+- 定向检查通过：frontend 15 tests、lint、production build；Web/API/replay 3 个 Python tests 与 Ruff 通过。
+  首次完整检查仅因 Yahoo Finance `^GSPC/^IXIC` 瞬时无数据使一个既有 world-model 测试失败，该用例单独
+  复跑通过；随后完整 `./scripts/check.sh` 全绿，包含 frontend 15 tests/build、Ruff、严格 mypy 与 688 个
+  Python tests（保留 2 个既有 OKX coroutine warnings）。下一步执行 GitNexus staged scope 检查、提交部署和
+  生产浏览器/cursor/legacy row-count canary；Gate 关闭前不进入 Sprint 123。
+
 ## Sprint 121 — Canonical Remote CLI Thread/Turn 已完成 — 2026-07-21
 
 - 新增 server-owned Thread/Turn/Item 领域合同、versioned event envelope、deterministic reducer、projection hash、

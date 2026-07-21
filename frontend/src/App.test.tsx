@@ -771,6 +771,123 @@ test("sidebar navigation keeps the clicked section active", async () => {
   expect(await screen.findByText("344")).toBeInTheDocument();
 });
 
+test("restores a canonical Web Thread and submits a follow-up without legacy history", async () => {
+  const values = new Map<string, string>([
+    ["hypertrade.agent.thread.v1", JSON.stringify({ threadId: "thr_web", cursor: 10 })]
+  ]);
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
+    clear: () => values.clear(),
+    key: (index: number) => [...values.keys()][index] ?? null,
+    get length() { return values.size; }
+  } satisfies Storage;
+  vi.stubGlobal("localStorage", storage);
+
+  const firstTurn = {
+    turn_id: "trn_1",
+    status: "completed",
+    client_message_id: "web-1",
+    mission_id: "mis_1",
+    resolved_context: {
+      subject_kind: "strategy",
+      subject_refs: ["momentum_breakout_v1", "mean_reversion_v1"]
+    }
+  };
+  const secondTurn = {
+    turn_id: "trn_2",
+    status: "completed",
+    client_message_id: "web-2",
+    mission_id: "mis_2",
+    resolved_context: {
+      subject_kind: "strategy",
+      subject_refs: ["momentum_breakout_v1", "mean_reversion_v1"],
+      resolved_subject: "mean_reversion_v1"
+    }
+  };
+  const firstItems = [
+    { item_id: "u1", turn_id: "trn_1", item_type: "user_message", status: "completed", sequence: 2, content: { text: "比较 momentum_breakout_v1 和 mean_reversion_v1" } },
+    { item_id: "a1", turn_id: "trn_1", item_type: "agent_message", status: "completed", sequence: 9, content: { text: "两项策略缺少可比数据。" } }
+  ];
+  const recovered = {
+    thread: { thread_id: "thr_web", title: "Web", status: "active", active_turn_id: "", event_cursor: 10 },
+    turns: [firstTurn],
+    items: firstItems
+  };
+  const completed = {
+    thread: { thread_id: "thr_web", title: "Web", status: "active", active_turn_id: "", event_cursor: 20 },
+    turns: [firstTurn, secondTurn],
+    items: [
+      ...firstItems,
+      { item_id: "u2", turn_id: "trn_2", item_type: "user_message", status: "completed", sequence: 11, content: { text: "后者最大回撤多少？" } },
+      { item_id: "t2", turn_id: "trn_2", item_type: "tool_call", status: "completed", sequence: 16, content: { capability_id: "strategy.performance" } },
+      { item_id: "a2", turn_id: "trn_2", item_type: "agent_message", status: "completed", sequence: 19, content: { text: "mean_reversion_v1 暂无可验证最大回撤。", unknowns: ["max_drawdown unavailable"] } }
+    ]
+  };
+  let turnStarted = false;
+  const turnBodies: Array<Record<string, unknown>> = [];
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/harness/overview")) return jsonResponse(overview);
+    if (url.endsWith("/api/agent/v1/threads/thr_web/turns") && init?.method === "POST") {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      turnBodies.push(body);
+      turnStarted = true;
+      return jsonResponse({ created: true, turn: secondTurn, event_cursor: 11 }, 202);
+    }
+    if (url.includes("/api/agent/v1/threads/thr_web/events/stream")) {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'id: 20\nevent: turn.completed\ndata: {"event_id":"e20","event_type":"turn.completed","thread_sequence":20,"payload":{"turn_id":"trn_2"}}\n\n'
+            )
+          );
+          controller.close();
+        }
+      });
+      return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    }
+    if (url.endsWith("/api/agent/v1/threads/thr_web/turns/trn_2")) {
+      return jsonResponse({ turn: secondTurn, items: completed.items.slice(-3), event_cursor: 20 });
+    }
+    if (url.endsWith("/api/agent/v1/threads/thr_web")) {
+      return jsonResponse(turnStarted ? completed : recovered);
+    }
+    if (url.endsWith("/api/memory")) return jsonResponse({ items: [] });
+    if (url.endsWith("/api/strategy/library")) {
+      return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
+    }
+    if (url.endsWith("/api/alerts")) return jsonResponse({ items: [] });
+    return jsonResponse({}, 404);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(<App />);
+
+  expect(await screen.findByText("thr_web")).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "后者最大回撤多少？" } });
+  fireEvent.click(screen.getByRole("button", { name: "发起归纳" }));
+
+  expect(
+    (await screen.findAllByText("mean_reversion_v1 暂无可验证最大回撤。")).length
+  ).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("服务端目标")).toBeInTheDocument();
+  expect(turnBodies).toHaveLength(1);
+  expect(turnBodies[0]).toEqual({
+    input: "后者最大回撤多少？",
+    client_message_id: expect.stringMatching(/^web_turn_/)
+  });
+  expect(JSON.stringify(turnBodies[0])).not.toContain("prior_turns");
+  expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/agent/runs/stream"))).toBe(false);
+  expect(readStoredCursor(storage)).toBe(20);
+});
+
+function readStoredCursor(storage: Storage): number {
+  return Number(JSON.parse(storage.getItem("hypertrade.agent.thread.v1") ?? "{}").cursor ?? 0);
+}
+
 const strategyLibrary = {
   source: "memory.strategy_knowledge",
   memory_count: 2,

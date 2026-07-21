@@ -1,6 +1,6 @@
 # Sprint 122 — Canonical Thread/Turn Web Cutover
 
-> 状态：Proposed；仅在 Sprint 121 完成并通过生产只读验收后进入开发。
+> 状态：Active — 实现与本地全量回归完成，等待部署和生产只读 canary。
 > 上游合同：[Sprint 121](sprint-121-canonical-thread-turn-protocol.md)。
 
 ## Goal

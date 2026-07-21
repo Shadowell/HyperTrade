@@ -32,6 +32,20 @@ import {
   AgentFlightRecorder,
   RunObservability
 } from "./components/observability/AgentFlightRecorder";
+import {
+  archiveAgentThread,
+  clearThreadSession,
+  createAgentThread,
+  followAgentTurn,
+  formatThreadEvent,
+  getAgentThread,
+  presentThread,
+  readThreadSession,
+  startAgentTurn,
+  ThreadProtocolRequestError,
+  ThreadSnapshot,
+  writeThreadSession
+} from "./agentThread";
 
 type Language = "zh" | "en";
 type NavSection =
@@ -527,6 +541,12 @@ const copy = {
     risk: "研究辅助",
     login: "登录",
     run: "发起归纳",
+    newThread: "新建会话",
+    archiveThread: "归档会话",
+    threadReady: "会话已恢复",
+    reconnecting: "正在续传",
+    resolvedRefs: "服务端目标",
+    canonicalHistory: "会话消息",
     prompt: "请做 OKX 全市场 SWAP 行情归纳",
     okx: "OKX SWAP",
     live: "行情覆盖",
@@ -537,6 +557,7 @@ const copy = {
     sendFeishu: "转发飞书",
     refresh: "刷新",
     recentRuns: "最近运行",
+    legacyHistory: "Legacy 只读历史",
     topMovers: "异动榜",
     preview: "预览数据",
     configured: "已配置",
@@ -770,6 +791,12 @@ const copy = {
     risk: "Not Investment Advice",
     login: "Login",
     run: "Run Summary",
+    newThread: "New Thread",
+    archiveThread: "Archive Thread",
+    threadReady: "Thread restored",
+    reconnecting: "Reconnecting",
+    resolvedRefs: "Server target",
+    canonicalHistory: "Thread messages",
     prompt: "Summarize OKX SWAP market",
     okx: "OKX SWAP",
     live: "Live Tickers",
@@ -780,6 +807,7 @@ const copy = {
     sendFeishu: "Send Feishu",
     refresh: "Refresh",
     recentRuns: "Recent Runs",
+    legacyHistory: "Legacy read-only history",
     topMovers: "Top Movers",
     preview: "Preview",
     configured: "Configured",
@@ -1169,13 +1197,21 @@ function App() {
   const [activeSection, setActiveSection] = useState<NavSection>(() => activeSectionFromPath());
   const [prompt, setPrompt] = useState(copy.zh.prompt);
   const [run, setRun] = useState<AgentRun>(seedRun);
+  const [threadSnapshot, setThreadSnapshot] = useState<ThreadSnapshot | null>(null);
+  const [threadCursor, setThreadCursor] = useState(0);
+  const [threadConnection, setThreadConnection] = useState("idle");
+  const [partialAnswer, setPartialAnswer] = useState("");
   const [overview, setOverview] = useState<HarnessOverview | null>(null);
   const [missions, setMissions] = useState<MissionProjection[]>([]);
   const [selectedMission, setSelectedMission] = useState<MissionProjection | null>(null);
   const [missionEvents, setMissionEvents] = useState<MissionEvent[]>([]);
   const [missionObjective, setMissionObjective] = useState("");
   const [missionBusy, setMissionBusy] = useState(false);
-  const activeRunIdempotencyKey = useRef("");
+  const activeTurnRequest = useRef<{
+    threadId: string;
+    prompt: string;
+    clientMessageId: string;
+  } | null>(null);
   const [harnessError, setHarnessError] = useState("");
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -1216,11 +1252,23 @@ function App() {
   const [observabilityLoading, setObservabilityLoading] = useState(false);
   const t = copy[language];
   const activeOverview = overview ?? previewOverview;
-  const reportBlocks = useMemo(() => reportBlocksFromRun(run), [run]);
+  const threadPresentation = useMemo(() => presentThread(threadSnapshot), [threadSnapshot]);
+  const reportMarkdown = partialAnswer || threadPresentation.answer || run.report_markdown;
+  const reportBlocks = useMemo(
+    () => (threadSnapshot ? [] : reportBlocksFromRun(run)),
+    [run, threadSnapshot]
+  );
   const defaultProvider =
     activeOverview.providers.find((provider) => provider.default) ?? activeOverview.providers[0];
-  const traceEvents =
-    run.id !== seedRun.id ? run.trace_events : activeOverview.trace.recent_events.slice(0, 6);
+  const traceEvents = threadSnapshot
+    ? threadPresentation.tools.map((tool) => ({
+        id: tool.id,
+        tool_name: tool.name,
+        status: tool.status
+      }))
+    : run.id !== seedRun.id
+      ? run.trace_events
+      : activeOverview.trace.recent_events.slice(0, 6);
   const selectedMemory =
     memoryItems.find((item) => item.id === selectedMemoryId) ?? memoryItems[0] ?? null;
   const navItemClass = useCallback(
@@ -1625,12 +1673,80 @@ function App() {
     }
   }, []);
 
+  const followCanonicalTurn = useCallback(
+    async (threadId: string, turnId: string, after: number) => {
+      setThreadConnection("streaming");
+      const result = await followAgentTurn({
+        threadId,
+        turnId,
+        after,
+        onCursor: (cursor) => {
+          setThreadCursor(cursor);
+          writeThreadSession(window.localStorage, { threadId, cursor });
+        },
+        onReconnecting: (attempt) => {
+          setThreadConnection(`reconnecting:${attempt}`);
+        },
+        onEvent: (event) => {
+          setAgentProgress((items) => [...items.slice(-8), formatThreadEvent(event)]);
+          if (event.event_type === "agent_message.delta" && isRecord(event.payload.content)) {
+            const delta = stringOrUndefined(event.payload.content.text);
+            if (delta) setPartialAnswer((value) => `${value}${delta}`);
+          }
+        }
+      });
+      setThreadSnapshot(result.snapshot);
+      setThreadCursor(result.cursor);
+      setPartialAnswer("");
+      setThreadConnection("idle");
+      writeThreadSession(window.localStorage, { threadId, cursor: result.cursor });
+      activeTurnRequest.current = null;
+    },
+    []
+  );
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshOverview();
     }, 0);
     return () => window.clearTimeout(timer);
   }, [refreshOverview]);
+
+  useEffect(() => {
+    const pointer = readThreadSession(window.localStorage);
+    if (!pointer) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snapshot = await getAgentThread(pointer.threadId);
+        if (cancelled) return;
+        if (snapshot.thread.status !== "active") {
+          clearThreadSession(window.localStorage);
+          return;
+        }
+        setThreadSnapshot(snapshot);
+        setThreadCursor(Math.max(pointer.cursor, snapshot.thread.event_cursor));
+        if (snapshot.thread.active_turn_id) {
+          setBusy(true);
+          await followCanonicalTurn(
+            snapshot.thread.thread_id,
+            snapshot.thread.active_turn_id,
+            pointer.cursor
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          clearThreadSession(window.localStorage);
+          setHarnessError(error instanceof Error ? error.message : "Thread restore failed");
+        }
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [followCanonicalTurn]);
 
   useEffect(() => {
     function syncActiveSection() {
@@ -1648,40 +1764,92 @@ function App() {
   }
 
   async function handleRun() {
+    const submittedPrompt = prompt.trim();
+    if (!submittedPrompt) return;
     setBusy(true);
     setAgentProgress([]);
     setRunObservability(null);
-    const idempotencyKey = activeRunIdempotencyKey.current || createClientIdempotencyKey("web_run");
-    activeRunIdempotencyKey.current = idempotencyKey;
+    setPartialAnswer("");
+    setHarnessError("");
     try {
-      const response = await fetch("/api/agent/runs/stream", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": idempotencyKey
-        },
-        body: JSON.stringify({ prompt })
+      let snapshot = threadSnapshot;
+      if (!snapshot || snapshot.thread.status !== "active") {
+        snapshot = await createAgentThread();
+        setThreadSnapshot(snapshot);
+        setThreadCursor(snapshot.thread.event_cursor);
+        writeThreadSession(window.localStorage, {
+          threadId: snapshot.thread.thread_id,
+          cursor: snapshot.thread.event_cursor
+        });
+      }
+      const threadId = snapshot.thread.thread_id;
+      const existing = activeTurnRequest.current;
+      const request =
+        existing && existing.threadId === threadId && existing.prompt === submittedPrompt
+          ? existing
+          : {
+              threadId,
+              prompt: submittedPrompt,
+              clientMessageId: createClientIdempotencyKey("web_turn")
+            };
+      activeTurnRequest.current = request;
+      const started = await startAgentTurn(threadId, submittedPrompt, request.clientMessageId);
+      const accepted = await getAgentThread(threadId);
+      setThreadSnapshot(accepted);
+      setThreadCursor(started.event_cursor);
+      writeThreadSession(window.localStorage, { threadId, cursor: started.event_cursor });
+      await followCanonicalTurn(threadId, started.turn.turn_id, started.event_cursor);
+      await refreshOverview();
+    } catch (error) {
+      if (error instanceof ThreadProtocolRequestError && error.status === 409) {
+        setHarnessError(`409 · ${error.message}`);
+      } else {
+        setHarnessError(error instanceof Error ? error.message : "Thread request failed");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleNewThread() {
+    if (threadSnapshot?.thread.active_turn_id) {
+      setHarnessError("Active Turn must reach a terminal state before archiving the Thread.");
+      return;
+    }
+    setBusy(true);
+    try {
+      if (threadSnapshot?.thread.status === "active") {
+        await archiveAgentThread(threadSnapshot.thread.thread_id);
+      }
+      const created = await createAgentThread();
+      setThreadSnapshot(created);
+      setThreadCursor(created.thread.event_cursor);
+      setAgentProgress([]);
+      setPartialAnswer("");
+      setHarnessError("");
+      activeTurnRequest.current = null;
+      writeThreadSession(window.localStorage, {
+        threadId: created.thread.thread_id,
+        cursor: created.thread.event_cursor
       });
-      if (response.ok && response.body) {
-        const finalRun = await consumeAgentStream(response.body, (line) =>
-          setAgentProgress((items) => [...items.slice(-8), line])
-        );
-        if (finalRun) {
-          setRun(finalRun);
-          await loadRunObservability(finalRun.id);
-          activeRunIdempotencyKey.current = "";
-        }
-        await refreshOverview();
-        return;
-      }
-      if (response.ok) {
-        const completedRun = (await response.json()) as AgentRun;
-        setRun(completedRun);
-        await loadRunObservability(completedRun.id);
-        activeRunIdempotencyKey.current = "";
-        await refreshOverview();
-      }
+    } catch (error) {
+      setHarnessError(error instanceof Error ? error.message : "Thread creation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleArchiveThread() {
+    if (!threadSnapshot || threadSnapshot.thread.active_turn_id) return;
+    setBusy(true);
+    try {
+      const archived = await archiveAgentThread(threadSnapshot.thread.thread_id);
+      setThreadSnapshot(archived);
+      clearThreadSession(window.localStorage);
+      activeTurnRequest.current = null;
+      setThreadConnection("archived");
+    } catch (error) {
+      setHarnessError(error instanceof Error ? error.message : "Thread archive failed");
     } finally {
       setBusy(false);
     }
@@ -2032,11 +2200,40 @@ function App() {
                 value={prompt}
               />
               <div className="mt-3 flex flex-wrap gap-2">
-                <button className="button-primary" disabled={busy} onClick={handleRun} type="button">
+                <button
+                  className="button-primary"
+                  disabled={busy || Boolean(threadSnapshot?.thread.active_turn_id)}
+                  onClick={handleRun}
+                  type="button"
+                >
                   {busy ? <RefreshCw className="animate-spin" size={16} /> : <Bot size={16} />}
                   {t.run}
                 </button>
+                <button className="icon-button" disabled={busy} onClick={handleNewThread} type="button">
+                  {t.newThread}
+                </button>
+                <button
+                  className="icon-button"
+                  disabled={busy || !threadSnapshot || Boolean(threadSnapshot.thread.active_turn_id)}
+                  onClick={handleArchiveThread}
+                  type="button"
+                >
+                  <Archive size={14} />
+                  {t.archiveThread}
+                </button>
               </div>
+              {threadSnapshot ? (
+                <div className="mt-3 flex flex-wrap gap-2 font-mono text-xs text-ink/50">
+                  <span>{threadSnapshot.thread.thread_id}</span>
+                  <span>cursor={threadCursor}</span>
+                  <span>{threadConnection.startsWith("reconnecting") ? t.reconnecting : t.threadReady}</span>
+                </div>
+              ) : null}
+              {harnessError ? (
+                <div className="mt-3 rounded border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger">
+                  {harnessError}
+                </div>
+              ) : null}
               <div className="mt-4 trace-list">
                 <div className="px-1 py-2 text-xs font-semibold uppercase text-ink/45">
                   {t.agentProgress}
@@ -2045,7 +2242,7 @@ function App() {
                   <Bot size={14} className="text-brass" />
                   <span className="text-xs">{t.currentStage}</span>
                   <span className="ml-auto font-mono text-xs text-ink/55">
-                    {run.run_state_json?.current_node ?? t.preview}
+                    {threadSnapshot ? threadPresentation.status : run.run_state_json?.current_node ?? t.preview}
                   </span>
                 </div>
                 {agentProgress.length === 0 ? (
@@ -2059,6 +2256,34 @@ function App() {
                   ))
                 )}
               </div>
+              {threadPresentation.resolvedRefs.length > 0 ? (
+                <div className="mt-4 mini-block">
+                  <span>{t.resolvedRefs}</span>
+                  <strong className="font-mono">{threadPresentation.resolvedRefs.join(" / ")}</strong>
+                </div>
+              ) : null}
+              {threadPresentation.messages.length > 0 ? (
+                <div className="mt-4">
+                  <h3 className="section-title">{t.canonicalHistory}</h3>
+                  <div className="mt-2 max-h-64 space-y-2 overflow-auto">
+                    {threadPresentation.messages.map((message) => (
+                      <div className="operator-card operator-card-compact" data-tone={message.role === "user" ? "brass" : "signal"} key={message.id}>
+                        <span>{message.role} · {message.kind} · {message.status}</span>
+                        <strong className="whitespace-pre-wrap text-sm">{message.text}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {threadPresentation.warnings.length > 0 ? (
+                <div className="mt-4 operator-card operator-card-compact" data-tone="danger">
+                  <span>warning / unknown</span>
+                  <strong>{threadPresentation.warnings.join(" · ")}</strong>
+                </div>
+              ) : null}
+              {threadPresentation.evidence.length > 0 ? (
+                <ReportSourceList label={t.sourceRefs} prefix="evidence" values={threadPresentation.evidence} />
+              ) : null}
               <div className="mt-4 flex items-center justify-between gap-3">
                 <h3 className="section-title">{t.reportReader}</h3>
                 <button
@@ -2072,13 +2297,13 @@ function App() {
               </div>
               {showRawMarkdown ? (
                 <pre className="report-block">
-                  {busy ? `${t.overviewLoading}...` : run.report_markdown}
+                  {busy ? `${t.overviewLoading}...` : reportMarkdown}
                 </pre>
               ) : reportBlocks.length > 0 ? (
-                <StructuredReport blocks={reportBlocks} markdown={run.report_markdown} t={t} />
+                <StructuredReport blocks={reportBlocks} markdown={reportMarkdown} t={t} />
               ) : (
                 <div className="markdown-report">
-                  {busy ? t.overviewLoading : renderMarkdown(run.report_markdown)}
+                  {busy ? t.overviewLoading : renderMarkdown(reportMarkdown)}
                 </div>
               )}
             </div>
@@ -2685,7 +2910,10 @@ function App() {
 
             <div className="panel">
               <div className="flex items-center justify-between gap-4">
-                <h2 className="section-title">{t.recentRuns}</h2>
+                <div>
+                  <h2 className="section-title">{t.recentRuns}</h2>
+                  <p className="mt-1 text-xs text-ink/45">{t.legacyHistory}</p>
+                </div>
                 <Layers3 size={18} className="text-brass" />
               </div>
               <div className="mt-4 space-y-2">
@@ -3956,66 +4184,6 @@ function renderInlineMarkdown(text: string): ReactNode {
     }
     return <span key={index}>{part}</span>;
   });
-}
-
-async function consumeAgentStream(
-  body: ReadableStream<Uint8Array>,
-  onProgress: (message: string) => void
-): Promise<AgentRun | null> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let finalRun: AgentRun | null = null;
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
-      break;
-    }
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop() ?? "";
-    for (const chunk of chunks) {
-      const dataLine = chunk
-        .split("\n")
-        .find((line) => line.startsWith("data:"));
-      if (!dataLine) {
-        continue;
-      }
-      const payload = JSON.parse(dataLine.slice(5).trim()) as Record<string, unknown>;
-      const eventName = String(payload.event ?? "message");
-      if (eventName === "final" && isAgentRun(payload.run)) {
-        finalRun = payload.run;
-      } else if (eventName === "run_completed" && isAgentRun(payload.run)) {
-        finalRun = payload.run;
-      }
-      onProgress(formatAgentEvent(payload));
-    }
-  }
-
-  return finalRun;
-}
-
-function isAgentRun(value: unknown): value is AgentRun {
-  return Boolean(
-    value &&
-      typeof value === "object" &&
-      "id" in value &&
-      "status" in value &&
-      "report_markdown" in value
-  );
-}
-
-function formatAgentEvent(payload: Record<string, unknown>): string {
-  const eventName = String(payload.event ?? "message");
-  const text = typeof payload.text === "string" ? payload.text.trim() : "";
-  if (text) {
-    return `${eventName} · ${text}`;
-  }
-  const toolName = payload.tool_name ? ` ${String(payload.tool_name)}` : "";
-  const status = payload.status ? ` ${String(payload.status)}` : "";
-  const runId = payload.run_id ? ` ${String(payload.run_id)}` : "";
-  return `${eventName}${toolName}${status}${runId}`.trim();
 }
 
 function createClientIdempotencyKey(prefix: string): string {

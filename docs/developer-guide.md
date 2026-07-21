@@ -202,11 +202,12 @@ graph TB
 
 #### Canonical Thread Runtime (`backend/src/hypertrade/runtime/`)
 
-Remote CLI natural-language requests use `ThreadTurnService`, an append-only `ThreadEventV1` envelope and a
+Remote CLI and Web natural-language requests use `ThreadTurnService`, an append-only `ThreadEventV1` envelope and a
 deterministic reducer. SQL and in-memory stores atomically persist events with Thread/Turn/Item projections;
 `client_message_id` is content-bound, worker events use monotonic fencing tokens, and SSE resumes by cursor.
 The service links each Turn to the existing read-only Mission Runtime without writing `AgentRun` or `AgentTask`.
-Do not add client-owned history or a second completion state machine.
+The Web client stores only a Thread pointer/cursor and rehydrates canonical Items from the server; legacy Run
+history remains read-only. Do not add client-owned history or a second completion state machine.
 
 #### AgentKernel (`backend/src/hypertrade/agent/kernel.py`)
 
@@ -612,7 +613,7 @@ ToolDefinition(
 
 ### Core Tables
 
-**agent_threads / agent_turns / agent_thread_items / agent_thread_events**: Remote CLI canonical interaction
+**agent_threads / agent_turns / agent_thread_items / agent_thread_events**: Remote CLI and Web canonical interaction
 projection and append-only event source. `agent_thread_leases` stores operational fencing tokens outside the
 public reducer projection. Migration revisions `0029` and `0030` create these structures.
 

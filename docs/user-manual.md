@@ -233,6 +233,11 @@ NO_COLOR=1 uv run ht --local
 
 访问 http://localhost:3333/harness 打开 Web 控制台。
 
+Web 工作台的自然语言会话使用与 Remote CLI 相同的服务端 Thread/Turn/Item 协议。浏览器只保存
+`thread_id + cursor` 定位信息，不保存或提交 `prior_turns`；刷新、断线或重新打开页面时会从服务器恢复
+消息、工具进度、Evidence、unknown、resolved target 与终态。可在没有 active Turn 时归档当前 Thread 或
+新建 Thread；“最近运行”区域明确是 legacy 只读历史，不能从自然语言输入创建新的 legacy Run/Task。
+
 ### 主要功能区
 
 1. **概览面板**：
@@ -242,10 +247,10 @@ NO_COLOR=1 uv run ht --local
    - RAG 和 Memory 统计
    - 追踪事件
 
-2. **Agent 运行**：
-   - 创建新的 Agent 运行
-   - 查看运行历史
-   - 查看详细报告和追踪
+2. **Agent 会话**：
+   - 在一个 durable Thread 内连续提交 Turn
+   - 查看服务端恢复的消息、resolved refs、Evidence、unknown 和工具进度
+   - 归档/新建 Thread；单独查看 legacy 只读运行历史
 
 3. **市场数据**：
    - 实时行情快照

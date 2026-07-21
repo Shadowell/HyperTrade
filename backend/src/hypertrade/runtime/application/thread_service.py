@@ -17,6 +17,7 @@ from hypertrade.runtime.domain.models import MissionStatus
 from hypertrade.runtime.domain.thread_turn import (
     TERMINAL_TURN_STATUSES,
     ThreadSnapshotV1,
+    ThreadStatus,
     TurnProjectionV1,
     TurnStatus,
     content_hash,
@@ -88,6 +89,20 @@ class ThreadTurnService:
         _, turn, _ = result
         self.ensure_scheduled(thread_id, turn.turn_id)
         return result
+
+    async def archive(self, thread_id: str, *, actor: str) -> ThreadSnapshotV1:
+        snapshot = await self.thread_store.get(thread_id)
+        if snapshot.thread is None:
+            raise KeyError(thread_id)
+        if snapshot.thread.status == ThreadStatus.ARCHIVED:
+            return snapshot
+        return await self.thread_store.append(
+            thread_id,
+            "thread.archived",
+            actor=actor,
+            idempotency_key=f"{thread_id}:archived",
+            payload={},
+        )
 
     def ensure_scheduled(self, thread_id: str, turn_id: str) -> None:
         key = f"{thread_id}:{turn_id}"
