@@ -1,6 +1,13 @@
 # Progress Log
 
-## Sprint 127 — Existing Strategy Evolution Engine 已启动 — 2026-07-21
+## Sprint 128 — Autonomous Strategy Discovery Lab 已启动 — 2026-07-21
+
+- Sprint 127 的实现、全量检查、数据库迁移和生产健康 Gate 已关闭，Sprint 128 合同进入 Active。
+- 本 Sprint 将在无 parent strategy 的有界 mandate 下，把真实 evidence 固化为 MarketPhenomenon 与不可后改的
+  AlphaHypothesis，执行可解释的新颖性判定、隔离 sandbox/BitPro validation，并只生成 research candidate；不启动
+  Paper/Live，不分配资金，也不把换名或参数微调伪装成新策略。
+
+## Sprint 127 — Existing Strategy Evolution Engine 已完成 — 2026-07-21
 
 - Sprint 126 的 BitPro 时序/执行质量合同、双侧部署与真实 paper 只读 Gate 已关闭，Sprint 127 合同进入 Active。
 - 本 Sprint 只为已有策略提出预算受限、可复现、不可变的参数/规则候选与实验注册；不从零发现新策略，不自动
@@ -14,7 +21,9 @@
   capital adapter 路径。
 - migration `0035` 新增 evolution run/candidate ledger；认证后的 API 与 `/evolution list|show` CLI 只读投影候选
   diff、lineage、unknown 和验证状态，不提供批准或执行动作。当前 Sprint 定向与相邻回归 30 passed；完整
-  `./scripts/check.sh` 通过（frontend 15 tests，Python 752 tests，Ruff、mypy 196 source files），部署待执行。
+  `./scripts/check.sh` 通过（frontend 15 tests，Python 752 tests，Ruff、mypy 196 source files）。实现提交
+  `200e45f` 已由工作流 `29824144605` 成功部署；生产日志确认 Alembic `0034 -> 0035`、API/worker 重建、健康
+  检查成功和完整 SHA 记录。Sprint 127 Gate 已关闭。
 
 ## Sprint 126 — BitPro Strategy Time-Series and Execution Evidence Contract 已完成 — 2026-07-21
 

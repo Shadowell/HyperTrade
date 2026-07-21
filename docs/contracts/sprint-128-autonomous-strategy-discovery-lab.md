@@ -1,6 +1,6 @@
 # Sprint 128 — Autonomous Strategy Discovery Lab
 
-> 状态：Proposed；依赖 Sprint 126 完成，可与 Sprint 127 实现解耦，但共同依赖 Sprint 129 晋级。
+> 状态：Active — Sprint 127 Gate 已关闭，开始实现有界、可证伪的全新策略发现流程。
 
 ## Goal
 
@@ -59,7 +59,7 @@ uv run pytest tests/test_market_phenomena.py -q
 uv run pytest tests/test_alpha_hypotheses.py -q
 uv run pytest tests/test_strategy_novelty.py -q
 uv run pytest tests/test_autonomous_strategy_discovery.py -q
-uv run pytest tests/test_strategy_sandbox.py tests/test_agent_tool_policy.py -q
+uv run pytest tests/test_strategy_sandbox.py tests/test_research_roles.py -q
 ./scripts/check.sh
 git diff --check
 ```

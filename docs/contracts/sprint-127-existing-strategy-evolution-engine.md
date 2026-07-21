@@ -1,6 +1,6 @@
 # Sprint 127 — Existing Strategy Evolution Engine
 
-> 状态：Active — Sprint 126 Gate 已关闭，开始实现已有策略的有界候选进化引擎。
+> 状态：Completed — 实现、全量检查、迁移与生产健康 Gate 已于 2026-07-21 关闭。
 
 ## Goal
 
