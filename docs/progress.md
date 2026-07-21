@@ -1,6 +1,6 @@
 # Progress Log
 
-## Sprint 121 — Canonical Remote CLI Thread/Turn 实现待生产验收 — 2026-07-21
+## Sprint 121 — Canonical Remote CLI Thread/Turn 已完成 — 2026-07-21
 
 - 新增 server-owned Thread/Turn/Item 领域合同、versioned event envelope、deterministic reducer、projection hash、
   SQLite/PostgreSQL SQL adapter、内存 adapter、Alembic 0029/0030 迁移以及独立 worker fencing lease。
@@ -16,8 +16,15 @@
   129 passed。PostgreSQL 方言离线 Alembic 0028→0030 SQL 生成通过；SQLite 全量 Alembic 被历史 0001 的
   PostgreSQL-only `CREATE EXTENSION vector` 阻断，但新 SQL store/replay 已在 SQLite 测试通过。
 - `./scripts/check.sh` 已通过：frontend lint、9 个 frontend tests、production build、Ruff、严格 mypy 和
-  687 个 Python tests 全部通过；保留 2 个既有 OKX coroutine warnings。当前等待提交、部署和生产只读
-  canary；在 Gate 关闭前不进入 Sprint 122 实现。
+  687 个 Python tests 全部通过；保留 2 个既有 OKX coroutine warnings。主实现提交 `5adb171` 与严格拒绝
+  客户端 `prior_turns` 的协议收口提交 `a35446e` 已推送；部署工作流 `29808896278` 成功，生产 SHA 匹配。
+- 生产只读 canary 连续完成两轮策略指代并把“后者”解析为 `mean_reversion_v1`；SSE 从 cursor 续传 9 个事件
+  且只有一个终态；离线 reducer 与在线 projection hash 一致；LAB 返回 `LAB-USDT-SWAP` 及
+  `hypertrade_db:market_tickers:LAB-USDT-SWAP` 来源；主网满仓请求以 failed 终止且工具调用为零。
+  `prior_turns` 返回 422，相同消息幂等重放、不同内容返回 409。
+- canary 前后 legacy `agent_runs` / `agent_tasks` 均保持 `160 / 11`，增量为零；canonical 表记录 3 Threads、
+  4 Turns、38 Events。API 健康正常，近期 API/worker 日志无 traceback、fatal 或 `thread_runtime_failure`。
+  Sprint 121 Gate 已关闭，下一实施合同为 Sprint 122 Web canonical cutover。
 
 ## 自主量化交易员 Sprint 122–134 合同序列 — 2026-07-21
 
@@ -27,8 +34,8 @@
   孵化；131 regime Shadow allocator；132 LiveTradingMandate/Risk Engine；133 Live Canary；134 有限自主组合 Pilot。
 - 产品目标明确为双轨进化：既优化已有策略，也从真实市场现象、未覆盖 regime 和共同失效中冻结全新 Alpha
   假设、检查新颖性、生成动态 DB `BaseStrategy` 候选，并使用与已有策略相同的严格验证漏斗。
-- 所有新合同状态均为 Proposed。Sprint 121 仍是下一实施合同；前一 Gate 未关闭时后一合同不能通过配置跳级。
-  本次仅编写合同与入口，不修改代码、部署、Paper、Testnet、Live、订单、资金或凭证权限。
+- Sprint 121 已关闭，Sprint 122 是下一实施合同；前一 Gate 未关闭时后一合同不能通过配置跳级。Sprint
+  123–134 仍保持 Proposed，不得提前扩大 Paper、Testnet、Live、订单、资金或凭证权限。
 
 ## 自主量化交易员北极星目标 — 2026-07-21
 
@@ -57,9 +64,9 @@
 - 新增 [目标架构](architecture/34-next-generation-agent-runtime-audit-and-target-design.md)，包含三项根因、
   真实执行图、Keep/Rewrite/Delete、比较矩阵、目标拓扑、Mission/Turn/Step/Attempt/ToolCall/Approval/
   Delegation 状态机、核心 Schema、权限、交易安全、故障评测和无永久双写的垂直切换。
-- [Sprint 121](contracts/sprint-121-canonical-thread-turn-protocol.md) 状态为 Proposed：只迁移 Remote CLI
-  ask/chat，要求服务端 Thread/Turn/Item、可重放 event/reducer、SSE 恢复、正确两轮指代和 legacy Run/Task
-  行增量为零。尚未实现该合同，也未增加 paper、Testnet、live、order 或 capital 权限。
+- [Sprint 121](contracts/sprint-121-canonical-thread-turn-protocol.md) 已在 2026-07-21 完成并通过生产验收：Remote
+  CLI ask/chat 已使用服务端 Thread/Turn/Item、可重放 event/reducer 与 SSE 恢复，两轮指代正确且 legacy
+  Run/Task 行增量为零；未增加 paper、Testnet、live、order 或 capital 权限。
 
 ## Sprint 120 — 任意明确合约标的的精确行情交付 — 2026-07-16
 
