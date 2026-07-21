@@ -8,6 +8,14 @@
   Approval/ToolCall 与 producer lineage，形成不可变、可修正但不可覆盖的 `StrategyOutcomeV1`。
 - Lesson 只以 candidate 形式生成；未经独立审核不得进入 active Memory、Skill、策略或组合政策。本 Sprint
   不自动调参、不生成策略代码，也不改变任何 paper/live/order/capital 权限。
+- 已实现 `StrategyOutcomeV1` 与不可变账本：Outcome 精确绑定 StrategyVersion/Card/Manifest、参数、数据/成本
+  窗口、regime、Mission CompletionProof、Evidence、Artifact 及可选 Approval/ToolCall/PortfolioWindow；未结算、
+  过期来源或 unknown effect 均 fail closed，修正只追加 `corrects`/`supersedes` 记录。
+- 已实现 `LessonCandidateV1` 提议/审核/过期生命周期、support/opposition/stance/confidence method 和有界
+  `active_for_context` 投影；模型/runtime 不能自批，单次盈利不会自动激活 Memory/Skill/策略/组合政策。
+- migration `0033` 新增 outcome、lesson candidate 与 append-only review 表。Sprint 定向回归 37 passed，
+  PostgreSQL offline migration 到 `0033` 通过。完整 `./scripts/check.sh` 通过：frontend 15 tests/build、Ruff、
+  严格 mypy（193 source files）与 Python 728 tests（保留 2 个既有 OKX coroutine warnings）；部署待执行。
 
 ## Sprint 124 — Approval and External Effect Reconciliation 已完成 — 2026-07-21
 

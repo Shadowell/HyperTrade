@@ -273,6 +273,18 @@ Public projections expose only bounded status, reason and timestamps—never app
 or private reasoning. These are runtime/domain contracts, not newly enabled public trading endpoints: production
 capabilities and credentials remain read-only/absent.
 
+## Strategy Outcome and Lesson Contracts
+
+`StrategyOutcomeV1` and `LessonCandidateV1` are internal domain contracts in Sprint 125; they do not add trading
+endpoints. Outcome append validates canonical strategy identity, settled data/cost windows, Mission completion,
+Evidence freshness and any effect reconciliation before persisting a content hash. The same idempotency key with a
+different payload is rejected; source corrections append a new record with `corrects_id` or `supersedes_id`.
+
+Lesson candidates expose claim, supporting/opposing Outcome IDs, stance, scope, regimes, confidence method,
+validity and review status. Only reviewed active Lessons are eligible for bounded context retrieval. Public
+projections contain no raw market/order series, credentials, prompts or private reasoning, and no Lesson review
+automatically changes Memory, Skill, strategy, portfolio policy or execution permissions.
+
 ## Legacy Agent Sessions, Tasks and Runs
 
 `AgentTask` is the durable control record. `AgentRun` is one immutable execution

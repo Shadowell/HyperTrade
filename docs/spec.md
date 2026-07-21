@@ -83,6 +83,15 @@ state, recovery and operator override are durable and audited. The implementatio
 only and adds no production paper, Testnet, live, order or capital capability. Sprint 125 will consume these
 canonical outcomes to build the Strategy Outcome/Lesson Ledger.
 
+Sprint 125 implements that immutable learning boundary. `StrategyOutcomeV1` binds a settled research rejection,
+validated backtest or paper observation to the exact strategy lineage/version/Card, manifest/code identity,
+parameters, data/cost window, regime, metrics, Evidence/Artifact, Mission CompletionProof and any Approval/ToolCall
+or observation-window facts. Corrections append new hash-bound records. `LessonCandidateV1` keeps support,
+opposition, unknowns, scope, regime, confidence method and validity visible; only an independently reviewed active
+Lesson is context-eligible. The ledger does not auto-approve Memory, Skill, strategy or portfolio policy and does
+not run research or mutate trading state. Sprint 126 will extend BitPro's stable read contract for aligned strategy
+returns and execution-quality evidence.
+
 ## Users
 
 - Operator running audited agent research and execution workflows.

@@ -48,7 +48,9 @@ question to evidence-backed strategy iteration—not an unattended trading bot.
 > use a server-owned Thread/Turn/Item event protocol; the Web natural-language workspace uses the same protocol,
 > and new Missions use an append-only V2 event reducer plus independent completion proof. A parameter-bound,
 > one-time approval and write-ahead effect protocol now exists for isolated adapters, while production Mission
-> capabilities remain read-only. Desktop, TUI and local compatibility paths still
+> capabilities remain read-only. Settled strategy research facts can now be recorded in an immutable Outcome
+> ledger and proposed as review-gated Lessons; no candidate can silently activate Memory or trading policy.
+> Desktop, TUI and local compatibility paths still
 > contain Run/Task/Mission differences. The fixed 100-task suite is useful regression evidence, not an overall
 > production-grade certification.
 
@@ -99,6 +101,12 @@ External writes must first persist an exact-parameter PolicyDecision, optional o
 DispatchIntent/ToolCall record; timeouts remain `effect_unknown` until reconciliation. No paper, Testnet, live,
 order or capital write capability is enabled by this foundation. Desktop, TUI and local compatibility paths are
 not migrated yet; remaining cross-surface cutover and Supervisor integration remain target work.
+
+Strategy learning is source-bound: a settled Outcome must reference a canonical strategy version/Card, data and
+cost window, current passing Mission proof, active Evidence and any relevant reconciled effects. Corrections append
+new records instead of rewriting history. Lesson candidates preserve supporting, opposing and unknown facts and
+become context-eligible only after independent review; this does not authorize Memory, strategy, portfolio or
+execution changes.
 
 See the [current implementation snapshot](docs/architecture/33-system-architecture.md) and the
 [evidence-driven target architecture](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md).

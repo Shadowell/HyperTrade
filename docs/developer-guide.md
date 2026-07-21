@@ -227,6 +227,16 @@ the external adapter is invoked only after the transaction commits. Ambiguous wr
 must be reconciled without automatic redispatch. The service allows write execution only in the `isolated`
 environment by default; this foundation does not expose production paper, Testnet, live or capital writes.
 
+#### Strategy Outcome and Lesson Ledger (`backend/src/hypertrade/research/outcome_ledger.py`)
+
+`StrategyOutcomeV1` is an immutable, content-hashed projection over already settled facts. Before append, the
+service validates the exact StrategyVersion/Card/Manifest, completed Experiment when applicable, current passing
+Mission CompletionProof, active Evidence, consumed Approval, reconciled ToolCall and matching paper observation
+window. Source corrections append `corrects_id`/`supersedes_id` records and never overwrite an Outcome.
+`LessonCandidateV1` preserves supporting and opposing Outcome refs, scope, regimes, confidence method and expiry.
+Only a non-model reviewer can activate it for bounded context retrieval; activation does not create Memory or
+modify strategy, portfolio, paper or execution state.
+
 #### AgentKernel (`backend/src/hypertrade/agent/kernel.py`)
 
 Orchestrates Agent runs:
@@ -644,6 +654,10 @@ rows are reducer-backed; migrated historical rows use `legacy_non_replayable`.
 agent_effect_audit_events / agent_effect_circuits**: Canonical policy, one-time approval, write-ahead intent,
 effect lifecycle, audit and shared circuit state. Revision `0032` creates these structures. Approval plaintext
 tokens and raw external responses are not persisted.
+
+**strategy_outcomes / strategy_lesson_candidates / strategy_lesson_reviews**: Immutable settled strategy facts,
+review-gated lesson projections and append-only human review decisions. Revision `0033` creates these structures;
+raw market series, orders, credentials, prompts and private reasoning are forbidden.
 
 **agent_runs**: Agent execution records
 ```sql

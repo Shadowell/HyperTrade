@@ -159,6 +159,10 @@ quarantine。旧 Mission 明确标记为 `legacy_non_replayable`，不会以伪�
    保留在账本中；重要假设失效时再产生有上限的 Plan diff，而不是无限重试。
 7. Mission 完成后，`OperatorResponseV1` 输出有证据约束的结论和安全下一步。深入的 Plan、步骤、预算、
    工具和审批信息在授权审计视图中查看，不混入默认答案。
+8. 已结算研究事实可以追加为 `StrategyOutcomeV1`；它引用策略版本、数据/成本窗口、Evidence、当前完成证明和
+   已确定 effect，不复制原始行情/订单。多个 Outcome 只能生成待审核 Lesson，冲突与反对证据必须保留。
+9. 只有 reviewed active Lesson 可作为有界 Context source；它不能替代当前市场/BitPro Evidence，也不会自动
+   修改 Memory、Skill、Strategy、PortfolioPolicy 或任何执行权限。
 
 策略研究复用既有的 Evidence、Experiment Manifest、StrategyCard、robustness 和 Portfolio
 projections。它们是研究事实和复核材料，不是自动执行授权；BitPro 负责策略和回测系统事实，
@@ -173,6 +177,7 @@ HyperTrade 不持久化 BitPro 的完整蜡烛、权益、交易、订单或持�
 | 预算与并发 | 事务性 token/tool/model/duration reservation、AnyIO bounded concurrency | 无剩余预算时停止或形成降级交付 |
 | 审计与重放 | V2 Mission events、deterministic reducer、projection hash、idempotency、SSE cursor | gap、冲突、未知版本或 stale fencing 会 quarantine；旧记录为 `legacy_non_replayable` |
 | 外部副作用 | 参数/版本/policy 绑定的一次性 Approval、write-ahead DispatchIntent、持久 ToolCall/circuit/reconciliation | deny 不可覆盖；超时进入 `effect_unknown` 且不自动重发，未对账时阻止完成 |
+| 策略学习 | 不可变 Outcome、append-only correction、reviewed Lesson、support/opposition/validity | 未结算、过期来源、unknown effect 或未审核 Lesson 不进入学习上下文 |
 | 数据保护 | redaction、结果大小限制、metadata-first artifacts | 不保存凭据、原始工具结果、完整 prompt 或私有推理 |
 | 策略代码 | UDS isolated sandbox、非 root、无网络、只读根、无 Docker socket、资源限制、digest 绑定 | socket/digest 不可用时生产返回 503，绝不回退到 API/宿主子进程 |
 | 评测 | 独立 API、数据库、网络和合成事实；生产禁用 fixture | 评测产物不进入生产事实，也不授予交易权限 |

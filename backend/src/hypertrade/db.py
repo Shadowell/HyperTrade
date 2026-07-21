@@ -1497,6 +1497,69 @@ class ExperimentEvidenceLink(Base, TimestampMixin):
     created_by: Mapped[str] = mapped_column(String(128), default="experiment_ledger", index=True)
 
 
+class StrategyOutcome(Base):
+    """Immutable settled strategy result bound to canonical source facts."""
+
+    __tablename__ = "strategy_outcomes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("sout"))
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    outcome_type: Mapped[str] = mapped_column(String(48), index=True)
+    strategy_lineage_id: Mapped[str] = mapped_column(String(32), index=True)
+    strategy_version_id: Mapped[str] = mapped_column(String(32), index=True)
+    strategy_card_id: Mapped[str] = mapped_column(String(64), index=True)
+    manifest_id: Mapped[str] = mapped_column(String(32), index=True)
+    experiment_execution_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    mission_id: Mapped[str] = mapped_column(String(32), index=True)
+    observation_window_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    corrects_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    supersedes_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    settled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    outcome_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class StrategyLessonCandidate(Base):
+    """Review-gated lesson projection; proposed lessons are never prompt-usable."""
+
+    __tablename__ = "strategy_lesson_candidates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("lesn"))
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(24), default="proposed", index=True)
+    stance: Mapped[str] = mapped_column(String(24), index=True)
+    target_type: Mapped[str] = mapped_column(String(32), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    lesson_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    reviewed_by: Mapped[str] = mapped_column(String(128), default="", index=True)
+    review_reason: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class StrategyLessonReview(Base):
+    """Append-only human review fact for one lesson candidate."""
+
+    __tablename__ = "strategy_lesson_reviews"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("lrev"))
+    lesson_id: Mapped[str] = mapped_column(String(32), index=True)
+    decision: Mapped[str] = mapped_column(String(16), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    decided_by: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class StrategyLineage(Base, TimestampMixin):
     """Stable mandate-scoped strategy identity; never stores mutable evidence."""
 

@@ -64,6 +64,14 @@ git diff --check
 验收 fixture 覆盖成功、失败、冲突、过期、来源修正、窗口未结算、effect_unknown 和重复事件；不得以随机收益
 或合成行情代替真实可引用结果。
 
+## Local Implementation Evidence
+
+- `StrategyOutcomeV1`、append-only correction、canonical source validation、deterministic replay hash、
+  `LessonCandidateV1` review/expiry/conflict/context projection 与 migration `0033` 已实现。
+- Sprint 合同及既有 Experiment、Memory、PortfolioWindow、Mission replay/Alembic 定向回归 37 passed，
+  PostgreSQL offline migration 通过。完整 `./scripts/check.sh` 通过 frontend 15 tests/build、Ruff、严格 mypy
+  （193 source files）与 Python 728 tests（2 个既有 OKX warnings）；部署验收待执行。
+
 ## Handoff
 
 Sprint 126 扩展 BitPro 稳定合同，提供策略级对齐收益与执行质量数据，使 Outcome Ledger 能支持参数研究、
