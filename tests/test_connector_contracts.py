@@ -53,3 +53,30 @@ def test_connector_dispatches_bounded_return_series_as_read_only() -> None:
     )
     assert descriptor.safe_read is True
     assert descriptor.requires_approval is False
+
+
+def test_connector_serializes_matrix_members_for_the_rest_contract() -> None:
+    seen_query: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/strategy-evidence/aligned-return-matrix":
+            seen_query.update(request.url.params)
+            return httpx.Response(200, json={"success": True, "data": {"status": "fixture"}})
+        raise AssertionError(f"unexpected connector request: {request.url}")
+
+    settings = Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2")
+    client = BitProMcpClient(
+        settings=settings,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    connector = BitProConnector(settings=settings, adapter=BitProToolAdapter(client))
+
+    connector.execute_read_tool(
+        "strategy_return_matrix",
+        {"members": ["paper:first", "paper:second"], "max_points": 50},
+    )
+
+    assert seen_query["members"] == "paper:first,paper:second"
+    assert seen_query["max_points"] == "50"

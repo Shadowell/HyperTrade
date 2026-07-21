@@ -12,9 +12,15 @@
 - HyperTrade 已实现 fail-closed 消费者和 migration `0034`：未知版本、hash 不符、乱序/重复/未来点、缺失成本、
   denominator 漂移或无缺失原因均被拒绝；数据库只保存 summary/hash/ref，不保存 points 或 matrix rows。
 - 双侧定向回归通过：HyperTrade 17 tests，BitPro 24 tests。HyperTrade 完整 `./scripts/check.sh` 通过：
-  frontend 15 tests/build、Ruff、严格 mypy（194 source files）与 Python 741 tests（保留 2 个既有 OKX
+  frontend 15 tests/build、Ruff、严格 mypy（194 source files）与 Python 742 tests（保留 2 个既有 OKX
   coroutine warnings）；BitPro 标准 `./scripts/check.sh` 通过。BitPro PR/合并、双侧部署与生产只读 canary
   完成后关闭 Sprint 126 Gate。
+- BitPro PR `#590` 已合并并由 workflow `29821517260` 成功部署；HyperTrade 首次实现提交 `4af3230` 由
+  workflow `29821548066` 成功部署。生产端到端只读 canary 通过 HyperTrade adapter 校验真实 paper source：
+  return series 35/35 点、成本完整且 content/source hash 均有效；execution quality 返回 143 fills 并显式保留
+  5 个 data gaps；双成员 matrix 固定 denominator=2，因合同不兼容明确返回不可比较而未强行对齐。
+- Canary 同时发现 HyperTrade REST adapter 对 matrix member list 缺少逗号编码；已补充加法兼容序列化和回归，
+  完整检查以 Python 742 tests 再次通过，修复部署完成后关闭 Sprint 126。
 
 ## Sprint 125 — Reviewed Strategy Outcome Ledger 已完成 — 2026-07-21
 

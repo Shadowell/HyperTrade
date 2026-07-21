@@ -385,7 +385,11 @@ class BitProToolAdapter:
         """Read a BitPro-owned aligned matrix; HyperTrade validates the frozen contract."""
         self.last_tool_calls = []
         self._preflight()
-        return _ensure_dict(self._call("strategy_return_matrix", dict(parameters)))
+        params = dict(parameters)
+        members = params.get("members")
+        if isinstance(members, (list, tuple)):
+            params["members"] = ",".join(str(member) for member in members)
+        return _ensure_dict(self._call("strategy_return_matrix", params))
 
     def strategy_execution_quality(self, **parameters: Any) -> dict[str, Any]:
         """Read bounded execution-quality evidence with no order or strategy mutation."""
