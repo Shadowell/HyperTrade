@@ -11,7 +11,8 @@ HyperTrade 的最终目的，是成为一个在预先授权的资本与风险边
 复盘和迭代的量化交易员。
 
 系统不依赖某一条永久有效的策略。它持续观察策略在不同市场状态下的回测、模拟盘和实盘结果，识别策略
-何时有效、何时衰退、何时应当降权或退出；随后自动提出参数或策略变体，完成真实数据回测、样本外验证、
+何时有效、何时衰退、何时应当降权或退出；同时从真实市场现象、未覆盖 regime 和已有策略共同失效中提出
+全新的可证伪 Alpha 假设，而不只优化已有参数。系统随后自动生成新旧候选，完成真实数据回测、样本外验证、
 模拟盘孵化和组合评估，并让满足全部门禁的策略在授权范围内进入实盘，让不再适合当前行情或触发风险条件
 的策略退出实盘。
 
@@ -30,8 +31,9 @@ HyperTrade 的最终目的，是成为一个在预先授权的资本与风险边
    数据时点和未知项，而不是只给出一个不可审计的市场标签。
 2. **理解策略**：维护每个不可变策略版本的适用状态、失效条件、参数边界、成本敏感性、容量、回撤、
    样本外表现和模拟/实盘偏差。
-3. **自主研究**：从策略衰减、市场切换、组合冲突和失败实验中提出可证伪假设，生成有限候选，自动完成
-   数据预检、代码校验、回测矩阵、走步验证和鲁棒性检查。
+3. **自主研究**：同时运行已有策略进化与全新策略发现。从策略衰减、市场切换、组合冲突、未覆盖状态和失败
+   实验中提出可证伪假设，生成有限候选，自动完成新颖性、数据预检、代码校验、回测矩阵、走步验证和
+   鲁棒性检查。
 4. **自主组合**：根据当前市场状态、策略条件表现、相关性、尾部风险、容量和交易成本，计算有约束的目标
    权重；避免只按收益率排名，也避免频繁追涨杀跌式切换。
 5. **自主孵化**：让通过研究门禁的 Challenger 进入模拟盘，与现有 Champion 在相同口径和观察窗口下比较，
@@ -276,7 +278,8 @@ HyperTrade 保存研究元数据、不可变摘要、hash 和来源引用。大�
 ### Gate 1：可信研究闭环
 
 - 统一 Thread/Turn/Mission 事件真相源和可重放 Outcome Ledger。
-- 自动生成有限候选并完成真实数据回测、OOS、walk-forward、成本和鲁棒性验证。
+- 自动优化已有策略，并从没有 parent strategy 的全新 Alpha 假设生成新策略候选。
+- 对新旧候选完成真实数据回测、OOS、walk-forward、成本、选择偏差和鲁棒性验证。
 - 所有失败、尝试次数、数据窗口和 artifacts 可追溯。
 
 ### Gate 2：自动模拟盘进化
@@ -304,6 +307,25 @@ HyperTrade 保存研究元数据、不可变摘要、hash 和来源引用。大�
 - 连续多个市场状态和故障场景证明风险、回滚、恢复和审计成立。
 
 任何 Gate 未通过时，不能通过配置开关跳到下一阶段。
+
+## 交付合同序列
+
+北极星按依赖顺序拆为以下 Proposed Sprint；前一合同未通过时，后一合同不能通过配置跳级：
+
+1. [Sprint 121](../contracts/sprint-121-canonical-thread-turn-protocol.md)：Remote CLI canonical Thread/Turn。
+2. [Sprint 122](../contracts/sprint-122-canonical-thread-turn-web-cutover.md)：Web canonical 协议切换。
+3. [Sprint 123](../contracts/sprint-123-canonical-mission-event-reducer.md)：Mission event reducer 与完成证明。
+4. [Sprint 124](../contracts/sprint-124-approval-effect-reconciliation.md)：Approval 与外部副作用对账。
+5. [Sprint 125](../contracts/sprint-125-reviewed-strategy-outcome-ledger.md)：Strategy Outcome/Lesson 账本。
+6. [Sprint 126](../contracts/sprint-126-bitpro-strategy-timeseries-contract.md)：BitPro 策略时序与执行证据合同。
+7. [Sprint 127](../contracts/sprint-127-existing-strategy-evolution-engine.md)：已有策略有界进化。
+8. [Sprint 128](../contracts/sprint-128-autonomous-strategy-discovery-lab.md)：全新策略自主发现。
+9. [Sprint 129](../contracts/sprint-129-unified-strategy-validation-funnel.md)：新旧候选统一验证漏斗。
+10. [Sprint 130](../contracts/sprint-130-autonomous-paper-incubation.md)：授权内自动模拟盘孵化。
+11. [Sprint 131](../contracts/sprint-131-regime-aware-shadow-allocator.md)：regime 感知 Shadow 组合。
+12. [Sprint 132](../contracts/sprint-132-live-trading-mandate-risk-engine.md)：实盘授权与确定性 Risk Engine。
+13. [Sprint 133](../contracts/sprint-133-live-canary-execution-reconciliation.md)：小额 Live Canary 与对账。
+14. [Sprint 134](../contracts/sprint-134-authorized-autonomous-portfolio-pilot.md)：授权内自主组合 Pilot。
 
 ## 非目标
 

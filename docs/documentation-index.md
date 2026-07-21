@@ -72,6 +72,7 @@
 - [Sprint 106–110 Research Operations Plan](architecture/29-research-operations-shadow-portfolio-roadmap.md#5-分期计划)
 - [Sprint 111–116 Professional Agent Runtime V2 Plan](architecture/30-professional-agent-runtime-v2-roadmap.md#7-sprint-路线)
 - [Sprint 121 Canonical Thread/Turn Protocol](contracts/sprint-121-canonical-thread-turn-protocol.md) - Remote CLI 首个垂直切换合同（Proposed）
+- [Sprint 122–134 Autonomous Quant Trader Delivery Contracts](architecture/35-autonomous-quant-trader-north-star.md#交付合同序列) - 从 Web canonical cutover、Outcome、新旧策略双轨研究到 Live Canary 和有限自主组合 Pilot
 
 ---
 

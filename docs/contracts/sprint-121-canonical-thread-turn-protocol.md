@@ -136,8 +136,9 @@ git diff --check
 
 ## Handoff
 
-Sprint 完成后，下一合同只迁移 Web natural-language workspace 到同一协议，并删除 Web 对 legacy run
-projection 的完成判断。Sprint 121 未完成前，不开始 Desktop/TUI/multi-agent/paper-write 切片。
+Sprint 完成后，[Sprint 122](sprint-122-canonical-thread-turn-web-cutover.md) 只迁移 Web natural-language
+workspace 到同一协议，并删除 Web 对 legacy run projection 的完成判断。Sprint 121 未完成前，不开始
+Desktop/TUI/multi-agent/paper-write 切片。
 
 后续开发者必须保留以下假设，若不成立先更新本合同和 spec：
 

@@ -1,5 +1,16 @@
 # Progress Log
 
+## 自主量化交易员 Sprint 122–134 合同序列 — 2026-07-21
+
+- 将北极星拆为 13 个依赖有序、单一结果的 Proposed 合同：Sprint 122 Web canonical cutover；123 Mission event
+  reducer/CompletionProof；124 Approval/effect reconciliation；125 Strategy Outcome/Lesson Ledger；126 BitPro
+  策略时序与执行证据合同；127 已有策略进化；128 全新策略发现；129 新旧候选统一验证；130 自动 Paper
+  孵化；131 regime Shadow allocator；132 LiveTradingMandate/Risk Engine；133 Live Canary；134 有限自主组合 Pilot。
+- 产品目标明确为双轨进化：既优化已有策略，也从真实市场现象、未覆盖 regime 和共同失效中冻结全新 Alpha
+  假设、检查新颖性、生成动态 DB `BaseStrategy` 候选，并使用与已有策略相同的严格验证漏斗。
+- 所有新合同状态均为 Proposed。Sprint 121 仍是下一实施合同；前一 Gate 未关闭时后一合同不能通过配置跳级。
+  本次仅编写合同与入口，不修改代码、部署、Paper、Testnet、Live、订单、资金或凭证权限。
+
 ## 自主量化交易员北极星目标 — 2026-07-21
 
 - 将产品所有者确认的最终目的固化为

@@ -22,12 +22,16 @@ BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储
 
 HyperTrade 的最终产品目标是成为一个在操作员预先定义的资本、风险、市场和授权期限内，能够持续自主研究、
 验证、组合、执行、复盘和迭代的量化交易员。它根据已经结算的回测、模拟盘和实盘结果识别策略适用状态与
-衰减，生成并验证新版本，根据当前市场状态配置多策略组合，并让合格策略在授权内进入实盘、让失效或越过
-风险条件的策略退出。
+衰减，同时从新的市场现象和未覆盖 regime 提出全新可证伪 Alpha 假设，而不只优化已有策略；系统生成并验证
+新旧候选，根据当前市场状态配置多策略组合，并让合格策略在授权内进入实盘、让失效或越过风险条件的策略退出。
 
 该目标及分阶段 Gate 定义在 [Autonomous Quant Trader North Star](architecture/35-autonomous-quant-trader-north-star.md)。
 这是长期目标，不改变当前 mainnet 禁用、人工批准、只读 Mission Catalog 或 Sprint 121 的范围；任何自动
 资金配置和实盘生命周期能力都必须通过新的合同、Risk Engine、LiveTradingMandate、Canary、对账和回滚门禁。
+
+依赖有序的 Proposed 交付合同现为 Sprint 121–134：先完成 canonical 协议、Mission event、Approval、Outcome
+和 BitPro 证据合同，再分别交付已有策略进化、全新策略发现、统一验证、自动 Paper、regime Shadow、
+LiveTradingMandate、Live Canary 和有限自主组合 Pilot。详细链接见北极星文档的“交付合同序列”。
 
 ## Canonical Agent Runtime Target
 
