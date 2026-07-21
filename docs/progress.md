@@ -1,5 +1,15 @@
 # Progress Log
 
+## Sprint 124 — Approval and External Effect Reconciliation 已启动 — 2026-07-21
+
+- Sprint 123 的 canonical Mission reducer、CompletionProof、生产 replay/hash Gate 已关闭，Sprint 124 合同正式
+  进入 Active。
+- 当前能力审计确认 Capability metadata 与通用 risk governance 已能表达 side-effect/idempotency，但 Mission
+  Runtime 尚无参数级一次性 Approval、write-ahead DispatchIntent、持久 ToolCall effect 状态或跨 worker
+  reconciler；现有 live/skill/promotion approval 是独立业务流程，不能替代 canonical Agent 协议。
+- 本 Sprint 只使用 fake/isolated write adapter 验证 crash boundary、unknown 与 reconciliation；生产不会新增
+  paper/Testnet/live/order/capital capability、凭证或授权。
+
 ## Sprint 123 — Canonical Mission Event Reducer 已完成 — 2026-07-21
 
 - Sprint 122 的实现、部署与生产浏览器 Gate 已关闭，Sprint 123 合同正式进入 Active。

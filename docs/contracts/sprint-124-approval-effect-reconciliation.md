@@ -1,6 +1,6 @@
 # Sprint 124 — Approval and External Effect Reconciliation
 
-> 状态：Proposed；依赖 Sprint 123 完成。
+> 状态：Active — Sprint 123 Gate 已关闭，正在实施 Approval 与外部副作用对账协议。
 
 ## Goal
 
