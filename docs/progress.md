@@ -1,5 +1,14 @@
 # Progress Log
 
+## Sprint 123 — Canonical Mission Event Reducer 已启动 — 2026-07-21
+
+- Sprint 122 的实现、部署与生产浏览器 Gate 已关闭，Sprint 123 合同正式进入 Active。
+- 代码审计确认当前 Mission projection 仍不是 event-sourced：`update_usage`、`set_current_step` 直接更新 read
+  model；Plan/Attempt event payload 不足以重建；Mission event envelope 缺少 aggregate/schema/reducer/fencing/
+  payload hash；Thread delivery 只看 Mission status，尚未验证独立 completion proof。
+- 本 Sprint 将复用 Sprint 121 的 canonical event/reducer 语义，先建立 Mission aggregate、离线 replay、
+  quarantine 与 `CompletionProofV1`，再切换 SQL/内存 store 和 Thread delivery；不扩大任何交易权限。
+
 ## Sprint 122 — Canonical Web Thread/Turn 已完成 — 2026-07-21
 
 - Web Harness natural-language workspace 已从 `/api/agent/runs/stream` 切换到 Sprint 121 的 canonical

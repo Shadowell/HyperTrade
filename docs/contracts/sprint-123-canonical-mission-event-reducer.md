@@ -1,6 +1,6 @@
 # Sprint 123 — Canonical Mission Event Reducer and Completion Proof
 
-> 状态：Proposed；依赖 Sprint 122 完成。
+> 状态：Active — Sprint 122 Gate 已关闭，正在实施 Mission event reducer 与 CompletionProof。
 > 目标架构：[34 下一代专业 Agent Runtime](../architecture/34-next-generation-agent-runtime-audit-and-target-design.md)。
 
 ## Goal
