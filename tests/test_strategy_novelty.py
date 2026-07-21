@@ -17,6 +17,17 @@ def test_explainable_feature_and_regime_difference_is_novel() -> None:
     assert report.reasons == ["explainable_feature_or_regime_difference"]
 
 
+def test_unrelated_strategy_family_does_not_require_correlation_evidence() -> None:
+    db, refs = seeded_discovery_db()
+    proposal = discovery_request(refs).proposals[0]
+    proposal.novelty_comparisons = []
+
+    report = StrategyDiscoveryService(db).assess_novelty(proposal, code_sha="c" * 64)
+
+    assert report.status == "novel"
+    assert report.unknowns == []
+
+
 def test_highly_correlated_candidate_is_existing_strategy_variant() -> None:
     db, refs = seeded_discovery_db()
     request = discovery_request(refs)

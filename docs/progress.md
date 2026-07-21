@@ -14,8 +14,9 @@
 - 代码先经本地禁止网络/文件/进程/动态执行/secret/无界循环检查，再通过窄化 BitPro
   `strategy_validate_code -> strategy_create` 合同写入 dynamic DB research candidate；配置显式关闭 Paper/Live，
   随后注册独立 ExperimentManifest/StrategyVersion。migration `0036` 与认证只读 discovery queue API 已实现。
-  当前定向与相邻回归 26 passed，Alembic 单 head 为 `0036`；完整 `./scripts/check.sh` 通过（frontend 15
-  tests，Python 765 tests，Ruff、mypy 198 source files），部署待执行。
+  当前定向与相邻回归 27 passed，Alembic 单 head 为 `0036`；修正可比策略范围后的完整
+  `./scripts/check.sh` 通过（frontend 15 tests，Python 766 tests，Ruff、mypy 198 source files）。实现提交
+  `faf2a35` 已由工作流 `29825692451` 部署并完成 `0035 -> 0036`、服务健康和 SHA Gate；新颖性修正待部署。
 
 ## Sprint 127 — Existing Strategy Evolution Engine 已完成 — 2026-07-21
 

@@ -319,9 +319,21 @@ class StrategyDiscoveryService:
                 reasons.append(f"code_fingerprint_match:{version.id}")
             if _spec_signature(manifest.strategy_spec.model_dump()) == candidate_signature:
                 reasons.append(f"equivalent_strategy_logic:{version.id}")
+            same_family = (
+                manifest.strategy_spec.strategy_category.casefold()
+                == proposal.hypothesis.strategy_family.casefold()
+            )
+            same_scope = bool(
+                set(manifest.strategy_spec.symbols)
+                & set(proposal.hypothesis.strategy_spec.symbols)
+            ) and bool(
+                set(manifest.strategy_spec.timeframes)
+                & set(proposal.hypothesis.strategy_spec.timeframes)
+            )
             comparison = comparison_by_id.get(version.id)
             if comparison is None:
-                unknowns.append(f"missing_comparison:{version.id}")
+                if same_family and same_scope:
+                    unknowns.append(f"missing_comparison:{version.id}")
                 continue
             if comparison.return_correlation is not None:
                 value = abs(comparison.return_correlation)
