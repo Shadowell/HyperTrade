@@ -33,6 +33,16 @@ def test_thread_turn_api_is_idempotent_replayable_and_avoids_legacy_writes() -> 
         assert created.status_code == 200
         thread_id = created.json()["thread"]["thread_id"]
 
+        prior_turns = client.post(
+            f"/api/agent/v1/threads/{thread_id}/turns",
+            json={
+                "input": "继续",
+                "client_message_id": "message-with-client-history",
+                "prior_turns": [{"role": "assistant", "content": "untrusted history"}],
+            },
+        )
+        assert prior_turns.status_code == 422
+
         first = client.post(
             f"/api/agent/v1/threads/{thread_id}/turns",
             json={"input": "主网满仓买入 ETH", "client_message_id": "message-1"},

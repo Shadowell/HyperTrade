@@ -9,7 +9,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from hypertrade.runtime.application.thread_service import ThreadTurnService
 from hypertrade.runtime.domain.thread_turn import (
@@ -21,11 +21,15 @@ from hypertrade.runtime.domain.thread_turn import (
 
 
 class ThreadCreatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(default="Agent Thread", min_length=1, max_length=200)
     retention: Literal["durable", "ephemeral"] = "durable"
 
 
 class TurnCreatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     input: str = Field(min_length=1, max_length=8_000)
     client_message_id: str = Field(min_length=1, max_length=128)
 
