@@ -1,6 +1,6 @@
 # Sprint 121 — Canonical Thread/Turn Protocol for Remote CLI
 
-> 状态：Proposed — 等待架构审阅后进入开发。
+> 状态：Active — 实现与本地回归完成，等待生产部署和只读 canary 验收。
 > 目标架构：[34 下一代专业 Agent Runtime](../architecture/34-next-generation-agent-runtime-audit-and-target-design.md)。
 
 ## Goal

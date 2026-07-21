@@ -44,9 +44,9 @@ question to evidence-backed strategy iteration—not an unattended trading bot.
 > to distinguish the current implementation from the canonical Thread/Turn architecture being built.
 
 > **Maturity note:** reviewed trading-research capabilities and selected read-only Mission requests are
-> deployed, but HyperTrade is not yet a complete professional general Agent runtime. The current system still
-> contains Run/Task/Mission compatibility paths, surface-specific conversation history and an event log that
-> cannot reconstruct every projection. The fixed 100-task suite is useful regression evidence, not an overall
+> deployed, but HyperTrade is not yet a complete professional general Agent runtime. Remote `ht ask/chat` now
+> use a server-owned Thread/Turn/Item event protocol; Web, Desktop, TUI and local compatibility paths still
+> contain Run/Task/Mission differences. The fixed 100-task suite is useful regression evidence, not an overall
 > production-grade certification.
 
 ### What HyperTrade Owns—and What It Does Not
@@ -88,10 +88,10 @@ flowchart LR
   C --> B["Isolated strategy sandbox<br/>digest-bound UDS"]
 ~~~
 
-Mission is the intended research-workflow record, but the current natural-language surfaces still include
-legacy Run/Task compatibility and do not yet share a durable Thread/Turn history. Reviewed capabilities,
-bounded observations, SQL leases and SSE Mission events are implemented; complete event reduction,
-cross-surface context, Approval and Supervisor integration are target work rather than finished claims.
+Mission is the intended research-workflow record. Remote CLI natural-language requests use canonical
+Thread/Turn/Item events, deterministic projection replay and cursor-resumable SSE without writing legacy
+Run/Task rows. Web, Desktop, TUI and local compatibility paths are not migrated yet; cross-surface cutover,
+Approval and Supervisor integration remain target work rather than finished claims.
 
 See the [current implementation snapshot](docs/architecture/33-system-architecture.md) and the
 [evidence-driven target architecture](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md).
@@ -112,7 +112,7 @@ See the [current implementation snapshot](docs/architecture/33-system-architectu
 
 | Capability | Description | Status |
 |-----------|-------------|--------|
-| Natural Language | Free-form prompts with bounded planning and tool selection | Bounded coverage; canonical Thread/Turn pending |
+| Natural Language | Free-form prompts with bounded planning and tool selection | Remote CLI canonical; other surfaces pending |
 | Tool Calling | Reviewed registry, scope, schema and idempotency enforcement | Read catalog deployed; Mission approval loop incomplete |
 | Market Intelligence | OKX SWAP tickers, candles, funding, OI, relative strength indicators | Delivered read capability |
 | Global Market | Cross-asset regime classification (equities, volatility, FX, rates) | Delivered read capability |
@@ -527,7 +527,7 @@ See [Runbooks](docs/runbooks/) for detailed deployment and monitoring procedures
 | Global Market — cross-asset regime classification | Production |
 | Vide Coding (opus-4.6) provider | Production |
 | Enhanced output formatting | Complete |
-| Agent Session and Task OS | Legacy-compatible; canonical Thread/Turn replacement proposed |
+| Agent Session and Task OS | Remote CLI canonical Thread/Turn implemented; other surfaces legacy-compatible |
 | Research Evidence V2 contract | Production |
 | Multi-Agent research graph V1 | Contracts/tests delivered; not in default Mission loop |
 | Reproducible experiment ledger | Production |

@@ -1,7 +1,7 @@
 # 33 HyperTrade 系统架构
 
-> 状态：当前实现快照（2026-07-16），不是下一代架构完成声明。真实代码和运行审计确认当前仍有
-> Run/Task/Mission 双路径、客户端上下文差异和不完整事件重放；目标架构与切换计划见
+> 状态：当前实现快照（2026-07-21），不是下一代架构完成声明。Remote CLI 已实现 canonical
+> Thread/Turn/Item 垂直切片；其他 surface 仍有 Run/Task/Mission 双路径和客户端上下文差异。目标架构与切换计划见
 > [34 下一代专业 Agent Runtime](34-next-generation-agent-runtime-audit-and-target-design.md)。历史路线图与
 > 逐 Sprint 设计见 [30 Professional Agent Runtime V2 路线图](30-professional-agent-runtime-v2-roadmap.md)
 > 和 [31 Professional Agent Runtime V2 技术设计](31-professional-agent-runtime-v2-technical-design.md)。
@@ -27,18 +27,18 @@ HyperTrade 只能通过稳定的 MCP/API 合同使用 BitPro。它不直接读�
 
 ## 2. 架构原则
 
-1. **Mission 是研究任务的目标真相源，但当前还不是完整交互协议。** 每次新式研究由可持久化的 Mission、
-   不可变 Plan 版本和 Step attempt 表示；不过默认自然语言入口、Local CLI 和部分 surface 仍保留
-   AgentTask/AgentRun/AgentKernel 兼容分支。Thread/Turn/Item 尚未成为服务端唯一真相源。
+1. **Mission 是研究任务的目标真相源，Thread 是 Remote CLI 的交互真相源。** Remote `ht ask/chat` 由
+   server-owned Thread/Turn/Item、versioned event 和 deterministic reducer 驱动，并显式关联只读 Mission；
+   Web、Desktop、TUI、Local CLI 仍保留 AgentTask/AgentRun/AgentKernel 兼容分支。
 2. **模型不能扩大权限。** 模型只可提出受 schema 限制的计划或输入；Capability Catalog、Tool Policy、
    Approval 与风险门禁在调用前后独立验证。
 3. **结论必须可追溯。** 默认操作员答案只显示结论、置信度、证据、未知项和安全下一步。模型文字、
    工具原始输出或“我已完成”的声明本身不能完成 Mission。
 4. **数据不足时显式失败。** stale、不可用、冲突、超预算或未审批状态会成为 `waiting_input`、
    `waiting_approval`、`needs_review` 或受分类的失败，绝不由模型补造事实。
-5. **目标原则是客户端只投影服务端状态，但当前尚未完全满足。** 各端都能消费 REST/SSE 结果；不过
-   Remote CLI/Web 未建立服务端 Thread，Desktop 会提交最近用户文本，Local CLI/TUI 仍有本地/legacy
-   fallback。统一 surface 投影属于 architecture 34 的 vertical cutover。
+5. **Remote CLI 只投影服务端状态，其他 surface 尚未完成切换。** Remote chat 只提交
+   `thread_id + input + client_message_id`，使用 cursor SSE 恢复；Web 尚未迁移，Desktop 仍提交最近用户文本，
+   Local CLI/TUI 仍有本地/legacy fallback。统一 surface 投影属于 architecture 34 的后续 vertical cutover。
 6. **副作用最小化。** 当前 Mission Catalog 只暴露受治理的读取能力；任何后续 paper、Testnet 或
    live 写能力仍须独立的审批、幂等、风险和产品合同。
 

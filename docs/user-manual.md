@@ -113,6 +113,10 @@ uv run ht /login
 uv run ht
 ```
 
+远程 `ht ask/chat` 使用服务端持久化的 Thread/Turn/Item 协议。`ask` 创建单次 ephemeral Thread；交互式
+`chat` 在启动时创建一个 durable Thread，后续只提交新的输入和 `client_message_id`。CLI 不拼接或上传
+`prior_turns`，断线后从最后 SSE cursor 继续；若流在没有 Turn 终态事件时结束，会显示协议错误而不是伪装完成。
+
 **单次查询模式**：
 ```bash
 uv run hypertrade --local ask "看下目前市场的热度怎么样"
@@ -140,7 +144,8 @@ uv run hypertrade --local ask "看下目前市场的热度怎么样"
 
 ### Agent 任务控制
 
-每次新的本地或远程 Agent 请求都会创建持久 Task。Run 代表一次执行尝试，Task 负责
+本地 CLI 和尚未迁移的 surface 仍可创建持久 Task/Run；Remote `ht ask/chat` 改为创建 Thread/Turn，并把
+长期只读研究显式关联到 Mission。legacy Task 负责
 暂停、恢复、取消、重试、分支和故障恢复：
 
 ```bash

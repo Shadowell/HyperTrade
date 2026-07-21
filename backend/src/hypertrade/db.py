@@ -208,6 +208,116 @@ class AgentMission(Base, TimestampMixin):
     )
 
 
+class AgentThread(Base):
+    """Rebuildable projection for one server-owned conversation Thread."""
+
+    __tablename__ = "agent_threads"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), default="default", index=True)
+    owner: Mapped[str] = mapped_column(String(128), index=True)
+    title: Mapped[str] = mapped_column(String(200), default="Agent Thread")
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    retention: Mapped[str] = mapped_column(String(32), default="durable")
+    active_turn_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    event_cursor: Mapped[int] = mapped_column(Integer, default=0)
+    projection_hash: Mapped[str] = mapped_column(String(64), index=True)
+    quarantine_reason: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class AgentTurn(Base):
+    """Rebuildable Turn projection; uniqueness binds a client message to content."""
+
+    __tablename__ = "agent_turns"
+    __table_args__ = (
+        UniqueConstraint("thread_id", "client_message_id", name="uq_agent_turn_client_message"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    client_message_id: Mapped[str] = mapped_column(String(128))
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    input_item_id: Mapped[str] = mapped_column(String(32))
+    response_item_id: Mapped[str] = mapped_column(String(32), default="")
+    mission_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    resolved_context_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class AgentThreadItem(Base):
+    """Public, bounded Item projection produced only by the Thread reducer."""
+
+    __tablename__ = "agent_thread_items"
+    __table_args__ = (
+        UniqueConstraint("thread_id", "sequence", "id", name="uq_agent_thread_item_sequence"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(32), index=True)
+    turn_id: Mapped[str] = mapped_column(String(32), index=True)
+    item_type: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    content_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class AgentThreadEvent(Base):
+    """Append-only canonical event envelope for Thread/Turn/Item replay."""
+
+    __tablename__ = "agent_thread_events"
+    __table_args__ = (
+        UniqueConstraint("thread_id", "thread_sequence", name="uq_agent_thread_event_sequence"),
+        UniqueConstraint("thread_id", "aggregate_version", name="uq_agent_thread_event_version"),
+        UniqueConstraint("thread_id", "idempotency_key", name="uq_agent_thread_event_idempotency"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(32), index=True)
+    event_type: Mapped[str] = mapped_column(String(96), index=True)
+    aggregate_type: Mapped[str] = mapped_column(String(32), default="thread")
+    aggregate_version: Mapped[int] = mapped_column(Integer)
+    thread_sequence: Mapped[int] = mapped_column(Integer)
+    schema_version: Mapped[int] = mapped_column(Integer, default=1)
+    reducer_version: Mapped[int] = mapped_column(Integer, default=1)
+    tenant_id: Mapped[str] = mapped_column(String(128), default="default", index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    causation_id: Mapped[str] = mapped_column(String(64), default="")
+    correlation_id: Mapped[str] = mapped_column(String(64), default="")
+    actor: Mapped[str] = mapped_column(String(128), default="runtime", index=True)
+    policy_snapshot_hash: Mapped[str] = mapped_column(String(64), default="")
+    payload_hash: Mapped[str] = mapped_column(String(64), index=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentThreadLease(Base):
+    """Operational fencing state kept outside event-reduced public projections."""
+
+    __tablename__ = "agent_thread_leases"
+
+    thread_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    worker_id: Mapped[str] = mapped_column(String(128), index=True)
+    fencing_token: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
 class AgentMissionEvent(Base):
     """Append-only, cursor-addressable Mission event without private reasoning."""
 

@@ -160,18 +160,24 @@ from hypertrade.runtime.adapters.supervisor import (
     SqlSupervisionStore,
     deterministic_worker,
 )
+from hypertrade.runtime.adapters.thread_store import (
+    InMemoryThreadStore,
+    SqlAlchemyThreadStore,
+)
 from hypertrade.runtime.adapters.tool_runtime import (
     GovernedToolExecutor,
     InMemoryObservationStore,
     SqlObservationStore,
     builtin_handlers,
 )
+from hypertrade.runtime.api.thread_turn import build_thread_turn_router
 from hypertrade.runtime.application.entrypoint import (
     is_mission_canary,
     mission_request_for_prompt,
     mission_run_projection,
 )
 from hypertrade.runtime.application.service import MissionRuntime
+from hypertrade.runtime.application.thread_service import ThreadTurnService
 from hypertrade.runtime.domain.capabilities import (
     CapabilityProposalV1,
     CapabilityReviewV1,
@@ -373,6 +379,11 @@ def create_app(
         if database.url == "sqlite:///:memory:"
         else SqlAlchemyMissionStore(database.url)
     )
+    thread_store = (
+        InMemoryThreadStore()
+        if database.url == "sqlite:///:memory:"
+        else SqlAlchemyThreadStore(database.url)
+    )
     capability_catalog = (
         InMemoryCapabilityCatalog()
         if database.url == "sqlite:///:memory:"
@@ -452,6 +463,12 @@ def create_app(
         CatalogCapabilityPolicy(capability_catalog),
         context_engine,
     )
+    thread_turn_service = ThreadTurnService(
+        thread_store,
+        mission_store,
+        mission_runtime,
+        worker_enabled=app_settings.mission_runtime_worker_enabled,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -463,6 +480,7 @@ def create_app(
         finally:
             for resource in (
                 mission_store,
+                thread_store,
                 capability_catalog,
                 observation_store,
                 context_artifact_store,
@@ -481,6 +499,8 @@ def create_app(
     app.state.bitpro_adapter = bitpro_adapter
     app.state.mission_store = mission_store
     app.state.mission_runtime = mission_runtime
+    app.state.thread_store = thread_store
+    app.state.thread_turn_service = thread_turn_service
     app.state.capability_catalog = capability_catalog
     app.state.tool_executor = tool_executor
     app.state.context_engine = context_engine
@@ -517,6 +537,7 @@ def create_app(
         return str(username)
 
     AdminUser = Annotated[str, Depends(require_admin)]
+    app.include_router(build_thread_turn_router(thread_turn_service, require_admin))
 
     def mission_request_key(request: Request) -> str:
         supplied = request.headers.get("Idempotency-Key", "").strip()

@@ -1,5 +1,24 @@
 # Progress Log
 
+## Sprint 121 — Canonical Remote CLI Thread/Turn 实现待生产验收 — 2026-07-21
+
+- 新增 server-owned Thread/Turn/Item 领域合同、versioned event envelope、deterministic reducer、projection hash、
+  SQLite/PostgreSQL SQL adapter、内存 adapter、Alembic 0029/0030 迁移以及独立 worker fencing lease。
+- 新增认证后的 `/api/agent/v1/threads` 创建/读取、Turn 创建/读取/interrupt、cursor event replay 和 SSE；
+  `client_message_id` 在 Thread 内与内容绑定，相同内容重放返回原 Turn，不同内容返回 409。
+- Remote `ht ask/chat` 已切换到 canonical API：ask 使用 ephemeral Thread，chat 复用一个 durable Thread，只提交
+  新输入，不提交 `prior_turns`，且无 terminal event 的 EOF 会被视为协议错误。Web/Desktop/TUI/Local CLI
+  与 legacy 历史读取不在本 Sprint 迁移范围。
+- canonical context compiler 只使用服务端 committed Items；两轮“比较 momentum/mean_reversion”→“后者最大
+  回撤”解析为 `mean_reversion_v1`。Turn 只关联现有 read-only Mission，没有新增 paper/Testnet/live/order/
+  capital capability，也没有写 `AgentRun`/`AgentTask`。
+- 定向 domain/API/SQL replay/worker recovery/CLI E2E 为 13 passed；现有 CLI/API/Mission/worker 回归为
+  129 passed。PostgreSQL 方言离线 Alembic 0028→0030 SQL 生成通过；SQLite 全量 Alembic 被历史 0001 的
+  PostgreSQL-only `CREATE EXTENSION vector` 阻断，但新 SQL store/replay 已在 SQLite 测试通过。
+- `./scripts/check.sh` 已通过：frontend lint、9 个 frontend tests、production build、Ruff、严格 mypy 和
+  687 个 Python tests 全部通过；保留 2 个既有 OKX coroutine warnings。当前等待提交、部署和生产只读
+  canary；在 Gate 关闭前不进入 Sprint 122 实现。
+
 ## 自主量化交易员 Sprint 122–134 合同序列 — 2026-07-21
 
 - 将北极星拆为 13 个依赖有序、单一结果的 Proposed 合同：Sprint 122 Web canonical cutover；123 Mission event

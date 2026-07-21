@@ -60,6 +60,11 @@ Delivery follows vertical cutover with no permanent dual writes. Sprint 121 firs
 the canonical protocol and requires correct real two-turn entity resolution, deterministic event replay, SSE
 recovery, zero false completion and zero legacy Run/Task writes. Web, Desktop and TUI migrate in later slices.
 
+Sprint 121 implementation now provides the Remote CLI vertical slice: authenticated Thread/Turn/Item REST/SSE,
+content-bound client idempotency, deterministic in-memory/SQL replay, worker fencing, server-owned follow-up
+resolution and explicit read-only Mission links. Production canary acceptance remains required before the Sprint
+is closed; Web/Desktop/TUI/Local CLI and legacy historical reads are unchanged.
+
 ## Users
 
 - Operator running audited agent research and execution workflows.

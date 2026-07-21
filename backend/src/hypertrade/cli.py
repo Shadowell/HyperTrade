@@ -22,7 +22,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol, TextIO, cast
+from typing import Any, Literal, Protocol, TextIO, cast, runtime_checkable
 from urllib.parse import quote
 
 import httpx
@@ -423,6 +423,32 @@ class AgentClient(Protocol):
     ) -> dict[str, Any]: ...
 
     def execute_live_order_intent(self, intent_id: str) -> dict[str, Any]: ...
+
+
+@runtime_checkable
+class CanonicalThreadClient(Protocol):
+    """Remote-only protocol used by canonical ask/chat surfaces."""
+
+    def create_thread(self, *, title: str, retention: str) -> dict[str, Any]: ...
+
+    def start_thread_turn(
+        self,
+        thread_id: str,
+        prompt: str,
+        *,
+        client_message_id: str,
+    ) -> dict[str, Any]: ...
+
+    def get_thread_turn(self, thread_id: str, turn_id: str) -> dict[str, Any]: ...
+
+    def stream_thread_events(
+        self,
+        thread_id: str,
+        *,
+        after: int = 0,
+    ) -> Iterator[dict[str, Any]]: ...
+
+    def interrupt_thread_turn(self, thread_id: str, turn_id: str) -> dict[str, Any]: ...
 
 
 class AgentClientFactory(Protocol):
@@ -918,6 +944,76 @@ class AgentApiClient:
                     data_lines.append(line.split(":", 1)[1].strip())
             if data_lines:
                 yield _parse_sse_event(event_name, data_lines)
+
+    def create_thread(self, *, title: str, retention: str) -> dict[str, Any]:
+        return self._post_object(
+            "/api/agent/v1/threads",
+            {"title": title, "retention": retention},
+        )
+
+    def start_thread_turn(
+        self,
+        thread_id: str,
+        prompt: str,
+        *,
+        client_message_id: str,
+    ) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/agent/v1/threads/{quote(thread_id, safe='')}/turns",
+            {"input": prompt, "client_message_id": client_message_id},
+        )
+
+    def get_thread_turn(self, thread_id: str, turn_id: str) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/agent/v1/threads/{quote(thread_id, safe='')}/turns/"
+            f"{quote(turn_id, safe='')}"
+        )
+
+    def stream_thread_events(
+        self,
+        thread_id: str,
+        *,
+        after: int = 0,
+    ) -> Iterator[dict[str, Any]]:
+        cursor = max(after, 0)
+        with self.client.stream(
+            "GET",
+            self._url(
+                f"/api/agent/v1/threads/{quote(thread_id, safe='')}/events/stream?after={cursor}"
+            ),
+            headers={"Last-Event-ID": str(cursor)},
+            timeout=_stream_timeout(config=self.config),
+        ) as response:
+            response.raise_for_status()
+            event_name = "message"
+            event_cursor = cursor
+            data_lines: list[str] = []
+            for line in response.iter_lines():
+                if line == "":
+                    if data_lines:
+                        event = _parse_sse_event(event_name, data_lines)
+                        event["cursor"] = event_cursor
+                        yield event
+                    event_name = "message"
+                    data_lines = []
+                    continue
+                if line.startswith("id:"):
+                    event_cursor = int(line.split(":", 1)[1].strip())
+                elif line.startswith("event:"):
+                    event_name = line.split(":", 1)[1].strip()
+                elif line.startswith("data:"):
+                    data_lines.append(line.split(":", 1)[1].strip())
+            if data_lines:
+                event = _parse_sse_event(event_name, data_lines)
+                event["cursor"] = event_cursor
+                yield event
+
+    def interrupt_thread_turn(self, thread_id: str, turn_id: str) -> dict[str, Any]:
+        return self._post_object(
+            f"/api/agent/v1/threads/{quote(thread_id, safe='')}/turns/"
+            f"{quote(turn_id, safe='')}/interrupt",
+            {},
+        )
 
     def list_tools(self) -> list[dict[str, Any]]:
         return self._get_list("/api/harness/tools", "tools")
@@ -2612,7 +2708,14 @@ def main(
         if not prompt:
             parser.error("ask requires a prompt")
         agent_client.login()
-        render_run_stream(agent_client, prompt, output=output)
+        if isinstance(agent_client, CanonicalThreadClient):
+            thread = agent_client.create_thread(title="CLI ask", retention="ephemeral")
+            thread_id = str(thread.get("thread", {}).get("thread_id") or "")
+            if not thread_id:
+                raise RuntimeError("canonical Thread creation returned no thread_id")
+            render_thread_turn_stream(agent_client, thread_id, prompt, output=output)
+        else:
+            render_run_stream(agent_client, prompt, output=output)
         return 0
 
     if args.command == "tui":
@@ -2669,6 +2772,14 @@ def run_chat(
     client.login()
     render_welcome_banner(client=client, output=output)
     history = configure_interactive_history(enabled=input_fn is input and sys.stdin.isatty())
+    thread_client = client if isinstance(client, CanonicalThreadClient) else None
+    thread_id = ""
+    thread_cursor = 0
+    if thread_client is not None:
+        thread = thread_client.create_thread(title="CLI chat", retention="durable")
+        thread_id = str(thread.get("thread", {}).get("thread_id") or "")
+        if not thread_id:
+            raise RuntimeError("canonical Thread creation returned no thread_id")
     while True:
         try:
             prompt = input_fn("ht> ").strip()
@@ -2685,7 +2796,16 @@ def run_chat(
             # specific tool surface without starting a free-form Agent run.
             handle_slash_command(prompt, client=client, output=output, input_fn=input_fn)
             continue
-        render_run_stream(client, prompt, output=output)
+        if thread_client is not None:
+            thread_cursor = render_thread_turn_stream(
+                thread_client,
+                thread_id,
+                prompt,
+                after=thread_cursor,
+                output=output,
+            )
+        else:
+            render_run_stream(client, prompt, output=output)
 
 
 def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
@@ -7178,6 +7298,133 @@ def _format_period(start: object, end: object) -> str:
     if start_text == "n/a" and end_text == "n/a":
         return "n/a"
     return f"{start_text}\n{end_text}"
+
+
+def render_thread_turn_stream(
+    client: CanonicalThreadClient,
+    thread_id: str,
+    prompt: str,
+    *,
+    after: int = 0,
+    output: TextIO | None = None,
+) -> int:
+    """Render one canonical Turn and reject an SSE EOF without terminal state."""
+
+    output = output or sys.stdout
+    created = client.start_thread_turn(
+        thread_id,
+        prompt,
+        client_message_id=new_id("cli_msg"),
+    )
+    turn = created.get("turn")
+    if not isinstance(turn, dict) or not str(turn.get("turn_id") or ""):
+        raise RuntimeError("canonical Turn creation returned no turn_id")
+    turn_id = str(turn["turn_id"])
+    cursor = max(after, 0)
+    terminal = ""
+    answer = ""
+    animator = _ThinkingAnimator(output)
+    animator.start("Thinking")
+    try:
+        for attempt in range(3):
+            for event in client.stream_thread_events(thread_id, after=cursor):
+                cursor = max(cursor, int(event.get("cursor") or 0))
+                payload = event.get("payload")
+                if not isinstance(payload, dict) or str(payload.get("turn_id") or "") != turn_id:
+                    continue
+                event_name = str(event.get("event") or event.get("event_type") or "")
+                if event_name == "turn.accepted":
+                    animator.update("Turn accepted")
+                elif event_name == "turn.started":
+                    animator.update("Running governed Mission")
+                elif event_name == "tool_call.started":
+                    content = payload.get("content")
+                    capability = (
+                        str(content.get("capability_id") or "governed_read")
+                        if isinstance(content, dict)
+                        else "governed_read"
+                    )
+                    animator.update(f"Executing {capability}")
+                elif event_name == "evidence_ready.completed":
+                    animator.update("Evidence ready")
+                elif event_name == "agent_message.completed":
+                    content = payload.get("content")
+                    if isinstance(content, dict):
+                        answer = str(content.get("text") or "")
+                    animator.update("Rendering answer")
+                elif event_name in {
+                    "turn.completed",
+                    "turn.failed",
+                    "turn.cancelled",
+                    "turn.expired",
+                }:
+                    terminal = event_name
+                    break
+            if terminal:
+                break
+            durable = client.get_thread_turn(thread_id, turn_id)
+            durable_turn = durable.get("turn")
+            status = str(durable_turn.get("status") or "") if isinstance(durable_turn, dict) else ""
+            if status in {"completed", "failed", "cancelled", "expired"}:
+                terminal = f"turn.{status}"
+                answer = answer or _canonical_answer(durable)
+                break
+            if status in {"waiting_input", "waiting_approval"}:
+                animator.stop()
+                print(_canonical_waiting_message(durable, status), file=output)
+                return cursor
+            if attempt < 2:
+                animator.update("Reconnecting event stream")
+    except httpx.HTTPError as exc:
+        animator.stop()
+        _print_remote_api_error(exc, output=output)
+        return cursor
+    finally:
+        animator.stop()
+
+    if not terminal:
+        print(
+            _paint(
+                "Protocol error: canonical Turn stream ended without a terminal event.",
+                "warning",
+                output=output,
+            ),
+            file=output,
+        )
+        return cursor
+    durable = client.get_thread_turn(thread_id, turn_id)
+    answer = answer or _canonical_answer(durable)
+    if answer:
+        print("", file=output)
+        print(answer, file=output)
+    elif terminal != "turn.completed":
+        print(_paint(f"Agent Turn ended as {terminal}.", "warning", output=output), file=output)
+    return cursor
+
+
+def _canonical_answer(payload: dict[str, Any]) -> str:
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return ""
+    for item in reversed(items):
+        if not isinstance(item, dict) or item.get("item_type") != "agent_message":
+            continue
+        content = item.get("content")
+        if isinstance(content, dict):
+            return str(content.get("text") or "")
+    return ""
+
+
+def _canonical_waiting_message(payload: dict[str, Any], status: str) -> str:
+    items = payload.get("items")
+    if isinstance(items, list):
+        for item in reversed(items):
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if isinstance(content, dict) and content.get("message"):
+                return str(content["message"])
+    return f"Agent Turn is {status}."
 
 
 def render_run_stream(
