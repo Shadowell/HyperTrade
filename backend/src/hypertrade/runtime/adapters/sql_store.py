@@ -256,9 +256,16 @@ class SqlAlchemyMissionStore:
             if row.version != expected_version:
                 raise MissionVersionConflict(mission_id)
             current = MissionStatus(row.status)
+            snapshot = await _load_snapshot(session, mission_id)
+            if target in TERMINAL_STATUSES:
+                # Lease fields are operational, not reducer state. Clear them
+                # before projection persistence so the ORM performs one UPDATE
+                # whose timestamp remains bound to the terminal event.
+                row.lease_owner = None
+                row.lease_expires_at = None
             updated = await _append_canonical(
                 session,
-                await _load_snapshot(session, mission_id),
+                snapshot,
                 "mission.transitioned",
                 actor=actor,
                 payload={
@@ -277,11 +284,8 @@ class SqlAlchemyMissionStore:
                 },
                 fencing_token=fencing_token,
             )
-            if target in TERMINAL_STATUSES:
-                row.lease_owner = None
-                row.lease_expires_at = None
-            await session.flush()
             assert updated.mission is not None
+            await session.flush()
             return updated.mission
 
     async def update_usage(

@@ -71,6 +71,9 @@ Run/Task 写入和任何交易 mutation。
 - reducer/replay/proof/worker fault、Alembic 及既有 Mission/Thread 回归测试通过；完整 `./scripts/check.sh` 通过，
   包含 frontend 15 tests/build、Ruff、严格 mypy 与 Python 699 tests（保留 2 个既有 OKX coroutine warnings）。
 - 生产部署、只读 replay/hash canary 与 legacy/trading mutation 前后计数仍待本 Sprint Gate 执行。
+- 首次生产 canary 捕获 terminal transition 后 ORM lease 清理覆盖 reducer `updated_at`，导致在线/离线 hash
+  不一致；已将 lease 清理移到 projection 持久化前，并补充带 fencing lease 的 SQL 回归测试。修复后的完整
+  `./scripts/check.sh` 再次通过，待重新部署复验。
 
 ## Handoff
 

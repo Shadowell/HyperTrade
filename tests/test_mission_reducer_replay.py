@@ -75,7 +75,10 @@ async def test_sql_projection_hash_matches_offline_replay(tmp_path: Path) -> Non
                 idempotency_key="sql-replay",
             )
         )
-        mission = await runtime.run(mission.mission_id)
+        claimed = await store.claim_next("replay-worker", lease_seconds=60)
+        assert claimed is not None
+        await runtime.run(mission.mission_id, fencing_token=claimed.fencing_token)
+        mission = await store.get(mission.mission_id)
         events = await store.events(mission.mission_id, limit=1_000)
         online = MissionSnapshotV2(
             mission=mission,

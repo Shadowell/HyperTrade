@@ -15,6 +15,10 @@
   terminal transition 和 Thread delivery；缺少当前 passing proof 时不会投影为 completed。
 - 新增 reducer/property/replay/proof/worker fault 测试。完整 `./scripts/check.sh` 通过：frontend 15 tests/build、
   Ruff、严格 mypy 与 Python 699 tests（保留 2 个既有 OKX coroutine warnings）。生产部署与只读 canary 待执行。
+- 首次生产只读 canary 的 17 个 V2 event、CompletionProof、单终态和只读 capability 均正确，但 hash Gate
+  发现 SQL terminal transition 清理 lease 后 `TimestampMixin.onupdate` 覆盖 reducer `updated_at`。已调整为在
+  projection 持久化前清理 operational lease，并让 SQL replay 测试使用真实 fencing lease；完整检查再次以
+  frontend 15 tests/build、Ruff、严格 mypy、Python 699 tests 通过，等待重部署。
 
 ## Sprint 122 — Canonical Web Thread/Turn 已完成 — 2026-07-21
 
