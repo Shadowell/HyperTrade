@@ -1,6 +1,15 @@
 # Progress Log
 
-## Sprint 124 — Approval and External Effect Reconciliation 已启动 — 2026-07-21
+## Sprint 125 — Reviewed Strategy Outcome Ledger 已启动 — 2026-07-21
+
+- Sprint 124 的参数级 Approval、write-ahead DispatchIntent、effect reconciliation、持久 circuit 与生产只读
+  Gate 已关闭，Sprint 125 合同正式进入 Active。
+- 本 Sprint 将把已结算的研究、回测和模拟观察绑定到策略版本、数据/成本窗口、regime、Evidence、Mission、
+  Approval/ToolCall 与 producer lineage，形成不可变、可修正但不可覆盖的 `StrategyOutcomeV1`。
+- Lesson 只以 candidate 形式生成；未经独立审核不得进入 active Memory、Skill、策略或组合政策。本 Sprint
+  不自动调参、不生成策略代码，也不改变任何 paper/live/order/capital 权限。
+
+## Sprint 124 — Approval and External Effect Reconciliation 已完成 — 2026-07-21
 
 - Sprint 123 的 canonical Mission reducer、CompletionProof、生产 replay/hash Gate 已关闭，Sprint 124 合同正式
   进入 Active。
@@ -18,7 +27,9 @@
   仍只有 read/live-read，governance service 默认只允许 `isolated` write environment。
 - 四个 Sprint 合同测试及 completion/migration 定向验证为 23 passed，PostgreSQL offline migration 可完整
   升级到 `0032`。完整 `./scripts/check.sh` 通过：frontend 15 tests/build、Ruff、严格 mypy 与 Python 717 tests
-  （保留 2 个既有 OKX coroutine warnings）；部署验收待执行。
+  （保留 2 个既有 OKX coroutine warnings）。实现提交 `6556377` 已由流水线 `29817939092` 成功部署。
+- 生产只读验收 health 为 200，active capability 共 16 个，write capability 为 0；未发起任何 paper、
+  Testnet、live、order 或 capital mutation。Sprint 124 Gate 已关闭，下一实施合同为 Sprint 125 Outcome Ledger。
 
 ## Sprint 123 — Canonical Mission Event Reducer 已完成 — 2026-07-21
 

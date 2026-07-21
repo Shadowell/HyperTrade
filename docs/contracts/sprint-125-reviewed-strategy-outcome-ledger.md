@@ -1,6 +1,6 @@
 # Sprint 125 — Reviewed Strategy Outcome Ledger
 
-> 状态：Proposed；依赖 Sprint 124 完成。
+> 状态：Active — Sprint 124 Gate 已关闭，正在实施 Reviewed Strategy Outcome Ledger。
 
 ## Goal
 

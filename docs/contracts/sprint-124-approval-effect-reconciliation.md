@@ -1,6 +1,6 @@
 # Sprint 124 — Approval and External Effect Reconciliation
 
-> 状态：Active — Sprint 123 Gate 已关闭，正在实施 Approval 与外部副作用对账协议。
+> 状态：Completed — 实现、全量验证、部署与只读生产 Gate 已关闭。
 
 ## Goal
 
@@ -68,7 +68,9 @@ unknown。生产验收只验证 capability 物理缺席和 fail-closed，不发�
   与 bounded public projection 已落地；生产 write environment 默认关闭。
 - 四个合同测试及 CompletionProof/Alembic 定向验证共 23 passed；PostgreSQL offline migration 通过。
   完整 `./scripts/check.sh` 通过 frontend 15 tests/build、Ruff、严格 mypy 与 Python 717 tests（2 个既有 OKX
-  coroutine warnings）；部署验收将在提交后记录。
+  coroutine warnings）。实现提交 `6556377` 由部署流水线 `29817939092` 成功发布。
+- 生产只读验收返回 health 200、16 个 active capabilities，且 write capability 数量为 0；未发起任何
+  paper/Testnet/live/order/capital mutation。Sprint 124 Gate 已关闭。
 
 ## Handoff
 
