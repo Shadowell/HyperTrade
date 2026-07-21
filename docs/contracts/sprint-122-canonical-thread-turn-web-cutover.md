@@ -1,6 +1,6 @@
 # Sprint 122 — Canonical Thread/Turn Web Cutover
 
-> 状态：Active — 实现与本地全量回归完成，等待部署和生产只读 canary。
+> 状态：Complete — 实现、全量回归、部署与生产只读浏览器 canary 均已通过。
 > 上游合同：[Sprint 121](sprint-121-canonical-thread-turn-protocol.md)。
 
 ## Goal
@@ -63,6 +63,21 @@ git diff --check
 
 生产只读 canary 必须覆盖真实两轮指代、LAB、主网阻断、SSE 中断恢复、浏览器刷新恢复和 legacy row-count
 前后对比。不得保存生产原始工具载荷、账户敏感信息或凭证。
+
+### Completion Evidence
+
+- `./scripts/check.sh` 全绿：frontend 15 tests、lint、production build、Ruff、严格 mypy 与 688 个 Python tests
+  通过；保留 2 个既有 OKX coroutine warnings。
+- 实现提交 `5327148` 已由 GitHub Actions `29810607327` 成功部署，生产 marker 为完整 SHA
+  `5327148592e596b1da946349fe56b0c0f9b12e32`，API health 正常。
+- 生产 API canary 验证 `prior_turns` 返回 422；LAB Turn 完成并引用
+  `hypertrade_db:market_tickers:LAB-USDT-SWAP`；主网满仓请求 failed 且 tool Items 为 0；active Turn 归档返回
+  409，终态归档幂等且 archived Thread 拒绝新 Turn；cursor replay 只出现一个 terminal event。
+- 真实浏览器从服务端恢复既有 Thread，提交第二轮“后者最大回撤多少？”，服务端 resolved subject 为
+  `mean_reversion_v1`。刷新后仍恢复同一 Thread、两轮 Items 与 `cursor=18`；网络记录包含 canonical
+  Thread/Turn/SSE 请求，不包含 legacy `/api/agent/runs/stream`。
+- canary 前后 legacy `agent_runs` / `agent_tasks` 均为 `160 / 11`，增量为零；验收窗口内 API 日志无
+  `ERROR`、Traceback 或 Exception。
 
 ## Handoff
 

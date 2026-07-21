@@ -1,6 +1,6 @@
 # Progress Log
 
-## Sprint 122 — Canonical Web Thread/Turn 实现待生产验收 — 2026-07-21
+## Sprint 122 — Canonical Web Thread/Turn 已完成 — 2026-07-21
 
 - Web Harness natural-language workspace 已从 `/api/agent/runs/stream` 切换到 Sprint 121 的 canonical
   Thread/Turn/Item API；浏览器只保存 `thread_id + cursor`，不提交 `prior_turns`，刷新或重新打开后从服务端
@@ -16,8 +16,15 @@
 - 定向检查通过：frontend 15 tests、lint、production build；Web/API/replay 3 个 Python tests 与 Ruff 通过。
   首次完整检查仅因 Yahoo Finance `^GSPC/^IXIC` 瞬时无数据使一个既有 world-model 测试失败，该用例单独
   复跑通过；随后完整 `./scripts/check.sh` 全绿，包含 frontend 15 tests/build、Ruff、严格 mypy 与 688 个
-  Python tests（保留 2 个既有 OKX coroutine warnings）。下一步执行 GitNexus staged scope 检查、提交部署和
-  生产浏览器/cursor/legacy row-count canary；Gate 关闭前不进入 Sprint 123。
+  Python tests（保留 2 个既有 OKX coroutine warnings）。
+- 实现提交 `5327148` 已由 GitHub Actions `29810607327` 成功部署；生产 marker 匹配完整提交 SHA，API
+  health 正常。生产 API canary 验证 LAB 精确来源、主网零工具失败关闭、`prior_turns` 422、运行中归档 409、
+  终态归档幂等、归档后新 Turn 409，以及 cursor replay 单终态。
+- 真实浏览器恢复已有 Thread 后提交第二轮“后者最大回撤多少？”，服务端解析并只展示
+  `mean_reversion_v1`；刷新后同一 Thread、两轮 Items 和 `cursor=18` 均从服务端恢复。浏览器网络记录使用
+  canonical Thread/Turn/SSE，没有 legacy `/api/agent/runs/stream`。
+- canary 前后 legacy `agent_runs` / `agent_tasks` 保持 `160 / 11`、增量为零，近 15 分钟 API 日志无错误。
+  Sprint 122 Gate 已关闭，下一实施合同为 Sprint 123 Mission event reducer / CompletionProof。
 
 ## Sprint 121 — Canonical Remote CLI Thread/Turn 已完成 — 2026-07-21
 
