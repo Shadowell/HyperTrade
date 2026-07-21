@@ -1,6 +1,6 @@
 # Sprint 125 — Reviewed Strategy Outcome Ledger
 
-> 状态：Active — Sprint 124 Gate 已关闭，正在实施 Reviewed Strategy Outcome Ledger。
+> 状态：Completed — 实现、全量验证、部署与只读生产 Gate 已关闭。
 
 ## Goal
 
@@ -70,7 +70,10 @@ git diff --check
   `LessonCandidateV1` review/expiry/conflict/context projection 与 migration `0033` 已实现。
 - Sprint 合同及既有 Experiment、Memory、PortfolioWindow、Mission replay/Alembic 定向回归 37 passed，
   PostgreSQL offline migration 通过。完整 `./scripts/check.sh` 通过 frontend 15 tests/build、Ruff、严格 mypy
-  （193 source files）与 Python 728 tests（2 个既有 OKX warnings）；部署验收待执行。
+  （193 source files）与 Python 728 tests（2 个既有 OKX warnings）。实现提交 `337db4d` 已由部署流水线
+  `29819166085` 成功发布。
+- 生产只读验收 health 为 200、active capability 共 16 个且 write capability 为 0；未创建 Outcome/Lesson
+  fixture，也未发起 paper/live/order/capital mutation。Sprint 125 Gate 已关闭。
 
 ## Handoff
 

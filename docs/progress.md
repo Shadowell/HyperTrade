@@ -1,6 +1,14 @@
 # Progress Log
 
-## Sprint 125 — Reviewed Strategy Outcome Ledger 已启动 — 2026-07-21
+## Sprint 126 — BitPro Strategy Time-Series and Execution Evidence Contract 已启动 — 2026-07-21
+
+- Sprint 125 的不可变 Outcome、reviewed Lesson、部署与生产只读 Gate 已关闭，Sprint 126 合同正式进入 Active。
+- 本 Sprint 将在 BitPro 侧新增版本化 `StrategyReturnSeriesV1`、`AlignedStrategyReturnMatrixV1` 与
+  `StrategyExecutionQualityV1` 稳定只读合同，并在 HyperTrade 侧实现严格 schema/hash/time/cost/source 验证。
+- HyperTrade 只持久化 bounded summaries、content/source hash 与 refs，不直连 BitPro DB、不复制完整收益、订单、
+  成交或账户历史。本 Sprint 不创建、启动、暂停或交易任何策略。
+
+## Sprint 125 — Reviewed Strategy Outcome Ledger 已完成 — 2026-07-21
 
 - Sprint 124 的参数级 Approval、write-ahead DispatchIntent、effect reconciliation、持久 circuit 与生产只读
   Gate 已关闭，Sprint 125 合同正式进入 Active。
@@ -15,7 +23,10 @@
   `active_for_context` 投影；模型/runtime 不能自批，单次盈利不会自动激活 Memory/Skill/策略/组合政策。
 - migration `0033` 新增 outcome、lesson candidate 与 append-only review 表。Sprint 定向回归 37 passed，
   PostgreSQL offline migration 到 `0033` 通过。完整 `./scripts/check.sh` 通过：frontend 15 tests/build、Ruff、
-  严格 mypy（193 source files）与 Python 728 tests（保留 2 个既有 OKX coroutine warnings）；部署待执行。
+  严格 mypy（193 source files）与 Python 728 tests（保留 2 个既有 OKX coroutine warnings）。实现提交
+  `337db4d` 已由流水线 `29819166085` 成功部署。
+- 生产只读验收 health 为 200、active capability 共 16 个、write capability 为 0；未写入 Outcome/Lesson
+  fixture 或交易状态。Sprint 125 Gate 已关闭，下一实施合同为 Sprint 126 BitPro strategy time-series contract。
 
 ## Sprint 124 — Approval and External Effect Reconciliation 已完成 — 2026-07-21
 
