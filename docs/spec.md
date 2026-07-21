@@ -102,6 +102,15 @@ parent ExperimentManifest into a distinct queued experiment and same-lineage Str
 duplicate and budget-exhausted proposals remain auditable. The engine has no BitPro, paper, live, order or capital
 adapter, and its API/CLI surfaces are read-only.
 
+Sprint 128 discovers new strategy families without a parent strategy. A bounded `DiscoveryMandateV1` admits only
+fresh, source-bound market facts and freezes observable phenomena plus falsifiable Alpha hypotheses before locked
+OOS results are visible. Hypothesis versions are immutable; novelty is deterministic across existing rule/code
+signatures, return/signal similarity and regime exposure, with missing comparison evidence remaining unknown.
+Only novel candidates may pass static isolation and BitPro `strategy_validate_code` before reviewed dynamic-DB
+`strategy_create`; the resulting immutable ExperimentManifest/StrategyVersion remains a research candidate with
+paper, live, order and capital permissions disabled. Rejections, duplicates, data gaps, sandbox failures and budget
+termination remain append-only terminal facts exposed through authenticated read-only queue APIs.
+
 ## Users
 
 - Operator running audited agent research and execution workflows.

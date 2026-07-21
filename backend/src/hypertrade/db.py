@@ -1617,6 +1617,48 @@ class StrategyEvolutionCandidate(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class StrategyDiscoveryRun(Base):
+    """Auditable new-strategy discovery run with no trading authority."""
+
+    __tablename__ = "strategy_discovery_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("disc"))
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    research_mandate_id: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    mandate_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    usage_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class StrategyDiscoveryCandidate(Base):
+    """Immutable phenomenon, hypothesis, novelty and candidate terminal fact."""
+
+    __tablename__ = "strategy_discovery_candidates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("dcand"))
+    run_id: Mapped[str] = mapped_column(String(32), index=True)
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    phenomenon_hash: Mapped[str] = mapped_column(String(64), index=True)
+    hypothesis_hash: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    strategy_family: Mapped[str] = mapped_column(String(48), index=True)
+    bitpro_strategy_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    manifest_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    experiment_execution_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    strategy_version_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    phenomenon_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    hypothesis_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    novelty_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    candidate_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class StrategyLineage(Base, TimestampMixin):
     """Stable mandate-scoped strategy identity; never stores mutable evidence."""
 

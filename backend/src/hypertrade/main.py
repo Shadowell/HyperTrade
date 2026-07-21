@@ -95,6 +95,7 @@ from hypertrade.portfolio.shadow_schemas import (
 )
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.rag.service import RagHit, RagService
+from hypertrade.research.discovery import StrategyDiscoveryService
 from hypertrade.research.evidence import EvidenceService, EvidenceSourceUnavailable
 from hypertrade.research.evidence_schemas import (
     EvidenceLifecycleRequest,
@@ -908,6 +909,17 @@ def create_app(
             return StrategyEvolutionService(database).get(run_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Strategy evolution run not found") from exc
+
+    @app.get("/api/research/discovery-runs")
+    def list_strategy_discovery_runs(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+        return {"items": StrategyDiscoveryService(database).list()}
+
+    @app.get("/api/research/discovery-runs/{run_id}")
+    def get_strategy_discovery_run(run_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return StrategyDiscoveryService(database).get(run_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Strategy discovery run not found") from exc
 
     @app.get("/api/research/strategy-cards/funnel")
     def strategy_card_funnel(_: AdminUser) -> dict[str, Any]:

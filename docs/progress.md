@@ -6,6 +6,16 @@
 - 本 Sprint 将在无 parent strategy 的有界 mandate 下，把真实 evidence 固化为 MarketPhenomenon 与不可后改的
   AlphaHypothesis，执行可解释的新颖性判定、隔离 sandbox/BitPro validation，并只生成 research candidate；不启动
   Paper/Live，不分配资金，也不把换名或参数微调伪装成新策略。
+- 已实现 `DiscoveryMandateV1`、`MarketPhenomenonV1`、`AlphaHypothesisV1`、`StrategyNoveltyReportV1` 和
+  discovery run/candidate ledger。仅 active、fresh、具有可用 tool/BitPro/snapshot 来源的 evidence 可进入现象；
+  locked OOS 可见前冻结假设，同一 hypothesis version 不可后改，确定性输入生成不同 code digest 时失败关闭。
+- 新颖性门禁比较现有不可变 StrategyVersion 的规则签名、code fingerprint、收益相关性、信号相似度和 regime
+  暴露；换名、等价逻辑、高相关候选归为 existing-strategy variant，缺少对比或可解释差异时保持 unknown。
+- 代码先经本地禁止网络/文件/进程/动态执行/secret/无界循环检查，再通过窄化 BitPro
+  `strategy_validate_code -> strategy_create` 合同写入 dynamic DB research candidate；配置显式关闭 Paper/Live，
+  随后注册独立 ExperimentManifest/StrategyVersion。migration `0036` 与认证只读 discovery queue API 已实现。
+  当前定向与相邻回归 26 passed，Alembic 单 head 为 `0036`；完整 `./scripts/check.sh` 通过（frontend 15
+  tests，Python 765 tests，Ruff、mypy 198 source files），部署待执行。
 
 ## Sprint 127 — Existing Strategy Evolution Engine 已完成 — 2026-07-21
 
