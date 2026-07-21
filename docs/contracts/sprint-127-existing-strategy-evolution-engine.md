@@ -1,6 +1,6 @@
 # Sprint 127 — Existing Strategy Evolution Engine
 
-> 状态：Proposed；依赖 Sprint 126 完成。
+> 状态：Active — Sprint 126 Gate 已关闭，开始实现已有策略的有界候选进化引擎。
 
 ## Goal
 

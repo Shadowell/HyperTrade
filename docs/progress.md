@@ -1,6 +1,12 @@
 # Progress Log
 
-## Sprint 126 — BitPro Strategy Time-Series and Execution Evidence Contract 已启动 — 2026-07-21
+## Sprint 127 — Existing Strategy Evolution Engine 已启动 — 2026-07-21
+
+- Sprint 126 的 BitPro 时序/执行质量合同、双侧部署与真实 paper 只读 Gate 已关闭，Sprint 127 合同进入 Active。
+- 本 Sprint 只为已有策略提出预算受限、可复现、不可变的参数/规则候选与实验注册；不从零发现新策略，不自动
+  启动 Paper/Live，不修改运行中版本，也不授予 order/capital 权限。
+
+## Sprint 126 — BitPro Strategy Time-Series and Execution Evidence Contract 已完成 — 2026-07-21
 
 - Sprint 125 的不可变 Outcome、reviewed Lesson、部署与生产只读 Gate 已关闭，Sprint 126 合同正式进入 Active。
 - 本 Sprint 将在 BitPro 侧新增版本化 `StrategyReturnSeriesV1`、`AlignedStrategyReturnMatrixV1` 与
@@ -20,7 +26,8 @@
   return series 35/35 点、成本完整且 content/source hash 均有效；execution quality 返回 143 fills 并显式保留
   5 个 data gaps；双成员 matrix 固定 denominator=2，因合同不兼容明确返回不可比较而未强行对齐。
 - Canary 同时发现 HyperTrade REST adapter 对 matrix member list 缺少逗号编码；已补充加法兼容序列化和回归，
-  完整检查以 Python 742 tests 再次通过，修复部署完成后关闭 Sprint 126。
+  完整检查以 Python 742 tests 再次通过，修复提交 `5dc56ee` 由 workflow `29822289838` 成功部署。生产再次用
+  Python list 参数验收通过，未调用写工具。Sprint 126 Gate 已关闭，下一实施合同为 Sprint 127。
 
 ## Sprint 125 — Reviewed Strategy Outcome Ledger 已完成 — 2026-07-21
 

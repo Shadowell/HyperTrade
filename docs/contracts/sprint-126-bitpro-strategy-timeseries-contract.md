@@ -1,6 +1,6 @@
 # Sprint 126 — BitPro Strategy Time-Series and Execution Evidence Contract
 
-> 状态：Active — Sprint 125 Gate 已关闭，正在与 BitPro 同步实施版本化时序与执行质量合同。
+> 状态：Completed — 双侧合同、PR/部署、真实 paper 只读 canary 与 HyperTrade fail-closed 验证均通过。
 
 ## Goal
 
