@@ -64,6 +64,14 @@ git diff --check
 生产 canary 仅使用受控只读 Mission：抓取 committed event，离线重放并比较 hash；在 canary 前后确认没有 legacy
 Run/Task 写入和任何交易 mutation。
 
+### Local Implementation Evidence
+
+- V2 envelope、deterministic reducer、SQL/内存 projection、worker fencing、quarantine 和 migration `0031` 已实现。
+- 独立 `CompletionProofV1` 已接入 Mission terminal transition 与 Thread delivery；无当前 passing proof 不得完成。
+- reducer/replay/proof/worker fault、Alembic 及既有 Mission/Thread 回归测试通过；完整 `./scripts/check.sh` 通过，
+  包含 frontend 15 tests/build、Ruff、严格 mypy 与 Python 699 tests（保留 2 个既有 OKX coroutine warnings）。
+- 生产部署、只读 replay/hash canary 与 legacy/trading mutation 前后计数仍待本 Sprint Gate 执行。
+
 ## Handoff
 
 Sprint 124 在该事件与完成语义上实现 Approval、write-ahead dispatch、effect_unknown 和 reconciliation。

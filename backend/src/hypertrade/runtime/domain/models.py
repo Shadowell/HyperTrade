@@ -32,6 +32,12 @@ class MissionStatus(StrEnum):
     BUDGET_EXHAUSTED = "budget_exhausted"
 
 
+class MissionReplayStatus(StrEnum):
+    CANONICAL = "canonical"
+    LEGACY_NON_REPLAYABLE = "legacy_non_replayable"
+    QUARANTINED = "quarantined"
+
+
 TERMINAL_STATUSES = {
     MissionStatus.CANCELED,
     MissionStatus.COMPLETED,
@@ -192,6 +198,7 @@ class StepObservationV2(StrictModel):
 
 class StepAttemptV2(StrictModel):
     attempt_id: str
+    plan_version: int = Field(default=1, ge=1, le=5)
     step_id: str
     attempt: int = Field(ge=1, le=3)
     status: Literal["running", "succeeded", "failed", "unknown", "waiting_approval"]
@@ -215,6 +222,31 @@ class MissionEventV1(StrictModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class CompletionCriterionResultV1(StrictModel):
+    criterion_id: str = Field(min_length=1, max_length=96)
+    passed: bool
+    detail: str = Field(min_length=1, max_length=500)
+
+
+class CompletionProofV1(StrictModel):
+    """Independent, persisted proof required before a Mission can complete."""
+
+    schema_version: Literal["completion_proof.v1"] = "completion_proof.v1"
+    proof_id: str = Field(min_length=1, max_length=64)
+    mission_id: str = Field(min_length=1, max_length=64)
+    mission_version: int = Field(ge=1)
+    plan_version: int = Field(ge=1)
+    passed: bool
+    criteria: tuple[CompletionCriterionResultV1, ...]
+    evidence_refs: tuple[str, ...] = ()
+    artifact_refs: tuple[str, ...] = ()
+    gaps: tuple[str, ...] = ()
+    pending_attempt_ids: tuple[str, ...] = ()
+    effect_unknown: bool = False
+    budget_valid: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class MissionProjection(StrictModel):
     mission_id: str
     objective: str
@@ -229,10 +261,16 @@ class MissionProjection(StrictModel):
     active_plan_version: int = 0
     current_step_id: str = ""
     version: int = 1
+    event_cursor: int = 0
+    event_protocol_version: int = 1
+    replay_status: MissionReplayStatus = MissionReplayStatus.LEGACY_NON_REPLAYABLE
+    quarantine_reason: str = ""
+    fencing_token: int = 0
     control_requested: str = ""
     terminal_summary: str = ""
     unknowns: tuple[str, ...] = ()
     artifact_refs: tuple[str, ...] = ()
+    completion_proof: CompletionProofV1 | None = None
     created_by: str
     idempotency_key: str = ""
     deadline: datetime | None = None

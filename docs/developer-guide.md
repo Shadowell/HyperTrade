@@ -209,6 +209,15 @@ The service links each Turn to the existing read-only Mission Runtime without wr
 The Web client stores only a Thread pointer/cursor and rehydrates canonical Items from the server; legacy Run
 history remains read-only. Do not add client-owned history or a second completion state machine.
 
+#### Canonical Mission Reducer (`backend/src/hypertrade/runtime/domain/mission_events.py`)
+
+New Missions are V2 event aggregates. SQL and in-memory stores append a content-hashed event and apply the same
+deterministic reducer before persisting Mission, Plan and Attempt projections. Usage, current step, steer, retry,
+replan and terminal state must not bypass this path. `application/completion.py` independently produces a
+`CompletionProofV1`; only a current passing proof permits Mission and linked Turn completion. Version gaps,
+conflicting duplicates, unknown protocol versions and stale worker fencing quarantine the aggregate. Existing
+pre-V2 rows remain readable as `legacy_non_replayable` and must not be backfilled with invented events.
+
 #### AgentKernel (`backend/src/hypertrade/agent/kernel.py`)
 
 Orchestrates Agent runs:
@@ -616,6 +625,11 @@ ToolDefinition(
 **agent_threads / agent_turns / agent_thread_items / agent_thread_events**: Remote CLI and Web canonical interaction
 projection and append-only event source. `agent_thread_leases` stores operational fencing tokens outside the
 public reducer projection. Migration revisions `0029` and `0030` create these structures.
+
+**agent_missions / agent_mission_events / agent_plan_versions / agent_step_attempts**: Canonical Mission V2
+projection and append-only domain event source. Revision `0031` adds protocol/reducer versions, aggregate cursor,
+projection hash, replay/quarantine state, completion proof, payload hash, audit context and fencing fields. New
+rows are reducer-backed; migrated historical rows use `legacy_non_replayable`.
 
 **agent_runs**: Agent execution records
 ```sql

@@ -8,6 +8,13 @@
   payload hash；Thread delivery 只看 Mission status，尚未验证独立 completion proof。
 - 本 Sprint 将复用 Sprint 121 的 canonical event/reducer 语义，先建立 Mission aggregate、离线 replay、
   quarantine 与 `CompletionProofV1`，再切换 SQL/内存 store 和 Thread delivery；不扩大任何交易权限。
+- 已实现 V2 Mission event envelope、deterministic reducer、SQL/内存原子 projection、migration `0031`、worker
+  fencing/quarantine 和 legacy `legacy_non_replayable`；Mission/Plan/Attempt/usage/current step/steer/terminal
+  状态现在从事件投影，线上与离线 replay 使用同一 canonical hash。
+- 独立 `CompletionProofV1` 已验证 success criteria、Evidence/Artifact、Attempt/effect/budget gaps，并接入 Mission
+  terminal transition 和 Thread delivery；缺少当前 passing proof 时不会投影为 completed。
+- 新增 reducer/property/replay/proof/worker fault 测试。完整 `./scripts/check.sh` 通过：frontend 15 tests/build、
+  Ruff、严格 mypy 与 Python 699 tests（保留 2 个既有 OKX coroutine warnings）。生产部署与只读 canary 待执行。
 
 ## Sprint 122 — Canonical Web Thread/Turn 已完成 — 2026-07-21
 

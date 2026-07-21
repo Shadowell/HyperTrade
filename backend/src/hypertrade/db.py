@@ -194,6 +194,14 @@ class AgentMission(Base, TimestampMixin):
     current_step_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     last_event_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    event_protocol_version: Mapped[int] = mapped_column(Integer, default=1)
+    replay_status: Mapped[str] = mapped_column(
+        String(32), default="legacy_non_replayable", index=True
+    )
+    projection_hash: Mapped[str] = mapped_column(String(64), default="", index=True)
+    quarantine_reason: Mapped[str] = mapped_column(Text, default="")
+    completion_proof_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    lease_fencing_token: Mapped[int] = mapped_column(Integer, default=0)
     control_requested: Mapped[str] = mapped_column(String(32), default="", index=True)
     terminal_summary: Mapped[str] = mapped_column(Text, default="")
     unknowns_json: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -324,14 +332,28 @@ class AgentMissionEvent(Base):
     __tablename__ = "agent_mission_events"
     __table_args__ = (
         UniqueConstraint("mission_id", "sequence", name="uq_agent_mission_event_sequence"),
+        UniqueConstraint(
+            "mission_id", "aggregate_version", name="uq_agent_mission_event_version"
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("mevt"))
     mission_id: Mapped[str] = mapped_column(String(32), index=True)
     sequence: Mapped[int] = mapped_column(Integer)
     event_type: Mapped[str] = mapped_column(String(96), index=True)
+    aggregate_type: Mapped[str] = mapped_column(String(32), default="mission")
+    aggregate_version: Mapped[int] = mapped_column(Integer, default=0)
+    schema_version: Mapped[int] = mapped_column(Integer, default=1)
+    reducer_version: Mapped[int] = mapped_column(Integer, default=0)
+    causation_id: Mapped[str] = mapped_column(String(64), default="")
+    correlation_id: Mapped[str] = mapped_column(String(64), default="")
     actor: Mapped[str] = mapped_column(String(128), default="runtime", index=True)
+    policy_snapshot_hash: Mapped[str] = mapped_column(String(64), default="")
+    payload_hash: Mapped[str] = mapped_column(String(64), default="", index=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    fencing_token: Mapped[int] = mapped_column(Integer, default=0)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 

@@ -6,11 +6,11 @@ HyperTrade is a crypto trading agent for market research and execution. V1 focus
 
 HyperTrade 是一个面向行情研究与执行的加密交易 Agent。V1 重点是稳定 Agent 能力：Provider 配置、Tool Call、RAG、Memory、Trace、行情采集、Connector 能力发现、风控门禁、Testnet 执行、BitPro 策略生命周期编排和面向操作员的 Harness。
 
-> Maturity correction (2026-07-16): the reviewed trading-research capabilities and selected read-only
+> Maturity correction (updated 2026-07-21): the reviewed trading-research capabilities and selected read-only
 > Mission paths are usable, but the system is not yet a complete professional general Agent runtime.
-> Real-code and real-request audit found concurrent Run/Task/Mission protocols, client-owned conversation
-> history, incomplete event replay, and Supervisor/Approval/Context components that are not fully connected
-> to the default loop. The target and cutover contract are defined in
+> Sprint 121–123 have replaced Remote CLI/Web client-owned history with canonical Thread/Turn/Item and made
+> new Mission state replayable from V2 events with independent completion proofs. Desktop/TUI/local compatibility,
+> legacy records, Supervisor and Approval remain incomplete or separate paths. The target is defined in
 > [architecture/34](architecture/34-next-generation-agent-runtime-audit-and-target-design.md); fixed-suite
 > 100/100 results are bounded regression evidence, not an overall production-grade certification.
 
@@ -66,6 +66,13 @@ content-bound client idempotency, deterministic in-memory/SQL replay, worker fen
 resolution and explicit read-only Mission links. Sprint 122 now adds Web Thread restore/archive, cursor reconnect,
 canonical Item/Evidence/unknown rendering and explicit legacy-history separation without Web Run/Task writes.
 Desktop/TUI/Local CLI and legacy historical reads remain unchanged pending later slices.
+
+Sprint 123 makes newly created Missions canonical event aggregates. Mission, Plan, Attempt, usage, current step,
+steer and terminal state are reduced from schema/reducer-versioned events with payload hashes, correlation,
+policy snapshots and worker fencing. Online SQL/in-memory projections must equal offline replay hashes. A separate
+`CompletionProofV1` checks criteria, Evidence/Artifact binding, pending/unknown attempts and budget before Mission
+or linked Turn completion. Pre-V2 Missions are labeled `legacy_non_replayable` and are not backfilled with invented
+events. Approval and external-effect reconciliation remain Sprint 124 scope.
 
 ## Users
 

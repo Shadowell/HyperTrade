@@ -46,7 +46,7 @@ question to evidence-backed strategy iteration—not an unattended trading bot.
 > **Maturity note:** reviewed trading-research capabilities and selected read-only Mission requests are
 > deployed, but HyperTrade is not yet a complete professional general Agent runtime. Remote `ht ask/chat` now
 > use a server-owned Thread/Turn/Item event protocol; the Web natural-language workspace uses the same protocol,
-> while Desktop, TUI and local compatibility paths still
+> and new Missions use an append-only V2 event reducer plus independent completion proof. Desktop, TUI and local compatibility paths still
 > contain Run/Task/Mission differences. The fixed 100-task suite is useful regression evidence, not an overall
 > production-grade certification.
 
@@ -91,7 +91,9 @@ flowchart LR
 
 Mission is the intended research-workflow record. Remote CLI and Web natural-language requests use canonical
 Thread/Turn/Item events, deterministic projection replay and cursor-resumable SSE without writing legacy
-Run/Task rows. Desktop, TUI and local compatibility paths are not migrated yet; remaining cross-surface cutover,
+Run/Task rows. New Mission/Plan/Attempt/Budget state is reduced from versioned events, and a Turn cannot complete
+without a current passing `CompletionProofV1`; pre-V2 Missions remain explicitly non-replayable legacy history.
+Desktop, TUI and local compatibility paths are not migrated yet; remaining cross-surface cutover,
 Approval and Supervisor integration remain target work rather than finished claims.
 
 See the [current implementation snapshot](docs/architecture/33-system-architecture.md) and the

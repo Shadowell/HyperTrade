@@ -16,6 +16,7 @@ from hypertrade.runtime.application.operator_response import (
     build_operator_response,
     render_operator_response,
 )
+from hypertrade.runtime.domain.mission_events import MissionEventV2
 from hypertrade.runtime.domain.models import (
     MissionCreate,
     MissionEventV1,
@@ -140,7 +141,7 @@ def _attempt_summary(attempt: StepAttemptV2) -> dict[str, Any]:
     }
 
 
-def _event_trace(event: MissionEventV1) -> dict[str, Any]:
+def _event_trace(event: MissionEventV1 | MissionEventV2) -> dict[str, Any]:
     payload = event.payload
     status = str(payload.get("status", "ok"))
     return {
@@ -149,5 +150,7 @@ def _event_trace(event: MissionEventV1) -> dict[str, Any]:
         "status": status,
         "input_json": {},
         "output_json": payload,
-        "created_at": event.created_at.isoformat(),
+        "created_at": (
+            event.created_at if isinstance(event, MissionEventV1) else event.occurred_at
+        ).isoformat(),
     }

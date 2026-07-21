@@ -129,16 +129,17 @@ sequenceDiagram
   else 需要人工或输入
     R->>S: waiting_approval / waiting_input 事件
   else 完成条件已验证
-    R->>S: completed + OperatorResponse projection
+    R->>S: CompletionProofV1(pass) + completed + OperatorResponse
   end
   S-->>C: cursor event stream
   C-->>O: 公共答案或审计事件
 ~~~
 
-Mission 的部分事件和 projection 在同一个数据库事务中更新。Worker 以 PostgreSQL lease/heartbeat 领取
-可执行 Mission，默认硬上限由服务端 schema 强制。当前 event log 没有覆盖 usage、current step 等全部
-projection 更新，也缺少完整 aggregate version/payload，因此不能仅靠事件确定性重建 Mission；SSE 重放
-只代表已记录事件的 cursor replay。下一代协议必须通过离线 reducer hash 门禁后才可称为 event-sourced。
+新建 Mission 的 V2 domain event 和 projection 在同一个数据库事务中更新。Worker 以 PostgreSQL
+lease/heartbeat 和 fencing token 领取可执行 Mission，默认硬上限由服务端 schema 强制。Mission、Plan、
+Attempt、usage、current step、steer 和 terminal delivery 都由同一 reducer 投影；离线重放 hash 必须与线上
+projection hash 一致。版本 gap、冲突重复、未知 schema/reducer 或 stale fencing event 会使 aggregate
+quarantine。旧 Mission 明确标记为 `legacy_non_replayable`，不会以伪造事件补齐历史。
 
 ## 6. 研究与数据流
 
@@ -167,7 +168,7 @@ HyperTrade 不持久化 BitPro 的完整蜡烛、权益、交易、订单或持�
 | 权限 | read-only Mission profile、Capability side-effect 分类、Tool Policy、Approval/Risk gate | 缺少匹配权限或批准时拒绝 dispatch |
 | 输入与输出 | Pydantic v2 + JSON Schema、policy/contract hash、来源绑定 | schema 或来源不匹配时记录分类失败 |
 | 预算与并发 | 事务性 token/tool/model/duration reservation、AnyIO bounded concurrency | 无剩余预算时停止或形成降级交付 |
-| 审计与重放 | 部分 append-only Mission events、idempotency、SSE cursor | 已记录事件可 cursor replay；完整 projection 尚不可从 event 重建 |
+| 审计与重放 | V2 Mission events、deterministic reducer、projection hash、idempotency、SSE cursor | gap、冲突、未知版本或 stale fencing 会 quarantine；旧记录为 `legacy_non_replayable` |
 | 数据保护 | redaction、结果大小限制、metadata-first artifacts | 不保存凭据、原始工具结果、完整 prompt 或私有推理 |
 | 策略代码 | UDS isolated sandbox、非 root、无网络、只读根、无 Docker socket、资源限制、digest 绑定 | socket/digest 不可用时生产返回 503，绝不回退到 API/宿主子进程 |
 | 评测 | 独立 API、数据库、网络和合成事实；生产禁用 fixture | 评测产物不进入生产事实，也不授予交易权限 |

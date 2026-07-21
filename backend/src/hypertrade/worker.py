@@ -136,7 +136,10 @@ async def mission_worker_once(
 
     heartbeat_task = asyncio.create_task(heartbeat())
     try:
-        completed = await runtime.run(mission.mission_id)
+        completed = await runtime.run(
+            mission.mission_id,
+            fencing_token=mission.fencing_token,
+        )
         return {
             "status": completed.status.value,
             "mission_id": completed.mission_id,
@@ -151,6 +154,7 @@ async def mission_worker_once(
                 "mission_worker_failed",
                 actor=f"worker:{owner}",
                 payload={"code": "worker_execution_failure"},
+                fencing_token=mission.fencing_token,
             )
             try:
                 current = await store.get(mission.mission_id)
@@ -163,6 +167,7 @@ async def mission_worker_once(
                     terminal_summary=(
                         "Mission execution failed before a validated result was produced."
                     ),
+                    fencing_token=mission.fencing_token,
                 )
                 return {"status": failed.status.value, "mission_id": failed.mission_id}
             except (KeyError, RuntimeError, ValueError):

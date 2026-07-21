@@ -4,7 +4,9 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from hypertrade.runtime.domain.context import ContextPackV1
+from hypertrade.runtime.domain.mission_events import MissionEventV2
 from hypertrade.runtime.domain.models import (
+    CompletionProofV1,
     MissionCreate,
     MissionEventV1,
     MissionProjection,
@@ -48,39 +50,80 @@ class MissionStore(Protocol):
         current_step_id: str | None = None,
         terminal_summary: str | None = None,
         control_requested: str | None = None,
+        fencing_token: int = 0,
     ) -> MissionProjection: ...
 
     async def update_usage(
-        self, mission_id: str, *, expected_version: int, delta: dict[str, int]
+        self,
+        mission_id: str,
+        *,
+        expected_version: int,
+        delta: dict[str, int],
+        fencing_token: int = 0,
     ) -> MissionProjection: ...
 
     async def set_current_step(
-        self, mission_id: str, *, expected_version: int, step_id: str
+        self,
+        mission_id: str,
+        *,
+        expected_version: int,
+        step_id: str,
+        fencing_token: int = 0,
     ) -> MissionProjection: ...
 
-    async def save_plan(self, mission_id: str, plan: PlanV2) -> None: ...
+    async def save_plan(
+        self, mission_id: str, plan: PlanV2, *, fencing_token: int = 0
+    ) -> None: ...
 
     async def plans(self, mission_id: str) -> Sequence[PlanV2]: ...
 
     async def start_attempt(
-        self, mission_id: str, plan_version: int, step: PlanStepV2, attempt: int
+        self,
+        mission_id: str,
+        plan_version: int,
+        step: PlanStepV2,
+        attempt: int,
+        *,
+        fencing_token: int = 0,
     ) -> StepAttemptV2: ...
 
     async def complete_attempt(
-        self, attempt_id: str, observation: StepObservationV2
+        self,
+        attempt_id: str,
+        observation: StepObservationV2,
+        *,
+        fencing_token: int = 0,
     ) -> StepAttemptV2: ...
 
     async def attempts(self, mission_id: str) -> Sequence[StepAttemptV2]: ...
 
     async def append_event(
-        self, mission_id: str, event_type: str, *, actor: str, payload: dict[str, object]
-    ) -> MissionEventV1: ...
+        self,
+        mission_id: str,
+        event_type: str,
+        *,
+        actor: str,
+        payload: dict[str, object],
+        causation_id: str = "",
+        policy_snapshot_hash: str = "",
+        fencing_token: int = 0,
+    ) -> MissionEventV1 | MissionEventV2: ...
+
+    async def record_completion_proof(
+        self,
+        mission_id: str,
+        proof: CompletionProofV1,
+        *,
+        fencing_token: int = 0,
+    ) -> MissionProjection: ...
 
     async def events(
         self, mission_id: str, *, after: int = 0, limit: int = 500
-    ) -> Sequence[MissionEventV1]: ...
+    ) -> Sequence[MissionEventV1 | MissionEventV2]: ...
 
-    async def append_steer(self, mission_id: str, steer: SteeringEventV1) -> None: ...
+    async def append_steer(
+        self, mission_id: str, steer: SteeringEventV1, *, fencing_token: int = 0
+    ) -> None: ...
 
 
 class MissionPlanner(Protocol):

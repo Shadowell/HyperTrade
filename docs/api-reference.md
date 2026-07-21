@@ -248,6 +248,18 @@ Item 是 user message、tool progress、evidence 或 agent message 的公开投�
 正常 SSE EOF 前必须出现唯一的 `turn.completed|failed|cancelled|expired`；Remote CLI 与 Web 会把无终态 EOF
 视为协议错误并从最后 cursor 恢复。`waiting_input` / `waiting_approval` 是持久暂停状态，不投影为 completed。
 
+## Canonical Mission Events and Completion Proof
+
+新建 Mission 使用 schema `2` / reducer `1` 的 append-only event envelope。每个事件包含 aggregate version、
+causation/correlation、actor、policy snapshot hash、payload hash、occurred/recorded time 和 worker fencing token。
+Mission REST/SSE 路径保持不变，但其 projection 现在携带 event cursor、protocol/reducer version、replay status、
+quarantine reason、fencing token 与可选 `CompletionProofV1`。
+
+只有当前 Mission version 对应的 passing completion proof 才允许 Mission 及关联 Turn 完成。未满足 success
+criteria、缺少 Evidence/Artifact、未终结 Attempt、`effect_unknown` 或预算违规都会生成带 gaps 的失败证明。
+版本 gap、冲突重复、未知版本或 stale fencing 会返回失败并 quarantine，禁止继续 dispatch。迁移前记录仍可读，
+但标记为 `legacy_non_replayable`。该协议不授予 paper、Testnet、live、订单或资金写权限。
+
 ## Legacy Agent Sessions, Tasks and Runs
 
 `AgentTask` is the durable control record. `AgentRun` is one immutable execution

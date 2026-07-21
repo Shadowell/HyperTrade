@@ -260,6 +260,13 @@ class ThreadTurnService:
 
     async def _deliver_mission(self, thread_id: str, turn_id: str, mission: Any) -> None:
         response = await mission_run_projection(mission, self.mission_store)
+        completion_proof = mission.completion_proof
+        completion_valid = (
+            mission.status == MissionStatus.COMPLETED
+            and completion_proof is not None
+            and completion_proof.passed
+            and completion_proof.mission_version + 1 == mission.version
+        )
         attempts = response.get("report_json", {}).get("attempts", [])
         for index, attempt in enumerate(attempts if isinstance(attempts, list) else []):
             if not isinstance(attempt, dict):
@@ -328,13 +335,19 @@ class ThreadTurnService:
                 },
             },
         )
-        terminal = "turn.completed" if mission.status == MissionStatus.COMPLETED else "turn.failed"
+        terminal = "turn.completed" if completion_valid else "turn.failed"
         await self._append(
             thread_id,
             terminal,
             actor="thread_runtime",
             idempotency_key=f"{turn_id}:terminal:{terminal}",
-            payload={"turn_id": turn_id, "mission_status": mission.status.value},
+            payload={
+                "turn_id": turn_id,
+                "mission_status": mission.status.value,
+                "completion_proof_id": (
+                    completion_proof.proof_id if completion_valid else ""
+                ),
+            },
         )
 
     async def _append(
