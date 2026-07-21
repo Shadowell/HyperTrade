@@ -18,6 +18,17 @@ BitPro is treated as the base trading-system platform: it owns market/reference 
 
 BitPro 作为基础交易系统平台：负责行情/基础数据、策略存储、回测执行、指标、模拟盘运行和未来实盘执行。HyperTrade 作为 Agent 控制与研发层：通过 MCP 发现 BitPro 能力，只经由 MCP 工具读写，生成并校验 `BaseStrategy` 策略，启动 BitPro 负责的回测，基于真实证据迭代，并且只把通过门禁的候选策略推进到模拟盘。HyperTrade 不复制 BitPro 业务逻辑，也不绕过 BitPro 风险边界。
 
+## Long-Term North Star
+
+HyperTrade 的最终产品目标是成为一个在操作员预先定义的资本、风险、市场和授权期限内，能够持续自主研究、
+验证、组合、执行、复盘和迭代的量化交易员。它根据已经结算的回测、模拟盘和实盘结果识别策略适用状态与
+衰减，生成并验证新版本，根据当前市场状态配置多策略组合，并让合格策略在授权内进入实盘、让失效或越过
+风险条件的策略退出。
+
+该目标及分阶段 Gate 定义在 [Autonomous Quant Trader North Star](architecture/35-autonomous-quant-trader-north-star.md)。
+这是长期目标，不改变当前 mainnet 禁用、人工批准、只读 Mission Catalog 或 Sprint 121 的范围；任何自动
+资金配置和实盘生命周期能力都必须通过新的合同、Risk Engine、LiveTradingMandate、Canary、对账和回滚门禁。
+
 ## Canonical Agent Runtime Target
 
 The next runtime uses a server-owned `Thread → Turn → Item` interaction protocol and links long-running

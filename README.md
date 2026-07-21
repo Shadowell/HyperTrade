@@ -333,6 +333,7 @@ not profitability, automatic optimization, paper promotion or live authority.
 
 | Document | Description |
 |----------|-------------|
+| [Autonomous Quant Trader North Star](docs/architecture/35-autonomous-quant-trader-north-star.md) | Long-term goal for governed strategy evolution, regime-aware allocation, and authorized live lifecycle automation |
 | [System Architecture](docs/architecture/33-system-architecture.md) | Canonical system context, runtime layers, trust boundaries, data flow, deployment model, and contribution rules |
 | [API Reference](docs/api-reference.md) | Complete REST/SSE API documentation |
 | [User Manual](docs/user-manual.md) | Operator guide for all surfaces (CLI, Web, API) |

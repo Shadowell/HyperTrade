@@ -35,6 +35,7 @@
 ### 架构文档
 详细的系统架构和设计文档：
 - [Architecture Overview](architecture/) - 架构概览目录
+- [Autonomous Quant Trader North Star](architecture/35-autonomous-quant-trader-north-star.md) - 最终产品目标：持续策略进化、市场状态感知、组合优化与授权内实盘生命周期
 - [Next-Generation Agent Runtime Audit and Target Design](architecture/34-next-generation-agent-runtime-audit-and-target-design.md) - 真实执行审计、目标协议、完整状态机、Schema、权限、多 Agent、交易安全、评测与切换路线
 - [System Architecture](architecture/33-system-architecture.md) - 当前实现快照、Mission Runtime、控制/数据平面、信任边界、安全与部署
 - [System Architecture Diagram](architecture/19-hypertrade-architecture-diagram.md)

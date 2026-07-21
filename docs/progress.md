@@ -1,5 +1,16 @@
 # Progress Log
 
+## 自主量化交易员北极星目标 — 2026-07-21
+
+- 将产品所有者确认的最终目的固化为
+  [自主量化交易员北极星目标](architecture/35-autonomous-quant-trader-north-star.md)：HyperTrade 最终在操作员
+  预先定义的资本、风险、市场和授权期限内，持续完成策略研究、参数/版本迭代、真实数据验证、模拟盘孵化、
+  regime 感知组合配置以及策略的授权内实盘进入、退出和降权。
+- 文档把系统拆为研究慢循环、组合中循环和确定性执行快循环，定义不可变策略版本、Champion/Challenger、
+  LiveTradingMandate、进入/退出门禁、Outcome→Lesson→Proposal 学习单元和五阶段成熟度 Gate。
+- 这是一项长期目标与架构边界记录，不是运行时功能交付。当前 mainnet 自动交易仍未启用，Sprint 121 仍不
+  包含自主学习、自动晋级、paper/Testnet/live/order/capital 权限变化；本次没有修改代码、配置或部署权限。
+
 ## 下一代专业 Agent Runtime 真实审计与 Sprint 121 提案 — 2026-07-16
 
 - 完成以真实代码、测试、数据库模型、运行事件和只读代表性请求为依据的 Agent 架构审计。审计确认当前
