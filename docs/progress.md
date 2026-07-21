@@ -9,6 +9,16 @@
   reconciler；现有 live/skill/promotion approval 是独立业务流程，不能替代 canonical Agent 协议。
 - 本 Sprint 只使用 fake/isolated write adapter 验证 crash boundary、unknown 与 reconciliation；生产不会新增
   paper/Testnet/live/order/capital capability、凭证或授权。
+- 已实现参数/版本/policy/account/environment 精确绑定的 `PolicyDecisionV1` 与一次性 Approval 状态机；token
+  明文不持久化，deny 不可覆盖，过期、撤销、重复消费、跨账户和模型自批准均 fail closed 并审计。
+- 已实现原子 write-ahead `DispatchIntentV1`/`ToolCallV1`、content-bound idempotency、fencing、持久 circuit、
+  orphan recovery 与 reconciliation。外部 adapter 在事务外调用；写超时进入 `effect_unknown` 且禁止自动重发，
+  CompletionProof 会被未消费 Approval、未终结 ToolCall 或未知 effect 阻断。
+- migration `0032` 新增 policy、approval、intent、tool call、effect audit 和 circuit 表；生产 capability catalog
+  仍只有 read/live-read，governance service 默认只允许 `isolated` write environment。
+- 四个 Sprint 合同测试及 completion/migration 定向验证为 23 passed，PostgreSQL offline migration 可完整
+  升级到 `0032`。完整 `./scripts/check.sh` 通过：frontend 15 tests/build、Ruff、严格 mypy 与 Python 717 tests
+  （保留 2 个既有 OKX coroutine warnings）；部署验收待执行。
 
 ## Sprint 123 — Canonical Mission Event Reducer 已完成 — 2026-07-21
 

@@ -74,6 +74,15 @@ policy snapshots and worker fencing. Online SQL/in-memory projections must equal
 or linked Turn completion. Pre-V2 Missions are labeled `legacy_non_replayable` and are not backfilled with invented
 events. Approval and external-effect reconciliation remain Sprint 124 scope.
 
+Sprint 124 adds the governance contract required before any external mutation: `PolicyDecisionV1` binds the exact
+capability version, arguments, subject/account/environment, role, budget and policy snapshot; an `ask` decision
+requires a separately granted, expiring, one-time Approval. Every accepted write first persists a content-bound
+`DispatchIntentV1` and `ToolCallV1`. A timeout or ambiguous adapter result becomes `effect_unknown`, is never
+blindly redispatched, and blocks `CompletionProofV1` until reconciliation establishes a definite outcome. Circuit
+state, recovery and operator override are durable and audited. The implementation defaults to isolated adapters
+only and adds no production paper, Testnet, live, order or capital capability. Sprint 125 will consume these
+canonical outcomes to build the Strategy Outcome/Lesson Ledger.
+
 ## Users
 
 - Operator running audited agent research and execution workflows.

@@ -218,6 +218,15 @@ replan and terminal state must not bypass this path. `application/completion.py`
 conflicting duplicates, unknown protocol versions and stale worker fencing quarantine the aggregate. Existing
 pre-V2 rows remain readable as `legacy_non_replayable` and must not be backfilled with invented events.
 
+#### External Effect Governance (`backend/src/hypertrade/runtime/application/effect_governance.py`)
+
+Future write adapters must pass the canonical contracts in `domain/effects.py`: an exact-parameter
+`PolicyDecisionV1`, an optional separately granted one-time Approval, and a write-ahead
+`DispatchIntentV1`/`ToolCallV1`. `adapters/effect_store.py` persists those records, circuit state and audit events;
+the external adapter is invoked only after the transaction commits. Ambiguous writes become `effect_unknown` and
+must be reconciled without automatic redispatch. The service allows write execution only in the `isolated`
+environment by default; this foundation does not expose production paper, Testnet, live or capital writes.
+
 #### AgentKernel (`backend/src/hypertrade/agent/kernel.py`)
 
 Orchestrates Agent runs:
@@ -630,6 +639,11 @@ public reducer projection. Migration revisions `0029` and `0030` create these st
 projection and append-only domain event source. Revision `0031` adds protocol/reducer versions, aggregate cursor,
 projection hash, replay/quarantine state, completion proof, payload hash, audit context and fencing fields. New
 rows are reducer-backed; migrated historical rows use `legacy_non_replayable`.
+
+**agent_policy_decisions / agent_approvals / agent_dispatch_intents / agent_tool_calls /
+agent_effect_audit_events / agent_effect_circuits**: Canonical policy, one-time approval, write-ahead intent,
+effect lifecycle, audit and shared circuit state. Revision `0032` creates these structures. Approval plaintext
+tokens and raw external responses are not persisted.
 
 **agent_runs**: Agent execution records
 ```sql

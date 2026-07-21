@@ -62,6 +62,14 @@ git diff --check
 故障测试必须覆盖所有 crash boundary、重复消息、乱序 ack、过期 lease、同 key 不同 payload 和外部状态持续
 unknown。生产验收只验证 capability 物理缺席和 fail-closed，不发起 paper/live mutation。
 
+## Local Implementation Evidence
+
+- 参数级 PolicyDecision、一次性 Approval、write-ahead outbox、ToolCall effect 状态、reconciler、持久 circuit
+  与 bounded public projection 已落地；生产 write environment 默认关闭。
+- 四个合同测试及 CompletionProof/Alembic 定向验证共 23 passed；PostgreSQL offline migration 通过。
+  完整 `./scripts/check.sh` 通过 frontend 15 tests/build、Ruff、严格 mypy 与 Python 717 tests（2 个既有 OKX
+  coroutine warnings）；部署验收将在提交后记录。
+
 ## Handoff
 
 Sprint 125 使用 canonical events、CompletionProof 和 reconciliation 结果形成可审核的策略 Outcome Ledger。

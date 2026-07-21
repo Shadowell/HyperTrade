@@ -121,8 +121,11 @@ sequenceDiagram
   W->>R: 加载 Mission 与活动 Plan
   R->>R: ingress / budget / permission / dependency check
   R->>R: 编译可复现 Context Pack
-  R->>X: schema、policy、health、timeout 预检后执行
+  R->>R: 生成参数绑定的 PolicyDecision，必要时等待一次性 Approval
+  R->>S: 外部写前原子提交 DispatchIntent + ToolCall
+  R->>X: 数据库事务外执行 adapter
   X-->>R: bounded ToolObservation + provenance
+  R->>S: 写 ack/terminal；歧义结果写 effect_unknown 并对账
   R->>S: 验证 observation，写 attempt/event/artifact refs
   alt 假设被否定且仍有预算
     R->>S: 写不可变 Plan diff 并激活新版本
@@ -169,6 +172,7 @@ HyperTrade 不持久化 BitPro 的完整蜡烛、权益、交易、订单或持�
 | 输入与输出 | Pydantic v2 + JSON Schema、policy/contract hash、来源绑定 | schema 或来源不匹配时记录分类失败 |
 | 预算与并发 | 事务性 token/tool/model/duration reservation、AnyIO bounded concurrency | 无剩余预算时停止或形成降级交付 |
 | 审计与重放 | V2 Mission events、deterministic reducer、projection hash、idempotency、SSE cursor | gap、冲突、未知版本或 stale fencing 会 quarantine；旧记录为 `legacy_non_replayable` |
+| 外部副作用 | 参数/版本/policy 绑定的一次性 Approval、write-ahead DispatchIntent、持久 ToolCall/circuit/reconciliation | deny 不可覆盖；超时进入 `effect_unknown` 且不自动重发，未对账时阻止完成 |
 | 数据保护 | redaction、结果大小限制、metadata-first artifacts | 不保存凭据、原始工具结果、完整 prompt 或私有推理 |
 | 策略代码 | UDS isolated sandbox、非 root、无网络、只读根、无 Docker socket、资源限制、digest 绑定 | socket/digest 不可用时生产返回 503，绝不回退到 API/宿主子进程 |
 | 评测 | 独立 API、数据库、网络和合成事实；生产禁用 fixture | 评测产物不进入生产事实，也不授予交易权限 |

@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Sequence
 
+from hypertrade.runtime.domain.effects import ApprovalRequestV1, ToolCallV1
 from hypertrade.runtime.domain.mission_events import mission_content_hash
 from hypertrade.runtime.domain.models import (
     CompletionCriterionResultV1,
@@ -28,6 +29,8 @@ class MissionCompletionVerifier:
         attempts: Sequence[StepAttemptV2],
         *,
         context_valid: bool,
+        approval_requests: Sequence[ApprovalRequestV1] = (),
+        tool_calls: Sequence[ToolCallV1] = (),
     ) -> CompletionProofV1:
         relevant = [
             row
@@ -48,7 +51,21 @@ class MissionCompletionVerifier:
             for row in relevant
             if row.status in {"running", "waiting_approval"}
         )
-        effect_unknown = any(row.status == "unknown" for row in relevant)
+        pending_approvals = tuple(
+            row.request_id
+            for row in approval_requests
+            if row.status in {"requested", "pending", "approved"}
+        )
+        pending_tool_calls = tuple(
+            row.tool_call_id
+            for row in tool_calls
+            if row.status in {"prepared", "dispatched", "acknowledged", "timed_out"}
+        )
+        effect_unknown = any(row.status == "unknown" for row in relevant) or any(
+            row.status == "effect_unknown"
+            or (row.status == "reconciled" and row.reconciliation_outcome == "unknown")
+            for row in tool_calls
+        )
         budget_valid = _budget_valid(mission)
         criteria: list[CompletionCriterionResultV1] = []
         for criterion in mission.success_criteria:
@@ -87,6 +104,10 @@ class MissionCompletionVerifier:
         gaps = [row.detail for row in criteria if not row.passed]
         if pending:
             gaps.append("unfinished tool/step attempts remain")
+        if pending_approvals:
+            gaps.append("approval requests remain unconsumed")
+        if pending_tool_calls:
+            gaps.append("external ToolCalls remain non-terminal")
         if effect_unknown:
             gaps.append("one or more attempts have unknown effect/result state")
         if not context_valid:
@@ -104,6 +125,8 @@ class MissionCompletionVerifier:
             "evidence_refs": source_refs,
             "artifact_refs": artifact_refs,
             "pending": pending,
+            "pending_approvals": pending_approvals,
+            "pending_tool_calls": pending_tool_calls,
             "effect_unknown": effect_unknown,
             "budget_valid": budget_valid,
             "context_valid": context_valid,

@@ -260,6 +260,19 @@ criteria、缺少 Evidence/Artifact、未终结 Attempt、`effect_unknown` 或�
 版本 gap、冲突重复、未知版本或 stale fencing 会返回失败并 quarantine，禁止继续 dispatch。迁移前记录仍可读，
 但标记为 `legacy_non_replayable`。该协议不授予 paper、Testnet、live、订单或资金写权限。
 
+## Approval and External Effect Governance Contracts
+
+Sprint 124 introduces internal `PolicyDecisionV1`, `ApprovalRequestV1`/`ApprovalGrantV1`,
+`DispatchIntentV1` and `ToolCallV1` contracts for future mutation adapters. Decisions and approvals bind the exact
+capability version/hash, canonical arguments, subject, account, environment, role, scope, budget and policy
+snapshot. Approval is independently granted, expiring and single-use; a deny decision cannot be overridden.
+
+An external write is not dispatched until its intent and ToolCall are durable. Timeout or ambiguous delivery is
+reported as `effect_unknown`, is not automatically repeated, and requires a read-only reconciliation result.
+Public projections expose only bounded status, reason and timestamps—never approval tokens, raw account responses
+or private reasoning. These are runtime/domain contracts, not newly enabled public trading endpoints: production
+capabilities and credentials remain read-only/absent.
+
 ## Legacy Agent Sessions, Tasks and Runs
 
 `AgentTask` is the durable control record. `AgentRun` is one immutable execution

@@ -357,6 +357,90 @@ class AgentMissionEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class AgentPolicyDecision(Base):
+    __tablename__ = "agent_policy_decisions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    mission_id: Mapped[str] = mapped_column(String(64), index=True)
+    decision: Mapped[str] = mapped_column(String(16), index=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentApproval(Base):
+    __tablename__ = "agent_approvals"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    decision_id: Mapped[str] = mapped_column(String(64), index=True)
+    mission_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    request_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    grant_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    token_hash: Mapped[str] = mapped_column(String(64), default="", index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class AgentDispatchIntent(Base):
+    __tablename__ = "agent_dispatch_intents"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    mission_id: Mapped[str] = mapped_column(String(64), index=True)
+    tool_call_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    payload_hash: Mapped[str] = mapped_column(String(64), index=True)
+    fencing_token: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    intent_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class AgentToolCall(Base):
+    __tablename__ = "agent_tool_calls"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    intent_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    mission_id: Mapped[str] = mapped_column(String(64), index=True)
+    capability_id: Mapped[str] = mapped_column(String(160), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    call_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class AgentEffectAuditEvent(Base):
+    __tablename__ = "agent_effect_audit_events"
+    __table_args__ = (
+        UniqueConstraint("aggregate_id", "sequence", name="uq_agent_effect_event_sequence"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    aggregate_id: Mapped[str] = mapped_column(String(64), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(96), index=True)
+    actor: Mapped[str] = mapped_column(String(128), index=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentEffectCircuit(Base):
+    __tablename__ = "agent_effect_circuits"
+
+    capability_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    state_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
 class AgentPlanVersion(Base):
     """Immutable plan version; replans append and never overwrite history."""
 

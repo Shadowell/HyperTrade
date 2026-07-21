@@ -46,7 +46,9 @@ question to evidence-backed strategy iteration—not an unattended trading bot.
 > **Maturity note:** reviewed trading-research capabilities and selected read-only Mission requests are
 > deployed, but HyperTrade is not yet a complete professional general Agent runtime. Remote `ht ask/chat` now
 > use a server-owned Thread/Turn/Item event protocol; the Web natural-language workspace uses the same protocol,
-> and new Missions use an append-only V2 event reducer plus independent completion proof. Desktop, TUI and local compatibility paths still
+> and new Missions use an append-only V2 event reducer plus independent completion proof. A parameter-bound,
+> one-time approval and write-ahead effect protocol now exists for isolated adapters, while production Mission
+> capabilities remain read-only. Desktop, TUI and local compatibility paths still
 > contain Run/Task/Mission differences. The fixed 100-task suite is useful regression evidence, not an overall
 > production-grade certification.
 
@@ -93,8 +95,10 @@ Mission is the intended research-workflow record. Remote CLI and Web natural-lan
 Thread/Turn/Item events, deterministic projection replay and cursor-resumable SSE without writing legacy
 Run/Task rows. New Mission/Plan/Attempt/Budget state is reduced from versioned events, and a Turn cannot complete
 without a current passing `CompletionProofV1`; pre-V2 Missions remain explicitly non-replayable legacy history.
-Desktop, TUI and local compatibility paths are not migrated yet; remaining cross-surface cutover,
-Approval and Supervisor integration remain target work rather than finished claims.
+External writes must first persist an exact-parameter PolicyDecision, optional one-time Approval and
+DispatchIntent/ToolCall record; timeouts remain `effect_unknown` until reconciliation. No paper, Testnet, live,
+order or capital write capability is enabled by this foundation. Desktop, TUI and local compatibility paths are
+not migrated yet; remaining cross-surface cutover and Supervisor integration remain target work.
 
 See the [current implementation snapshot](docs/architecture/33-system-architecture.md) and the
 [evidence-driven target architecture](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md).
@@ -116,7 +120,7 @@ See the [current implementation snapshot](docs/architecture/33-system-architectu
 | Capability | Description | Status |
 |-----------|-------------|--------|
 | Natural Language | Free-form prompts with bounded planning and tool selection | Remote CLI and Web canonical; other surfaces pending |
-| Tool Calling | Reviewed registry, scope, schema and idempotency enforcement | Read catalog deployed; Mission approval loop incomplete |
+| Tool Calling | Reviewed registry, scope, schema and idempotency enforcement | Read catalog deployed; isolated approval/effect protocol implemented, production writes absent |
 | Market Intelligence | OKX SWAP tickers, candles, funding, OI, relative strength indicators | Delivered read capability |
 | Global Market | Cross-asset regime classification (equities, volatility, FX, rates) | Delivered read capability |
 | RAG | pgvector-backed citation search over knowledge documents | Delivered |
