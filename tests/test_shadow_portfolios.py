@@ -338,7 +338,11 @@ def test_review_is_expiring_idempotent_audit_without_trading_side_effects() -> N
 def test_shadow_api_requires_admin_and_cli_renders_governance_boundary() -> None:
     db = Database("sqlite:///:memory:")
     db.create_all()
-    cohort_id = _cohort(db, suffix="api")
+    cohort_id = _cohort(
+        db,
+        suffix="api",
+        valid_until=datetime.now(UTC) + timedelta(days=7),
+    )
     client = TestClient(
         create_app(
             settings=Settings(
