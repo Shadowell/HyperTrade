@@ -18,6 +18,7 @@ from hypertrade.db import (
     ExperimentEvidenceLink,
     ExperimentExecution,
     ExperimentManifest,
+    PaperIncubationMember,
     PaperPromotion,
     ResearchExperimentEvidence,
     ResearchMandate,
@@ -455,11 +456,22 @@ class StrategyCardService:
                 .order_by(desc(PaperPromotion.updated_at))
                 .limit(1)
             )
+            incubation_member = session.scalar(
+                select(PaperIncubationMember)
+                .where(
+                    PaperIncubationMember.manifest_id == manifest.id,
+                    PaperIncubationMember.status != "rejected",
+                )
+                .order_by(desc(PaperIncubationMember.updated_at))
+                .limit(1)
+            )
             bitpro_strategy_id = next(
                 (row.bitpro_strategy_id for row in legacy_evidence if row.bitpro_strategy_id), ""
             )
             if promotion is not None and promotion.bitpro_strategy_id:
                 bitpro_strategy_id = promotion.bitpro_strategy_id
+            if incubation_member is not None and incubation_member.bitpro_strategy_id:
+                bitpro_strategy_id = incubation_member.bitpro_strategy_id
             monitor = (
                 session.scalar(
                     select(BitProPaperMonitorSnapshot)
@@ -502,19 +514,46 @@ class StrategyCardService:
                     if unified_validation.status == "validated"
                     else "validation_rejected"
                 )
+            incubation_lifecycle = {
+                "eligible": "paper_pending",
+                "configured": "paper_pending",
+                "observing": "observing",
+                "paper_degraded": "degraded",
+                "paper_review_required": "review_required",
+                "effect_unknown": "review_required",
+                "paused": "degraded",
+                "retired": "retired",
+            }
+            if incubation_member is not None:
+                lifecycle = incubation_lifecycle.get(incubation_member.status, lifecycle)
             present = {
                 "identity": True,
                 "manifest": True,
                 "execution": latest_execution is not None,
                 "evidence": bool(evidence_ids),
                 "validation": validation is not None or unified_validation is not None,
-                "paper": promotion is not None,
+                "paper": promotion is not None or incubation_member is not None,
                 "monitor": monitor is not None,
                 "memory": bool(matching_assertions),
             }
             missing_fields = [key for key, value in present.items() if not value]
             score = Decimal(sum(present.values())) / Decimal(len(present))
-            paper_status = promotion.status if promotion is not None else "not_started"
+            paper_status = (
+                promotion.status
+                if promotion is not None
+                else {
+                    "eligible": "paper_pending",
+                    "configured": "paper_pending",
+                    "observing": "paper_observing",
+                    "paper_degraded": "paper_degraded",
+                    "paper_review_required": "paper_review_required",
+                    "effect_unknown": "paper_review_required",
+                    "paused": "paper_degraded",
+                    "retired": "retired",
+                }.get(incubation_member.status, "not_started")
+                if incubation_member is not None
+                else "not_started"
+            )
             robustness_status = validation.final_status if validation is not None else "unknown"
             effective_validation_status = (
                 unified_validation.status
@@ -589,6 +628,9 @@ class StrategyCardService:
                     "validation_ids": [row.id for row in unified_validations]
                     + [row.id for row in validations],
                     "paper_promotion_ids": [promotion.id] if promotion is not None else [],
+                    "paper_incubation_member_ids": (
+                        [incubation_member.id] if incubation_member is not None else []
+                    ),
                     "monitor_snapshot_ids": [monitor.id] if monitor is not None else [],
                     "memory_assertion_ids": matching_assertions,
                 },

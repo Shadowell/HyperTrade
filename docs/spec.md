@@ -120,6 +120,17 @@ regime evidence. Discovery adds novelty falsification but cannot remove common g
 versioned by candidate, policy, trial family and source hash; StrategyCard receives a new research projection only,
 while Paper, Live, order and capital state remain unchanged.
 
+Sprint 130 admits only an exact fixed denominator of Sprint 129 `validated` candidates into an operator-created
+`PaperResearchMandateV1`. The authenticated creator must be the named human approver; candidate, validation
+fingerprint, symbol, capital, action, cost, risk, horizon and validity bounds are immutable and content-hashed.
+Configure, start, pause and retire use Sprint 124 one-time Approval plus write-ahead DispatchIntent/ToolCall;
+ambiguous effects remain `effect_unknown` until read-state reconciliation and are never blindly retried. Paper
+observations can automatically issue the same governed pause when drawdown, errors, abnormal trades, stale data or
+BitPro health cross the mandate boundary. Immutable 30/60/90-day PortfolioObservationWindows and PaperCohorts keep
+incomplete horizons and single-member groups from producing a Champion. API, CLI and Harness expose server-owned
+mandate/member/action/kill-switch state; the controller protocol contains no Testnet, live-order, capital-transfer
+or credential surface, and every projection explicitly reports `live_authorized=false`.
+
 ## Users
 
 - Operator running audited agent research and execution workflows.

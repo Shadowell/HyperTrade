@@ -300,6 +300,35 @@ type PaperCohort = {
   execution_authorized: boolean;
 };
 
+type PaperIncubationMandate = {
+  id: string;
+  status: string;
+  kill_switch: boolean;
+  policy_hash: string;
+  fixed_denominator: number;
+  members: Array<{
+    id: string;
+    status: string;
+    candidate_id: string;
+    validation_id: string;
+    rejection_reasons: string[];
+  }>;
+  actions: Array<{
+    id: string;
+    action: string;
+    status: string;
+    reason: string;
+    outcome_link: string;
+  }>;
+  mutation_boundary: {
+    paper_only: boolean;
+    testnet_writes: boolean;
+    live_writes: boolean;
+    real_order_writes: boolean;
+    capital_transfer_writes: boolean;
+  };
+};
+
 type ShadowPortfolio = {
   id: string;
   status: string;
@@ -657,6 +686,9 @@ const copy = {
     captureWindow: "采集只读窗口",
     noObservationWindows: "暂无组合观察窗口",
     paperCohorts: "Paper Cohort",
+    paperIncubation: "Paper 自治孵化",
+    paperIncubationHint: "服务端 mandate、kill switch、成员状态与受治理动作；客户端不重算。",
+    noPaperIncubation: "暂无 PaperResearchMandate",
     buildCohort: "构建可比 Cohort",
     cohortComparable: "可比成员",
     noPaperCohorts: "暂无 Paper Cohort",
@@ -909,6 +941,10 @@ const copy = {
     captureWindow: "Capture Read-only Window",
     noObservationWindows: "No portfolio observation windows",
     paperCohorts: "Paper Cohorts",
+    paperIncubation: "Autonomous Paper Incubation",
+    paperIncubationHint:
+      "Server-owned mandates, kill switches, member states, and governed actions; no client recomputation.",
+    noPaperIncubation: "No PaperResearchMandates",
     buildCohort: "Build Comparable Cohort",
     cohortComparable: "Comparable Members",
     noPaperCohorts: "No paper cohorts",
@@ -1229,6 +1265,9 @@ function App() {
     PortfolioObservationWindow[]
   >([]);
   const [paperCohorts, setPaperCohorts] = useState<PaperCohort[]>([]);
+  const [paperIncubationMandates, setPaperIncubationMandates] = useState<
+    PaperIncubationMandate[]
+  >([]);
   const [shadowPortfolios, setShadowPortfolios] = useState<ShadowPortfolio[]>([]);
   const [portfolioReason, setPortfolioReason] = useState("");
   const [ragQuery, setRagQuery] = useState("risk");
@@ -1521,6 +1560,18 @@ function App() {
     setPaperCohorts(Array.isArray(payload.items) ? payload.items : []);
   }, []);
 
+  const refreshPaperIncubationMandates = useCallback(async () => {
+    const response = await fetch("/api/research/paper-incubation/mandates", {
+      credentials: "include"
+    });
+    if (!response.ok) {
+      setPaperIncubationMandates([]);
+      return;
+    }
+    const payload = (await response.json()) as { items?: PaperIncubationMandate[] };
+    setPaperIncubationMandates(Array.isArray(payload.items) ? payload.items : []);
+  }, []);
+
   const refreshShadowPortfolios = useCallback(async () => {
     const response = await fetch("/api/portfolio/shadow-portfolios", { credentials: "include" });
     if (!response.ok) {
@@ -1634,6 +1685,7 @@ function App() {
         await refreshPortfolioAssessments();
         await refreshPortfolioObservationWindows();
         await refreshPaperCohorts();
+        await refreshPaperIncubationMandates();
         await refreshShadowPortfolios();
         await refreshMissions();
         setHarnessError("");
@@ -1650,6 +1702,7 @@ function App() {
     refreshPortfolioAssessments,
     refreshPortfolioObservationWindows,
     refreshPaperCohorts,
+    refreshPaperIncubationMandates,
     refreshMissions,
     refreshShadowPortfolios,
     refreshStrategyCards,
@@ -2710,6 +2763,7 @@ function App() {
             <PortfolioLifecyclePanel
               assessments={portfolioAssessments}
               cohorts={paperCohorts}
+              incubationMandates={paperIncubationMandates}
               shadowPortfolios={shadowPortfolios}
               observationWindows={portfolioObservationWindows}
               onAssess={handlePortfolioAssessment}
@@ -3171,6 +3225,7 @@ type MemoryActivityInsight = {
 function PortfolioLifecyclePanel({
   assessments,
   cohorts,
+  incubationMandates,
   shadowPortfolios,
   observationWindows,
   reason,
@@ -3185,6 +3240,7 @@ function PortfolioLifecyclePanel({
 }: {
   assessments: PortfolioAssessment[];
   cohorts: PaperCohort[];
+  incubationMandates: PaperIncubationMandate[];
   shadowPortfolios: ShadowPortfolio[];
   observationWindows: PortfolioObservationWindow[];
   reason: string;
@@ -3303,6 +3359,48 @@ function PortfolioLifecyclePanel({
         )}
       </section>
       <section className="panel">
+        <h2 className="section-title">{t.paperIncubation}</h2>
+        <p className="mt-1 text-xs leading-5 text-ink/50">{t.paperIncubationHint}</p>
+        <div className="mt-4 space-y-2">
+          {incubationMandates.length === 0 ? (
+            <div className="empty-row">{t.noPaperIncubation}</div>
+          ) : (
+            incubationMandates.slice(0, 6).map((mandate) => {
+              const unknownActions = mandate.actions.filter(
+                (action) => action.status === "effect_unknown"
+              ).length;
+              return (
+                <div
+                  className="operator-card block"
+                  data-tone={mandate.kill_switch ? "danger" : "signal"}
+                  key={mandate.id}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs">{mandate.id}</span>
+                    <span className="text-xs">
+                      {statusLabel(mandate.status)} · kill={String(mandate.kill_switch)}
+                    </span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-ink/55">
+                    <span>{mandate.members.length}/{mandate.fixed_denominator} members</span>
+                    <span>{mandate.actions.length} actions</span>
+                    <span>{unknownActions} unknown</span>
+                  </div>
+                  <div className="mt-2 truncate font-mono text-[11px] text-ink/40">
+                    policy={mandate.policy_hash} · paper_only=
+                    {String(mandate.mutation_boundary.paper_only)} · live=false
+                  </div>
+                  {mandate.actions[0] ? (
+                    <div className="mt-2 text-xs text-ink/55">
+                      {mandate.actions[0].action} · {mandate.actions[0].status} ·{" "}
+                      {mandate.actions[0].reason}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })
+          )}
+        </div>
         <h2 className="section-title">{t.observationWindows}</h2>
         <div className="mt-4 space-y-2">
           {observationWindows.length === 0 ? (

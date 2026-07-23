@@ -22,6 +22,7 @@ from hypertrade.cli import (
     render_backtest_result,
     render_connectors,
     render_evals_status,
+    render_paper_incubation_mandates,
     render_run,
     render_run_stream,
     render_slash_help,
@@ -35,6 +36,34 @@ from hypertrade.cli import (
 class TtyStringIO(StringIO):
     def isatty(self) -> bool:
         return True
+
+
+def test_render_paper_incubation_mandates_keeps_server_state_and_safety_boundary() -> None:
+    output = StringIO()
+
+    render_paper_incubation_mandates(
+        [
+            {
+                "id": "prm_001",
+                "status": "revoked",
+                "kill_switch": True,
+                "fixed_denominator": 1,
+                "members": [{"id": "pim_001"}],
+                "actions": [
+                    {
+                        "action": "configure",
+                        "status": "effect_unknown",
+                    }
+                ],
+            }
+        ],
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert "prm_001 [revoked] kill=true" in rendered
+    assert "unknown=1" in rendered
+    assert "paper_only=true live=false" in rendered
 
 
 class FakeReadline:

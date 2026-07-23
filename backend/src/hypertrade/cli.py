@@ -67,6 +67,7 @@ from hypertrade.reporting.blocks import ReportBlock, render_report_blocks
 from hypertrade.research.experiment_ledger import ExperimentLedgerService
 from hypertrade.research.graph import ResearchGraphRuntime, graph_topology_projection
 from hypertrade.research.graph_tools import BuiltinResearchToolRunner
+from hypertrade.research.paper_incubation import AutonomousPaperIncubationService
 from hypertrade.research.paper_promotion import PaperPromotionService
 from hypertrade.research.robustness import RobustnessValidationService
 from hypertrade.research.role_provider import DeterministicGapRoleProvider
@@ -245,6 +246,8 @@ class AgentClient(Protocol):
     def list_portfolio_observation_windows(self) -> list[dict[str, Any]]: ...
 
     def list_paper_cohorts(self) -> list[dict[str, Any]]: ...
+
+    def list_paper_incubation_mandates(self) -> list[dict[str, Any]]: ...
 
     def build_paper_cohort(self) -> dict[str, Any]: ...
 
@@ -518,6 +521,10 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     (
         "/cohorts list|build|show|diff|decide",
         "Inspect comparable paper cohorts and record expiring label reviews.",
+    ),
+    (
+        "/incubation",
+        "Inspect PaperResearchMandates, kill switches, governed actions, and unknown effects.",
     ),
     ("/rag <query>", "Search project and trading knowledge chunks."),
     ("/evals", "Show deterministic Agent eval status."),
@@ -1133,6 +1140,9 @@ class AgentApiClient:
 
     def list_paper_cohorts(self) -> list[dict[str, Any]]:
         return self._get_list("/api/portfolio/paper-cohorts", "items")
+
+    def list_paper_incubation_mandates(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/research/paper-incubation/mandates", "items")
 
     def build_paper_cohort(self) -> dict[str, Any]:
         return self._post_object(
@@ -2286,6 +2296,9 @@ class LocalAgentClient:
     def list_paper_cohorts(self) -> list[dict[str, Any]]:
         return PaperCohortService(self.db).list()
 
+    def list_paper_incubation_mandates(self) -> list[dict[str, Any]]:
+        return AutonomousPaperIncubationService(self.db).list()
+
     def build_paper_cohort(self) -> dict[str, Any]:
         return PaperCohortService(self.db).build(
             PaperCohortBuildV1(idempotency_key=new_id("cli_cohort")),
@@ -3057,6 +3070,11 @@ def handle_slash_command(
         handle_portfolio_window_command(command, client=client, output=output)
     elif name in {"/cohorts", "/paper-cohorts"}:
         handle_paper_cohort_command(command, client=client, output=output)
+    elif name in {"/incubation", "/paper-incubation"}:
+        render_paper_incubation_mandates(
+            client.list_paper_incubation_mandates(),
+            output=output,
+        )
     elif name in {"/shadow", "/shadow-portfolios"}:
         handle_shadow_portfolio_command(command, client=client, output=output)
     elif name == "/rag":
@@ -4880,6 +4898,32 @@ def handle_paper_cohort_command(
         "decide <cohort_id> <proposal_id> accept|reject|hold <reason>",
         file=output,
     )
+
+
+def render_paper_incubation_mandates(
+    rows: list[dict[str, Any]], *, output: TextIO
+) -> None:
+    print("Paper incubation mandates:", file=output)
+    if not rows:
+        print("- none", file=output)
+        return
+    for row in rows[:30]:
+        members = list(row.get("members", []))
+        actions = list(row.get("actions", []))
+        unknown_count = sum(
+            isinstance(action, dict) and action.get("status") == "effect_unknown"
+            for action in actions
+        )
+        latest = actions[-1] if actions and isinstance(actions[-1], dict) else {}
+        print(
+            f"- {row.get('id')} [{row.get('status')}] "
+            f"kill={str(bool(row.get('kill_switch'))).lower()} "
+            f"members={len(members)}/{row.get('fixed_denominator', 0)} "
+            f"actions={len(actions)} unknown={unknown_count} "
+            f"latest={latest.get('action', 'none')}:{latest.get('status', 'none')} "
+            "paper_only=true live=false",
+            file=output,
+        )
 
 
 def handle_shadow_portfolio_command(

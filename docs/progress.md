@@ -6,6 +6,22 @@
   Sprint 130 合同进入 Active。
 - 本 Sprint 仅允许在显式、可撤销的 `PaperResearchMandateV1` 内对 validated candidate 执行幂等
   configure/start/observe/reduce/pause/retire；继续禁止 Testnet、Live、真实订单和资金动作。
+- 已实现固定 denominator intake 与 candidate→validation fingerprint 绑定；非 `validated`、hash/Manifest/
+  symbol 不一致、缺 BitPro strategy identity 或超过实例 quota 的候选保留 rejected reason。mandate 创建者必须
+  等于认证的人类审批人，Agent/model 不能创建审批或控制 kill switch。
+- configure/start/pause/retire 已接入 Sprint 124 的参数级一次性 Approval、write-ahead DispatchIntent、
+  ToolCall、content-bound idempotency、外部 operation id、`effect_unknown` 与 read-state reconciliation。
+  revoke/kill switch 阻止扩张动作，但 `safe_pause` 可对已运行实例执行受治理的安全收敛。
+- Paper observation 已按 BitPro health、回撤、错误、异常成交、数据时效和样本覆盖判断
+  continue/degraded/hold/pause；越过风险阈值会自动走相同受治理 pause，而非旁路调用。30/60/90 天窗口复用
+  immutable PortfolioObservationWindow 与 PaperCohort，窗口不完整或成员不足时保持 needs_data，不能产生
+  Champion。
+- migration `0038`、认证 API、CLI `/incubation` 与 Harness 只读面板已实现；展示 mandate、member、action、
+  reason、before/after、Outcome link、unknown/reconciliation 与 kill switch，客户端不重算状态。controller
+  adapter 静态边界无 Testnet/Live/order/capital 方法。
+- 定向与相邻回归 117 passed；完整 `./scripts/check.sh` 通过：frontend lint/build/15 tests、Ruff、严格
+  mypy（202 source files）和 Python 793 tests 全绿，保留 2 条既有 OKX coroutine warnings。生产部署与小额
+  预批准 Paper canary 待执行，Sprint 130 Gate 仍保持 Active。
 
 ## Sprint 129 — Unified Strategy Validation Funnel 已完成 — 2026-07-23
 

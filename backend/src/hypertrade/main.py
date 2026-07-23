@@ -117,6 +117,15 @@ from hypertrade.research.graph_tools import (
 )
 from hypertrade.research.legacy_evidence import LegacyEvidenceAdapter
 from hypertrade.research.orchestrator import BitProResearchAdapter, ResearchOrchestrator
+from hypertrade.research.paper_incubation import (
+    AutonomousPaperIncubationService,
+    PaperIncubationAdapter,
+)
+from hypertrade.research.paper_incubation_schemas import (
+    PaperIncubationActionV1,
+    PaperIncubationCaptureV1,
+    PaperMandateCreateV1,
+)
 from hypertrade.research.paper_observation import PaperObservationService
 from hypertrade.research.paper_promotion import PaperPromotionAdapter, PaperPromotionService
 from hypertrade.research.robustness import RobustnessValidationService
@@ -146,6 +155,10 @@ from hypertrade.runtime.adapters.context_engine import (
     InMemoryContextArtifactStore,
     SqlContextArtifactStore,
 )
+from hypertrade.runtime.adapters.effect_store import (
+    InMemoryEffectGovernanceStore,
+    SqlEffectGovernanceStore,
+)
 from hypertrade.runtime.adapters.memory_store import InMemoryMissionStore
 from hypertrade.runtime.adapters.research_planner import ProviderBackedResearchPlanner
 from hypertrade.runtime.adapters.sandbox import (
@@ -174,6 +187,7 @@ from hypertrade.runtime.adapters.tool_runtime import (
     builtin_handlers,
 )
 from hypertrade.runtime.api.thread_turn import build_thread_turn_router
+from hypertrade.runtime.application.effect_governance import EffectGovernanceService
 from hypertrade.runtime.application.entrypoint import (
     is_mission_canary,
     mission_request_for_prompt,
@@ -333,6 +347,11 @@ class PaperPromotionApprovalPayload(BaseModel):
     idempotency_key: str
 
 
+class PaperMandateStatePayload(BaseModel):
+    status: Literal["active", "paused", "revoked"]
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class BacktestPayload(BaseModel):
     research_id: str = ""
     strategy_key: str = "momentum_breakout_v1"
@@ -396,6 +415,15 @@ def create_app(
         InMemoryObservationStore()
         if database.url == "sqlite:///:memory:"
         else SqlObservationStore(database.url)
+    )
+    paper_effect_store = (
+        InMemoryEffectGovernanceStore()
+        if database.url == "sqlite:///:memory:"
+        else SqlEffectGovernanceStore(database.url)
+    )
+    paper_effect_governance = EffectGovernanceService(
+        paper_effect_store,
+        enabled_write_environments=frozenset({"paper"}),
     )
     context_artifact_store = (
         InMemoryContextArtifactStore()
@@ -486,6 +514,7 @@ def create_app(
                 thread_store,
                 capability_catalog,
                 observation_store,
+                paper_effect_store,
                 context_artifact_store,
                 supervision_store,
                 sandbox_store,
@@ -506,6 +535,7 @@ def create_app(
     app.state.thread_turn_service = thread_turn_service
     app.state.capability_catalog = capability_catalog
     app.state.tool_executor = tool_executor
+    app.state.paper_effect_governance = paper_effect_governance
     app.state.context_engine = context_engine
     app.state.context_artifact_store = context_artifact_store
     app.state.supervisor = supervisor
@@ -653,6 +683,17 @@ def create_app(
             app.state.bitpro_adapter = BitProToolAdapter(BitProMcpClient(settings=app_settings))
         adapter: BitProApiAdapter = app.state.bitpro_adapter
         return adapter
+
+    def paper_incubation_service(
+        *, external_access: bool = False
+    ) -> AutonomousPaperIncubationService:
+        return AutonomousPaperIncubationService(
+            database,
+            effect_governance=paper_effect_governance if external_access else None,
+            bitpro_adapter=(
+                cast(PaperIncubationAdapter, get_bitpro_adapter()) if external_access else None
+            ),
+        )
 
     def active_provider_models() -> dict[str, str]:
         active_model = str(getattr(app.state, "active_chat_model", "") or "")
@@ -2453,6 +2494,90 @@ def create_app(
         try:
             return PaperPromotionService(database).request(
                 evidence_id=payload.evidence_id, reason=payload.reason
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/research/paper-incubation/mandates")
+    def create_paper_research_mandate(
+        payload: PaperMandateCreateV1, actor: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return paper_incubation_service().create_mandate(payload, actor=actor)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/research/paper-incubation/mandates")
+    def list_paper_research_mandates(
+        _: AdminUser, limit: int = 100
+    ) -> dict[str, list[dict[str, Any]]]:
+        return {"items": paper_incubation_service().list(limit=limit)}
+
+    @app.get("/api/research/paper-incubation/mandates/{mandate_id}")
+    def get_paper_research_mandate(mandate_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return paper_incubation_service().get(mandate_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/research/paper-incubation/mandates/{mandate_id}/state")
+    def set_paper_research_mandate_state(
+        mandate_id: str, payload: PaperMandateStatePayload, actor: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return paper_incubation_service().set_mandate_state(
+                mandate_id,
+                status=payload.status,
+                actor=actor,
+                reason=payload.reason,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/research/paper-incubation/members/{member_id}")
+    def get_paper_incubation_member(member_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return paper_incubation_service().get_member(member_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/research/paper-incubation/windows/capture")
+    def capture_paper_incubation_windows(
+        payload: PaperIncubationCaptureV1, actor: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return paper_incubation_service(external_access=True).capture_windows(
+                payload, actor=actor
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/research/paper-incubation/actions")
+    async def run_paper_incubation_action(
+        payload: PaperIncubationActionV1, actor: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return await paper_incubation_service(external_access=True).act(payload, actor=actor)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/research/paper-incubation/actions/{action_id}/reconcile")
+    async def reconcile_paper_incubation_action(action_id: str, actor: AdminUser) -> dict[str, Any]:
+        try:
+            return await paper_incubation_service(external_access=True).reconcile(
+                action_id, actor=actor
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

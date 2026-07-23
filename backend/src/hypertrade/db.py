@@ -1694,6 +1694,85 @@ class UnifiedStrategyValidation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class PaperResearchMandate(Base):
+    """Operator-approved, paper-only authority for autonomous incubation."""
+
+    __tablename__ = "paper_research_mandates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("prm"))
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    policy_hash: Mapped[str] = mapped_column(String(64), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    mandate_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    control_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    approved_by: Mapped[str] = mapped_column(String(128), index=True)
+    kill_switch: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class PaperIncubationMember(Base):
+    """Fixed-denominator candidate intake under one paper mandate."""
+
+    __tablename__ = "paper_incubation_members"
+    __table_args__ = (
+        UniqueConstraint(
+            "mandate_id",
+            "candidate_kind",
+            "candidate_id",
+            name="uq_paper_incubation_member",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("pim"))
+    mandate_id: Mapped[str] = mapped_column(String(32), index=True)
+    candidate_kind: Mapped[str] = mapped_column(String(24), index=True)
+    candidate_id: Mapped[str] = mapped_column(String(32), index=True)
+    validation_id: Mapped[str] = mapped_column(String(32), index=True)
+    manifest_id: Mapped[str] = mapped_column(String(32), index=True)
+    experiment_execution_id: Mapped[str] = mapped_column(String(32), index=True)
+    bitpro_strategy_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    paper_instance_id: Mapped[str] = mapped_column(String(128), default="", index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    source_hash: Mapped[str] = mapped_column(String(72), index=True)
+    policy_hash: Mapped[str] = mapped_column(String(64), index=True)
+    rejection_reasons_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class PaperIncubationAction(Base):
+    """Append-only paper action linked to Sprint 124 dispatch evidence."""
+
+    __tablename__ = "paper_incubation_actions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("pia"))
+    mandate_id: Mapped[str] = mapped_column(String(32), index=True)
+    member_id: Mapped[str] = mapped_column(String(32), index=True)
+    action: Mapped[str] = mapped_column(String(24), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    dispatch_intent_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    tool_call_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    external_operation_id: Mapped[str] = mapped_column(String(256), default="")
+    reason: Mapped[str] = mapped_column(Text)
+    before_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    after_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    evidence_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    outcome_link: Mapped[str] = mapped_column(String(256), default="")
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class StrategyLineage(Base, TimestampMixin):
     """Stable mandate-scoped strategy identity; never stores mutable evidence."""
 
