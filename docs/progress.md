@@ -1,6 +1,13 @@
 # Progress Log
 
-## Sprint 129 — Unified Strategy Validation Funnel 已启动 — 2026-07-21
+## Sprint 130 — Autonomous Paper Incubation 已启动 — 2026-07-23
+
+- Sprint 129 的实现、全量检查、migration `0037`、生产部署与真实 BitPro rejected/needs_review Gate 已关闭，
+  Sprint 130 合同进入 Active。
+- 本 Sprint 仅允许在显式、可撤销的 `PaperResearchMandateV1` 内对 validated candidate 执行幂等
+  configure/start/observe/reduce/pause/retire；继续禁止 Testnet、Live、真实订单和资金动作。
+
+## Sprint 129 — Unified Strategy Validation Funnel 已完成 — 2026-07-23
 
 - Sprint 127–128 的候选生成、生产部署与真实 BitPro discovery Gate 已关闭，Sprint 129 合同进入 Active。
 - 本 Sprint 将把已有策略进化候选与全新策略候选放入同一个 Research Quarantine，以冻结的 V2 policy 执行
@@ -18,6 +25,19 @@
   28 passed；完整 `./scripts/check.sh` 通过（frontend 15 tests，Python 777 tests，Ruff、mypy 200 source files）。
 - 完整检查同时发现 shadow portfolio API 测试夹具的固定标签有效期已随日历过期；修正为仅 API 实时时钟用例使用
   相对有效期，显式过期评测保持固定时钟。修正提交 `7b31cc7` 已由工作流 `29997562132` 成功部署。
+- 实现提交 `1b84af0` 已由工作流 `29997729771` 成功部署；生产健康检查通过，Alembic
+  `0037_unified_validation` 为 head，部署 SHA 与提交一致。
+- 真实 BitPro canary 保留失败而不美化：BTC range-expansion strategy `310` 的真实 3271-bar 回测因
+  `close_contract` 参数缺失失败；新 mean-reversion candidate `dcand_c071655d504e41aa9b2e` 的主回测虽为
+  `+0.174%`，但 walk-forward 含负窗口且 1.6x 成本压力为 `-0.467%`，形成 immutable rejected
+  validation `uval_66ca8ceea4a54ae19e5f`。
+- 独立 SOL trend candidate `dcand_841e97892ca34c24a319` 使用新冻结的真实 120-bar BitPro snapshot，
+  主回测 `+2.877%`、三个带 purge/embargo 间隔的 fold 全为正、1.6x 成本压力 `+2.479%`，并记录
+  12 个主/窗口/压力/参数 trial；Funding 未建模且 regime 仅为 ex-post，因此 validation
+  `uval_a8250b1fb82646afbc8f` 正确停在 needs_review，而非 validated。
+- 两条 production validation 的 PaperPromotion/PaperOrder/LiveOrderIntent 计数在调用前后完全一致，
+  mutation boundary 对 Paper/Live/order/capital 均为 false；所有 BitPro research strategy 保持
+  `paper_enabled=false`、`live_enabled=false`，结果不构成未来收益保证。
 
 ## Sprint 128 — Autonomous Strategy Discovery Lab 已完成 — 2026-07-21
 

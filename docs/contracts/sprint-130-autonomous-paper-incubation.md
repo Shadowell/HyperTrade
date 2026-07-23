@@ -1,6 +1,6 @@
 # Sprint 130 — Autonomous Paper Incubation
 
-> 状态：Proposed；依赖 Sprint 129 完成。
+> 状态：Active — Sprint 129 Gate 已关闭，开始实现受 mandate 约束的自动 Paper 孵化。
 
 ## Goal
 
