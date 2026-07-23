@@ -1,6 +1,6 @@
 # Sprint 131 — Regime-Aware Shadow Portfolio Allocator
 
-> 状态：Proposed；依赖 Sprint 130 完成。
+> 状态：Active — Sprint 130 Gate 已关闭，开始实现只读、无执行权限的 regime-aware Shadow allocator。
 
 ## Goal
 

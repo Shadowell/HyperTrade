@@ -1,6 +1,7 @@
 # Sprint 130 — Autonomous Paper Incubation
 
-> 状态：Active — Sprint 129 Gate 已关闭，开始实现受 mandate 约束的自动 Paper 孵化。
+> 状态：Completed — 实现、完整验证、生产部署与 fail-closed canary 已关闭；生产暂无 validated candidate，
+> 因此未伪造正向 Paper 实例。
 
 ## Goal
 

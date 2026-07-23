@@ -1,6 +1,13 @@
 # Progress Log
 
-## Sprint 130 — Autonomous Paper Incubation 已启动 — 2026-07-23
+## Sprint 131 — Regime-Aware Shadow Portfolio Allocator 已启动 — 2026-07-23
+
+- Sprint 130 的实现、完整检查、migration `0038`、生产部署与 fail-closed Gate 已关闭，Sprint 131 合同进入
+  Active。
+- 本 Sprint 只生成 `execution_authorized=false` 的 regime snapshot、strategy eligibility 和 Shadow target；
+  继续禁止 Paper lifecycle mutation、Testnet/Live、订单、资金、账户和凭证调用。
+
+## Sprint 130 — Autonomous Paper Incubation 已完成 — 2026-07-23
 
 - Sprint 129 的实现、全量检查、migration `0037`、生产部署与真实 BitPro rejected/needs_review Gate 已关闭，
   Sprint 130 合同进入 Active。
@@ -20,8 +27,13 @@
   reason、before/after、Outcome link、unknown/reconciliation 与 kill switch，客户端不重算状态。controller
   adapter 静态边界无 Testnet/Live/order/capital 方法。
 - 定向与相邻回归 117 passed；完整 `./scripts/check.sh` 通过：frontend lint/build/15 tests、Ruff、严格
-  mypy（202 source files）和 Python 793 tests 全绿，保留 2 条既有 OKX coroutine warnings。生产部署与小额
-  预批准 Paper canary 待执行，Sprint 130 Gate 仍保持 Active。
+  mypy（202 source files）和 Python 793 tests 全绿，保留 2 条既有 OKX coroutine warnings。
+- 实现提交 `99d3e13` 已由 workflow `30001388215` 成功部署；生产 SHA 精确匹配，API health 正常，Alembic
+  `0038_paper_incubation` 为 head。生产库当时没有 `validated` candidate，因此没有伪造验证或越权启动
+  Paper 实例。
+- 生产 fail-closed canary 证明 `agent:canary` 冒充人类审批人会在数据库写入前被拒绝；canary 前后
+  Paper mandate/member/action 为 `0/0/0`、LiveOrderIntent 为 `1`，全部不变。部署后的 controller protocol
+  不含 Testnet/Live/order 方法，未认证 API 返回 401。Sprint 130 Gate 已关闭，下一合同为 Sprint 131。
 
 ## Sprint 129 — Unified Strategy Validation Funnel 已完成 — 2026-07-23
 
