@@ -1,11 +1,22 @@
 # Progress Log
 
-## Sprint 131 — Regime-Aware Shadow Portfolio Allocator 已启动 — 2026-07-23
+## Sprint 131 — Regime-Aware Shadow Portfolio Allocator 已完成 — 2026-07-23
 
-- Sprint 130 的实现、完整检查、migration `0038`、生产部署与 fail-closed Gate 已关闭，Sprint 131 合同进入
-  Active。
-- 本 Sprint 只生成 `execution_authorized=false` 的 regime snapshot、strategy eligibility 和 Shadow target；
-  继续禁止 Paper lifecycle mutation、Testnet/Live、订单、资金、账户和凭证调用。
+- 已实现 source-bound `MarketRegimeSnapshotV2`：六类概率精确归一化、缺失保持 unknown、ex-post label 与决策
+  隔离，并以 `as_of + available_at` 阻止未来数据进入历史决策。
+- 已实现固定 denominator `StrategyEligibilityV1` 与 immutable `RegimeShadowTargetV2`。资格先于权重；
+  volatility、correlation、capacity、liquidity、cost 或 regime fit 任一缺失都会 fail closed。四种固定模板覆盖
+  equal weight、inverse volatility、capped risk contribution 与 constrained risk-adjusted，并执行策略/标的/
+  容量/相关性/换手/成本约束。
+- entry/exit 双阈值、连续窗口确认、minimum dwell、cooldown、最大 turnover 与最大 weight delta 已进入
+  deterministic policy；regime 翻转或成本恶化越界时不生成目标，不通过客户端或 LLM 覆盖。
+- migration `0039`、认证 API、CLI `/regime-shadow`、无未来数据 replay 和 Harness 只读视图已实现。所有投影
+  保持 hypothetical，顶层 execution/capital/paper/live authorization 均为 false，且不包含 exchange order
+  payload。
+- Sprint 专项 14 tests 通过；完整 `./scripts/check.sh` 通过：frontend lint/build/15 tests、Ruff、严格
+  mypy（205 source files）和 Python 807 tests，保留 2 条既有 OKX coroutine warnings。
+- Sprint 132 涉及 mainnet 授权边界，当前状态为 `Awaiting explicit owner approval`；在产品所有者再次明确
+  批准前不实施 LiveTradingMandate 或任何 live-write 能力。
 
 ## Sprint 130 — Autonomous Paper Incubation 已完成 — 2026-07-23
 

@@ -131,6 +131,15 @@ incomplete horizons and single-member groups from producing a Champion. API, CLI
 mandate/member/action/kill-switch state; the controller protocol contains no Testnet, live-order, capital-transfer
 or credential surface, and every projection explicitly reports `live_authorized=false`.
 
+Sprint 131 adds immutable, point-in-time `MarketRegimeSnapshotV2`, per-version `StrategyEligibilityV1`, and
+`RegimeShadowTargetV2`. Regime probabilities remain source/as-of/availability bound, missing values stay unknown,
+and ex-post labels never enter decisions. Eligibility is calculated before weights over the fixed Paper cohort
+denominator. Four deterministic allocation templates enforce strategy, symbol, capacity, liquidity, correlation,
+turnover, transaction-cost and weight-delta constraints; missing required inputs or infeasible bounds suppress the
+target instead of applying defaults. Entry/exit hysteresis, confirmation windows, minimum dwell and cooldown prevent
+churn. Historical replay uses only then-visible source versions. API, CLI and Harness are read-only projections and
+all outputs keep execution, capital, paper lifecycle and live authorization false.
+
 ## Users
 
 - Operator running audited agent research and execution workflows.

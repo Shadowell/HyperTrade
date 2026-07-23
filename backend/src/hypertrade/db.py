@@ -1142,6 +1142,61 @@ class ShadowPortfolioReviewDecision(Base, TimestampMixin):
     decided_by: Mapped[str] = mapped_column(String(128), index=True)
 
 
+class MarketRegimeSnapshotV2(Base, TimestampMixin):
+    """Immutable point-in-time regime probabilities; ex-post labels are excluded."""
+
+    __tablename__ = "market_regime_snapshots_v2"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("mrsv"))
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    model_version: Mapped[str] = mapped_column(String(64), index=True)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    policy_hash: Mapped[str] = mapped_column(String(64), index=True)
+    source_hash: Mapped[str] = mapped_column(String(72), index=True)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    snapshot_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
+class RegimeShadowTargetV2(Base, TimestampMixin):
+    """Versioned hypothetical target; never contains an exchange order payload."""
+
+    __tablename__ = "regime_shadow_targets_v2"
+    __table_args__ = (
+        UniqueConstraint(
+            "portfolio_key",
+            "version_number",
+            name="uq_regime_shadow_target_version",
+        ),
+        UniqueConstraint(
+            "portfolio_key",
+            "source_hash",
+            name="uq_regime_shadow_target_source",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("rstv"))
+    portfolio_key: Mapped[str] = mapped_column(String(64), index=True)
+    version_number: Mapped[int] = mapped_column(Integer)
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    regime_snapshot_id: Mapped[str] = mapped_column(String(32), index=True)
+    cohort_snapshot_id: Mapped[str] = mapped_column(String(32), index=True)
+    previous_target_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    policy_hash: Mapped[str] = mapped_column(String(64), index=True)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    source_hash: Mapped[str] = mapped_column(String(64), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    target_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+
+
 class Job(Base, TimestampMixin):
     __tablename__ = "jobs"
 

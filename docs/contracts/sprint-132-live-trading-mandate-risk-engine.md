@@ -1,6 +1,7 @@
 # Sprint 132 — LiveTradingMandate and Deterministic Risk Engine
 
-> 状态：Proposed；依赖 Sprint 131 完成。该 Sprint 是 mainnet 边界变更，实施前必须再次获得产品所有者明确批准。
+> 状态：Awaiting explicit owner approval；Sprint 131 已完成。该 Sprint 是 mainnet 边界变更，实施前必须
+> 再次获得产品所有者明确批准。
 
 ## Goal
 

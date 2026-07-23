@@ -342,6 +342,36 @@ type ShadowPortfolio = {
   capital_authorized: boolean;
 };
 
+type MarketRegimeSnapshotV2 = {
+  id: string;
+  status: string;
+  as_of: string;
+  confidence: string;
+  probabilities: Record<string, string>;
+  unknowns: string[];
+  execution_authorized: boolean;
+};
+
+type RegimeShadowTargetV2 = {
+  id: string;
+  status: string;
+  version_number: number;
+  eligible_count: number;
+  intake_denominator: number;
+  selected_template: string;
+  estimated_turnover: string;
+  estimated_cost_bps: string;
+  target_weights: Array<{ card_id: string; weight: string }>;
+  eligibility: Array<{
+    card_id: string;
+    status: string;
+    reasons: string[];
+  }>;
+  unknowns: string[];
+  execution_authorized: boolean;
+  capital_authorized: boolean;
+};
+
 type RagHit = {
   source_path: string;
   title: string;
@@ -695,6 +725,10 @@ const copy = {
     shadowPortfolios: "影子组合方案",
     buildShadow: "生成影子方案",
     noShadowPortfolios: "暂无影子组合方案",
+    regimeShadowV2: "Regime Shadow V2",
+    regimeShadowHint: "服务端按时点计算 regime、资格与目标权重；本页只读展示，不在客户端重算。",
+    noRegimeSnapshots: "暂无 MarketRegimeSnapshotV2",
+    noRegimeShadowTargets: "暂无 Regime Shadow V2 目标",
     hold: "暂缓",
     noPortfolioAssessments: "暂无组合评估",
     initialCash: "初始资金",
@@ -951,6 +985,11 @@ const copy = {
     shadowPortfolios: "Shadow Portfolios",
     buildShadow: "Build Shadow Proposal",
     noShadowPortfolios: "No shadow portfolios",
+    regimeShadowV2: "Regime Shadow V2",
+    regimeShadowHint:
+      "Server-computed point-in-time regimes, eligibility, and target weights; this client is display-only.",
+    noRegimeSnapshots: "No MarketRegimeSnapshotV2 records",
+    noRegimeShadowTargets: "No Regime Shadow V2 targets",
     hold: "Hold",
     noPortfolioAssessments: "No portfolio assessments",
     initialCash: "Initial Cash",
@@ -1269,6 +1308,10 @@ function App() {
     PaperIncubationMandate[]
   >([]);
   const [shadowPortfolios, setShadowPortfolios] = useState<ShadowPortfolio[]>([]);
+  const [marketRegimesV2, setMarketRegimesV2] = useState<MarketRegimeSnapshotV2[]>([]);
+  const [regimeShadowTargetsV2, setRegimeShadowTargetsV2] = useState<
+    RegimeShadowTargetV2[]
+  >([]);
   const [portfolioReason, setPortfolioReason] = useState("");
   const [ragQuery, setRagQuery] = useState("risk");
   const [ragHits, setRagHits] = useState<RagHit[]>([]);
@@ -1434,8 +1477,8 @@ function App() {
         tone: "violet"
       },
       {
-        label: t.shadowPortfolios,
-        value: formatMetricNumber(shadowPortfolios.length),
+        label: t.regimeShadowV2,
+        value: formatMetricNumber(regimeShadowTargetsV2.length),
         tone: "brass"
       },
       {
@@ -1444,7 +1487,7 @@ function App() {
         tone: "danger"
       }
     ];
-  }, [portfolioAssessments, portfolioObservationWindows, shadowPortfolios, t]);
+  }, [portfolioAssessments, portfolioObservationWindows, regimeShadowTargetsV2, t]);
 
   const refreshMemoryItems = useCallback(async (query = "") => {
     const path = query ? `/api/memory?query=${encodeURIComponent(query)}` : "/api/memory";
@@ -1582,6 +1625,23 @@ function App() {
     setShadowPortfolios(Array.isArray(payload.items) ? payload.items : []);
   }, []);
 
+  const refreshRegimeShadowV2 = useCallback(async () => {
+    const [regimesResponse, targetsResponse] = await Promise.all([
+      fetch("/api/portfolio/market-regimes-v2", { credentials: "include" }),
+      fetch("/api/portfolio/regime-shadow-targets-v2", { credentials: "include" })
+    ]);
+    setMarketRegimesV2(
+      regimesResponse.ok
+        ? (((await regimesResponse.json()) as { items?: MarketRegimeSnapshotV2[] }).items ?? [])
+        : []
+    );
+    setRegimeShadowTargetsV2(
+      targetsResponse.ok
+        ? (((await targetsResponse.json()) as { items?: RegimeShadowTargetV2[] }).items ?? [])
+        : []
+    );
+  }, []);
+
   const refreshMissions = useCallback(async (missionId = "") => {
     const response = await fetch("/api/agent/missions", { credentials: "include" });
     if (!response.ok) {
@@ -1687,6 +1747,7 @@ function App() {
         await refreshPaperCohorts();
         await refreshPaperIncubationMandates();
         await refreshShadowPortfolios();
+        await refreshRegimeShadowV2();
         await refreshMissions();
         setHarnessError("");
         return;
@@ -1704,6 +1765,7 @@ function App() {
     refreshPaperCohorts,
     refreshPaperIncubationMandates,
     refreshMissions,
+    refreshRegimeShadowV2,
     refreshShadowPortfolios,
     refreshStrategyCards,
     refreshStrategyLibrary
@@ -2764,6 +2826,8 @@ function App() {
               assessments={portfolioAssessments}
               cohorts={paperCohorts}
               incubationMandates={paperIncubationMandates}
+              marketRegimesV2={marketRegimesV2}
+              regimeShadowTargetsV2={regimeShadowTargetsV2}
               shadowPortfolios={shadowPortfolios}
               observationWindows={portfolioObservationWindows}
               onAssess={handlePortfolioAssessment}
@@ -3226,6 +3290,8 @@ function PortfolioLifecyclePanel({
   assessments,
   cohorts,
   incubationMandates,
+  marketRegimesV2,
+  regimeShadowTargetsV2,
   shadowPortfolios,
   observationWindows,
   reason,
@@ -3241,6 +3307,8 @@ function PortfolioLifecyclePanel({
   assessments: PortfolioAssessment[];
   cohorts: PaperCohort[];
   incubationMandates: PaperIncubationMandate[];
+  marketRegimesV2: MarketRegimeSnapshotV2[];
+  regimeShadowTargetsV2: RegimeShadowTargetV2[];
   shadowPortfolios: ShadowPortfolio[];
   observationWindows: PortfolioObservationWindow[];
   reason: string;
@@ -3399,6 +3467,66 @@ function PortfolioLifecyclePanel({
                 </div>
               );
             })
+          )}
+        </div>
+        <h2 className="section-title mt-5">{t.regimeShadowV2}</h2>
+        <p className="mt-1 text-xs leading-5 text-ink/50">{t.regimeShadowHint}</p>
+        <div className="mt-4 space-y-2">
+          {marketRegimesV2.length === 0 ? (
+            <div className="empty-row">{t.noRegimeSnapshots}</div>
+          ) : (
+            marketRegimesV2.slice(0, 3).map((snapshot) => (
+              <div className="operator-card block" data-tone="signal" key={snapshot.id}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs">{snapshot.id}</span>
+                  <span className="text-xs text-signal">{statusLabel(snapshot.status)}</span>
+                </div>
+                <div className="mt-2 text-xs text-ink/55">
+                  confidence={snapshot.confidence} · as_of={snapshot.as_of} ·
+                  unknown={snapshot.unknowns.length} · execution=false
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 font-mono text-[11px] text-ink/45">
+                  {Object.entries(snapshot.probabilities).map(([name, probability]) => (
+                    <span key={name}>{name}={probability}</span>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+          {regimeShadowTargetsV2.length === 0 ? (
+            <div className="empty-row">{t.noRegimeShadowTargets}</div>
+          ) : (
+            regimeShadowTargetsV2.slice(0, 6).map((target) => (
+              <div className="operator-card block" data-tone="brass" key={target.id}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs">
+                    {target.id} · v{target.version_number}
+                  </span>
+                  <span className="text-xs text-brass">{statusLabel(target.status)}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-ink/55">
+                  <span>{target.eligible_count}/{target.intake_denominator} eligible</span>
+                  <span>{target.selected_template || "infeasible"}</span>
+                  <span>
+                    turnover={target.estimated_turnover} · cost={target.estimated_cost_bps}bps
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 font-mono text-[11px] text-ink/45">
+                  {target.target_weights.map((weight) => (
+                    <span key={weight.card_id}>{weight.card_id}={weight.weight}</span>
+                  ))}
+                </div>
+                {target.eligibility.map((item) => (
+                  <div className="mt-2 text-xs text-ink/50" key={item.card_id}>
+                    {item.card_id} · {item.status} · {item.reasons.join(", ") || "eligible"}
+                  </div>
+                ))}
+                <div className="mt-2 text-[11px] text-ink/40">
+                  hypothetical=true · capital={String(target.capital_authorized)} · execution=
+                  {String(target.execution_authorized)}
+                </div>
+              </div>
+            ))
           )}
         </div>
         <h2 className="section-title">{t.observationWindows}</h2>

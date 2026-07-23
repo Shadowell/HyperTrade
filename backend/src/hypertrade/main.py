@@ -88,6 +88,12 @@ from hypertrade.portfolio.lifecycle import (
     PortfolioAssessmentService,
     StrategyLifecycleDecisionV1,
 )
+from hypertrade.portfolio.market_regime_v2 import MarketRegimeSnapshotServiceV2
+from hypertrade.portfolio.regime_shadow import RegimeShadowAllocatorServiceV2
+from hypertrade.portfolio.regime_shadow_schemas import (
+    MarketRegimeCaptureV2,
+    RegimeShadowBuildV2,
+)
 from hypertrade.portfolio.shadow import ShadowPortfolioService
 from hypertrade.portfolio.shadow_schemas import (
     ShadowPortfolioBuildV1,
@@ -1073,6 +1079,94 @@ def create_app(
             raise HTTPException(status_code=404, detail="Paper cohort not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/portfolio/market-regimes-v2")
+    def capture_market_regime_v2(
+        payload: MarketRegimeCaptureV2,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return MarketRegimeSnapshotServiceV2(database).capture(
+                payload, actor=username
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/portfolio/market-regimes-v2")
+    def list_market_regimes_v2(_: AdminUser) -> dict[str, Any]:
+        return {"items": MarketRegimeSnapshotServiceV2(database).list()}
+
+    @app.get("/api/portfolio/market-regimes-v2/{snapshot_id}")
+    def get_market_regime_v2(
+        snapshot_id: str, _: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return MarketRegimeSnapshotServiceV2(database).get(snapshot_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="Market regime snapshot not found"
+            ) from exc
+
+    @app.get(
+        "/api/portfolio/market-regimes-v2/{left_id}/diff/{right_id}"
+    )
+    def diff_market_regimes_v2(
+        left_id: str, right_id: str, _: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return MarketRegimeSnapshotServiceV2(database).diff(
+                left_id, right_id
+            )
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="Market regime snapshot not found"
+            ) from exc
+
+    @app.post("/api/portfolio/regime-shadow-targets-v2")
+    def build_regime_shadow_target_v2(
+        payload: RegimeShadowBuildV2,
+        username: AdminUser,
+    ) -> dict[str, Any]:
+        try:
+            return RegimeShadowAllocatorServiceV2(database).build(
+                payload, actor=username
+            )
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="Regime shadow source not found"
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/portfolio/regime-shadow-targets-v2")
+    def list_regime_shadow_targets_v2(_: AdminUser) -> dict[str, Any]:
+        return {
+            "items": RegimeShadowAllocatorServiceV2(database).list_targets()
+        }
+
+    @app.get("/api/portfolio/regime-shadow-targets-v2/{target_id}")
+    def get_regime_shadow_target_v2(
+        target_id: str, _: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return RegimeShadowAllocatorServiceV2(database).get(target_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="Regime shadow target not found"
+            ) from exc
+
+    @app.get(
+        "/api/portfolio/regime-shadow-targets-v2/{target_id}/replay"
+    )
+    def replay_regime_shadow_target_v2(
+        target_id: str, _: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return RegimeShadowAllocatorServiceV2(database).replay(target_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="Regime shadow target not found"
+            ) from exc
 
     @app.get("/api/portfolio/shadow-portfolios")
     def list_shadow_portfolios(_: AdminUser) -> dict[str, Any]:

@@ -21,6 +21,8 @@ import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, Protocol, TextIO, cast, runtime_checkable
 from urllib.parse import quote
@@ -56,6 +58,11 @@ from hypertrade.portfolio.lifecycle import (
     PortfolioAssessmentRequestV2,
     PortfolioAssessmentService,
     StrategyLifecycleDecisionV1,
+)
+from hypertrade.portfolio.regime_shadow import RegimeShadowAllocatorServiceV2
+from hypertrade.portfolio.regime_shadow_schemas import (
+    RegimeShadowBuildV2,
+    ShadowAllocationPolicyV2,
 )
 from hypertrade.portfolio.shadow import ShadowPortfolioService
 from hypertrade.portfolio.shadow_schemas import (
@@ -280,6 +287,16 @@ class AgentClient(Protocol):
         decision: str,
         reason: str,
     ) -> dict[str, Any]: ...
+
+    def list_regime_shadow_targets(self) -> list[dict[str, Any]]: ...
+
+    def build_regime_shadow_target(
+        self, regime_id: str, cohort_id: str
+    ) -> dict[str, Any]: ...
+
+    def get_regime_shadow_target(self, target_id: str) -> dict[str, Any]: ...
+
+    def replay_regime_shadow_target(self, target_id: str) -> dict[str, Any]: ...
 
     def capture_portfolio_observation_window(self) -> dict[str, Any]: ...
 
@@ -521,6 +538,10 @@ SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     (
         "/cohorts list|build|show|diff|decide",
         "Inspect comparable paper cohorts and record expiring label reviews.",
+    ),
+    (
+        "/regime-shadow list|build|show|replay",
+        "Inspect point-in-time eligibility and hypothetical Shadow V2 targets.",
     ),
     (
         "/incubation",
@@ -1215,6 +1236,39 @@ class AgentApiClient:
                 "reason": reason,
                 "idempotency_key": new_id("cli_shadow_review"),
             },
+        )
+
+    def list_regime_shadow_targets(self) -> list[dict[str, Any]]:
+        return self._get_list(
+            "/api/portfolio/regime-shadow-targets-v2", "items"
+        )
+
+    def build_regime_shadow_target(
+        self, regime_id: str, cohort_id: str
+    ) -> dict[str, Any]:
+        return self._post_object(
+            "/api/portfolio/regime-shadow-targets-v2",
+            {
+                "decision_at": datetime.now(UTC).isoformat(),
+                "regime_snapshot_id": regime_id,
+                "cohort_snapshot_id": cohort_id,
+                "policy": _default_regime_shadow_policy().model_dump(
+                    mode="json"
+                ),
+                "idempotency_key": new_id("cli_regime_shadow"),
+            },
+        )
+
+    def get_regime_shadow_target(self, target_id: str) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/portfolio/regime-shadow-targets-v2/"
+            f"{quote(target_id, safe='')}"
+        )
+
+    def replay_regime_shadow_target(self, target_id: str) -> dict[str, Any]:
+        return self._get_object(
+            f"/api/portfolio/regime-shadow-targets-v2/"
+            f"{quote(target_id, safe='')}/replay"
         )
 
     def capture_portfolio_observation_window(self) -> dict[str, Any]:
@@ -2364,6 +2418,29 @@ class LocalAgentClient:
             actor="cli_operator",
         )
 
+    def list_regime_shadow_targets(self) -> list[dict[str, Any]]:
+        return RegimeShadowAllocatorServiceV2(self.db).list_targets()
+
+    def build_regime_shadow_target(
+        self, regime_id: str, cohort_id: str
+    ) -> dict[str, Any]:
+        return RegimeShadowAllocatorServiceV2(self.db).build(
+            RegimeShadowBuildV2(
+                decision_at=datetime.now(UTC),
+                regime_snapshot_id=regime_id,
+                cohort_snapshot_id=cohort_id,
+                policy=_default_regime_shadow_policy(),
+                idempotency_key=new_id("cli_regime_shadow"),
+            ),
+            actor="cli_operator",
+        )
+
+    def get_regime_shadow_target(self, target_id: str) -> dict[str, Any]:
+        return RegimeShadowAllocatorServiceV2(self.db).get(target_id)
+
+    def replay_regime_shadow_target(self, target_id: str) -> dict[str, Any]:
+        return RegimeShadowAllocatorServiceV2(self.db).replay(target_id)
+
     def capture_portfolio_observation_window(self) -> dict[str, Any]:
         return self._portfolio_evidence_service().capture(
             PortfolioObservationCaptureV1(idempotency_key=new_id("cli_window")),
@@ -3077,6 +3154,8 @@ def handle_slash_command(
         )
     elif name in {"/shadow", "/shadow-portfolios"}:
         handle_shadow_portfolio_command(command, client=client, output=output)
+    elif name in {"/regime-shadow", "/shadow-v2"}:
+        handle_regime_shadow_command(command, client=client, output=output)
     elif name == "/rag":
         handle_rag_command(command, client=client, output=output)
     elif name in {"/evals", "/eval"}:
@@ -4993,6 +5072,95 @@ def handle_shadow_portfolio_command(
         "Usage: /shadow list|build|show <proposal_id>|diff <left> <right>|"
         "review <proposal_id> <scenario_id> accept|reject|hold <reason>",
         file=output,
+    )
+
+
+def handle_regime_shadow_command(
+    command: str,
+    *,
+    client: AgentClient,
+    output: TextIO,
+) -> None:
+    parts = command.split()
+    action = parts[1].lower() if len(parts) > 1 else "list"
+    if action == "list":
+        rows = client.list_regime_shadow_targets()
+        print("Regime-aware Shadow V2 targets:", file=output)
+        if not rows:
+            print("- none", file=output)
+        for row in rows[:30]:
+            print(
+                f"- {row.get('id')} v{row.get('version_number')} "
+                f"[{row.get('status')}] "
+                f"eligible={row.get('eligible_count', 0)}/"
+                f"{row.get('intake_denominator', 0)} "
+                f"template={row.get('selected_template') or 'none'} "
+                "hypothetical=true execution=false",
+                file=output,
+            )
+        return
+    if action == "build" and len(parts) == 4:
+        row = client.build_regime_shadow_target(parts[2], parts[3])
+        print(
+            f"Regime Shadow target {row.get('id')} "
+            f"[{row.get('status')}] "
+            f"template={row.get('selected_template') or 'none'} "
+            f"turnover={row.get('estimated_turnover', 'unknown')} "
+            f"cost_bps={row.get('estimated_cost_bps', 'unknown')} "
+            "capital=false execution=false",
+            file=output,
+        )
+        return
+    if action == "show" and len(parts) == 3:
+        print(
+            json.dumps(
+                client.get_regime_shadow_target(parts[2]),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            file=output,
+        )
+        return
+    if action == "replay" and len(parts) == 3:
+        print(
+            json.dumps(
+                client.replay_regime_shadow_target(parts[2]),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            file=output,
+        )
+        return
+    print(
+        "Usage: /regime-shadow list|build <regime_id> <cohort_id>|"
+        "show <target_id>|replay <target_id>",
+        file=output,
+    )
+
+
+def _default_regime_shadow_policy() -> ShadowAllocationPolicyV2:
+    return ShadowAllocationPolicyV2(
+        templates=[
+            "equal_weight",
+            "inverse_volatility",
+            "capped_risk_contribution",
+            "constrained_risk_adjusted",
+        ],
+        hypothetical_notional=Decimal("100000"),
+        min_members=2,
+        max_members=8,
+        max_strategy_weight=Decimal("0.60"),
+        max_symbol_weight=Decimal("0.80"),
+        max_pair_correlation=Decimal("0.80"),
+        max_turnover=Decimal("0.50"),
+        max_weight_delta=Decimal("0.20"),
+        max_estimated_cost_bps=Decimal("50"),
+        entry_threshold=Decimal("0.20"),
+        exit_threshold=Decimal("0.10"),
+        confirmation_windows=2,
+        minimum_dwell_hours=24,
+        cooldown_hours=24,
+        valid_minutes=60,
     )
 
 
