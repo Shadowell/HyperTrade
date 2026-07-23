@@ -26,6 +26,7 @@ from hypertrade.db import (
     StrategyCardSnapshot,
     StrategyLineage,
     StrategyVersion,
+    UnifiedStrategyValidation,
 )
 from hypertrade.memory.governance import MemoryAssertionService
 from hypertrade.research.strategy_card_schemas import (
@@ -427,6 +428,19 @@ class StrategyCardService:
                 if execution_ids
                 else []
             )
+            unified_validations = (
+                session.scalars(
+                    select(UnifiedStrategyValidation)
+                    .where(
+                        UnifiedStrategyValidation.experiment_execution_id.in_(
+                            execution_ids
+                        )
+                    )
+                    .order_by(desc(UnifiedStrategyValidation.created_at))
+                ).all()
+                if execution_ids
+                else []
+            )
             promotion = session.scalar(
                 select(PaperPromotion)
                 .where(
@@ -473,6 +487,7 @@ class StrategyCardService:
                 if _assertion_matches(assertion, symbols, manifest.strategy_key)
             ]
             validation = validations[0] if validations else None
+            unified_validation = unified_validations[0] if unified_validations else None
             evidence = legacy_evidence[0] if legacy_evidence else None
             latest_execution = executions[0] if executions else None
             lifecycle = _lifecycle(
@@ -481,12 +496,18 @@ class StrategyCardService:
                 promotion=promotion,
                 decision=decision,
             )
+            if unified_validation is not None and promotion is None and decision is None:
+                lifecycle = (
+                    "validated"
+                    if unified_validation.status == "validated"
+                    else "validation_rejected"
+                )
             present = {
                 "identity": True,
                 "manifest": True,
                 "execution": latest_execution is not None,
                 "evidence": bool(evidence_ids),
-                "validation": validation is not None,
+                "validation": validation is not None or unified_validation is not None,
                 "paper": promotion is not None,
                 "monitor": monitor is not None,
                 "memory": bool(matching_assertions),
@@ -495,11 +516,18 @@ class StrategyCardService:
             score = Decimal(sum(present.values())) / Decimal(len(present))
             paper_status = promotion.status if promotion is not None else "not_started"
             robustness_status = validation.final_status if validation is not None else "unknown"
+            effective_validation_status = (
+                unified_validation.status
+                if unified_validation is not None
+                else validation.final_status
+                if validation is not None
+                else "unknown"
+            )
             validation_status = (
                 "passed"
-                if validation is not None and validation.final_status == "validated"
+                if effective_validation_status == "validated"
                 else "not_passed"
-                if validation is not None
+                if effective_validation_status != "unknown"
                 else "unknown"
             )
             freshness = _freshness(evidence.updated_at) if evidence is not None else "unknown"
@@ -558,7 +586,8 @@ class StrategyCardService:
                         {row.research_job_id for row in executions if row.research_job_id}
                     ),
                     "evidence_ids": evidence_ids,
-                    "validation_ids": [row.id for row in validations],
+                    "validation_ids": [row.id for row in unified_validations]
+                    + [row.id for row in validations],
                     "paper_promotion_ids": [promotion.id] if promotion is not None else [],
                     "monitor_snapshot_ids": [monitor.id] if monitor is not None else [],
                     "memory_assertion_ids": matching_assertions,

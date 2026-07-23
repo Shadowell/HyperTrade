@@ -5,6 +5,19 @@
 - Sprint 127–128 的候选生成、生产部署与真实 BitPro discovery Gate 已关闭，Sprint 129 合同进入 Active。
 - 本 Sprint 将把已有策略进化候选与全新策略候选放入同一个 Research Quarantine，以冻结的 V2 policy 执行
   locked OOS、walk-forward、成本、regime、参数稳定性、多重测试和独立 verifier 门禁；不启动 Paper/Live。
+- 已实现 `ValidationPolicyV2`、`TrialFamilyV1`、`UnifiedValidationEvidenceV2`、`ValidationDecisionV2` 与
+  immutable unified validation ledger。evolution/discovery 共用 real data、chronological split、purge/embargo、
+  OOS access、trial accounting、成本/资金费、容量、Artifact、交易数、回撤、尾部风险、Probabilistic/Deflated
+  Sharpe、selection bias、walk-forward、参数邻域、成本压力和 regime coverage 门禁；新策略只增加 novelty
+  falsification，不减少通用门槛。
+- deterministic verifier 将 OOS 首次访问与候选冻结时点、candidate/Manifest/Execution lineage、全部 trial 和
+  source hash 绑定；越界/选择偏差/尖峰/成本失败为 rejected，缺数据为 needs_data，ex-post regime 标签为
+  needs_review。同 candidate/policy/trial/source fingerprint 可重放，来源变化追加 validation version。
+- migration `0037`、认证只读 list/show/diff API 与 StrategyCard V2 新快照已实现；V2 validated 仅改变研究投影，
+  mutation boundary 对 Paper/Live/order/capital 全为 false。定向及 Robustness/Experiment/Card 相邻回归
+  28 passed；完整 `./scripts/check.sh` 通过（frontend 15 tests，Python 777 tests，Ruff、mypy 200 source files）。
+- 完整检查同时发现 shadow portfolio API 测试夹具的固定标签有效期已随日历过期；修正为仅 API 实时时钟用例使用
+  相对有效期，显式过期评测保持固定时钟。修正提交 `7b31cc7` 已由工作流 `29997562132` 成功部署。
 
 ## Sprint 128 — Autonomous Strategy Discovery Lab 已完成 — 2026-07-21
 

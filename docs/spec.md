@@ -111,6 +111,15 @@ Only novel candidates may pass static isolation and BitPro `strategy_validate_co
 paper, live, order and capital permissions disabled. Rejections, duplicates, data gaps, sandbox failures and budget
 termination remain append-only terminal facts exposed through authenticated read-only queue APIs.
 
+Sprint 129 places both evolution and discovery candidates in one Research Quarantine. An immutable
+`ValidationPolicyV2` and `TrialFamilyV1` bind candidate freeze time, first locked-OOS access, every successful or
+failed attempt, real-data/cost/artifact references and the full required gate set. A deterministic verifier—not an
+LLM—derives `validated`, `rejected`, `needs_data` or `needs_review` from OOS, walk-forward, purge/embargo, funding,
+capacity, drawdown, tail risk, probabilistic/deflated Sharpe, selection bias, parameter stability, cost stress and
+regime evidence. Discovery adds novelty falsification but cannot remove common gates. Decisions are immutable and
+versioned by candidate, policy, trial family and source hash; StrategyCard receives a new research projection only,
+while Paper, Live, order and capital state remain unchanged.
+
 ## Users
 
 - Operator running audited agent research and execution workflows.

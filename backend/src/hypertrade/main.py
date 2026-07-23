@@ -134,6 +134,7 @@ from hypertrade.research.triggers import (
     TriggerControlUpdate,
     TriggerEvent,
 )
+from hypertrade.research.validation_v2 import UnifiedStrategyValidationService
 from hypertrade.runtime.adapters.capability_catalog import (
     CatalogCapabilityPolicy,
     InMemoryCapabilityCatalog,
@@ -920,6 +921,26 @@ def create_app(
             return StrategyDiscoveryService(database).get(run_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Strategy discovery run not found") from exc
+
+    @app.get("/api/research/unified-validations")
+    def list_unified_validations(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
+        return {"items": UnifiedStrategyValidationService(database).list()}
+
+    @app.get("/api/research/unified-validations/{validation_id}")
+    def get_unified_validation(validation_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            return UnifiedStrategyValidationService(database).get(validation_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Unified validation not found") from exc
+
+    @app.get("/api/research/unified-validations/{left_id}/diff/{right_id}")
+    def diff_unified_validations(
+        left_id: str, right_id: str, _: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return UnifiedStrategyValidationService(database).diff(left_id, right_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Unified validation not found") from exc
 
     @app.get("/api/research/strategy-cards/funnel")
     def strategy_card_funnel(_: AdminUser) -> dict[str, Any]:

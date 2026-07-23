@@ -1659,6 +1659,41 @@ class StrategyDiscoveryCandidate(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class UnifiedStrategyValidation(Base):
+    """Immutable deterministic decision for one candidate/policy/source version."""
+
+    __tablename__ = "unified_strategy_validations"
+    __table_args__ = (
+        UniqueConstraint(
+            "candidate_kind",
+            "candidate_id",
+            "validation_version",
+            name="uq_unified_validation_version",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("uval"))
+    schema_version: Mapped[str] = mapped_column(String(64), index=True)
+    candidate_kind: Mapped[str] = mapped_column(String(24), index=True)
+    candidate_id: Mapped[str] = mapped_column(String(32), index=True)
+    trial_family_id: Mapped[str] = mapped_column(String(128), index=True)
+    manifest_id: Mapped[str] = mapped_column(String(32), index=True)
+    experiment_execution_id: Mapped[str] = mapped_column(String(32), index=True)
+    validation_version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    policy_hash: Mapped[str] = mapped_column(String(64), index=True)
+    source_hash: Mapped[str] = mapped_column(String(72), index=True)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    policy_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    trial_family_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    evidence_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    decision_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class StrategyLineage(Base, TimestampMixin):
     """Stable mandate-scoped strategy identity; never stores mutable evidence."""
 
