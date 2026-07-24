@@ -33,6 +33,31 @@ HyperTrade 的最终产品目标是成为一个在操作员预先定义的资本
 和 BitPro 证据合同，再分别交付已有策略进化、全新策略发现、统一验证、自动 Paper、regime Shadow、
 LiveTradingMandate、Live Canary 和有限自主组合 Pilot。详细链接见北极星文档的“交付合同序列”。
 
+## Active Product Priority — Goal-Driven Research Loop M0
+
+2026-07-24 产品所有者明确调整当前开发优先级：暂停 Sprint 132–134 的实盘扩张，先把已经交付但分散的
+Provider、Mission、BitPro 策略/回测、统一验证和 Paper Incubation 能力收敛为一个最小自主研究闭环。
+
+当前最高优先级用户结果是：
+
+> 用户只提交一次自然语言策略目标；HyperTrade 自主生成多个候选、编写策略、调用真实 BitPro 校验和回测、
+> 根据确定性证据淘汰并继续研究；达标候选在用户预先批准的 Paper 边界内自动进入模拟盘；预算耗尽仍无候选
+> 达标时，系统交付完整失败证据并询问是否继续。
+
+这次调整不改变长期北极星，也不授权任何 Live 能力。它修正的是交付顺序和产品主路径：
+
+- 新增专用、持久化的 `AutonomousResearchController`，而不是继续扩大固定 ResearchGraph。
+- 新路径采用动态、有预算的工具循环，不以 LangGraph 固定节点图作为核心编排。
+- 模型负责目标解释、候选和失败后的下一假设；确定性服务负责权限、验证、状态迁移和完成证明。
+- 复用 `ChatProvider` 保持 Provider 可切换，但 M0 生产验收只要求一个真实 Provider。
+- BitPro 继续拥有策略、回测和 Paper 真相；未来 StockPro 通过相同平台端口接入。
+- Sprint 132–134 保持未激活，直至 M0 和后续现有策略优化闭环完成并再次获得产品所有者明确批准。
+
+开发设计见
+[Goal-Driven Autonomous Research Loop M0](architecture/36-goal-driven-autonomous-research-loop-m0.md)，
+当前执行合同见
+[User-Directed Autonomous Strategy Research Loop M0](contracts/user-directed-autonomous-strategy-research-loop-m0.md)。
+
 ## Canonical Agent Runtime Target
 
 The next runtime uses a server-owned `Thread → Turn → Item` interaction protocol and links long-running

@@ -1,5 +1,24 @@
 # Progress Log
 
+## User-Directed Autonomous Strategy Research Loop M0 已激活 — 2026-07-24
+
+- 产品所有者明确要求按 HyperTrade 最高目标改造当前项目，并先完成最小闭环：一次自然语言请求自动完成
+  目标结构化、多个策略候选生成、真实 BitPro 代码校验/策略创建/回测、统一确定性验证、失败诊断与有预算
+  迭代；通过候选在明确 Paper 预授权内自动进入模拟盘，没有通过候选则交付证据并询问是否继续。
+- 已建立开发设计
+  `docs/architecture/36-goal-driven-autonomous-research-loop-m0.md`，明确新增持久化
+  `AutonomousResearchController`，复用 canonical Mission、`ChatProvider`、BitPro Adapter、Discovery、
+  Unified Validation、Effect Governance 和 Paper Incubation。新的默认产品路径采用动态工具循环，不以固定
+  LangGraph/ResearchGraph 作为核心编排。
+- 已激活用户定向合同
+  `docs/contracts/user-directed-autonomous-strategy-research-loop-m0.md`。M0 只接一个真实 Provider、BitPro、
+  单市场受限研究和 Paper；现有策略优化、StockPro、多 Agent、Web 重做、Testnet、Live、订单和资金全部
+  保持 out of scope。
+- Sprint 132–134 的 LiveTradingMandate、Live Canary 和自主实盘组合继续保持未激活。产品所有者本次指令
+  只调整开发优先级，不构成 mainnet 边界批准。
+- 下一步是 Slice 1：先实现领域合同、事件、状态机、CompletionProof 和 Fake Provider/Fake BitPro 黄金
+  验收，证明单请求只能收敛到 `paper_observing`、`needs_operator`、`canceled` 或可解释 `failed`。
+
 ## Sprint 131 — Regime-Aware Shadow Portfolio Allocator 已完成 — 2026-07-23
 
 - 已实现 source-bound `MarketRegimeSnapshotV2`：六类概率精确归一化、缺失保持 unknown、ex-post label 与决策

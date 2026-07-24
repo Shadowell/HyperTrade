@@ -36,6 +36,7 @@
 详细的系统架构和设计文档：
 - [Architecture Overview](architecture/) - 架构概览目录
 - [Autonomous Quant Trader North Star](architecture/35-autonomous-quant-trader-north-star.md) - 最终产品目标：持续策略进化、市场状态感知、组合优化与授权内实盘生命周期
+- [Goal-Driven Autonomous Research Loop M0](architecture/36-goal-driven-autonomous-research-loop-m0.md) - 当前最高优先级开发设计：自然语言目标、候选生成、真实 BitPro 回测、证据迭代和预授权模拟盘闭环
 - [Next-Generation Agent Runtime Audit and Target Design](architecture/34-next-generation-agent-runtime-audit-and-target-design.md) - 真实执行审计、目标协议、完整状态机、Schema、权限、多 Agent、交易安全、评测与切换路线
 - [System Architecture](architecture/33-system-architecture.md) - 当前实现快照、Mission Runtime、控制/数据平面、信任边界、安全与部署
 - [System Architecture Diagram](architecture/19-hypertrade-architecture-diagram.md)
@@ -73,6 +74,7 @@
 - [Sprint 111–116 Professional Agent Runtime V2 Plan](architecture/30-professional-agent-runtime-v2-roadmap.md#7-sprint-路线)
 - [Sprint 121 Canonical Thread/Turn Protocol](contracts/sprint-121-canonical-thread-turn-protocol.md) - Remote CLI 首个垂直切换合同（Proposed）
 - [Sprint 122–134 Autonomous Quant Trader Delivery Contracts](architecture/35-autonomous-quant-trader-north-star.md#交付合同序列) - 从 Web canonical cutover、Outcome、新旧策略双轨研究到 Live Canary 和有限自主组合 Pilot
+- [Active M0 Autonomous Research Contract](contracts/user-directed-autonomous-strategy-research-loop-m0.md) - 当前执行合同；Sprint 132–134 保持未激活
 
 ---
 
