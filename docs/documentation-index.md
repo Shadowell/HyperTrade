@@ -44,6 +44,7 @@
 - [ARC Red Team Monte Carlo Overfitting Attack Matrix](architecture/44-arc-red-team-monte-carlo-overfitting-matrix.md) - 阶段三：红队蒙特卡洛参数抖动与黑天鹅防过拟合矩阵设计
 - [ARC Parallel MCTS Rollout Engine & Distributed MAP-Elites Architecture](architecture/45-arc-parallel-mcts-rollout-engine-design.md) - 阶段四：多 Agent 并行 MCTS 探索引擎设计
 - [ARC Portfolio MCTS Co-Evolution Engine & Low-Correlation Allocator](architecture/46-arc-portfolio-mcts-co-evolution-engine.md) - 阶段五：组合级 MCTS 协同演化引擎与低相关性分配器设计
+- [ARC Macro & Unstructured Event Causal Factor Engine](architecture/47-arc-macro-unstructured-event-causal-factor-engine.md) - 阶段六：宏观新闻与非结构化事件因果因子化引擎设计
 - [Autonomous Quant Trader North Star](architecture/35-autonomous-quant-trader-north-star.md) - 最终产品目标：持续策略进化、市场状态感知、组合优化与授权内实盘生命周期
 - [Goal-Driven Autonomous Research Loop M0](architecture/36-goal-driven-autonomous-research-loop-m0.md) - 自然语言目标、候选生成、真实 BitPro 回测、证据迭代和预授权模拟盘闭环
 - [Next-Generation Agent Runtime Audit and Target Design](architecture/34-next-generation-agent-runtime-audit-and-target-design.md) - 真实执行审计、目标协议、完整状态机、Schema、权限、多 Agent、交易安全、评测与切换路线

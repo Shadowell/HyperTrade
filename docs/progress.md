@@ -1,8 +1,8 @@
 # Progress Log
 
-## ARC SOTA Production Evolution Upgrade (Phases 1–5) 已完成 — 2026-07-30
+## ARC SOTA Production Evolution Upgrade (Phases 1–6) 已完成 — 2026-07-30
 
-- 完成五大 SOTA 生产级进化升级阶段：
+- 完成六大 SOTA 生产级进化升级阶段：
   1. **阶段一：模拟盘实盘数据闭环 & 动态衰退自动重练 (Phase 1)**
      - 架构文档：[docs/architecture/42-arc-dynamic-paper-observation-feedback.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/42-arc-dynamic-paper-observation-feedback.md)
      - 实现 `PaperObservationMonitorDaemon` 模拟盘采样守护进程、`PaperAnomalyDetector` 异常检测器与 `IncrementalEvolutionTrigger` 增量自动重练触发器。
@@ -18,8 +18,11 @@
   5. **阶段五：组合级 MCTS 协同演化引擎与低相关性分配器 (Phase 5)**
      - 架构文档：[docs/architecture/46-arc-portfolio-mcts-co-evolution-engine.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/46-arc-portfolio-mcts-co-evolution-engine.md)
      - 实现 `ARCPortfolioCoEvolutionEngine` 策略间两两 Pearson 相关系数矩阵校验（$\rho < 0.35$ 强制门禁）与组合净 Sharpe 比率提升度评估（$\Delta S > 15\%$ 准入机制）。
+  6. **阶段六：宏观新闻与非结构化事件因果因子化引擎 (Phase 6)**
+     - 架构文档：[docs/architecture/47-arc-macro-unstructured-event-causal-factor-engine.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/47-arc-macro-unstructured-event-causal-factor-engine.md)
+     - 实现 `MacroEventCausalExtractor`，解析非结构化宏观/新闻流（央行加息/降息、OPEC 减产、地缘政治等），提取情绪偏置 $S \in [-1, 1]$、置信度 $C \in [0, 1]$ 与动态仓位缩放乘数 $P_{mult} \in [0.5, 1.25]$。
 - 全量质量检查与单元测试验证：
-  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 831 个 pytest 单元与集成测试**全部 100% 通过**。
+  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 834 个 pytest 单元与集成测试**全部 100% 通过**。
 
 ## ARC (Autonomous Research Core) 自主进化控制内核已激活 — 2026-07-30
 
