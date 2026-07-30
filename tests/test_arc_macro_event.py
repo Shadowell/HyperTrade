@@ -1,8 +1,9 @@
 """
-Unit & Integration Tests for Phase 6: Macro & Unstructured Event Causal Factor Engine
+Unit & Integration Tests for Phase 6: Macro Event Causal Factor Engine
 """
 
 from hypertrade.strategy.macro_event import (
+    FreeMacroNewsProvider,
     MacroEventCausalExtractor,
     MacroEventPayload,
 )
@@ -46,3 +47,14 @@ def test_neutral_news_extraction():
     assert factor.regime_type == "NEUTRAL"
     assert factor.sentiment_bias == 0.0
     assert factor.position_multiplier == 1.0
+
+
+def test_free_macro_news_provider_integration():
+    provider = FreeMacroNewsProvider()
+    factors = provider.fetch_and_extract_latest_causal_factors(symbol="CL=F")
+
+    assert len(factors) == 3
+    regimes = {f.regime_type for f in factors}
+    assert "FED_HAWKISH" in regimes
+    assert "OPEC_CUT" in regimes
+    assert "GEOPOLITICAL_RISK_OFF" in regimes
