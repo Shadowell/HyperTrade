@@ -175,7 +175,7 @@ def run_autonomous_arc_loop(mission_id: str) -> None:
 
             # 7. Auto Paper Incubation
             if goal.paper_authorization:
-                ok, paper_inst_id, msg = (
+                ok, paper_inst_id, strat_name, msg = (
                     incubation_resolver.resolve_and_provision_paper_trading(
                         mutated_attempt, goal.paper_authorization
                     )
@@ -186,6 +186,7 @@ def run_autonomous_arc_loop(mission_id: str) -> None:
                         {
                             "attempt_id": mutated_attempt.attempt_id,
                             "paper_instance_id": paper_inst_id,
+                            "strategy_name": strat_name,
                         },
                     )
                     ctrl.apply_event("mission_completed", {})
@@ -212,7 +213,7 @@ def run_autonomous_arc_loop(mission_id: str) -> None:
             skill_library.register_skill(skill)
 
         if goal.paper_authorization:
-            ok, paper_inst_id, msg = (
+            ok, paper_inst_id, strat_name, msg = (
                 incubation_resolver.resolve_and_provision_paper_trading(
                     initial_attempt, goal.paper_authorization
                 )
@@ -223,6 +224,7 @@ def run_autonomous_arc_loop(mission_id: str) -> None:
                     {
                         "attempt_id": initial_attempt.attempt_id,
                         "paper_instance_id": paper_inst_id,
+                        "strategy_name": strat_name,
                     },
                 )
                 ctrl.apply_event("mission_completed", {})
