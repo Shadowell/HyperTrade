@@ -25,7 +25,7 @@ def test_red_team_adversarial_attack():
 
     assert passed is False
     assert len(reasons) > 0
-    assert "RED_TEAM_ATTACK_FAIL" in reasons[0]
+    assert "RED_TEAM_ATTACK_FAIL" in reasons[0] or "MONTE_CARLO_FAIL" in reasons[0]
     assert metrics["max_drawdown_after_attack"] > 0.15
 
 

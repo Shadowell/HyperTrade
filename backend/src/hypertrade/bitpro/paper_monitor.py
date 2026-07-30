@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
+from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 
 from hypertrade.db import BitProPaperMonitorSnapshot, Database
+
+if TYPE_CHECKING:
+    from hypertrade.arc.controller import ARCController
 
 
 class BitProPaperMonitorAdapter(Protocol):
@@ -315,3 +320,175 @@ def _int_or_zero(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+class PaperObservationSnapshot(BaseModel):
+    """Snapshot of active paper trading performance metrics."""
+
+    instance_id: str
+    symbol: str
+    timeframe: str = "1H"
+    cumulative_return_pct: float
+    current_drawdown_pct: float
+    consecutive_losses: int
+    win_rate_30d: float
+    avg_slippage_bps: float
+    sampled_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class PaperAnomalyEvent(BaseModel):
+    """Triggered when paper instance violates safety or performance thresholds."""
+
+    instance_id: str
+    symbol: str
+    anomaly_type: str
+    observed_value: float
+    threshold_value: float
+    message: str
+    detected_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class PaperAnomalyDetector:
+    """
+    Evaluates paper observation snapshots against risk and alpha decay thresholds.
+    """
+
+    def __init__(
+        self,
+        max_drawdown_threshold: float = 0.10,
+        min_win_rate_threshold: float = 0.45,
+        max_consecutive_losses: int = 4,
+        max_slippage_bps: float = 15.0,
+    ) -> None:
+        self.max_drawdown_threshold = max_drawdown_threshold
+        self.min_win_rate_threshold = min_win_rate_threshold
+        self.max_consecutive_losses = max_consecutive_losses
+        self.max_slippage_bps = max_slippage_bps
+
+    def detect_anomalies(self, snapshot: PaperObservationSnapshot) -> list[PaperAnomalyEvent]:
+        anomalies: list[PaperAnomalyEvent] = []
+
+        if snapshot.current_drawdown_pct >= self.max_drawdown_threshold:
+            anomalies.append(
+                PaperAnomalyEvent(
+                    instance_id=snapshot.instance_id,
+                    symbol=snapshot.symbol,
+                    anomaly_type="MAX_DRAWDOWN_BREACH",
+                    observed_value=snapshot.current_drawdown_pct,
+                    threshold_value=self.max_drawdown_threshold,
+                    message=(
+                        f"Paper drawdown ({snapshot.current_drawdown_pct:.1%}) "
+                        f"exceeded threshold ({self.max_drawdown_threshold:.1%})"
+                    ),
+                )
+            )
+
+        if snapshot.win_rate_30d < self.min_win_rate_threshold:
+            anomalies.append(
+                PaperAnomalyEvent(
+                    instance_id=snapshot.instance_id,
+                    symbol=snapshot.symbol,
+                    anomaly_type="WIN_RATE_DECAY",
+                    observed_value=snapshot.win_rate_30d,
+                    threshold_value=self.min_win_rate_threshold,
+                    message=(
+                        f"Paper win rate ({snapshot.win_rate_30d:.1%}) "
+                        f"dropped below threshold ({self.min_win_rate_threshold:.1%})"
+                    ),
+                )
+            )
+
+        if snapshot.consecutive_losses >= self.max_consecutive_losses:
+            anomalies.append(
+                PaperAnomalyEvent(
+                    instance_id=snapshot.instance_id,
+                    symbol=snapshot.symbol,
+                    anomaly_type="LOSS_STREAK",
+                    observed_value=float(snapshot.consecutive_losses),
+                    threshold_value=float(self.max_consecutive_losses),
+                    message=(
+                        f"Paper consecutive loss streak ({snapshot.consecutive_losses}) "
+                        f"reached limit ({self.max_consecutive_losses})"
+                    ),
+                )
+            )
+
+        if snapshot.avg_slippage_bps >= self.max_slippage_bps:
+            anomalies.append(
+                PaperAnomalyEvent(
+                    instance_id=snapshot.instance_id,
+                    symbol=snapshot.symbol,
+                    anomaly_type="SLIPPAGE_SURGE",
+                    observed_value=snapshot.avg_slippage_bps,
+                    threshold_value=self.max_slippage_bps,
+                    message=(
+                        f"Paper execution slippage ({snapshot.avg_slippage_bps:.1f} bps) "
+                        f"exceeded threshold ({self.max_slippage_bps:.1f} bps)"
+                    ),
+                )
+            )
+
+        return anomalies
+
+
+class PaperReflexionTranslator:
+    """
+    Translates paper anomaly events into negative constraints for ARC incremental re-training.
+    """
+
+    def translate_anomaly_to_constraints(self, anomaly: PaperAnomalyEvent) -> list[str]:
+        constraints: list[str] = []
+
+        if anomaly.anomaly_type == "MAX_DRAWDOWN_BREACH":
+            constraints.append(
+                f"模拟盘回撤超标 ({anomaly.observed_value:.1%})：必须强制设置 stop_loss <= 0.07"
+            )
+            constraints.append("禁止在极高波动率行情中持空仓过夜")
+        elif anomaly.anomaly_type == "WIN_RATE_DECAY":
+            constraints.append(
+                f"模拟盘胜率衰退 ({anomaly.observed_value:.1%})："
+                "均线 lookback_period 必须 > 25 以滤波噪声"
+            )
+        elif anomaly.anomaly_type == "LOSS_STREAK":
+            constraints.append("连续亏损警示：触发次日建仓必须叠加 ATR 波动率突破确认信号")
+        elif anomaly.anomaly_type == "SLIPPAGE_SURGE":
+            constraints.append("执行滑点过大：禁止在低流动性时段 (02:00-05:00 UTC) 发起市价单建仓")
+
+        return constraints
+
+
+class IncrementalEvolutionTrigger:
+    """
+    Triggers an incremental ARC evolution loop based on paper anomaly events.
+    """
+
+    def trigger_re_training(
+        self,
+        anomaly: PaperAnomalyEvent,
+        reflexion_ledger: Any = None,
+    ) -> ARCController:
+        from hypertrade.arc.contracts import ARCBudgetV1, ARCGoalV1, PaperPreauthorizationV1
+        from hypertrade.arc.controller import ARCController
+
+        translator = PaperReflexionTranslator()
+        new_constraints = translator.translate_anomaly_to_constraints(anomaly)
+
+        if reflexion_ledger:
+            for c in new_constraints:
+                reflexion_ledger.record_negative_constraint(c)
+
+        objective = (
+            f"针对模拟盘异常 ({anomaly.anomaly_type}) 重新演化 {anomaly.symbol} 1H 策略，"
+            "修复回撤并重新测试上线"
+        )
+        preauth = PaperPreauthorizationV1(symbols=[anomaly.symbol])
+        goal = ARCGoalV1(
+            objective=objective,
+            symbols=[anomaly.symbol],
+            timeframes=["1H"],
+            budget=ARCBudgetV1(max_candidates=5),
+            paper_authorization=preauth,
+        )
+
+        controller = ARCController(goal=goal)
+        return controller

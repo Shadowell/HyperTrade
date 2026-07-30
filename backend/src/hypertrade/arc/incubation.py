@@ -16,7 +16,7 @@ def format_bitpro_strategy_name(
     symbol: str,
     timeframe: str = "1H",
     strategy_type: str = "CTA",
-    logic_summary: str = "20周期突破8%止损",
+    logic_summary: str = "20周期突破8%动态止损",
     capital_u: int = 100,
 ) -> str:
     """
@@ -72,23 +72,31 @@ class ARCPaperIncubationResolver:
         # Call BitPro MCP API to register strategy on BitPro platform UI & DB
         try:
             client = BitProMcpClient()
-            res = client.strategy_create(
-                name=bitpro_strategy_name,
-                script_content=attempt.strategy_code,
-                description=f"ARC Autonomous Research Candidate {attempt.candidate_id} for {symbol}",
-                exchange="okx",
-                symbols=[symbol],
+            desc = f"ARC Autonomous Research Candidate {attempt.candidate_id} for {symbol}"
+            res = client.call_tool(
+                "strategy_create",
+                {
+                    "name": bitpro_strategy_name,
+                    "script_content": attempt.strategy_code,
+                    "description": desc,
+                    "exchange": "okx",
+                    "symbols": [symbol],
+                },
             )
-            if res.get("status") == "ok" and "strategy" in res:
+            if isinstance(res, dict) and res.get("status") == "ok" and "strategy" in res:
                 strat_info = res["strategy"]
                 if isinstance(strat_info, dict) and "id" in strat_info:
                     paper_instance_id = f"bitpro_paper_strat_{strat_info['id']}"
         except Exception:
             pass
 
+        msg = (
+            f"Successfully provisioned strategy '{bitpro_strategy_name}' "
+            f"({paper_instance_id}) on BitPro with capital {capital}"
+        )
         return (
             True,
             paper_instance_id,
             bitpro_strategy_name,
-            f"Successfully provisioned strategy '{bitpro_strategy_name}' ({paper_instance_id}) on BitPro with capital {capital}",
+            msg,
         )

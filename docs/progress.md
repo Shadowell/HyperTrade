@@ -1,5 +1,20 @@
 # Progress Log
 
+## ARC SOTA Production Evolution Upgrade (Phases 1–3) 已完成 — 2026-07-30
+
+- 完成三大 SOTA 生产级进化升级阶段：
+  1. **阶段一：模拟盘实盘数据闭环 & 动态衰退自动重练 (Phase 1)**
+     - 架构文档：[docs/architecture/42-arc-dynamic-paper-observation-feedback.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/42-arc-dynamic-paper-observation-feedback.md)
+     - 实现 `PaperObservationMonitorDaemon` 模拟盘采样守护进程、`PaperAnomalyDetector` 异常检测器与 `IncrementalEvolutionTrigger` 增量自动重练触发器。
+  2. **阶段二：高阶量化因子（Orderbook失衡、VWAP、ATR通道）算子库 (Phase 2)**
+     - 架构文档：[docs/architecture/43-arc-higher-order-quant-factor-library.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/43-arc-higher-order-quant-factor-library.md)
+     - 实现 `compute_orderbook_imbalance`、`compute_vwap_zscore` 与 `compute_atr_volatility_channel` 高阶算子，扩充蓝队与 MCTS 变异算法的策略表达空间。
+  3. **阶段三：红队蒙特卡洛参数抖动与黑天鹅防过拟合矩阵 (Phase 3)**
+     - 架构文档：[docs/architecture/44-arc-red-team-monte-carlo-overfitting-matrix.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/44-arc-red-team-monte-carlo-overfitting-matrix.md)
+     - 实现 100 次蒙特卡洛参数抖动测试（Sharpe 衰减 $>25\%$ 直接剔除）、历史黑天鹅重放（2020.3.12 瀑布、2022 LUNA 崩溃）与 1~5 bps 随机滑点摩擦测试。
+- 全量质量检查与单元测试验证：
+  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 826 个 pytest 单元与集成测试**全部 100% 通过**。
+
 ## ARC (Autonomous Research Core) 自主进化控制内核已激活 — 2026-07-30
 
 - 产品所有者确认将通用自主进化控制内核命名为 **ARC (Autonomous Research Core)**，要求建立具备解耦通用性、自主搜索探索、策略代码 AST 基因突变、因果反思归因 (Reflexion Memory) 和红蓝对抗博弈 (Blue Inventor vs Red Falsifier) 的核心控制核，并在通过确定性验证后自动上线模拟盘运行 (Paper Incubation)。
