@@ -1,8 +1,8 @@
 # Progress Log
 
-## ARC SOTA Production Evolution Upgrade (Phases 1–6) 已完成 — 2026-07-30
+## ARC SOTA Production Evolution Upgrade (Phases 1–7) 已完成 — 2026-07-30
 
-- 完成六大 SOTA 生产级进化升级阶段：
+- 完成七大 SOTA 生产级进化升级阶段（实现 100% 终极北极星目标能力闭环）：
   1. **阶段一：模拟盘实盘数据闭环 & 动态衰退自动重练 (Phase 1)**
      - 架构文档：[docs/architecture/42-arc-dynamic-paper-observation-feedback.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/42-arc-dynamic-paper-observation-feedback.md)
      - 实现 `PaperObservationMonitorDaemon` 模拟盘采样守护进程、`PaperAnomalyDetector` 异常检测器与 `IncrementalEvolutionTrigger` 增量自动重练触发器。
@@ -21,8 +21,11 @@
   6. **阶段六：宏观新闻与非结构化事件因果因子化引擎 (Phase 6)**
      - 架构文档：[docs/architecture/47-arc-macro-unstructured-event-causal-factor-engine.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/47-arc-macro-unstructured-event-causal-factor-engine.md)
      - 实现 `MacroEventCausalExtractor`，解析非结构化宏观/新闻流（央行加息/降息、OPEC 减产、地缘政治等），提取情绪偏置 $S \in [-1, 1]$、置信度 $C \in [0, 1]$ 与动态仓位缩放乘数 $P_{mult} \in [0.5, 1.25]$。
+  7. **阶段七：主网 Live 实盘安全金库与 Canary 动态上线机制 (Phase 7 - 终极里程碑)**
+     - 架构文档：[docs/architecture/48-arc-live-canary-vault-and-risk-gate-pipeline.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/48-arc-live-canary-vault-and-risk-gate-pipeline.md)
+     - 实现 `CanaryVaultPipeline` 资本分级金字塔（Paper 14D $\rightarrow$ Live Micro 0.5% $\rightarrow$ Live Mini 2.0% $\rightarrow$ Production Vault），叠加单日 3% 强制硬熔断与实盘-模拟盘 10% 收益漂移降级切回。
 - 全量质量检查与单元测试验证：
-  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 834 个 pytest 单元与集成测试**全部 100% 通过**。
+  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 838 个 pytest 单元与集成测试**全部 100% 通过**。
 
 ## ARC (Autonomous Research Core) 自主进化控制内核已激活 — 2026-07-30
 
