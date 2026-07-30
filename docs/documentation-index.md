@@ -34,9 +34,13 @@
 
 ### 架构文档
 详细的系统架构和设计文档：
-- [Architecture Overview](architecture/) - 架构概览目录
+- [ARC Autonomous Research Core Architecture](architecture/37-arc-autonomous-research-core-architecture.md) - 通用自主进化控制内核设计：六边形解耦架构、闭环控制器与解耦适配器
+- [ARC MCTS & Quality-Diversity Search Design](architecture/38-arc-mcts-and-quality-diversity-search-design.md) - MCTS 蒙特卡洛树搜索 + MAP-Elites 网格搜寻引擎设计
+- [ARC Red-Blue Adversarial Game Engine Design](architecture/39-arc-adversarial-red-blue-engine-design.md) - 蓝队策略发明 vs. 红队攻击找茬博弈引擎设计
+- [ARC Multi-Regime Causal Attribution & Reflexion Design](architecture/40-arc-reflexion-causal-attribution-design.md) - 多 Regime 定量因果归因与 Reflexion 记忆账本设计
+- [ARC Voyager-Style Skill Distillation Design](architecture/41-arc-voyager-skill-distillation-design.md) - Voyager 风格 AST 技能自动提取与基因库设计
 - [Autonomous Quant Trader North Star](architecture/35-autonomous-quant-trader-north-star.md) - 最终产品目标：持续策略进化、市场状态感知、组合优化与授权内实盘生命周期
-- [Goal-Driven Autonomous Research Loop M0](architecture/36-goal-driven-autonomous-research-loop-m0.md) - 当前最高优先级开发设计：自然语言目标、候选生成、真实 BitPro 回测、证据迭代和预授权模拟盘闭环
+- [Goal-Driven Autonomous Research Loop M0](architecture/36-goal-driven-autonomous-research-loop-m0.md) - 自然语言目标、候选生成、真实 BitPro 回测、证据迭代和预授权模拟盘闭环
 - [Next-Generation Agent Runtime Audit and Target Design](architecture/34-next-generation-agent-runtime-audit-and-target-design.md) - 真实执行审计、目标协议、完整状态机、Schema、权限、多 Agent、交易安全、评测与切换路线
 - [System Architecture](architecture/33-system-architecture.md) - 当前实现快照、Mission Runtime、控制/数据平面、信任边界、安全与部署
 - [System Architecture Diagram](architecture/19-hypertrade-architecture-diagram.md)

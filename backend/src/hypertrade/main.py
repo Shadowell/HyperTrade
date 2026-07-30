@@ -42,6 +42,7 @@ from hypertrade.agent.tasks import (
     TaskControl,
     task_to_dict,
 )
+from hypertrade.arc.router import router as arc_router
 from hypertrade.backtest.service import BacktestService
 from hypertrade.bitpro.mcp import (
     BitProMcpClient,
@@ -577,6 +578,7 @@ def create_app(
 
     AdminUser = Annotated[str, Depends(require_admin)]
     app.include_router(build_thread_turn_router(thread_turn_service, require_admin))
+    app.include_router(arc_router)
 
     def mission_request_key(request: Request) -> str:
         supplied = request.headers.get("Idempotency-Key", "").strip()

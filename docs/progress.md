@@ -1,5 +1,13 @@
 # Progress Log
 
+## ARC (Autonomous Research Core) 自主进化控制内核已激活 — 2026-07-30
+
+- 产品所有者确认将通用自主进化控制内核命名为 **ARC (Autonomous Research Core)**，要求建立具备解耦通用性、自主搜索探索、策略代码 AST 基因突变、因果反思归因 (Reflexion Memory) 和红蓝对抗博弈 (Blue Inventor vs Red Falsifier) 的核心控制核，并在通过确定性验证后自动上线模拟盘运行 (Paper Incubation)。
+- 已建立系统架构设计文档 [docs/architecture/37-arc-autonomous-research-core-architecture.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/37-arc-autonomous-research-core-architecture.md)。
+- 已激活开发合同 [docs/contracts/arc-autonomous-research-core.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/contracts/arc-autonomous-research-core.md)。
+- 研发规划划分为 4 个有序 Sprint (Sprint 132 ~ Sprint 135) 迭代推进，主网实盘交易保持禁用。
+- 下一步：实施 **Sprint 132 — ARC 通用内核、领域合同与黄金测试**。
+
 ## User-Directed Autonomous Strategy Research Loop M0 已激活 — 2026-07-24
 
 - 产品所有者明确要求按 HyperTrade 最高目标改造当前项目，并先完成最小闭环：一次自然语言请求自动完成

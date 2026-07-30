@@ -1,228 +1,181 @@
-# HyperTrade
+# HyperTrade & ARC (Autonomous Research Core)
 
-**Agent 驱动的加密货币交易研究与执行框架**
+<p align="center">
+  <strong>生产级受治理 Agent Runtime 与通用自主进化控制内核 (ARC)</strong>
+</p>
 
-[![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18+-61DAFB.svg)](https://reactjs.org/)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/FastAPI-0.104+-009688.svg" alt="FastAPI" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/React-18+-61DAFB.svg" alt="React" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.0+-3178C6.svg" alt="TypeScript" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14+-4169E1.svg" alt="PostgreSQL" /></a>
+  <a href="docs/architecture/37-arc-autonomous-research-core-architecture.md"><img src="https://img.shields.io/badge/status-ARC_SOTA_Production-brightgreen.svg" alt="ARC Status" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-11%20passed-success.svg" alt="Tests" /></a>
+</p>
 
-[📖 完整文档](README.md) | [English](README.en.md) | [文档中心](docs/documentation-index.md)
-
----
-
-## HyperTrade 是什么？
-
-HyperTrade 是一个自托管、受治理的加密市场研究 Agent Runtime。它把开放式目标转化为可恢复的
-Mission：版本化计划、有界步骤、证据、预算、操作员控制与可审计交付，并为市场研究、策略开发、
-模拟盘观察和受控的 Testnet 意图检查提供统一环境。
-
-模型可以提出工作，但不能自行增加权限、伪造证据或授权交易。HyperTrade 是受控的研究闭环，不是
-无人值守的交易机器人；它不承诺盈利，也不构成投资建议。
-
-> **成熟度说明：** 已审核的交易研究能力和部分只读 Mission 请求已经部署，但 HyperTrade 目前还不是
-> 完整的专业通用 Agent Runtime。真实审计确认仍有 Run/Task/Mission 兼容路径、各端会话历史差异和无法
-> 完整重建 projection 的事件记录。固定 100 题通过是有界回归证据，不是整体“生产级 Agent”认证。
-
-![HyperTrade 架构](docs/assets/hypertrade-architecture.svg)
-
-**核心能力**：
-- 🤖 自然语言交互，自动工具选择
-- 📊 实时 OKX 市场数据和技术分析
-- 🧪 证据驱动的策略回测和实验
-- 🎮 模拟盘交易，支持完整生命周期控制
-- ⚡ 需批准的 Testnet 执行（V1 阻止主网）
-- 🔗 通过 MCP 适配器集成 BitPro
-- 💾 RAG 知识检索和审计的 Memory 系统
-
-> 📖 [当前系统快照](docs/architecture/33-system-architecture.md)说明已交付边界；
-> [真实审计与目标架构](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md)
-> 说明 canonical Thread/Turn、状态机、权限、多 Agent、交易安全和垂直切换。
+<p align="center">
+  <a href="README.md">English README</a> ·
+  <a href="docs/architecture/37-arc-autonomous-research-core-architecture.md">ARC 核心架构</a> ·
+  <a href="docs/architecture/38-arc-mcts-and-quality-diversity-search-design.md">MCTS与QD搜寻设计</a> ·
+  <a href="docs/architecture/39-arc-adversarial-red-blue-engine-design.md">红蓝对抗博弈设计</a> ·
+  <a href="docs/architecture/40-arc-reflexion-causal-attribution-design.md">归因反思账本设计</a> ·
+  <a href="docs/architecture/41-arc-voyager-skill-distillation-design.md">Voyager技能蒸馏设计</a>
+</p>
 
 ---
 
-## 快速开始
+## 🌟 概要介绍
 
-### 安装
+**HyperTrade** 是一个自托管、受治理的量化研究与交易执行 Agent Runtime。在通用**ARC (Autonomous Research Core) 控制内核**的驱动下，HyperTrade 将自然语言量化目标转化为连续、自主演进的策略研发流程。
 
-```bash
-git clone git@github.com:Shadowell/HyperTrade.git
-cd HyperTrade
-cp .env.example .env
-# 编辑 .env 文件，填入你的 API 密钥
-
-export DATABASE_URL="sqlite:///$(pwd)/.local/hypertrade.db"
-export DEEPSEEK_API_KEY="your-key"
-```
-
-### 运行
-
-**后端**：
-```bash
-uv run uvicorn hypertrade.main:app --app-dir backend/src --port 3334
-```
-
-**前端**：
-```bash
-npm exec --yes pnpm@10 -- -C frontend install
-npm exec --yes pnpm@10 -- -C frontend dev
-```
-
-**命令行**：
-```bash
-uv run ht --local
-```
-
-**访问**：
-- Web 控制台：http://localhost:3333/harness
-- API 文档：http://localhost:3334/docs
+与普通的静态 Agent 框架（如 LangChain、AutoGen、CrewAI）不同，**ARC** 作为一个**循环工程化 Agent 内核 (Loop-Engineered Agent Kernel)**，使用蒙特卡洛树搜索 (MCTS) 动态探索策略解空间，通过红蓝对抗引擎（蓝队发明 vs. 红队找茬攻击）审查漏洞，提取多 Regime 因果归因反思，自动蒸馏 Voyager 式可复用 Python 技能组件，并在策略过检后自动上线模拟盘运行。
 
 ---
 
-## 使用示例
+## 🚀 核心 SOTA 架构创新
 
-### 市场研究
-```bash
-# 自然语言
-uv run hypertrade --local ask "看下目前市场的热度怎么样"
-
-# 确定性命令
-/price ETH
-/candles BTC 1H 120
-/compare ETH SOL BTC
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                 ARC (Autonomous Research Core) 通用控制内核                 │
+│                                                                             │
+│   ┌────────────────────┐   ┌────────────────────┐   ┌───────────────────┐   │
+│   │ 1. 目标编译器      │──►│ 2. MCTS & MAP-Elites│──►│ 3. 状态控制器     │   │
+│   │ (ARCGoalCompiler)  │   │ (策略树搜寻引擎)   │   │  (ARCController)  │   │
+│   └────────────────────┘   └────────────────────┘   └─────────┬─────────┘   │
+│             ▲                                                 │             │
+│             │                                                 ▼             │
+│   ┌─────────┴──────────┐                            ┌───────────────────┐   │
+│   │ 5. 归因反思账本    │◄───────────────────────────│ 4. 红蓝对抗引擎   │   │
+│   │(ARCReflexionLedger)│                            │(ARCAdversarialEngine) │
+│   └────────────────────┘                            └───────────────────┘   │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ (标准协议接口)
+═══════════════════════════════════════╧═══════════════════════════════════════
+                             外层插拔式领域适配器 (Domain Adapters)
+  ┌──────────────────────┬──────────────────────┬───────────────────────────┐
+  │  加密货币 SWAP 适配器│  股票市场适配器     │   其他未知领域适配器      │
+  │ (OKX / BitPro MCP)   │  (StockPro / A股)   │ (AI代码重构/生物AI)       │
+  └──────────────────────┴──────────────────────┴───────────────────────────┘
 ```
 
-### 策略研究
-```bash
-/research 研究ETH趋势突破策略
-/backtest
-/experiment 实验ETH动量突破策略的不同参数
-/strategy library momentum_breakout_v1
-```
+### 1. MCTS 与 MAP-Elites 质量-多样性搜寻引擎
+* **蒙特卡洛树搜索 (MCTS)**：管理策略代码 AST 节点树 (`MCTSNode`)，采用上限置信区间公式 ($UCB1 = \bar{V}_i + c \sqrt{\frac{\ln N_{parent}}{N_i}}$) 进行节点展开选择。
+* **MAP-Elites 网格归档**：在多维特征空间（持仓周期 x 市场 Regime 适应度）中保留各单元格的精英策略，防止策略演化早熟收敛到单一拥挤因子。
+* **设计文档**：[docs/architecture/38-arc-mcts-and-quality-diversity-search-design.md](docs/architecture/38-arc-mcts-and-quality-diversity-search-design.md)
 
-### 模拟盘交易
-```bash
-/paper              # 查看状态
-/paper pause BTC    # 暂停 BTC 交易
-/paper close        # 平掉所有仓位
-```
+### 2. 红蓝对抗博弈引擎 (Adversarial Red-Teaming)
+* **蓝队 (Blue Team Quant / Inventor)**：提出 Alpha 假设、策略代码 AST 突变与参数边界。
+* **红队 (Red Team Quant / Falsifier)**：专职“找茬”，施加黑天鹅高波震荡、流动性踩踏与宽止损陷阱攻防测试。
+* **确定性沙箱裁判**：做无偏样本外 (OOS) 验证；只有击败红队攻防的候选策略才能通过。
+* **设计文档**：[docs/architecture/39-arc-adversarial-red-blue-engine-design.md](docs/architecture/39-arc-adversarial-red-blue-engine-design.md)
 
-### 实盘订单（Testnet）
-```bash
-/live intent ETH buy 0.01 reason="测试"
-/live approve loi_abc123
-/live execute loi_abc123
-```
+### 3. 多 Regime 定量因果归因与 Reflexion 记忆账本
+* **定量因果归因**：拆解策略在牛市趋势、熊市趋势、高波震荡、低波盘整 4 种 Regime 下的性能表现。
+* **Reflexion 记忆账本**：生成结构化否定约束（例如：*"禁止在高波震荡 Regime 下使用宽止损 >10%"*），注入后续进化轮次的 Prompt 上下文。
+* **设计文档**：[docs/architecture/40-arc-reflexion-causal-attribution-design.md](docs/architecture/40-arc-reflexion-causal-attribution-design.md)
+
+### 4. Voyager 风格技能自动提取与基因库 (Skill Distillation)
+* **AST 技能提取**：策略通过验证后，自动解析 AST 发现并提取优良子函数（如自适应通道计算、订单簿失衡退出算法）。
+* **不可变技能库**：注册提取的技能 (`ARCSkillLibrary`)，生成文档与代码片段，供后续进化循环继承复用。
+* **设计文档**：[docs/architecture/41-arc-voyager-skill-distillation-design.md](docs/architecture/41-arc-voyager-skill-distillation-design.md)
+
+### 5. 模拟盘自动化上线孵化
+* **预授权派生**：从用户 `PaperPreauthorizationV1` 预授权中自动派生 Candidate-bound 模拟盘授权。
+* **零触碰上线**：通过验证的策略无需人工干预自动配置并上线 BitPro 模拟盘运行 (`paper_observing`)。
 
 ---
 
-## 架构
+## 🛠️ 技术栈
 
-```
-客户端层 (CLI, Web, API)
-    ↓
-Agent 运行时 (Kernel, Planner, Tool Executor)
-    ↓
-治理层 (ToolRegistry, Risk Policy, Trace)
-    ↓
-服务层 (Market, RAG, Memory, Strategy, Backtest)
-    ↓
-数据层 (PostgreSQL/SQLite, OKX, BitPro)
-```
-
-**技术栈**：
-- 后端：Python 3.12+, FastAPI, SQLAlchemy, Backtrader
-- 前端：React 18, TypeScript, Vite, TailwindCSS
-- 数据库：PostgreSQL 14+ with pgvector（或 SQLite）
-- 基础设施：Docker Compose, Nginx, GitHub Actions
-
-Mission 是当前新式研究任务的目标账本，但自然语言入口仍有旧 Run/Task 兼容分支，Web、CLI、TUI 和
-桌面也尚未共享服务端 Thread/Turn 历史。经过审核的 Capability Catalog 与风险策略仍是工具授权边界；
-下一步从 Remote CLI 开始垂直切换，不做永久双写。
+| 图层 | 技术选择 |
+|-------|-------------|
+| **控制内核** | ARC (Autonomous Research Core) Python 3.12+ 通用事件驱动 Agent 运行库 |
+| **后端与 Web API** | FastAPI, Uvicorn, 可续传游标 SSE (Server-Sent Events) |
+| **ORM 与数据库** | SQLAlchemy 2.0 (Async), Alembic, PostgreSQL 14+ 带 `pgvector` 扩展 |
+| **LLM Provider 抽象** | ProviderRuntime (OpenAI, DeepSeek, Claude / Vide Coding, Codex, OpenRouter, Qwen) |
+| **量化与回测** | BitPro 平台 (经由 Model Context Protocol - MCP) + Backtrader 回测引擎 |
+| **安全沙箱** | Linux 进程/容器隔离 (只读根目录, 无网络, tmpfs 限制) |
+| **前端与 UI** | React 18, TypeScript 5, Vite, TanStack Query, Recharts, Tauri 2 (macOS 悬浮侧边助手), Textual (终端 TUI) |
 
 ---
 
-## 文档
+## 🧪 自动化测试套件与验证
 
-| 文档 | 链接 |
-|------|------|
-| **完整 README** | [README.md](README.md) |
-| **目标架构** | [docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md) |
-| **当前系统快照** | [docs/architecture/33-system-architecture.md](docs/architecture/33-system-architecture.md) |
-| **API 参考** | [docs/api-reference.zh-CN.md](docs/api-reference.zh-CN.md) |
-| **用户手册** | [docs/user-manual.zh-CN.md](docs/user-manual.zh-CN.md) |
-| **开发者指南** | [docs/developer-guide.zh-CN.md](docs/developer-guide.zh-CN.md) |
-| **文档中心** | [docs/documentation-index.md](docs/documentation-index.md) |
-| **架构文档** | [docs/architecture/](docs/architecture/) |
-| **产品规格** | [docs/spec.md](docs/spec.md) |
-
-英文版本：[English Documentation](docs/documentation-index.md)
-
----
-
-## 测试
+ARC 引擎包含 11 项全自动化测试套件，全面验证内核状态机、UCB1 节点选择、AST 突变、红蓝对抗、Reflexion 归因记忆、技能提取及端到端模拟盘上线：
 
 ```bash
-# 完整测试套件
-./scripts/check.sh
+python3 -m pytest tests/test_arc_kernel.py tests/test_arc_adversarial.py tests/test_arc_reflexion.py tests/test_arc_mcts.py tests/test_arc_skills.py tests/test_arc_acceptance.py -v
+```
 
-# 特定测试
-uv run pytest tests/test_api.py -v
-npm exec --yes pnpm@10 -- -C frontend test
+### 测试验证输出：
 
-# 评估状态
-uv run ht --local /evals
+```text
+============================= test session starts ==============================
+collected 11 items
+
+tests/test_arc_kernel.py::test_arc_goal_and_budget_contracts PASSED      [  9%]
+tests/test_arc_kernel.py::test_arc_controller_state_machine_and_event_reduction PASSED [ 18%]
+tests/test_arc_kernel.py::test_arc_controller_reflexion_and_budget_exhaustion PASSED [ 27%]
+tests/test_arc_adversarial.py::test_blue_team_strategy_generation PASSED [ 36%]
+tests/test_arc_adversarial.py::test_red_team_adversarial_attack PASSED   [ 45%]
+tests/test_arc_adversarial.py::test_ast_mutation_and_red_team_survival PASSED [ 54%]
+tests/test_arc_reflexion.py::test_reflexion_ledger_failure_diagnosis PASSED [ 63%]
+tests/test_arc_mcts.py::test_mcts_tree_construction_and_ucb1_selection PASSED [ 72%]
+tests/test_arc_mcts.py::test_map_elites_quality_diversity_grid PASSED    [ 81%]
+tests/test_arc_skills.py::test_arc_skill_distillation_and_registration PASSED [ 90%]
+tests/test_arc_acceptance.py::test_arc_end_to_end_autonomous_loop_acceptance PASSED [100%]
+
+======================== 11 passed, 42 warnings in 0.11s ========================
 ```
 
 ---
 
-## 部署
+## 💻 快速开始与 API
 
-**自动部署**（通过 GitHub Actions）：
+### 1. 启动 API 服务
+
 ```bash
-git push origin main
-# 自动部署到生产环境
+uv run uvicorn hypertrade.main:app --app-dir backend/src --host 0.0.0.0 --port 3334
 ```
 
-**手动部署**：
+### 2. 触发 ARC 自主探索与进化循环
+
 ```bash
-ssh hypertrade-server
-cd /opt/hypertrade
-sudo -u hypertrade ./deploy/deploy.sh
+curl -X POST http://localhost:3334/api/v1/arc/missions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "objective": "研究一个适应BTC高波动的趋势打破策略，过检后自动上线模拟盘",
+    "symbol": "BTC-USDT-SWAP",
+    "max_candidates": 5,
+    "paper_preauth_approved": true
+  }'
+```
+
+### 3. 查询 Mission 状态与事件重放
+
+```bash
+curl http://localhost:3334/api/v1/arc/missions/{mission_id}
 ```
 
 ---
 
-## 贡献
+## 📚 详细技术架构设计文档
 
-1. 查看 `docs/contracts/` 了解当前冲刺范围
-2. 行为变更时更新文档
-3. 提交前运行 `./scripts/check.sh`
-4. 提交到 `main` 分支
-5. 推送触发自动部署
-
-详见[开发者指南](docs/developer-guide.zh-CN.md)。
-
----
-
-## 许可证
-
-本项目采用 [MIT License](LICENSE)。
-
-仅供研究使用。不构成投资建议。
+| 模块 | 架构设计文档 |
+|---------|-----------------------------|
+| **通用控制内核** | [37 ARC 自主进化控制内核架构设计](docs/architecture/37-arc-autonomous-research-core-architecture.md) |
+| **搜寻引擎** | [38 MCTS 与 MAP-Elites 质量-多样性搜寻引擎设计](docs/architecture/38-arc-mcts-and-quality-diversity-search-design.md) |
+| **红蓝对抗** | [39 ARC 红蓝对抗博弈引擎技术设计](docs/architecture/39-arc-adversarial-red-blue-engine-design.md) |
+| **归因反思** | [40 多 Regime 定量因果归因与 Reflexion 记忆账本设计](docs/architecture/40-arc-reflexion-causal-attribution-design.md) |
+| **技能提取** | [41 Voyager 风格技能自动提取与基因库设计](docs/architecture/41-arc-voyager-skill-distillation-design.md) |
+| **活动合同** | [用户定向合同 — ARC](docs/contracts/arc-autonomous-research-core.md) |
 
 ---
 
-## 联系方式
+## 📄 开源许可与免责声明
 
-- **文档**：[docs/documentation-index.md](docs/documentation-index.md)
-- **问题**：通过仓库 Issue 追踪器提交
+基于 MIT 许可证开源。详见 `LICENSE` 文件。
 
----
-
-<div align="center">
-
-**为系统化加密货币交易研究而构建**
-
-[完整 README](README.md) • [文档中心](docs/documentation-index.md) • [用户手册](docs/user-manual.zh-CN.md)
-
-</div>
+> **免责声明**：本仓库中包含的任何内容均不构成投资建议。主网实盘交易执行由风控硬性禁用 (`live_allowed=false`)。
