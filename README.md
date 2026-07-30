@@ -1,7 +1,7 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
 <p align="center">
-  <strong>Production-Grade Governed Agent Runtime & Universal Autonomous Research Kernel (ARC)</strong>
+  <strong>生产级受治理 Agent Runtime 与通用自主进化控制内核 (ARC)</strong>
 </p>
 
 <p align="center">
@@ -16,100 +16,101 @@
 </p>
 
 <p align="center">
-  <a href="README.zh-CN.md">中文文档</a> ·
-  <a href="docs/architecture/37-arc-autonomous-research-core-architecture.md">ARC Core Architecture</a> ·
-  <a href="docs/architecture/38-arc-mcts-and-quality-diversity-search-design.md">MCTS & QD Search</a> ·
-  <a href="docs/architecture/39-arc-adversarial-red-blue-engine-design.md">Red-Blue Adversarial</a> ·
-  <a href="docs/architecture/40-arc-reflexion-causal-attribution-design.md">Reflexion Memory</a> ·
-  <a href="docs/architecture/41-arc-voyager-skill-distillation-design.md">Voyager Skill Library</a>
+  🌐 <strong>中文主文档</strong> ·
+  <a href="README.en.md">🇬🇧 English Documentation</a> ·
+  <a href="docs/architecture/37-arc-autonomous-research-core-architecture.md">ARC 核心架构</a> ·
+  <a href="docs/architecture/38-arc-mcts-and-quality-diversity-search-design.md">MCTS与QD搜寻设计</a> ·
+  <a href="docs/architecture/39-arc-adversarial-red-blue-engine-design.md">红蓝对抗博弈设计</a> ·
+  <a href="docs/architecture/40-arc-reflexion-causal-attribution-design.md">归因反思账本设计</a> ·
+  <a href="docs/architecture/41-arc-voyager-skill-distillation-design.md">Voyager技能蒸馏设计</a>
 </p>
 
 ---
 
-## 🌟 Executive Overview
+## 🌟 概要介绍
 
-**HyperTrade** is a self-hosted, governed Agent runtime for quantitative research and trading execution. Powered by its domain-agnostic **ARC (Autonomous Research Core)** kernel, HyperTrade bridges open-ended natural language research objectives to continuous, self-evolving quantitative discovery.
+**HyperTrade** 是一个自托管、受治理的量化研究与交易执行 Agent Runtime。在通用 **ARC (Autonomous Research Core) 控制内核** 的驱动下，HyperTrade 将自然语言量化目标转化为连续、自主演进的策略研发与模拟孵化全流程。
 
-Unlike standard static Agent frameworks (e.g. LangChain, AutoGen, CrewAI), **ARC** operates as a **Loop-Engineered Agent Kernel** that dynamically explores strategy search spaces using Monte Carlo Tree Search (MCTS), tests candidates against Adversarial Red-Team attacks, extracts multi-regime causal failure reflexions, distills reusable Voyager-style Python skills, and automatically provisions passing strategies into paper simulation trading.
+与传统的静态 Agent 框架（如 LangChain、AutoGen、CrewAI）不同，**ARC** 作为一个**循环工程化 Agent 内核 (Loop-Engineered Agent Kernel)**，使用蒙特卡洛树搜索 (MCTS) 动态探索策略解空间，通过红蓝对抗引擎（蓝队发明 vs. 红队找茬攻击）审查漏洞，提取多 Regime 因果归因反思，自动蒸馏 Voyager 式可复用 Python 技能组件，并在策略过检后自动上线模拟盘运行。
 
 ---
 
-## 🚀 Key SOTA Architectural Innovations
+## 🚀 核心 SOTA 架构创新
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                 ARC (Autonomous Research Core) Universal Kernel             │
+│                 ARC (Autonomous Research Core) 通用控制内核                 │
 │                                                                             │
 │   ┌────────────────────┐   ┌────────────────────┐   ┌───────────────────┐   │
-│   │ 1. Goal Compiler   │──►│ 2. MCTS & MAP-Elites│──►│ 3. State Controller │   │
-│   │  (ARCGoalCompiler) │   │ (Search Tree Engine)│   │  (ARCController)  │   │
+│   │ 1. 目标编译器      │──►│ 2. MCTS & MAP-Elites│──►│ 3. 状态控制器     │   │
+│   │ (ARCGoalCompiler)  │   │ (策略树搜寻引擎)   │   │  (ARCController)  │   │
 │   └────────────────────┘   └────────────────────┘   └─────────┬─────────┘   │
 │             ▲                                                 │             │
 │             │                                                 ▼             │
 │   ┌─────────┴──────────┐                            ┌───────────────────┐   │
-│   │ 5. Reflexion Memory│◄───────────────────────────│ 4. Red-Blue Engine│   │
-│   │ (Causal Ledger)    │                            │ (Adversarial Team)│   │
+│   │ 5. 归因反思账本    │◄───────────────────────────│ 4. 红蓝对抗引擎   │   │
+│   │(ARCReflexionLedger)│                            │(ARCAdversarialEngine) │
 │   └────────────────────┘                            └───────────────────┘   │
 └──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ (Pluggable Protocol Ports)
+                                       │ (标准协议接口)
 ═══════════════════════════════════════╧═══════════════════════════════════════
-                             Pluggable Domain Adapters
+                             外层插拔式领域适配器 (Domain Adapters)
   ┌──────────────────────┬──────────────────────┬───────────────────────────┐
-  │  Crypto SWAP Adapter │  Stock Market Adapter│   Other Domain Adapters   │
-  │ (OKX / BitPro MCP)   │  (StockPro / A-Share)│ (AI Refactoring/Bio-AI)   │
+  │  加密货币 SWAP 适配器│  股票市场适配器     │   其他未知领域适配器      │
+  │ (OKX / BitPro MCP)   │  (StockPro / A股)   │ (AI代码重构/生物AI)       │
   └──────────────────────┴──────────────────────┴───────────────────────────┘
 ```
 
-### 1. MCTS & MAP-Elites Quality-Diversity Search Engine
-* **Monte Carlo Tree Search (MCTS)**: Manages candidate strategy AST code trees (`MCTSNode`) with upper confidence bound ($UCB1 = \bar{V}_i + c \sqrt{\frac{\ln N_{parent}}{N_i}}$) node expansion.
-* **MAP-Elites QD Archive**: Preserves elite strategies across multi-dimensional feature descriptors (Holding Horizon x Market Regime Fit), preventing premature convergence to single crowded factors.
-* **Design Doc**: [docs/architecture/38-arc-mcts-and-quality-diversity-search-design.md](docs/architecture/38-arc-mcts-and-quality-diversity-search-design.md)
+### 1. MCTS 与 MAP-Elites 质量-多样性搜寻引擎
+* **蒙特卡洛树搜索 (MCTS)**：管理策略代码 AST 节点树 (`MCTSNode`)，采用上限置信区间公式 ($UCB1 = \bar{V}_i + c \sqrt{\frac{\ln N_{parent}}{N_i}}$) 进行节点展开选择。
+* **MAP-Elites 网格归档**：在多维特征空间（持仓周期 x 市场 Regime 适应度）中保留各单元格的精英策略，防止策略演化早熟收敛到单一拥挤因子。
+* **设计文档**：[docs/architecture/38-arc-mcts-and-quality-diversity-search-design.md](docs/architecture/38-arc-mcts-and-quality-diversity-search-design.md)
 
-### 2. Red-Blue Adversarial Game Engine (Adversarial Red-Teaming)
-* **Blue Team Quant (Inventor)**: Proposes strategy hypotheses, code AST mutations, and parameter bounds.
-* **Red Team Quant (Falsifier)**: Attacks strategy code under black swan volatility shocks, liquidity cliffs, and whipsaw stop-loss traps.
-* **Deterministic Sandbox Judge**: Enforces unbiased out-of-sample (OOS) validation; only candidates surviving Red-Team attacks pass.
-* **Design Doc**: [docs/architecture/39-arc-adversarial-red-blue-engine-design.md](docs/architecture/39-arc-adversarial-red-blue-engine-design.md)
+### 2. 红蓝对抗博弈引擎 (Adversarial Red-Teaming)
+* **蓝队 (Blue Team Quant / Inventor)**：提出 Alpha 假设、策略代码 AST 突变与参数边界。
+* **红队 (Red Team Quant / Falsifier)**：专职“找茬”，施加黑天鹅高波震荡、流动性踩踏与宽止损陷阱攻防测试。
+* **确定性沙箱裁判**：做无偏样本外 (OOS) 验证；只有击败红队攻防的候选策略才能通过。
+* **设计文档**：[docs/architecture/39-arc-adversarial-red-blue-engine-design.md](docs/architecture/39-arc-adversarial-red-blue-engine-design.md)
 
-### 3. Multi-Regime Causal Attribution & Reflexion Memory Ledger
-* **Quantitative Causal Attribution**: Decomposes performance across 4 market regimes (*Bull Trend*, *Bear Trend*, *High-Vol Ranging*, *Low-Vol Ranging*).
-* **Reflexion Memory Ledger**: Logs structured `negative_constraints` (e.g., *"Prohibit wide stop loss >10% under high volatility ranging"*) and injects them into future LLM prompt contexts.
-* **Design Doc**: [docs/architecture/40-arc-reflexion-causal-attribution-design.md](docs/architecture/40-arc-reflexion-causal-attribution-design.md)
+### 3. 多 Regime 定量因果归因与 Reflexion 记忆账本
+* **定量因果归因**：拆解策略在牛市趋势、熊市趋势、高波震荡、低波盘整 4 种 Regime 下的性能表现。
+* **Reflexion 记忆账本**：生成结构化否定约束（例如：*"禁止在高波震荡 Regime 下使用宽止损 >10%"*），注入后续进化轮次的 Prompt 上下文。
+* **设计文档**：[docs/architecture/40-arc-reflexion-causal-attribution-design.md](docs/architecture/40-arc-reflexion-causal-attribution-design.md)
 
-### 4. Voyager-Style Automated Skill & Factor Distillation
-* **AST Skill Distillation**: Automatically parses AST syntax trees of validated strategies to discover reusable sub-functions (e.g. adaptive volatility channels, micro imbalance exit rules).
-* **Immutable Skill Library**: Registers extracted skills (`ARCSkillLibrary`), generating docstrings and code blocks for prompt injection in subsequent evolution cycles.
-* **Design Doc**: [docs/architecture/41-arc-voyager-skill-distillation-design.md](docs/architecture/41-arc-voyager-skill-distillation-design.md)
+### 4. Voyager 风格技能自动提取与基因库 (Skill Distillation)
+* **AST 技能提取**：策略通过验证后，自动解析 AST 发现并提取优良子函数（如自适应通道计算、订单簿失衡退出算法）。
+* **不可变技能库**：注册提取的技能 (`ARCSkillLibrary`)，生成文档与代码片段，供后续进化循环继承复用。
+* **设计文档**：[docs/architecture/41-arc-voyager-skill-distillation-design.md](docs/architecture/41-arc-voyager-skill-distillation-design.md)
 
-### 5. Automated Paper Trading Incubation
-* **Candidate-Bound Preauthorization**: Automatically derives candidate-bound paper mandates from user preauthorizations (`PaperPreauthorizationV1`).
-* **Zero-Touch Provisioning**: Provisions passing strategies to simulated BitPro paper trading without manual intervention (`paper_observing`).
+### 5. 模拟盘自动化上线孵化
+* **预授权派生**：从用户 `PaperPreauthorizationV1` 预授权中自动派生 Candidate-bound 模拟盘授权。
+* **零触碰上线**：通过验证的策略无需人工干预自动配置并上线 BitPro 模拟盘运行 (`paper_observing`)。
 
 ---
 
-## 🛠️ Technology Stack
+## 🛠️ 技术栈
 
-| Layer | Technologies |
+| 图层 | 技术选择 |
 |-------|-------------|
-| **Core Kernel** | ARC (Autonomous Research Core) Python 3.12+ Universal Event-Driven Runtime |
-| **Backend & Web API** | FastAPI, Uvicorn, Resumable Cursor SSE (Server-Sent Events) |
-| **ORM & Database** | SQLAlchemy 2.0 (Async), Alembic, PostgreSQL 14+ with `pgvector` extension |
-| **LLM Provider Layer** | ProviderRuntime (OpenAI, DeepSeek, Claude / Vide Coding, Codex, OpenRouter, Qwen) |
-| **Quant & Backtesting** | BitPro Platform (via Model Context Protocol - MCP) + Backtrader |
-| **Security Sandbox** | Linux Process/Container Isolation (read-only root, no network, tmpfs limits) |
-| **Frontend & UI** | React 18, TypeScript 5, Vite, TanStack Query, Recharts, Tauri 2 (macOS Floating Companion), Textual (Terminal TUI) |
+| **控制内核** | ARC (Autonomous Research Core) Python 3.12+ 通用事件驱动 Agent 运行库 |
+| **后端与 Web API** | FastAPI, Uvicorn, 可续传游标 SSE (Server-Sent Events) |
+| **ORM 与数据库** | SQLAlchemy 2.0 (Async), Alembic, PostgreSQL 14+ 带 `pgvector` 扩展 |
+| **LLM Provider 抽象** | ProviderRuntime (OpenAI, DeepSeek, Claude / Vide Coding, Codex, OpenRouter, Qwen) |
+| **量化与回测** | BitPro 平台 (经由 Model Context Protocol - MCP) + Backtrader 回测引擎 |
+| **安全沙箱** | Linux 进程/容器隔离 (只读根目录, 无网络, tmpfs 限制) |
+| **前端与 UI** | React 18, TypeScript 5, Vite, TanStack Query, Recharts, Tauri 2 (macOS 悬浮侧边助手), Textual (终端 TUI) |
 
 ---
 
-## 🧪 Comprehensive Test Suite & Verification
+## 🧪 自动化测试套件与验证
 
-The ARC engine includes an exhaustive 11-case automated test suite verifying kernel state machine, UCB1 node selection, AST mutation, Red-Team attacks, Reflexion memory, Skill distillation, and end-to-end paper incubation:
+ARC 引擎包含 11 项全自动化测试套件，全面验证内核状态机、UCB1 节点选择、AST 突变、红蓝对抗、Reflexion 归因记忆、技能提取及端到端模拟盘上线：
 
 ```bash
 python3 -m pytest tests/test_arc_kernel.py tests/test_arc_adversarial.py tests/test_arc_reflexion.py tests/test_arc_mcts.py tests/test_arc_skills.py tests/test_arc_acceptance.py -v
 ```
 
-### Verification Output:
+### 测试验证输出：
 
 ```text
 ============================= test session starts ==============================
@@ -132,15 +133,15 @@ tests/test_arc_acceptance.py::test_arc_end_to_end_autonomous_loop_acceptance PAS
 
 ---
 
-## 💻 Quick Start & API
+## 💻 快速开始与 API
 
-### 1. Start API Server
+### 1. 启动 API 服务
 
 ```bash
 uv run uvicorn hypertrade.main:app --app-dir backend/src --host 0.0.0.0 --port 3334
 ```
 
-### 2. Trigger Autonomous ARC Exploration Loop
+### 2. 触发 ARC 自主探索与进化循环
 
 ```bash
 curl -X POST http://localhost:3334/api/v1/arc/missions \
@@ -153,7 +154,7 @@ curl -X POST http://localhost:3334/api/v1/arc/missions \
   }'
 ```
 
-### 3. Inspect Mission State & Replay Events
+### 3. 查询 Mission 状态与事件重放
 
 ```bash
 curl http://localhost:3334/api/v1/arc/missions/{mission_id}
@@ -161,21 +162,21 @@ curl http://localhost:3334/api/v1/arc/missions/{mission_id}
 
 ---
 
-## 📚 Technical Architecture Documentation
+## 📚 详细技术架构设计文档
 
-| Section | Architecture Design Document |
+| 模块 | 架构设计文档 |
 |---------|-----------------------------|
-| **Core Kernel** | [37 ARC Autonomous Research Core Architecture](docs/architecture/37-arc-autonomous-research-core-architecture.md) |
-| **Search Engine** | [38 MCTS & MAP-Elites Quality Diversity Search Design](docs/architecture/38-arc-mcts-and-quality-diversity-search-design.md) |
-| **Adversarial Engine** | [39 Red-Blue Adversarial Game Engine Design](docs/architecture/39-arc-adversarial-red-blue-engine-design.md) |
-| **Reflexion Memory** | [40 Multi-Regime Causal Attribution & Reflexion Design](docs/architecture/40-arc-reflexion-causal-attribution-design.md) |
-| **Skill Distillation** | [41 Voyager-Style Skill Distillation & Library Design](docs/architecture/41-arc-voyager-skill-distillation-design.md) |
-| **Active Contract** | [User-Directed Contract — ARC](docs/contracts/arc-autonomous-research-core.md) |
+| **通用控制内核** | [37 ARC 自主进化控制内核架构设计](docs/architecture/37-arc-autonomous-research-core-architecture.md) |
+| **搜寻引擎** | [38 MCTS 与 MAP-Elites 质量-多样性搜寻引擎设计](docs/architecture/38-arc-mcts-and-quality-diversity-search-design.md) |
+| **红蓝对抗** | [39 ARC 红蓝对抗博弈引擎技术设计](docs/architecture/39-arc-adversarial-red-blue-engine-design.md) |
+| **归因反思** | [40 多 Regime 定量因果归因与 Reflexion 记忆账本设计](docs/architecture/40-arc-reflexion-causal-attribution-design.md) |
+| **技能提取** | [41 Voyager 风格技能自动提取与基因库设计](docs/architecture/41-arc-voyager-skill-distillation-design.md) |
+| **活动合同** | [用户定向合同 — ARC](docs/contracts/arc-autonomous-research-core.md) |
 
 ---
 
-## 📄 License & Disclaimer
+## 📄 开源许可与免责声明
 
-Distributed under the MIT License. See `LICENSE` for details.
+基于 MIT 许可证开源。详见 `LICENSE` 文件。
 
-> **Disclaimer**: Nothing in this repository constitutes investment advice or financial guidance. Mainnet live trading execution remains strictly blocked by governance (`live_allowed=false`).
+> **免责声明**：本仓库中包含的任何内容均不构成投资建议。主网实盘交易执行由风控硬性禁用 (`live_allowed=false`)。
