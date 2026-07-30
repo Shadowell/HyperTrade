@@ -47,6 +47,7 @@
 - [ARC Macro & Unstructured Event Causal Factor Engine](architecture/47-arc-macro-unstructured-event-causal-factor-engine.md) - 阶段六：宏观新闻与非结构化事件因果因子化引擎设计
 - [ARC Live Canary Vault & Risk Gate Pipeline Architecture](architecture/48-arc-live-canary-vault-and-risk-gate-pipeline.md) - 阶段七：主网 Live 实盘安全金库与 Canary 动态上线机制设计
 - [Agent Harness Industrialization & Self-Healing Scaffolding Architecture](architecture/49-agent-harness-industrialization-design.md) - 工业级 Agent 脚手架强化、工具自愈重试与 Hybrid RAG 检索设计
+- [Agent Harness Context Compactor & Parallel Tool Pipeline Architecture](architecture/50-agent-harness-context-compactor-and-parallel-tool-pipeline.md) - SOTA 脚手架补齐：动态 Context 压缩修剪与多工具并发流水线设计
 - [Autonomous Quant Trader North Star](architecture/35-autonomous-quant-trader-north-star.md) - 最终产品目标：持续策略进化、市场状态感知、组合优化与授权内实盘生命周期
 - [Goal-Driven Autonomous Research Loop M0](architecture/36-goal-driven-autonomous-research-loop-m0.md) - 自然语言目标、候选生成、真实 BitPro 回测、证据迭代和预授权模拟盘闭环
 - [Next-Generation Agent Runtime Audit and Target Design](architecture/34-next-generation-agent-runtime-audit-and-target-design.md) - 真实执行审计、目标协议、完整状态机、Schema、权限、多 Agent、交易安全、评测与切换路线

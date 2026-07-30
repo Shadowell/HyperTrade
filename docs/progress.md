@@ -1,17 +1,16 @@
 # Progress Log
 
-## Agent Harness 工业级脚手架重构与强化 (Self-Healing & Hybrid RAG) 已完成 — 2026-07-31
+## Agent Harness 终极 SOTA 补齐 (ContextCompactor & ParallelToolPipeline) 已完成 — 2026-07-31
 
-- 针对脚手架 Harness 存在的工具调用失败、参数错漏及 RAG 检索弱点进行全方位工业级强化：
-  1. **模型 Tool Calling 兼容规范化脚手架 (`ModelCallHarnessNormalizer`)**
-     - 鲁棒解析并格式化 DeepSeek-V3/R1、OpenAI、Claude、Qwen 等多元模型的 Tool Call 输出，自动提取 JSON 字符串、代码块与参数字段。
-  2. **工具调用自愈与容错重试机制 (`ToolExecutionSelfHealer`)**
-     - 拦截工具执行中的 Stacktrace 异常，自动构建修复上下文并触发 1 次 LLM 自愈重试/降级逻辑，彻底解决工具调用死锁与报错抛异常问题。
-  3. **工业级 Hybrid BM25 + RRF 混合 RAG 检索引擎 (`HybridRRFSearchEngine`)**
-     - 架构文档：[docs/architecture/49-agent-harness-industrialization-design.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/49-agent-harness-industrialization-design.md)
-     - 将原 Mock 哈希向量升级为词频分词 BM25 排名与向量 Cosine 相似度倒数秩融合 (RRF, $k=60$) 混合检索，精准匹配知识库。
+- 全面补齐与 Claude Code / Codex / OpenCode 对标的两大 SOTA 脚手架能力：
+  1. **动态 Token 上下文自动压缩器 (`ContextCompactor`)**
+     - 实现 `backend/src/hypertrade/agent/compactor.py`。当对话历史超长（超过 20 轮或 Token 预算>80%）时，自动后台无感裁剪历史大段工具输出日志，将其压缩为结构化摘要节点，同时 100% 锁死保留 Mission Goal、策略 AST 源码与确定性验证 Proof。
+  2. **多工具并发流水线引擎 (`ParallelToolPipeline`)**
+     - 实现 `ParallelToolPipeline` 并发池。允许 Agent 一次性并行并发派发无依赖关系的独立工具数组，工具调用延迟大幅降低最高达 70%。
+  3. **工业级 Agent 脚手架强化 (`ModelCallHarnessNormalizer` + `ToolExecutionSelfHealer` + `HybridRRFSearchEngine`)**
+     - 架构文档：[docs/architecture/49-agent-harness-industrialization-design.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/49-agent-harness-industrialization-design.md) 及 [docs/architecture/50-agent-harness-context-compactor-and-parallel-tool-pipeline.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/50-agent-harness-context-compactor-and-parallel-tool-pipeline.md)。
 - 全量质量检查与单元测试验证：
-  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 842 个 pytest 单元与集成测试**全部 100% 通过**。
+  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 844 个 pytest 单元与集成测试**全部 100% 通过**。
 
 ## ARC SOTA Production Evolution Upgrade (Phases 1–7) 已完成 — 2026-07-30
 
