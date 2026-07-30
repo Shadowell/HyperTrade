@@ -11,7 +11,7 @@ from hypertrade.arc.adversarial import ARCAdversarialEngine, BlueTeamQuant
 from hypertrade.arc.contracts import ARCBudgetV1, ARCGoalV1, PaperPreauthorizationV1
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.incubation import ARCPaperIncubationResolver
-from hypertrade.arc.mcts import ARCMCTSEngine
+from hypertrade.arc.mcts import ARCParallelMCTSEngine
 from hypertrade.arc.mutation import ARCGeneticMutator
 from hypertrade.arc.reflexion import ARCReflexionLedger
 from hypertrade.arc.skills import ARCSkillDistiller, ARCSkillLibrary
@@ -26,6 +26,7 @@ class CreateARCMissionRequest(BaseModel):
     symbol: str = "BTC-USDT-SWAP"
     max_candidates: int = 5
     paper_preauth_approved: bool = True
+    parallel_workers: int = 4
 
 
 @router.post("/missions")
@@ -50,13 +51,21 @@ async def create_arc_mission(
     controller = ARCController(goal=goal)
     _ARC_MISSIONS[controller.mission_id] = controller
 
-    background_tasks.add_task(run_autonomous_arc_loop, controller.mission_id)
+    background_tasks.add_task(
+        run_autonomous_arc_loop,
+        controller.mission_id,
+        request.parallel_workers,
+    )
 
     return {
         "mission_id": controller.mission_id,
         "status": controller.projection.state,
         "objective": request.objective,
-        "message": "Production-Grade SOTA ARC Autonomous Exploration Loop started",
+        "parallel_workers": request.parallel_workers,
+        "message": (
+            f"Production-Grade SOTA ARC Autonomous Exploration Loop started "
+            f"with {request.parallel_workers} parallel Rollout workers"
+        ),
     }
 
 
@@ -68,11 +77,11 @@ async def get_arc_mission(mission_id: str) -> dict[str, Any]:
     return ctrl.projection.model_dump()
 
 
-def run_autonomous_arc_loop(mission_id: str) -> None:
+def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     """
-    Production SOTA Autonomous Execution Engine Loop:
-    Goal -> MCTS Node -> Blue Proposal -> Red Attack -> Multi-Regime Causal Reflexion ->
-    AST Mutation -> Verification -> Voyager Skill Distillation -> Auto Paper Launch
+    Production SOTA Autonomous Execution Engine Loop with Multi-Agent Parallel Rollouts:
+    Goal -> Parallel MCTS Nodes -> Blue Proposals -> Red Attacks -> Reflexion ->
+    AST Mutation -> Voyager Skill Distillation -> Auto Paper Launch
     """
     ctrl = _ARC_MISSIONS.get(mission_id)
     if not ctrl:
@@ -88,7 +97,7 @@ def run_autonomous_arc_loop(mission_id: str) -> None:
     engine = ARCAdversarialEngine()
     mutator = ARCGeneticMutator()
     reflexion_ledger = ARCReflexionLedger()
-    mcts_engine = ARCMCTSEngine()
+    mcts_engine = ARCParallelMCTSEngine(parallel_workers=parallel_workers)
     skill_library = ARCSkillLibrary()
     skill_distiller = ARCSkillDistiller()
     incubation_resolver = ARCPaperIncubationResolver()
@@ -142,19 +151,25 @@ def run_autonomous_arc_loop(mission_id: str) -> None:
         )
         mcts_engine.add_child(parent_id, mutated_attempt)
 
-        # 5. Second Red Team Attack on Mutated Attempt
-        passed2, metrics2, reasons2 = engine.run_adversarial_session(mutated_attempt)
+        # 5. Parallel Rollout Execution across Red Team Attacks
+        def eval_candidate(cand: Any) -> tuple[bool, float]:
+            p, m, _ = engine.run_adversarial_session(cand)
+            return p, float(m.get("sharpe_after_attack", 1.5))
+
+        rollouts = mcts_engine.execute_parallel_rollout(
+            eval_candidate, [mutated_attempt]
+        )
+        passed2, score2 = rollouts[0][1], rollouts[0][2]
+
         ctrl.apply_event(
             "red_team_tested",
             {
                 "attempt_id": mutated_attempt.attempt_id,
                 "passed": passed2,
-                "metrics": metrics2,
+                "metrics": {"sharpe_after_attack": score2},
             },
         )
-        mcts_engine.backpropagate(
-            mutated_attempt.attempt_id, metrics2.get("sharpe_after_attack", 1.5)
-        )
+        mcts_engine.backpropagate(mutated_attempt.attempt_id, score2)
 
         if passed2:
             mutated_attempt.state = "validated"

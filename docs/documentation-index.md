@@ -42,6 +42,7 @@
 - [ARC Dynamic Paper Observation Feedback Architecture](architecture/42-arc-dynamic-paper-observation-feedback.md) - 阶段一：模拟盘实盘数据闭环 & 动态衰退自动重练设计
 - [ARC Higher-Order Quant Factor Library Architecture](architecture/43-arc-higher-order-quant-factor-library.md) - 阶段二：高阶量化因子（Orderbook失衡、VWAP、ATR通道）算子库设计
 - [ARC Red Team Monte Carlo Overfitting Attack Matrix](architecture/44-arc-red-team-monte-carlo-overfitting-matrix.md) - 阶段三：红队蒙特卡洛参数抖动与黑天鹅防过拟合矩阵设计
+- [ARC Parallel MCTS Rollout Engine & Distributed MAP-Elites Architecture](architecture/45-arc-parallel-mcts-rollout-engine-design.md) - 阶段四：多 Agent 并行 MCTS 探索引擎设计
 - [Autonomous Quant Trader North Star](architecture/35-autonomous-quant-trader-north-star.md) - 最终产品目标：持续策略进化、市场状态感知、组合优化与授权内实盘生命周期
 - [Goal-Driven Autonomous Research Loop M0](architecture/36-goal-driven-autonomous-research-loop-m0.md) - 自然语言目标、候选生成、真实 BitPro 回测、证据迭代和预授权模拟盘闭环
 - [Next-Generation Agent Runtime Audit and Target Design](architecture/34-next-generation-agent-runtime-audit-and-target-design.md) - 真实执行审计、目标协议、完整状态机、Schema、权限、多 Agent、交易安全、评测与切换路线

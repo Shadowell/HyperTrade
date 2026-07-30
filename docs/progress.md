@@ -1,8 +1,8 @@
 # Progress Log
 
-## ARC SOTA Production Evolution Upgrade (Phases 1–3) 已完成 — 2026-07-30
+## ARC SOTA Production Evolution Upgrade (Phases 1–4) 已完成 — 2026-07-30
 
-- 完成三大 SOTA 生产级进化升级阶段：
+- 完成四大 SOTA 生产级进化升级阶段：
   1. **阶段一：模拟盘实盘数据闭环 & 动态衰退自动重练 (Phase 1)**
      - 架构文档：[docs/architecture/42-arc-dynamic-paper-observation-feedback.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/42-arc-dynamic-paper-observation-feedback.md)
      - 实现 `PaperObservationMonitorDaemon` 模拟盘采样守护进程、`PaperAnomalyDetector` 异常检测器与 `IncrementalEvolutionTrigger` 增量自动重练触发器。
@@ -12,8 +12,11 @@
   3. **阶段三：红队蒙特卡洛参数抖动与黑天鹅防过拟合矩阵 (Phase 3)**
      - 架构文档：[docs/architecture/44-arc-red-team-monte-carlo-overfitting-matrix.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/44-arc-red-team-monte-carlo-overfitting-matrix.md)
      - 实现 100 次蒙特卡洛参数抖动测试（Sharpe 衰减 $>25\%$ 直接剔除）、历史黑天鹅重放（2020.3.12 瀑布、2022 LUNA 崩溃）与 1~5 bps 随机滑点摩擦测试。
+  4. **阶段四：多 Agent 并行 MCTS 探索引擎与分布式 MAP-Elites 网格 (Phase 4)**
+     - 架构文档：[docs/architecture/45-arc-parallel-mcts-rollout-engine-design.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/45-arc-parallel-mcts-rollout-engine-design.md)
+     - 实现 `ARCParallelMCTSEngine` 并行工作线程池、`MAPElitesGrid` 线程安全原子插入与多 Agent 策略并行提案与模拟盘评估。
 - 全量质量检查与单元测试验证：
-  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 826 个 pytest 单元与集成测试**全部 100% 通过**。
+  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 828 个 pytest 单元与集成测试**全部 100% 通过**。
 
 ## ARC (Autonomous Research Core) 自主进化控制内核已激活 — 2026-07-30
 
