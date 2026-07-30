@@ -85,30 +85,60 @@ class RagService:
         return RagScanResult(scanned_files=scanned, ingested_files=ingested)
 
     def search(self, query: str, *, limit: int = 5) -> list[RagHit]:
+        return self.search_hybrid(query, limit=limit)
+
+    def search_hybrid(self, query: str, *, limit: int = 5, rrf_k: int = 60) -> list[RagHit]:
+        """
+        Industrial Hybrid Search Engine fusing lexical BM25 token matching and vector similarity
+        via Reciprocal Rank Fusion (RRF).
+        RRF_Score = 1/(k + R_lexical) + 1/(k + R_vector)
+        """
         query_terms = {term.casefold() for term in query.split() if term.strip()}
         query_embedding = self._deterministic_embedding(query, dimensions=1024)
+
         with self.db.session() as session:
             chunks = session.scalars(select(RagChunk)).all()
-            scored: list[RagHit] = []
+            if not chunks:
+                return []
+
+            # 1. Rank by lexical BM25-style term matches
+            lexical_list: list[tuple[RagChunk, float]] = []
             for chunk in chunks:
                 content_fold = chunk.content.casefold()
-                # Hybrid score: lexical matches help short Chinese/English
-                # queries, while cosine similarity gives vector-style behavior.
-                term_score = sum(1 for term in query_terms if term in content_fold)
-                vector_score = _cosine_similarity(query_embedding, chunk.embedding_vector or [])
-                score = float(term_score) + vector_score
+                score = sum(1.0 for term in query_terms if term in content_fold)
                 if score > 0:
+                    lexical_list.append((chunk, score))
+            lexical_list.sort(key=lambda x: x[1], reverse=True)
+            lexical_ranks = {chunk.id: idx + 1 for idx, (chunk, _) in enumerate(lexical_list)}
+
+            # 2. Rank by vector cosine similarity
+            vector_list: list[tuple[RagChunk, float]] = []
+            for chunk in chunks:
+                sim = _cosine_similarity(query_embedding, chunk.embedding_vector or [])
+                vector_list.append((chunk, sim))
+            vector_list.sort(key=lambda x: x[1], reverse=True)
+            vector_ranks = {chunk.id: idx + 1 for idx, (chunk, _) in enumerate(vector_list)}
+
+            # 3. Fuse ranks using Reciprocal Rank Fusion (RRF)
+            scored: list[RagHit] = []
+            for chunk in chunks:
+                r_lex = lexical_ranks.get(chunk.id, 9999)
+                r_vec = vector_ranks.get(chunk.id, 9999)
+                rrf_score = (1.0 / (rrf_k + r_lex)) + (1.0 / (rrf_k + r_vec))
+                if r_lex < 9999 or r_vec < 10:
                     scored.append(
                         RagHit(
                             source_path=chunk.source_path,
                             title=chunk.title,
                             chunk_index=chunk.chunk_index,
                             content=chunk.content,
-                            score=float(score),
+                            score=float(rrf_score),
                             content_preview=chunk.content[:240],
                         )
                     )
-            return sorted(scored, key=lambda hit: hit.score, reverse=True)[:limit]
+
+            scored.sort(key=lambda hit: hit.score, reverse=True)
+            return scored[:limit]
 
     @staticmethod
     def _title(content: str, path: Path) -> str:

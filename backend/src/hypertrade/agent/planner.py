@@ -1346,3 +1346,62 @@ def _executor_error_payload(tool_name: str, exc: Exception) -> dict[str, Any]:
         ],
         "tool_name": tool_name,
     }
+
+
+class ModelCallHarnessNormalizer:
+    """
+    Industrial Harness Normalizer sanitizing heterogeneous LLM tool call payloads
+    (DeepSeek, OpenAI, Claude, Qwen), handling raw JSON strings & schema edge cases.
+    """
+
+    @staticmethod
+    def normalize_tool_call(raw_call: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(raw_call, dict):
+            return {"name": "invalid", "arguments": {}}
+
+        name = str(raw_call.get("name") or raw_call.get("tool_name") or "unknown")
+        args = raw_call.get("arguments") or raw_call.get("parameters") or {}
+
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                args = {}
+
+        if not isinstance(args, dict):
+            args = {}
+
+        return {"name": name, "arguments": args}
+
+
+class ToolExecutionSelfHealer:
+    """
+    Self-healing Tool Execution Harness intercepting tool execution errors
+    and executing 1-step LLM self-correction retries.
+    """
+
+    def __init__(self, executor: ToolExecutor) -> None:
+        self.executor = executor
+
+    def execute_with_self_healing(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+        fallback_retry_fn: Callable[[str, str], dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        try:
+            res = self.executor(tool_name, tool_args)
+            if isinstance(res, dict) and res.get("status") == "error":
+                raise RuntimeError(res.get("message", "Tool returned status error"))
+            return res
+        except Exception as exc:
+            err_msg = str(exc)
+            if fallback_retry_fn:
+                try:
+                    repaired = fallback_retry_fn(tool_name, err_msg)
+                    if isinstance(repaired, dict):
+                        return repaired
+                except Exception:
+                    pass
+            return _executor_error_payload(tool_name, exc)
+
