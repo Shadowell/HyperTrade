@@ -12,10 +12,27 @@ from hypertrade.arc.contracts import (
 from hypertrade.bitpro.mcp import BitProMcpClient
 
 
+def format_bitpro_strategy_name(
+    symbol: str,
+    timeframe: str = "1H",
+    strategy_type: str = "CTA",
+    logic_summary: str = "20周期突破8%止损",
+    capital_u: int = 100,
+) -> str:
+    """
+    Formats strategy name according to BitPro's official card naming specification:
+    Format: [合约][<周期>][<类型>] <标的代码> - <算法逻辑> - <初始资金>U
+    Example: [合约][1H][CTA] CL - EMA9/20趋势追踪迹速 - 100U
+    """
+    clean_symbol = symbol.replace("-SWAP", "").replace("-USDT", "").replace("-", "").upper()
+    symbol_code = "CL" if clean_symbol in ["CLUSDT", "OILUSDT", "OIL", "CRCL"] else clean_symbol
+    return f"[合约][{timeframe}][{strategy_type}] {symbol_code} - {logic_summary} - {capital_u}U"
+
+
 class ARCPaperIncubationResolver:
     """
     Derives candidate-bound Paper mandate from preauthorization,
-    calls BitPro MCP strategy_create API to register the strategy in BitPro UI/DB,
+    calls BitPro MCP strategy_create API with official BitPro naming convention,
     and provisions the simulated trading instance.
     """
 
@@ -39,17 +56,20 @@ class ARCPaperIncubationResolver:
         if not preauth or not preauth.allowed_actions:
             return False, None, None, "Invalid or missing paper preauthorization"
 
-        # Ensure capital limit per instance is respected
         capital = min(preauth.max_capital_per_instance, Decimal("10000"))
-
         symbol = preauth.symbols[0] if preauth.symbols else "CLUSDT"
-        clean_symbol = symbol.replace("-SWAP", "").replace("-", "").upper()
 
-        # Format strategy name matching BitPro UI card convention: [合约][1H][CTA] <Name> - <Desc> - 100U
-        bitpro_strategy_name = f"[合约][1H][CTA] {clean_symbol} - ARC趋势突破止损策略 - 100U"
+        # Format strategy name with exact BitPro card naming specification
+        bitpro_strategy_name = format_bitpro_strategy_name(
+            symbol=symbol,
+            timeframe="1H",
+            strategy_type="CTA",
+            logic_summary="20周期突破8%动态止损",
+            capital_u=100,
+        )
         paper_instance_id = f"bitpro_paper_{uuid.uuid4().hex[:10]}"
 
-        # Attempt calling BitPro MCP API to create strategy on BitPro platform
+        # Call BitPro MCP API to register strategy on BitPro platform UI & DB
         try:
             client = BitProMcpClient()
             res = client.strategy_create(
@@ -64,7 +84,6 @@ class ARCPaperIncubationResolver:
                 if isinstance(strat_info, dict) and "id" in strat_info:
                     paper_instance_id = f"bitpro_paper_strat_{strat_info['id']}"
         except Exception:
-            # Fallback if BitPro API daemon is offline
             pass
 
         return (
