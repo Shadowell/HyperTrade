@@ -1,14 +1,14 @@
 # Progress Log
 
-## Advanced Context & Memory Management 2.0 架构升级 (Dynamic Token Budget, Schema Pruner, Hierarchical Memory & Ebbinghaus Decay) 已完成 — 2026-07-31
+## Advanced Context & Memory Management 2.0 架构升级 (Dynamic Token Budget, Schema Pruner, Selective Insight Summarizer 2.0 & Ebbinghaus Decay) 已完成 — 2026-07-31
 
 - 针对 SOTA 智能体在 Context 管理与 Memory 进化上的 6 大深度工程升级全量落地：
   1. **动态 Token 配额护城河 (`DynamicTokenBudgetManager`)**
      - 实现 `backend/src/hypertrade/agent/context_v2.py`。自适应 DeepSeek (128K)、Claude (200K)、Qwen (32K) 等不同 LLM 窗口，按 20% System / 40% Tool History / 30% Memory / 10% Output Reserve 进行物理隔离与水冷截断 guard。
   2. **Schema 感知的语义保留剪裁 (`SemanticContextPruner`)**
      - 保留字典与 Key 结构，对大 List/Array 采用前 2 后 3 语义折叠（`[Folded N items]`），彻底避免语法破坏与 Token 浪费。
-  3. **多轮对话无感背景摘要 (`TurnSlidingWindowSummarizer`)**
-     - 对话轮数 $>12$ 时，自动将中间历史交互链压缩为单一 `[Historical Executive Summary]` 节点，支持无限轮次长会话。
+  3. **选择性洞察感知多轮对话摘要 2.0 (`TurnSlidingWindowSummarizer 2.0`)**
+     - 对话轮数 $>12$ 时，自动扫描中间历史，提取**关键夏普率/回撤指标、用户指令与错误 Traceback**，同时掩码原始大 Tool Output，提炼生成包含重要决策洞察的 `[Selective Executive Insight Summary]` 节点，支持无限轮次长会话。
   4. **三层金字塔记忆架构 (`HierarchicalMemoryPyramid`)**
      - 实现 `backend/src/hypertrade/memory/memory_v2.py`。划分 Working Memory (短暂变量)、Episodic Memory (7日任务与回测实验)、Semantic Memory (长期 Regime 规则与避坑账本)。
   5. **艾宾浩斯记忆衰减与重要性重排序 (`EbbinghausDecayScorer`)**

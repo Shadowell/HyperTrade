@@ -2,13 +2,14 @@
 Advanced Context Management 2.0 Core Subsystem
 
 Provides Dynamic Token Budget Manager, Schema-Aware Semantic Context Pruner,
-and Multi-Turn Sliding Window Summarizer.
+and Multi-Turn Selective Insight Sliding Window Summarizer 2.0.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -91,12 +92,42 @@ class SemanticContextPruner:
 
 class TurnSlidingWindowSummarizer:
     """
-    Multi-Turn Sliding Window Summarizer compressing historical conversation turns
-    when turn count exceeds max_turns.
+    Multi-Turn Selective Insight Sliding Window Summarizer 2.0.
+    Extracts key numerical metrics, user directives, and error tracebacks
+    while masking raw tool observations into a structured insight summary node.
     """
 
     def __init__(self, max_turns: int = 12) -> None:
         self.max_turns = max_turns
+
+    def extract_key_insights(self, messages: list[dict[str, Any]]) -> list[str]:
+        insights: list[str] = []
+        metric_pattern = re.compile(
+            r"(sharpe|drawdown|win_rate|pnl|return|roi|accuracy|loss|error|pass|failed)",
+            re.IGNORECASE,
+        )
+
+        for msg in messages:
+            content = str(msg.get("content", ""))
+            # Extract key metric mentions
+            if metric_pattern.search(content):
+                lines = [line.strip() for line in content.split("\n") if line.strip()]
+                for line in lines:
+                    if metric_pattern.search(line) and len(line) < 120:
+                        insights.append(line)
+
+            # Extract user directives
+            if msg.get("role") == "user" and len(content) < 150:
+                insights.append(f"User Directive: {content}")
+
+        # Deduplicate while preserving order
+        seen = set()
+        deduped = []
+        for item in insights:
+            if item not in seen:
+                seen.add(item)
+                deduped.append(item)
+        return deduped[:8]
 
     def compress_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if len(messages) <= self.max_turns:
@@ -107,16 +138,25 @@ class TurnSlidingWindowSummarizer:
         tail = messages[-4:]  # Preserve last 4 active messages
         middle = messages[2:-4]
 
-        # Compress middle messages
+        # Extract structured key insights from middle turns
+        key_insights = self.extract_key_insights(middle)
+
         tools_called: set[str] = set()
         for msg in middle:
             if msg.get("role") == "tool" and "tool_call_id" in msg:
                 tools_called.add(str(msg.get("tool_name", "tool")))
 
         tools_str = ", ".join(sorted(tools_called)) if tools_called else "None"
+        insights_str = (
+            "\n- " + "\n- ".join(key_insights)
+            if key_insights
+            else "\n- No explicit metric anomalies."
+        )
+
         summary_content = (
-            f"[Historical Executive Summary]: Compressed {len(middle)} intermediate turns. "
-            f"Tools invoked in history: {tools_str}."
+            f"[Selective Executive Insight Summary]: Compressed {len(middle)} intermediate turns.\n"
+            f"Invoked Tools: {tools_str}\n"
+            f"Key Extracted Insights & Metrics:{insights_str}"
         )
 
         summary_msg = {

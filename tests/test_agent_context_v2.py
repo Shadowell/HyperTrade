@@ -37,12 +37,14 @@ def test_semantic_context_pruner():
     assert "... [Folded text] ..." in pruned["description"]
 
 
-def test_turn_sliding_window_summarizer():
+def test_turn_sliding_window_summarizer_selective_insight():
     summarizer = TurnSlidingWindowSummarizer(max_turns=6)
 
     messages = [
         {"role": "system", "content": "You are a quant assistant."},
         {"role": "user", "content": "Goal: Optimize WTI strategy."},
+        {"role": "assistant", "content": "Sharpe Ratio achieved 1.85 on test set."},
+        {"role": "tool", "content": "Error: connection timeout", "tool_name": "bitpro_paper"},
     ] + [
         {
             "role": "assistant" if i % 2 == 0 else "tool",
@@ -57,4 +59,5 @@ def test_turn_sliding_window_summarizer():
     assert len(compressed) < len(messages)
     assert compressed[0]["role"] == "system"
     assert compressed[1]["role"] == "user"
-    assert "[Historical Executive Summary]" in compressed[2]["content"]
+    assert "[Selective Executive Insight Summary]" in compressed[2]["content"]
+    assert "Sharpe Ratio achieved 1.85" in compressed[2]["content"]
