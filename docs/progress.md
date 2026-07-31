@@ -1,5 +1,24 @@
 # Progress Log
 
+## Advanced Context & Memory Management 2.0 架构升级 (Dynamic Token Budget, Schema Pruner, Hierarchical Memory & Ebbinghaus Decay) 已完成 — 2026-07-31
+
+- 针对 SOTA 智能体在 Context 管理与 Memory 进化上的 6 大深度工程升级全量落地：
+  1. **动态 Token 配额护城河 (`DynamicTokenBudgetManager`)**
+     - 实现 `backend/src/hypertrade/agent/context_v2.py`。自适应 DeepSeek (128K)、Claude (200K)、Qwen (32K) 等不同 LLM 窗口，按 20% System / 40% Tool History / 30% Memory / 10% Output Reserve 进行物理隔离与水冷截断 guard。
+  2. **Schema 感知的语义保留剪裁 (`SemanticContextPruner`)**
+     - 保留字典与 Key 结构，对大 List/Array 采用前 2 后 3 语义折叠（`[Folded N items]`），彻底避免语法破坏与 Token 浪费。
+  3. **多轮对话无感背景摘要 (`TurnSlidingWindowSummarizer`)**
+     - 对话轮数 $>12$ 时，自动将中间历史交互链压缩为单一 `[Historical Executive Summary]` 节点，支持无限轮次长会话。
+  4. **三层金字塔记忆架构 (`HierarchicalMemoryPyramid`)**
+     - 实现 `backend/src/hypertrade/memory/memory_v2.py`。划分 Working Memory (短暂变量)、Episodic Memory (7日任务与回测实验)、Semantic Memory (长期 Regime 规则与避坑账本)。
+  5. **艾宾浩斯记忆衰减与重要性重排序 (`EbbinghausDecayScorer`)**
+     - 结合向量相似度、指数时间衰减 $e^{-\lambda \Delta t}$ ($\lambda=0.05$) 与重要性权重计算综合 Recall 得分。
+  6. **记忆自动聚类去重 (`MemoryConsolidator`)**
+     - 检索阈值 $>0.85$ 时自动合并增量 Observation 进既有 Memory 节点，防止数据库污染。
+- 架构文档：[docs/architecture/54-advanced-context-and-memory-management-v2-architecture.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/54-advanced-context-and-memory-management-v2-architecture.md)。
+- 全量质量检查与单元测试验证：
+  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 855 个 pytest 单元与集成测试**全部 100% 通过**。
+
 ## Agent Harness 2.0 工业级架构重构 (Exponential Backoff, Parallel Dispatcher, Water-Cooler, Idempotency Lock) 已完成 — 2026-07-31
 
 - 针对 Harness 1.0 的 5 大工程缺陷完成全面工业级重构升级：
