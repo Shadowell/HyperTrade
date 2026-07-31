@@ -1237,11 +1237,18 @@ class AgentPlanner:
             assistant_msg = _assistant_tool_message(response)
             messages.append(assistant_msg)
 
-            for tc in response.tool_calls:
-                try:
-                    result = executor(tc.name, tc.arguments)
-                except Exception as exc:  # noqa: BLE001 - preserve run traceability
-                    result = _executor_error_payload(tc.name, exc)
+            from hypertrade.agent.harness_v2 import (
+                AsyncParallelToolDispatcher,
+                SmartToolExecutionHealer,
+            )
+
+            healer = SmartToolExecutionHealer(executor)
+            dispatcher = AsyncParallelToolDispatcher(healer)
+
+            tool_reqs = [(tc.name, tc.arguments) for tc in response.tool_calls]
+            executed_results = dispatcher.dispatch_batch(tool_reqs)
+
+            for tc, result in zip(response.tool_calls, executed_results, strict=False):
                 tool_call = ToolCallRecord(tc.name, tc.arguments, result)
                 tool_calls.append(tool_call)
                 if self._tool_call_sink is not None:
