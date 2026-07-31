@@ -82,9 +82,61 @@ Unlike standard static Agent frameworks (e.g. LangChain, AutoGen, CrewAI), **ARC
 * **Immutable Skill Library**: Registers extracted skills (`ARCSkillLibrary`), generating docstrings and code blocks for prompt injection in subsequent evolution cycles.
 * **Design Doc**: [docs/architecture/41-arc-voyager-skill-distillation-design.md](docs/architecture/41-arc-voyager-skill-distillation-design.md)
 
-### 5. Automated Paper Trading Incubation
-* **Candidate-Bound Preauthorization**: Automatically derives candidate-bound paper mandates from user preauthorizations (`PaperPreauthorizationV1`).
-* **Zero-Touch Provisioning**: Provisions passing strategies to simulated BitPro paper trading without manual intervention (`paper_observing`).
+### 5. Automated Paper Trading Sandbox Provisioning
+* **Pre-authorization Derivation**: Automatically derives candidate-bound paper trading sub-authorizations from `PaperPreauthorizationV1`.
+* **Zero-Touch Provisioning**: Verified strategies deploy to BitPro paper trading (`paper_observing`) without human intervention.
+
+---
+
+## ⚡ Industrial Infrastructure (Harness 2.5, Context 2.0, Memory 3.0, DAG Pipeline)
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+|                          HyperTrade Industrial Infrastructure System                     |
+├────────────────────────────┬────────────────────────────┬───────────────────────────────┤
+| 1. Industrial Harness 2.5  | 2. Advanced Context 2.0    | 3. Autonomous Memory 3.0      |
+| - Exponential Backoff      | - 4-3-2-1 Dynamic Token    | - 3-Tier Memory Pyramid       |
+|   Retry (502/429 Jitter)   |   Budget Guard             |   (Working/Episodic/Semantic) |
+| - MCP Flat Schema Translator| - Schema/AST Pruning       | - Ebbinghaus Time Decay       |
+| - MCP Circuit Breaker (30s)| - Selective Insight 2.0     | - Auto Reflexion Flusher      |
+| - L1/L2/L3 Risk Permission |   (Sharpe/Drawdown/Errors) | - Regime Filtering & Resolver |
+├────────────────────────────┴────────────────────────────┴───────────────────────────────┤
+| 4. DAG Pipeline & MCP Batch Aggregator                                                  |
+| - DAG 2-Stage Dispatcher (Stage 0 Parallel Read -> Stage 1 Sequential Write)             |
+| - MCP Batch JSON-RPC Aggregator (Single RTT Payload Dispatch)                           |
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 🛠️ 1. Industrial Agent Harness 2.5 & MCP Governance
+* **`MCPToolSchemaTranslator`**: Dereferences and flattens complex MCP `$ref` and `allOf` JSON Schemas into flat parameter definitions optimized for LLM tool calling.
+* **`MCPConnectionCircuitBreaker`**: 3-state circuit breaker tripping after 3 consecutive failures/timeouts for 30s. Returns `status: degraded` to guide graceful LLM tool degradation.
+* **`ToolCallPermissionSandboxGuard`**: Enforces 3-tier risk permissions:
+  * `L1_READ_ONLY`: Auto-approved for read queries;
+  * `L2_SIMULATED_WRITE`: Validated within paper trading sandbox;
+  * `L3_CRITICAL_LIVE_WRITE`: Requires valid `approval_token`.
+* **`SmartToolExecutionHealer`**: Retries transient `502`/`429` errors with exponential backoff ($50\text{ms} \rightarrow 100\text{ms} \rightarrow 200\text{ms}$).
+* **`ToolIdempotencyLockGuard`**: Thread-safe memory lock set preventing duplicate write tool submissions.
+* **Architecture Spec**: [docs/architecture/56-mcp-circuit-breaker-and-tool-governance-v2.md](docs/architecture/56-mcp-circuit-breaker-and-tool-governance-v2.md)
+
+### 🔀 2. DAG Tool Dispatcher & MCP Batch Pipeline (`tool_pipeline.py`)
+* **`ToolDependencyGraphDispatcher`**: Constructs a 2-stage execution DAG. Stage 0 dispatches independent read-only tools concurrently via thread pools, followed by Stage 1 sequential write tool execution.
+* **`MCPBatchPipelineAggregator`**: Bundles homogenous MCP tool requests targeting the same server into single batch JSON-RPC requests, eliminating redundant TCP/HTTP RTTs.
+* **Architecture Spec**: [docs/architecture/57-dag-tool-dispatcher-and-mcp-batch-pipeline.md](docs/architecture/57-dag-tool-dispatcher-and-mcp-batch-pipeline.md)
+
+### 🧠 3. Advanced Context Management 2.0
+* **`DynamicTokenBudgetManager`**: Adapts to model context limits (DeepSeek 128K, Claude 200K, Qwen 32K) with strict **20% System / 40% Tool History / 30% Memory / 10% Output Reserve** physical isolation.
+* **`SemanticContextPruner`**: Preserves dictionary key structures while applying head-2/tail-3 folding to large nested lists.
+* **`TurnSlidingWindowSummarizer 2.0`**: Compresses >12 turn histories into a structured `[Selective Executive Insight Summary]` node with extracted Sharpe ratio, drawdown, and user directives.
+* **Architecture Spec**: [docs/architecture/54-advanced-context-and-memory-management-v2-architecture.md](docs/architecture/54-advanced-context-and-memory-management-v2-architecture.md)
+
+### 💾 4. Autonomous Memory Subsystem 3.0
+* **`HierarchicalMemoryPyramid`**: 3-tier memory model: Working Memory (scratchpad), Episodic Memory (7-day task logs & backtests), Semantic Memory (long-term regime rules).
+* **`EbbinghausDecayScorer`**: Composite score formula: $\text{Score} = 0.5 \text{Sim} + 0.3 e^{-0.05 \Delta t} + 0.2 \text{Imp}$.
+* **`MemoryConsolidator`**: Merges duplicate observations ($>0.85$ similarity) into existing items.
+* **`AutoReflexionMemoryFlusher`**: Automatically extracts post-task takeaways and flushes strategy rules into Semantic memory or error traces into Episodic memory.
+* **`MarketRegimeMemoryFilter`**: Tags memories with `bull_trend`, `bear_crash`, `sideways_range`, or `high_volatility` and applies $0.5\times$ penalty score to cross-regime memory retrieval.
+* **`MemoryContradictionResolver`**: Automatically flags older contradicted memory items as `deprecated: true`.
+* **Architecture Spec**: [docs/architecture/55-autonomous-memory-v3-regime-filter-and-reflexion-flusher.md](docs/architecture/55-autonomous-memory-v3-regime-filter-and-reflexion-flusher.md)
 
 ---
 
