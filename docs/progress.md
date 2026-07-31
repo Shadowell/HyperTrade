@@ -1,5 +1,18 @@
 # Progress Log
 
+## Autonomous Memory 3.0 自主进化体系 (AutoReflexion Flusher, Market Regime Filter & Contradiction Resolver) 已完成 — 2026-07-31
+
+- 针对 SOTA 智能体记忆系统全面补齐无人值守盘后总结、Regime 隔离与假设冲突裁决 3 大核心架构：
+  1. **盘后自动反思与记忆刷盘 (`AutoReflexionMemoryFlusher`)**
+     - 实现 `backend/src/hypertrade/memory/flusher.py`。任务结束时自动挂载反思，成功任务提炼策略规律入 Semantic Memory，失败任务提炼报错教训入 Episodic Memory。
+  2. **市场 Regime 上下文感知记忆隔离 (`MarketRegimeMemoryFilter`)**
+     - 实现 `backend/src/hypertrade/memory/regime_filter.py`。为记忆打上 `bull_trend` / `bear_crash` / `sideways_range` / `high_volatility` 标签，同 Regime 优先召回，跨 Regime 施加 0.5x 惩罚，防止震荡市误用单边牛市经验。
+  3. **记忆冲突检测与旧知识裁决 (`MemoryContradictionResolver`)**
+     - 实现 `backend/src/hypertrade/memory/resolver.py`。检测新旧记忆的语义矛盾，对被推翻的旧假设标记 `deprecated: true`，确保送入 Context 的知识库具有绝对一致性。
+- 架构文档：[docs/architecture/55-autonomous-memory-v3-regime-filter-and-reflexion-flusher.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/55-autonomous-memory-v3-regime-filter-and-reflexion-flusher.md)。
+- 全量质量检查与单元测试验证：
+  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 858 个 pytest 单元与集成测试**全部 100% 通过**。
+
 ## Advanced Context & Memory Management 2.0 架构升级 (Dynamic Token Budget, Schema Pruner, Selective Insight Summarizer 2.0 & Ebbinghaus Decay) 已完成 — 2026-07-31
 
 - 针对 SOTA 智能体在 Context 管理与 Memory 进化上的 6 大深度工程升级全量落地：
