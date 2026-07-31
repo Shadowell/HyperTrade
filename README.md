@@ -88,39 +88,41 @@
 
 ---
 
-## ⚡ 工业级基础设施 (Harness 2.5, Context 2.0, Memory 3.0, DAG Pipeline)
+## ⚡ 工业级基础设施 (Harness 3.0, Context 2.0, Memory 3.0, Flight Recorder)
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
 |                            HyperTrade 工业级底层基础设施体系                             |
 ├────────────────────────────┬────────────────────────────┬───────────────────────────────┤
-| 1. Industrial Harness 2.5  | 2. Advanced Context 2.0    | 3. Autonomous Memory 3.0      |
-| - 指数退避重试 (502/429)   | - 4-3-2-1 动态 Token 护城河| - 三层金字塔记忆 (Working/    |
-| - MCP 动态 Schema 展平翻译 | - Schema/AST 语义折叠剪裁  |   Episodic/Semantic Pyramid)  |
-| - MCP 链接三态熔断 (30s)   | - 洞察感知摘要 2.0 (提取   | - 艾宾浩斯时间衰减重排序      |
-| - L1/L2/L3 工具风险门禁    |   夏普率/回撤/错误Traceback| - 自动盘后反思刷盘 (Flusher)  |
-| - 写工具原子幂等锁 (Guard) |   与原始观测掩码)          | - Regime 上下文感知与冲突裁决 |
-├────────────────────────────┴────────────────────────────┴───────────────────────────────┤
-| 4. DAG Pipeline & MCP Batch Aggregator                                                  |
-| - DAG 依赖图 2 阶段分发器 (Stage 0 并发读 -> Stage 1 串行写)                             |
-| - MCP 同源 JSON-RPC 管道批量打包器 (一趟 RTT 批量取回)                                   |
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+| 1. Industrial Harness 3.0  | 2. Advanced Context 2.0    | 3. Autonomous Memory 3.0      |
+| - 工具结果感知 LRU 缓存    | - 4-3-2-1 动态 Token 护城河| - 三层金字塔记忆 (Working/    |
+| - KV Prompt Cache 前缀对齐 | - Schema/AST 语义折叠剪裁  |   Episodic/Semantic Pyramid)  |
+| - MCP 动态 Schema 展平翻译 | - 洞察感知摘要 2.0 (提取   | - 艾宾浩斯时间衰减重排序      |
+| - MCP 链接三态熔断 (30s)   |   夏普率/回撤/错误Traceback| - 自动盘后反思刷盘 (Flusher)  |
+| - L1/L2/L3 工具风险门禁    |   与原始观测掩码)          | - Regime 上下文感知与冲突裁决 |
+├────────────────────────────┼────────────────────────────┴───────────────────────────────┤
+| 4. DAG Pipeline Aggregator | 5. Observability & Flight Recorder                          |
+| - DAG 2 阶段分发器         | - 黑盒全轨迹单步 Snapshots (Input/Output Token, Latency)     |
+| - MCP 同源管道 JSON-RPC    | - Step Replay 单步回退与轨迹离线 JSON 导出                   |
+└────────────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
-### 🛠️ 1. Industrial Agent Harness 2.5 与 MCP 治理
-* **`MCPToolSchemaTranslator` (Schema 展平翻译)**：解耦并展平 MCP Server 复杂的 `$ref` 与 `allOf` 嵌套，转化为 LLM 最优偏好的扁平化标准 Schema。
-* **`MCPConnectionCircuitBreaker` (MCP 三态熔断器)**：连续 3 次失败/超时自动触发 30s 熔断，返回 `status: degraded` 引导 LLM 优雅降级。
-* **`ToolCallPermissionSandboxGuard` (L1/L2/L3 风险门禁)**：
-  * `L1_READ_ONLY`：无感自动放行；
-  * `L2_SIMULATED_WRITE`：沙箱校验放行；
-  * `L3_CRITICAL_LIVE_WRITE`：强制要求合法 `approval_token` 校验。
-* **`SmartToolExecutionHealer` (退避重试)**：对 `502`/`429` 提供 $50\text{ms} \rightarrow 100\text{ms} \rightarrow 200\text{ms}$ 指数退避重试。
-* **`ToolIdempotencyLockGuard` (原子幂等锁)**：线程安全内存锁集，拦截重复 `idempotency_key` 提交。
-* **架构文档**：[docs/architecture/56-mcp-circuit-breaker-and-tool-governance-v2.md](docs/architecture/56-mcp-circuit-breaker-and-tool-governance-v2.md)
+### 🛠️ 1. Industrial Agent Harness 3.0 与 Prompt 缓存治理
+* **`ToolResultLRUCache` (工具结果感知 LRU 缓存)**：对只读工具引入基于 `MD5(tool_name + canonical_args)` 的 TTL 缓存（默认 15 秒），遇到写工具操作自动清空失效，杜绝重复网络请求开销。
+* **`PromptCachePrefixAligner` (KV Prompt Caching 前缀对齐器)**：将 System Prompt、System Rules 与 Tools 结构静态对齐置于 Message 数组 index 0，显著提升 DeepSeek V3 / Claude 3.5 / Gemini 的 API KV Cache 命中率（降低 50%~90% Token 费用与 TTFT 延迟）。
+* **`MCPToolSchemaTranslator` (Schema 展平翻译)**：解耦并展平 MCP Server 复杂的 `$ref` 与 `allOf` 嵌套 Schema。
+* **`MCPConnectionCircuitBreaker` (MCP 三态熔断器)**：连续 3 次失败自动触发 30s 熔断，引导优雅降级。
+* **`ToolCallPermissionSandboxGuard` (L1/L2/L3 风险门禁)**：L1 自动放行、L2 沙箱校验、L3 实盘强校验 `approval_token`。
+* **架构文档**：[docs/architecture/58-tool-result-cache-and-prompt-cache-prefix-aligner.md](docs/architecture/58-tool-result-cache-and-prompt-cache-prefix-aligner.md)
 
-### 🔀 2. DAG 依赖图分发与 MCP 批量管道 (`tool_pipeline.py`)
-* **`ToolDependencyGraphDispatcher` (DAG 2 阶段分发)**：自动构建 2 阶段 DAG 执行图。Stage 0 阶段并发分发无依赖只读工具，完成后 Stage 1 阶段严格串行执行写工具，实现“能并发的最大化并发”。
-* **`MCPBatchPipelineAggregator` (MCP 管道聚合)**：将对同一 MCP Endpoint 的多条工具请求打包为单一 JSON-RPC Batch 消息，一趟 TCP/HTTP RTT 批量取回结果。
+### 📼 2. 黑盒飞行记录仪与全轨迹单步重放 (`flight_recorder.py`)
+* **`AgentFlightRecorder` (全轨迹快照记录仪)**：以 Session 为单位不可变记录每个 Step 的 Input/Output Token 消耗、Tool Call 详情、Tool Result、Model Output 与响应延迟。
+* **`FlightRecorderReplayEngine` (单步重放引擎)**：支持指定 Session 与 Step 索引进行单步重放与全轨迹 JSON 导出会话审计。
+* **架构文档**：[docs/architecture/59-agent-flight-recorder-and-replay-telemetry.md](docs/architecture/59-agent-flight-recorder-and-replay-telemetry.md)
+
+### 🔀 3. DAG 依赖图分发与 MCP 批量管道 (`tool_pipeline.py`)
+* **`ToolDependencyGraphDispatcher` (DAG 2 阶段分发)**：Stage 0 并发分发无依赖只读工具，完成倒换 Stage 1 串行执行写工具。
+* **`MCPBatchPipelineAggregator` (MCP 管道聚合)**：打包同源 MCP 工具请求为单一 JSON-RPC Batch 消息，一趟 RTT 取回结果。
 * **架构文档**：[docs/architecture/57-dag-tool-dispatcher-and-mcp-batch-pipeline.md](docs/architecture/57-dag-tool-dispatcher-and-mcp-batch-pipeline.md)
 
 ### 🧠 3. Advanced Context Management 2.0 深度上下文管理

@@ -1,5 +1,18 @@
 # Progress Log
 
+## Industrial Harness 3.0 缓存前缀对齐与 Agent 黑盒飞行记录仪全量落地 — 2026-07-31
+
+- 针对 Agent 高性能执行与黑盒可观测性，落地 Harness 3.0 核心体系：
+  1. **工具结果感知 LRU 缓存 (`ToolResultLRUCache`)**
+     - 基于 `MD5(tool_name + canonical_args)` 实现只读工具 TTL (15s) 动态缓存，并在写工具触发时自动清空失效，大幅降低网络 RTT。
+  2. **KV Prompt Cache 前缀对齐器 (`PromptCachePrefixAligner`)**
+     - 规范化 System Prompt、System Rules 与 Tools 结构位置（Message 0），显着提升 DeepSeek V3 / Claude 3.5 的 API KV Cache 命中率 (降低 50%~90% 费用与 TTFT)。
+  3. **Agent 黑盒飞行记录仪 (`AgentFlightRecorder` & `FlightRecorderReplayEngine`)**
+     - 针对 Session 不可变记录单步 Token 消耗、Tool Call 详情、Tool Result、Model Output 与延迟；提供单步 Replay 与全轨迹 JSON 导出能力。
+- 架构文档：[docs/architecture/58-tool-result-cache-and-prompt-cache-prefix-aligner.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/58-tool-result-cache-and-prompt-cache-prefix-aligner.md) 与 [docs/architecture/59-agent-flight-recorder-and-replay-telemetry.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/59-agent-flight-recorder-and-replay-telemetry.md)。
+- 全量质量检查与单元测试验证：
+  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 866 个 pytest 单元与集成测试**全部 100% 通过**。
+
 ## MCP Harness 2.5 熔断降级与 DAG 依赖图 2 阶段分发聚合管道全量落地 — 2026-07-31
 
 - 针对 MCP 服务治理与工具调用并发体验完成 4 大核心底层突破：

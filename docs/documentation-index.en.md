@@ -65,3 +65,5 @@
 - [Autonomous Memory 3.0 Architecture Specification](architecture/55-autonomous-memory-v3-regime-filter-and-reflexion-flusher.md)
 - [MCP Circuit Breaker & Tool Risk Governance Architecture Specification](architecture/56-mcp-circuit-breaker-and-tool-governance-v2.md)
 - [DAG Tool Dispatcher & MCP Batch Pipeline Architecture Specification](architecture/57-dag-tool-dispatcher-and-mcp-batch-pipeline.md)
+- [Tool Result Cache & Prompt Cache Prefix Aligner Architecture Specification](architecture/58-tool-result-cache-and-prompt-cache-prefix-aligner.md)
+- [Agent Flight Recorder & Replay Telemetry Architecture Specification](architecture/59-agent-flight-recorder-and-replay-telemetry.md)
