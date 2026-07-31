@@ -1,5 +1,20 @@
 # Progress Log
 
+## MCP Harness 2.5 熔断降级与 DAG 依赖图 2 阶段分发聚合管道全量落地 — 2026-07-31
+
+- 针对 MCP 服务治理与工具调用并发体验完成 4 大核心底层突破：
+  1. **MCP 动态 Schema 展平翻译器 (`MCPToolSchemaTranslator`)**
+     - 展平 MCP Server 复杂的 `$ref` 与 `allOf` 结构，生成符合 LLM 最佳偏好的扁平化 JSON Schema。
+  2. **MCP 连接三态熔断器 (`MCPConnectionCircuitBreaker`)**
+     - 连续 3 次失败/超时触发 30s 熔断，自动切断故障 MCP 节点并向 LLM 返回 `status: degraded` 引导降级。
+  3. **L1/L2/L3 工具风险门禁 (`ToolCallPermissionSandboxGuard`)**
+     - L1 无感放行、L2 沙箱校验、L3 实盘下单强校验 `approval_token`。
+  4. **DAG 2 阶段依赖图分发与 MCP JSON-RPC 管道打包 (`ToolDependencyGraphDispatcher` & `MCPBatchPipelineAggregator`)**
+     - Stage 0 阶段并发分发无依赖读工具，Stage 1 阶段严格串行执行写工具；同源 MCP 请求聚合为单一 JSON-RPC 批量消息（一趟 RTT 批量取回）。
+- 架构文档：[docs/architecture/56-mcp-circuit-breaker-and-tool-governance-v2.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/56-mcp-circuit-breaker-and-tool-governance-v2.md) 与 [docs/architecture/57-dag-tool-dispatcher-and-mcp-batch-pipeline.md](file:///Users/jie.feng/Dev/Github/Private/HyperTrade/docs/architecture/57-dag-tool-dispatcher-and-mcp-batch-pipeline.md)。
+- 全量质量检查与单元测试验证：
+  - 执行 `./scripts/check.sh`：前端 Lint、Vitest、Build，Python Ruff、Mypy 及 863 个 pytest 单元与集成测试**全部 100% 通过**。
+
 ## README 主文档与 53~55 详细架构规范同步完成 — 2026-07-31
 
 - 针对 Harness 2.0、Context 2.0 与 Memory 3.0 的核心技术与设计进行了全量文档同步与精细化撰写：

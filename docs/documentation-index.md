@@ -53,6 +53,8 @@
 - [Industrial Agent Harness 2.0 Architecture Specification](architecture/53-industrial-agent-harness-v2-architecture.md) - 工业级 Agent Harness 2.0 架构重构（并发工具分发、退避重试、水冷剪裁、幂等锁与微观指标）
 - [Advanced Context & Memory Management 2.0 Architecture Specification](architecture/54-advanced-context-and-memory-management-v2-architecture.md) - 深度 Context 与 Memory 2.0 架构重构（动态 Token 护城河、 Schema 剪裁、三层记忆金字塔与艾宾浩斯衰减）
 - [Autonomous Memory 3.0 Architecture Specification](architecture/55-autonomous-memory-v3-regime-filter-and-reflexion-flusher.md) - 自主进化 Memory 3.0 架构（自动盘后反思刷盘、Regime 感知隔离与记忆冲突裁决）
+- [MCP Circuit Breaker & Tool Risk Governance Architecture Specification](architecture/56-mcp-circuit-breaker-and-tool-governance-v2.md) - MCP 熔断器、Schema 展平翻译与三级风险门禁架构
+- [DAG Tool Dispatcher & MCP Batch Pipeline Architecture Specification](architecture/57-dag-tool-dispatcher-and-mcp-batch-pipeline.md) - DAG 依赖图分发与 MCP 同源 JSON-RPC 管道聚合架构
 - [Autonomous Quant Trader North Star](architecture/35-autonomous-quant-trader-north-star.md) - 最终产品目标：持续策略进化、市场状态感知、组合优化与授权内实盘生命周期
 - [Goal-Driven Autonomous Research Loop M0](architecture/36-goal-driven-autonomous-research-loop-m0.md) - 自然语言目标、候选生成、真实 BitPro 回测、证据迭代和预授权模拟盘闭环
 - [Next-Generation Agent Runtime Audit and Target Design](architecture/34-next-generation-agent-runtime-audit-and-target-design.md) - 真实执行审计、目标协议、完整状态机、Schema、权限、多 Agent、交易安全、评测与切换路线

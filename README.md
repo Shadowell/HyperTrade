@@ -88,36 +88,48 @@
 
 ---
 
-## ⚡ 工业级基础设施 (Harness 2.0, Context 2.0, Memory 3.0)
+## ⚡ 工业级基础设施 (Harness 2.5, Context 2.0, Memory 3.0, DAG Pipeline)
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
 |                            HyperTrade 工业级底层基础设施体系                             |
 ├────────────────────────────┬────────────────────────────┬───────────────────────────────┤
-| 1. Industrial Harness 2.0  | 2. Advanced Context 2.0    | 3. Autonomous Memory 3.0      |
+| 1. Industrial Harness 2.5  | 2. Advanced Context 2.0    | 3. Autonomous Memory 3.0      |
 | - 指数退避重试 (502/429)   | - 4-3-2-1 动态 Token 护城河| - 三层金字塔记忆 (Working/    |
-| - 读工具并发流水线分发器   | - Schema/AST 语义折叠剪裁  |   Episodic/Semantic Pyramid)  |
-| - Payload 结构化水冷截断   | - 洞察感知摘要 2.0 (提取   | - 艾宾浩斯时间衰减重排序      |
-| - 写工具原子幂等锁 (Guard) |   夏普率/回撤/错误Traceback| - 自动盘后反思刷盘 (Flusher)  |
-| - 微观 P95 延迟与重试监控  |   与原始观测掩码)          | - Regime 上下文感知与冲突裁决 |
-└────────────────────────────┴────────────────────────────┴───────────────────────────────┘
+| - MCP 动态 Schema 展平翻译 | - Schema/AST 语义折叠剪裁  |   Episodic/Semantic Pyramid)  |
+| - MCP 链接三态熔断 (30s)   | - 洞察感知摘要 2.0 (提取   | - 艾宾浩斯时间衰减重排序      |
+| - L1/L2/L3 工具风险门禁    |   夏普率/回撤/错误Traceback| - 自动盘后反思刷盘 (Flusher)  |
+| - 写工具原子幂等锁 (Guard) |   与原始观测掩码)          | - Regime 上下文感知与冲突裁决 |
+├────────────────────────────┴────────────────────────────┴───────────────────────────────┤
+| 4. DAG Pipeline & MCP Batch Aggregator                                                  |
+| - DAG 依赖图 2 阶段分发器 (Stage 0 并发读 -> Stage 1 串行写)                             |
+| - MCP 同源 JSON-RPC 管道批量打包器 (一趟 RTT 批量取回)                                   |
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 🛠️ 1. Industrial Agent Harness 2.0 脚手架
-* **`SmartToolExecutionHealer` (退避重试与自愈引擎)**：对 `502 Bad Gateway` / `429 Rate Limit` 提供 $50\text{ms} \rightarrow 100\text{ms} \rightarrow 200\text{ms}$ 指数退避重试，结合错误 Context 语义自愈。
-* **`AsyncParallelToolDispatcher` (并发流水线分发)**：区分只读与写工具，采用 ThreadPool 并发执行独立读工具，查询延迟降低 70%。
-* **`HarnessContextWaterCooler` (水冷剪裁)**：拦截字符量 $>2000$ 的大 Output Payload，保留头元数据，截断嵌套长数组，杜绝 Context 暴涨。
-* **`ToolIdempotencyLockGuard` (原子幂等锁)**：线程安全内存锁集，拦截重复 `idempotency_key` 提交，保证写工具操作幂等。
-* **`HarnessTelemetryCollector` (微观监控)**：收集工具 P95 延迟、重试率与水冷截断统计。
-* **架构文档**：[docs/architecture/53-industrial-agent-harness-v2-architecture.md](docs/architecture/53-industrial-agent-harness-v2-architecture.md)
+### 🛠️ 1. Industrial Agent Harness 2.5 与 MCP 治理
+* **`MCPToolSchemaTranslator` (Schema 展平翻译)**：解耦并展平 MCP Server 复杂的 `$ref` 与 `allOf` 嵌套，转化为 LLM 最优偏好的扁平化标准 Schema。
+* **`MCPConnectionCircuitBreaker` (MCP 三态熔断器)**：连续 3 次失败/超时自动触发 30s 熔断，返回 `status: degraded` 引导 LLM 优雅降级。
+* **`ToolCallPermissionSandboxGuard` (L1/L2/L3 风险门禁)**：
+  * `L1_READ_ONLY`：无感自动放行；
+  * `L2_SIMULATED_WRITE`：沙箱校验放行；
+  * `L3_CRITICAL_LIVE_WRITE`：强制要求合法 `approval_token` 校验。
+* **`SmartToolExecutionHealer` (退避重试)**：对 `502`/`429` 提供 $50\text{ms} \rightarrow 100\text{ms} \rightarrow 200\text{ms}$ 指数退避重试。
+* **`ToolIdempotencyLockGuard` (原子幂等锁)**：线程安全内存锁集，拦截重复 `idempotency_key` 提交。
+* **架构文档**：[docs/architecture/56-mcp-circuit-breaker-and-tool-governance-v2.md](docs/architecture/56-mcp-circuit-breaker-and-tool-governance-v2.md)
 
-### 🧠 2. Advanced Context Management 2.0 深度上下文管理
+### 🔀 2. DAG 依赖图分发与 MCP 批量管道 (`tool_pipeline.py`)
+* **`ToolDependencyGraphDispatcher` (DAG 2 阶段分发)**：自动构建 2 阶段 DAG 执行图。Stage 0 阶段并发分发无依赖只读工具，完成后 Stage 1 阶段严格串行执行写工具，实现“能并发的最大化并发”。
+* **`MCPBatchPipelineAggregator` (MCP 管道聚合)**：将对同一 MCP Endpoint 的多条工具请求打包为单一 JSON-RPC Batch 消息，一趟 TCP/HTTP RTT 批量取回结果。
+* **架构文档**：[docs/architecture/57-dag-tool-dispatcher-and-mcp-batch-pipeline.md](docs/architecture/57-dag-tool-dispatcher-and-mcp-batch-pipeline.md)
+
+### 🧠 3. Advanced Context Management 2.0 深度上下文管理
 * **`DynamicTokenBudgetManager` (动态 Token 护城河)**：识别 DeepSeek (128K)、Claude (200K)、Qwen (32K) 模型上限，划分 **20% System / 40% Tool History / 30% Memory / 10% Output Reserve** 物理隔离预算 Guard。
 * **`SemanticContextPruner` (Schema 语义剪裁)**：保留 Dict 与 Key 结构，对 List 采用“前 2 项 + 后 3 项”语义折叠，绝不损坏 JSON 语法。
 * **`TurnSlidingWindowSummarizer 2.0` (选择性洞察摘要)**：对话 Turn $>12$ 时，扫描历史提取夏普率/回撤指标、用户指令与报错 Traceback，掩码原始观测，生成 `[Selective Executive Insight Summary]` 节点，支持无限轮次长会话。
 * **架构文档**：[docs/architecture/54-advanced-context-and-memory-management-v2-architecture.md](docs/architecture/54-advanced-context-and-memory-management-v2-architecture.md)
 
-### 💾 3. Autonomous Memory Subsystem 3.0 自主进化记忆体系
+### 💾 4. Autonomous Memory Subsystem 3.0 自主进化记忆体系
 * **`HierarchicalMemoryPyramid` (三层记忆金字塔)**：划分 Working Memory (短暂变量)、Episodic Memory (7日任务与回测实验)、Semantic Memory (长期 Regime 规则与避坑账本)。
 * **`EbbinghausDecayScorer` (艾宾浩斯时间衰减)**：结合向量相似度、时间衰减 $e^{-0.05 \Delta t}$ 与重要性权重计算综合得分：$\text{Score} = 0.5 \text{Sim} + 0.3 \text{Decay} + 0.2 \text{Imp}$。
 * **`MemoryConsolidator` (记忆聚类去重)**：相似度 $>0.85$ 时自动合并增量 Observation 进既有 Memory 节点，防止数据库污染。
