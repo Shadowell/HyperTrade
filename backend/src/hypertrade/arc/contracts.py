@@ -112,3 +112,28 @@ class ARCCandidateAttemptV1(BaseModel):
     observed_metrics: dict[str, Any] = Field(default_factory=dict)
     reflexion_events: list[ARCReflexionEventV1] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CanaryTier(str):
+    PAPER_INCUBATION = "paper_incubation"  # Tier 0 (0% Real Capital)
+    CANARY_LIVE_MICRO = "canary_live_micro"  # Tier 1 (0.5% Capital)
+    CANARY_LIVE_MINI = "canary_live_mini"  # Tier 2 (2.0% Capital)
+    PRODUCTION_LIVE_VAULT = "production_live_vault"  # Tier 3 (Dynamic Capital)
+
+
+class LiveTradingMandateV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["live_trading_mandate.v1"] = "live_trading_mandate.v1"
+    mandate_id: str
+    approved_by: str = Field(default="operator")
+    approval_token: str
+    symbol: str = Field(default="BTC-USDT-SWAP")
+    candidate_id: str
+    canary_tier: str = Field(default=CanaryTier.PAPER_INCUBATION)
+    max_capital_u: Decimal = Field(default=Decimal("100"))
+    max_daily_drawdown_pct: Decimal = Field(default=Decimal("3.0"))
+    max_pnl_drift_pct: Decimal = Field(default=Decimal("10.0"))
+    mandatory_stop_loss_pct: Decimal = Field(default=Decimal("7.0"))
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)

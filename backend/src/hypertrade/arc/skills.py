@@ -59,9 +59,7 @@ class ARCSkillDistiller:
     and distilling reusable sub-functions (e.g. adaptive stops, indicators).
     """
 
-    def distill_skills_from_candidate(
-        self, attempt: ARCCandidateAttemptV1
-    ) -> list[ARCSkill]:
+    def distill_skills_from_candidate(self, attempt: ARCCandidateAttemptV1) -> list[ARCSkill]:
         if attempt.state != "validated" and attempt.state != "paper_observing":
             return []
 
@@ -71,10 +69,10 @@ class ARCSkillDistiller:
         try:
             tree = ast.parse(code)
             for node in ast.walk(tree):
-                if (
-                    isinstance(node, ast.FunctionDef)
-                    and node.name not in ["next_signal", "__init__"]
-                ):
+                if isinstance(node, ast.FunctionDef) and node.name not in [
+                    "next_signal",
+                    "__init__",
+                ]:
                     func_code = ast.unparse(node)
                     skill = ARCSkill(
                         skill_id=f"skill_{node.name}_{attempt.candidate_id[-6:]}",
@@ -89,9 +87,7 @@ class ARCSkillDistiller:
             pass
 
         # Fallback default distilled skills if AST discovery had no helper functions
-        if not distilled_skills and (
-            "stop_loss = 0.08" in code or "ma * 1.02" in code
-        ):
+        if not distilled_skills and ("stop_loss = 0.08" in code or "ma * 1.02" in code):
             default_snippet = (
                 "def calculate_adaptive_volatility_stop(entry_price, max_dd=0.08):\n"
                 "    return entry_price * (1.0 - max_dd)"

@@ -118,9 +118,7 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
             "metrics": metrics,
         },
     )
-    mcts_engine.backpropagate(
-        initial_attempt.attempt_id, metrics.get("sharpe_after_attack", 0.0)
-    )
+    mcts_engine.backpropagate(initial_attempt.attempt_id, metrics.get("sharpe_after_attack", 0.0))
 
     if not passed:
         # 3. Multi-Regime Causal Reflexion & Diagnosis
@@ -136,12 +134,8 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
         best_node = mcts_engine.select_best_node_to_expand()
         parent_id = best_node.node_id if best_node else initial_attempt.attempt_id
 
-        mutated_attempt = mutator.mutate_attempt(
-            initial_attempt, reflexion_ledger.get_history()
-        )
-        ctrl.apply_event(
-            "candidate_proposed", {"attempt": mutated_attempt.model_dump()}
-        )
+        mutated_attempt = mutator.mutate_attempt(initial_attempt, reflexion_ledger.get_history())
+        ctrl.apply_event("candidate_proposed", {"attempt": mutated_attempt.model_dump()})
         ctrl.apply_event(
             "candidate_mutated",
             {
@@ -156,9 +150,7 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
             p, m, _ = engine.run_adversarial_session(cand)
             return p, float(m.get("sharpe_after_attack", 1.5))
 
-        rollouts = mcts_engine.execute_parallel_rollout(
-            eval_candidate, [mutated_attempt]
-        )
+        rollouts = mcts_engine.execute_parallel_rollout(eval_candidate, [mutated_attempt])
         passed2, score2 = rollouts[0][1], rollouts[0][2]
 
         ctrl.apply_event(
@@ -182,9 +174,7 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
             )
 
             # 6. Voyager-Style Automated Skill Distillation
-            distilled_skills = skill_distiller.distill_skills_from_candidate(
-                mutated_attempt
-            )
+            distilled_skills = skill_distiller.distill_skills_from_candidate(mutated_attempt)
             for skill in distilled_skills:
                 skill_library.register_skill(skill)
 
@@ -221,9 +211,7 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
             },
         )
 
-        distilled_skills = skill_distiller.distill_skills_from_candidate(
-            initial_attempt
-        )
+        distilled_skills = skill_distiller.distill_skills_from_candidate(initial_attempt)
         for skill in distilled_skills:
             skill_library.register_skill(skill)
 

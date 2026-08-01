@@ -14,9 +14,7 @@ class BlueTeamQuant:
     and higher-order factor integrations targeting user objectives.
     """
 
-    def propose_initial_strategy(
-        self, objective: str, symbol: str
-    ) -> ARCCandidateAttemptV1:
+    def propose_initial_strategy(self, objective: str, symbol: str) -> ARCCandidateAttemptV1:
         class_name = f"Strategy_{symbol.replace('-', '_')}"
         code = f"""# Strategy Hypothesis: {objective}
 from hypertrade.strategy.operators import compute_atr_volatility_channel
@@ -78,11 +76,7 @@ class MonteCarloParamPerturbationAttack:
 
         median_sharpe = sorted(jitter_sharpes)[50]
         max_dd = max(jitter_drawdowns)
-        deg = (
-            (baseline_sharpe - median_sharpe) / baseline_sharpe
-            if baseline_sharpe > 0
-            else 1.0
-        )
+        deg = (baseline_sharpe - median_sharpe) / baseline_sharpe if baseline_sharpe > 0 else 1.0
 
         passed = (deg <= 0.25) and (max_dd <= 0.15) and (stop_loss_val <= 0.10)
         reason = (
@@ -164,12 +158,8 @@ class RedTeamQuant:
 
         passed = len(reasons) == 0
 
-        dd_after = (
-            mc_metrics.get("max_perturbed_drawdown", 0.18) if not passed else 0.07
-        )
-        sharpe_after = (
-            mc_metrics.get("median_perturbed_sharpe", 0.6) if not passed else 1.85
-        )
+        dd_after = mc_metrics.get("max_perturbed_drawdown", 0.18) if not passed else 0.07
+        sharpe_after = mc_metrics.get("median_perturbed_sharpe", 0.6) if not passed else 1.85
 
         observed_metrics = {
             "max_drawdown_after_attack": dd_after,

@@ -110,9 +110,7 @@ class ARCReflexionLedger:
         failed_gates = []
 
         # Run multi-regime causal attribution
-        regime_results = self.causal_engine.decompose_regime_performance(
-            attempt, observed_metrics
-        )
+        regime_results = self.causal_engine.decompose_regime_performance(attempt, observed_metrics)
         for res in regime_results:
             if not res.passed:
                 failed_gates.append(f"regime_{res.regime_name}")
@@ -120,31 +118,19 @@ class ARCReflexionLedger:
                     f"禁止在行情 Regime [{res.regime_name}] 下使用宽止损；{res.attribution_notes}"
                 )
 
-        if (
-            failure_class == "drawdown_exceeded"
-            or observed_metrics.get("max_drawdown", 0) > 0.15
-        ):
+        if failure_class == "drawdown_exceeded" or observed_metrics.get("max_drawdown", 0) > 0.15:
             failed_gates.append("max_drawdown")
-            negative_constraints.append(
-                "止损比例 (stop_loss) 必须限制在 10% 以内以防范大回撤"
-            )
+            negative_constraints.append("止损比例 (stop_loss) 必须限制在 10% 以内以防范大回撤")
 
-        if (
-            failure_class == "sharpe_too_low"
-            or observed_metrics.get("sharpe", 0) < 1.2
-        ):
+        if failure_class == "sharpe_too_low" or observed_metrics.get("sharpe", 0) < 1.2:
             failed_gates.append("min_sharpe")
-            negative_constraints.append(
-                "均线回看周期 (lookback_period) 必须大于 10 以免过度交易"
-            )
+            negative_constraints.append("均线回看周期 (lookback_period) 必须大于 10 以免过度交易")
 
         if failure_class == "red_team_attack_failed":
             failed_gates.append("adversarial_survival")
             for reason in raw_reasons:
                 if "Stop loss is too wide" in reason:
-                    negative_constraints.append(
-                        "止损比例 (stop_loss) 必须限制在 10% 以内"
-                    )
+                    negative_constraints.append("止损比例 (stop_loss) 必须限制在 10% 以内")
                 if "Lookback period is too short" in reason:
                     negative_constraints.append(
                         "均线回看周期 (lookback_period) 表现为过拟合，必须大于 15"

@@ -20,23 +20,17 @@ class MCTSNode(BaseModel):
     visits: int = 0
     total_value: float = 0.0
     depth: int = 0
-    feature_descriptor: tuple[str, str] = Field(
-        default=("medium_term", "ranging")
-    )
+    feature_descriptor: tuple[str, str] = Field(default=("medium_term", "ranging"))
 
     @property
     def mean_value(self) -> float:
         return self.total_value / self.visits if self.visits > 0 else 0.0
 
-    def ucb1_score(
-        self, parent_visits: int, exploration_weight: float = 1.414
-    ) -> float:
+    def ucb1_score(self, parent_visits: int, exploration_weight: float = 1.414) -> float:
         if self.visits == 0:
             return float("inf")
         exploitation = self.mean_value
-        exploration = exploration_weight * math.sqrt(
-            math.log(parent_visits) / self.visits
-        )
+        exploration = exploration_weight * math.sqrt(math.log(parent_visits) / self.visits)
         return exploitation + exploration
 
 
@@ -51,9 +45,7 @@ class MAPElitesGrid:
         self.archive: dict[tuple[str, str], MCTSNode] = {}
         self._lock = threading.Lock()
 
-    def get_feature_descriptor(
-        self, attempt: ARCCandidateAttemptV1
-    ) -> tuple[str, str]:
+    def get_feature_descriptor(self, attempt: ARCCandidateAttemptV1) -> tuple[str, str]:
         code = attempt.strategy_code
         metrics = attempt.observed_metrics
 
@@ -121,9 +113,7 @@ class ARCMCTSEngine:
         self.qd_grid.add_candidate(node)
         return node
 
-    def add_child(
-        self, parent_id: str, attempt: ARCCandidateAttemptV1
-    ) -> MCTSNode:
+    def add_child(self, parent_id: str, attempt: ARCCandidateAttemptV1) -> MCTSNode:
         with self._lock:
             parent = self.nodes.get(parent_id)
             descriptor = self.qd_grid.get_feature_descriptor(attempt)
@@ -145,11 +135,7 @@ class ARCMCTSEngine:
             if not self.nodes:
                 return None
 
-            current = (
-                self.nodes.get(self.root_id)
-                if self.root_id
-                else list(self.nodes.values())[0]
-            )
+            current = self.nodes.get(self.root_id) if self.root_id else list(self.nodes.values())[0]
 
             while current and current.children_ids:
                 parent_visits = max(current.visits, 1)
@@ -158,9 +144,7 @@ class ARCMCTSEngine:
 
                 for child_id in current.children_ids:
                     child = self.nodes[child_id]
-                    score = child.ucb1_score(
-                        parent_visits, self.exploration_weight
-                    )
+                    score = child.ucb1_score(parent_visits, self.exploration_weight)
                     if score > best_score:
                         best_score = score
                         best_child = child
@@ -209,9 +193,7 @@ class ARCParallelMCTSEngine(ARCMCTSEngine):
         results: list[tuple[ARCCandidateAttemptV1, bool, float]] = []
 
         with ThreadPoolExecutor(max_workers=self.parallel_workers) as executor:
-            future_to_cand = {
-                executor.submit(eval_fn, cand): cand for cand in candidates
-            }
+            future_to_cand = {executor.submit(eval_fn, cand): cand for cand in candidates}
             for future in as_completed(future_to_cand):
                 cand = future_to_cand[future]
                 try:

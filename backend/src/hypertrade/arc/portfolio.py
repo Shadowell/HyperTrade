@@ -38,9 +38,7 @@ class ARCPortfolioCoEvolutionEngine:
         self.max_correlation_threshold = max_correlation_threshold
         self.min_sharpe_improvement_pct = min_sharpe_improvement_pct
 
-    def compute_pairwise_correlation(
-        self, returns_a: list[float], returns_b: list[float]
-    ) -> float:
+    def compute_pairwise_correlation(self, returns_a: list[float], returns_b: list[float]) -> float:
         """
         Computes Pearson correlation coefficient between two strategy return series.
         """
@@ -116,9 +114,7 @@ class ARCPortfolioCoEvolutionEngine:
             )
 
         # 2. Compute existing portfolio return series
-        min_len = min(
-            len(c.historical_returns) for c in existing_constituents
-        )
+        min_len = min(len(c.historical_returns) for c in existing_constituents)
         if min_len == 0:
             existing_returns = [0.0]
         else:
@@ -134,19 +130,14 @@ class ARCPortfolioCoEvolutionEngine:
         comb_len = min(min_len, len(candidate_returns))
         new_constituents_count = len(existing_constituents) + 1
         new_returns = [
-            (
-                sum(c.historical_returns[i] for c in existing_constituents)
-                + candidate_returns[i]
-            )
+            (sum(c.historical_returns[i] for c in existing_constituents) + candidate_returns[i])
             / new_constituents_count
             for i in range(comb_len)
         ]
 
         new_sharpe = self.calculate_sharpe(new_returns)
         improvement = (
-            (new_sharpe - baseline_sharpe) / abs(baseline_sharpe)
-            if baseline_sharpe > 0
-            else 1.0
+            (new_sharpe - baseline_sharpe) / abs(baseline_sharpe) if baseline_sharpe > 0 else 1.0
         )
 
         if improvement < self.min_sharpe_improvement_pct:
