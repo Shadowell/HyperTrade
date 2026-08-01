@@ -180,9 +180,7 @@ def test_agent_can_call_world_model_snapshot_without_write_tools(monkeypatch) ->
         for name in names
     )
     world_event = next(
-        event
-        for event in body["trace_events"]
-        if event["tool_name"] == "world_model_snapshot"
+        event for event in body["trace_events"] if event["tool_name"] == "world_model_snapshot"
     )
     assert world_event["output_json"]["status"] == "completed"
     # Sprint 75: Global market data now comes from yfinance, not fixture

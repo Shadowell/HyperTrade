@@ -29,7 +29,9 @@ def test_changed_hypothesis_requires_a_new_version() -> None:
     service = StrategyDiscoveryService(db, adapter=FakeDiscoveryAdapter())
     service.discover(discovery_request(refs), actor="test", now=NOW)
     changed = discovery_request(refs, key="changed-hypothesis-version")
-    changed.proposals[0].hypothesis.economic_rationale = (
+    changed.proposals[
+        0
+    ].hypothesis.economic_rationale = (
         "A materially changed rationale that must not overwrite frozen version one."
     )
 

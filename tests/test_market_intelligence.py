@@ -83,8 +83,7 @@ def test_planner_report_renders_market_intelligence_evidence() -> None:
                         {
                             "source": "okx_public.funding_open_interest",
                             "source_path": (
-                                "/api/v5/public/funding-rate + "
-                                "/api/v5/public/open-interest"
+                                "/api/v5/public/funding-rate + /api/v5/public/open-interest"
                             ),
                             "symbol": "ETH-USDT-SWAP",
                             "as_of": "2026-06-22T14:25:00+00:00",

@@ -26,6 +26,5 @@ def test_alembic_revision_ids_fit_version_table() -> None:
                     continue
                 assert isinstance(revision, str)
                 assert len(revision) <= ALEMBIC_VERSION_NUM_LIMIT, (
-                    f"{path.name} {field}={revision!r} exceeds "
-                    f"{ALEMBIC_VERSION_NUM_LIMIT} chars"
+                    f"{path.name} {field}={revision!r} exceeds {ALEMBIC_VERSION_NUM_LIMIT} chars"
                 )

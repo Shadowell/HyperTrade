@@ -92,9 +92,7 @@ def test_assertion_cli_lists_and_reviews_with_reason() -> None:
 
     assert "Source-bound regime assertion" in output.getvalue()
     assert "[active] usable=True" in output.getvalue()
-    assert raw_client.decisions == [
-        ("assertion", "masrt_cli_1", "approve", "evidence verified")
-    ]
+    assert raw_client.decisions == [("assertion", "masrt_cli_1", "approve", "evidence verified")]
 
 
 def test_skill_cli_projects_diff_release_and_rollback() -> None:

@@ -128,9 +128,7 @@ async def test_expired_revoked_and_agent_self_grants_are_rejected(monkeypatch) -
         await service.grant_approval(request.request_id, actor="agent", reason="self grant")
     monkeypatch.setattr(module, "_now", lambda: clock + timedelta(seconds=2))
     with pytest.raises(PermissionError, match="expired"):
-        await service.grant_approval(
-            request.request_id, actor="human-reviewer", reason="too late"
-        )
+        await service.grant_approval(request.request_id, actor="human-reviewer", reason="too late")
     expired, _ = await store.approval(request.request_id)
     assert expired.status == "expired"
 
@@ -201,9 +199,7 @@ async def test_sql_approval_token_is_private_durable_and_consumable(tmp_path: Pa
             approval_grant_id=issued.grant.grant_id,
             approval_token=issued.consumption_token,
         )
-        persisted_request, persisted_grant = await reopened_store.approval(
-            request.request_id
-        )
+        persisted_request, persisted_grant = await reopened_store.approval(request.request_id)
     finally:
         await reopened_store.dispose()
 

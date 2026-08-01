@@ -33,9 +33,7 @@ def test_highly_correlated_candidate_is_existing_strategy_variant() -> None:
     request = discovery_request(refs)
     comparison = request.proposals[0].novelty_comparisons[0]
     comparison.return_correlation = Decimal("0.95")
-    report = StrategyDiscoveryService(db).assess_novelty(
-        request.proposals[0], code_sha="c" * 64
-    )
+    report = StrategyDiscoveryService(db).assess_novelty(request.proposals[0], code_sha="c" * 64)
 
     assert report.status == "existing_strategy_variant"
     assert report.max_return_correlation == Decimal("0.95")

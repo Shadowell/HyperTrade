@@ -45,9 +45,7 @@ class RecoveryClient:
             "budget": {"max_tokens": 1000},
         }
 
-    def list_agent_task_events(
-        self, task_id: str, *, after: int = 0
-    ) -> list[dict[str, Any]]:
+    def list_agent_task_events(self, task_id: str, *, after: int = 0) -> list[dict[str, Any]]:
         return [event for event in self.events if int(event["sequence"]) > after]
 
     def stream_agent_task_events(self, task_id: str, *, after: int = 0) -> Any:
@@ -76,9 +74,7 @@ class RecoveryClient:
     ) -> dict[str, Any]:
         return {"id": trigger_id, "enabled": enabled}
 
-    def set_research_trigger_control(
-        self, *, kill_switch: bool, reason: str
-    ) -> dict[str, Any]:
+    def set_research_trigger_control(self, *, kill_switch: bool, reason: str) -> dict[str, Any]:
         return {"kill_switch": kill_switch}
 
     def fire_research_trigger(
@@ -121,9 +117,7 @@ class RecoveryClient:
     ) -> dict[str, Any]:
         return {"id": "slrev_1", "decision": decision}
 
-    def control_agent_task(
-        self, task_id: str, action: str, *, reason: str
-    ) -> dict[str, Any]:
+    def control_agent_task(self, task_id: str, action: str, *, reason: str) -> dict[str, Any]:
         self.control_requests.append((task_id, action, reason))
         return {**self.get_agent_task(task_id), "status": "pause_requested"}
 

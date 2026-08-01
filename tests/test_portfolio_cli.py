@@ -33,9 +33,7 @@ class PortfolioClient:
             ],
         }
 
-    def diff_portfolio_assessments(
-        self, left_id: str, right_id: str
-    ) -> dict[str, Any]:
+    def diff_portfolio_assessments(self, left_id: str, right_id: str) -> dict[str, Any]:
         return {"left_id": left_id, "right_id": right_id, "unknowns_resolved": []}
 
     def review_portfolio_recommendation(
@@ -60,9 +58,7 @@ def test_portfolio_cli_lists_projects_and_records_review_reason() -> None:
     output = StringIO()
 
     handle_portfolio_v2_command("/portfolio-v2 list", client=client, output=output)
-    handle_portfolio_v2_command(
-        "/portfolio-v2 show pasmt_cli_1", client=client, output=output
-    )
+    handle_portfolio_v2_command("/portfolio-v2 show pasmt_cli_1", client=client, output=output)
     handle_portfolio_v2_command(
         "/portfolio-v2 review pasmt_cli_1 plrec_cli_1 hold need aligned returns",
         client=client,
@@ -73,6 +69,4 @@ def test_portfolio_cli_lists_projects_and_records_review_reason() -> None:
     assert "strategies=1 unknowns=1" in rendered
     assert "run_targeted_research" in rendered
     assert "[hold]" in rendered
-    assert raw_client.reviews == [
-        ("pasmt_cli_1", "plrec_cli_1", "hold", "need aligned returns")
-    ]
+    assert raw_client.reviews == [("pasmt_cli_1", "plrec_cli_1", "hold", "need aligned returns")]

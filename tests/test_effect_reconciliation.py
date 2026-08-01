@@ -61,9 +61,7 @@ class TimeoutThenReconcileAdapter:
             {
                 "outcome": self.outcome,
                 "external_operation_id": (
-                    f"fixture:{intent.idempotency_key}"
-                    if self.outcome == "committed"
-                    else ""
+                    f"fixture:{intent.idempotency_key}" if self.outcome == "committed" else ""
                 ),
                 "result": {"accepted": True} if self.outcome == "committed" else {},
                 "reason": "isolated reconciliation lookup completed",
@@ -196,9 +194,7 @@ async def test_unconsumed_approval_blocks_completion_proof() -> None:
 
 @pytest.mark.anyio
 async def test_manual_only_adapter_remains_unknown_and_public_item_is_bounded() -> None:
-    _, service, adapter, intent, call = await _unknown_call(
-        reconciliation_policy="manual_only"
-    )
+    _, service, adapter, intent, call = await _unknown_call(reconciliation_policy="manual_only")
     unresolved, resolution = await service.reconcile(intent.intent_id, adapter)
     item = public_effect_item(mission_id=intent.mission_id, call=unresolved)
 

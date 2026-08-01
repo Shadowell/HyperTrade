@@ -199,8 +199,7 @@ def discovery_request(
         strategy_family="carry_funding",
         phenomenon_keys=[phenomenon.phenomenon_key],
         economic_rationale=(
-            "Crowded perpetual positioning pays an unsustainable premium before "
-            "normalization."
+            "Crowded perpetual positioning pays an unsustainable premium before normalization."
         ),
         features=["funding_zscore", "neutral_price_momentum"],
         expected_regimes=["neutral_price_high_funding"],

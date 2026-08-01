@@ -97,12 +97,7 @@ def test_stale_evidence_and_scope_expansion_fail_before_candidate_generation() -
 
 def test_evolution_module_has_no_execution_adapter_imports() -> None:
     source = (
-        Path(__file__).parents[1]
-        / "backend"
-        / "src"
-        / "hypertrade"
-        / "research"
-        / "evolution.py"
+        Path(__file__).parents[1] / "backend" / "src" / "hypertrade" / "research" / "evolution.py"
     ).read_text(encoding="utf-8")
     assert "hypertrade.bitpro" not in source
     assert "hypertrade.paper" not in source

@@ -46,12 +46,8 @@ def test_trigger_cli_lists_controls_runs_and_audits() -> None:
         client=client,
         output=output,
     )
-    handle_slash_command(
-        f"/triggers fires {trigger['id']}", client=client, output=output
-    )
-    handle_slash_command(
-        "/triggers kill on incident_response", client=client, output=output
-    )
+    handle_slash_command(f"/triggers fires {trigger['id']}", client=client, output=output)
+    handle_slash_command("/triggers kill on incident_response", client=client, output=output)
 
     rendered = output.getvalue()
     assert "feature_enabled=True" in rendered

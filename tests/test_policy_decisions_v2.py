@@ -45,12 +45,8 @@ async def _decision(service, snapshot, arguments, *, account="acct-a", environme
 async def test_policy_decision_binds_exact_args_hashes_and_capability_version() -> None:
     service = EffectGovernanceService(InMemoryEffectGovernanceStore())
     first = await _decision(service, _snapshot(version="1"), {"symbol": "LAB", "size": 1})
-    changed_args = await _decision(
-        service, _snapshot(version="1"), {"symbol": "LAB", "size": 2}
-    )
-    changed_version = await _decision(
-        service, _snapshot(version="2"), {"symbol": "LAB", "size": 1}
-    )
+    changed_args = await _decision(service, _snapshot(version="1"), {"symbol": "LAB", "size": 2})
+    changed_version = await _decision(service, _snapshot(version="2"), {"symbol": "LAB", "size": 1})
 
     assert first.decision == "ask"
     assert first.arguments_hash != changed_args.arguments_hash

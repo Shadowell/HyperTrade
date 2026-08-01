@@ -174,9 +174,7 @@ def evolution_request(
         "timeframes": ["1H"],
         "parameter_ranges": {
             "fast": ParameterRangeV1(minimum=Decimal("5"), maximum=Decimal("15")),
-            "threshold": ParameterRangeV1(
-                minimum=Decimal("0.005"), maximum=Decimal("0.03")
-            ),
+            "threshold": ParameterRangeV1(minimum=Decimal("0.005"), maximum=Decimal("0.03")),
         },
         "mutable_rule_slots": ["entry", "exit", "filter", "risk"],
         "max_candidates": 3,

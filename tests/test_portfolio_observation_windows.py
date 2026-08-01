@@ -229,16 +229,12 @@ def test_snapshot_failure_does_not_block_curve_but_curve_failure_is_unhealthy(
 
     partial = PortfolioEvidenceService(
         db,
-        adapter=SnapshotFailureAdapter(
-            {402: _curve([100, 101, 103, 102, 105, 107, 106, 109])}
-        ),
+        adapter=SnapshotFailureAdapter({402: _curve([100, 101, 103, 102, 105, 107, 106, 109])}),
     ).capture(_payload(), actor="test", now=NOW)
 
     assert partial["status"] == "available"
     assert partial["strategies"][0]["sample_count"] == 7
-    assert "bitpro_snapshot_read_failed:RuntimeError" in partial["strategies"][0][
-        "unknown_reasons"
-    ]
+    assert "bitpro_snapshot_read_failed:RuntimeError" in partial["strategies"][0]["unknown_reasons"]
 
     class CurveFailureAdapter(ReadAdapter):
         def paper_equity_curve(
@@ -261,12 +257,7 @@ def test_snapshot_failure_does_not_block_curve_but_curve_failure_is_unhealthy(
 
 def test_evidence_module_exposes_no_mutation_adapter_surface() -> None:
     source = (
-        Path(__file__).parents[1]
-        / "backend"
-        / "src"
-        / "hypertrade"
-        / "portfolio"
-        / "evidence.py"
+        Path(__file__).parents[1] / "backend" / "src" / "hypertrade" / "portfolio" / "evidence.py"
     ).read_text(encoding="utf-8")
 
     assert "hypertrade.paper.service" not in source

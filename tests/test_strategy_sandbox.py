@@ -115,9 +115,7 @@ async def test_review_is_hash_bound_idempotent_and_never_imports() -> None:
     with pytest.raises(ValueError, match="idempotency key"):
         await store.review(
             run,
-            review.model_copy(
-                update={"reason": "different decision context"}
-            ),
+            review.model_copy(update={"reason": "different decision context"}),
             "admin",
         )
 

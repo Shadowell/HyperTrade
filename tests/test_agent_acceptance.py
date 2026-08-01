@@ -279,9 +279,7 @@ class ReplayBitProAdapter:
                 {
                     "id": 193,
                     "strategy_id": 162,
-                    "strategy_name": (
-                        "[合约][1H][CTA] ETH · Heikin Ashi趋势跟踪低频版 · 100U"
-                    ),
+                    "strategy_name": ("[合约][1H][CTA] ETH · Heikin Ashi趋势跟踪低频版 · 100U"),
                     "total_return_pct": "141.83713784801657",
                     "annual_return_pct": "142.4246",
                     "max_drawdown_pct": "14.5667",
@@ -623,9 +621,7 @@ def test_agent_acceptance_specific_symbol_report_uses_exact_ticker_tool(
                 ],
             ),
             ChatResponse(
-                content=(
-                    "DOGE 已查询，重点观察价格、涨跌幅和成交额。"
-                ),
+                content=("DOGE 已查询，重点观察价格、涨跌幅和成交额。"),
                 tool_calls=[],
             ),
         ],
@@ -758,8 +754,7 @@ def test_agent_trace_records_enforced_tool_policy(monkeypatch, tmp_path) -> None
     )
     assert approval_node.output_json["policy"]["scope"] == "read"
     assert (
-        approval_node.output_json.get("policy_outcome")
-        or approval_node.output_json.get("status")
+        approval_node.output_json.get("policy_outcome") or approval_node.output_json.get("status")
     ) == "allowed"
 
 
@@ -882,9 +877,7 @@ def test_agent_acceptance_trend_and_relative_strength_reports_are_structured(
                 ],
             ),
             ChatResponse(
-                content=(
-                    "ETH 短线偏强，和 SOL 对比时需要继续观察成交量确认。"
-                ),
+                content=("ETH 短线偏强，和 SOL 对比时需要继续观察成交量确认。"),
                 tool_calls=[],
             ),
         ],
@@ -950,9 +943,7 @@ def test_agent_acceptance_rag_memory_run_is_auditable(monkeypatch, tmp_path) -> 
                 ],
             ),
             ChatResponse(
-                content=(
-                    "已结合知识库和历史记忆输出风险上下文。"
-                ),
+                content=("已结合知识库和历史记忆输出风险上下文。"),
                 tool_calls=[],
             ),
         ],
@@ -1015,9 +1006,7 @@ def test_agent_acceptance_strategy_research_and_backtest_chain(
                 ],
             ),
             ChatResponse(
-                content=(
-                    "策略研究和样例回测已完成，结果只用于流程验收。"
-                ),
+                content=("策略研究和样例回测已完成，结果只用于流程验收。"),
                 tool_calls=[],
             ),
         ],
@@ -1179,9 +1168,7 @@ def test_agent_acceptance_bitpro_backtest_detail_reads_artifacts(
     assert "bitpro.backtest_get_result" in names
     assert "bitpro_backtest_get_result" in names
     bitpro_event = next(
-        event
-        for event in _business_events(run)
-        if event.tool_name == "bitpro_backtest_get_result"
+        event for event in _business_events(run) if event.tool_name == "bitpro_backtest_get_result"
     )
     assert bitpro_event.input_json["backtest_id"] == "196"
     assert bitpro_event.output_json["result"]["id"] == 196
@@ -1237,8 +1224,7 @@ def test_agent_acceptance_bitpro_paper_monitor_reports_alerts(
     assert "告警 warning/negative_pnl" in run.report_markdown
     assert "告警 warning/high_drawdown" in run.report_markdown
     assert (
-        "数据缺口: running strategy inventory does not include "
-        "per-strategy PnL/drawdown metrics"
+        "数据缺口: running strategy inventory does not include per-strategy PnL/drawdown metrics"
     ) in run.report_markdown
     assert "结论: 已读取 BitPro 模拟盘监控。" in run.report_markdown
     assert "运行策略覆盖: listed=" in run.report_markdown

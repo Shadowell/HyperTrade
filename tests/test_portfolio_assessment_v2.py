@@ -221,8 +221,7 @@ def test_bounded_aligned_correlation_and_shared_exposure_persist_only_summary() 
         "factors": ["TREND"],
     }
     assert any(
-        item["action"] == "request_risk_budget_review"
-        for item in assessment["recommendations"]
+        item["action"] == "request_risk_budget_review" for item in assessment["recommendations"]
     )
     assert pair["source_snapshot_ids"]
     for recommendation in assessment["recommendations"]:

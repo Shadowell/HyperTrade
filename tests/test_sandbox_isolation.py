@@ -125,8 +125,7 @@ async def test_command_output_is_bounded_and_hashed_from_full_stream() -> None:
     payload = request(
         files={
             "strategies/candidate.py": (
-                "def generate_signals(prices):\n"
-                "    return [0 for _ in prices]\n"
+                "def generate_signals(prices):\n    return [0 for _ in prices]\n"
             ),
             "tests/test_output.py": "def test_output():\n    print('x' * 100000)\n",
         },

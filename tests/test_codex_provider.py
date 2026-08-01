@@ -143,9 +143,7 @@ def test_codex_provider_posts_responses_payload_and_parses_tool_call() -> None:
                 )
                 + "\n\n"
                 "event: response.completed\n"
-                "data: "
-                + json.dumps(completed)
-                + "\n\n"
+                "data: " + json.dumps(completed) + "\n\n"
             ),
         )
 
@@ -256,7 +254,7 @@ def test_codex_provider_maps_tool_outputs_back_to_responses_input() -> None:
                     }
                 ],
             },
-            {"role": "tool", "tool_call_id": "call_market", "content": "{\"top_movers\": []}"},
+            {"role": "tool", "tool_call_id": "call_market", "content": '{"top_movers": []}'},
         ],
     )
 
@@ -269,7 +267,7 @@ def test_codex_provider_maps_tool_outputs_back_to_responses_input() -> None:
     assert {
         "type": "function_call_output",
         "call_id": "call_market",
-        "output": "{\"top_movers\": []}",
+        "output": '{"top_movers": []}',
     } in captured["payload"]["input"]
     assert response.content == "# 市场归纳\n\n已基于工具结果完成。"
     assert response.tool_calls == []

@@ -114,12 +114,15 @@ class ReplayMonitorAdapter:
 def test_monitor_service_persists_runs_and_alert_events_without_write_tools() -> None:
     db = Database("sqlite:///:memory:")
     db.create_all()
-    service = MonitorService(db, bitpro_adapter=ReplayMonitorAdapter(
-        equity="104",
-        pnl="4",
-        drawdown="1.5",
-        errors=0,
-    ))
+    service = MonitorService(
+        db,
+        bitpro_adapter=ReplayMonitorAdapter(
+            equity="104",
+            pnl="4",
+            drawdown="1.5",
+            errors=0,
+        ),
+    )
     monitor = service.upsert_monitor(
         monitor_id="mon_test_paper",
         name="BitPro paper strategy 105",
@@ -134,12 +137,15 @@ def test_monitor_service_persists_runs_and_alert_events_without_write_tools() ->
     )
 
     baseline = service.run_monitor(monitor["id"])
-    degraded = MonitorService(db, bitpro_adapter=ReplayMonitorAdapter(
-        equity="100",
-        pnl="1.5",
-        drawdown="4.2",
-        errors=2,
-    )).run_monitor(monitor["id"])
+    degraded = MonitorService(
+        db,
+        bitpro_adapter=ReplayMonitorAdapter(
+            equity="100",
+            pnl="1.5",
+            drawdown="4.2",
+            errors=2,
+        ),
+    ).run_monitor(monitor["id"])
 
     assert baseline["status"] == "completed"
     assert baseline["drift"]["mode"] == "baseline"
@@ -168,8 +174,7 @@ def test_monitor_service_persists_runs_and_alert_events_without_write_tools() ->
         "paper_equity_curve",
     ]
     assert not any(
-        name in {"paper_pause", "paper_resume", "paper_start", "paper_stop"}
-        for name in tool_names
+        name in {"paper_pause", "paper_resume", "paper_start", "paper_stop"} for name in tool_names
     )
 
     with db.session() as session:

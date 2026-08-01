@@ -157,9 +157,7 @@ def test_ledger_evidence_requires_validated_robustness_before_paper_queue() -> N
         )
 
     with pytest.raises(ValueError, match="requires a validated robustness run"):
-        PaperPromotionService(db).request(
-            evidence_id=evidence_id, reason="should remain blocked"
-        )
+        PaperPromotionService(db).request(evidence_id=evidence_id, reason="should remain blocked")
     with db.session() as session:
         run = session.query(RobustnessValidationRun).one()
         run.final_status = "validated"

@@ -19,9 +19,7 @@ def test_evolution_and_discovery_candidates_share_required_gates() -> None:
         decisions.append(decision)
         assert decision["status"] == "validated"
         assert decision["strategy_card_snapshot"]["validation_status"] == "passed"
-        assert decision["id"] in decision["strategy_card_snapshot"]["source_refs"][
-            "validation_ids"
-        ]
+        assert decision["id"] in decision["strategy_card_snapshot"]["source_refs"]["validation_ids"]
         assert not any(decision["mutation_boundary"].values())
         with db.session() as session:
             assert session.scalar(select(func.count(AgentToolCall.id))) == 0
@@ -99,9 +97,7 @@ def test_replay_is_deterministic_and_source_change_appends_version() -> None:
 
 def test_unified_validation_api_is_authenticated_and_read_only(tmp_path) -> None:
     db, refs = seeded_validation_candidate("evolution")
-    recorded = UnifiedStrategyValidationService(db).validate(
-        validation_request(refs), actor="test"
-    )
+    recorded = UnifiedStrategyValidationService(db).validate(validation_request(refs), actor="test")
     client = TestClient(
         create_app(
             settings=Settings(

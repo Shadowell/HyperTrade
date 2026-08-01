@@ -7,15 +7,18 @@ from typing import Any
 
 
 def canonical_hash(value: Any) -> str:
-    return "sha256:" + hashlib.sha256(
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            default=str,
-        ).encode()
-    ).hexdigest()
+    return (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode()
+        ).hexdigest()
+    )
 
 
 def return_series_payload() -> dict[str, Any]:

@@ -118,9 +118,7 @@ def test_planner_rejects_gaps_and_supports_optional_regime_windows() -> None:
         slippage_bps=Decimal("5"),
         policy=RobustnessPolicyV2(),
         max_new_backtests=5,
-        regime_windows={
-            "high_vol": [start + timedelta(hours=index) for index in range(40, 80)]
-        },
+        regime_windows={"high_vol": [start + timedelta(hours=index) for index in range(40, 80)]},
     )
     regime = next(item for item in plan.scenarios if item.kind == "regime_stress")
     assert regime.required is False
@@ -200,9 +198,7 @@ def test_validation_persistence_public_api_and_cli_projection() -> None:
     db = Database("sqlite:///:memory:")
     db.create_all()
     registration = ExperimentLedgerService(db).register(
-        ExperimentRegister(
-            manifest=manifest(), idempotency_key="robustness-ledger-key-001"
-        ),
+        ExperimentRegister(manifest=manifest(), idempotency_key="robustness-ledger-key-001"),
         actor="test",
     )
     execution_id = str(dict(registration["execution"])["id"])  # type: ignore[arg-type]
@@ -228,9 +224,7 @@ def test_validation_persistence_public_api_and_cli_projection() -> None:
             db=db,
         )
     )
-    assert client.get("/api/research/validations").json()["items"][0][
-        "final_status"
-    ] == "validated"
+    assert client.get("/api/research/validations").json()["items"][0]["final_status"] == "validated"
     assert client.get(f"/api/research/validations/{recorded['id']}").status_code == 200
 
     class ValidationClient:
@@ -245,7 +239,9 @@ def test_validation_persistence_public_api_and_cli_projection() -> None:
     cli = ValidationClient()
     handle_slash_command("/validations list", client=cli, output=output)  # type: ignore[arg-type]
     handle_slash_command(
-        f"/validations show {recorded['id']}", client=cli, output=output  # type: ignore[arg-type]
+        f"/validations show {recorded['id']}",
+        client=cli,
+        output=output,  # type: ignore[arg-type]
     )
     rendered = output.getvalue()
     assert "[validated]" in rendered

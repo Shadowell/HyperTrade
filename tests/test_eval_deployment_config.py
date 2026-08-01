@@ -13,7 +13,7 @@ def test_eval_compose_has_a_separate_runtime_boundary() -> None:
     assert "name: hypertrade-eval" in compose
     assert "/opt/hypertrade-eval/data/postgres" in compose
     assert '"127.0.0.1:${HYPERTRADE_EVAL_PORT:-4334}:3334"' in compose
-    assert "profiles: [\"background\"]" in compose
+    assert 'profiles: ["background"]' in compose
     assert "host.docker.internal" not in compose
     assert "/bitpro-data" not in compose
     assert "/opt/hypertrade/data/postgres" not in compose
@@ -21,9 +21,7 @@ def test_eval_compose_has_a_separate_runtime_boundary() -> None:
 
 def test_eval_compose_disables_production_write_paths_and_uses_a_secret() -> None:
     compose = (REPO_ROOT / "docker-compose.eval.yml").read_text(encoding="utf-8")
-    env_example = (REPO_ROOT / "deploy" / "hypertrade-eval.env.example").read_text(
-        encoding="utf-8"
-    )
+    env_example = (REPO_ROOT / "deploy" / "hypertrade-eval.env.example").read_text(encoding="utf-8")
 
     assert 'PAPER_ENABLED: "false"' in compose
     assert 'MONITOR_SCHEDULER_ENABLED: "false"' in compose

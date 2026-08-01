@@ -227,10 +227,7 @@ async def test_fixed_mandate_captures_immutable_30_60_90_windows_without_champio
     assert len(captured["cohorts"]) == 3
     assert {item["status"] for item in captured["cohorts"]} == {"needs_data"}
     assert captured["cohorts"][0]["members"][0]["paper_status"] == "paper_observing"
-    assert (
-        "paper_status_not_observing"
-        not in captured["cohorts"][0]["members"][0]["reasons"]
-    )
+    assert "paper_status_not_observing" not in captured["cohorts"][0]["members"][0]["reasons"]
     assert captured["fixed_denominator"] == 1
     assert captured["champion_authorized"] is False
     assert captured["live_authorized"] is False

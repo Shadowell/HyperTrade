@@ -146,9 +146,7 @@ def test_two_run_gate_requires_fixed_denominator_and_passing_quality(tmp_path: P
     assert result["fixed_case_count"] == 26
 
 
-def test_api_quality_projection_loads_only_aggregate_baseline(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_api_quality_projection_loads_only_aggregate_baseline(tmp_path: Path, monkeypatch) -> None:
     baseline = tmp_path / "baseline.json"
     baseline.write_text(
         json.dumps(

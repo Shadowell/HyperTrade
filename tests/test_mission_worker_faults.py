@@ -99,9 +99,12 @@ async def test_reopen_after_each_boundary_keeps_events_and_single_terminal(
 
     assert again == completed
     assert len(after) == len(before)
-    assert sum(
-        row.event_type in {"mission.transitioned", "mission_transitioned"}
-        and row.payload.get("to") == "completed"
-        for row in after
-    ) == 1
+    assert (
+        sum(
+            row.event_type in {"mission.transitioned", "mission_transitioned"}
+            and row.payload.get("to") == "completed"
+            for row in after
+        )
+        == 1
+    )
     assert mission_projection_hash(replayed) == mission_projection_hash(online)

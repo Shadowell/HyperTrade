@@ -2492,8 +2492,7 @@ def test_run_stream_preserves_final_report_when_market_symbol_is_not_found(
                     "id": "run_missing_market",
                     "status": "completed",
                     "report_markdown": (
-                        "## 结果\n\n"
-                        "未找到 MUUSDT-USDT-SWAP；请确认 OKX 标准合约代码。"
+                        "## 结果\n\n未找到 MUUSDT-USDT-SWAP；请确认 OKX 标准合约代码。"
                     ),
                     "trace_events": [
                         {

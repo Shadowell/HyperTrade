@@ -8,9 +8,7 @@ from regime_shadow_support import build_request, policy, seed_sources
 def test_eligibility_precedes_weights_and_keeps_fixed_denominator() -> None:
     db = Database("sqlite:///:memory:")
     db.create_all()
-    cohort_id, regime_id = seed_sources(
-        db, suffix="eligibility", capacities=("80000", "unknown")
-    )
+    cohort_id, regime_id = seed_sources(db, suffix="eligibility", capacities=("80000", "unknown"))
 
     target = RegimeShadowAllocatorServiceV2(db).build(
         build_request(cohort_id, regime_id), actor="test"
@@ -41,8 +39,7 @@ def test_entry_confirmation_dwell_and_risk_pause_are_explicit() -> None:
     )
     assert {item["status"] for item in confirming["eligibility"]} == {"observe"}
     assert all(
-        "entry_confirmation_pending" in item["reasons"]
-        for item in confirming["eligibility"]
+        "entry_confirmation_pending" in item["reasons"] for item in confirming["eligibility"]
     )
 
     with db.session() as session:
@@ -58,9 +55,7 @@ def test_entry_confirmation_dwell_and_risk_pause_are_explicit() -> None:
         ),
         actor="test",
     )
-    first = next(
-        item for item in paused["eligibility"] if item["card_id"].endswith("-a")
-    )
+    first = next(item for item in paused["eligibility"] if item["card_id"].endswith("-a"))
     assert first["status"] == "pause"
     assert "strategy_risk_state" in first["reasons"]
     assert first["cooldown_until"]

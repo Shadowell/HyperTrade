@@ -264,9 +264,9 @@ async def test_provider_semantic_intent_can_bind_a_user_verbatim_market_symbol()
 async def test_provider_cannot_invent_market_symbol_absent_from_objective() -> None:
     mission = await _mission("Show LAB price")
 
-    plan = await ProviderBackedResearchPlanner(
-        provider=_InventedMarketQuoteProvider()
-    ).plan(mission)
+    plan = await ProviderBackedResearchPlanner(provider=_InventedMarketQuoteProvider()).plan(
+        mission
+    )
 
     # The deterministic route remains a generic summary; provider ETH is
     # discarded because it is not a standalone symbol in the objective.
@@ -277,8 +277,8 @@ async def test_provider_cannot_invent_market_symbol_absent_from_objective() -> N
 async def test_provider_cannot_extract_a_partial_market_symbol_from_a_word() -> None:
     mission = await _mission("Show ETHEREUM price")
 
-    plan = await ProviderBackedResearchPlanner(
-        provider=_InventedMarketQuoteProvider()
-    ).plan(mission)
+    plan = await ProviderBackedResearchPlanner(provider=_InventedMarketQuoteProvider()).plan(
+        mission
+    )
 
     assert plan.steps[-1].arguments == {"limit": 10}

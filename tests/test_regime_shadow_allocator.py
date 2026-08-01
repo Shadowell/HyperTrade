@@ -37,9 +37,7 @@ def test_four_fixed_templates_are_bounded_and_never_authorize_execution() -> Non
     assert len(target["allocations"]) == 4
     assert all(item["status"] == "feasible" for item in target["allocations"])
     for allocation in target["allocations"]:
-        weights = [
-            Decimal(item["weight"]) for item in allocation["target_weights"]
-        ]
+        weights = [Decimal(item["weight"]) for item in allocation["target_weights"]]
         assert sum(weights) == Decimal("1.000000000000")
         assert max(weights) <= Decimal("0.70")
         assert allocation["execution_authorized"] is False
@@ -57,9 +55,7 @@ def test_four_fixed_templates_are_bounded_and_never_authorize_execution() -> Non
 def test_missing_correlation_and_infeasible_caps_fail_closed() -> None:
     db = Database("sqlite:///:memory:")
     db.create_all()
-    cohort_id, regime_id = seed_sources(
-        db, suffix="missing-correlation", correlation=None
-    )
+    cohort_id, regime_id = seed_sources(db, suffix="missing-correlation", correlation=None)
     service = RegimeShadowAllocatorServiceV2(db)
 
     missing = service.build(
@@ -67,21 +63,18 @@ def test_missing_correlation_and_infeasible_caps_fail_closed() -> None:
         actor="test",
     )
     assert missing["status"] == "infeasible"
-    assert any(
-        reason.startswith("correlation_missing:")
-        for reason in missing["unknowns"]
-    )
+    assert any(reason.startswith("correlation_missing:") for reason in missing["unknowns"])
 
     capped = service.build(
         build_request(
             cohort_id,
             regime_id,
             key="infeasible-cap-build",
-                allocation_policy=policy(
-                    min_members=3,
-                    max_members=3,
-                    max_strategy_weight=Decimal("0.40"),
-                ),
+            allocation_policy=policy(
+                min_members=3,
+                max_members=3,
+                max_strategy_weight=Decimal("0.40"),
+            ),
         ),
         actor="test",
     )
@@ -201,26 +194,21 @@ def test_authenticated_api_and_cli_render_read_only_target() -> None:
             db=db,
         )
     )
-    assert (
-        client.get("/api/portfolio/regime-shadow-targets-v2").status_code
-        == 401
-    )
+    assert client.get("/api/portfolio/regime-shadow-targets-v2").status_code == 401
     client.post(
         "/api/auth/login",
         json={"username": "admin", "password": "secret"},
     )
     response = client.post(
         "/api/portfolio/regime-shadow-targets-v2",
-        json=build_request(
-            cohort_id, regime_id, key="regime-shadow-api-build"
-        ).model_dump(mode="json"),
+        json=build_request(cohort_id, regime_id, key="regime-shadow-api-build").model_dump(
+            mode="json"
+        ),
     )
     assert response.status_code == 200
     target = response.json()
     assert target["execution_authorized"] is False
-    replay = client.get(
-        f"/api/portfolio/regime-shadow-targets-v2/{target['id']}/replay"
-    )
+    replay = client.get(f"/api/portfolio/regime-shadow-targets-v2/{target['id']}/replay")
     assert replay.json()["no_lookahead_verified"] is True
 
     class FakeClient:

@@ -274,9 +274,7 @@ def test_human_label_decision_is_idempotent_and_has_no_paper_side_effect(
         suffix="decision",
     )
     service = PaperCohortService(db)
-    cohort = service.build(
-        _build(window_id, "paper-cohort-build-decision"), actor="test", now=NOW
-    )
+    cohort = service.build(_build(window_id, "paper-cohort-build-decision"), actor="test", now=NOW)
     proposal = cohort["groups"][0]["label_proposals"][0]
     payload = PaperCohortLabelDecisionV1(
         proposal_id=proposal["proposal_id"],
@@ -310,12 +308,7 @@ def test_human_label_decision_is_idempotent_and_has_no_paper_side_effect(
 
 def test_cohort_module_cannot_import_execution_or_paper_adapters() -> None:
     source = (
-        Path(__file__).parents[1]
-        / "backend"
-        / "src"
-        / "hypertrade"
-        / "portfolio"
-        / "cohorts.py"
+        Path(__file__).parents[1] / "backend" / "src" / "hypertrade" / "portfolio" / "cohorts.py"
     ).read_text(encoding="utf-8")
 
     for forbidden in (

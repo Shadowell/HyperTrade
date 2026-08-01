@@ -109,21 +109,16 @@ def test_agent_chat_market_summary_creates_report_trace_and_memory(monkeypatch, 
 
     assert run.status == "completed"
     assert (
-        "BTC-USDT-SWAP" in run.report_markdown
-        or "当前无法获取实时 OKX 行情" in run.report_markdown
+        "BTC-USDT-SWAP" in run.report_markdown or "当前无法获取实时 OKX 行情" in run.report_markdown
     )
     if "当前无法获取实时 OKX 行情" in run.report_markdown:
         assert run.report_json["data_source"] == "unavailable"
     assert run.report_json["market_scope"] == "OKX SWAP"
     tool_names = [
-        event.tool_name
-        for event in run.trace_events
-        if not event.tool_name.startswith("graph.")
+        event.tool_name for event in run.trace_events if not event.tool_name.startswith("graph.")
     ]
     graph_names = [
-        event.tool_name
-        for event in run.trace_events
-        if event.tool_name.startswith("graph.")
+        event.tool_name for event in run.trace_events if event.tool_name.startswith("graph.")
     ]
     assert "graph.intent_classify" in graph_names
     assert "graph.final_report" in graph_names
@@ -152,9 +147,7 @@ def test_agent_without_provider_does_not_guess_business_tool_route(tmp_path):
     assert "市场热度总结" not in run.report_markdown
     assert run.report_json["status"] == "provider_unavailable"
     tool_names = [
-        event.tool_name
-        for event in run.trace_events
-        if not event.tool_name.startswith("graph.")
+        event.tool_name for event in run.trace_events if not event.tool_name.startswith("graph.")
     ]
     assert tool_names == []
 
@@ -252,9 +245,7 @@ def test_agent_routes_live_order_history_prompt_through_planner(monkeypatch, tmp
     assert "ord_latest ETH/USDT:USDT buy closed" in run.report_markdown
     assert "市场热度总结" not in run.report_markdown
     tool_names = [
-        event.tool_name
-        for event in run.trace_events
-        if not event.tool_name.startswith("graph.")
+        event.tool_name for event in run.trace_events if not event.tool_name.startswith("graph.")
     ]
     assert "bitpro.live_order_history" in tool_names
     assert "market.summary" not in tool_names
@@ -329,9 +320,7 @@ def test_agent_routes_live_strategy_performance_prompt_through_planner(monkeypat
     assert "收益率=4.56%" in run.report_markdown
     assert "市场热度总结" not in run.report_markdown
     tool_names = [
-        event.tool_name
-        for event in run.trace_events
-        if not event.tool_name.startswith("graph.")
+        event.tool_name for event in run.trace_events if not event.tool_name.startswith("graph.")
     ]
     assert "bitpro.live_strategy_performance" in tool_names
     assert "market.summary" not in tool_names

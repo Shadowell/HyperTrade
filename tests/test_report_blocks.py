@@ -98,11 +98,7 @@ def test_report_blocks_preserve_source_refs_and_missing_data() -> None:
         for block in serialized
     )
 
-    source_ids = {
-        source["source_id"]
-        for block in serialized
-        for source in block["source_refs"]
-    }
+    source_ids = {source["source_id"] for block in serialized for source in block["source_refs"]}
     assert {"mem_fast", "strategy:105"} <= source_ids
 
     missing = {item for block in serialized for item in block["missing"]}

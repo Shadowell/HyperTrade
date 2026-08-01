@@ -344,9 +344,12 @@ def test_strategy_library_filters_by_strategy_key() -> None:
     )
 
     assert StrategyLibraryService(db).search(strategy_key="missing")["items"] == []
-    assert StrategyLibraryService(db).search(strategy_key="momentum_breakout_v1")[
-        "items"
-    ][0]["strategy_key"] == "momentum_breakout_v1"
+    assert (
+        StrategyLibraryService(db).search(strategy_key="momentum_breakout_v1")["items"][0][
+            "strategy_key"
+        ]
+        == "momentum_breakout_v1"
+    )
 
 
 def test_strategy_iteration_plan_uses_prior_evidence_and_failure_constraints() -> None:
@@ -394,9 +397,7 @@ def test_strategy_iteration_plan_uses_prior_evidence_and_failure_constraints() -
     assert plan["variants"][0]["variant_id"] == "evidence_baseline"
     assert plan["variants"][0]["source_memory_id"] == winning_memory_id
     assert all(item["reason"] for item in plan["variants"])
-    assert any(
-        "require_non_negative_return" in item["reason"] for item in plan["variants"]
-    )
+    assert any("require_non_negative_return" in item["reason"] for item in plan["variants"])
 
 
 def test_strategy_iteration_plan_creates_first_baseline_without_prior_evidence() -> None:

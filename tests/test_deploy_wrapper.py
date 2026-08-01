@@ -14,8 +14,7 @@ def test_host_cli_wrapper_runs_one_off_remote_client_container(tmp_path: Path) -
     fake_bin.mkdir()
     fake_docker = fake_bin / "docker"
     fake_docker.write_text(
-        "#!/usr/bin/env bash\n"
-        "printf '%s\\n' \"$@\" > \"$HYPERTRADE_TEST_DOCKER_ARGV\"\n",
+        '#!/usr/bin/env bash\nprintf \'%s\\n\' "$@" > "$HYPERTRADE_TEST_DOCKER_ARGV"\n',
         encoding="utf-8",
     )
     fake_docker.chmod(0o755)
@@ -53,8 +52,7 @@ def test_host_cli_wrapper_uses_optional_tui_image(tmp_path: Path) -> None:
     fake_bin.mkdir()
     fake_docker = fake_bin / "docker"
     fake_docker.write_text(
-        "#!/usr/bin/env bash\n"
-        "printf '%s\\n' \"$@\" > \"$HYPERTRADE_TEST_DOCKER_ARGV\"\n",
+        '#!/usr/bin/env bash\nprintf \'%s\\n\' "$@" > "$HYPERTRADE_TEST_DOCKER_ARGV"\n',
         encoding="utf-8",
     )
     fake_docker.chmod(0o755)

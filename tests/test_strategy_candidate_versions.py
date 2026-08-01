@@ -118,8 +118,7 @@ def test_api_and_cli_expose_read_only_candidate_queue() -> None:
     )
     assert client.get("/api/research/evolution-runs").status_code == 401
     assert (
-        client.post("/api/auth/login", json={"username": "admin", "password": "secret"})
-        .status_code
+        client.post("/api/auth/login", json={"username": "admin", "password": "secret"}).status_code
         == 200
     )
     listed = client.get("/api/research/evolution-runs").json()["items"]

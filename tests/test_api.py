@@ -199,9 +199,7 @@ def test_api_exposes_health_harness_and_agent_run(monkeypatch, tmp_path):
         "live_order_history_source",
         "live_strategy_performance_source",
     }
-    assert expected_eval_cases == {
-        case["name"] for case in evals["cases"]
-    }
+    assert expected_eval_cases == {case["name"] for case in evals["cases"]}
 
     pause = client.post("/api/paper/control", json={"action": "pause"}).json()
     assert pause["session"]["status"] == "paused"
@@ -337,10 +335,13 @@ def test_public_workbench_can_read_observability_without_login(tmp_path):
 
     assert client.get("/api/memory").status_code == 200
     assert client.get("/api/rag/search?query=risk").status_code == 200
-    assert client.post(
-        "/api/harness/provider-selection",
-        json={"provider": "deepseek"},
-    ).status_code == 401
+    assert (
+        client.post(
+            "/api/harness/provider-selection",
+            json={"provider": "deepseek"},
+        ).status_code
+        == 401
+    )
     assert client.post("/api/paper/control", json={"action": "pause"}).status_code == 401
 
 
@@ -360,10 +361,13 @@ def test_api_streams_agent_run_events(monkeypatch, tmp_path):
         db=db,
     )
     client = TestClient(app)
-    assert client.post(
-        "/api/auth/login",
-        json={"username": "admin", "password": "secret"},
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "secret"},
+        ).status_code
+        == 200
+    )
 
     with client.stream(
         "POST",
@@ -398,10 +402,13 @@ def test_api_can_cancel_running_agent_run(tmp_path):
         db=db,
     )
     client = TestClient(app)
-    assert client.post(
-        "/api/auth/login",
-        json={"username": "admin", "password": "secret"},
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "secret"},
+        ).status_code
+        == 200
+    )
 
     canceled = client.post(f"/api/agent/runs/{run_id}/cancel")
 
@@ -434,10 +441,13 @@ def test_api_can_switch_active_provider_without_exposing_keys(tmp_path):
         db=db,
     )
     client = TestClient(app)
-    assert client.post(
-        "/api/auth/login",
-        json={"username": "admin", "password": "secret"},
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "secret"},
+        ).status_code
+        == 200
+    )
 
     switched = client.post(
         "/api/harness/provider-selection",
@@ -475,10 +485,13 @@ def test_api_can_select_codex_provider_model_without_exposing_keys(tmp_path):
         db=db,
     )
     client = TestClient(app)
-    assert client.post(
-        "/api/auth/login",
-        json={"username": "admin", "password": "secret"},
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "secret"},
+        ).status_code
+        == 200
+    )
 
     switched = client.post(
         "/api/harness/provider-selection",
@@ -528,10 +541,13 @@ def test_api_exposes_deterministic_market_shortcuts(monkeypatch, tmp_path):
         db=db,
     )
     client = TestClient(app)
-    assert client.post(
-        "/api/auth/login",
-        json={"username": "admin", "password": "secret"},
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "secret"},
+        ).status_code
+        == 200
+    )
 
     monkeypatch.setattr(
         AgentKernel,
@@ -594,10 +610,13 @@ def test_api_exposes_bitpro_mcp_read_adapter(tmp_path):
         bitpro_adapter=ApiFakeBitProAdapter(),
     )
     client = TestClient(app)
-    assert client.post(
-        "/api/auth/login",
-        json={"username": "admin", "password": "secret"},
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "secret"},
+        ).status_code
+        == 200
+    )
 
     overview = client.get("/api/harness/overview").json()
     assert overview["bitpro"]["adapter"] == "mcp_non_live_lifecycle"
@@ -648,10 +667,13 @@ def test_api_returns_structured_bitpro_gateway_errors(tmp_path):
         bitpro_adapter=FailingBitProAdapter(),
     )
     client = TestClient(app)
-    assert client.post(
-        "/api/auth/login",
-        json={"username": "admin", "password": "secret"},
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "secret"},
+        ).status_code
+        == 200
+    )
 
     response = client.get("/api/bitpro/health")
 
@@ -802,9 +824,10 @@ def test_api_lists_and_requests_paper_promotion_without_starting_paper(tmp_path)
     client = TestClient(app)
 
     assert client.get("/api/research/paper-promotions").status_code == 401
-    assert client.post(
-        "/api/auth/login", json={"username": "admin", "password": "secret"}
-    ).status_code == 200
+    assert (
+        client.post("/api/auth/login", json={"username": "admin", "password": "secret"}).status_code
+        == 200
+    )
     requested = client.post(
         "/api/research/paper-promotions",
         json={"evidence_id": evidence_id, "reason": "operator requests paper evidence"},

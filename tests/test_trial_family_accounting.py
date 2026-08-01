@@ -19,9 +19,7 @@ def test_failed_trials_remain_counted_and_cannot_be_deleted() -> None:
 
 def test_all_attempts_including_failures_can_validate() -> None:
     db, refs = seeded_validation_candidate("evolution")
-    result = UnifiedStrategyValidationService(db).validate(
-        validation_request(refs), actor="test"
-    )
+    result = UnifiedStrategyValidationService(db).validate(validation_request(refs), actor="test")
 
     assert result["status"] == "validated"
     assert result["gates"]["trial_accounting"]["outcome"] == "passed"

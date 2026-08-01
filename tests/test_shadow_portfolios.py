@@ -148,9 +148,7 @@ def test_complete_evidence_builds_three_bounded_hypothetical_templates() -> None
     db.create_all()
     cohort_id = _cohort(db)
 
-    proposal = ShadowPortfolioService(db).build(
-        _build(cohort_id), actor="test", now=NOW
-    )
+    proposal = ShadowPortfolioService(db).build(_build(cohort_id), actor="test", now=NOW)
 
     assert proposal["status"] == "ready_for_review"
     assert proposal["intake_count"] == proposal["eligible_count"] == 2
@@ -220,9 +218,7 @@ def test_fixed_denominator_and_infeasible_cap_fail_closed() -> None:
     )
     service = ShadowPortfolioService(db)
 
-    excluded = service.build(
-        _build(cohort_id, "shadow-build-denominator"), actor="test", now=NOW
-    )
+    excluded = service.build(_build(cohort_id, "shadow-build-denominator"), actor="test", now=NOW)
     assert excluded["intake_count"] == 2
     assert excluded["eligible_count"] == 1
     assert excluded["scenario_count"] == 0
@@ -267,12 +263,8 @@ def test_build_is_idempotent_and_source_changes_append_version() -> None:
     db.create_all()
     cohort_id = _cohort(db, suffix="version")
     service = ShadowPortfolioService(db)
-    first = service.build(
-        _build(cohort_id, "shadow-build-version-one"), actor="test", now=NOW
-    )
-    replay = service.build(
-        _build(cohort_id, "shadow-build-version-one"), actor="test", now=NOW
-    )
+    first = service.build(_build(cohort_id, "shadow-build-version-one"), actor="test", now=NOW)
+    replay = service.build(_build(cohort_id, "shadow-build-version-one"), actor="test", now=NOW)
     duplicate = service.build(
         _build(cohort_id, "shadow-build-version-duplicate"), actor="test", now=NOW
     )
@@ -302,9 +294,7 @@ def test_review_is_expiring_idempotent_audit_without_trading_side_effects() -> N
     db.create_all()
     cohort_id = _cohort(db, suffix="review")
     service = ShadowPortfolioService(db)
-    proposal = service.build(
-        _build(cohort_id, "shadow-build-review"), actor="test", now=NOW
-    )
+    proposal = service.build(_build(cohort_id, "shadow-build-review"), actor="test", now=NOW)
     scenario_id = proposal["scenarios"][0]["scenario_id"]
     payload = ShadowPortfolioReviewV1(
         scenario_id=scenario_id,
@@ -378,9 +368,7 @@ def test_shadow_api_requires_admin_and_cli_renders_governance_boundary() -> None
             return [proposal]
 
     output = io.StringIO()
-    handle_shadow_portfolio_command(
-        "/shadow list", client=cast(Any, Client()), output=output
-    )
+    handle_shadow_portfolio_command("/shadow list", client=cast(Any, Client()), output=output)
     rendered = output.getvalue()
     assert "hypothetical only" in rendered
     assert "execution=false" in rendered
@@ -388,12 +376,7 @@ def test_shadow_api_requires_admin_and_cli_renders_governance_boundary() -> None
 
 def test_shadow_module_has_no_data_or_execution_adapter_imports() -> None:
     source = (
-        Path(__file__).parents[1]
-        / "backend"
-        / "src"
-        / "hypertrade"
-        / "portfolio"
-        / "shadow.py"
+        Path(__file__).parents[1] / "backend" / "src" / "hypertrade" / "portfolio" / "shadow.py"
     ).read_text(encoding="utf-8")
     for forbidden in (
         "from hypertrade.bitpro",

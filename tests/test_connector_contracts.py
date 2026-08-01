@@ -15,9 +15,7 @@ def test_strategy_evidence_tools_are_additive_safe_reads() -> None:
         "strategy_execution_quality": "/strategy-evidence/execution-quality",
     }
     assert all(name in capabilities["tool_groups"]["read"] for name in expected)
-    assert {
-        name: capabilities["tool_endpoints"][name]["path"] for name in expected
-    } == expected
+    assert {name: capabilities["tool_endpoints"][name]["path"] for name in expected} == expected
 
 
 def test_connector_dispatches_bounded_return_series_as_read_only() -> None:

@@ -68,9 +68,9 @@ def test_fingerprint_is_idempotent_and_code_failure_is_preserved() -> None:
             "template_version": "discovery-template-v2",
         },
     )
-    failed = StrategyDiscoveryService(
-        bad_db, adapter=FakeDiscoveryAdapter()
-    ).discover(bad, actor="test", now=NOW)
+    failed = StrategyDiscoveryService(bad_db, adapter=FakeDiscoveryAdapter()).discover(
+        bad, actor="test", now=NOW
+    )
     assert failed["candidates"][0]["status"] == "sandbox_failed"
     assert "filesystem_access" in failed["candidates"][0]["rejection_reasons"]
 
@@ -92,12 +92,7 @@ def test_budget_and_prompt_injection_cannot_dispatch_trading_tools() -> None:
         assert session.scalar(select(func.count(AgentToolCall.id))) == 0
 
     source = (
-        Path(__file__).parents[1]
-        / "backend"
-        / "src"
-        / "hypertrade"
-        / "research"
-        / "discovery.py"
+        Path(__file__).parents[1] / "backend" / "src" / "hypertrade" / "research" / "discovery.py"
     ).read_text(encoding="utf-8")
     assert "paper_start" not in source
     assert "live_order" not in source
@@ -119,9 +114,10 @@ def test_discovery_queue_api_is_authenticated_and_read_only(tmp_path) -> None:
     )
 
     assert client.get("/api/research/discovery-runs").status_code == 401
-    assert client.post(
-        "/api/auth/login", json={"username": "admin", "password": "secret"}
-    ).status_code == 200
+    assert (
+        client.post("/api/auth/login", json={"username": "admin", "password": "secret"}).status_code
+        == 200
+    )
     response = client.get("/api/research/discovery-runs")
     assert response.status_code == 200
     assert response.json() == {"items": []}

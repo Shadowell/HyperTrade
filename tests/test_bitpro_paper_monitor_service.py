@@ -148,9 +148,11 @@ def test_bitpro_paper_monitor_snapshot_persists_baseline_and_drift() -> None:
     ]
 
     with db.session() as session:
-        rows = session.query(BitProPaperMonitorSnapshot).order_by(
-            BitProPaperMonitorSnapshot.created_at
-        ).all()
+        rows = (
+            session.query(BitProPaperMonitorSnapshot)
+            .order_by(BitProPaperMonitorSnapshot.created_at)
+            .all()
+        )
 
     assert [row.id for row in rows] == [first["snapshot_id"], second["snapshot_id"]]
     assert rows[1].previous_snapshot_id == rows[0].id

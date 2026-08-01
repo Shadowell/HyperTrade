@@ -71,18 +71,14 @@ class FakeWorkbenchClient:
             }
         return self.list_agent_tasks()[0]
 
-    def list_agent_task_events(
-        self, task_id: str, *, after: int = 0
-    ) -> list[dict[str, Any]]:
+    def list_agent_task_events(self, task_id: str, *, after: int = 0) -> list[dict[str, Any]]:
         events = [
             {"sequence": 1, "event": "task_created", "actor": "operator"},
             {"sequence": 2, "event": "task_status_changed", "actor": "worker"},
         ]
         return [event for event in events if int(event["sequence"]) > after]
 
-    def stream_agent_task_events(
-        self, task_id: str, *, after: int = 0
-    ) -> Iterator[dict[str, Any]]:
+    def stream_agent_task_events(self, task_id: str, *, after: int = 0) -> Iterator[dict[str, Any]]:
         return iter(())
 
     def get_research_graph(self, task_id: str) -> dict[str, Any]:
@@ -137,9 +133,7 @@ class FakeWorkbenchClient:
         self.trigger_controls.append((trigger_id, "enable" if enabled else "disable", reason))
         return {"id": trigger_id, "enabled": enabled}
 
-    def set_research_trigger_control(
-        self, *, kill_switch: bool, reason: str
-    ) -> dict[str, Any]:
+    def set_research_trigger_control(self, *, kill_switch: bool, reason: str) -> dict[str, Any]:
         self.trigger_controls.append(("global", "kill_on" if kill_switch else "kill_off", reason))
         return {"kill_switch": kill_switch}
 
@@ -290,14 +284,10 @@ class FakeWorkbenchClient:
         decision: str,
         reason: str,
     ) -> dict[str, Any]:
-        self.portfolio_reviews.append(
-            (assessment_id, recommendation_id, decision, reason)
-        )
+        self.portfolio_reviews.append((assessment_id, recommendation_id, decision, reason))
         return {"id": "slrev_1", "decision": decision}
 
-    def control_agent_task(
-        self, task_id: str, action: str, *, reason: str
-    ) -> dict[str, Any]:
+    def control_agent_task(self, task_id: str, action: str, *, reason: str) -> dict[str, Any]:
         self.controls.append((task_id, action, reason))
         return {**self.get_agent_task(task_id), "status": "pause_requested"}
 
@@ -416,10 +406,6 @@ async def test_tui_portfolio_tab_records_human_review_only() -> None:
         await pilot.click("#control-submit")
         await pilot.pause()
 
-    assert client.portfolio_reviews == [
-        ("pasmt_1", "plrec_001", "hold", "need aligned returns")
-    ]
+    assert client.portfolio_reviews == [("pasmt_1", "plrec_001", "hold", "need aligned returns")]
     assert client.shadow_builds == 1
-    assert client.shadow_reviews == [
-        ("shpf_1", "shsc_1", "hold", "hypothetical review only")
-    ]
+    assert client.shadow_reviews == [("shpf_1", "shsc_1", "hold", "hypothetical review only")]

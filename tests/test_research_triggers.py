@@ -29,9 +29,9 @@ from hypertrade.research.triggers import (
 from sqlalchemy import func, select
 
 
-def _service(*, enabled: bool = True, global_quota: int = 20) -> tuple[
-    Database, ResearchTriggerService, str
-]:
+def _service(
+    *, enabled: bool = True, global_quota: int = 20
+) -> tuple[Database, ResearchTriggerService, str]:
     db = Database("sqlite:///:memory:")
     db.create_all()
     mandate = ResearchProgramService(db).create_mandate(
@@ -83,9 +83,7 @@ def test_trigger_is_fail_closed_bounded_and_deduplicated() -> None:
     assert skipped["reason"] == "feature_disabled"
     assert AgentTaskService(db).list_tasks(limit=10) == []
 
-    enabled_service = ResearchTriggerService(
-        db, settings=Settings(RESEARCH_TRIGGERS_ENABLED=True)
-    )
+    enabled_service = ResearchTriggerService(db, settings=Settings(RESEARCH_TRIGGERS_ENABLED=True))
     second_event = TriggerEvent(source_type="data_quality", source_id="monitor-run-2")
     created = enabled_service.fire(str(trigger["id"]), second_event, actor="test")
     duplicate = enabled_service.fire(str(trigger["id"]), second_event, actor="test")
@@ -123,9 +121,7 @@ def test_condition_kill_switch_cooldown_and_quota_block_before_task_creation() -
     )
     assert mismatch["reason"] == "condition_not_matched"
 
-    service.set_control(
-        TriggerControlUpdate(kill_switch=True, reason="incident"), actor="operator"
-    )
+    service.set_control(TriggerControlUpdate(kill_switch=True, reason="incident"), actor="operator")
     killed = service.fire(
         trigger_id,
         TriggerEvent(
@@ -289,9 +285,7 @@ def test_trigger_storm_and_concurrent_workers_create_one_task(tmp_path) -> None:
         concurrent = list(pool.map(fire, range(2)))
     storm = [fire(index) for index in range(100)]
 
-    assert {str(item["id"]) for item in concurrent + storm} == {
-        str(concurrent[0]["id"])
-    }
+    assert {str(item["id"]) for item in concurrent + storm} == {str(concurrent[0]["id"])}
     assert any(item.get("deduplicated") is True for item in concurrent)
     assert len(AgentTaskService(db).list_tasks(limit=200)) == 1
     assert len(service.list_fires(trigger_id=trigger_id)) == 1
@@ -330,9 +324,10 @@ def test_trigger_api_requires_admin_and_exposes_control_history() -> None:
     client = TestClient(app)
 
     assert client.get("/api/research/triggers").status_code == 401
-    assert client.post(
-        "/api/auth/login", json={"username": "admin", "password": "secret"}
-    ).status_code == 200
+    assert (
+        client.post("/api/auth/login", json={"username": "admin", "password": "secret"}).status_code
+        == 200
+    )
     listed = client.get("/api/research/triggers").json()
     assert listed["feature_enabled"] is True
     assert listed["items"][0]["id"] == trigger["id"]

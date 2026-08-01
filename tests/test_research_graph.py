@@ -80,9 +80,7 @@ def test_fixed_graph_completes_with_explicit_optional_and_provider_gaps(tmp_path
 
     assert result["task"]["status"] == "completed"
     latest_by_role = {row["role_key"]: row for row in result["nodes"]}
-    assert set(latest_by_role) == {
-        result["topology"]["roles"][index]["key"] for index in range(13)
-    }
+    assert set(latest_by_role) == {result["topology"]["roles"][index]["key"] for index in range(13)}
     assert all(row["status"] == "completed" for row in latest_by_role.values())
     assert {row["evidence_type"] for row in result["evidence"]} == {"data_gap"}
     optional_roles = {
@@ -213,8 +211,7 @@ def test_provider_timeout_enters_retry_wait_with_checkpoint_and_gap(tmp_path) ->
     assert projection["task"]["status"] == "retry_wait"
     assert projection["task"]["error"]["code"] == "role_timeout"
     assert any(
-        row["claim"] == "Research graph stopped: role_timeout"
-        for row in projection["evidence"]
+        row["claim"] == "Research graph stopped: role_timeout" for row in projection["evidence"]
     )
 
 
@@ -277,9 +274,7 @@ def test_role_budget_failure_does_not_persist_partial_role_evidence(tmp_path) ->
 
     projection = runtime.projection(task_id)
     assert projection["task"]["status"] == "failed"
-    assert {row["role_key"] for row in projection["evidence"]} == {
-        "research_graph_runtime"
-    }
+    assert {row["role_key"] for row in projection["evidence"]} == {"research_graph_runtime"}
 
 
 class SemanticInvalidProvider(DeterministicGapRoleProvider):
@@ -482,6 +477,4 @@ def test_research_graph_api_requires_admin_mutation_and_has_public_projection(tm
     public = client.get(f"/api/research/graphs/{task_id}")
     assert public.status_code == 200
     assert len(public.json()["nodes"]) == 13
-    assert [item["id"] for item in client.get("/api/research/graphs").json()["items"]] == [
-        task_id
-    ]
+    assert [item["id"] for item in client.get("/api/research/graphs").json()["items"]] == [task_id]

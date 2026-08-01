@@ -10,9 +10,7 @@ def test_oos_access_before_candidate_freeze_invalidates_family() -> None:
     result = UnifiedStrategyValidationService(db).validate(
         validation_request(
             refs,
-            family_changes={
-                "locked_oos_first_accessed_at": frozen - timedelta(seconds=1)
-            },
+            family_changes={"locked_oos_first_accessed_at": frozen - timedelta(seconds=1)},
         ),
         actor="test",
     )

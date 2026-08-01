@@ -72,7 +72,8 @@ def test_concurrent_registration_creates_one_physical_execution(tmp_path) -> Non
         results = list(pool.map(submit, range(2)))
 
     execution_ids = {
-        str(dict(item["execution"])["id"]) for item in results  # type: ignore[arg-type]
+        str(dict(item["execution"])["id"])
+        for item in results  # type: ignore[arg-type]
     }
     assert len(execution_ids) == 1
     assert len(ExperimentLedgerService(db).executions(experiment_fingerprint(manifest()))) == 1
@@ -170,9 +171,7 @@ def test_diff_explains_semantic_category() -> None:
         actor="test",
     )
     second = service.register(
-        ExperimentRegister(
-            manifest=manifest(fee="11"), idempotency_key="experiment-key-0002"
-        ),
+        ExperimentRegister(manifest=manifest(fee="11"), idempotency_key="experiment-key-0002"),
         actor="test",
     )
 
@@ -202,17 +201,21 @@ def test_experiment_api_requires_admin_to_register_but_reads_publicly() -> None:
     ).model_dump(mode="json")
 
     assert client.post("/api/research/experiments", json=payload).status_code == 401
-    assert client.post(
-        "/api/auth/login", json={"username": "admin", "password": "secret"}
-    ).status_code == 200
+    assert (
+        client.post("/api/auth/login", json={"username": "admin", "password": "secret"}).status_code
+        == 200
+    )
     created = client.post("/api/research/experiments", json=payload)
     fingerprint = created.json()["manifest"]["fingerprint"]
 
     assert created.status_code == 200
     assert client.get(f"/api/research/experiments/{fingerprint}").status_code == 200
-    assert client.get(
-        f"/api/research/experiments/{fingerprint}/executions"
-    ).json()["items"][0]["status"] == "queued"
+    assert (
+        client.get(f"/api/research/experiments/{fingerprint}/executions").json()["items"][0][
+            "status"
+        ]
+        == "queued"
+    )
 
 
 def test_cli_projects_manifest_execution_and_categorized_diff() -> None:
