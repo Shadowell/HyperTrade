@@ -1,8 +1,17 @@
 # User-Directed Contract — ARC (Autonomous Research Core)
 
-> 状态：Active。
+> 状态：Closed。
+> 关闭日期：2026-08-01。
+> 关闭依据：ARC Sprint 132–135 全部交付并验收，QA 见 `docs/qa/arc-autonomous-research-core.md`；
+> `./scripts/check.sh` 全绿（frontend lint/test/build、Ruff、严格 mypy、871 pytest）。
 > 激活原因：产品所有者明确要求实现通用 ARC (Autonomous Research Core) 自主进化控制内核，具备自主探索、代码突变演进、因果反思与红蓝对抗能力，并在达标后自动上线模拟盘运行。
 > 优先级：最高。主线全速推进，主网实盘交易保持禁用。
+
+> 编号说明：本合同的 Sprint 132–135 是 **ARC 内部**开发阶段，与
+> `docs/contracts/sprint-132-live-trading-mandate-risk-engine.md`、
+> `sprint-133-live-canary-execution-reconciliation.md`、
+> `sprint-134-authorized-autonomous-portfolio-pilot.md`（北星实盘 Gates 4–5）编号重叠但**相互独立**。
+> 北星实盘合同仍处于 `Awaiting explicit owner approval`，未因本合同关闭而激活。
 
 ## Goal
 

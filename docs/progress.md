@@ -1,5 +1,22 @@
 # Progress Log
 
+## ARC 合同收口与 Sprint 125 Outcome 日历过期回归修复 — 2026-08-01
+
+- 正式关闭 [ARC 合同](docs/contracts/arc-autonomous-research-core.md)：ARC Sprint 132–135
+  四个内部阶段全部交付并验收，QA 报告见 `docs/qa/arc-autonomous-research-core.md`。
+- 验收证据：ARC 黄金测试 11 passed、ARC SOTA 演进测试 20 passed；完整
+  `./scripts/check.sh` 通过（frontend lint/test/build、Ruff、严格 mypy、871 Python pytest）。
+- API 已接入主应用：`POST /api/v1/arc/missions` 与
+  `GET /api/v1/arc/missions/{mission_id}`（`main.py:581`）；`ARCGoalV1.live_allowed`
+  保持 `Literal[False]`，`CanaryVaultPipeline` 仅为确定性风险策略对象，无实盘写路径。
+- 全量检查发现并修复 Sprint 125 回归：`tests/outcome_fixtures.py` 硬编码
+  `valid_until=datetime(2026, 8, 1)`，恰在 2026-08-01 触发 `valid_until <= now` 过期判定，
+  导致 9 个 outcome/lesson 测试失败；已改为 `datetime.now(UTC) + timedelta(days=30)`
+  相对有效期（同 Sprint 129 shadow fixture 处理）。修复后全量 871 passed。
+- 澄清编号冲突：ARC 合同内部 Sprint 132–135 与北星实盘合同 `sprint-132/133/134`
+  （LiveTradingMandate/Risk Engine、Live Canary、自主组合 Pilot）编号重叠但相互独立；
+  北星实盘仍处于 `Awaiting explicit owner approval`，未激活。
+
 ## Industrial Harness 3.0 缓存前缀对齐与 Agent 黑盒飞行记录仪全量落地 — 2026-07-31
 
 - 针对 Agent 高性能执行与黑盒可观测性，落地 Harness 3.0 核心体系：
