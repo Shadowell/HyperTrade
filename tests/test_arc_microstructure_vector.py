@@ -3,9 +3,14 @@ Unit & Integration Tests for Microstructure Alpha Factors & Vectorized MCTS Scre
 """
 
 from hypertrade.arc.microstructure import (
+    compute_amihud_illiquidity_ratio,
     compute_funding_rate_arbitrage_pressure,
+    compute_kyle_lambda_market_impact,
     compute_liquidation_cascade_density,
+    compute_microprice_imbalance,
     compute_order_flow_imbalance,
+    compute_roll_implicit_spread,
+    compute_trade_flow_toxicity_vpin,
     compute_volume_order_imbalance,
 )
 from hypertrade.arc.vector_screening import VectorizedMCTSScreeningEngine
@@ -48,8 +53,57 @@ def test_liquidation_cascade_density() -> None:
     assert res["recommended_position_multiplier"] == 0.5
 
 
-def test_vectorized_mcts_two_stage_screening() -> None:
-    engine = VectorizedMCTSScreeningEngine(min_fast_sharpe=0.5, max_fast_drawdown=0.5)
+def test_kyle_lambda_market_impact() -> None:
+    price_changes = [0.5, -0.2, 0.8, -0.1, 0.4]
+    signed_volumes = [100.0, -50.0, 150.0, -20.0, 80.0]
+    kyle_lambda = compute_kyle_lambda_market_impact(price_changes, signed_volumes)
+    assert isinstance(kyle_lambda, float)
+    assert kyle_lambda > 0.0
+
+
+def test_amihud_illiquidity_ratio() -> None:
+    returns = [0.01, 0.02, 0.015]
+    dollar_volumes = [100000.0, 50000.0, 80000.0]
+    illiq = compute_amihud_illiquidity_ratio(returns, dollar_volumes)
+    assert isinstance(illiq, float)
+    assert illiq > 0.0
+
+
+def test_roll_implicit_spread() -> None:
+    # Alternating price changes produce negative covariance -> positive Roll spread
+    price_changes = [1.0, -1.0, 1.0, -1.0, 1.0]
+    spread = compute_roll_implicit_spread(price_changes)
+    assert isinstance(spread, float)
+    assert spread > 0.0
+
+
+def test_microprice_imbalance() -> None:
+    # Heavier bid volume should push microprice closer to ask price
+    microprice = compute_microprice_imbalance(
+        bid_price=100.0,
+        bid_volume=100.0,
+        ask_price=102.0,
+        ask_volume=10.0,
+    )
+    assert microprice > 101.0  # Midprice is 101.0, microprice > 101.0
+
+
+def test_trade_flow_toxicity_vpin() -> None:
+    res = compute_trade_flow_toxicity_vpin(
+        buy_volumes=[900.0, 950.0],
+        sell_volumes=[100.0, 50.0],
+    )
+    assert res["is_toxic"] is True
+    assert res["vpin"] >= 0.65
+    assert res["alert_level"] in ["high", "critical"]
+
+
+def test_vectorized_mcts_multi_metric_screening() -> None:
+    engine = VectorizedMCTSScreeningEngine(
+        min_fast_sharpe=0.5,
+        max_fast_drawdown=0.5,
+        min_fast_sortino=0.5,
+    )
 
     close_prices = [100.0 + i * 0.5 for i in range(50)]
     candidate_signals = [
@@ -62,6 +116,11 @@ def test_vectorized_mcts_two_stage_screening() -> None:
     assert len(survivors) >= 1
     assert survivors[0]["candidate_index"] == 0
     assert survivors[0]["fast_sharpe"] > 0.0
+    assert "fast_sortino" in survivors[0]
+    assert "fast_calmar" in survivors[0]
+    assert "fast_cvar" in survivors[0]
+    assert "fast_profit_factor" in survivors[0]
+    assert "composite_score" in survivors[0]
 
     def mock_backtrader_eval(idx: int, sigs: list[int]) -> dict[str, float]:
         return {"sharpe": 1.8 if idx == 0 else 0.2, "drawdown": 0.05}
