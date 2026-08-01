@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from hypertrade.db import (
@@ -121,7 +121,7 @@ def seeded_db() -> tuple[Database, dict[str, str]]:
             claim="Backtest passed declared robustness gates.",
             confidence=Decimal("0.8"),
             as_of=WINDOW_END,
-            valid_until=datetime(2026, 8, 1, tzinfo=UTC),
+            valid_until=datetime.now(UTC) + timedelta(days=30),
             content_hash="1" * 64,
             created_by="test",
         )
