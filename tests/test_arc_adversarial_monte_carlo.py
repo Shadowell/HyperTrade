@@ -7,7 +7,11 @@ from hypertrade.arc.adversarial import (
     RedTeamQuant,
 )
 from hypertrade.arc.contracts import ARCCandidateAttemptV1
-from hypertrade.arc.findings import MAX_ADMISSIBLE_DRAWDOWN, ARCReasonCode
+from hypertrade.arc.findings import (
+    MAX_ADMISSIBLE_DRAWDOWN,
+    ARCReasonCode,
+    FindingSeverity,
+)
 
 
 def test_monte_carlo_param_perturbation_attack():
@@ -74,7 +78,7 @@ class Strategy_CL_USDT_SWAP:
 
     passed, metrics, findings = red_team.evaluate_adversarial_attack(attempt)
     assert passed
-    assert findings == []
+    assert [f for f in findings if f.severity is FindingSeverity.BLOCKING] == []
     assert metrics["max_drawdown_after_attack"] <= MAX_ADMISSIBLE_DRAWDOWN
 
     # Reported metrics come from the perturbation run rather than a constant

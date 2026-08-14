@@ -71,7 +71,14 @@ class ARCGeneticMutator:
         }
         # Provenance the next generation needs to keep exploring: without the declared
         # bounds a mutated candidate has no admissible range left to resample within.
-        for inherited in ("family", "direction", "parameter_bounds", "risk_overlays"):
+        for inherited in (
+            "family",
+            "direction",
+            "parameter_bounds",
+            "risk_overlays",
+            "symbol",
+            "timeframe",
+        ):
             if inherited in attempt.strategy_spec:
                 spec[inherited] = attempt.strategy_spec[inherited]
 

@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCReflexionEventV1
+from hypertrade.arc.evidence import MIN_ADMISSIBLE_OOS_SHARPE
 from hypertrade.arc.findings import (
     MAX_ADMISSIBLE_DRAWDOWN,
     MAX_ADMISSIBLE_STOP_LOSS,
@@ -40,6 +41,24 @@ _CONSTRAINT_BY_REASON_CODE: dict[ARCReasonCode, str] = {
         f"最大回撤必须控制在 {MAX_ADMISSIBLE_DRAWDOWN:.0%} 以内"
     ),
     ARCReasonCode.SHARPE_TOO_LOW: "夏普比率不足，必须提升信号质量而非放大杠杆",
+    ARCReasonCode.INERT_NO_TRADES: (
+        "样本外窗口内从未开仓，入场条件过严或信号跨度超过窗口长度，必须放宽入场或缩短跨度"
+    ),
+    ARCReasonCode.OOS_SHARPE_TOO_LOW: (
+        f"样本外夏普低于 {MIN_ADMISSIBLE_OOS_SHARPE:.2f}，该信号构造在留出窗口上没有可用边际"
+    ),
+    ARCReasonCode.OOS_DRAWDOWN_EXCEEDED: (
+        f"样本外回撤超过 {MAX_ADMISSIBLE_DRAWDOWN:.0%}，必须收紧止损或降低敞口"
+    ),
+    ARCReasonCode.IS_OOS_DEGRADATION: (
+        "样本内表现无法延续到样本外，属选择偏差，必须减少参数自由度而非继续调参"
+    ),
+    ARCReasonCode.PERMANENT_EXPOSURE: (
+        "几乎全窗口持仓，等同方向性押注，必须引入明确的离场条件"
+    ),
+    ARCReasonCode.EVIDENCE_REPLAY_FAILED: (
+        "候选无法在回放器中执行，策略体存在运行期缺陷，必须重新生成"
+    ),
 }
 
 

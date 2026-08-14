@@ -106,6 +106,13 @@ class Settings(BaseSettings):
         alias="AGENT_STRATEGY_SANDBOX_SOCKET_PATH",
     )
     research_triggers_enabled: bool = Field(default=False, alias="RESEARCH_TRIGGERS_ENABLED")
+    # The archive is the reproducible source for research verdicts. Pulling the window
+    # live is opt-in: a verdict backed by a window that shifts under it is not evidence,
+    # and an autonomous loop must not reach an exchange unless an operator asked it to.
+    arc_evidence_live_fallback_enabled: bool = Field(
+        default=False,
+        alias="ARC_EVIDENCE_LIVE_FALLBACK_ENABLED",
+    )
     research_trigger_poll_interval_seconds: float = Field(
         default=10.0,
         alias="RESEARCH_TRIGGER_POLL_INTERVAL_SECONDS",

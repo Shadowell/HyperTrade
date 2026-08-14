@@ -39,6 +39,25 @@ class ARCReasonCode(StrEnum):
     SHARPE_TOO_LOW = "SHARPE_TOO_LOW"
     REGIME_UNDERPERFORMANCE = "REGIME_UNDERPERFORMANCE"
     PAPER_OBSERVATION_ANOMALY = "PAPER_OBSERVATION_ANOMALY"
+    NO_HISTORICAL_EVIDENCE = "NO_HISTORICAL_EVIDENCE"
+    EVIDENCE_REPLAY_FAILED = "EVIDENCE_REPLAY_FAILED"
+    INERT_NO_TRADES = "INERT_NO_TRADES"
+    OOS_SHARPE_TOO_LOW = "OOS_SHARPE_TOO_LOW"
+    OOS_DRAWDOWN_EXCEEDED = "OOS_DRAWDOWN_EXCEEDED"
+    IS_OOS_DEGRADATION = "IS_OOS_DEGRADATION"
+    PERMANENT_EXPOSURE = "PERMANENT_EXPOSURE"
+
+
+class FindingSeverity(StrEnum):
+    """Whether an objection disqualifies the candidate or merely annotates it.
+
+    A missing data window says nothing about the candidate, so it must not read as a
+    defect; but it also must not vanish, because a verdict reached without evidence has
+    to be visible as such downstream.
+    """
+
+    BLOCKING = "blocking"
+    ADVISORY = "advisory"
 
 
 @dataclass(frozen=True)
@@ -48,6 +67,7 @@ class AttackFinding:
     code: ARCReasonCode
     gate: str
     detail: str
+    severity: FindingSeverity = FindingSeverity.BLOCKING
 
     def render(self) -> str:
         """Operator-facing rendering. Never parsed; `code` is the machine contract."""

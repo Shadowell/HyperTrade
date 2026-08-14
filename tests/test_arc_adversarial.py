@@ -4,7 +4,7 @@ Sprint 133 — Test ARC Strategy Code AST Mutation & Red-Blue Adversarial Engine
 
 from hypertrade.arc.adversarial import ARCAdversarialEngine, BlueTeamQuant, RedTeamQuant
 from hypertrade.arc.contracts import ARCReflexionEventV1
-from hypertrade.arc.findings import ARCReasonCode
+from hypertrade.arc.findings import ARCReasonCode, FindingSeverity
 from hypertrade.arc.mutation import ARCGeneticMutator
 
 
@@ -69,10 +69,16 @@ def test_red_team_adversarial_attack():
 
 def test_red_team_accepts_the_blue_team_default_risk_envelope():
     """The default proposal is admissible; only an operator override makes it reckless."""
+    from hypertrade.arc.findings import FindingSeverity
+
     attempt = BlueTeamQuant().propose_initial_strategy("BTC 策略", "BTC-USDT-SWAP")
-    passed, _, findings = RedTeamQuant().evaluate_adversarial_attack(attempt)
+    passed, metrics, findings = RedTeamQuant().evaluate_adversarial_attack(attempt)
     assert passed is True
-    assert findings == []
+    assert [f for f in findings if f.severity is FindingSeverity.BLOCKING] == []
+    # With no data window configured the verdict is annotated as evidence-free rather
+    # than silently presented as a clean pass.
+    assert metrics["evidence_available"] is False
+    assert metrics["advisories"]
 
 
 def test_attack_verdict_tracks_the_declared_value_not_a_known_literal():
@@ -189,6 +195,6 @@ def test_ast_mutation_and_red_team_survival():
     # 5. Re-run Red Team attack on mutated strategy -> should PASS!
     passed_2, metrics_2, findings_2 = engine.run_adversarial_session(mutated_attempt)
     assert passed_2 is True
-    assert findings_2 == []
+    assert [f for f in findings_2 if f.severity is FindingSeverity.BLOCKING] == []
     assert metrics_2["sharpe_after_attack"] > 1.5
     assert metrics_2["max_drawdown_after_attack"] <= 0.15

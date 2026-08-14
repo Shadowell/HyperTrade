@@ -68,6 +68,67 @@ def test_loop_searches_across_structurally_different_hypotheses():
     assert proj.goal.budget.candidates_used < proj.goal.budget.max_candidates
 
 
+def test_candidate_without_out_of_sample_evidence_never_reaches_paper():
+    """The gate that stops an unproven candidate has to hold end to end.
+
+    Before the evidence gate existed, review read only what a candidate declared about
+    itself, so a strategy with defensible parameters and no edge was provisioned onto
+    paper. A flat window makes every family inert, which is precisely the case a gate
+    reading only Sharpe would have scored as flawless.
+    """
+    from decimal import Decimal
+
+    import hypertrade.arc.router as router_module
+    from hypertrade.arc.evidence import HistoricalEvidenceGate
+    from hypertrade.strategy.sdk import Candle
+
+    flat = Decimal("100")
+    candles = [
+        Candle(
+            timestamp=f"2026-01-01T{index:05d}",
+            open=flat,
+            high=flat,
+            low=flat,
+            close=flat,
+            volume=Decimal("10"),
+        )
+        for index in range(800)
+    ]
+
+    class _Window:
+        def read(self, *, symbol, timeframe, limit):
+            return candles
+
+    goal = ARCGoalV1(
+        objective="自主搜索趋势突破策略",
+        symbols=["BTC-USDT-SWAP"],
+        budget=ARCBudgetV1(max_candidates=5),
+        paper_authorization=PaperPreauthorizationV1(symbols=["BTC-USDT-SWAP"]),
+    )
+    ctrl = ARCController(goal=goal)
+    _ARC_MISSIONS[ctrl.mission_id] = ctrl
+
+    original = router_module.build_default_window
+    router_module.build_default_window = lambda *args, **kwargs: _Window()
+    try:
+        run_autonomous_arc_loop(ctrl.mission_id)
+    finally:
+        router_module.build_default_window = original
+
+    proj = ctrl.projection
+    assert proj.state == "needs_operator"
+    assert not any(att.paper_instance_id for att in proj.attempts)
+    # The rejection has to be attributed to held-back evidence, not to a parameter guess.
+    evidence_codes = {
+        code
+        for event in proj.reflexion_history
+        for code in event.reason_codes
+        if code.startswith(("OOS_", "INERT_", "IS_OOS_", "PERMANENT_"))
+    }
+    assert evidence_codes, "rejection must cite out-of-sample evidence"
+    assert HistoricalEvidenceGate(_Window()).evaluate(proj.attempts[0]).passed is False
+
+
 def test_loop_stops_at_the_candidate_budget_when_nothing_survives():
     """Budget is the stopping condition; the loop must not spin on hopeless candidates."""
     goal = ARCGoalV1(

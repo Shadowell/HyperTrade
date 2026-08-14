@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1
+from hypertrade.arc.evidence import HistoricalEvidenceGate
 from hypertrade.arc.findings import (
     MAX_ADMISSIBLE_DRAWDOWN,
     MAX_ADMISSIBLE_SHARPE_DEGRADATION,
@@ -15,6 +16,7 @@ from hypertrade.arc.findings import (
     MIN_ADMISSIBLE_LOOKBACK,
     ARCReasonCode,
     AttackFinding,
+    FindingSeverity,
     declared_span,
     extract_strategy_parameters,
 )
@@ -60,6 +62,10 @@ class BlueTeamQuant:
             strategy_code=generated.code,
             strategy_spec={
                 "source": "blue_team_codegen",
+                # The evidence gate replays the candidate, so the window it must be
+                # judged on travels with the candidate rather than being re-derived.
+                "symbol": symbol,
+                "timeframe": timeframe,
                 "family": generated.family,
                 "direction": generated.direction,
                 "risk_overlays": list(generated.risk_overlays),
@@ -286,10 +292,13 @@ class RedTeamQuant:
     and Stochastic Friction attacks against candidate strategies.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, evidence_gate: HistoricalEvidenceGate | None = None) -> None:
         self.mc_attack = MonteCarloParamPerturbationAttack()
         self.bs_attack = BlackSwanScenarioReplayAttack()
         self.friction_attack = StochasticFrictionStressAttack()
+        # The three parametric attacks only read what the candidate declares about
+        # itself. The evidence gate is the one tier that replays it on prices.
+        self.evidence_gate = evidence_gate or HistoricalEvidenceGate()
 
     def evaluate_adversarial_attack(
         self, attempt: ARCCandidateAttemptV1
@@ -308,7 +317,14 @@ class RedTeamQuant:
         if not friction_pass and friction_finding is not None:
             findings.append(friction_finding)
 
-        passed = not findings
+        verdict = self.evidence_gate.evaluate(attempt)
+        findings.extend(verdict.findings)
+
+        # Advisories annotate the verdict without disqualifying the candidate: a window
+        # that could not be fetched says nothing about the strategy.
+        passed = not any(
+            finding.severity is FindingSeverity.BLOCKING for finding in findings
+        )
         observed_metrics: dict[str, Any] = {
             "max_drawdown_after_attack": mc_metrics["max_perturbed_drawdown"],
             "sharpe_after_attack": mc_metrics["adverse_perturbed_sharpe"],
@@ -316,7 +332,13 @@ class RedTeamQuant:
             "declared_stop_loss": mc_metrics["declared_stop_loss"],
             "win_rate": 0.65 if passed else 0.42,
             "liquidity_stress_passed": bs_pass and friction_pass,
+            "advisories": [
+                finding.render()
+                for finding in findings
+                if finding.severity is FindingSeverity.ADVISORY
+            ],
         }
+        observed_metrics.update(verdict.metrics)
         return passed, observed_metrics, findings
 
 
@@ -325,9 +347,9 @@ class ARCAdversarialEngine:
     Orchestrates the Red-Blue adversarial game session for a strategy attempt.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, evidence_gate: HistoricalEvidenceGate | None = None) -> None:
         self.blue_team = BlueTeamQuant()
-        self.red_team = RedTeamQuant()
+        self.red_team = RedTeamQuant(evidence_gate=evidence_gate)
 
     def run_adversarial_session(
         self, attempt: ARCCandidateAttemptV1

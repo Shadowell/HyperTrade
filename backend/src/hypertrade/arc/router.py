@@ -15,6 +15,7 @@ from hypertrade.arc.contracts import (
     PaperPreauthorizationV1,
 )
 from hypertrade.arc.controller import ARCController
+from hypertrade.arc.evidence import HistoricalEvidenceGate, build_default_window
 from hypertrade.arc.incubation import ARCPaperIncubationResolver
 from hypertrade.arc.mcts import ARCParallelMCTSEngine, MCTSNode
 from hypertrade.arc.mutation import ARCGeneticMutator
@@ -115,7 +116,12 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     budget = goal.budget
 
     blue_team = BlueTeamQuant()
-    engine = ARCAdversarialEngine()
+    # Candidates are replayed on held-back history before they can be validated. With no
+    # window configured the gate raises an advisory rather than failing every candidate,
+    # so a missing data source shows up as such instead of looking like bad strategies.
+    engine = ARCAdversarialEngine(
+        evidence_gate=HistoricalEvidenceGate(build_default_window())
+    )
     mutator = ARCGeneticMutator()
     reflexion_ledger = ARCReflexionLedger()
     mcts_engine = ARCParallelMCTSEngine(parallel_workers=parallel_workers)
