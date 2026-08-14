@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pydantic import BaseModel, Field
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1
+from hypertrade.arc.findings import declared_span, extract_strategy_parameters
 
 
 class MCTSNode(BaseModel):
@@ -45,13 +46,21 @@ class MAPElitesGrid:
         self.archive: dict[tuple[str, str], MCTSNode] = {}
         self._lock = threading.Lock()
 
+    # Bar counts separating the behavioural niches a candidate can occupy.
+    SHORT_HORIZON_BARS = 15
+    LONG_HORIZON_BARS = 40
+
     def get_feature_descriptor(self, attempt: ARCCandidateAttemptV1) -> tuple[str, str]:
-        code = attempt.strategy_code
         metrics = attempt.observed_metrics
 
-        if "lookback_period = 5" in code or "lookback_period = 10" in code:
+        # Read the declared span rather than matching four literals: the previous probe
+        # filed every candidate whose lookback was not one of 5/10/50/100 — which is
+        # every compiled candidate — into the same `medium_term` cell, collapsing the
+        # diversity archive the QD grid exists to maintain.
+        span = declared_span(extract_strategy_parameters(attempt.strategy_code))
+        if span is not None and span <= self.SHORT_HORIZON_BARS:
             horizon = "short_term"
-        elif "lookback_period = 50" in code or "lookback_period = 100" in code:
+        elif span is not None and span >= self.LONG_HORIZON_BARS:
             horizon = "long_term"
         else:
             horizon = "medium_term"

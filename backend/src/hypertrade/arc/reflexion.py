@@ -2,11 +2,45 @@
 ARC Multi-Regime Causal Attribution & Reflexion Memory Ledger Engine
 """
 
+from collections.abc import Sequence
 from typing import Any
 
 from pydantic import BaseModel
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCReflexionEventV1
+from hypertrade.arc.findings import (
+    MAX_ADMISSIBLE_DRAWDOWN,
+    MAX_ADMISSIBLE_STOP_LOSS,
+    MIN_ADMISSIBLE_LOOKBACK,
+    ARCReasonCode,
+    AttackFinding,
+    extract_strategy_parameters,
+)
+
+# Remediation advice keyed by the reviewer's own reason code. Keying on codes rather
+# than on prose is what keeps this branch reachable: the previous English-sentence
+# match never fired against the strings the red team actually emitted.
+_CONSTRAINT_BY_REASON_CODE: dict[ARCReasonCode, str] = {
+    ARCReasonCode.WIDE_STOP_LOSS: (
+        f"止损比例 (stop_loss) 必须限制在 {MAX_ADMISSIBLE_STOP_LOSS:.0%} 以内"
+    ),
+    ARCReasonCode.LIQUIDITY_CRASH_DRAWDOWN: (
+        f"止损比例 (stop_loss) 必须限制在 {MAX_ADMISSIBLE_STOP_LOSS:.0%} 以内以承受极端流动性缺口"
+    ),
+    ARCReasonCode.SHORT_LOOKBACK_OVERFIT: (
+        f"均线回看周期 (lookback_period) 必须大于 {MIN_ADMISSIBLE_LOOKBACK} 以免过度交易"
+    ),
+    ARCReasonCode.PARAMETER_JITTER_DEGRADATION: (
+        "参数邻域敏感度过高，必须收窄参数搜索范围或改用更稳健的信号构造"
+    ),
+    ARCReasonCode.FRICTION_NEGATIVE_NET_RETURN: (
+        "换手率在滑点与手续费压力下产生负净收益，必须降低交易频率"
+    ),
+    ARCReasonCode.DRAWDOWN_EXCEEDED: (
+        f"最大回撤必须控制在 {MAX_ADMISSIBLE_DRAWDOWN:.0%} 以内"
+    ),
+    ARCReasonCode.SHARPE_TOO_LOW: "夏普比率不足，必须提升信号质量而非放大杠杆",
+}
 
 
 class RegimeAttributionResult(BaseModel):
@@ -26,9 +60,14 @@ class ARCCausalAttributionEngine:
     def decompose_regime_performance(
         self, attempt: ARCCandidateAttemptV1, observed_metrics: dict[str, Any]
     ) -> list[RegimeAttributionResult]:
-        code = attempt.strategy_code
         base_sharpe = observed_metrics.get("sharpe_after_attack", 1.0)
         base_dd = observed_metrics.get("max_drawdown_after_attack", 0.10)
+        # Read the declared guard via AST rather than probing for a literal, so any
+        # stop-loss value is attributed instead of only the two the demo emitted.
+        stop_loss = extract_strategy_parameters(attempt.strategy_code).get(
+            "stop_loss", MAX_ADMISSIBLE_STOP_LOSS
+        )
+        wide_stop = stop_loss > MAX_ADMISSIBLE_STOP_LOSS
 
         results = [
             RegimeAttributionResult(
@@ -47,13 +86,13 @@ class ARCCausalAttributionEngine:
             ),
             RegimeAttributionResult(
                 regime_name="ranging_high_vol",
-                sharpe=base_sharpe * 0.4 if "stop_loss = 0.12" in code else base_sharpe * 1.1,
-                max_drawdown=base_dd * 1.5 if "stop_loss = 0.12" in code else base_dd * 0.8,
-                passed="stop_loss = 0.12" not in code,
+                sharpe=base_sharpe * (0.4 if wide_stop else 1.1),
+                max_drawdown=base_dd * (1.5 if wide_stop else 0.8),
+                passed=not wide_stop,
                 attribution_notes=(
-                    "Whipsaw losses due to wide stop loss"
-                    if "stop_loss = 0.12" in code
-                    else "Protected by tight stop loss"
+                    f"Whipsaw losses due to {stop_loss:.1%} stop loss"
+                    if wide_stop
+                    else f"Protected by {stop_loss:.1%} stop loss"
                 ),
             ),
             RegimeAttributionResult(
@@ -87,7 +126,7 @@ class ARCReflexionLedger:
         event = ARCReflexionEventV1(
             candidate_id=candidate_id,
             failure_class="paper_observation_anomaly",
-            reason_codes=["PAPER_ANOMALY"],
+            reason_codes=[ARCReasonCode.PAPER_OBSERVATION_ANOMALY.value],
             failed_gates=["paper_trading_observation"],
             observed_metrics={},
             negative_constraints=[constraint],
@@ -100,14 +139,18 @@ class ARCReflexionLedger:
         attempt: ARCCandidateAttemptV1,
         failure_class: str,
         observed_metrics: dict[str, Any],
-        raw_reasons: list[str],
+        findings: Sequence[AttackFinding],
     ) -> ARCReflexionEventV1:
         """
         Diagnose a failed attempt, extract actionable negative constraints,
         and log to the Reflexion memory ledger.
+
+        Consumes the reviewer's structured findings so every objection the red team
+        raised produces a constraint. Findings arrive as typed codes rather than prose
+        precisely because the earlier sentence matching silently dropped all of them.
         """
-        negative_constraints = []
-        failed_gates = []
+        negative_constraints: list[str] = []
+        failed_gates: list[str] = []
 
         # Run multi-regime causal attribution
         regime_results = self.causal_engine.decompose_regime_performance(attempt, observed_metrics)
@@ -118,31 +161,37 @@ class ARCReflexionLedger:
                     f"禁止在行情 Regime [{res.regime_name}] 下使用宽止损；{res.attribution_notes}"
                 )
 
-        if failure_class == "drawdown_exceeded" or observed_metrics.get("max_drawdown", 0) > 0.15:
-            failed_gates.append("max_drawdown")
-            negative_constraints.append("止损比例 (stop_loss) 必须限制在 10% 以内以防范大回撤")
-
-        if failure_class == "sharpe_too_low" or observed_metrics.get("sharpe", 0) < 1.2:
-            failed_gates.append("min_sharpe")
-            negative_constraints.append("均线回看周期 (lookback_period) 必须大于 10 以免过度交易")
+        for finding in findings:
+            failed_gates.append(finding.gate)
+            constraint = _CONSTRAINT_BY_REASON_CODE.get(finding.code)
+            if constraint is not None:
+                negative_constraints.append(constraint)
 
         if failure_class == "red_team_attack_failed":
             failed_gates.append("adversarial_survival")
-            for reason in raw_reasons:
-                if "Stop loss is too wide" in reason:
-                    negative_constraints.append("止损比例 (stop_loss) 必须限制在 10% 以内")
-                if "Lookback period is too short" in reason:
-                    negative_constraints.append(
-                        "均线回看周期 (lookback_period) 表现为过拟合，必须大于 15"
-                    )
 
+        if (
+            failure_class == "drawdown_exceeded"
+            or observed_metrics.get("max_drawdown", 0) > MAX_ADMISSIBLE_DRAWDOWN
+        ):
+            failed_gates.append("max_drawdown")
+            negative_constraints.append(_CONSTRAINT_BY_REASON_CODE[ARCReasonCode.DRAWDOWN_EXCEEDED])
+            negative_constraints.append(_CONSTRAINT_BY_REASON_CODE[ARCReasonCode.WIDE_STOP_LOSS])
+
+        if failure_class == "sharpe_too_low" or observed_metrics.get("sharpe", 0) < 1.2:
+            failed_gates.append("min_sharpe")
+            negative_constraints.append(
+                _CONSTRAINT_BY_REASON_CODE[ARCReasonCode.SHORT_LOOKBACK_OVERFIT]
+            )
+
+        reason_codes = [finding.code.value for finding in findings] or [failure_class.upper()]
         event = ARCReflexionEventV1(
             candidate_id=attempt.candidate_id,
             failure_class=failure_class,
-            reason_codes=raw_reasons or [failure_class.upper()],
-            failed_gates=list(set(failed_gates)),
+            reason_codes=reason_codes,
+            failed_gates=sorted(set(failed_gates)),
             observed_metrics=observed_metrics,
-            negative_constraints=list(set(negative_constraints)),
+            negative_constraints=sorted(set(negative_constraints)),
         )
 
         self._records.append(event)

@@ -2,130 +2,282 @@
 ARC Red-Blue Adversarial Game Engine & Monte Carlo Overfitting Attack Matrix
 """
 
+import hashlib
 import random
+from collections.abc import Mapping
 from typing import Any
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1
+from hypertrade.arc.findings import (
+    MAX_ADMISSIBLE_DRAWDOWN,
+    MAX_ADMISSIBLE_SHARPE_DEGRADATION,
+    MAX_ADMISSIBLE_STOP_LOSS,
+    MIN_ADMISSIBLE_LOOKBACK,
+    ARCReasonCode,
+    AttackFinding,
+    declared_span,
+    extract_strategy_parameters,
+)
+from hypertrade.research.codegen import FAMILIES, generate_strategy
 
 
 class BlueTeamQuant:
     """
     Blue Team Agent (Inventor): Proposes strategy hypotheses, code AST mutations,
     and higher-order factor integrations targeting user objectives.
+
+    Proposals are compiled by `research.codegen` from the objective's own wording, so
+    two different mandates yield two different trading logics. The previous template
+    emitted one ATR breakout body for every objective, which made the whole ARC search
+    a parameter tweak on a single strategy no matter what the operator asked for.
     """
 
-    def propose_initial_strategy(self, objective: str, symbol: str) -> ARCCandidateAttemptV1:
-        class_name = f"Strategy_{symbol.replace('-', '_')}"
-        code = f"""# Strategy Hypothesis: {objective}
-from hypertrade.strategy.operators import compute_atr_volatility_channel
-
-class {class_name}:
-    symbol = "{symbol}"
-    timeframe = "1H"
-    lookback_period = 20
-    stop_loss = 0.12
-    atr_multiplier = 2.0
-
-    def next_signal(self, candles):
-        mid, upper, lower = compute_atr_volatility_channel(
-            candles, period=self.lookback_period, multiplier=self.atr_multiplier
+    def propose_initial_strategy(
+        self,
+        objective: str,
+        symbol: str,
+        *,
+        timeframe: str = "1H",
+        family_key: str | None = None,
+        parameter_bounds: Mapping[str, Mapping[str, float]] | None = None,
+    ) -> ARCCandidateAttemptV1:
+        spec = self.build_spec(
+            objective, symbol, timeframe=timeframe, parameter_bounds=parameter_bounds
         )
-        current = candles[-1]['close'] if candles else 0.0
-        if current > upper:
-            return "buy"
-        elif current < lower:
-            return "close"
-        return "hold"
-"""
-        hypo = f"Initial ATR breakout strategy for {symbol} based on: {objective[:30]}"
+        if family_key is not None:
+            spec["family_key"] = family_key
+        generated = generate_strategy(spec)
+        # Ids are derived from the mandate so that re-proposing the same objective is
+        # idempotent while two objectives never collide on one MCTS root.
+        digest = hashlib.blake2s(
+            f"{objective}|{symbol}|{timeframe}|{generated.family}".encode(), digest_size=3
+        )
+        token = digest.hexdigest()
         return ARCCandidateAttemptV1(
-            attempt_id="att_blue_001",
-            candidate_id="cand_blue_001",
-            hypothesis=hypo,
-            strategy_code=code,
+            attempt_id=f"att_blue_{token}",
+            candidate_id=f"cand_blue_{token}",
+            hypothesis=f"{generated.family} ({generated.direction}) on {symbol}: {objective}",
+            strategy_code=generated.code,
+            strategy_spec={
+                "source": "blue_team_codegen",
+                "family": generated.family,
+                "direction": generated.direction,
+                "risk_overlays": list(generated.risk_overlays),
+                "tunable_parameters": dict(generated.tunable_parameters),
+                "parameter_bounds": dict(generated.parameter_bounds),
+            },
         )
+
+    def propose_diverse_frontier(
+        self,
+        objective: str,
+        symbol: str,
+        count: int,
+        *,
+        timeframe: str = "1H",
+        parameter_bounds: Mapping[str, Mapping[str, float]] | None = None,
+    ) -> list[ARCCandidateAttemptV1]:
+        """Seed the search with `count` structurally different hypotheses.
+
+        The objective's own reading comes first; the remaining slots walk the family
+        catalogue in declaration order so the frontier is reproducible. Without this
+        the search could only ever tune the parameters of whichever single family the
+        objective's wording happened to match.
+        """
+        primary = self.propose_initial_strategy(
+            objective, symbol, timeframe=timeframe, parameter_bounds=parameter_bounds
+        )
+        frontier = [primary]
+        for family in FAMILIES:
+            if len(frontier) >= max(1, count):
+                break
+            if family.key == primary.strategy_spec["family"]:
+                continue
+            frontier.append(
+                self.propose_initial_strategy(
+                    objective,
+                    symbol,
+                    timeframe=timeframe,
+                    family_key=family.key,
+                    parameter_bounds=parameter_bounds,
+                )
+            )
+        return frontier
+
+    @staticmethod
+    def build_spec(
+        objective: str,
+        symbol: str,
+        *,
+        timeframe: str = "1H",
+        parameter_bounds: Mapping[str, Mapping[str, float]] | None = None,
+    ) -> dict[str, Any]:
+        """Project an ARC objective onto the research spec the codegen consumes.
+
+        The objective text is repeated across the fields the family and direction
+        selectors read, because ARC goals arrive as one free-text mandate rather than
+        the structured entry/exit prose a research mandate carries.
+        """
+        return {
+            "schema_version": "research_strategy_spec.v1",
+            "strategy_key": f"arc_{symbol.replace('-', '_').casefold()}",
+            "title": f"ARC candidate for {symbol}",
+            "hypothesis": objective,
+            "entry_logic": objective,
+            "exit_logic": objective,
+            "symbols": [symbol],
+            "timeframes": [timeframe],
+            "strategy_category": "ARC",
+            "risk_conditions": ["bounded notional", "stop loss"],
+            "data_requirements": ["ohlcv"],
+            "invalidation_conditions": ["insufficient data"],
+            "parameter_bounds": dict(parameter_bounds or {}),
+        }
 
 
 class MonteCarloParamPerturbationAttack:
+    """Parametric risk proxy: jitters declared parameters to expose curve fitting.
+
+    NOT a historical backtest. The projection is driven by the candidate's declared
+    risk parameters, so it measures whether the parameterisation is defensible, not
+    whether the trading logic has edge. A strategy with sound parameters and no signal
+    will still pass this gate; catching that requires the real backtest engine.
+
+    The projection is continuous in stop-loss width rather than a two-value lookup, so
+    every value is judged rather than only the two literals the demo emitted.
     """
-    Simulates 100 random parameter jitter iterations (±15%~25%) to measure curve-fitting.
-    Rejects strategies with Sharpe degradation ratio > 25% or Max Drawdown > 15%.
-    """
 
-    def attack(self, attempt: ARCCandidateAttemptV1) -> tuple[bool, str, dict[str, float]]:
-        code = attempt.strategy_code
-        stop_loss_val = 0.12
-        if "stop_loss = 0.08" in code:
-            stop_loss_val = 0.08
-        elif "stop_loss = 0.12" in code:
-            stop_loss_val = 0.12
+    JITTER_TRIALS = 100
+    JITTER_SIGMA = 0.15
+    ADVERSE_PERCENTILE = 5
 
-        jitter_sharpes: list[float] = []
-        jitter_drawdowns: list[float] = []
+    @staticmethod
+    def _project(stop_loss: float) -> tuple[float, float]:
+        """Project (Sharpe, drawdown) from a stop-loss width.
 
-        random.seed(42)
-        baseline_sharpe = 1.85 if stop_loss_val <= 0.10 else 0.60
-        baseline_dd = 0.07 if stop_loss_val <= 0.10 else 0.18
-
-        for _ in range(100):
-            jitter = random.gauss(1.0, 0.15)
-            sim_sharpe = max(0.1, baseline_sharpe * jitter)
-            sim_dd = max(0.02, baseline_dd * (2.0 - jitter))
-            jitter_sharpes.append(sim_sharpe)
-            jitter_drawdowns.append(sim_dd)
-
-        median_sharpe = sorted(jitter_sharpes)[50]
-        max_dd = max(jitter_drawdowns)
-        deg = (baseline_sharpe - median_sharpe) / baseline_sharpe if baseline_sharpe > 0 else 1.0
-
-        passed = (deg <= 0.25) and (max_dd <= 0.15) and (stop_loss_val <= 0.10)
-        reason = (
-            ""
-            if passed
-            else (
-                f"MONTE_CARLO_FAIL: Parameter jitter degradation ({deg:.1%}) > 25% "
-                f"or Max Drawdown ({max_dd:.1%}) > 15%"
-            )
+        Continuous in `stop_loss` so every value is judged, and so perturbing the
+        parameter actually moves the projection.
+        """
+        overshoot = max(0.0, stop_loss - MAX_ADMISSIBLE_STOP_LOSS) / MAX_ADMISSIBLE_STOP_LOSS
+        return (
+            max(0.15, 1.85 / (1.0 + 2.0 * overshoot)),
+            min(0.60, 0.07 * (1.0 + 1.6 * overshoot)),
         )
+
+    def attack(
+        self, attempt: ARCCandidateAttemptV1
+    ) -> tuple[bool, AttackFinding | None, dict[str, float]]:
+        parameters = extract_strategy_parameters(attempt.strategy_code)
+        stop_loss = parameters.get("stop_loss", MAX_ADMISSIBLE_STOP_LOSS * 1.2)
+        baseline_sharpe, baseline_dd = self._project(stop_loss)
+
+        # Jitter the declared parameter and re-project, rather than jittering the
+        # outcome directly. Perturbing the outcome around its own mean made the
+        # median converge on the baseline, so the degradation gate could never fire
+        # and measured only the jitter width. Perturbing the input instead exposes
+        # candidates parked against an admissibility cliff, where a small parameter
+        # error crosses the boundary.
+        rng = random.Random(42)
+        sharpes: list[float] = []
+        drawdowns: list[float] = []
+        for _ in range(self.JITTER_TRIALS):
+            jittered = max(1e-4, stop_loss * rng.gauss(1.0, self.JITTER_SIGMA))
+            sharpe, drawdown = self._project(jittered)
+            sharpes.append(sharpe)
+            drawdowns.append(drawdown)
+
+        sharpes.sort()
+        adverse_sharpe = sharpes[self.ADVERSE_PERCENTILE]
+        max_dd = max(drawdowns)
+        degradation = (
+            (baseline_sharpe - adverse_sharpe) / baseline_sharpe if baseline_sharpe > 0 else 1.0
+        )
+
         metrics = {
             "baseline_sharpe": baseline_sharpe,
-            "median_perturbed_sharpe": median_sharpe,
-            "sharpe_degradation": deg,
+            "median_perturbed_sharpe": sharpes[self.JITTER_TRIALS // 2],
+            "adverse_perturbed_sharpe": adverse_sharpe,
+            "sharpe_degradation": degradation,
             "max_perturbed_drawdown": max_dd,
+            "declared_stop_loss": stop_loss,
         }
-        return passed, reason, metrics
+
+        if stop_loss > MAX_ADMISSIBLE_STOP_LOSS:
+            return (
+                False,
+                AttackFinding(
+                    code=ARCReasonCode.WIDE_STOP_LOSS,
+                    gate="parameter_perturbation",
+                    detail=(
+                        f"declared stop_loss {stop_loss:.1%} exceeds the admissible "
+                        f"{MAX_ADMISSIBLE_STOP_LOSS:.0%} ceiling; perturbed drawdown "
+                        f"reached {max_dd:.1%}"
+                    ),
+                ),
+                metrics,
+            )
+        if degradation > MAX_ADMISSIBLE_SHARPE_DEGRADATION or max_dd > MAX_ADMISSIBLE_DRAWDOWN:
+            return (
+                False,
+                AttackFinding(
+                    code=ARCReasonCode.PARAMETER_JITTER_DEGRADATION,
+                    gate="parameter_perturbation",
+                    detail=(
+                        f"Sharpe degraded {degradation:.1%} under parameter jitter and "
+                        f"drawdown reached {max_dd:.1%}"
+                    ),
+                ),
+                metrics,
+            )
+        return True, None, metrics
 
 
 class BlackSwanScenarioReplayAttack:
-    """
-    Replays strategy logic against historical extreme liquidity crashes (2020.3.12, 2022 LUNA).
+    """Projects candidate risk parameters onto extreme liquidity crash conditions.
+
+    NOT a replay of historical bars; it judges whether the declared loss guard could
+    have survived a gap of crash magnitude. Wiring this to real 2020-03-12 / LUNA
+    candles requires the backtest engine.
     """
 
-    def attack(self, attempt: ARCCandidateAttemptV1) -> tuple[bool, str]:
-        code = attempt.strategy_code
-        if "stop_loss = 0.12" in code or "stop_loss = 0.15" in code:
-            return (
-                False,
-                "BLACK_SWAN_FAIL: Wide stop-loss failed under 2020.3.12 liquidity crash "
-                "replay (Drawdown 18% > 12%)",
+    CRASH_GAP = 0.18
+
+    def attack(self, attempt: ARCCandidateAttemptV1) -> tuple[bool, AttackFinding | None]:
+        parameters = extract_strategy_parameters(attempt.strategy_code)
+        stop_loss = parameters.get("stop_loss", MAX_ADMISSIBLE_STOP_LOSS * 1.2)
+        if stop_loss > MAX_ADMISSIBLE_STOP_LOSS:
+            return False, AttackFinding(
+                code=ARCReasonCode.LIQUIDITY_CRASH_DRAWDOWN,
+                gate="black_swan_replay",
+                detail=(
+                    f"stop_loss {stop_loss:.1%} leaves the position exposed to a "
+                    f"{self.CRASH_GAP:.0%} crash gap"
+                ),
             )
-        return True, ""
+        return True, None
 
 
 class StochasticFrictionStressAttack:
-    """
-    Injects stochastic 1-5 bps random walk slippage and 2x taker commission surges.
+    """Flags parameterisations whose turnover cannot survive slippage and fees.
+
+    Uses the declared lookback as a turnover proxy: a very short lookback implies
+    frequent re-entry, which friction erodes first.
     """
 
-    def attack(self, attempt: ARCCandidateAttemptV1) -> tuple[bool, str]:
-        code = attempt.strategy_code
-        if "lookback_period = 5" in code:
-            return (
-                False,
-                "FRICTION_STRESS_FAIL: High turnover under 5bps slippage stress "
-                "produced negative net return",
+    def attack(self, attempt: ARCCandidateAttemptV1) -> tuple[bool, AttackFinding | None]:
+        parameters = extract_strategy_parameters(attempt.strategy_code)
+        span = declared_span(parameters)
+        if span is not None and span < MIN_ADMISSIBLE_LOOKBACK:
+            return False, AttackFinding(
+                code=ARCReasonCode.SHORT_LOOKBACK_OVERFIT,
+                gate="friction_stress",
+                detail=(
+                    f"declared signal span {span:.0f} bars is below the admissible "
+                    f"{MIN_ADMISSIBLE_LOOKBACK}; implied turnover produces negative "
+                    "net return under slippage stress"
+                ),
             )
-        return True, ""
+        return True, None
 
 
 class RedTeamQuant:
@@ -141,35 +293,31 @@ class RedTeamQuant:
 
     def evaluate_adversarial_attack(
         self, attempt: ARCCandidateAttemptV1
-    ) -> tuple[bool, dict[str, Any], list[str]]:
-        reasons: list[str] = []
+    ) -> tuple[bool, dict[str, Any], list[AttackFinding]]:
+        findings: list[AttackFinding] = []
 
-        mc_pass, mc_reason, mc_metrics = self.mc_attack.attack(attempt)
-        if not mc_pass:
-            reasons.append(mc_reason)
+        mc_pass, mc_finding, mc_metrics = self.mc_attack.attack(attempt)
+        if not mc_pass and mc_finding is not None:
+            findings.append(mc_finding)
 
-        bs_pass, bs_reason = self.bs_attack.attack(attempt)
-        if not bs_pass:
-            reasons.append(bs_reason)
+        bs_pass, bs_finding = self.bs_attack.attack(attempt)
+        if not bs_pass and bs_finding is not None:
+            findings.append(bs_finding)
 
-        fric_pass, fric_reason = self.friction_attack.attack(attempt)
-        if not fric_pass:
-            reasons.append(fric_reason)
+        friction_pass, friction_finding = self.friction_attack.attack(attempt)
+        if not friction_pass and friction_finding is not None:
+            findings.append(friction_finding)
 
-        passed = len(reasons) == 0
-
-        dd_after = mc_metrics.get("max_perturbed_drawdown", 0.18) if not passed else 0.07
-        sharpe_after = mc_metrics.get("median_perturbed_sharpe", 0.6) if not passed else 1.85
-
-        observed_metrics = {
-            "max_drawdown_after_attack": dd_after,
-            "sharpe_after_attack": sharpe_after,
-            "win_rate": 0.42 if not passed else 0.65,
-            "sharpe_degradation": mc_metrics.get("sharpe_degradation", 0.35),
-            "liquidity_stress_passed": bs_pass and fric_pass,
+        passed = not findings
+        observed_metrics: dict[str, Any] = {
+            "max_drawdown_after_attack": mc_metrics["max_perturbed_drawdown"],
+            "sharpe_after_attack": mc_metrics["adverse_perturbed_sharpe"],
+            "sharpe_degradation": mc_metrics["sharpe_degradation"],
+            "declared_stop_loss": mc_metrics["declared_stop_loss"],
+            "win_rate": 0.65 if passed else 0.42,
+            "liquidity_stress_passed": bs_pass and friction_pass,
         }
-
-        return passed, observed_metrics, reasons
+        return passed, observed_metrics, findings
 
 
 class ARCAdversarialEngine:
@@ -183,5 +331,5 @@ class ARCAdversarialEngine:
 
     def run_adversarial_session(
         self, attempt: ARCCandidateAttemptV1
-    ) -> tuple[bool, dict[str, Any], list[str]]:
+    ) -> tuple[bool, dict[str, Any], list[AttackFinding]]:
         return self.red_team.evaluate_adversarial_attack(attempt)

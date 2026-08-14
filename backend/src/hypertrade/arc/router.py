@@ -77,11 +77,20 @@ async def get_arc_mission(mission_id: str) -> dict[str, Any]:
     return ctrl.projection.model_dump()
 
 
+# How much of the candidate budget goes to seeding structurally different hypotheses
+# rather than to repairing them. Leaves room for at least one generation of mutation.
+_MAX_SEED_WIDTH = 3
+
+
 def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     """
     Production SOTA Autonomous Execution Engine Loop with Multi-Agent Parallel Rollouts:
     Goal -> Parallel MCTS Nodes -> Blue Proposals -> Red Attacks -> Reflexion ->
     AST Mutation -> Voyager Skill Distillation -> Auto Paper Launch
+
+    The loop searches until a candidate survives review or the candidate budget runs
+    out. It used to be a hand-unrolled two-step script: one proposal, one mutation, and
+    then it gave up regardless of how much budget the operator had granted.
     """
     ctrl = _ARC_MISSIONS.get(mission_id)
     if not ctrl:
@@ -92,6 +101,13 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
         return
 
     ctrl.apply_event("goal_compiled", {"goal": goal.model_dump()})
+    # The projection rebuilds the goal from the event payload, so the pre-event object
+    # is a detached copy whose budget counters never advance. Reading budget off that
+    # copy let the loop propose past its allowance without ever seeing it exhausted.
+    goal = ctrl.projection.goal
+    if not goal:
+        return
+    budget = goal.budget
 
     blue_team = BlueTeamQuant()
     engine = ARCAdversarialEngine()
@@ -102,132 +118,112 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     skill_distiller = ARCSkillDistiller()
     incubation_resolver = ARCPaperIncubationResolver()
 
-    # 1. Initial Blue Team Proposal & MCTS Tree Root Initialization
     symbol = goal.symbols[0] if goal.symbols else "BTC-USDT-SWAP"
-    initial_attempt = blue_team.propose_initial_strategy(goal.objective, symbol)
-    ctrl.apply_event("candidate_proposed", {"attempt": initial_attempt.model_dump()})
-    mcts_engine.add_root(initial_attempt)
 
-    # 2. First Red Team Attack
-    passed, metrics, reasons = engine.run_adversarial_session(initial_attempt)
+    # 1. Seed the MCTS tree with structurally different hypotheses, not one template.
+    #    One slot is always held back so a rejected frontier still gets one repair pass.
+    seed_width = max(1, min(_MAX_SEED_WIDTH, budget.max_candidates - 1))
+    frontier = blue_team.propose_diverse_frontier(goal.objective, symbol, seed_width)
+    root_id: str | None = None
+    for seed in frontier:
+        ctrl.apply_event("candidate_proposed", {"attempt": seed.model_dump()})
+        if root_id is None:
+            root_id = mcts_engine.add_root(seed).node_id
+        else:
+            mcts_engine.add_child(root_id, seed)
+
+    # The rollout contract only carries (passed, score), so the review detail each
+    # candidate needs for reflexion is captured here and read back by attempt id.
+    reviews: dict[str, tuple[dict[str, Any], list[Any]]] = {}
+
+    def eval_candidate(cand: Any) -> tuple[bool, float]:
+        survived, metrics, findings = engine.run_adversarial_session(cand)
+        reviews[cand.attempt_id] = (metrics, list(findings))
+        return survived, float(metrics.get("sharpe_after_attack", 0.0))
+
+    validated: Any | None = None
+    while frontier and validated is None:
+        # 2. Parallel Rollout Execution across Red Team Attacks
+        rollouts = mcts_engine.execute_parallel_rollout(eval_candidate, frontier)
+        for cand, survived, score in rollouts:
+            metrics, _ = reviews.get(cand.attempt_id, ({}, []))
+            ctrl.apply_event(
+                "red_team_tested",
+                {"attempt_id": cand.attempt_id, "passed": survived, "metrics": metrics},
+            )
+            mcts_engine.backpropagate(cand.attempt_id, score)
+
+        survivors = sorted(
+            ((score, cand) for cand, survived, score in rollouts if survived),
+            key=lambda pair: pair[0],
+            reverse=True,
+        )
+        if survivors:
+            validated = survivors[0][1]
+            break
+
+        # 3. Multi-Regime Causal Reflexion, then guided AST repair of each casualty.
+        next_generation: list[Any] = []
+        for cand, _, _ in rollouts:
+            if budget.is_exhausted():
+                break
+            metrics, findings = reviews.get(cand.attempt_id, ({}, []))
+            reflexion = reflexion_ledger.diagnose_and_record_failure(
+                attempt=cand,
+                failure_class="red_team_attack_failed",
+                observed_metrics=metrics,
+                findings=findings,
+            )
+            ctrl.apply_event("reflexion_recorded", {"reflexion": reflexion.model_dump()})
+
+            mutated = mutator.mutate_attempt(cand, reflexion_ledger.get_history())
+            if mutated.strategy_code == cand.strategy_code:
+                # Nothing the reviewer objected to is expressible as a parameter repair;
+                # re-testing an identical body would only burn budget.
+                continue
+            ctrl.apply_event("candidate_proposed", {"attempt": mutated.model_dump()})
+            ctrl.apply_event(
+                "candidate_mutated",
+                {"attempt_id": mutated.attempt_id, "strategy_code": mutated.strategy_code},
+            )
+            mcts_engine.add_child(cand.attempt_id, mutated)
+            next_generation.append(mutated)
+        frontier = next_generation
+
+    if validated is None:
+        ctrl.apply_event("operator_needed", {})
+        return
+
+    validated.state = "validated"
     ctrl.apply_event(
-        "red_team_tested",
+        "candidate_validated",
         {
-            "attempt_id": initial_attempt.attempt_id,
-            "passed": passed,
-            "metrics": metrics,
+            "attempt_id": validated.attempt_id,
+            "validation_id": f"val_{validated.attempt_id}",
         },
     )
-    mcts_engine.backpropagate(initial_attempt.attempt_id, metrics.get("sharpe_after_attack", 0.0))
 
-    if not passed:
-        # 3. Multi-Regime Causal Reflexion & Diagnosis
-        reflexion = reflexion_ledger.diagnose_and_record_failure(
-            attempt=initial_attempt,
-            failure_class="red_team_attack_failed",
-            observed_metrics=metrics,
-            raw_reasons=reasons,
-        )
-        ctrl.apply_event("reflexion_recorded", {"reflexion": reflexion.model_dump()})
+    # 4. Voyager-Style Automated Skill Distillation
+    for skill in skill_distiller.distill_skills_from_candidate(validated):
+        skill_library.register_skill(skill)
 
-        # 4. MCTS Node Expansion & AST Mutation Guided by Reflexion
-        best_node = mcts_engine.select_best_node_to_expand()
-        parent_id = best_node.node_id if best_node else initial_attempt.attempt_id
+    # 5. Auto Paper Incubation. Paper launch stays gated on explicit pre-authorization.
+    if not goal.paper_authorization:
+        ctrl.apply_event("operator_needed", {})
+        return
 
-        mutated_attempt = mutator.mutate_attempt(initial_attempt, reflexion_ledger.get_history())
-        ctrl.apply_event("candidate_proposed", {"attempt": mutated_attempt.model_dump()})
+    ok, paper_inst_id, strat_name, _msg = incubation_resolver.resolve_and_provision_paper_trading(
+        validated, goal.paper_authorization
+    )
+    if ok and paper_inst_id:
         ctrl.apply_event(
-            "candidate_mutated",
+            "paper_started",
             {
-                "attempt_id": mutated_attempt.attempt_id,
-                "strategy_code": mutated_attempt.strategy_code,
+                "attempt_id": validated.attempt_id,
+                "paper_instance_id": paper_inst_id,
+                "strategy_name": strat_name,
             },
         )
-        mcts_engine.add_child(parent_id, mutated_attempt)
-
-        # 5. Parallel Rollout Execution across Red Team Attacks
-        def eval_candidate(cand: Any) -> tuple[bool, float]:
-            p, m, _ = engine.run_adversarial_session(cand)
-            return p, float(m.get("sharpe_after_attack", 1.5))
-
-        rollouts = mcts_engine.execute_parallel_rollout(eval_candidate, [mutated_attempt])
-        passed2, score2 = rollouts[0][1], rollouts[0][2]
-
-        ctrl.apply_event(
-            "red_team_tested",
-            {
-                "attempt_id": mutated_attempt.attempt_id,
-                "passed": passed2,
-                "metrics": {"sharpe_after_attack": score2},
-            },
-        )
-        mcts_engine.backpropagate(mutated_attempt.attempt_id, score2)
-
-        if passed2:
-            mutated_attempt.state = "validated"
-            ctrl.apply_event(
-                "candidate_validated",
-                {
-                    "attempt_id": mutated_attempt.attempt_id,
-                    "validation_id": f"val_{mutated_attempt.attempt_id}",
-                },
-            )
-
-            # 6. Voyager-Style Automated Skill Distillation
-            distilled_skills = skill_distiller.distill_skills_from_candidate(mutated_attempt)
-            for skill in distilled_skills:
-                skill_library.register_skill(skill)
-
-            # 7. Auto Paper Incubation
-            if goal.paper_authorization:
-                ok, paper_inst_id, strat_name, msg = (
-                    incubation_resolver.resolve_and_provision_paper_trading(
-                        mutated_attempt, goal.paper_authorization
-                    )
-                )
-                if ok and paper_inst_id:
-                    ctrl.apply_event(
-                        "paper_started",
-                        {
-                            "attempt_id": mutated_attempt.attempt_id,
-                            "paper_instance_id": paper_inst_id,
-                            "strategy_name": strat_name,
-                        },
-                    )
-                    ctrl.apply_event("mission_completed", {})
-                else:
-                    ctrl.apply_event("operator_needed", {})
-            else:
-                ctrl.apply_event("operator_needed", {})
-        else:
-            ctrl.apply_event("operator_needed", {})
+        ctrl.apply_event("mission_completed", {})
     else:
-        initial_attempt.state = "validated"
-        ctrl.apply_event(
-            "candidate_validated",
-            {
-                "attempt_id": initial_attempt.attempt_id,
-                "validation_id": f"val_{initial_attempt.attempt_id}",
-            },
-        )
-
-        distilled_skills = skill_distiller.distill_skills_from_candidate(initial_attempt)
-        for skill in distilled_skills:
-            skill_library.register_skill(skill)
-
-        if goal.paper_authorization:
-            ok, paper_inst_id, strat_name, msg = (
-                incubation_resolver.resolve_and_provision_paper_trading(
-                    initial_attempt, goal.paper_authorization
-                )
-            )
-            if ok and paper_inst_id:
-                ctrl.apply_event(
-                    "paper_started",
-                    {
-                        "attempt_id": initial_attempt.attempt_id,
-                        "paper_instance_id": paper_inst_id,
-                        "strategy_name": strat_name,
-                    },
-                )
-                ctrl.apply_event("mission_completed", {})
+        ctrl.apply_event("operator_needed", {})

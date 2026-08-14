@@ -580,7 +580,14 @@ def select_family(spec: Mapping[str, Any]) -> StrategyFamily:
     Scoring is longest-keyword-wins so that a specific phrase ("mean reversion")
     outranks a generic one ("trend") that happens to also appear in the prose.
     Ties break on declaration order, keeping the mapping stable across runs.
+
+    An explicit `family_key` short-circuits inference. A search process asking for a
+    named family needs that family, not the one its objective prose happens to read
+    like; inference is for specs that only describe intent.
     """
+    requested = spec.get("family_key")
+    if isinstance(requested, str) and requested in _FAMILY_BY_KEY:
+        return _FAMILY_BY_KEY[requested]
     corpus = _spec_corpus(spec)
     best: StrategyFamily | None = None
     best_score = 0
