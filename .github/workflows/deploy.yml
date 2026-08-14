@@ -31,31 +31,65 @@ jobs:
             echo "sha=" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Skip unchanged deployment
-        if: steps.deployed.outputs.sha == github.sha && github.event.inputs.force_deploy != 'true'
-        run: echo "SHA ${{ github.sha }} is already deployed"
+      - name: Decide whether this SHA may deploy
+        id: gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_sha="${{ github.sha }}"
+          deployed="${{ steps.deployed.outputs.sha }}"
+          force="${{ github.event.inputs.force_deploy }}"
+          tip=""
+          if command -v gh >/dev/null 2>&1; then
+            tip=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha || true)
+          fi
+          if [ -z "$tip" ]; then
+            tip=$(curl -fsS \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/main" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
+          fi
+          echo "tip=$tip" >> "$GITHUB_OUTPUT"
+          echo "run=$run_sha deployed=$deployed tip=$tip force=$force"
+          if [ "$force" = "true" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$tip" ] && [ "$run_sha" != "$tip" ]; then
+            echo "Refusing stale SHA $run_sha; origin/main tip is $tip"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$deployed" ] && [ "$deployed" = "$run_sha" ]; then
+            echo "SHA $run_sha is already deployed"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
-        if: steps.deployed.outputs.sha != github.sha || github.event.inputs.force_deploy == 'true'
+        if: steps.gate.outputs.deploy == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
       - name: Set up Node
-        if: steps.deployed.outputs.sha != github.sha || github.event.inputs.force_deploy == 'true'
+        if: steps.gate.outputs.deploy == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "25"
 
       - name: Build frontend
-        if: steps.deployed.outputs.sha != github.sha || github.event.inputs.force_deploy == 'true'
+        if: steps.gate.outputs.deploy == 'true'
         shell: bash
         run: |
           npm exec --yes pnpm@10 -- -C frontend install --frozen-lockfile
           npm exec --yes pnpm@10 -- -C frontend build
 
       - name: Sync release to /opt/hypertrade
-        if: steps.deployed.outputs.sha != github.sha || github.event.inputs.force_deploy == 'true'
+        if: steps.gate.outputs.deploy == 'true'
         shell: bash
         run: |
           mkdir -p /opt/hypertrade/frontend/dist /opt/hypertrade/deploy
@@ -73,14 +107,13 @@ jobs:
           rsync -a --delete frontend/dist/ /opt/hypertrade/frontend/dist/
 
       - name: Deploy
-        if: steps.deployed.outputs.sha != github.sha || github.event.inputs.force_deploy == 'true'
+        if: steps.gate.outputs.deploy == 'true'
         shell: bash
         run: |
           chmod +x /opt/hypertrade/deploy/deploy.sh
           /opt/hypertrade/deploy/deploy.sh
 
       - name: Record deployed SHA
-        if: steps.deployed.outputs.sha != github.sha || github.event.inputs.force_deploy == 'true'
+        if: steps.gate.outputs.deploy == 'true'
         shell: bash
         run: echo "${{ github.sha }}" > /opt/hypertrade/deploy/last_deployed_sha
-

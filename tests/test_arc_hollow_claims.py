@@ -36,6 +36,19 @@ def test_loop_stops_without_a_window_instead_of_completing() -> None:
     assert "budget.is_exhausted" in src
 
 
+def test_loop_self_tests_against_success_criteria_before_paper() -> None:
+    src = getsource(router.run_autonomous_arc_loop)
+    assert "success_criteria" in src
+    assert "ARCSelfTestService" in src
+    assert "mission_completed" not in src
+
+
+def test_missions_are_loaded_from_the_store() -> None:
+    src = getsource(router)
+    assert "get_controller" in src
+    assert "save_mission" in src
+
+
 def test_live_write_is_still_unexpressible() -> None:
     src = getsource(CanaryVaultPipeline)
     assert "place_order" not in src
@@ -51,5 +64,3 @@ def test_remaining_hollows_are_still_visible() -> None:
     """These are not done. The test exists so they cannot silently look done."""
     loop = getsource(router.run_autonomous_arc_loop)
     assert "UnifiedStrategyValidation" not in loop
-    assert "success_criteria" not in loop
-    assert "_ARC_MISSIONS" in getsource(router)

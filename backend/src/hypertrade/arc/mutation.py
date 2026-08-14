@@ -8,8 +8,10 @@ import random
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCReflexionEventV1
 from hypertrade.arc.findings import (
     REMEDIATION_BY_REASON_CODE,
+    SPAN_PARAMETER_NAMES,
     ARCReasonCode,
     ParameterRemediation,
+    RemediationMode,
     extract_strategy_parameters,
 )
 
@@ -52,6 +54,14 @@ class ARCGeneticMutator:
                 remediations[remediation.parameter] = (
                     remediation if existing is None else _tighter(existing, remediation)
                 )
+
+        if any(
+            raw == ARCReasonCode.OOS_SAMPLE_TOO_SMALL.value
+            or raw == ARCReasonCode.INERT_NO_TRADES.value
+            for ref in reflexion_history
+            for raw in ref.reason_codes
+        ):
+            remediations.update(_shorten_span_remediations(attempt.strategy_code))
 
         round_index = int(attempt.strategy_spec.get("mutation_round", 0)) + 1
         explored = self._pick_exploration(attempt, remediations, round_index)
@@ -165,6 +175,20 @@ def _remediation_for(raw_code: str) -> ParameterRemediation | None:
     except ValueError:
         return None
     return REMEDIATION_BY_REASON_CODE.get(code)
+
+
+def _shorten_span_remediations(code: str) -> dict[str, ParameterRemediation]:
+    """Fewer OOS trades means the signal horizon is too long for the window."""
+    current = extract_strategy_parameters(code)
+    remediations: dict[str, ParameterRemediation] = {}
+    for name in SPAN_PARAMETER_NAMES:
+        value = current.get(name)
+        if value is None or value <= 3:
+            continue
+        remediations[name] = ParameterRemediation(
+            name, RemediationMode.AT_MOST, max(3.0, value * 0.7)
+        )
+    return remediations
 
 
 def _tighter(left: ParameterRemediation, right: ParameterRemediation) -> ParameterRemediation:

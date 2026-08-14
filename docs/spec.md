@@ -58,6 +58,16 @@ Provider、Mission、BitPro 策略/回测、统一验证和 Paper Incubation 能
 当前执行合同见
 [User-Directed Autonomous Strategy Research Loop M0](contracts/user-directed-autonomous-strategy-research-loop-m0.md)。
 
+## Current Product Path — ARC Research, Paper Observe, One Live Approval
+
+产品入口是 `POST /api/v1/arc/missions`，不是第三条控制器。Agent 自己生成候选、本地预筛、再走
+BitPro `strategy_validate_code` / create / `backtest_start_job`；`ARCGoalV1.success_criteria`
+必须参与第二级判定。过检后自动上模拟盘并进入 `paper_observing`，不立刻 `mission_completed`。
+观察窗（最短小时数 + 最少成交 + BitPro 对账）结束后生成 `LiveApprovalPackageV1`。缺 backtest
+ref、paper instance、观察窗或对账时包状态为 `incomplete`，`POST .../live-approval/decide`
+拒绝批准。操作员批准后才走审批绑定的 `authorized_live_promote`；`call_tool("live_promote")`
+和现货/合约下单、划转仍然拦截。Mission 投影落在 `arc_missions`，重启可恢复。
+
 ## Canonical Agent Runtime Target
 
 The next runtime uses a server-owned `Thread → Turn → Item` interaction protocol and links long-running

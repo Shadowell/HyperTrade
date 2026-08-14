@@ -604,8 +604,36 @@ def select_family(spec: Mapping[str, Any]) -> StrategyFamily:
     return FAMILIES[sum(key.encode("utf-8")) % len(FAMILIES)]
 
 
+def direction_is_mandated(spec: Mapping[str, Any]) -> bool:
+    """Whether the spec's own words constrain direction, rather than leaving it open.
+
+    A search process needs to tell "the operator forbade shorting" apart from "the
+    operator did not mention direction". Both currently compile to `long_only`, so
+    without this distinction the search cannot know whether the other directions are
+    off the table or merely unexplored.
+    """
+    corpus = _spec_corpus(spec)
+    return any(
+        marker in corpus
+        for markers in (_SHORT_ONLY_MARKERS, _LONG_ONLY_MARKERS, _BIDIRECTIONAL_MARKERS)
+        for marker in markers
+    )
+
+
 def detect_direction(spec: Mapping[str, Any], family: StrategyFamily) -> Direction:
-    """Resolve trade direction from the spec, honouring explicit prohibitions first."""
+    """Resolve trade direction from the spec, honouring explicit prohibitions first.
+
+    An explicit `direction` short-circuits inference, for the same reason `family_key`
+    does: a search asking for a named direction needs that direction, not the one the
+    objective prose happens to read like. A direction the family cannot express is
+    downgraded rather than emitted, since `supports_short=False` is a property of the
+    logic, not a preference.
+    """
+    requested = spec.get("direction")
+    if isinstance(requested, str) and requested in ("long_only", "short_only", "long_short"):
+        if requested != "long_only" and not family.supports_short:
+            return "long_only"
+        return requested
     corpus = _spec_corpus(spec)
     if any(marker in corpus for marker in _SHORT_ONLY_MARKERS):
         return "short_only" if family.supports_short else "long_only"

@@ -32,3 +32,9 @@
 - 模型只能提出假设、突变代码、红蓝对抗陈述与反思总结。
 - 确定性验证服务做独立终审裁决。
 - 模拟盘上线使用预授权派生的 candidate-bound 窄授权。
+
+## Addendum — 2026-08-15 一次实盘审批
+
+产品入口仍是 ARC。`live_allowed` 仍不可构造为 True。实盘不再从 goal 开关打开，只经
+`GET/POST /api/v1/arc/missions/{id}/live-approval`：观察窗证据齐全后操作员批一次，再走
+审批绑定的 `authorized_live_promote`。`call_tool` 对 `live_promote` / 下单 / 划转继续拦截。

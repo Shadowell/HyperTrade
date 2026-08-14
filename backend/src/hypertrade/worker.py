@@ -13,6 +13,8 @@ from hypertrade.agent.task_executor import (
     TaskExecutionError,
 )
 from hypertrade.agent.tasks import AgentTaskService
+from hypertrade.arc.observation import observe_arc_missions_once
+from hypertrade.arc.store import configure_store
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import Database
@@ -481,7 +483,21 @@ async def main() -> None:
         tasks.append(mission_worker_loop(db))
     if settings.research_triggers_enabled and not full_mission_cutover:
         tasks.append(research_trigger_loop(db))
+    tasks.append(arc_observation_loop(db))
     await asyncio.gather(*tasks)
+
+
+async def arc_observation_loop(db: Database) -> None:
+    """Poll paper_observing ARC missions and record BitPro snapshots."""
+    configure_store(db)
+    while True:
+        try:
+            result = await asyncio.to_thread(observe_arc_missions_once)
+            if result.get("observed"):
+                logger.info("arc_observation observed=%s", result.get("observed"))
+        except Exception:
+            logger.exception("arc_observation failed")
+        await asyncio.sleep(60)
 
 
 if __name__ == "__main__":

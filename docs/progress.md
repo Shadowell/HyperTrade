@@ -1,5 +1,19 @@
 # Progress Log
 
+## 研究自测、自动模拟盘、一次实盘审批 — 2026-08-15
+
+- **产品闭环**：ARC 仍是唯一入口。本地回放只做预筛；幸存者必须拿到 BitPro backtest ref，
+  并且通过 `success_criteria`（默认夏普 1.2 / 回撤 15% / 最少成交）才能宣称自测通过。
+  过检后自动 configure+start 模拟盘，状态停在 `paper_observing`，不再 `mission_completed`。
+- **窗口与变异**：预检/门禁默认读到归档安全上限 20_000 根，不再自残 1500。创建 mission
+  可配 `timeframe` 和观察窗。`OOS_SAMPLE_TOO_SMALL` / `INERT_NO_TRADES` 会缩短 span 参数。
+- **可恢复**：`arc_missions` 落投影；`GET` 从库读；`continue` 追加预算不重置历史。
+- **一次实盘审批**：观察窗满后生成对照包。缺 ref 不能批。批准后走
+  `BitProLivePromoteClient` / `authorized_live_promote`（先 `live_preflight`，不经
+  `call_tool`）。未批、拒绝、证据不全：实盘动作为零。下单/划转仍拦截。
+- **部署**：排队的旧 SHA 若不是 `origin/main` tip，拒绝部署，避免验收被旧镜像盖掉。
+- **验证**：`./scripts/check.sh`；新增 self-test / store / live-approval / span mutation 测试。
+
 ## Gate 2 真接通：create → configure → start，且 start 必须用 instance_id — 2026-08-15
 
 - **默认客户端接错类**：高层 `strategy_create` / `paper_configure` / `paper_start` 在

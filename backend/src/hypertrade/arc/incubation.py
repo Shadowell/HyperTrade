@@ -154,28 +154,34 @@ class ARCPaperIncubationResolver:
         configure_key = f"arc-configure-{attempt.candidate_id}"
         start_key = f"arc-start-{attempt.candidate_id}"
 
-        try:
-            created = client.strategy_create(
-                name=bitpro_strategy_name,
-                script_content=attempt.strategy_code,
-                description=(
-                    f"ARC Autonomous Research Candidate {attempt.candidate_id} for {symbol}"
-                ),
-                exchange="okx",
-                symbols=[symbol],
-                idempotency_key=create_key,
-            )
-        except Exception as exc:
-            return (
-                False,
-                None,
-                bitpro_strategy_name,
-                f"bitpro_strategy_create_failed:{type(exc).__name__}",
-            )
+        existing_id = _as_int(attempt.bitpro_strategy_id)
+        strategy_id: int
+        if existing_id is not None:
+            strategy_id = existing_id
+        else:
+            try:
+                created = client.strategy_create(
+                    name=bitpro_strategy_name,
+                    script_content=attempt.strategy_code,
+                    description=(
+                        f"ARC Autonomous Research Candidate {attempt.candidate_id} for {symbol}"
+                    ),
+                    exchange="okx",
+                    symbols=[symbol],
+                    idempotency_key=create_key,
+                )
+            except Exception as exc:
+                return (
+                    False,
+                    None,
+                    bitpro_strategy_name,
+                    f"bitpro_strategy_create_failed:{type(exc).__name__}",
+                )
 
-        strategy_id = _strategy_id(created)
-        if not _ok(created) or strategy_id is None:
-            return False, None, bitpro_strategy_name, "bitpro_strategy_create_rejected"
+            created_id = _strategy_id(created)
+            if not _ok(created) or created_id is None:
+                return False, None, bitpro_strategy_name, "bitpro_strategy_create_rejected"
+            strategy_id = created_id
 
         try:
             configured = client.paper_configure(

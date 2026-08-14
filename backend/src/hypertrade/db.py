@@ -2034,6 +2034,16 @@ class ResearchTriggerControl(Base, TimestampMixin):
     updated_by: Mapped[str] = mapped_column(String(128), default="operator")
 
 
+class ArcMission(Base, TimestampMixin):
+    """Durable ARC mission projection. Restart must not drop attempts or paper ids."""
+
+    __tablename__ = "arc_missions"
+
+    mission_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    state: Mapped[str] = mapped_column(String(48), index=True)
+    projection_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class Database:
     def __init__(self, url: str, *, echo: bool = False) -> None:
         self.url = url

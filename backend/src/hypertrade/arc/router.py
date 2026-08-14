@@ -2,16 +2,18 @@
 ARC API Router - Single Entry Autonomous Exploration & Event Streaming
 """
 
-from typing import Any
+from decimal import Decimal
+from typing import Any, Literal
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
+from pydantic import BaseModel, Field
 
 from hypertrade.arc.adversarial import ARCAdversarialEngine, BlueTeamQuant
 from hypertrade.arc.contracts import (
     ARCBudgetV1,
     ARCCandidateAttemptV1,
     ARCGoalV1,
+    PaperObservationPolicyV1,
     PaperPreauthorizationV1,
 )
 from hypertrade.arc.controller import ARCController
@@ -20,28 +22,66 @@ from hypertrade.arc.evidence import (
     build_default_window,
     preflight_window,
 )
+from hypertrade.arc.findings import ARCReasonCode, AttackFinding
 from hypertrade.arc.incubation import ARCPaperIncubationResolver
+from hypertrade.arc.live_approval import build_live_approval_package
+from hypertrade.arc.live_promote import decide_live_approval, revoke_live_approval
 from hypertrade.arc.mcts import ARCParallelMCTSEngine, MCTSNode
 from hypertrade.arc.mutation import ARCGeneticMutator
+from hypertrade.arc.observation import observe_mission
 from hypertrade.arc.reflexion import ARCReflexionLedger
+from hypertrade.arc.self_test import ARCSelfTestService, SelfTestResult
 from hypertrade.arc.skills import ARCSkillDistiller, ARCSkillLibrary
+from hypertrade.arc.store import MISSIONS, get_controller, save_mission
+
+_ARC_MISSIONS = MISSIONS
 
 router = APIRouter(prefix="/api/v1/arc", tags=["arc"])
-
-_ARC_MISSIONS: dict[str, ARCController] = {}
 
 
 class CreateARCMissionRequest(BaseModel):
     objective: str
     symbol: str = "BTC-USDT-SWAP"
+    timeframe: str = "1H"
     max_candidates: int = 5
     paper_preauth_approved: bool = True
     parallel_workers: int = 4
+    min_paper_hours: int = 24
+    min_paper_trades: int = 10
+    live_max_capital_u: Decimal = Field(default=Decimal("100"))
+    live_mandate_hours: int = 24
+
+
+class ContinueARCMissionRequest(BaseModel):
+    extra_candidates: int = Field(default=3, ge=1, le=50)
+
+
+class LiveDecisionRequest(BaseModel):
+    decision: Literal["approve", "reject"]
+    reason: str
+    force: bool = False
+
+
+class LiveRevokeRequest(BaseModel):
+    reason: str
+
+
+def _require_operator(operator_id: str | None, idempotency_key: str | None) -> tuple[str, str]:
+    actor = (operator_id or "").strip()
+    key = (idempotency_key or "").strip()
+    if not actor:
+        raise HTTPException(status_code=400, detail="X-Operator-Id is required")
+    if not key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key is required")
+    return actor, key
 
 
 @router.post("/missions")
 async def create_arc_mission(
-    request: CreateARCMissionRequest, background_tasks: BackgroundTasks
+    request: CreateARCMissionRequest,
+    background_tasks: BackgroundTasks,
+    x_operator_id: str | None = Header(default="operator"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
     """
     Create & trigger SOTA ARC autonomous research & evolution loop.
@@ -54,12 +94,20 @@ async def create_arc_mission(
     goal = ARCGoalV1(
         objective=request.objective,
         symbols=[request.symbol],
+        timeframes=[request.timeframe],
         budget=ARCBudgetV1(max_candidates=request.max_candidates),
         paper_authorization=preauth,
+        observation=PaperObservationPolicyV1(
+            min_hours=request.min_paper_hours,
+            min_trades=request.min_paper_trades,
+        ),
+        live_max_capital_u=request.live_max_capital_u,
+        live_mandate_hours=request.live_mandate_hours,
     )
 
     controller = ARCController(goal=goal)
-    _ARC_MISSIONS[controller.mission_id] = controller
+    controller.projection.created_by = (x_operator_id or "operator").strip() or "operator"
+    save_mission(controller)
 
     background_tasks.add_task(
         run_autonomous_arc_loop,
@@ -71,6 +119,7 @@ async def create_arc_mission(
         "mission_id": controller.mission_id,
         "status": controller.projection.state,
         "objective": request.objective,
+        "timeframe": request.timeframe,
         "parallel_workers": request.parallel_workers,
         "message": (
             f"Production-Grade SOTA ARC Autonomous Exploration Loop started "
@@ -93,42 +142,189 @@ async def arc_evidence_preflight(
 
 @router.get("/missions/{mission_id}")
 async def get_arc_mission(mission_id: str) -> dict[str, Any]:
-    if mission_id not in _ARC_MISSIONS:
+    ctrl = get_controller(mission_id)
+    if ctrl is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
-    ctrl = _ARC_MISSIONS[mission_id]
-    return ctrl.projection.model_dump()
+    return ctrl.projection.model_dump(mode="json")
+
+
+@router.post("/missions/{mission_id}/continue")
+async def continue_arc_mission(
+    mission_id: str,
+    request: ContinueARCMissionRequest,
+    background_tasks: BackgroundTasks,
+    x_operator_id: str | None = Header(default=None),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    actor, key = _require_operator(x_operator_id, idempotency_key)
+    ctrl = get_controller(mission_id)
+    if ctrl is None:
+        raise HTTPException(status_code=404, detail="ARC Mission not found")
+    if ctrl.projection.state in {
+        "paper_observing",
+        "live_approval_ready",
+        "approved_pending_effect",
+        "live_canary",
+    }:
+        return {
+            "mission_id": mission_id,
+            "status": ctrl.projection.state,
+            "message": "research already finished; continue does not reset history",
+        }
+    ctrl.apply_event(
+        "budget_extended",
+        {
+            "extra_candidates": request.extra_candidates,
+            "operator_id": actor,
+            "idempotency_key": key,
+        },
+    )
+    background_tasks.add_task(run_autonomous_arc_loop, mission_id)
+    return {
+        "mission_id": mission_id,
+        "status": ctrl.projection.state,
+        "max_candidates": (
+            ctrl.projection.goal.budget.max_candidates if ctrl.projection.goal else None
+        ),
+    }
+
+
+@router.get("/missions/{mission_id}/live-approval")
+async def get_live_approval(mission_id: str) -> dict[str, Any]:
+    ctrl = get_controller(mission_id)
+    if ctrl is None:
+        raise HTTPException(status_code=404, detail="ARC Mission not found")
+    if ctrl.projection.state == "paper_observing":
+        observe_mission(ctrl)
+    package = ctrl.projection.live_approval or build_live_approval_package(ctrl.projection)
+    return package.model_dump(mode="json")
+
+
+@router.post("/missions/{mission_id}/live-approval/decide")
+async def decide_live_approval_endpoint(
+    mission_id: str,
+    request: LiveDecisionRequest,
+    x_operator_id: str | None = Header(default=None),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    actor, key = _require_operator(x_operator_id, idempotency_key)
+    ctrl = get_controller(mission_id)
+    if ctrl is None:
+        raise HTTPException(status_code=404, detail="ARC Mission not found")
+    if ctrl.projection.live_approval is None:
+        package = build_live_approval_package(ctrl.projection)
+        ctrl.apply_event("live_approval_ready", {"package": package.model_dump(mode="json")})
+    try:
+        return decide_live_approval(
+            ctrl,
+            decision=request.decision,
+            reason=request.reason,
+            operator_id=actor,
+            idempotency_key=key,
+            force=request.force,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/missions/{mission_id}/live-approval/revoke")
+async def revoke_live_approval_endpoint(
+    mission_id: str,
+    request: LiveRevokeRequest,
+    x_operator_id: str | None = Header(default=None),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    actor, key = _require_operator(x_operator_id, idempotency_key)
+    ctrl = get_controller(mission_id)
+    if ctrl is None:
+        raise HTTPException(status_code=404, detail="ARC Mission not found")
+    return revoke_live_approval(
+        ctrl, operator_id=actor, reason=request.reason, idempotency_key=key
+    )
 
 
 # How much of the candidate budget goes to seeding structurally different hypotheses
 # rather than to repairing them. Leaves room for at least one generation of mutation.
 _MAX_SEED_WIDTH = 3
+_RESEARCH_DONE = {
+    "paper_observing",
+    "live_approval_ready",
+    "approved_pending_effect",
+    "live_canary",
+}
+
+
+def _findings_from_self_test(result: SelfTestResult) -> list[AttackFinding]:
+    findings: list[AttackFinding] = []
+    text = " ".join(result.reasons).lower()
+    if "sharpe" in text:
+        findings.append(
+            AttackFinding(
+                ARCReasonCode.OOS_SHARPE_TOO_LOW,
+                "success_criteria",
+                result.message or "BitPro self-test sharpe below success_criteria",
+            )
+        )
+    if "drawdown" in text:
+        findings.append(
+            AttackFinding(
+                ARCReasonCode.OOS_DRAWDOWN_EXCEEDED,
+                "success_criteria",
+                result.message or "BitPro self-test drawdown exceeds success_criteria",
+            )
+        )
+    if "trades" in text:
+        findings.append(
+            AttackFinding(
+                ARCReasonCode.OOS_SAMPLE_TOO_SMALL,
+                "success_criteria",
+                result.message or "BitPro self-test trades below success_criteria",
+            )
+        )
+    if "net_return" in text:
+        findings.append(
+            AttackFinding(
+                ARCReasonCode.FRICTION_NEGATIVE_NET_RETURN,
+                "success_criteria",
+                result.message or "BitPro self-test net return below success_criteria",
+            )
+        )
+    if not findings:
+        findings.append(
+            AttackFinding(
+                ARCReasonCode.EVIDENCE_REPLAY_FAILED,
+                "bitpro_self_test",
+                result.message or "; ".join(result.reasons) or "BitPro self-test failed",
+            )
+        )
+    return findings
 
 
 def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     """
     Production SOTA Autonomous Execution Engine Loop with Multi-Agent Parallel Rollouts:
     Goal -> Parallel MCTS Nodes -> Blue Proposals -> Red Attacks -> Reflexion ->
-    AST Mutation -> Voyager Skill Distillation -> Auto Paper Launch
+    AST Mutation -> Voyager Skill Distillation -> BitPro self-test -> Auto Paper Observe
 
     The loop searches until a candidate survives review or the candidate budget runs
-    out. It used to be a hand-unrolled two-step script: one proposal, one mutation, and
-    then it gave up regardless of how much budget the operator had granted.
+    out. Local replay is a cheap pre-filter. Paper launch requires BitPro backtest
+    refs and goal.success_criteria.
     """
-    ctrl = _ARC_MISSIONS.get(mission_id)
+    ctrl = get_controller(mission_id)
     if not ctrl:
         return
 
     goal = ctrl.projection.goal
     if not goal:
         return
-
-    ctrl.apply_event("goal_compiled", {"goal": goal.model_dump()})
-    # The projection rebuilds the goal from the event payload, so the pre-event object
-    # is a detached copy whose budget counters never advance. Reading budget off that
-    # copy let the loop propose past its allowance without ever seeing it exhausted.
-    goal = ctrl.projection.goal
-    if not goal:
+    if ctrl.projection.state in _RESEARCH_DONE:
         return
+
+    if not any(event.event_type == "goal_compiled" for event in ctrl.projection.events):
+        ctrl.apply_event("goal_compiled", {"goal": goal.model_dump()})
+        goal = ctrl.projection.goal
+        if not goal:
+            return
     budget = goal.budget
 
     symbol = goal.symbols[0] if goal.symbols else "BTC-USDT-SWAP"
@@ -150,36 +346,17 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     engine = ARCAdversarialEngine(evidence_gate=HistoricalEvidenceGate(window))
     mutator = ARCGeneticMutator()
     reflexion_ledger = ARCReflexionLedger()
+    reflexion_ledger._records.extend(ctrl.projection.reflexion_history)
     mcts_engine = ARCParallelMCTSEngine(parallel_workers=parallel_workers)
     skill_library = ARCSkillLibrary()
     skill_distiller = ARCSkillDistiller()
     incubation_resolver = ARCPaperIncubationResolver()
 
-    # 1. Seed the MCTS tree with structurally different hypotheses, not one template.
-    #    One slot is always held back so a rejected frontier still gets one repair pass.
-    seed_width = max(1, min(_MAX_SEED_WIDTH, budget.max_candidates - 1))
-    seeds = blue_team.propose_diverse_frontier(goal.objective, symbol, seed_width)
-    root_id: str | None = None
-    frontier: list[MCTSNode] = []
-    for seed in seeds:
-        ctrl.apply_event("candidate_proposed", {"attempt": seed.model_dump()})
-        if root_id is None:
-            root = mcts_engine.add_root(seed)
-            root_id = root.node_id
-            frontier.append(root)
-        else:
-            frontier.append(mcts_engine.add_child(root_id, seed))
-
-    # The rollout contract only carries (passed, score), so the review detail each
-    # candidate needs for reflexion is captured here and read back by attempt id.
     reviews: dict[str, tuple[dict[str, Any], list[Any]]] = {}
 
     def eval_candidate(cand: ARCCandidateAttemptV1) -> tuple[bool, float]:
         survived, metrics, findings = engine.run_adversarial_session(cand)
         reviews[cand.attempt_id] = (metrics, list(findings))
-        # `ranking_sharpe` is the held-out result where the window allowed one, and only
-        # falls back to the declared projection when it did not. MCTS backpropagates this
-        # value, so it decides which subtree the remaining budget is spent on.
         return survived, float(metrics.get("ranking_sharpe", 0.0))
 
     def repair(cand: ARCCandidateAttemptV1) -> list[ARCCandidateAttemptV1]:
@@ -197,8 +374,6 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
 
         mutated = mutator.mutate_attempt(cand, reflexion_ledger.get_history())
         if mutated.strategy_code == cand.strategy_code:
-            # Nothing the reviewer objected to is expressible as a parameter change;
-            # re-testing an identical body would only burn budget.
             return []
         ctrl.apply_event("candidate_proposed", {"attempt": mutated.model_dump()})
         ctrl.apply_event(
@@ -207,73 +382,173 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
         )
         return [mutated]
 
-    validated: ARCCandidateAttemptV1 | None = None
-    while frontier and validated is None:
-        # 2. Simulation: the engine rolls the generation out and backpropagates values.
-        rollouts = mcts_engine.simulate(frontier, eval_candidate)
-        for node, survived, _score in rollouts:
-            metrics, _ = reviews.get(node.attempt.attempt_id, ({}, []))
-            ctrl.apply_event(
-                "red_team_tested",
-                {
-                    "attempt_id": node.attempt.attempt_id,
-                    "passed": survived,
-                    "metrics": metrics,
-                },
+    validated = next(
+        (
+            item
+            for item in ctrl.projection.attempts
+            if item.state == "validated" and item.bitpro_backtest_id
+        ),
+        None,
+    )
+
+    frontier: list[MCTSNode] = []
+    if validated is None:
+        if not ctrl.projection.attempts:
+            seed_width = max(1, min(_MAX_SEED_WIDTH, budget.max_candidates - 1))
+            seeds = blue_team.propose_diverse_frontier(
+                goal.objective, symbol, seed_width, timeframe=timeframe
             )
+            root_id: str | None = None
+            for seed in seeds:
+                ctrl.apply_event("candidate_proposed", {"attempt": seed.model_dump()})
+                if root_id is None:
+                    root = mcts_engine.add_root(seed)
+                    root_id = root.node_id
+                    frontier.append(root)
+                else:
+                    frontier.append(mcts_engine.add_child(root_id, seed))
+        else:
+            rejected = [item for item in ctrl.projection.attempts if item.state == "rejected"]
+            source = rejected[-1] if rejected else ctrl.projection.attempts[-1]
+            root = mcts_engine.add_root(source)
+            for cand in rejected[-3:] or [source]:
+                mutated = mutator.mutate_attempt(cand, reflexion_ledger.get_history())
+                if mutated.strategy_code == cand.strategy_code or budget.is_exhausted():
+                    continue
+                ctrl.apply_event("candidate_proposed", {"attempt": mutated.model_dump()})
+                ctrl.apply_event(
+                    "candidate_mutated",
+                    {
+                        "attempt_id": mutated.attempt_id,
+                        "strategy_code": mutated.strategy_code,
+                    },
+                )
+                frontier.append(mcts_engine.add_child(root.node_id, mutated))
+            if not frontier:
+                extra = max(1, min(_MAX_SEED_WIDTH, budget.max_candidates - budget.candidates_used))
+                for seed in blue_team.propose_diverse_frontier(
+                    goal.objective, symbol, extra, timeframe=timeframe
+                ):
+                    if budget.is_exhausted():
+                        break
+                    ctrl.apply_event("candidate_proposed", {"attempt": seed.model_dump()})
+                    frontier.append(mcts_engine.add_child(root.node_id, seed))
 
-        survivors = sorted(
-            ((score, node.attempt) for node, survived, score in rollouts if survived),
-            key=lambda pair: pair[0],
-            reverse=True,
-        )
-        if survivors:
-            validated = survivors[0][1]
-            break
+        while frontier and validated is None:
+            rollouts = mcts_engine.simulate(frontier, eval_candidate)
+            for node, survived, _score in rollouts:
+                metrics, _ = reviews.get(node.attempt.attempt_id, ({}, []))
+                ctrl.apply_event(
+                    "red_team_tested",
+                    {
+                        "attempt_id": node.attempt.attempt_id,
+                        "passed": survived,
+                        "metrics": metrics,
+                    },
+                )
 
-        # 3. Expansion: reflexion-guided repair of every casualty in this generation.
-        next_generation: list[MCTSNode] = []
-        for node, _, _ in rollouts:
-            next_generation.extend(mcts_engine.expand(node.node_id, repair))
-        frontier = next_generation
+            survivors = sorted(
+                ((score, node.attempt) for node, survived, score in rollouts if survived),
+                key=lambda pair: pair[0],
+                reverse=True,
+            )
+            oos_survivors = [
+                pair
+                for pair in survivors
+                if reviews.get(pair[1].attempt_id, ({}, []))[0].get("ranking_basis")
+                == "out_of_sample"
+            ]
+            if survivors and not oos_survivors:
+                metrics, _ = reviews.get(survivors[0][1].attempt_id, ({}, []))
+                ctrl.apply_event(
+                    "operator_needed",
+                    {
+                        "reason": "no_out_of_sample_evidence",
+                        "attempt_id": survivors[0][1].attempt_id,
+                        "ranking_basis": metrics.get("ranking_basis"),
+                    },
+                )
+                return
+            for _score, candidate in oos_survivors:
+                survivor_metrics, _ = reviews.get(candidate.attempt_id, ({}, []))
+                if survivor_metrics.get("ranking_basis") != "out_of_sample":
+                    continue
+                self_test = ARCSelfTestService().run(candidate, goal)
+                ctrl.apply_event(
+                    "bitpro_self_tested",
+                    {
+                        "attempt_id": candidate.attempt_id,
+                        "passed": self_test.passed,
+                        "validation_id": self_test.validation_id,
+                        "bitpro_strategy_id": self_test.bitpro_strategy_id,
+                        "backtest_id": self_test.backtest_id,
+                        "metrics": self_test.metrics,
+                        "reasons": self_test.reasons,
+                        "success_criteria": goal.success_criteria.model_dump(mode="json"),
+                    },
+                )
+                if self_test.passed:
+                    validated = next(
+                        item
+                        for item in ctrl.projection.attempts
+                        if item.attempt_id == candidate.attempt_id
+                    )
+                    break
+                reflexion = reflexion_ledger.diagnose_and_record_failure(
+                    attempt=candidate,
+                    failure_class="bitpro_self_test_failed",
+                    observed_metrics=self_test.metrics,
+                    findings=_findings_from_self_test(self_test),
+                )
+                ctrl.apply_event("reflexion_recorded", {"reflexion": reflexion.model_dump()})
+
+            if validated is not None:
+                break
+
+            next_generation: list[MCTSNode] = []
+            for node, _, _ in rollouts:
+                next_generation.extend(mcts_engine.expand(node.node_id, repair))
+            frontier = next_generation
 
     if validated is None:
-        ctrl.apply_event("operator_needed", {})
+        if ctrl.projection.state != "needs_operator":
+            ctrl.apply_event("operator_needed", {"reason": "no_validated_candidate"})
         return
 
-    survivor_metrics, _ = reviews.get(validated.attempt_id, ({}, []))
-    # Projected Sharpe is what the candidate declared about itself. Paper launch
-    # requires a held-out measurement, not an advisory-shaped pass.
-    if survivor_metrics.get("ranking_basis") != "out_of_sample":
+    if not validated.bitpro_backtest_id or not validated.validation_id:
         ctrl.apply_event(
             "operator_needed",
             {
-                "reason": "no_out_of_sample_evidence",
+                "reason": "bitpro_self_test_incomplete",
                 "attempt_id": validated.attempt_id,
-                "ranking_basis": survivor_metrics.get("ranking_basis"),
             },
         )
         return
 
-    validated.state = "validated"
-    ctrl.apply_event(
-        "candidate_validated",
-        {
-            "attempt_id": validated.attempt_id,
-            "validation_id": f"val_{validated.attempt_id}",
-        },
-    )
+    if validated.state != "validated":
+        ctrl.apply_event(
+            "candidate_validated",
+            {
+                "attempt_id": validated.attempt_id,
+                "validation_id": validated.validation_id,
+                "bitpro_strategy_id": validated.bitpro_strategy_id,
+                "backtest_id": validated.bitpro_backtest_id,
+            },
+        )
+        validated = next(
+            item
+            for item in ctrl.projection.attempts
+            if item.attempt_id == validated.attempt_id
+        )
 
-    # 4. Voyager-Style Automated Skill Distillation
     for skill in skill_distiller.distill_skills_from_candidate(validated):
         skill_library.register_skill(skill)
 
-    # 5. Auto Paper Incubation. Paper launch stays gated on explicit pre-authorization.
     if not goal.paper_authorization:
-        ctrl.apply_event("operator_needed", {})
+        ctrl.apply_event("operator_needed", {"reason": "paper_preauthorization_missing"})
         return
 
-    ok, paper_inst_id, strat_name, _msg = incubation_resolver.resolve_and_provision_paper_trading(
+    ok, paper_inst_id, strat_name, msg = incubation_resolver.resolve_and_provision_paper_trading(
         validated, goal.paper_authorization
     )
     if ok and paper_inst_id:
@@ -283,8 +558,11 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
                 "attempt_id": validated.attempt_id,
                 "paper_instance_id": paper_inst_id,
                 "strategy_name": strat_name,
+                "message": msg,
             },
         )
-        ctrl.apply_event("mission_completed", {})
-    else:
-        ctrl.apply_event("operator_needed", {})
+        return
+    ctrl.apply_event(
+        "operator_needed",
+        {"reason": "paper_provision_failed", "message": msg},
+    )

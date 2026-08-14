@@ -41,6 +41,48 @@ def test_blue_team_proposal_follows_the_objective_instead_of_one_template():
     assert len({p.attempt_id for p in proposals.values()}) == len(objectives)
 
 
+def test_frontier_explores_both_sides_when_the_mandate_does_not_pick_one():
+    """On real BTC history that fell 45%, every long-only family failed on evidence.
+
+    Direction was fixed for the whole frontier and defaults to long only, so a mission
+    would spend its budget on one side of the market and report `needs_operator` without
+    recording that the other side was never proposed.
+    """
+    frontier = BlueTeamQuant().propose_diverse_frontier(
+        "find an edge on BTC", "BTC-USDT-SWAP", 3
+    )
+
+    directions = {a.strategy_spec["direction"] for a in frontier}
+    assert len(directions) > 1, directions
+    assert "long_short" in directions
+    # Structural variety in both dimensions, not one traded three ways.
+    assert len({a.strategy_spec["family"] for a in frontier}) > 1
+    # Same family on two sides is two hypotheses, so ids must not collide.
+    assert len({a.attempt_id for a in frontier}) == len(frontier)
+
+
+def test_an_explicit_prohibition_is_a_constraint_not_a_preference():
+    """"仅做多" has to survive the direction exploration that silence now triggers."""
+    frontier = BlueTeamQuant().propose_diverse_frontier(
+        "仅做多，寻找 BTC 趋势机会", "BTC-USDT-SWAP", 4
+    )
+
+    assert {a.strategy_spec["direction"] for a in frontier} == {"long_only"}
+    for attempt in frontier:
+        assert 'await self._enter(symbol, "short"' not in attempt.strategy_code
+
+
+def test_a_requested_direction_is_compiled_rather_than_inferred_from_prose():
+    blue = BlueTeamQuant()
+    short = blue.propose_initial_strategy(
+        "BTC 机会", "BTC-USDT-SWAP", family_key="atr_breakout", direction="short_only"
+    )
+
+    assert short.strategy_spec["direction"] == "short_only"
+    assert 'await self._enter(symbol, "short"' in short.strategy_code
+    assert 'await self._enter(symbol, "long"' not in short.strategy_code
+
+
 def test_blue_team_proposal_is_reproducible():
     """The experiment ledger fingerprints code, so the same mandate must recompile identically."""
     blue_team = BlueTeamQuant()

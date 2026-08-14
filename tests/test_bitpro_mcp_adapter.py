@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 from typing import Any
 
@@ -86,6 +87,54 @@ def test_bitpro_mcp_client_rejects_live_write_tools_before_http() -> None:
 
     with pytest.raises(PermissionError, match="live write"):
         client.call_tool("trading_futures_order", {"symbol": "ETH/USDT:USDT"})
+
+    with pytest.raises(PermissionError, match="live write"):
+        client.call_tool("live_promote", {"strategy_id": 1})
+
+
+def test_authorized_live_promote_requires_package_hash_and_uses_direct_request() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(
+                200, json={"success": True, "data": {"status": "healthy"}}
+            )
+        if request.url.path == "/api/v2/live/promote/preflight":
+            return httpx.Response(
+                200, json={"success": True, "data": {"status": "ok", "ready": True}}
+            )
+        if request.url.path == "/api/v2/live/promote":
+            body = json.loads(request.content)
+            assert body["approval_package_hash"] == "pkg_hash"
+            assert body["idempotency_key"] == "live-1"
+            return httpx.Response(
+                200, json={"success": True, "data": {"live_instance_id": "L9"}}
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    client = BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    adapter = BitProToolAdapter(client)
+    with pytest.raises(PermissionError, match="approval_package_hash"):
+        adapter.authorized_live_promote(
+            strategy_id=9,
+            approval_package_hash="",
+            mandate={"max_capital_u": "100"},
+            idempotency_key="live-1",
+        )
+    result = adapter.authorized_live_promote(
+        strategy_id=9,
+        approval_package_hash="pkg_hash",
+        mandate={"max_capital_u": "100"},
+        idempotency_key="live-1",
+    )
+    assert result["status"] == "ok"
+    assert result["promotion"]["live_instance_id"] == "L9"
+    assert "/api/v2/live/promote" in seen
 
 
 def test_strategy_validation_uses_remote_mcp_after_health_preflight() -> None:

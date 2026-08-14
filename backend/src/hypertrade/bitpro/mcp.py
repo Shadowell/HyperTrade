@@ -1217,6 +1217,81 @@ class BitProToolAdapter:
             "tool_calls": self.last_tool_calls,
         }
 
+    def live_preflight(self, *, strategy_id: int | None = None) -> dict[str, Any]:
+        """Read-only live promote diagnosis. Does not mutate BitPro."""
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        preflight = self._call(
+            "live_preflight",
+            _compact({"strategy_id": strategy_id} if strategy_id is not None else {}),
+        )
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "preflight": preflight,
+            "tool_calls": self.last_tool_calls,
+        }
+
+    def authorized_live_promote(
+        self,
+        *,
+        strategy_id: int,
+        approval_package_hash: str,
+        mandate: dict[str, Any],
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Promote only after a frozen live-approval package. Not reachable via call_tool."""
+        if not str(approval_package_hash or "").strip():
+            raise PermissionError("live_promote requires approval_package_hash")
+        if not isinstance(mandate, dict) or not mandate:
+            raise PermissionError("live_promote requires a frozen mandate")
+        if not str(idempotency_key or "").strip():
+            raise PermissionError("live_promote requires an idempotency key")
+        self.last_tool_calls = []
+        capabilities, health = self._preflight()
+        preflight = self._call("live_preflight", {"strategy_id": int(strategy_id)})
+        if not _live_preflight_healthy(preflight, health):
+            return {
+                "status": "pending_effect",
+                "reason": "live_preflight_unhealthy",
+                "contract_version": str(capabilities.get("contract_version", "")),
+                "health": health,
+                "preflight": preflight,
+                "tool_calls": self.last_tool_calls,
+            }
+        raw = self.client._request(
+            "POST",
+            "/live/promote",
+            json={
+                "strategy_id": int(strategy_id),
+                "approval_package_hash": approval_package_hash,
+                "mandate": mandate,
+                "idempotency_key": idempotency_key,
+            },
+            tool_name="authorized_live_promote",
+        )
+        self.last_tool_calls.append(
+            {
+                "tool": "authorized_live_promote",
+                "parameters": {
+                    "strategy_id": int(strategy_id),
+                    "approval_package_hash": approval_package_hash,
+                    "idempotency_key": idempotency_key,
+                },
+                "status": "success",
+                "result_summary": _summarize_tool_result(raw),
+            }
+        )
+        return {
+            "status": "ok",
+            "contract_version": str(capabilities.get("contract_version", "")),
+            "health": health,
+            "preflight": preflight,
+            "promotion": raw,
+            "tool_calls": self.last_tool_calls,
+        }
+
     def _preflight(self) -> tuple[dict[str, Any], dict[str, Any]]:
         capabilities = self._call("bitpro_capabilities", {})
         contract_version = str(capabilities.get("contract_version", ""))
@@ -1425,6 +1500,22 @@ def _error_message(payload: Any, status_code: int, *, tool_name: str) -> str:
 
 def _ensure_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {"value": value}
+
+
+def _live_preflight_healthy(preflight: Any, health: Any) -> bool:
+    health_status = ""
+    if isinstance(health, dict):
+        health_status = str(health.get("status") or "")
+    if health_status and health_status.lower() not in {"healthy", "ok"}:
+        return False
+    if not isinstance(preflight, dict):
+        return False
+    if preflight.get("success") is False:
+        return False
+    status = str(preflight.get("status") or preflight.get("ready") or "ok")
+    if status.lower() in {"unhealthy", "failed", "error", "blocked"}:
+        return False
+    return preflight.get("ready") is not False
 
 
 def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:

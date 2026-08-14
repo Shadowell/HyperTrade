@@ -119,6 +119,20 @@ def test_incubation_fails_closed_when_start_fails() -> None:
     assert client.kwargs["paper_start"]["strategy_id"] == 9
 
 
+def test_incubation_reuses_self_test_strategy_id() -> None:
+    client = _RecordingClient()
+    attempt = _validated(family="atr_breakout", timeframe="1m")
+    attempt.bitpro_strategy_id = "88"
+    ok, paper_id, _, _msg = ARCPaperIncubationResolver(client).resolve_and_provision_paper_trading(
+        attempt,
+        PaperPreauthorizationV1(symbols=["BTC-USDT-SWAP"]),
+    )
+    assert ok is True
+    assert paper_id == "9"
+    assert client.calls == ["paper_configure", "paper_start"]
+    assert client.kwargs["paper_configure"]["strategy_id"] == 88
+
+
 def test_incubation_starts_paper_and_names_from_family() -> None:
     client = _RecordingClient()
     resolver = ARCPaperIncubationResolver(client)

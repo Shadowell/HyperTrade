@@ -20,7 +20,11 @@ from hypertrade.arc.findings import (
     declared_span,
     extract_strategy_parameters,
 )
-from hypertrade.research.codegen import FAMILIES, generate_strategy
+from hypertrade.research.codegen import (
+    FAMILIES,
+    direction_is_mandated,
+    generate_strategy,
+)
 
 
 class BlueTeamQuant:
@@ -41,6 +45,7 @@ class BlueTeamQuant:
         *,
         timeframe: str = "1H",
         family_key: str | None = None,
+        direction: str | None = None,
         parameter_bounds: Mapping[str, Mapping[str, float]] | None = None,
     ) -> ARCCandidateAttemptV1:
         spec = self.build_spec(
@@ -48,11 +53,15 @@ class BlueTeamQuant:
         )
         if family_key is not None:
             spec["family_key"] = family_key
+        if direction is not None:
+            spec["direction"] = direction
         generated = generate_strategy(spec)
         # Ids are derived from the mandate so that re-proposing the same objective is
-        # idempotent while two objectives never collide on one MCTS root.
+        # idempotent while two objectives never collide on one MCTS root. Direction is
+        # part of the identity: the same family traded long and short is two hypotheses.
         digest = hashlib.blake2s(
-            f"{objective}|{symbol}|{timeframe}|{generated.family}".encode(), digest_size=3
+            f"{objective}|{symbol}|{timeframe}|{generated.family}|{generated.direction}".encode(),
+            digest_size=3,
         )
         token = digest.hexdigest()
         return ARCCandidateAttemptV1(
@@ -85,15 +94,33 @@ class BlueTeamQuant:
     ) -> list[ARCCandidateAttemptV1]:
         """Seed the search with `count` structurally different hypotheses.
 
-        The objective's own reading comes first; the remaining slots walk the family
-        catalogue in declaration order so the frontier is reproducible. Without this
-        the search could only ever tune the parameters of whichever single family the
-        objective's wording happened to match.
+        The objective's own reading comes first; the remaining slots vary both family and
+        direction, because both are structural. Without the family walk the search could
+        only tune the parameters of whichever family the objective's wording matched.
+
+        Direction matters just as much and was previously fixed for the whole frontier:
+        it is keyword-matched off the objective and defaults to long only, so on a market
+        that fell 45% over the window a mission would spend its entire budget on long
+        candidates, fail them all on evidence, and report `needs_operator` without ever
+        recording that the other side was never on the table. An explicit mandate is
+        still obeyed - "仅做多" is a constraint, not a preference - but silence is now
+        treated as unexplored rather than as a decision.
         """
         primary = self.propose_initial_strategy(
             objective, symbol, timeframe=timeframe, parameter_bounds=parameter_bounds
         )
         frontier = [primary]
+
+        spec = self.build_spec(objective, symbol, timeframe=timeframe)
+        # long_short leads: it is the most expressive of the three, so when the budget
+        # only funds one extra direction it should be the one that can trade either side.
+        directions: tuple[str | None, ...] = (
+            (None,)
+            if direction_is_mandated(spec)
+            else ("long_short", "short_only", "long_only")
+        )
+
+        slot = 0
         for family in FAMILIES:
             if len(frontier) >= max(1, count):
                 break
@@ -105,9 +132,11 @@ class BlueTeamQuant:
                     symbol,
                     timeframe=timeframe,
                     family_key=family.key,
+                    direction=directions[slot % len(directions)],
                     parameter_bounds=parameter_bounds,
                 )
             )
+            slot += 1
         return frontier
 
     @staticmethod

@@ -12,6 +12,8 @@ from typing import Any
 from hypertrade.arc.contracts import ARCBudgetV1, ARCGoalV1, PaperPreauthorizationV1
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.router import _ARC_MISSIONS, run_autonomous_arc_loop
+from hypertrade.arc.self_test import SelfTestResult
+from hypertrade.arc.store import reset_store
 from hypertrade.strategy.sdk import Candle
 
 
@@ -24,7 +26,28 @@ def _goal(*, max_candidates: int = 5) -> ARCGoalV1:
     )
 
 
+def _pass_self_test(*_args: Any, **_kwargs: Any) -> object:
+    class _Service:
+        def run(self, attempt: Any, goal: Any) -> SelfTestResult:
+            return SelfTestResult(
+                passed=True,
+                validation_id="val_test",
+                bitpro_strategy_id="77",
+                backtest_id="bt_77",
+                metrics={
+                    "sharpe": 1.4,
+                    "max_drawdown": 0.08,
+                    "trades": 12,
+                    "net_return": 0.11,
+                    "out_of_sample_sharpe": 1.4,
+                },
+            )
+
+    return _Service()
+
+
 def _start(goal: ARCGoalV1) -> ARCController:
+    reset_store()
     ctrl = ARCController(goal=goal)
     _ARC_MISSIONS[ctrl.mission_id] = ctrl
     return ctrl
@@ -217,6 +240,7 @@ def test_held_out_survivor_reaches_paper_only_when_bitpro_creates_it() -> None:
     original_window = router_module.build_default_window
     original_review = router_module.ARCAdversarialEngine.run_adversarial_session
     original_client = incubation_module.BitProToolAdapter
+    original_self_test = router_module.ARCSelfTestService
 
     def held_out_pass(self, attempt):  # type: ignore[no-untyped-def]
         return (
@@ -232,19 +256,23 @@ def test_held_out_survivor_reaches_paper_only_when_bitpro_creates_it() -> None:
     router_module.build_default_window = lambda *args, **kwargs: _flat_window()
     router_module.ARCAdversarialEngine.run_adversarial_session = held_out_pass  # type: ignore[method-assign]
     incubation_module.BitProToolAdapter = lambda *args, **kwargs: _OkBitPro()  # type: ignore[misc,assignment]
+    router_module.ARCSelfTestService = _pass_self_test  # type: ignore[assignment]
     try:
         run_autonomous_arc_loop(ctrl.mission_id)
     finally:
         router_module.build_default_window = original_window
         router_module.ARCAdversarialEngine.run_adversarial_session = original_review  # type: ignore[method-assign]
         incubation_module.BitProToolAdapter = original_client
+        router_module.ARCSelfTestService = original_self_test
 
     proj = ctrl.projection
-    assert proj.state == "completed"
+    assert proj.state == "paper_observing"
+    assert not any(event.event_type == "mission_completed" for event in proj.events)
     papered = [att for att in proj.attempts if att.paper_instance_id]
     assert len(papered) == 1
     assert papered[0].paper_instance_id == "77"
     assert papered[0].state == "paper_observing"
+    assert papered[0].bitpro_backtest_id == "bt_77"
 
 
 def test_held_out_survivor_stays_needs_operator_when_bitpro_fails() -> None:
@@ -256,15 +284,16 @@ def test_held_out_survivor_stays_needs_operator_when_bitpro_fails() -> None:
             raise RuntimeError("timeout")
 
         def paper_configure(self, **kwargs: Any) -> Any:
-            raise AssertionError("configure must not run after create failure")
+            raise RuntimeError("timeout")
 
         def paper_start(self, **kwargs: Any) -> Any:
-            raise AssertionError("start must not run after create failure")
+            raise AssertionError("start must not run after configure failure")
 
     ctrl = _start(_goal())
     original_window = router_module.build_default_window
     original_review = router_module.ARCAdversarialEngine.run_adversarial_session
     original_client = incubation_module.BitProToolAdapter
+    original_self_test = router_module.ARCSelfTestService
 
     def held_out_pass(self, attempt):  # type: ignore[no-untyped-def]
         return True, {"ranking_sharpe": 1.4, "ranking_basis": "out_of_sample"}, []
@@ -272,12 +301,14 @@ def test_held_out_survivor_stays_needs_operator_when_bitpro_fails() -> None:
     router_module.build_default_window = lambda *args, **kwargs: _flat_window()
     router_module.ARCAdversarialEngine.run_adversarial_session = held_out_pass  # type: ignore[method-assign]
     incubation_module.BitProToolAdapter = lambda *args, **kwargs: _DownBitPro()  # type: ignore[misc,assignment]
+    router_module.ARCSelfTestService = _pass_self_test  # type: ignore[assignment]
     try:
         run_autonomous_arc_loop(ctrl.mission_id)
     finally:
         router_module.build_default_window = original_window
         router_module.ARCAdversarialEngine.run_adversarial_session = original_review  # type: ignore[method-assign]
         incubation_module.BitProToolAdapter = original_client
+        router_module.ARCSelfTestService = original_self_test
 
     proj = ctrl.projection
     assert proj.state == "needs_operator"

@@ -43,6 +43,7 @@ from hypertrade.agent.tasks import (
     task_to_dict,
 )
 from hypertrade.arc.router import router as arc_router
+from hypertrade.arc.store import configure_store
 from hypertrade.backtest.service import BacktestService
 from hypertrade.bitpro.mcp import (
     BitProMcpClient,
@@ -403,6 +404,7 @@ def create_app(
 ) -> FastAPI:
     app_settings = settings or get_settings()
     database = db or Database(app_settings.database_url)
+    configure_store(database)
     mission_store = (
         InMemoryMissionStore()
         if database.url == "sqlite:///:memory:"

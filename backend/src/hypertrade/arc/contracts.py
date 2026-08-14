@@ -20,6 +20,15 @@ class ARCSuccessCriteriaV1(BaseModel):
     paper_required: bool = Field(default=True)
 
 
+class PaperObservationPolicyV1(BaseModel):
+    """When a paper instance has produced enough evidence for a live decision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    min_hours: int = Field(default=24, ge=0, le=24 * 90)
+    min_trades: int = Field(default=10, ge=0, le=100_000)
+
+
 class ARCBudgetV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -70,9 +79,12 @@ class ARCGoalV1(BaseModel):
         default_factory=lambda: ["trend_following", "mean_reversion"]
     )
     success_criteria: ARCSuccessCriteriaV1 = Field(default_factory=ARCSuccessCriteriaV1)
+    observation: PaperObservationPolicyV1 = Field(default_factory=PaperObservationPolicyV1)
     budget: ARCBudgetV1 = Field(default_factory=ARCBudgetV1)
     paper_authorization: PaperPreauthorizationV1 | None = None
     live_allowed: Literal[False] = False
+    live_max_capital_u: Decimal = Field(default=Decimal("100"))
+    live_mandate_hours: int = Field(default=24, ge=1, le=24 * 30)
 
 
 class ARCReflexionEventV1(BaseModel):
@@ -101,14 +113,17 @@ class ARCCandidateAttemptV1(BaseModel):
         "rejected",
         "paper_authorizing",
         "paper_observing",
+        "live_canary",
         "failed",
     ] = "proposed"
     hypothesis: str
     strategy_code: str
     strategy_spec: dict[str, Any] = Field(default_factory=dict)
     bitpro_strategy_id: str | None = None
+    bitpro_backtest_id: str | None = None
     validation_id: str | None = None
     paper_instance_id: str | None = None
+    live_instance_id: str | None = None
     observed_metrics: dict[str, Any] = Field(default_factory=dict)
     reflexion_events: list[ARCReflexionEventV1] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -137,3 +152,22 @@ class LiveTradingMandateV1(BaseModel):
     mandatory_stop_loss_pct: Decimal = Field(default=Decimal("7.0"))
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class LiveApprovalPackageV1(BaseModel):
+    """Operator-facing evidence for the single live decision. Missing refs => incomplete."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["live_approval_package.v1"] = "live_approval_package.v1"
+    mission_id: str
+    status: Literal["incomplete", "ready", "approved", "rejected", "promoted"]
+    recommendation: Literal["approve", "reject", "wait"]
+    package_hash: str
+    strategy: dict[str, Any] = Field(default_factory=dict)
+    backtest: dict[str, Any] = Field(default_factory=dict)
+    paper: dict[str, Any] = Field(default_factory=dict)
+    comparison: dict[str, Any] = Field(default_factory=dict)
+    unknowns: list[str] = Field(default_factory=list)
+    live_intent: dict[str, Any] = Field(default_factory=dict)
+    decision: dict[str, Any] | None = None

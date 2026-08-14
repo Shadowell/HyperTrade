@@ -184,11 +184,16 @@ def _configured_archive(raw_path: Any) -> ArchiveWindow | None:
     return ArchiveWindow(text)
 
 
+# Archive reader already caps at 20_000. Using that as the default means a 1m
+# window is judged on the history that is actually mounted, not a 1500-bar stub.
+MAX_WINDOW_BARS = 20_000
+
+
 def preflight_window(
     *,
     symbol: str,
     timeframe: str,
-    bars: int = 1_500,
+    bars: int = MAX_WINDOW_BARS,
     window: CandleWindowSource | None = None,
 ) -> dict[str, Any]:
     """Report what evidence a mission on this symbol would actually be able to obtain.
@@ -258,7 +263,7 @@ class HistoricalEvidenceGate:
         self,
         window: CandleWindowSource | None = None,
         *,
-        bars: int = 1_500,
+        bars: int = MAX_WINDOW_BARS,
         replay: Callable[..., CandidateBacktestResult] = replay_candidate,
     ) -> None:
         self.window = window
