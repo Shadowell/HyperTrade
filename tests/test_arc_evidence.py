@@ -228,6 +228,53 @@ def test_a_result_that_holds_in_only_one_period_is_rejected():
     assert ARCReasonCode.WALK_FORWARD_INCONSISTENT in {f.code for f in verdict.blocking}
 
 
+def test_reported_win_rate_is_measured_rather_than_derived_from_the_verdict():
+    """It used to be 0.65 on a pass and 0.42 on a failure: the verdict in metric costume."""
+    from hypertrade.arc.adversarial import RedTeamQuant
+
+    candidate = _candidate()
+    gate = HistoricalEvidenceGate(_StaticWindow(_candles(1_200)))
+    _, metrics, _ = RedTeamQuant(evidence_gate=gate).evaluate_adversarial_attack(candidate)
+
+    assert metrics["win_rate"] == metrics["out_of_sample_win_rate"]
+    assert metrics["win_rate"] not in (0.65, 0.42)
+    # A closed trade is either a win or a loss, so the rate is a multiple of 1/n.
+    trades = metrics["out_of_sample_trades"]
+    assert abs(metrics["win_rate"] * trades - round(metrics["win_rate"] * trades)) < 1e-9
+
+
+def test_an_inert_candidate_reports_no_win_rate_rather_than_zero():
+    """Zero would read as a candidate that traded and lost every time."""
+    from hypertrade.arc.adversarial import RedTeamQuant
+
+    candidate = _candidate(parameter_bounds={"slow_window": {"min": 390, "max": 400}})
+    gate = HistoricalEvidenceGate(_StaticWindow(_candles(600)))
+    _, metrics, _ = RedTeamQuant(evidence_gate=gate).evaluate_adversarial_attack(candidate)
+
+    assert metrics["out_of_sample_win_rate"] is None
+    assert "win_rate" not in metrics
+
+
+def test_search_ranks_on_held_out_evidence_when_a_window_exists():
+    """Ranking by the declared projection means the winner is self-reported."""
+    from hypertrade.arc.adversarial import RedTeamQuant
+
+    candidate = _candidate()
+    with_window = RedTeamQuant(evidence_gate=HistoricalEvidenceGate(_StaticWindow(_candles(1_200))))
+    _, evidenced, _ = with_window.evaluate_adversarial_attack(candidate)
+
+    assert evidenced["ranking_basis"] == "out_of_sample"
+    assert evidenced["ranking_sharpe"] == evidenced["out_of_sample_sharpe"]
+
+    # With no window the search still has to order candidates somehow, but the basis for
+    # the ordering must be visible as the weaker one.
+    _, unevidenced, _ = RedTeamQuant(
+        evidence_gate=HistoricalEvidenceGate(None)
+    ).evaluate_adversarial_attack(candidate)
+    assert unevidenced["ranking_basis"] == "declared_projection"
+    assert unevidenced["ranking_sharpe"] == unevidenced["sharpe_after_attack"]
+
+
 def test_live_fallback_is_off_unless_an_operator_enabled_it():
     """An autonomous loop must not reach an exchange on its own initiative."""
     from hypertrade.arc.evidence import build_default_window

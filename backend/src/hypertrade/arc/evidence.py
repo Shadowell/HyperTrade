@@ -435,6 +435,7 @@ def _metrics(
         "out_of_sample_return": out_of_sample.total_return,
         "out_of_sample_max_drawdown": out_of_sample.max_drawdown,
         "out_of_sample_trades": out_of_sample.trade_count,
+        "out_of_sample_win_rate": out_of_sample.win_rate,
         "out_of_sample_turnover": out_of_sample.turnover,
         "out_of_sample_exposure": out_of_sample.exposure,
         "out_of_sample_fees_paid": out_of_sample.fees_paid,

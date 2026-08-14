@@ -110,6 +110,17 @@ class CandidateBacktestResult:
         return len(self.trades)
 
     @property
+    def win_rate(self) -> float | None:
+        """Share of closed trades that made money, or None when nothing was closed.
+
+        None rather than 0.0: an inert candidate has no win rate, and reporting zero
+        would read as a candidate that traded and lost every time.
+        """
+        if not self.trades:
+            return None
+        return sum(1 for trade in self.trades if trade.pnl > 0.0) / len(self.trades)
+
+    @property
     def is_inert(self) -> bool:
         """No trade means no evidence. A gate that reads only Sharpe would score an
         inert candidate as flawless, so callers need this distinguished explicitly."""

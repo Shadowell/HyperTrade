@@ -153,7 +153,10 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     def eval_candidate(cand: ARCCandidateAttemptV1) -> tuple[bool, float]:
         survived, metrics, findings = engine.run_adversarial_session(cand)
         reviews[cand.attempt_id] = (metrics, list(findings))
-        return survived, float(metrics.get("sharpe_after_attack", 0.0))
+        # `ranking_sharpe` is the held-out result where the window allowed one, and only
+        # falls back to the declared projection when it did not. MCTS backpropagates this
+        # value, so it decides which subtree the remaining budget is spent on.
+        return survived, float(metrics.get("ranking_sharpe", 0.0))
 
     def repair(cand: ARCCandidateAttemptV1) -> list[ARCCandidateAttemptV1]:
         """Diagnose one casualty and propose its repaired successor."""

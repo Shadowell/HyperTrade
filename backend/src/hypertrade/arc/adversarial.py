@@ -330,7 +330,6 @@ class RedTeamQuant:
             "sharpe_after_attack": mc_metrics["adverse_perturbed_sharpe"],
             "sharpe_degradation": mc_metrics["sharpe_degradation"],
             "declared_stop_loss": mc_metrics["declared_stop_loss"],
-            "win_rate": 0.65 if passed else 0.42,
             "liquidity_stress_passed": bs_pass and friction_pass,
             "advisories": [
                 finding.render()
@@ -339,6 +338,26 @@ class RedTeamQuant:
             ],
         }
         observed_metrics.update(verdict.metrics)
+
+        # The win rate is read off the replayed trades. It used to be assigned 0.65 on a
+        # pass and 0.42 on a failure, which is a restatement of the verdict wearing the
+        # costume of a measurement — and it flowed onward into the paper handoff.
+        win_rate = verdict.metrics.get("out_of_sample_win_rate")
+        if win_rate is not None:
+            observed_metrics["win_rate"] = win_rate
+
+        # Rank on held-out evidence when there is any. `sharpe_after_attack` is projected
+        # from the declared parameters, so ordering candidates by it means the search
+        # picks its winner by what the candidate says about itself.
+        oos_sharpe = verdict.metrics.get("out_of_sample_sharpe")
+        observed_metrics["ranking_sharpe"] = (
+            float(oos_sharpe)
+            if oos_sharpe is not None
+            else float(mc_metrics["adverse_perturbed_sharpe"])
+        )
+        observed_metrics["ranking_basis"] = (
+            "out_of_sample" if oos_sharpe is not None else "declared_projection"
+        )
         return passed, observed_metrics, findings
 
 
