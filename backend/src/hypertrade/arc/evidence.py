@@ -59,6 +59,17 @@ MAX_ADMISSIBLE_SHARPE_DECAY = 0.5
 # permanent position is expressing a directional view, not a strategy.
 MAX_ADMISSIBLE_EXPOSURE = 0.95
 
+# Rolling folds the window is cut into when it is long enough. A single split proves the
+# candidate worked once, at one point in time; folds are what distinguish a strategy from
+# a period. Each fold trains on everything before it and is judged on the slice after, so
+# no fold can see its own future.
+WALK_FORWARD_FOLDS = 4
+
+# Fraction of a candidate's folds that must survive. Demanding every fold would reject any
+# strategy that has a regime it does not suit, which is most of them; demanding one would
+# be indistinguishable from picking the best period after the fact.
+MIN_SURVIVING_FOLD_FRACTION = 0.5
+
 
 class CandleWindowSource(Protocol):
     """Supplies the historical window a candidate is judged on."""
@@ -145,12 +156,25 @@ def build_default_window(settings: Any = None) -> ArchiveThenLiveWindow:
     from hypertrade.config import get_settings
 
     resolved = settings or get_settings()
-    archive_path = getattr(resolved, "bitpro_sqlite_path", "")
     live_enabled = bool(getattr(resolved, "arc_evidence_live_fallback_enabled", False))
     return ArchiveThenLiveWindow(
-        archive=ArchiveWindow(str(archive_path)) if archive_path else None,
+        archive=_configured_archive(getattr(resolved, "bitpro_sqlite_path", "")),
         live=OkxLiveWindow(resolved) if live_enabled else None,
     )
+
+
+def _configured_archive(raw_path: Any) -> ArchiveWindow | None:
+    """Treat an unset archive path as unset.
+
+    The setting defaults to `Path("")`, which is truthy and stringifies to ".", so a
+    deployment with no archive configured produced a window pointing at the working
+    directory. It failed on connect and fell through, which meant an unconfigured
+    archive was indistinguishable from a broken one in the advisory detail.
+    """
+    text = str(raw_path or "").strip()
+    if text in ("", "."):
+        return None
+    return ArchiveWindow(text)
 
 
 @dataclass(frozen=True)
@@ -208,6 +232,7 @@ class HistoricalEvidenceGate:
             # honest statement of what this particular candidate does.
             in_sample = self._run(attempt, bars[:split], timeframe)
             out_of_sample = self._run(attempt, bars[split:], timeframe)
+            folds = self._walk_forward(attempt, bars, timeframe)
         except CandidateBacktestError as exc:
             return EvidenceVerdict(
                 findings=(
@@ -220,8 +245,28 @@ class HistoricalEvidenceGate:
                 metrics={"evidence_available": False},
             )
 
-        findings = _judge(in_sample, out_of_sample)
-        return EvidenceVerdict(findings=findings, metrics=_metrics(in_sample, out_of_sample))
+        findings = _judge(in_sample, out_of_sample) + _judge_folds(folds)
+        metrics = _metrics(in_sample, out_of_sample)
+        metrics.update(_fold_metrics(folds))
+        return EvidenceVerdict(findings=findings, metrics=metrics)
+
+    def _walk_forward(
+        self,
+        attempt: ARCCandidateAttemptV1,
+        bars: Sequence[Bar],
+        timeframe: str,
+    ) -> tuple[CandidateBacktestResult, ...]:
+        """Replay each rolling out-of-sample slice the window can support.
+
+        A single split shows the candidate worked once. Folds show whether it keeps
+        working as the market changes, which is the difference between a strategy and a
+        period. Returns empty when the window is too short to cut, so the single-split
+        verdict stands alone rather than being weakened by folds too small to read.
+        """
+        results: list[CandidateBacktestResult] = []
+        for start, end in walk_forward_slices(len(bars)):
+            results.append(self._run(attempt, bars[start:end], timeframe))
+        return tuple(results)
 
     def _run(
         self,
@@ -230,6 +275,60 @@ class HistoricalEvidenceGate:
         timeframe: str,
     ) -> CandidateBacktestResult:
         return self._replay(attempt.strategy_code, list(bars), timeframe=timeframe)
+
+
+def walk_forward_slices(total_bars: int) -> tuple[tuple[int, int], ...]:
+    """Rolling out-of-sample slices, expressed as [start, end) bar indices.
+
+    Anchored so each fold begins where the previous one ended: the folds tile the
+    held-out portion without overlapping, because an overlapping fold would count the
+    same bars twice and make an accidental good run look repeated.
+    """
+    fold_bars = total_bars // (WALK_FORWARD_FOLDS + 1)
+    if fold_bars < MIN_OUT_OF_SAMPLE_BARS:
+        return ()
+    return tuple(
+        (fold_bars * index, fold_bars * (index + 1))
+        for index in range(1, WALK_FORWARD_FOLDS + 1)
+    )
+
+
+def _judge_folds(folds: Sequence[CandidateBacktestResult]) -> tuple[AttackFinding, ...]:
+    if not folds:
+        return ()
+    surviving = sum(
+        1
+        for fold in folds
+        if not fold.is_inert
+        and fold.sharpe >= MIN_ADMISSIBLE_OOS_SHARPE
+        and fold.max_drawdown <= MAX_ADMISSIBLE_DRAWDOWN
+    )
+    required = math.ceil(len(folds) * MIN_SURVIVING_FOLD_FRACTION)
+    if surviving >= required:
+        return ()
+    return (
+        AttackFinding(
+            code=ARCReasonCode.WALK_FORWARD_INCONSISTENT,
+            gate=GATE,
+            detail=(
+                f"only {surviving} of {len(folds)} rolling windows cleared the "
+                f"out-of-sample bar, below the {required} required; the result does not "
+                "hold across market conditions"
+            ),
+        ),
+    )
+
+
+def _fold_metrics(folds: Sequence[CandidateBacktestResult]) -> dict[str, Any]:
+    if not folds:
+        return {"walk_forward_folds": 0}
+    return {
+        "walk_forward_folds": len(folds),
+        "walk_forward_sharpes": [fold.sharpe for fold in folds],
+        "walk_forward_returns": [fold.total_return for fold in folds],
+        "walk_forward_drawdowns": [fold.max_drawdown for fold in folds],
+        "walk_forward_trades": [fold.trade_count for fold in folds],
+    }
 
 
 def _advisory(detail: str) -> EvidenceVerdict:

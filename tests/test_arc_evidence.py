@@ -38,11 +38,19 @@ class _BrokenWindow:
         raise FileNotFoundError("/no/such/archive.sqlite")
 
 
-def _candles(count: int, *, seed: int = 5, drift: float = 0.0005) -> list[Candle]:
+def _candles(
+    count: int,
+    *,
+    seed: int = 5,
+    drift: float = 0.0005,
+    start_index: int = 0,
+    start_price: float = 100.0,
+) -> list[Candle]:
     rnd = random.Random(seed)
-    price = 100.0
+    price = start_price
     candles = []
-    for index in range(count):
+    for offset in range(count):
+        index = start_index + offset
         price *= 1.0 + rnd.gauss(drift, 0.012)
         candles.append(
             Candle(
@@ -103,7 +111,7 @@ def test_a_candidate_that_never_trades_is_flagged_rather_than_scored_as_flawless
     verdict = HistoricalEvidenceGate(_StaticWindow(_candles(600))).evaluate(candidate)
 
     assert verdict.passed is False
-    assert [f.code for f in verdict.blocking] == [ARCReasonCode.INERT_NO_TRADES]
+    assert ARCReasonCode.INERT_NO_TRADES in {f.code for f in verdict.blocking}
 
 
 def test_out_of_sample_failure_blocks_the_candidate():
@@ -165,6 +173,61 @@ def test_red_team_blocks_a_candidate_that_fails_out_of_sample():
     assert any(f.gate == "historical_evidence" for f in findings)
 
 
+def test_walk_forward_folds_tile_the_window_without_overlapping():
+    """An overlapping fold counts the same bars twice, making one good run look repeated."""
+    from hypertrade.arc.evidence import WALK_FORWARD_FOLDS, walk_forward_slices
+
+    slices = walk_forward_slices(1_000)
+    assert len(slices) == WALK_FORWARD_FOLDS
+    for (_, previous_end), (next_start, _) in zip(slices, slices[1:], strict=False):
+        assert previous_end == next_start
+    # The first fold starts after a training portion, so no fold can see its own future.
+    assert slices[0][0] > 0
+    for start, end in slices:
+        assert end - start >= MIN_OUT_OF_SAMPLE_BARS
+        assert end <= 1_000
+
+
+def test_a_window_too_short_to_cut_yields_no_folds():
+    """A fold shorter than the out-of-sample floor would weaken the verdict, not support it."""
+    from hypertrade.arc.evidence import walk_forward_slices
+
+    assert walk_forward_slices(MIN_EVIDENCE_BARS) == ()
+    verdict = HistoricalEvidenceGate(_StaticWindow(_candles(MIN_EVIDENCE_BARS + 10))).evaluate(
+        _candidate()
+    )
+    assert verdict.metrics["walk_forward_folds"] == 0
+    assert ARCReasonCode.WALK_FORWARD_INCONSISTENT not in {f.code for f in verdict.findings}
+
+
+def test_rolling_windows_are_reported_and_judged_together():
+    window = _StaticWindow(_candles(1_200))
+    verdict = HistoricalEvidenceGate(window).evaluate(_candidate())
+
+    from hypertrade.arc.evidence import WALK_FORWARD_FOLDS
+
+    assert verdict.metrics["walk_forward_folds"] == WALK_FORWARD_FOLDS
+    assert len(verdict.metrics["walk_forward_sharpes"]) == WALK_FORWARD_FOLDS
+    # Folds are separately replayed, so their results must not all be identical.
+    assert len(set(verdict.metrics["walk_forward_trades"])) > 1
+
+
+def test_a_result_that_holds_in_only_one_period_is_rejected():
+    """The failure a single split cannot see: profitable once, not repeatable."""
+    # One strong leg followed by a long drift down: a trend follower clears the early
+    # folds and fails the later ones.
+    rally = _candles(400, seed=4, drift=0.006)
+    slump = _candles(
+        800, seed=9, drift=-0.002, start_index=400, start_price=float(rally[-1].close)
+    )
+
+    verdict = HistoricalEvidenceGate(_StaticWindow(rally + slump)).evaluate(_candidate())
+    surviving = sum(1 for value in verdict.metrics["walk_forward_sharpes"] if value >= 0.5)
+
+    assert surviving < 2  # ceil(4 folds * 0.5) are required
+    assert ARCReasonCode.WALK_FORWARD_INCONSISTENT in {f.code for f in verdict.blocking}
+
+
 def test_live_fallback_is_off_unless_an_operator_enabled_it():
     """An autonomous loop must not reach an exchange on its own initiative."""
     from hypertrade.arc.evidence import build_default_window
@@ -180,6 +243,25 @@ def test_live_fallback_is_off_unless_an_operator_enabled_it():
     enabled = _Settings()
     enabled.arc_evidence_live_fallback_enabled = True
     assert build_default_window(enabled).live is not None
+
+
+def test_an_unset_archive_path_is_not_treated_as_a_configured_archive():
+    """`Path("")` is truthy and stringifies to ".", so the default pointed at the cwd."""
+    from pathlib import Path
+
+    from hypertrade.arc.evidence import build_default_window
+
+    class _Settings:
+        bitpro_sqlite_path = Path("")
+        arc_evidence_live_fallback_enabled = False
+
+    assert build_default_window(_Settings()).archive is None
+
+    configured = _Settings()
+    configured.bitpro_sqlite_path = Path("/bitpro-data/crypto_data.db")
+    archive = build_default_window(configured).archive
+    assert archive is not None
+    assert archive.db_path == "/bitpro-data/crypto_data.db"
 
 
 def test_every_blocking_evidence_code_has_remediation_advice():

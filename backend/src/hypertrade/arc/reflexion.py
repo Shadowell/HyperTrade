@@ -56,6 +56,9 @@ _CONSTRAINT_BY_REASON_CODE: dict[ARCReasonCode, str] = {
     ARCReasonCode.PERMANENT_EXPOSURE: (
         "几乎全窗口持仓，等同方向性押注，必须引入明确的离场条件"
     ),
+    ARCReasonCode.WALK_FORWARD_INCONSISTENT: (
+        "滚动窗口中过半窗口不成立，结论依赖特定时段而非市场结构，必须改用跨状态更稳健的信号"
+    ),
     ARCReasonCode.EVIDENCE_REPLAY_FAILED: (
         "候选无法在回放器中执行，策略体存在运行期缺陷，必须重新生成"
     ),
