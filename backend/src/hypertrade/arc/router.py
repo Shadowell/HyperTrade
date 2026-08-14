@@ -131,21 +131,29 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
         return
     budget = goal.budget
 
+    symbol = goal.symbols[0] if goal.symbols else "BTC-USDT-SWAP"
+    timeframe = goal.timeframes[0] if goal.timeframes else "1H"
+    window = build_default_window()
+    preflight = preflight_window(symbol=symbol, timeframe=timeframe, window=window)
+    # A missing window used to be an advisory on each candidate. The loop then treated
+    # projected Sharpe as a pass and minted a local paper id, so the mission completed
+    # looking successful. Missing data is an operator problem: stop before spending
+    # the candidate budget.
+    if not preflight.get("evidence_possible"):
+        ctrl.apply_event(
+            "operator_needed",
+            {"reason": "evidence_window_unavailable", "preflight": preflight},
+        )
+        return
+
     blue_team = BlueTeamQuant()
-    # Candidates are replayed on held-back history before they can be validated. With no
-    # window configured the gate raises an advisory rather than failing every candidate,
-    # so a missing data source shows up as such instead of looking like bad strategies.
-    engine = ARCAdversarialEngine(
-        evidence_gate=HistoricalEvidenceGate(build_default_window())
-    )
+    engine = ARCAdversarialEngine(evidence_gate=HistoricalEvidenceGate(window))
     mutator = ARCGeneticMutator()
     reflexion_ledger = ARCReflexionLedger()
     mcts_engine = ARCParallelMCTSEngine(parallel_workers=parallel_workers)
     skill_library = ARCSkillLibrary()
     skill_distiller = ARCSkillDistiller()
     incubation_resolver = ARCPaperIncubationResolver()
-
-    symbol = goal.symbols[0] if goal.symbols else "BTC-USDT-SWAP"
 
     # 1. Seed the MCTS tree with structurally different hypotheses, not one template.
     #    One slot is always held back so a rejected frontier still gets one repair pass.
@@ -231,6 +239,20 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
 
     if validated is None:
         ctrl.apply_event("operator_needed", {})
+        return
+
+    survivor_metrics, _ = reviews.get(validated.attempt_id, ({}, []))
+    # Projected Sharpe is what the candidate declared about itself. Paper launch
+    # requires a held-out measurement, not an advisory-shaped pass.
+    if survivor_metrics.get("ranking_basis") != "out_of_sample":
+        ctrl.apply_event(
+            "operator_needed",
+            {
+                "reason": "no_out_of_sample_evidence",
+                "attempt_id": validated.attempt_id,
+                "ranking_basis": survivor_metrics.get("ranking_basis"),
+            },
+        )
         return
 
     validated.state = "validated"

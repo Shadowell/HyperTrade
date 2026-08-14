@@ -1,5 +1,33 @@
 # Progress Log
 
+## Gate 2 真接通：create → configure → start，且 start 必须用 instance_id — 2026-08-15
+
+- **默认客户端接错类**：高层 `strategy_create` / `paper_configure` / `paper_start` 在
+  `BitProToolAdapter` 上，不在 `BitProMcpClient` 上。后者只有 `call_tool`，部署后第一下
+  就会 `AttributeError`，看起来像「没上模拟盘」其实是根本没打到 BitPro。
+- **start 用错了 id**：BitPro `paper_start` 的请求体字段是 `instance_id`。适配器参数仍叫
+  `strategy_id`，但会把它原样 POST 成 instance。configure 返回的 instance 和 create 返回的
+  strategy id 不是同一个数；拿 strategy id 去 start，会 404 或启动别人的实例。现改为只接受
+  configure 给出的 instance id，缺 id 则失败，不再编 `bitpro_paper_strat_*`。
+- **空壳回归网**：`tests/test_arc_hollow_claims.py` 钉住「曾经看起来完成其实是空的」路径，
+  并显式列出仍空的项（统一验证、`success_criteria`、Mission 内存字典）。
+- **验证**：`tests/test_arc_acceptance.py` / `incubation` / `hollow_claims` / `evidence` /
+  `kernel`。本轮仍不接统一验证、Sprint 130 审批流、Mission 持久化或实盘。
+
+## ARC 主循环诚实性：无窗口不得完成，BitPro 失败不得假上线 — 2026-08-14
+
+- **无窗口会假完成**：缺归档时证据门禁只发 advisory，循环把投影夏普当成过检，再本地编一个
+  `bitpro_paper_*`，黄金验收还断言 `state == completed`。现改为预检硬门禁：窗口不够就
+  `needs_operator`（`evidence_window_unavailable`），不花候选预算、不上模拟盘。
+- **投影夏普不能上 Paper**：幸存者若 `ranking_basis != out_of_sample`，同样停在
+  `needs_operator`（`no_out_of_sample_evidence`）。
+- **BitPro 失败不再谎称成功**：`except: pass` 后仍返回 `ok=True` 的路径删掉。没有
+  `status=ok` 和策略 id 就失败；paper id 只来自 BitPro。策略名改用候选族/方向，不再写死
+  「20周期突破8%动态止损」。
+- **验收改口**：缺窗口用例断言 `needs_operator` 且 0 次尝试；补上 BitPro 成功/失败与投影
+  夏普三条。`tests/test_arc_acceptance.py` + `tests/test_arc_incubation.py`。
+- **验证**：相关 ARC 测试随后与 Gate 2 接线一并重跑。本轮不接统一验证、Mission 持久化或实盘。
+
 ## 归档路径打通、预检端点，以及"5 笔成交撑起夏普 8"的门禁补漏 — 2026-08-14
 
 - **归档路径此前只用假对象测过偏好顺序**。真实部署里窗口来自挂载的 sqlite，symbol 写作

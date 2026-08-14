@@ -323,7 +323,7 @@ def test_a_sharpe_computed_from_a_handful_of_trades_is_not_accepted_as_evidence(
 
 
 def test_preflight_tells_an_operator_what_a_mission_could_prove(tmp_path):
-    """A mission with no window completes on advisories, which reads as success."""
+    """Operators must see whether a symbol has a window before the budget is spent."""
     from hypertrade.arc.evidence import build_default_window, preflight_window
     from hypertrade.config import Settings
 
