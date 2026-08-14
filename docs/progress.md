@@ -1,5 +1,54 @@
 # Progress Log
 
+## 假设驱动的确定性策略代码生成器（Gate 1 生成能力补齐） — 2026-08-14
+
+- **背景（实测发现的缺口）**：北极星 Gate 1 要求「从全新 Alpha 假设生成新策略候选」。
+  实测发现 `orchestrator._compile_strategy(strategy_key)` 只用 key 拼类名，策略体恒为
+  固定双均线交叉；5 个语义迥异的 `strategy_key` 产出同一逻辑指纹。下游的验证漏斗、
+  实验账本、新颖性检测全部建立在「候选各不相同」这一前提上，该前提当前不成立。
+- **新增 `research/codegen.py`**：把 `research_strategy_spec.v1` 确定性编译为自包含的
+  BitPro `BaseStrategy` Python。
+  - 6 个策略族：`ma_crossover`、`atr_breakout`、`mean_reversion_zscore`、
+    `rsi_reversal`、`donchian_breakout`、`momentum_roc`。
+  - 族选择用**两级词表**：signature（点名具体指标，权重 10）压倒 theme（描述风格，
+    权重 1），并剔除被更长同族词包含的子串，避免「突破」这类泛化词压倒「ATR」。
+  - 方向从 spec 文本推导（`long_only` / `short_only` / `long_short`），显式禁止
+    （"禁止做空"/"long only"）优先于裸提及。
+  - 风控叠加 `stop_loss` / `take_profit` / `max_holding_bars` 按 spec 请求生成；
+    任何候选**必带**止损保护。
+  - **确定性是硬约束**：`ExperimentLedger` 以 `strategy_code_sha256` 做幂等指纹，
+    同一 spec 必须编译出逐字节相同的源码，否则复用与重放都会失效。因此不采用
+    自由式 LLM 生成。
+  - 指标全部**内联**：生成代码运行在 BitPro 运行时，`hypertrade.*` 不可 import。
+- **静态门禁单一真相源**：禁用构造表迁入 `codegen.static_code_rejections()`，
+  `discovery._static_code_rejections` 改为委派。防止「对生成候选禁止的构造，
+  改从 discovery proposal 提交就能绕过」。生成器自身 fail-closed：产物若无法
+  `ast.parse` 或触发门禁则抛 `StrategyCodegenError`。
+- **修复参数扫描空转**：`_draft_spec` 默认产出的 `parameter_bounds`（`lookback`/
+  `threshold`）没有任何策略族实现，矩阵调的键生成代码一个都不读，敏感性覆盖实际为 0。
+  新增 `_effective_parameter_bounds()` 改用生成器真认得的旋钮。
+- **修复敏感性探针语义**：矩阵与鲁棒性计划都探参数 `[min,max]` 的**中点**，而族的
+  默认范围很宽（`fast_window` ∈ [2,120]，中点 61 而 baseline 为 8）——这测的是另一个
+  策略，不是局部稳定性。改为以默认值为锚的邻域（`fast_window` 8→10、`slow_window`
+  32→40）；操作员显式声明的范围仍被尊重。生成代码内的硬钳制仍用族的完整范围。
+- **保持 reuse 契约**：`plan_robustness_validation` 的 `parameter_sensitivity` 场景是
+  `source="reuse"`，靠 `f"adjacent_{key}"` 反查矩阵结果。故探针命名与位置不可改动；
+  新增 `_budgeted_parameter_bounds()` 让矩阵与计划共享同一套按预算裁剪的维度集合，
+  由构造保证一致（此前维度不匹配会让 reuse 落空，候选被判证据不足）。
+- **预算门禁语义修正**：`_ensure_research_budget` 改为先按预算推导可负担维度数，
+  仅在连一个参数探针都负担不起时才拒绝（此时矩阵只有 baseline，无任何敏感性证据）。
+  该拒绝仍发生在任何 BitPro 写入之前，避免浪费外部写并留下孤儿策略。
+- **实测验证**：`scratch/northstar_probe3.py` 复测原先失败的探针 7/8——
+  5 个语义不同的 `strategy_key` 现产出 **5 种**不同策略逻辑（原为 1 种）；
+  矩阵调的 3 个参数**全部**被 `on_init` 读取（原为 0 个）；5 个候选字节级可复现
+  且全部通过静态门禁。
+- **验收**：`./scripts/check.sh` 通过（前端 lint/test/build、Ruff、严格 mypy、
+  **904** pytest，含 28 个新增 codegen 测试）。GitNexus `detect-changes`：
+  2 文件 15 符号，风险 low，影响进程 0。
+- **仍未达成**：`_matrix_variants` 仍是单参数一次一动的中点探针，不是网格或贝叶斯
+  搜索；ARC 路径的 `BlueTeamQuant.propose_initial_strategy` 尚未接入本生成器；
+  红队攻击仍由 `stop_loss` 字面量决定，与策略逻辑无关。
+
 ## ARC 合同收口与 Sprint 125 Outcome 日历过期回归修复 — 2026-08-01
 
 - 正式关闭 [ARC 合同](docs/contracts/arc-autonomous-research-core.md)：ARC Sprint 132–135

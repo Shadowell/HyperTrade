@@ -22,6 +22,7 @@ from hypertrade.db import (
     StrategyVersion,
     utc_now,
 )
+from hypertrade.research.codegen import static_code_rejections
 from hypertrade.research.discovery_schemas import (
     AlphaHypothesisV1,
     DiscoveryCandidateV1,
@@ -802,22 +803,13 @@ def _spec_signature(spec: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _static_code_rejections(code: str) -> builtins.list[str]:
-    lowered = code.casefold()
-    reasons: list[str] = []
-    if len(re.findall(r"class\s+\w+\s*\([^)]*BaseStrategy[^)]*\)\s*:", code)) != 1:
-        reasons.append("code_requires_single_basestrategy_subclass")
-    forbidden = {
-        "network_access": ("socket", "requests", "urllib", "httpx", "aiohttp"),
-        "filesystem_access": ("open(", "pathlib", "os.", "shutil"),
-        "process_execution": ("subprocess", "os.system", "popen("),
-        "dynamic_execution": ("eval(", "exec(", "compile(", "__import__("),
-        "secret_access": ("environ", "getenv", "api_key", "secret", "password"),
-        "unbounded_loop": ("while true", "while 1"),
-    }
-    for reason, tokens in forbidden.items():
-        if any(token in lowered for token in tokens):
-            reasons.append(reason)
-    return sorted(set(reasons))
+    """Delegate to the shared gate so operator-supplied and generated code agree.
+
+    Keeping one implementation matters for more than tidiness: a construct banned
+    for HyperTrade-generated candidates must not be reachable by submitting it as a
+    discovery proposal instead.
+    """
+    return static_code_rejections(code)
 
 
 def _validation_passed(payload: dict[str, Any]) -> bool:

@@ -12,6 +12,7 @@ from typing import Any, Protocol, cast
 
 from hypertrade.db import Database, ResearchExperimentEvidence
 from hypertrade.memory.service import MemoryService
+from hypertrade.research.codegen import generate_strategy
 from hypertrade.research.experiment_ledger import ExperimentLedgerService
 from hypertrade.research.experiment_schemas import (
     ArtifactReference,
@@ -137,7 +138,7 @@ class ResearchOrchestrator:
             mandate = self.program.get_mandate(str(job["mandate_id"]))
             self._advance(job_id, "data_preflight")
             windows = self._preflight_and_windows(job=job, mandate=mandate)
-            script_content = _compile_strategy(str(job["strategy_spec"]["strategy_key"]))
+            script_content = _compile_strategy(dict(job["strategy_spec"]))
             registration = ExperimentLedgerService(self.db).register(
                 ExperimentRegister(
                     manifest=_experiment_manifest(
@@ -204,6 +205,7 @@ class ResearchOrchestrator:
                 fingerprint=fingerprint,
                 evidence=evidence,
                 existing_backtests=len(evidence) * len(windows),
+                window_count=len(windows),
             )
             self._advance(job_id, "validation")
             passing = [row for row in evidence if row["status"] == "evidence_recorded"]
@@ -401,8 +403,10 @@ class ResearchOrchestrator:
     ) -> list[dict[str, Any]]:
         spec = job["strategy_spec"]
         variants = _matrix_variants(
-            spec.get("parameter_bounds") if isinstance(spec.get("parameter_bounds"), dict) else {},
-            limit=int(mandate["budget"]["max_variants_per_candidate"]),
+            _budgeted_parameter_bounds(
+                dict(spec), budget=mandate["budget"], window_count=len(windows)
+            ),
+            limit=_matrix_variant_limit(budget=mandate["budget"], window_count=len(windows)),
         )
         projected = len(variants) * len(windows)
         if projected > _per_candidate_backtest_cap(mandate["budget"]):
@@ -579,6 +583,7 @@ class ResearchOrchestrator:
         fingerprint: str,
         evidence: list[dict[str, Any]],
         existing_backtests: int,
+        window_count: int,
     ) -> dict[str, Any]:
         validation = dict(mandate["validation"])
         policy = RobustnessPolicyV2(
@@ -592,7 +597,9 @@ class ResearchOrchestrator:
                 fingerprint=fingerprint,
                 data_snapshot_hash=self.data_snapshot_hash,
                 candle_times=self.preflight_candle_times,
-                parameter_bounds=dict(spec.get("parameter_bounds", {})),
+                parameter_bounds=_budgeted_parameter_bounds(
+                    spec, budget=mandate["budget"], window_count=window_count
+                ),
                 maker_fee_bps=Decimal(str(validation["fee_bps"])),
                 taker_fee_bps=Decimal(str(validation["fee_bps"])),
                 slippage_bps=Decimal(str(validation["slippage_bps"])),
@@ -876,16 +883,41 @@ def _per_candidate_backtest_cap(budget: dict[str, Any]) -> int:
     return max(baseline, int(budget["max_total_backtests_per_day"]) // candidates)
 
 
+# Backtests the robustness plan runs after the matrix (locked OOS, cost and regime
+# stress). Reserved up front so a wide matrix cannot starve the gate that decides
+# whether the candidate is admissible at all.
+_ROBUSTNESS_BACKTEST_RESERVE = 4
+
+def _matrix_variant_limit(*, budget: dict[str, Any], window_count: int) -> int:
+    """Largest matrix width that fits the mandate cap and the backtest budget."""
+    declared = max(1, int(budget["max_variants_per_candidate"]))
+    affordable = 1 + _affordable_dimension_count(budget=budget, window_count=window_count)
+    return max(1, min(declared, affordable))
+
+
 def _ensure_research_budget(
     *, job: dict[str, Any], mandate: dict[str, Any], window_count: int
 ) -> None:
-    bounds = job["strategy_spec"].get("parameter_bounds", {})
+    """Fail before any BitPro write if the budget cannot fund admissible evidence.
+
+    Runs ahead of `strategy_validate_code` / `strategy_create` on purpose: spending
+    external writes on a candidate whose matrix can never satisfy the robustness gate
+    wastes mandate budget and leaves an orphan strategy on the BitPro side.
+    """
+    budget = mandate["budget"]
+    spec = dict(job["strategy_spec"])
+    if _effective_parameter_bounds(spec) and not _budgeted_parameter_bounds(
+        spec, budget=budget, window_count=window_count
+    ):
+        # A baseline-only matrix yields no parameter sensitivity evidence at all,
+        # which the robustness gate scores as missing rather than passing.
+        raise ResearchRejected("robustness_plan_exceeds_per_candidate_backtest_budget")
     variants = _matrix_variants(
-        bounds if isinstance(bounds, dict) else {},
-        limit=int(mandate["budget"]["max_variants_per_candidate"]),
+        _budgeted_parameter_bounds(spec, budget=budget, window_count=window_count),
+        limit=_matrix_variant_limit(budget=budget, window_count=window_count),
     )
-    projected = len(variants) * window_count + 4
-    if projected > _per_candidate_backtest_cap(mandate["budget"]):
+    projected = len(variants) * window_count + _ROBUSTNESS_BACKTEST_RESERVE
+    if projected > _per_candidate_backtest_cap(budget):
         raise ResearchRejected("robustness_plan_exceeds_per_candidate_backtest_budget")
 
 
@@ -916,6 +948,14 @@ def _chronological_windows(
 
 
 def _matrix_variants(bounds: dict[str, Any], *, limit: int) -> list[tuple[str, dict[str, float]]]:
+    """Deterministic one-parameter-at-a-time sweep used by the backtest matrix.
+
+    Probe points are the midpoint of each dimension because the robustness plan's
+    `parameter_sensitivity` scenarios are declared `source="reuse"` against exactly
+    those midpoints. Moving the matrix off them would leave the plan with nothing to
+    reuse and downgrade the candidate to insufficient evidence, so this ordering is
+    a contract with `plan_robustness_validation`, not a default.
+    """
     variants: list[tuple[str, dict[str, float]]] = [("baseline", {})]
     for key in sorted(bounds):
         if len(variants) >= limit:
@@ -928,57 +968,57 @@ def _matrix_variants(bounds: dict[str, Any], *, limit: int) -> list[tuple[str, d
     return variants[:limit]
 
 
-def _compile_strategy(strategy_key: str) -> str:
-    class_name = "Research" + "".join(part.capitalize() for part in strategy_key.split("_"))[:80]
-    return "\n".join(
-        [
-            "from collections import deque",
-            "from app.core.execution.base_strategy import BaseStrategy",
-            "",
-            f"class {class_name}(BaseStrategy):",
-            '    """Bounded dynamic DB moving-average research candidate."""',
-            "",
-            "    async def on_init(self):",
-            '        params = self.config.get("research_parameters", {})',
-            '        self.fast_window = max(2, int(params.get("fast_window", 8)))',
-            (
-                "        self.slow_window = max("
-                'self.fast_window + 1, int(params.get("slow_window", 32)))'
-            ),
-            (
-                "        self.trade_notional_usdt = float("
-                'self.config.get("trade_notional_usdt", 1000.0))'
-            ),
-            '        self.leverage = float(self.config.get("leverage", 2.0))',
-            "        self._closes = {",
-            "            symbol: deque(maxlen=self.slow_window) for symbol in self.symbols()",
-            "        }",
-            "        self._direction = {symbol: 0 for symbol in self.symbols()}",
-            "",
-            "    async def on_bar(self, bar):",
-            "        symbol = bar.symbol",
-            "        close = float(bar.close)",
-            "        if symbol not in self._closes or close <= 0:",
-            "            return None",
-            "        closes = self._closes[symbol]",
-            "        closes.append(close)",
-            "        if len(closes) < self.slow_window:",
-            "            return None",
-            "        values = list(closes)",
-            "        fast_ma = sum(values[-self.fast_window:]) / self.fast_window",
-            "        slow_ma = sum(values) / self.slow_window",
-            "        if fast_ma > slow_ma and self._direction[symbol] == 0:",
-            "            await self.open_contract(",
-            '                symbol, "long", self.trade_notional_usdt, leverage=self.leverage',
-            "            )",
-            "            self._direction[symbol] = 1",
-            "        elif fast_ma < slow_ma and self._direction[symbol] == 1:",
-            '            await self.close_contract(symbol, "long")',
-            "            self._direction[symbol] = 0",
-            "        return None",
-            "",
-        ]
-    )
+def _effective_parameter_bounds(spec: dict[str, Any]) -> dict[str, Any]:
+    """Bounds for parameters the compiled candidate actually reads.
+
+    The operator-declared `parameter_bounds` are advisory: a drafted spec routinely
+    names placeholder knobs ("lookback", "threshold") that no strategy family
+    implements. Tuning those writes `research_parameters` the generated code ignores,
+    so both the matrix and the robustness plan would report sensitivity coverage they
+    never exercised. Codegen is the only component that knows the real knob set, so
+    it owns this answer.
+    """
+    try:
+        return dict(generate_strategy(spec).parameter_bounds)
+    except Exception:
+        declared = spec.get("parameter_bounds")
+        return dict(declared) if isinstance(declared, dict) else {}
+
+
+def _budgeted_parameter_bounds(
+    spec: dict[str, Any], *, budget: dict[str, Any], window_count: int
+) -> dict[str, Any]:
+    """Trim the tunable dimensions to the count the backtest budget can fund.
+
+    The matrix and the robustness plan must agree on the dimension set: the plan
+    reuses one matrix variant per dimension, so a dimension the matrix could not
+    afford to run becomes a sensitivity scenario with no result behind it. Both
+    callers select via `sorted()`, so trimming in sorted order keeps them aligned.
+    """
+    bounds = _effective_parameter_bounds(spec)
+    affordable = _affordable_dimension_count(budget=budget, window_count=window_count)
+    if affordable >= len(bounds):
+        return bounds
+    return dict(sorted(bounds.items())[:affordable])
+
+
+def _affordable_dimension_count(*, budget: dict[str, Any], window_count: int) -> int:
+    """How many tunable dimensions fit alongside the baseline and robustness reserve."""
+    windows = max(1, window_count)
+    affordable_variants = (
+        _per_candidate_backtest_cap(budget) - _ROBUSTNESS_BACKTEST_RESERVE
+    ) // windows
+    return max(0, affordable_variants - 1)
+
+
+def _compile_strategy(spec: dict[str, Any]) -> str:
+    """Compile a research strategy spec into BitPro BaseStrategy source.
+
+    Deterministic by contract: the experiment ledger fingerprints candidates by
+    `strategy_code_sha256`, so identical specs must yield identical bytes for
+    idempotent reuse and replay to hold.
+    """
+    return generate_strategy(spec).code
 
 
 def _canonical_name(*, symbol: str, timeframe: str, title: str) -> str:
