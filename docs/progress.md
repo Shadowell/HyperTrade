@@ -1,5 +1,23 @@
 # Progress Log
 
+## 归档路径打通、预检端点，以及"5 笔成交撑起夏普 8"的门禁补漏 — 2026-08-14
+
+- **归档路径此前只用假对象测过偏好顺序**。真实部署里窗口来自挂载的 sqlite，symbol 写作
+  `BTC/USDT:USDT` 而 ARC 要的是 `BTC-USDT-SWAP`，中间每一环都得成立才可能产出证据。新增端到端
+  测试：按 BitPro 真实 schema 落 1200 根到 sqlite，经 `build_default_window` 读出并完成
+  IS/OOS + 4 折判定。
+- **新增 `GET /api/v1/arc/evidence/preflight`**：窗口缺失的 mission 会靠 advisory 走完并显示
+  成功，运维只能在事后从 metrics 里发现结论是无证据作出的。预检返回哪些源已配置、拿到多少根、
+  够不够单次切分与滚动折，让这件事在花掉候选预算之前就能知道。
+- **用真实归档跑探针后抓到一个实质漏洞**：过检的候选里，`donchian_breakout` 样本外夏普 8.13
+  却只有 5 笔成交，`ma_crossover` 7 笔 —— 夏普由个别几笔决定，一笔的变动就超过 0.5 这个门槛，
+  即门禁在拿噪声当度量。此前除"非空转"外没有任何笔数下限（研究链路的
+  `RobustnessPolicyV2.min_trade_count` 是整窗 20 笔，留出窗约占三分之一，同密度落到 7）。
+  新增 `OOS_SAMPLE_TOO_SMALL`（阻断，与"空转"区分：这类候选交易过，只是不足以度量）及整改建议。
+  探针复跑：过检数由 4/6 降到 3/6，被剔掉的正是那个 5 笔成交的。
+- **验证**：`./scripts/check.sh` 953 通过。探针脚本 `scratch/real_evidence_probe.py`
+  在挂载归档的主机上可直接跑。
+
 ## 搜索改按真实样本外结果排名，胜率改为实测 — 2026-08-14
 
 - **搜索此前用合成值挑赢家**：MCTS 回传的分数是 `sharpe_after_attack`，也就是

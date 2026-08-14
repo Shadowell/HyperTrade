@@ -15,7 +15,11 @@ from hypertrade.arc.contracts import (
     PaperPreauthorizationV1,
 )
 from hypertrade.arc.controller import ARCController
-from hypertrade.arc.evidence import HistoricalEvidenceGate, build_default_window
+from hypertrade.arc.evidence import (
+    HistoricalEvidenceGate,
+    build_default_window,
+    preflight_window,
+)
 from hypertrade.arc.incubation import ARCPaperIncubationResolver
 from hypertrade.arc.mcts import ARCParallelMCTSEngine, MCTSNode
 from hypertrade.arc.mutation import ARCGeneticMutator
@@ -73,6 +77,18 @@ async def create_arc_mission(
             f"with {request.parallel_workers} parallel Rollout workers"
         ),
     }
+
+
+@router.get("/evidence/preflight")
+async def arc_evidence_preflight(
+    symbol: str = "BTC-USDT-SWAP", timeframe: str = "1H"
+) -> dict[str, Any]:
+    """What evidence a mission on this symbol could obtain, before one is started.
+
+    A mission whose window is missing completes on advisories, which reads as success;
+    this is how an operator finds that out first instead of afterwards.
+    """
+    return preflight_window(symbol=symbol, timeframe=timeframe)
 
 
 @router.get("/missions/{mission_id}")

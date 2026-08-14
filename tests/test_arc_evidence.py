@@ -275,6 +275,143 @@ def test_search_ranks_on_held_out_evidence_when_a_window_exists():
     assert unevidenced["ranking_sharpe"] == unevidenced["sharpe_after_attack"]
 
 
+def test_gate_reads_a_real_bitpro_archive_end_to_end(tmp_path):
+    """The archive route has only been exercised against fakes.
+
+    On the server the window comes from a mounted sqlite file with BitPro's schema and a
+    symbol spelled `BTC/USDT:USDT`, while ARC asks for `BTC-USDT-SWAP`. Everything
+    between those two facts has to hold before a real mission can produce evidence.
+    """
+    from hypertrade.arc.evidence import build_default_window
+    from hypertrade.config import Settings
+
+    db_path = tmp_path / "crypto_data.db"
+    _seed_bitpro_archive(db_path, table="kline_1h", symbol="BTC/USDT:USDT", rows=1_200)
+
+    window = build_default_window(
+        Settings(BITPRO_SQLITE_PATH=db_path, ARC_EVIDENCE_LIVE_FALLBACK_ENABLED=False)
+    )
+    assert window.archive is not None
+    assert window.live is None  # no exchange call is made on the archive route
+
+    verdict = HistoricalEvidenceGate(window).evaluate(_candidate())
+
+    assert verdict.metrics["evidence_available"] is True
+    assert verdict.metrics["out_of_sample_bars"] >= MIN_OUT_OF_SAMPLE_BARS
+    assert verdict.metrics["walk_forward_folds"] > 0
+
+
+def test_a_sharpe_computed_from_a_handful_of_trades_is_not_accepted_as_evidence(tmp_path):
+    """A probe on real archive data passed candidates whose out-of-sample Sharpe of 8
+    came from five trades. One trade moved it by more than the admissible threshold, so
+    the number was noise with a decimal point on it."""
+    from hypertrade.arc.evidence import MIN_OUT_OF_SAMPLE_TRADES, build_default_window
+    from hypertrade.config import Settings
+
+    db_path = tmp_path / "crypto_data.db"
+    _seed_bitpro_archive(db_path, table="kline_1h", symbol="BTC/USDT:USDT", rows=1_200)
+    window = build_default_window(Settings(BITPRO_SQLITE_PATH=db_path))
+
+    # A span long relative to the window fires rarely without being inert.
+    sparse = _candidate(parameter_bounds={"slow_window": {"min": 150, "max": 160}})
+    verdict = HistoricalEvidenceGate(window).evaluate(sparse)
+
+    assert verdict.metrics["out_of_sample_trades"] < MIN_OUT_OF_SAMPLE_TRADES
+    assert ARCReasonCode.OOS_SAMPLE_TOO_SMALL in {f.code for f in verdict.blocking}
+    # Distinct from being inert: this candidate did trade, just not enough to measure.
+    assert ARCReasonCode.INERT_NO_TRADES not in {f.code for f in verdict.findings}
+
+
+def test_preflight_tells_an_operator_what_a_mission_could_prove(tmp_path):
+    """A mission with no window completes on advisories, which reads as success."""
+    from hypertrade.arc.evidence import build_default_window, preflight_window
+    from hypertrade.config import Settings
+
+    db_path = tmp_path / "crypto_data.db"
+    _seed_bitpro_archive(db_path, table="kline_1h", symbol="BTC/USDT:USDT", rows=1_200)
+    window = build_default_window(Settings(BITPRO_SQLITE_PATH=db_path))
+
+    stocked = preflight_window(symbol="BTC-USDT-SWAP", timeframe="1H", window=window)
+    assert stocked["evidence_possible"] is True
+    assert stocked["bars_available"] >= MIN_EVIDENCE_BARS
+    assert stocked["walk_forward_folds"] > 0
+    assert stocked["sources_configured"] == ["archive"]
+
+    # A symbol the archive has never heard of has to be distinguishable from a stocked
+    # one before the budget is spent, not after.
+    missing = preflight_window(symbol="DOGE-USDT-SWAP", timeframe="1H", window=window)
+    assert missing["evidence_possible"] is False
+    assert missing["bars_available"] == 0
+    assert missing["walk_forward_folds"] == 0
+
+
+def test_preflight_reports_an_unconfigured_deployment_as_such():
+    from hypertrade.arc.evidence import preflight_window
+
+    report = preflight_window(symbol="BTC-USDT-SWAP", timeframe="1H", window=_EmptyWindow())
+    assert report["sources_configured"] == []
+    assert report["evidence_possible"] is False
+    assert "no_source_configured" in report["detail"]
+
+
+class _EmptyWindow:
+    def read(self, *, symbol: str, timeframe: str, limit: int):
+        raise CandidateBacktestError("no_candle_window_available:no_source_configured")
+
+
+def _seed_bitpro_archive(db_path, *, table: str, symbol: str, rows: int) -> None:
+    """Write BitPro's kline table shape so the reader is exercised, not stubbed."""
+    import sqlite3
+
+    rnd = random.Random(11)
+    price = 30_000.0
+    base_ts = 1_780_272_000_000
+    records = []
+    for index in range(rows):
+        open_price = price
+        price *= 1.0 + rnd.gauss(0.0004, 0.011)
+        records.append(
+            (
+                "okx",
+                symbol,
+                base_ts + index * 3_600_000,
+                open_price,
+                max(open_price, price) * 1.001,
+                min(open_price, price) * 0.999,
+                price,
+                1_000.0 + index,
+                100_000.0 + index,
+            )
+        )
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            f"""
+            CREATE TABLE {table} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exchange TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                open REAL NOT NULL,
+                high REAL NOT NULL,
+                low REAL NOT NULL,
+                close REAL NOT NULL,
+                volume REAL NOT NULL,
+                quote_volume REAL,
+                UNIQUE(exchange, symbol, timestamp)
+            )
+            """
+        )
+        connection.executemany(
+            f"""
+            INSERT INTO {table}
+                (exchange, symbol, timestamp, open, high, low, close, volume, quote_volume)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            records,
+        )
+
+
 def test_live_fallback_is_off_unless_an_operator_enabled_it():
     """An autonomous loop must not reach an exchange on its own initiative."""
     from hypertrade.arc.evidence import build_default_window

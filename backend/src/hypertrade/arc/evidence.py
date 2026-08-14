@@ -51,6 +51,13 @@ MIN_EVIDENCE_BARS = math.ceil(MIN_OUT_OF_SAMPLE_BARS / (1.0 - IN_SAMPLE_FRACTION
 
 MIN_ADMISSIBLE_OOS_SHARPE = 0.5
 
+# Trades the held-out slice must contain for its Sharpe to be a measurement rather than
+# an accident. Below this a single trade moves the Sharpe by more than the admissible
+# threshold, so the verdict reports noise with a decimal point on it. The research
+# pipeline requires 20 over a full window (`RobustnessPolicyV2.min_trade_count`); the
+# held-out slice is roughly a third of one, so the same density lands here.
+MIN_OUT_OF_SAMPLE_TRADES = 7
+
 # How much of the in-sample Sharpe may evaporate out of sample. A candidate that only
 # works on the half it was selected on is the classic selection-bias failure.
 MAX_ADMISSIBLE_SHARPE_DECAY = 0.5
@@ -175,6 +182,57 @@ def _configured_archive(raw_path: Any) -> ArchiveWindow | None:
     if text in ("", "."):
         return None
     return ArchiveWindow(text)
+
+
+def preflight_window(
+    *,
+    symbol: str,
+    timeframe: str,
+    bars: int = 1_500,
+    window: CandleWindowSource | None = None,
+) -> dict[str, Any]:
+    """Report what evidence a mission on this symbol would actually be able to obtain.
+
+    Without this an operator learns that the archive has no history for a symbol only
+    after a mission has spent its candidate budget and completed on advisories alone —
+    the run looks successful and the absent evidence is a line in the metrics.
+    """
+    source = window if window is not None else build_default_window()
+    configured = [
+        label
+        for label, member in (("archive", getattr(source, "archive", None)),
+                              ("live", getattr(source, "live", None)))
+        if member is not None
+    ]
+    try:
+        candles = source.read(symbol=symbol, timeframe=timeframe, limit=bars)
+    except Exception as exc:
+        return {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "sources_configured": configured,
+            "bars_available": 0,
+            "evidence_possible": False,
+            "walk_forward_folds": 0,
+            "detail": str(exc)[:200],
+        }
+
+    available = len(bars_from_candles(symbol, candles))
+    folds = len(walk_forward_slices(available))
+    return {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "sources_configured": configured,
+        "bars_available": available,
+        "bars_required": MIN_EVIDENCE_BARS,
+        "evidence_possible": available >= MIN_EVIDENCE_BARS,
+        "walk_forward_folds": folds,
+        "detail": (
+            "ok"
+            if folds
+            else "window supports a single split but is too short for rolling folds"
+        ),
+    }
 
 
 @dataclass(frozen=True)
@@ -365,6 +423,19 @@ def _judge(
             )
         )
         return tuple(findings)
+
+    if out_of_sample.trade_count < MIN_OUT_OF_SAMPLE_TRADES:
+        findings.append(
+            AttackFinding(
+                code=ARCReasonCode.OOS_SAMPLE_TOO_SMALL,
+                gate=GATE,
+                detail=(
+                    f"the held-out window contains {out_of_sample.trade_count} trades, "
+                    f"below the {MIN_OUT_OF_SAMPLE_TRADES} needed for its Sharpe of "
+                    f"{out_of_sample.sharpe:.2f} to be a measurement rather than an accident"
+                ),
+            )
+        )
 
     if out_of_sample.sharpe < MIN_ADMISSIBLE_OOS_SHARPE:
         findings.append(

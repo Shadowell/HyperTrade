@@ -56,6 +56,10 @@ _CONSTRAINT_BY_REASON_CODE: dict[ARCReasonCode, str] = {
     ARCReasonCode.PERMANENT_EXPOSURE: (
         "几乎全窗口持仓，等同方向性押注，必须引入明确的离场条件"
     ),
+    ARCReasonCode.OOS_SAMPLE_TOO_SMALL: (
+        "样本外成交笔数太少，夏普由个别几笔决定，不构成度量；必须缩短信号周期或放宽触发条件，"
+        "让候选在留出窗口里产生可统计的成交量"
+    ),
     ARCReasonCode.WALK_FORWARD_INCONSISTENT: (
         "滚动窗口中过半窗口不成立，结论依赖特定时段而非市场结构，必须改用跨状态更稳健的信号"
     ),
