@@ -10,6 +10,7 @@ from hypertrade.arc.findings import (
     REMEDIATION_BY_REASON_CODE,
     ARCReasonCode,
     ParameterRemediation,
+    extract_strategy_parameters,
 )
 
 
@@ -30,6 +31,12 @@ class ARCGeneticMutator:
         """
         Produce a mutated candidate attempt with AST modifications
         and parameter tuning while respecting negative constraints.
+
+        Two mutation pressures act together: compliance repairs move parameters the
+        reviewer objected to inside their admissible bound, and an exploratory step
+        resamples one other knob within the bounds the candidate itself declares. With
+        repairs alone every generation converged on the same body, so successive rounds
+        re-tested one strategy instead of searching.
         """
         negative_constraints: set[str] = set()
         remediations: dict[str, ParameterRemediation] = {}
@@ -46,10 +53,27 @@ class ARCGeneticMutator:
                     remediation if existing is None else _tighter(existing, remediation)
                 )
 
-        mutated_code = self._apply_ast_mutations(attempt.strategy_code, remediations)
+        round_index = int(attempt.strategy_spec.get("mutation_round", 0)) + 1
+        explored = self._pick_exploration(attempt, remediations, round_index)
+        mutated_code = self._apply_ast_mutations(
+            attempt.strategy_code, remediations, exploration=explored
+        )
 
-        new_attempt_id = f"att_mut_{attempt.attempt_id[-6:]}"
-        new_candidate_id = f"cand_mut_{attempt.candidate_id[-6:]}"
+        new_attempt_id = f"att_mut{round_index}_{attempt.attempt_id[-6:]}"
+        new_candidate_id = f"cand_mut{round_index}_{attempt.candidate_id[-6:]}"
+
+        spec: dict[str, object] = {
+            "parent_attempt_id": attempt.attempt_id,
+            "negative_constraints_applied": sorted(negative_constraints),
+            "remediated_parameters": sorted(remediations),
+            "explored_parameters": sorted(explored),
+            "mutation_round": round_index,
+        }
+        # Provenance the next generation needs to keep exploring: without the declared
+        # bounds a mutated candidate has no admissible range left to resample within.
+        for inherited in ("family", "direction", "parameter_bounds", "risk_overlays"):
+            if inherited in attempt.strategy_spec:
+                spec[inherited] = attempt.strategy_spec[inherited]
 
         return ARCCandidateAttemptV1(
             attempt_id=new_attempt_id,
@@ -57,18 +81,57 @@ class ARCGeneticMutator:
             state="mutated",
             hypothesis=f"Mutated version of {attempt.hypothesis} with negative constraint guards",
             strategy_code=mutated_code,
-            strategy_spec={
-                "parent_attempt_id": attempt.attempt_id,
-                "negative_constraints_applied": sorted(negative_constraints),
-                "remediated_parameters": sorted(remediations),
-                "mutation_round": attempt.strategy_spec.get("mutation_round", 0) + 1,
-            },
+            strategy_spec=spec,
         )
+
+    def _pick_exploration(
+        self,
+        attempt: ARCCandidateAttemptV1,
+        remediations: dict[str, ParameterRemediation],
+        round_index: int,
+    ) -> dict[str, float]:
+        """Resample one knob the reviewer did not object to, inside its own bounds.
+
+        Restricted to a single knob per generation so a rejection can still be
+        attributed: changing the whole vector at once would leave the next verdict
+        unattributable to any one dimension.
+        """
+        bounds = attempt.strategy_spec.get("parameter_bounds")
+        if not isinstance(bounds, dict):
+            return {}
+        current = extract_strategy_parameters(attempt.strategy_code)
+        candidates = sorted(
+            name
+            for name, window in bounds.items()
+            if name not in remediations and isinstance(window, dict) and name in current
+        )
+        if not candidates:
+            return {}
+        # Rotate deterministically by generation so consecutive rounds probe different
+        # dimensions rather than re-rolling the same one.
+        name = candidates[(round_index - 1) % len(candidates)]
+        window = bounds[name]
+        try:
+            low = float(window["min"])
+            high = float(window["max"])
+        except (KeyError, TypeError, ValueError):
+            return {}
+        if high <= low:
+            return {}
+        drawn = self.random.uniform(low, high)
+        # Bar counts are declared as whole numbers on both the bound and the default;
+        # a fractional window would be truncated by the generated clamp anyway.
+        if all(value.is_integer() for value in (low, high, current[name])):
+            drawn = float(round(drawn))
+        if drawn == current[name]:
+            drawn = high if current[name] < high else low
+        return {name: drawn}
 
     def _apply_ast_mutations(
         self,
         code: str,
         remediations: dict[str, ParameterRemediation],
+        exploration: dict[str, float] | None = None,
     ) -> str:
         """Rewrite the offending parameter declarations, preserving everything else.
 
@@ -76,13 +139,14 @@ class ARCGeneticMutator:
         repaired body would let the red team clear a candidate whose remaining logic
         was never actually reviewed.
         """
-        if not remediations:
+        exploration = exploration or {}
+        if not remediations and not exploration:
             return code
         try:
             tree = ast.parse(code)
         except SyntaxError:
             return code
-        transformer = StrategyASTTransformer(remediations=remediations)
+        transformer = StrategyASTTransformer(remediations=remediations, exploration=exploration)
         modified_tree = transformer.visit(tree)
         ast.fix_missing_locations(modified_tree)
         return ast.unparse(modified_tree)
@@ -114,8 +178,21 @@ class StrategyASTTransformer(ast.NodeTransformer):
     on every compiled strategy.
     """
 
-    def __init__(self, remediations: dict[str, ParameterRemediation]):
+    def __init__(
+        self,
+        remediations: dict[str, ParameterRemediation],
+        exploration: dict[str, float] | None = None,
+    ):
         self.remediations = remediations
+        self.exploration = exploration or {}
+
+    def _rewrite(self, name: str, current: int | float) -> int | float | None:
+        remediation = self.remediations.get(name)
+        if remediation is not None:
+            return _cast_like(current, remediation.repair(float(current)))
+        if name in self.exploration:
+            return _cast_like(current, self.exploration[name])
+        return None
 
     def visit_Assign(self, node: ast.Assign) -> ast.AST:
         self.generic_visit(node)
@@ -127,10 +204,9 @@ class StrategyASTTransformer(ast.NodeTransformer):
         for target in node.targets:
             if not isinstance(target, ast.Name):
                 continue
-            remediation = self.remediations.get(target.id)
-            if remediation is None:
-                continue
-            node.value = ast.Constant(value=_cast_like(current, remediation.repair(float(current))))
+            replacement = self._rewrite(target.id, current)
+            if replacement is not None:
+                node.value = ast.Constant(value=replacement)
         return node
 
     def visit_Call(self, node: ast.Call) -> ast.AST:
@@ -146,11 +222,10 @@ class StrategyASTTransformer(ast.NodeTransformer):
         current = default_node.value
         if isinstance(current, bool) or not isinstance(current, (int, float)):
             return node
-        remediation = self.remediations.get(name_node.value)
-        if remediation is None:
+        replacement = self._rewrite(name_node.value, current)
+        if replacement is None:
             return node
-        repaired = _cast_like(current, remediation.repair(float(current)))
-        node.args = [name_node, ast.Constant(value=repaired)]
+        node.args = [name_node, ast.Constant(value=replacement)]
         return node
 
 

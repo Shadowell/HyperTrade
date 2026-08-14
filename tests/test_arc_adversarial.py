@@ -119,6 +119,41 @@ def test_parameter_parked_on_the_admissibility_cliff_is_flagged_as_fragile():
     assert ARCReasonCode.PARAMETER_JITTER_DEGRADATION in {finding.code for finding in findings}
 
 
+def test_successive_mutations_explore_more_than_the_one_repaired_knob():
+    """Repair-only mutation converged on one body, so extra rounds re-tested one strategy."""
+    from hypertrade.arc.findings import extract_strategy_parameters
+    from hypertrade.arc.reflexion import ARCReflexionLedger
+
+    engine = ARCAdversarialEngine()
+    ledger = ARCReflexionLedger()
+    mutator = ARCGeneticMutator(seed=7)
+
+    candidate = BlueTeamQuant().propose_initial_strategy(
+        "均线金叉趋势",
+        "BTC-USDT-SWAP",
+        parameter_bounds={"stop_loss": {"min": 0.12, "max": 0.18}},
+    )
+    bodies: set[str] = set()
+    explored: set[str] = set()
+    for _ in range(4):
+        survived, metrics, findings = engine.run_adversarial_session(candidate)
+        if not survived:
+            ledger.diagnose_and_record_failure(
+                attempt=candidate,
+                failure_class="red_team_attack_failed",
+                observed_metrics=metrics,
+                findings=findings,
+            )
+        candidate = mutator.mutate_attempt(candidate, ledger.get_history())
+        bodies.add(candidate.strategy_code)
+        explored.update(candidate.strategy_spec["explored_parameters"])
+        # The compliance repair must survive every later exploratory round.
+        assert extract_strategy_parameters(candidate.strategy_code)["stop_loss"] <= 0.10
+
+    assert len(bodies) == 4, "each generation must differ from the last"
+    assert len(explored) >= 2, "exploration must rotate across dimensions"
+
+
 def test_ast_mutation_and_red_team_survival():
     blue_team = BlueTeamQuant()
     mutator = ARCGeneticMutator(seed=123)

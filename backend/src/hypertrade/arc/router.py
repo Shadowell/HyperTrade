@@ -8,10 +8,15 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from hypertrade.arc.adversarial import ARCAdversarialEngine, BlueTeamQuant
-from hypertrade.arc.contracts import ARCBudgetV1, ARCGoalV1, PaperPreauthorizationV1
+from hypertrade.arc.contracts import (
+    ARCBudgetV1,
+    ARCCandidateAttemptV1,
+    ARCGoalV1,
+    PaperPreauthorizationV1,
+)
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.incubation import ARCPaperIncubationResolver
-from hypertrade.arc.mcts import ARCParallelMCTSEngine
+from hypertrade.arc.mcts import ARCParallelMCTSEngine, MCTSNode
 from hypertrade.arc.mutation import ARCGeneticMutator
 from hypertrade.arc.reflexion import ARCReflexionLedger
 from hypertrade.arc.skills import ARCSkillDistiller, ARCSkillLibrary
@@ -123,38 +128,69 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     # 1. Seed the MCTS tree with structurally different hypotheses, not one template.
     #    One slot is always held back so a rejected frontier still gets one repair pass.
     seed_width = max(1, min(_MAX_SEED_WIDTH, budget.max_candidates - 1))
-    frontier = blue_team.propose_diverse_frontier(goal.objective, symbol, seed_width)
+    seeds = blue_team.propose_diverse_frontier(goal.objective, symbol, seed_width)
     root_id: str | None = None
-    for seed in frontier:
+    frontier: list[MCTSNode] = []
+    for seed in seeds:
         ctrl.apply_event("candidate_proposed", {"attempt": seed.model_dump()})
         if root_id is None:
-            root_id = mcts_engine.add_root(seed).node_id
+            root = mcts_engine.add_root(seed)
+            root_id = root.node_id
+            frontier.append(root)
         else:
-            mcts_engine.add_child(root_id, seed)
+            frontier.append(mcts_engine.add_child(root_id, seed))
 
     # The rollout contract only carries (passed, score), so the review detail each
     # candidate needs for reflexion is captured here and read back by attempt id.
     reviews: dict[str, tuple[dict[str, Any], list[Any]]] = {}
 
-    def eval_candidate(cand: Any) -> tuple[bool, float]:
+    def eval_candidate(cand: ARCCandidateAttemptV1) -> tuple[bool, float]:
         survived, metrics, findings = engine.run_adversarial_session(cand)
         reviews[cand.attempt_id] = (metrics, list(findings))
         return survived, float(metrics.get("sharpe_after_attack", 0.0))
 
-    validated: Any | None = None
+    def repair(cand: ARCCandidateAttemptV1) -> list[ARCCandidateAttemptV1]:
+        """Diagnose one casualty and propose its repaired successor."""
+        if budget.is_exhausted():
+            return []
+        metrics, findings = reviews.get(cand.attempt_id, ({}, []))
+        reflexion = reflexion_ledger.diagnose_and_record_failure(
+            attempt=cand,
+            failure_class="red_team_attack_failed",
+            observed_metrics=metrics,
+            findings=findings,
+        )
+        ctrl.apply_event("reflexion_recorded", {"reflexion": reflexion.model_dump()})
+
+        mutated = mutator.mutate_attempt(cand, reflexion_ledger.get_history())
+        if mutated.strategy_code == cand.strategy_code:
+            # Nothing the reviewer objected to is expressible as a parameter change;
+            # re-testing an identical body would only burn budget.
+            return []
+        ctrl.apply_event("candidate_proposed", {"attempt": mutated.model_dump()})
+        ctrl.apply_event(
+            "candidate_mutated",
+            {"attempt_id": mutated.attempt_id, "strategy_code": mutated.strategy_code},
+        )
+        return [mutated]
+
+    validated: ARCCandidateAttemptV1 | None = None
     while frontier and validated is None:
-        # 2. Parallel Rollout Execution across Red Team Attacks
-        rollouts = mcts_engine.execute_parallel_rollout(eval_candidate, frontier)
-        for cand, survived, score in rollouts:
-            metrics, _ = reviews.get(cand.attempt_id, ({}, []))
+        # 2. Simulation: the engine rolls the generation out and backpropagates values.
+        rollouts = mcts_engine.simulate(frontier, eval_candidate)
+        for node, survived, _score in rollouts:
+            metrics, _ = reviews.get(node.attempt.attempt_id, ({}, []))
             ctrl.apply_event(
                 "red_team_tested",
-                {"attempt_id": cand.attempt_id, "passed": survived, "metrics": metrics},
+                {
+                    "attempt_id": node.attempt.attempt_id,
+                    "passed": survived,
+                    "metrics": metrics,
+                },
             )
-            mcts_engine.backpropagate(cand.attempt_id, score)
 
         survivors = sorted(
-            ((score, cand) for cand, survived, score in rollouts if survived),
+            ((score, node.attempt) for node, survived, score in rollouts if survived),
             key=lambda pair: pair[0],
             reverse=True,
         )
@@ -162,32 +198,10 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
             validated = survivors[0][1]
             break
 
-        # 3. Multi-Regime Causal Reflexion, then guided AST repair of each casualty.
-        next_generation: list[Any] = []
-        for cand, _, _ in rollouts:
-            if budget.is_exhausted():
-                break
-            metrics, findings = reviews.get(cand.attempt_id, ({}, []))
-            reflexion = reflexion_ledger.diagnose_and_record_failure(
-                attempt=cand,
-                failure_class="red_team_attack_failed",
-                observed_metrics=metrics,
-                findings=findings,
-            )
-            ctrl.apply_event("reflexion_recorded", {"reflexion": reflexion.model_dump()})
-
-            mutated = mutator.mutate_attempt(cand, reflexion_ledger.get_history())
-            if mutated.strategy_code == cand.strategy_code:
-                # Nothing the reviewer objected to is expressible as a parameter repair;
-                # re-testing an identical body would only burn budget.
-                continue
-            ctrl.apply_event("candidate_proposed", {"attempt": mutated.model_dump()})
-            ctrl.apply_event(
-                "candidate_mutated",
-                {"attempt_id": mutated.attempt_id, "strategy_code": mutated.strategy_code},
-            )
-            mcts_engine.add_child(cand.attempt_id, mutated)
-            next_generation.append(mutated)
+        # 3. Expansion: reflexion-guided repair of every casualty in this generation.
+        next_generation: list[MCTSNode] = []
+        for node, _, _ in rollouts:
+            next_generation.extend(mcts_engine.expand(node.node_id, repair))
         frontier = next_generation
 
     if validated is None:

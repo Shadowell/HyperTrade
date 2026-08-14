@@ -165,6 +165,54 @@ class ARCMCTSEngine:
 
             return current
 
+    def expand(
+        self,
+        parent_id: str,
+        proposer: Callable[[ARCCandidateAttemptV1], list[ARCCandidateAttemptV1]],
+    ) -> list[MCTSNode]:
+        """Expansion phase: grow the tree under `parent_id` using `proposer`.
+
+        The engine used to offer only Selection and Backpropagation, so whoever drove
+        it had to build the tree by hand — which meant the shape of the search lived in
+        the caller and no two callers searched the same way. Proposals that repeat an
+        existing node are dropped rather than re-explored.
+        """
+        with self._lock:
+            parent = self.nodes.get(parent_id)
+        if parent is None:
+            return []
+        children: list[MCTSNode] = []
+        for attempt in proposer(parent.attempt):
+            with self._lock:
+                already_present = attempt.attempt_id in self.nodes
+            if already_present:
+                continue
+            children.append(self.add_child(parent_id, attempt))
+        return children
+
+    def simulate(
+        self,
+        nodes: list[MCTSNode],
+        evaluator: Callable[[ARCCandidateAttemptV1], tuple[bool, float]],
+    ) -> list[tuple[MCTSNode, bool, float]]:
+        """Simulation phase: roll out each node and backpropagate its value."""
+        results = [(node, *self._rollout(node, evaluator)) for node in nodes]
+        for node, _survived, score in results:
+            self.backpropagate(node.node_id, score)
+        return results
+
+    @staticmethod
+    def _rollout(
+        node: MCTSNode,
+        evaluator: Callable[[ARCCandidateAttemptV1], tuple[bool, float]],
+    ) -> tuple[bool, float]:
+        """A single rollout. A worker that raises scores zero rather than aborting the
+        whole generation, so one malformed candidate cannot halt the search."""
+        try:
+            return evaluator(node.attempt)
+        except Exception:
+            return False, 0.0
+
     def backpropagate(self, node_id: str, value: float) -> None:
         with self._lock:
             current_id: str | None = node_id
@@ -189,6 +237,23 @@ class ARCParallelMCTSEngine(ARCMCTSEngine):
     ) -> None:
         super().__init__(exploration_weight=exploration_weight)
         self.parallel_workers = max(1, parallel_workers)
+
+    def simulate(
+        self,
+        nodes: list[MCTSNode],
+        evaluator: Callable[[ARCCandidateAttemptV1], tuple[bool, float]],
+    ) -> list[tuple[MCTSNode, bool, float]]:
+        """Run the generation's rollouts concurrently, then backpropagate each value."""
+        by_attempt = {node.attempt.attempt_id: node for node in nodes}
+        rollouts = self.execute_parallel_rollout(
+            evaluator, [node.attempt for node in nodes]
+        )
+        results: list[tuple[MCTSNode, bool, float]] = []
+        for attempt, survived, score in rollouts:
+            node = by_attempt[attempt.attempt_id]
+            self.backpropagate(node.node_id, score)
+            results.append((node, survived, score))
+        return results
 
     def execute_parallel_rollout(
         self,

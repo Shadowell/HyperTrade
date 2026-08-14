@@ -55,6 +55,88 @@ def test_mcts_tree_construction_and_ucb1_selection():
     assert selected.node_id == "att_child2"
 
 
+def test_engine_owns_expansion_and_simulation():
+    """The engine offered only Selection and Backpropagation.
+
+    Callers had to build the tree themselves, so the shape of the search lived outside
+    the search engine and every caller searched differently.
+    """
+    mcts = ARCMCTSEngine()
+    root = mcts.add_root(
+        ARCCandidateAttemptV1(
+            attempt_id="att_seed",
+            candidate_id="cand_seed",
+            hypothesis="seed",
+            strategy_code="lookback_period = 20\nstop_loss = 0.12",
+        )
+    )
+
+    def proposer(parent):
+        return [
+            ARCCandidateAttemptV1(
+                attempt_id=f"att_{parent.attempt_id}_child",
+                candidate_id="cand_child",
+                hypothesis="child",
+                strategy_code="lookback_period = 20\nstop_loss = 0.08",
+            )
+        ]
+
+    children = mcts.expand(root.node_id, proposer)
+    assert [child.node_id for child in children] == ["att_att_seed_child"]
+    assert children[0].parent_id == root.node_id
+    # Re-proposing an existing node must not duplicate it.
+    assert mcts.expand(root.node_id, proposer) == []
+
+    results = mcts.simulate(children, lambda attempt: (True, 1.7))
+    assert results[0][1] is True
+    assert children[0].visits == 1
+    # Simulation backpropagates without the caller having to remember to.
+    assert root.visits == 1
+    assert root.total_value == 1.7
+
+
+def test_a_failing_rollout_does_not_halt_the_generation():
+    mcts = ARCMCTSEngine()
+    root = mcts.add_root(
+        ARCCandidateAttemptV1(
+            attempt_id="att_boom",
+            candidate_id="cand_boom",
+            hypothesis="explodes under review",
+            strategy_code="stop_loss = 0.05",
+        )
+    )
+
+    def exploding(attempt):
+        raise RuntimeError("reviewer crashed")
+
+    results = mcts.simulate([root], exploding)
+    assert results == [(root, False, 0.0)]
+
+
+def test_quality_diversity_niche_reads_the_declared_span():
+    """Matching four literals filed every compiled candidate into one niche."""
+    grid = MAPElitesGrid()
+
+    def descriptor_for(code: str) -> tuple[str, str]:
+        return grid.get_feature_descriptor(
+            ARCCandidateAttemptV1(
+                attempt_id="att_span",
+                candidate_id="cand_span",
+                hypothesis="span probe",
+                strategy_code=code,
+                observed_metrics={"sharpe_after_attack": 1.6},
+            )
+        )
+
+    # A compiled candidate declares its window through the research parameter map, and
+    # names it after its own indicator rather than calling it `lookback_period`.
+    fast = descriptor_for('params = {}\nw = int(params.get("rsi_period", 7))')
+    slow = descriptor_for('params = {}\nw = int(params.get("channel_period", 60))')
+    assert fast[0] == "short_term"
+    assert slow[0] == "long_term"
+    assert fast != slow
+
+
 def test_map_elites_quality_diversity_grid():
     grid = MAPElitesGrid()
 
