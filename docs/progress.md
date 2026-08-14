@@ -12,7 +12,11 @@
   `BitProLivePromoteClient` / `authorized_live_promote`（先 `live_preflight`，不经
   `call_tool`）。未批、拒绝、证据不全：实盘动作为零。下单/划转仍拦截。
 - **部署**：排队的旧 SHA 若不是 `origin/main` tip，拒绝部署，避免验收被旧镜像盖掉。
-- **验证**：`./scripts/check.sh`；新增 self-test / store / live-approval / span mutation 测试。
+- **验证**：`./scripts/check.sh` 987 通过。生产 `d2ab144` 已部署：1m 预检
+  `bars_available=14433`（不再卡 1500）；mission `arc_31d05530923d` 诚实停在
+  `needs_operator` / `no_validated_candidate`，6 个 attempt 的 paper id 全是
+  null；缺证据的审批包 `incomplete`，`decide(approve)` 返回 409；`continue`
+  追加预算不重置历史。
 
 ## Gate 2 真接通：create → configure → start，且 start 必须用 instance_id — 2026-08-15
 
