@@ -1,5 +1,50 @@
 # Progress Log
 
+## ARC 红蓝闭环打通、搜索预算化与候选真实回测（Gate 1 收口） — 2026-08-14
+
+- **红蓝之间的格式断路**：红队输出 `"BLACK_SWAN_FAIL: Wide stop-loss..."`，reflexion 却在
+  匹配 `"Stop loss is too wide"`，两个字符串永不相等，`red_team_attack_failed` 的归因分支
+  是不可达代码，`reason_codes` 里装的是人类句子而非代码。新增 `arc/findings.py`：
+  `ARCReasonCode`（闭合 StrEnum）+ `AttackFinding`（code/gate/detail），ledger 改为 switch
+  on code。新增测试直接跑真引擎输出，而不是手写一条红队根本不会产生的 reason 字符串——
+  旧单测正是因此把断路藏了起来。
+- **审查改为读真参数**：攻击此前用子串探测（`"stop_loss = 0.12" in code`），只认 demo 恰好
+  emit 的两个字面量，其余取值（含刻意激进的）一律放行。改为 AST 读取，同时覆盖手写字面量
+  与 codegen 的 `params.get(name, default)` 形式；`declared_span()` 统一各族的窗口命名
+  （`rsi_period` / `channel_period` / `slow_window` …），否则编译候选等于「没声明任何周期」。
+- **Monte Carlo 攻击改为扰动真参数**：此前在结果均值附近抖动，退化度恒为 0。现直接扰动声明
+  参数并重投影，取第 5 百分位判定，使「参数停在可接受性悬崖上」这类脆弱性能被抓出。
+- **蓝队接入 codegen**：`propose_initial_strategy` 不再套用同一份 ATR 突破模板，改为按目标
+  文本编译；`propose_diverse_frontier` 按族目录稳定地铺开结构不同的假设。目标不同 → 策略族
+  不同 → 逻辑不同；同一目标可复现出逐字节相同的候选（账本按代码指纹幂等）。
+- **循环从两步脚本改为预算驱动搜索**：原实现是手工展开的「一次提案 + 一次突变」，不论操作员
+  给了多少预算都到此为止。现在按代 frontier 迭代直到有候选过检或预算耗尽。顺带修掉一个
+  真 bug：`goal_compiled` 事件会用载荷重建 `projection.goal`，循环持有的是脱离的副本，
+  预算计数器永不前进，因此**预算检查从未生效**（实测 max_candidates=4 时用掉了 6 个）。
+- **MCTS 补齐 Expansion / Simulation**：引擎此前只有 Selection + Backpropagation，树必须由
+  调用方手工喂入，搜索形状散落在 caller。现 `expand()` 由 proposer 生成子节点并去重，
+  `simulate()` 跑完一代并回传；单个 rollout 抛异常记 0 分而不中断整代。
+- **突变新增探索维度**：原本只做合规修复，每代收敛到同一份代码，多跑几轮等于重测同一策略。
+  现每代额外重采样一个「审查方未反对」的旋钮（按代轮换维度、限定在候选自身声明的边界内），
+  合规修复仍然保持；突变候选继承 family/bounds，否则下一代没有可探索的区间。
+- **QD 描述符**：`get_feature_descriptor` 靠匹配 4 个 lookback 字面量，编译候选全部落进同一个
+  `medium_term` 格子，多样性档案形同虚设；改为读声明周期。
+- **新增 `backtest/candidate.py`（本轮最关键的一块）**：`BacktestEngine` 只跑那一个手写
+  Backtrader 策略，其余 key 直接 `KeyError`，也就是说**编译候选从未被历史数据评估过**——
+  红队门禁、reflexion、模拟盘上线决策全部只在读声明参数。新模拟器直接回放 codegen 的产物：
+  把 BitPro 基类 import 换成窄运行时 shim，按调用方给定顺序投喂 bar（同一序列因此可切成
+  IS/OOS 而候选无从分辨），产出收益/Sharpe/回撤/换手/敞口/手续费并附带假设清单。
+  空转候选（`is_inert`）显式区分：只看 Sharpe 的门禁会把「从未开仓」评为完美。
+  生产边界：仅执行通过与生成器同一套静态门禁的源码，且在 load 处重检而不信任调用方——
+  这是研究链路上唯一真正 exec 生成代码的地方；末根 bar 强制平仓，避免白拿一个没付出场
+  成本的有利收盘价。
+- **验证**：`./scripts/check.sh` 929 通过（ruff / mypy 241 文件 / pytest）。6 个策略族 ×
+  2 个方向在随机行走上全部真实成交，双向版本敞口不低于纯多头版本。
+- **仍未打通（下一步的唯一阻塞项）**：模拟器尚未接入 ARC 门禁。`sample_candles()` 只有 24
+  根，连 33 根的均线跨度都填不满；真正的研究窗口需要选定数据源（BitPro kline 归档 sqlite
+  支持到 20000 根，或 OKX REST）与 IS/OOS 切分口径。在此之前，ARC 仍可能把「未经历史验证」
+  的候选送进模拟盘，这正是 Gate 1 与 Gate 2 的边界所在。
+
 ## 假设驱动的确定性策略代码生成器（Gate 1 生成能力补齐） — 2026-08-14
 
 - **背景（实测发现的缺口）**：北极星 Gate 1 要求「从全新 Alpha 假设生成新策略候选」。
