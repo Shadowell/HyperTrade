@@ -43,6 +43,7 @@ from hypertrade.arc.live_promote import decide_live_approval, revoke_live_approv
 from hypertrade.arc.mcts import ARCParallelMCTSEngine, MCTSNode
 from hypertrade.arc.mutation import ARCGeneticMutator
 from hypertrade.arc.observation import observe_mission
+from hypertrade.arc.pipeline_view import build_pipeline_view
 from hypertrade.arc.reflexion import ARCReflexionLedger
 from hypertrade.arc.self_test import ARCSelfTestService, SelfTestResult
 from hypertrade.arc.skills import ARCSkillDistiller, ARCSkillLibrary
@@ -209,6 +210,18 @@ async def get_arc_mission(mission_id: str) -> dict[str, Any]:
     if ctrl is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
     return ctrl.projection.model_dump(mode="json")
+
+
+@router.get(
+    "/missions/{mission_id}/progress",
+    dependencies=[Depends(require_scope(ARCScope.READ))],
+)
+async def get_arc_mission_progress(mission_id: str) -> dict[str, Any]:
+    """Pipeline position of a running mission, for a console that polls it."""
+    ctrl = get_controller(mission_id)
+    if ctrl is None:
+        raise HTTPException(status_code=404, detail="ARC Mission not found")
+    return build_pipeline_view(ctrl.projection)
 
 
 @router.get(

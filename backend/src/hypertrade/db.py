@@ -2042,6 +2042,9 @@ class ArcMission(Base, TimestampMixin):
     mission_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     state: Mapped[str] = mapped_column(String(48), index=True)
     projection_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # api and worker are separate processes that both advance a mission. This counter
+    # tells a cached projection from the committed one, so neither erases the other.
+    revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class Database:

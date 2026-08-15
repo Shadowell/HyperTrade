@@ -62,11 +62,14 @@ def build_candidate_detail(
 
 
 def build_mission_summary(projection: ARCMissionProjection) -> dict[str, Any]:
+    from hypertrade.arc.pipeline_view import build_pipeline_badge
+
     summary = _mission_summary(projection)
     summary["awaiting_approval"] = _awaiting_approval(projection)
     summary["survivor_count"] = sum(
         1 for item in projection.attempts if item.state in _SURVIVOR_STATES
     )
+    summary["pipeline"] = build_pipeline_badge(projection)
     return summary
 
 

@@ -66,19 +66,37 @@ class ARCController:
     def __init__(self, mission_id: str | None = None, goal: ARCGoalV1 | None = None):
         self.mission_id = mission_id or f"arc_{uuid.uuid4().hex[:12]}"
         self.projection = ARCMissionProjection(mission_id=self.mission_id, goal=goal)
+        # Storage revision this projection was read at. The store compares it against
+        # the committed row to tell a stale cache from the current mission.
+        self.revision = 0
 
     def apply_event(self, event_type: str, payload: dict[str, Any]) -> ARCEventV1:
+        """Apply one event to the newest committed projection.
+
+        The reduction happens inside the store's per-mission lock rather than here,
+        because api and worker each hold their own controller for the same mission.
+        Reducing against a stale local snapshot and writing it back whole is how one
+        process silently erases the other's progress.
+        """
         evt = ARCEventV1(
             mission_id=self.mission_id,
             event_type=event_type,
             payload=payload,
         )
+        from hypertrade.arc.store import commit_event
+
+        commit_event(self, evt)
+        return evt
+
+    def absorb(self, evt: ARCEventV1) -> None:
+        """Append and reduce. The store calls this while holding the mission row."""
         self.projection.events.append(evt)
         self._reduce(evt)
-        from hypertrade.arc.store import save_mission
 
-        save_mission(self)
-        return evt
+    def rebase(self, projection: ARCMissionProjection, revision: int) -> None:
+        """Adopt the committed projection before replaying a local event onto it."""
+        self.projection = projection
+        self.revision = revision
 
     def _reduce(self, evt: ARCEventV1) -> None:
         p = self.projection

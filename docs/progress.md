@@ -1,5 +1,20 @@
 # Progress Log
 
+## 两个进程共写一个 mission，以及控制台看不到进度 — 2026-08-15
+
+- **缺陷**：`store.MISSIONS` 是进程内缓存，`get_controller` 命中后不再读库。生产上
+  `api`（研究循环 + 审批）和 `worker`（模拟盘观察）是两个容器，各持一份缓存、各写整份
+  `projection_json`。实测：worker 把任务推到 `needs_operator`，api 仍然对外供 `paper_observing`，
+  且 api 下一次写入直接抹掉 worker 提交的事实。控制台的"启动 → 轮询 → 审批"整条链路因此走不完。
+- **修法**：`arc_missions.revision` 计数器。读命中缓存先比对 revision，落后就重载；写在
+  mission 行上串行（`with_for_update`），发现行已前进就把控制器 rebase 到已提交投影再重放事件——
+  事件是 mission 的状态转移，不是某个进程副本的转移。无数据库时行为不变，单进程仍复用同一控制器。
+- **进度投影**：`GET /missions/{id}/progress` 给出七阶段流水线、当前阶段、阻塞原因和活动流；
+  `GET /missions` 每行附 `pipeline` 徽章。阶段完成度由"进入过后续阶段"与"本阶段产出"合成，
+  稀疏投影不会读成倒退。活动流只投影白名单标量，不转发事件载荷，源码仍只在候选下钻。
+- **验证**：`tests/test_arc_store_concurrency.py`（4 个用例在修复前必失败）、
+  `tests/test_arc_pipeline_view.py`；`./scripts/check.sh` 1022 通过。
+
 ## ARC 外部控制台接入面 — 2026-08-15
 
 - **边界**：服务令牌可以启动任务、读全部证据，结构上不能审批。`ARCScope` 只有
