@@ -174,3 +174,45 @@ def test_observe_completes_window_from_bitpro_snapshot() -> None:
     assert ctrl.projection.live_approval is not None
     assert ctrl.projection.live_approval.paper["trades"] == 8
     reset_store()
+
+
+def test_a_snapshot_that_names_no_instance_is_unknown_not_a_match() -> None:
+    """The field answers "is this the instance we started", so silence is not a yes."""
+    from hypertrade.arc.observation import collect_paper_observation
+
+    class _Nameless:
+        def paper_snapshot(self, **kwargs: object) -> dict[str, object]:
+            return {"snapshot": {"status": "running", "trade_count": 5}}
+
+        def health(self) -> dict[str, object]:
+            return {"status": "ok"}
+
+    attempt = ARCCandidateAttemptV1(
+        attempt_id="att_x",
+        candidate_id="cand_x",
+        hypothesis="x",
+        strategy_code="class X: pass",
+        bitpro_strategy_id="9",
+        paper_instance_id="77",
+    )
+
+    observation = collect_paper_observation(attempt, _Nameless())
+
+    assert observation["instance_matched"] is None
+    assert observation["reported_instance_id"] is None
+
+
+def test_an_unconfirmed_paper_instance_cannot_back_a_live_promote() -> None:
+    """instance_matched was carried in the package and never gated on."""
+    ctrl = _ready_controller()
+    ctrl.projection.paper_observation = {
+        **ctrl.projection.paper_observation,
+        "instance_matched": None,
+    }
+
+    package = build_live_approval_package(ctrl.projection)
+
+    assert "paper_instance_unconfirmed" in package.unknowns
+    assert package.status == "incomplete"
+    with pytest.raises(PermissionError):
+        assert_approvable(package, force=True)

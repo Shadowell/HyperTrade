@@ -48,6 +48,11 @@ class ARCReasonCode(StrEnum):
     PERMANENT_EXPOSURE = "PERMANENT_EXPOSURE"
     WALK_FORWARD_INCONSISTENT = "WALK_FORWARD_INCONSISTENT"
     OOS_SAMPLE_TOO_SMALL = "OOS_SAMPLE_TOO_SMALL"
+    # The platform failed, not the candidate. Every self-test failure that did not name
+    # a success criterion used to be filed as EVIDENCE_REPLAY_FAILED, so a BitPro outage
+    # was recorded as "this strategy cannot execute, regenerate it": a sound candidate
+    # was discarded and the ledger learned a lesson that was not true.
+    BITPRO_SELF_TEST_UNAVAILABLE = "BITPRO_SELF_TEST_UNAVAILABLE"
 
 
 class FindingSeverity(StrEnum):

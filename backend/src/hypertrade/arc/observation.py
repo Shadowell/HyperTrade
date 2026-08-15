@@ -62,7 +62,11 @@ def collect_paper_observation(
         }
     body = _snapshot_body(raw)
     reported = body.get("instance_id") or body.get("id")
-    matched = reported is None or str(reported) == str(instance_id)
+    # None, not True, when the snapshot names no instance. This field answers "is this
+    # the instance we started"; reading silence as confirmation resolves the one
+    # question it exists to ask in the direction that lets an unverified paper run
+    # stand in as evidence for a live promote.
+    matched = None if reported is None else str(reported) == str(instance_id)
     health = {}
     try:
         health = client.health()
@@ -74,7 +78,7 @@ def collect_paper_observation(
     else:
         healthy = str(health.get("status") or "")
     return {
-        "ok": bool(matched and body),
+        "ok": bool(matched is not False and body),
         "instance_id": instance_id,
         "reported_instance_id": None if reported is None else str(reported),
         "instance_matched": matched,

@@ -66,6 +66,10 @@ _CONSTRAINT_BY_REASON_CODE: dict[ARCReasonCode, str] = {
     ARCReasonCode.EVIDENCE_REPLAY_FAILED: (
         "候选无法在回放器中执行，策略体存在运行期缺陷，必须重新生成"
     ),
+    ARCReasonCode.BITPRO_SELF_TEST_UNAVAILABLE: (
+        "BitPro 自检调用未能完成，这是平台侧故障而非候选缺陷；不要据此改写策略，"
+        "应检查 BitPro 连通性与凭据后重跑自检"
+    ),
 }
 
 

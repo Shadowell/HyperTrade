@@ -58,6 +58,11 @@ def build_live_approval_package(projection: ARCMissionProjection) -> LiveApprova
         )
         if not complete:
             unknowns.extend(missing)
+    # The package carried instance_matched without ever gating on it, so a paper run
+    # that BitPro never confirmed as the instance ARC started could still be presented
+    # as the evidence for a live promote.
+    if observation and observation.get("instance_matched") is not True:
+        unknowns.append("paper_instance_unconfirmed")
     health = str(observation.get("bitpro_health") or "").lower()
     if health and health not in {"healthy", "ok", "unknown"}:
         unknowns.append(f"bitpro_unhealthy:{observation.get('bitpro_health')}")
