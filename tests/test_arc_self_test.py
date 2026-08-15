@@ -29,6 +29,51 @@ def test_success_criteria_pass_when_all_floors_hold() -> None:
     assert reasons == []
 
 
+def test_criteria_read_the_names_and_units_bitpro_actually_returns() -> None:
+    """A real BitPro result: ratios under `*_ratio`/`trade_count`, returns as percentages.
+
+    Reading only the fraction spellings made sharpe, drawdown and net return unreadable
+    on every real result, so the referee refused a candidate whose numbers it had never
+    managed to read and reported the absent values as having failed the gate.
+    """
+    observed = {
+        "total_return_pct": "9.84538720666078",
+        "annual_return_pct": "4.0533",
+        "max_drawdown_pct": "1.2908",
+        "sharpe_ratio": "1.501",
+        "win_rate_pct": "47.37",
+        "trade_count": 19,
+    }
+
+    passed, reasons = apply_success_criteria(observed, ARCSuccessCriteriaV1())
+
+    assert passed is True, reasons
+
+
+def test_a_percentage_return_is_not_read_as_a_fraction() -> None:
+    """0.98% must not clear a 5% floor by being mistaken for 98%."""
+    passed, reasons = apply_success_criteria(
+        {
+            "sharpe_ratio": "1.5",
+            "max_drawdown_pct": "1.29",
+            "trade_count": 19,
+            "total_return_pct": "0.984538720666078",
+        },
+        ARCSuccessCriteriaV1(),
+    )
+
+    assert passed is False
+    assert any("net_return" in item for item in reasons)
+
+
+def test_an_unreported_metric_is_not_described_as_having_failed() -> None:
+    """`sharpe None below min_oos_sharpe` reads as a verdict on the strategy."""
+    passed, reasons = apply_success_criteria({}, ARCSuccessCriteriaV1())
+
+    assert passed is False
+    assert all("not reported" in item for item in reasons), reasons
+
+
 def test_self_test_fail_closed_without_backtest_ref() -> None:
     class _Client:
         def strategy_validate_code(self, **kwargs):  # type: ignore[no-untyped-def]

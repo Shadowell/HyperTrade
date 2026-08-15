@@ -67,30 +67,69 @@ class SelfTestResult:
 def apply_success_criteria(
     metrics: dict[str, Any], criteria: ARCSuccessCriteriaV1
 ) -> tuple[bool, list[str]]:
-    """Deterministic paper-promotion referee. Model text cannot pass this."""
+    """Deterministic paper-promotion referee. Model text cannot pass this.
+
+    The criteria are fractions (0.05 is five percent). BitPro reports ratios under
+    `sharpe_ratio`/`trade_count` and returns and drawdowns as percentages under
+    `*_pct`, so both the names and the units have to be translated. Reading only the
+    fraction spellings left sharpe, drawdown and net return unreadable on every real
+    BitPro result, and the referee reported the absent numbers as having failed the
+    gate; taking a `*_pct` value at face value would be worse, turning a 0.98% return
+    into a 98% one and waving it past a 5% floor.
+    """
     reasons: list[str] = []
-    sharpe = _number(metrics, "sharpe", "out_of_sample_sharpe", "oos_sharpe")
-    drawdown = _number(metrics, "max_drawdown", "out_of_sample_max_drawdown", "drawdown")
+    sharpe = _number(metrics, "sharpe", "out_of_sample_sharpe", "oos_sharpe", "sharpe_ratio")
+    drawdown = _fraction(
+        metrics,
+        fractions=("max_drawdown", "out_of_sample_max_drawdown", "drawdown"),
+        percentages=("max_drawdown_pct",),
+    )
     trades = _number(metrics, "trades", "out_of_sample_trades", "trade_count")
-    net_return = _number(metrics, "net_return", "out_of_sample_return", "total_return")
-    if sharpe is None or sharpe < float(criteria.min_oos_sharpe):
+    net_return = _fraction(
+        metrics,
+        fractions=("net_return", "out_of_sample_return", "total_return"),
+        percentages=("total_return_pct",),
+    )
+    if sharpe is None:
+        reasons.append("sharpe not reported by the backtest result")
+    elif sharpe < float(criteria.min_oos_sharpe):
         reasons.append(
             f"sharpe {sharpe} below success_criteria.min_oos_sharpe {criteria.min_oos_sharpe}"
         )
-    if drawdown is None or abs(drawdown) > float(criteria.max_drawdown):
+    if drawdown is None:
+        reasons.append("max_drawdown not reported by the backtest result")
+    elif abs(drawdown) > float(criteria.max_drawdown):
         reasons.append(
             f"drawdown {drawdown} exceeds success_criteria.max_drawdown {criteria.max_drawdown}"
         )
-    if trades is None or trades < criteria.min_trades:
+    if trades is None:
+        reasons.append("trade count not reported by the backtest result")
+    elif trades < criteria.min_trades:
         reasons.append(
             f"trades {trades} below success_criteria.min_trades {criteria.min_trades}"
         )
-    if net_return is None or net_return < float(criteria.min_oos_net_return):
+    if net_return is None:
+        reasons.append("net_return not reported by the backtest result")
+    elif net_return < float(criteria.min_oos_net_return):
         reasons.append(
             f"net_return {net_return} below success_criteria.min_oos_net_return "
             f"{criteria.min_oos_net_return}"
         )
     return not reasons, reasons
+
+
+def _fraction(
+    metrics: dict[str, Any],
+    *,
+    fractions: tuple[str, ...],
+    percentages: tuple[str, ...],
+) -> float | None:
+    """Read a ratio, accepting either a fraction or an explicit percentage spelling."""
+    value = _number(metrics, *fractions)
+    if value is not None:
+        return value
+    percent = _number(metrics, *percentages)
+    return None if percent is None else percent / 100.0
 
 
 def _number(metrics: dict[str, Any], *keys: str) -> float | None:
