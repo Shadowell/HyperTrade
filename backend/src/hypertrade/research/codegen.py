@@ -871,8 +871,14 @@ def _on_bar_lines(
     ]
     if family.needs_high_low:
         lines += [
-            '        high = float(getattr(bar, "high", close) or close)',
-            '        low = float(getattr(bar, "low", close) or close)',
+            # Read the fields directly. BitPro's code check forbids `getattr`, so every
+            # high/low family (donchian, atr_breakout) failed `strategy_validate_code`
+            # and no candidate from them could ever be validated. The fallback was also
+            # unsound: both runtimes declare high and low as required, and silently
+            # substituting close would degrade a channel into a close-only signal, so
+            # BitPro would trade something other than what the evidence measured.
+            "        high = float(bar.high)",
+            "        low = float(bar.low)",
             "        self._highs[symbol].append(max(high, close))",
             "        self._lows[symbol].append(min(low, close))",
         ]

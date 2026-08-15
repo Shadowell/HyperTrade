@@ -130,6 +130,55 @@ def test_every_family_emits_admissible_parseable_code(family: Any) -> None:
     assert "def __init__" not in generated.code
 
 
+# Mirrors BitPro's `code_sandbox.FORBIDDEN_NAMES`. Duplicated as a literal because
+# HyperTrade must not import BitPro code; a candidate calling any of these is rejected by
+# `strategy_validate_code`, so it can never be validated however good its evidence is.
+_BITPRO_FORBIDDEN_CALLS = frozenset(
+    {
+        "eval",
+        "exec",
+        "compile",
+        "__import__",
+        "open",
+        "globals",
+        "locals",
+        "getattr",
+        "setattr",
+        "delattr",
+        "breakpoint",
+        "exit",
+        "quit",
+    }
+)
+
+
+@pytest.mark.parametrize("family", FAMILIES, ids=lambda family: family.key)
+@pytest.mark.parametrize("direction", ["long_only", "short_only", "long_short"])
+def test_no_family_emits_a_call_bitpro_forbids(family: Any, direction: str) -> None:
+    """`getattr` in the high/low families made donchian and atr_breakout unvalidatable.
+
+    Their candidates cleared held-out evidence — donchian short was the best scoring
+    family on real ETH history — and were then rejected by BitPro's code check, so the
+    mission stalled at validation with the reason recorded as a platform outage.
+    """
+    hypothesis = f"{family.signature[0]} driven candidate"
+    if direction == "short_only":
+        hypothesis += "，仅做空"
+    elif direction == "long_short":
+        hypothesis += " traded long and short"
+    generated = generate_strategy(_spec(strategy_key=f"{family.key}_probe", hypothesis=hypothesis))
+
+    called = {
+        node.func.id
+        for node in ast.walk(ast.parse(generated.code))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert not (called & _BITPRO_FORBIDDEN_CALLS), (
+        f"{family.key}/{direction} emits calls BitPro rejects: "
+        f"{sorted(called & _BITPRO_FORBIDDEN_CALLS)}"
+    )
+
+
 def test_generated_parameters_are_the_ones_on_init_reads() -> None:
     """A knob the matrix tunes but the code never reads is silent dead coverage."""
     generated = generate_strategy(
