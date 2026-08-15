@@ -1,15 +1,48 @@
 from __future__ import annotations
 
+import threading
 import time
+from typing import Any
 
 from fastapi.testclient import TestClient
 from hypertrade.config import Settings
 from hypertrade.db import AgentRun, AgentTask, Database
 from hypertrade.main import create_app
+from hypertrade.providers.chat import ChatResponse
 from sqlalchemy import func, select
 
 
-def test_web_thread_contract_archives_without_legacy_writes() -> None:
+class _HeldChatProvider:
+    """A planner call the test releases, instead of one the network happens to finish.
+
+    The contract under test needs the turn to still be running at the first archive and
+    terminal at the second. Driving that with a real provider made the test a race in
+    both directions: with credentials present the call outran the wait budget, and
+    without them it completed before the archive could observe an active turn.
+    """
+
+    name = "held"
+    model = "held-1"
+
+    def __init__(self) -> None:
+        self.released = threading.Event()
+
+    def chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> ChatResponse:
+        self.released.wait(timeout=30)
+        return ChatResponse(content="held response")
+
+
+def test_web_thread_contract_archives_without_legacy_writes(monkeypatch) -> None:
+    provider = _HeldChatProvider()
+    monkeypatch.setattr(
+        "hypertrade.agent.kernel.ProviderRuntime.get_chat_provider",
+        lambda self, **kwargs: provider,
+    )
+
     database = Database("sqlite:///:memory:")
     database.create_all()
     settings = Settings(
@@ -44,6 +77,8 @@ def test_web_thread_contract_archives_without_legacy_writes() -> None:
 
         active_archive = client.post(f"/api/agent/v1/threads/{thread_id}/archive")
         assert active_archive.status_code == 409
+
+        provider.released.set()
         _wait_for_terminal(client, thread_id, turn_id)
 
         archived = client.post(f"/api/agent/v1/threads/{thread_id}/archive")
@@ -64,7 +99,13 @@ def test_web_thread_contract_archives_without_legacy_writes() -> None:
 
 
 def _wait_for_terminal(client: TestClient, thread_id: str, turn_id: str) -> None:
-    for _ in range(200):
+    """Poll to a wall-clock deadline, not a fixed iteration count.
+
+    An iteration count silently shortens as each request gets slower, which is exactly
+    when the extra time is needed.
+    """
+    deadline = time.monotonic() + 30.0
+    while time.monotonic() < deadline:
         payload = client.get(f"/api/agent/v1/threads/{thread_id}/turns/{turn_id}").json()
         if payload["turn"]["status"] in {"completed", "failed", "cancelled", "expired"}:
             return
