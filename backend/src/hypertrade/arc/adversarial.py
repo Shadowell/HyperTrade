@@ -174,7 +174,13 @@ class BlueTeamQuant:
             "symbols": [symbol],
             "timeframes": [timeframe],
             "strategy_category": "ARC",
-            "risk_conditions": ["bounded notional", "stop loss"],
+            # BitPro refuses to validate a contract strategy that lacks a profit exit:
+            # `strategy_validate_code` requires a stop loss, a take profit or trailing
+            # lock, and a close_contract path. Declaring only the loss guard meant every
+            # ARC candidate was rejected at validation no matter how strong its held-out
+            # evidence was, and the mission reported it as a platform outage. ARC targets
+            # BitPro by contract, so the spec has to carry what BitPro requires.
+            "risk_conditions": ["bounded notional", "stop loss", "take profit"],
             "data_requirements": ["ohlcv"],
             "invalidation_conditions": ["insufficient data"],
             "parameter_bounds": dict(parameter_bounds or {}),

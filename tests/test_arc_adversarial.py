@@ -19,6 +19,28 @@ def test_blue_team_strategy_generation():
     assert attempt.strategy_spec["source"] == "blue_team_codegen"
 
 
+def test_every_proposal_carries_the_exits_bitpro_requires_to_validate():
+    """A candidate without a profit exit cannot be validated, whatever its evidence.
+
+    BitPro's `strategy_validate_code` requires a contract strategy to implement a stop
+    loss, a take profit or trailing lock, and a close_contract path. ARC declared only
+    the loss guard, so on real ETH history the best-scoring candidate cleared held-out
+    evidence and was then refused at validation, with the refusal recorded as a platform
+    outage rather than as a missing exit.
+    """
+    blue_team = BlueTeamQuant()
+    frontier = blue_team.propose_diverse_frontier("find an edge on ETH", "ETH-USDT-SWAP", 6)
+
+    assert frontier
+    for attempt in frontier:
+        code = attempt.strategy_code
+        family = attempt.strategy_spec["family"]
+        assert 'params.get("stop_loss"' in code, family
+        assert 'params.get("take_profit"' in code, family
+        assert "self.p_take_profit" in code, family
+        assert "close_contract" in code, family
+
+
 def test_blue_team_proposal_follows_the_objective_instead_of_one_template():
     """Every objective used to compile to the same ATR breakout body."""
     blue_team = BlueTeamQuant()

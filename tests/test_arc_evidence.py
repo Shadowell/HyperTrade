@@ -312,8 +312,10 @@ def test_a_sharpe_computed_from_a_handful_of_trades_is_not_accepted_as_evidence(
     _seed_bitpro_archive(db_path, table="kline_1h", symbol="BTC/USDT:USDT", rows=1_200)
     window = build_default_window(Settings(BITPRO_SQLITE_PATH=db_path))
 
-    # A span long relative to the window fires rarely without being inert.
-    sparse = _candidate(parameter_bounds={"slow_window": {"min": 150, "max": 160}})
+    # A span long relative to the window fires rarely without being inert. Widened once
+    # proposals started carrying a take profit: banking a gain frees the position to
+    # re-enter, so the old span produced exactly the trade count this gate rejects at.
+    sparse = _candidate(parameter_bounds={"slow_window": {"min": 300, "max": 320}})
     verdict = HistoricalEvidenceGate(window).evaluate(sparse)
 
     assert verdict.metrics["out_of_sample_trades"] < MIN_OUT_OF_SAMPLE_TRADES
