@@ -576,11 +576,17 @@ def create_app(
             raise HTTPException(status_code=401, detail="Invalid session") from exc
         if username != app_settings.admin_username:
             raise HTTPException(status_code=403, detail="Forbidden")
+        # ARC records who decided a live promote. Reading the identity off the verified
+        # session rather than a client-supplied header keeps that audit trail unforgeable.
+        request.state.admin_user = str(username)
         return str(username)
 
     AdminUser = Annotated[str, Depends(require_admin)]
     app.include_router(build_thread_turn_router(thread_turn_service, require_admin))
-    app.include_router(arc_router)
+    # ARC reaches BitPro live promote. Mounted bare, every ARC route including
+    # `live-approval/decide` answered unauthenticated callers, and the operator identity
+    # it recorded was whatever `X-Operator-Id` the caller chose to send.
+    app.include_router(arc_router, dependencies=[Depends(require_admin)])
 
     def mission_request_key(request: Request) -> str:
         supplied = request.headers.get("Idempotency-Key", "").strip()

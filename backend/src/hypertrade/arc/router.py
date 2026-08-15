@@ -5,7 +5,7 @@ ARC API Router - Single Entry Autonomous Exploration & Event Streaming
 from decimal import Decimal
 from typing import Any, Literal
 
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from hypertrade.arc.adversarial import ARCAdversarialEngine, BlueTeamQuant
@@ -66,8 +66,19 @@ class LiveRevokeRequest(BaseModel):
     reason: str
 
 
-def _require_operator(operator_id: str | None, idempotency_key: str | None) -> tuple[str, str]:
-    actor = (operator_id or "").strip()
+def _require_operator(
+    operator_id: str | None,
+    idempotency_key: str | None,
+    request: Request | None = None,
+) -> tuple[str, str]:
+    """Resolve who is acting, preferring the authenticated session over the header.
+
+    `X-Operator-Id` is supplied by the caller, so on its own it attributes a live
+    promote to whatever name the caller typed. The verified session identity wins where
+    one exists; the header then only labels which operator of that account acted.
+    """
+    authenticated = str(getattr(request.state, "admin_user", "") or "") if request else ""
+    actor = authenticated or (operator_id or "").strip()
     key = (idempotency_key or "").strip()
     if not actor:
         raise HTTPException(status_code=400, detail="X-Operator-Id is required")
@@ -153,10 +164,11 @@ async def continue_arc_mission(
     mission_id: str,
     request: ContinueARCMissionRequest,
     background_tasks: BackgroundTasks,
+    request_context: Request,
     x_operator_id: str | None = Header(default=None),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
-    actor, key = _require_operator(x_operator_id, idempotency_key)
+    actor, key = _require_operator(x_operator_id, idempotency_key, request_context)
     ctrl = get_controller(mission_id)
     if ctrl is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
@@ -204,10 +216,11 @@ async def get_live_approval(mission_id: str) -> dict[str, Any]:
 async def decide_live_approval_endpoint(
     mission_id: str,
     request: LiveDecisionRequest,
+    request_context: Request,
     x_operator_id: str | None = Header(default=None),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
-    actor, key = _require_operator(x_operator_id, idempotency_key)
+    actor, key = _require_operator(x_operator_id, idempotency_key, request_context)
     ctrl = get_controller(mission_id)
     if ctrl is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
@@ -231,10 +244,11 @@ async def decide_live_approval_endpoint(
 async def revoke_live_approval_endpoint(
     mission_id: str,
     request: LiveRevokeRequest,
+    request_context: Request,
     x_operator_id: str | None = Header(default=None),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
-    actor, key = _require_operator(x_operator_id, idempotency_key)
+    actor, key = _require_operator(x_operator_id, idempotency_key, request_context)
     ctrl = get_controller(mission_id)
     if ctrl is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
