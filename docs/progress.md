@@ -1572,6 +1572,34 @@
 
 ## Latest Completed Work
 
+- Ran the ARC pipeline end to end on production BTC-USDT-SWAP 1H
+  (`arc_0ea821136f54`, 20000-bar archive window). All six strategy families were
+  explored, 4 of 24 candidates cleared the held-out evidence gate, all 4 reached
+  BitPro validation (backtest job 351), and none met the success criteria. Paper,
+  approval, and live were not reached because no candidate was validated, which is
+  a research result rather than a defect.
+  - Finding: the walk-forward gate has a recency blind spot. It requires 2 of 4
+    rolling folds to clear the out-of-sample bar without caring which 2, so both
+    mean-reversion candidates qualified on folds 2-3 while losing money in fold 4 —
+    the period BitPro then tested. Fold Sharpe for `att_blue_3b8501` was
+    -0.80 / +2.60 / +5.60 / -1.10.
+  - Ruled out an engine disagreement first: replaying each candidate with
+    HyperTrade's own engine over exactly BitPro's trailing 90 days reproduced
+    BitPro's return within 0.003-0.33pp on 3 of 4 candidates (-1.427% vs -1.424%,
+    +0.789% vs +0.575%, -0.125% vs -0.455%). The fourth differs on 15 vs 9 trades,
+    below the sample size the criteria require.
+  - Open decision: requiring the newest fold to survive would have rejected both
+    candidates before they consumed a validation slot. It tightens what counts as
+    evidence, so it is deliberately not folded into a bug fix.
+- Cleared four defects that were each silently truncating ARC research:
+  the evidence archive read a 385-row legacy SQLite table instead of BitPro's
+  Parquet kline store; the untried-family re-seed was guarded by `if not frontier`
+  so missions only ever explored 3 of 6 families; generated code used `getattr`
+  and `@staticmethod`, neither available in BitPro's sandbox, both surfacing as
+  `BITPRO_SELF_TEST_UNAVAILABLE`; and `apply_success_criteria` looked for `sharpe`
+  and `net_return` as fractions while BitPro returns `sharpe_ratio`, `trade_count`,
+  and percentages under `*_pct`, so every metric read as None and was reported as
+  having failed the gate.
 - Implemented Sprint 84 StrategyCard portfolio review. The WorldState portfolio
   view consumes a source-bound, read-only card projection from S81–83 evidence,
   exposes declared regime fit, lifecycle status, freshness, drawdown/coverage
