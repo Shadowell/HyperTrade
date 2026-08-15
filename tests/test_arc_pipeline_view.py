@@ -196,24 +196,71 @@ def test_mission_summary_carries_the_badge_a_list_row_renders() -> None:
     assert badge == build_pipeline_badge(controller.projection)
 
 
-def test_approval_stage_refuses_to_look_ready_with_open_unknowns() -> None:
-    controller = _mission()
-    _propose(controller, "att_1")
-    controller.apply_event("paper_started", {"attempt_id": "att_1", "paper_instance_id": "77"})
+def _incomplete_package(controller: ARCController, *unknowns: str) -> None:
     package = LiveApprovalPackageV1(
         mission_id=controller.mission_id,
         status="incomplete",
         recommendation="wait",
         package_hash="hash",
-        unknowns=["paper_instance_unconfirmed"],
+        unknowns=list(unknowns),
+    )
+    controller.apply_event("live_approval_ready", {"package": package.model_dump(mode="json")})
+
+
+def test_an_incomplete_package_blocks_where_the_evidence_actually_stops() -> None:
+    controller = _mission()
+    _propose(controller, "att_1")
+    controller.apply_event("paper_started", {"attempt_id": "att_1", "paper_instance_id": "77"})
+    _incomplete_package(controller, "paper_instance_unconfirmed")
+
+    view = build_pipeline_view(controller.projection)
+    assert view["blocked"] is True
+    assert _stage(view, "paper")["status"] == "blocked"
+    assert _stage(view, "approval")["status"] == "pending"
+    assert _stage(view, "approval")["metrics"]["unknowns"] == 1
+
+
+def test_an_exhausted_mission_is_not_dragged_forward_by_its_gap_report() -> None:
+    """A run that lost every candidate still ends with a package listing what it lacks."""
+    controller = _mission()
+    for index in range(1, 4):
+        _propose(controller, f"att_{index}")
+        controller.apply_event("red_team_tested", {"attempt_id": f"att_{index}", "passed": False})
+    _incomplete_package(
+        controller,
+        "missing_candidate",
+        "missing_backtest_ref",
+        "missing_paper_instance",
+    )
+    controller.apply_event("operator_needed", {"reason": "no_validated_candidate"})
+
+    view = build_pipeline_view(controller.projection)
+    assert _stage(view, "red_team")["status"] == "blocked"
+    # It never started a paper run, so nothing downstream may claim to be done.
+    assert [item["status"] for item in view["stages"][3:]] == ["pending"] * 4
+    assert view["percent"] == pytest.approx(200 / 7, abs=0.1)
+    assert _stage(view, "paper")["detail"] == "尚未启动模拟盘"
+
+
+def test_a_decidable_package_does_put_the_mission_on_approval() -> None:
+    controller = _mission()
+    _propose(controller, "att_1")
+    controller.apply_event("paper_started", {"attempt_id": "att_1", "paper_instance_id": "77"})
+    package = LiveApprovalPackageV1(
+        mission_id=controller.mission_id,
+        status="ready",
+        recommendation="approve",
+        package_hash="hash",
+        backtest={"backtest_id": "bt_1"},
+        paper={"instance_id": "77"},
     )
     controller.apply_event("live_approval_ready", {"package": package.model_dump(mode="json")})
 
     view = build_pipeline_view(controller.projection)
-    approval = _stage(view, "approval")
-    assert view["blocked"] is True
-    assert approval["status"] == "blocked"
-    assert approval["metrics"]["unknowns"] == 1
+    assert view["blocked"] is False
+    assert _stage(view, "paper")["status"] == "done"
+    assert _stage(view, "approval")["status"] == "active"
+    assert view["current_stage"] == "approval"
 
 
 def test_view_matches_the_projection_after_a_reload() -> None:

@@ -136,7 +136,7 @@ def _entered_stages(projection: ARCMissionProjection) -> list[bool]:
         any(event.event_type == "red_team_tested" for event in projection.events),
         bool(projection.self_test_records) or any(item.bitpro_backtest_id for item in attempts),
         any(item.paper_instance_id for item in attempts),
-        projection.live_approval is not None,
+        _decidable(projection),
         any(item.live_instance_id for item in attempts),
     ]
 
@@ -152,10 +152,21 @@ def _stage_results(projection: ARCMissionProjection) -> list[bool]:
             for event in projection.events
         ),
         any(item.bitpro_backtest_id and item.validation_id for item in attempts),
-        approval is not None,
+        _decidable(projection),
         approval is not None and approval.status in {"approved", "promoted"},
         any(item.live_instance_id for item in attempts),
     ]
+
+
+def _decidable(projection: ARCMissionProjection) -> bool:
+    """An incomplete package is a list of the gaps, not proof the mission reached approval.
+
+    A mission that exhausted its budget still ends with a package enumerating what it
+    never produced. Reading that as evidence marked every earlier stage done and let a
+    run with no surviving candidate report itself three quarters of the way to live.
+    """
+    approval = projection.live_approval
+    return approval is not None and approval.status != "incomplete"
 
 
 def _frontier(done: list[bool]) -> int:

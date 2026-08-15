@@ -81,7 +81,8 @@ ref、paper instance、观察窗或对账时包状态为 `incomplete`，`POST ..
 
 `GET .../missions/{id}/progress` 是给轮询控制台的流水线投影：七个阶段（目标编译、候选探索、红队
 对抗、BitPro 验证、模拟盘观察、实盘审批、实盘灰度）各带状态、计数和本阶段进度；后续阶段有证据即
-认定前面阶段已走过。`needs_operator` / `failed` 把停住的那个阶段标为 blocked 并附最后一条
+认定前面阶段已走过——但 `incomplete` 的审批包是缺口清单，不算走到过审批阶段，预算耗尽的任务不会
+因为末尾那份包而把模拟盘观察判成已完成。`needs_operator` / `failed` 把停住的那个阶段标为 blocked 并附最后一条
 `operator_needed` 的原因，进度条不再给该阶段部分分数。活动流只投影事件类型与白名单标量字段，
 不转发事件载荷，策略源码仍然只在候选下钻里。
 
