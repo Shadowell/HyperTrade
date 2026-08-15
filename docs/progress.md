@@ -10,6 +10,11 @@
   `GET /missions/{id}/candidates/{attempt_id}` 下钻（源码只在这里）。
 - **验证**：`tests/test_arc_external_surface.py` + 既有 `test_arc_router_auth.py`。
   合同：`docs/contracts/sprint-135-arc-external-console-surface.md`。
+- **生产密钥（2026-08-15）**：已在服务器 `/opt/hypertrade/.env` 与
+  `/opt/bitpro/backend/.env` 写入对齐的服务令牌哈希 / 明文令牌与共享 HMAC
+  （权限 `0600`，不进仓库）。BitPro `HYPERTRADE_BASE_URL=http://127.0.0.1:3334`。
+  同机探测：无令牌 `GET /api/v1/arc/missions` 401，持令牌 200；容器已加载
+  `ARC_SERVICE_TOKENS` 与 `ARC_OPERATOR_ASSERTION_SECRET`。
 
 ## 第一份真实行情证据，以及它暴露的四个缺陷 — 2026-08-15
 
