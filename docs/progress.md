@@ -1588,9 +1588,19 @@
     BitPro's return within 0.003-0.33pp on 3 of 4 candidates (-1.427% vs -1.424%,
     +0.789% vs +0.575%, -0.125% vs -0.455%). The fourth differs on 15 vs 9 trades,
     below the sample size the criteria require.
-  - Open decision: requiring the newest fold to survive would have rejected both
-    candidates before they consumed a validation slot. It tightens what counts as
-    evidence, so it is deliberately not folded into a bug fix.
+  - Acted on it: the walk-forward gate now also requires the newest fold to survive,
+    recorded as `WALK_FORWARD_STALE_EDGE` rather than `WALK_FORWARD_INCONSISTENT`
+    because such a candidate is not unstable across regimes -- it worked and then
+    stopped, so mutation should look for a signal the current market still pays for.
+  - The decay is not BTC-specific. Re-running with the new gate, `arc_7fa260b2705c`
+    (ETH) caught 2 stale-edge candidates and `arc_0a810fdc5f3e` (SOL) caught 4.
+    The sharpest is SOL `donchian_breakout`, held-out Sharpe 1.34 on a newest fold
+    of 0.37, which the old 2-of-4 rule would have passed. ETH's single survivor
+    (short-only `donchian_breakout`, held-out Sharpe 1.28 over 61 trades) then
+    earned 0.26 on BitPro's 90 days.
+  - Net across the three symbols: 72 candidates explored, 5 cleared the evidence
+    gate, 0 validated. No catalogued family currently holds an edge on 1H that
+    survives both the held-out window and a recent independent replay.
 - Cleared four defects that were each silently truncating ARC research:
   the evidence archive read a 385-row legacy SQLite table instead of BitPro's
   Parquet kline store; the untried-family re-seed was guarded by `if not frontier`
