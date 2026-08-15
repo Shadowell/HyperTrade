@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import builtins
 from typing import Any
 
 import pytest
@@ -177,6 +178,58 @@ def test_no_family_emits_a_call_bitpro_forbids(family: Any, direction: str) -> N
         f"{family.key}/{direction} emits calls BitPro rejects: "
         f"{sorted(called & _BITPRO_FORBIDDEN_CALLS)}"
     )
+
+
+# Mirrors the names BitPro's `code_sandbox._safe_exec_globals` puts in `__builtins__`.
+# Duplicated as a literal because HyperTrade must not import BitPro code. Anything a
+# candidate needs at class-definition time and BitPro does not supply raises NameError
+# inside `strategy_validate_code`, which ARC then records as a BitPro outage.
+_BITPRO_SANDBOX_BUILTINS = frozenset(
+    {
+        "range", "len", "abs", "max", "min", "round", "int", "float", "bool", "str",
+        "list", "dict", "tuple", "set", "enumerate", "zip", "sorted", "reversed",
+        "sum", "any", "all", "isinstance", "hasattr", "print",
+        "Exception", "ValueError", "TypeError", "KeyError", "IndexError",
+        "RuntimeError", "ZeroDivisionError",
+        "__import__", "__build_class__", "True", "False", "None",
+    }
+)
+
+
+@pytest.mark.parametrize("family", FAMILIES, ids=lambda family: family.key)
+def test_every_family_builds_under_bitpro_restricted_builtins(family: Any) -> None:
+    """`@staticmethod` is absent from BitPro's builtins, so the class never built.
+
+    The decorator raised NameError while BitPro executed the module, and
+    `strategy_validate_code` surfaced it as a tool failure, so candidates that had
+    already cleared held-out evidence were recorded as blocked on a platform outage.
+    """
+    generated = generate_strategy(
+        _spec(
+            strategy_key=f"{family.key}_sandbox_probe",
+            hypothesis=f"{family.signature[0]} driven candidate traded long and short",
+        )
+    )
+    body = "\n".join(
+        line
+        for line in generated.code.splitlines()
+        if not line.startswith(("from ", "import "))
+    )
+
+    namespace: dict[str, Any] = {
+        "__builtins__": {
+            name: getattr(builtins, name)
+            for name in _BITPRO_SANDBOX_BUILTINS
+            if hasattr(builtins, name)
+        },
+        # BitPro's exec globals, minus the indicator and numpy handles the generated
+        # code does not touch.
+        "__name__": "agent_strategy",
+        "BaseStrategy": object,
+    }
+    exec(compile(body, f"<{family.key}>", "exec"), namespace)
+
+    assert generated.class_name in namespace
 
 
 def test_generated_parameters_are_the_ones_on_init_reads() -> None:

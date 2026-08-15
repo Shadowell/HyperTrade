@@ -488,15 +488,18 @@ _MAX_HOLDING_MARKERS = (
     "超时",
 )
 
+# Plain methods, not `@staticmethod`. BitPro executes strategy code with a curated
+# `__builtins__` that omits `staticmethod`, so the decorator raised NameError while
+# BitPro was building the class and `strategy_validate_code` reported it as a tool
+# failure -- indistinguishable, from ARC's side, from BitPro being down. Every call
+# site already goes through `self`, so binding these costs nothing.
 _HELPER_SOURCES: dict[str, tuple[str, ...]] = {
     "_mean": (
-        "    @staticmethod",
-        "    def _mean(values):",
+        "    def _mean(self, values):",
         "        return sum(values) / len(values) if values else 0.0",
     ),
     "_stdev": (
-        "    @staticmethod",
-        "    def _stdev(values):",
+        "    def _stdev(self, values):",
         "        if len(values) < 2:",
         "            return 0.0",
         "        avg = sum(values) / len(values)",
@@ -504,8 +507,7 @@ _HELPER_SOURCES: dict[str, tuple[str, ...]] = {
         "        return variance ** 0.5",
     ),
     "_atr": (
-        "    @staticmethod",
-        "    def _atr(highs, lows, closes, period):",
+        "    def _atr(self, highs, lows, closes, period):",
         "        span = min(len(highs), len(lows), len(closes))",
         "        if span < 2:",
         "            return 0.0",
@@ -523,8 +525,7 @@ _HELPER_SOURCES: dict[str, tuple[str, ...]] = {
         "        return sum(recent) / len(recent) if recent else 0.0",
     ),
     "_rsi": (
-        "    @staticmethod",
-        "    def _rsi(closes, period):",
+        "    def _rsi(self, closes, period):",
         "        if len(closes) < period + 1 or period <= 0:",
         "            return 50.0",
         "        window = closes[-(period + 1):]",
