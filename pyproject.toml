@@ -18,6 +18,7 @@ dependencies = [
   "openai>=2.0.0",
   "opentelemetry-api>=1.30",
   "psycopg[binary]>=3.2.0",
+  "pyarrow>=18.0.0",
   "pydantic-settings>=2.8.0",
   "python-multipart>=0.0.20",
   "rich>=13.9.0",
@@ -80,4 +81,8 @@ mypy_path = ["backend/src"]
 
 [[tool.mypy.overrides]]
 module = "yfinance"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyarrow.*"
 ignore_missing_imports = true
