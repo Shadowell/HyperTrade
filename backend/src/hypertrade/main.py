@@ -583,10 +583,9 @@ def create_app(
 
     AdminUser = Annotated[str, Depends(require_admin)]
     app.include_router(build_thread_turn_router(thread_turn_service, require_admin))
-    # ARC reaches BitPro live promote. Mounted bare, every ARC route including
-    # `live-approval/decide` answered unauthenticated callers, and the operator identity
-    # it recorded was whatever `X-Operator-Id` the caller chose to send.
-    app.include_router(arc_router, dependencies=[Depends(require_admin)])
+    # Per-route scopes live on the ARC router. A blanket require_admin would block
+    # the service-token surface; mounting bare would reopen live-approval to anyone.
+    app.include_router(arc_router)
 
     def mission_request_key(request: Request) -> str:
         supplied = request.headers.get("Idempotency-Key", "").strip()

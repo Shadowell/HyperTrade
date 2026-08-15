@@ -5,10 +5,19 @@ ARC API Router - Single Entry Autonomous Exploration & Event Streaming
 from decimal import Decimal
 from typing import Any, Literal
 
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from hypertrade.arc.adversarial import ARCAdversarialEngine, BlueTeamQuant
+from hypertrade.arc.auth import (
+    ARCScope,
+    OperatorIdentity,
+    reject_token_only_approval,
+    require_scope,
+    resolve_admin_session,
+    resolve_service_principal,
+    verify_operator_assertion,
+)
 from hypertrade.arc.contracts import (
     ARCBudgetV1,
     ARCCandidateAttemptV1,
@@ -22,6 +31,11 @@ from hypertrade.arc.evidence import (
     build_default_window,
     preflight_window,
 )
+from hypertrade.arc.evidence_view import (
+    build_candidate_detail,
+    build_evidence_view,
+    build_mission_summary,
+)
 from hypertrade.arc.findings import ARCReasonCode, AttackFinding
 from hypertrade.arc.incubation import ARCPaperIncubationResolver
 from hypertrade.arc.live_approval import build_live_approval_package
@@ -32,7 +46,7 @@ from hypertrade.arc.observation import observe_mission
 from hypertrade.arc.reflexion import ARCReflexionLedger
 from hypertrade.arc.self_test import ARCSelfTestService, SelfTestResult
 from hypertrade.arc.skills import ARCSkillDistiller, ARCSkillLibrary
-from hypertrade.arc.store import MISSIONS, get_controller, save_mission
+from hypertrade.arc.store import MISSIONS, get_controller, list_mission_ids, save_mission
 
 _ARC_MISSIONS = MISSIONS
 
@@ -67,32 +81,55 @@ class LiveRevokeRequest(BaseModel):
 
 
 def _require_operator(
-    operator_id: str | None,
+    request: Request,
+    *,
+    mission_id: str,
+    decision: str,
     idempotency_key: str | None,
-    request: Request | None = None,
-) -> tuple[str, str]:
-    """Resolve who is acting, preferring the authenticated session over the header.
+) -> tuple[OperatorIdentity, str]:
+    """Resolve a human actor. A service token is never an identity here.
 
-    `X-Operator-Id` is supplied by the caller, so on its own it attributes a live
-    promote to whatever name the caller typed. The verified session identity wins where
-    one exists; the header then only labels which operator of that account acted.
+    Session wins. Otherwise the assertion is verified against this request's
+    mission, decision, and idempotency key. ``X-Operator-Id`` is a hint that
+    may agree with an already-established identity; it cannot mint one.
     """
-    authenticated = str(getattr(request.state, "admin_user", "") or "") if request else ""
-    actor = authenticated or (operator_id or "").strip()
     key = (idempotency_key or "").strip()
-    if not actor:
-        raise HTTPException(status_code=400, detail="X-Operator-Id is required")
     if not key:
         raise HTTPException(status_code=400, detail="Idempotency-Key is required")
-    return actor, key
+    session_user = resolve_admin_session(request)
+    if session_user:
+        return (
+            OperatorIdentity(operator_id=session_user, identity_source="hypertrade_session"),
+            key,
+        )
+    identity = verify_operator_assertion(
+        request,
+        mission_id=mission_id,
+        decision=decision,
+        idempotency_key=key,
+    )
+    if identity is not None:
+        return identity, key
+    if resolve_service_principal(request) is not None:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    raise HTTPException(status_code=401, detail="Not authenticated")
 
 
-@router.post("/missions")
+def _actor_label(request: Request) -> str:
+    session_user = resolve_admin_session(request)
+    if session_user:
+        return session_user
+    principal = resolve_service_principal(request)
+    return principal.label if principal is not None else "operator"
+
+
+@router.post("/missions", dependencies=[Depends(require_scope(ARCScope.START))])
 async def create_arc_mission(
     request: CreateARCMissionRequest,
     background_tasks: BackgroundTasks,
-    x_operator_id: str | None = Header(default="operator"),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    request_context: Request,
+    _x_operator_id: str | None = Header(default="operator", alias="X-Operator-Id"),
+    _idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
     """
     Create & trigger SOTA ARC autonomous research & evolution loop.
@@ -117,7 +154,7 @@ async def create_arc_mission(
     )
 
     controller = ARCController(goal=goal)
-    controller.projection.created_by = (x_operator_id or "operator").strip() or "operator"
+    controller.projection.created_by = _actor_label(request_context)
     save_mission(controller)
 
     background_tasks.add_task(
@@ -139,7 +176,7 @@ async def create_arc_mission(
     }
 
 
-@router.get("/evidence/preflight")
+@router.get("/evidence/preflight", dependencies=[Depends(require_scope(ARCScope.READ))])
 async def arc_evidence_preflight(
     symbol: str = "BTC-USDT-SWAP", timeframe: str = "1H"
 ) -> dict[str, Any]:
@@ -151,7 +188,22 @@ async def arc_evidence_preflight(
     return preflight_window(symbol=symbol, timeframe=timeframe)
 
 
-@router.get("/missions/{mission_id}")
+@router.get("/missions", dependencies=[Depends(require_scope(ARCScope.READ))])
+async def list_arc_missions(
+    state: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict[str, Any]:
+    summaries: list[dict[str, Any]] = []
+    for mission_id in list_mission_ids(state=state):
+        ctrl = get_controller(mission_id)
+        if ctrl is None:
+            continue
+        summaries.append(build_mission_summary(ctrl.projection))
+    summaries.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+    return {"missions": summaries[:limit]}
+
+
+@router.get("/missions/{mission_id}", dependencies=[Depends(require_scope(ARCScope.READ))])
 async def get_arc_mission(mission_id: str) -> dict[str, Any]:
     ctrl = get_controller(mission_id)
     if ctrl is None:
@@ -159,16 +211,47 @@ async def get_arc_mission(mission_id: str) -> dict[str, Any]:
     return ctrl.projection.model_dump(mode="json")
 
 
-@router.post("/missions/{mission_id}/continue")
+@router.get(
+    "/missions/{mission_id}/evidence",
+    dependencies=[Depends(require_scope(ARCScope.READ))],
+)
+async def get_arc_mission_evidence(mission_id: str) -> dict[str, Any]:
+    ctrl = get_controller(mission_id)
+    if ctrl is None:
+        raise HTTPException(status_code=404, detail="ARC Mission not found")
+    return build_evidence_view(ctrl.projection)
+
+
+@router.get(
+    "/missions/{mission_id}/candidates/{attempt_id}",
+    dependencies=[Depends(require_scope(ARCScope.READ))],
+)
+async def get_arc_mission_candidate(mission_id: str, attempt_id: str) -> dict[str, Any]:
+    ctrl = get_controller(mission_id)
+    if ctrl is None:
+        raise HTTPException(status_code=404, detail="ARC Mission not found")
+    detail = build_candidate_detail(ctrl.projection, attempt_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="ARC candidate not found")
+    return detail
+
+
+@router.post(
+    "/missions/{mission_id}/continue",
+    dependencies=[Depends(require_scope(ARCScope.START))],
+)
 async def continue_arc_mission(
     mission_id: str,
     request: ContinueARCMissionRequest,
     background_tasks: BackgroundTasks,
     request_context: Request,
-    x_operator_id: str | None = Header(default=None),
+    _x_operator_id: str | None = Header(default=None, alias="X-Operator-Id"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
-    actor, key = _require_operator(x_operator_id, idempotency_key, request_context)
+    key = (idempotency_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key is required")
+    actor = _actor_label(request_context)
     ctrl = get_controller(mission_id)
     if ctrl is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
@@ -201,7 +284,10 @@ async def continue_arc_mission(
     }
 
 
-@router.get("/missions/{mission_id}/live-approval")
+@router.get(
+    "/missions/{mission_id}/live-approval",
+    dependencies=[Depends(require_scope(ARCScope.READ))],
+)
 async def get_live_approval(mission_id: str) -> dict[str, Any]:
     ctrl = get_controller(mission_id)
     if ctrl is None:
@@ -212,15 +298,23 @@ async def get_live_approval(mission_id: str) -> dict[str, Any]:
     return package.model_dump(mode="json")
 
 
-@router.post("/missions/{mission_id}/live-approval/decide")
+@router.post(
+    "/missions/{mission_id}/live-approval/decide",
+    dependencies=[Depends(reject_token_only_approval)],
+)
 async def decide_live_approval_endpoint(
     mission_id: str,
     request: LiveDecisionRequest,
     request_context: Request,
-    x_operator_id: str | None = Header(default=None),
+    _x_operator_id: str | None = Header(default=None, alias="X-Operator-Id"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
-    actor, key = _require_operator(x_operator_id, idempotency_key, request_context)
+    identity, key = _require_operator(
+        request_context,
+        mission_id=mission_id,
+        decision=request.decision,
+        idempotency_key=idempotency_key,
+    )
     ctrl = get_controller(mission_id)
     if ctrl is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
@@ -232,7 +326,8 @@ async def decide_live_approval_endpoint(
             ctrl,
             decision=request.decision,
             reason=request.reason,
-            operator_id=actor,
+            operator_id=identity.operator_id,
+            identity_source=identity.identity_source,
             idempotency_key=key,
             force=request.force,
         )
@@ -240,20 +335,32 @@ async def decide_live_approval_endpoint(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.post("/missions/{mission_id}/live-approval/revoke")
+@router.post(
+    "/missions/{mission_id}/live-approval/revoke",
+    dependencies=[Depends(reject_token_only_approval)],
+)
 async def revoke_live_approval_endpoint(
     mission_id: str,
     request: LiveRevokeRequest,
     request_context: Request,
-    x_operator_id: str | None = Header(default=None),
+    _x_operator_id: str | None = Header(default=None, alias="X-Operator-Id"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
-    actor, key = _require_operator(x_operator_id, idempotency_key, request_context)
+    identity, key = _require_operator(
+        request_context,
+        mission_id=mission_id,
+        decision="revoke",
+        idempotency_key=idempotency_key,
+    )
     ctrl = get_controller(mission_id)
     if ctrl is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
     return revoke_live_approval(
-        ctrl, operator_id=actor, reason=request.reason, idempotency_key=key
+        ctrl,
+        operator_id=identity.operator_id,
+        identity_source=identity.identity_source,
+        reason=request.reason,
+        idempotency_key=key,
     )
 
 

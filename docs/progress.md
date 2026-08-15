@@ -1,5 +1,16 @@
 # Progress Log
 
+## ARC 外部控制台接入面 — 2026-08-15
+
+- **边界**：服务令牌可以启动任务、读全部证据，结构上不能审批。`ARCScope` 只有
+  `arc:read` / `arc:start`，没有 approve。审批只认 HyperTrade 会话或 BitPro 签名断言。
+- **断言**：`X-Operator-Assertion` 对请求里的 mission / decision / idempotency key 验签，
+  过期、篡改、绑错任务或绑错决策一律 401，不写 `live_decided`。空密钥 fail closed。
+- **证据**：`GET /missions` 摘要、`GET /missions/{id}/evidence` 整形视图、
+  `GET /missions/{id}/candidates/{attempt_id}` 下钻（源码只在这里）。
+- **验证**：`tests/test_arc_external_surface.py` + 既有 `test_arc_router_auth.py`。
+  合同：`docs/contracts/sprint-135-arc-external-console-surface.md`。
+
 ## 第一份真实行情证据，以及它暴露的四个缺陷 — 2026-08-15
 
 - **真实数据**：OKX 在本网络不可达，改用可达交易所拉真实小时线灌本地归档

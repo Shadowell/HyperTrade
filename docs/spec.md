@@ -68,6 +68,12 @@ ref、paper instance、观察窗或对账时包状态为 `incomplete`，`POST ..
 拒绝批准。操作员批准后才走审批绑定的 `authorized_live_promote`；`call_tool("live_promote")`
 和现货/合约下单、划转仍然拦截。Mission 投影落在 `arc_missions`，重启可恢复。
 
+外部控制台（BitPro）通过服务令牌调用同一组 ARC 路由：`arc:read` 可读任务列表、证据视图和候选
+下钻，`arc:start` 可创建任务和追加预算。令牌结构上没有审批能力。实盘审批只接受 HyperTrade
+管理员会话，或 BitPro 对 `mission_id + decision + operator_id + idempotency_key + issued_at`
+签名的 `X-Operator-Assertion`。记录的操作人带 `identity_source`，区分 `hypertrade_session`
+与 `bitpro_signed`。证据视图是投影的只读渲染，列表响应不含策略源码。
+
 ## Canonical Agent Runtime Target
 
 The next runtime uses a server-owned `Thread → Turn → Item` interaction protocol and links long-running

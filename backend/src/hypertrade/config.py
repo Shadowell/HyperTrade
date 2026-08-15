@@ -113,6 +113,19 @@ class Settings(BaseSettings):
         default=False,
         alias="ARC_EVIDENCE_LIVE_FALLBACK_ENABLED",
     )
+    # Hashed service principals only. Format: label:arc:read+arc:start:sha256hex, comma-separated.
+    # No token value can carry an approve capability; approval is not a token scope.
+    arc_service_tokens: str = Field(default="", alias="ARC_SERVICE_TOKENS")
+    # Shared HMAC key with BitPro. Empty refuses every signed assertion (fail closed).
+    # Must be distinct from SESSION_SECRET and must live in the server env, never the repo.
+    arc_operator_assertion_secret: str = Field(
+        default="",
+        alias="ARC_OPERATOR_ASSERTION_SECRET",
+    )
+    arc_operator_assertion_max_age_seconds: int = Field(
+        default=300,
+        alias="ARC_OPERATOR_ASSERTION_MAX_AGE_SECONDS",
+    )
     research_trigger_poll_interval_seconds: float = Field(
         default=10.0,
         alias="RESEARCH_TRIGGER_POLL_INTERVAL_SECONDS",

@@ -53,6 +53,7 @@ def decide_live_approval(
     operator_id: str,
     idempotency_key: str,
     force: bool = False,
+    identity_source: str = "hypertrade_session",
     client: LivePromoteClient | None = None,
 ) -> dict[str, Any]:
     if controller.projection.state == "live_canary" and decision == "approve":
@@ -76,6 +77,7 @@ def decide_live_approval(
                 "decision": "approved",
                 "reason": reason,
                 "operator_id": operator_id,
+                "identity_source": identity_source,
                 "idempotency_key": idempotency_key,
                 "package_hash": package.package_hash,
                 "force": force,
@@ -90,6 +92,7 @@ def decide_live_approval(
             "decision": "rejected",
             "reason": reason,
             "operator_id": operator_id,
+            "identity_source": identity_source,
             "idempotency_key": idempotency_key,
             "package_hash": package.package_hash,
         },
@@ -165,11 +168,13 @@ def revoke_live_approval(
     operator_id: str,
     reason: str,
     idempotency_key: str,
+    identity_source: str = "hypertrade_session",
 ) -> dict[str, Any]:
     controller.apply_event(
         "live_revoked",
         {
             "operator_id": operator_id,
+            "identity_source": identity_source,
             "reason": reason,
             "idempotency_key": idempotency_key,
         },

@@ -40,7 +40,11 @@ def test_anonymous_callers_cannot_reach_any_arc_route(client: TestClient) -> Non
             "/api/v1/arc/missions",
             json={"objective": "probe", "symbol": "BTC-USDT-SWAP", "max_candidates": 1},
         ),
+        client.get("/api/v1/arc/missions"),
+        client.get("/api/v1/arc/evidence/preflight"),
         client.get(f"/api/v1/arc/missions/{mission}"),
+        client.get(f"/api/v1/arc/missions/{mission}/evidence"),
+        client.get(f"/api/v1/arc/missions/{mission}/candidates/att_x"),
         client.get(f"/api/v1/arc/missions/{mission}/live-approval"),
         client.post(
             f"/api/v1/arc/missions/{mission}/live-approval/decide",
@@ -94,3 +98,4 @@ def test_the_recorded_operator_is_the_session_not_the_header(client: TestClient)
     ]
     assert decided, events.get("events")
     assert decided[-1]["payload"]["operator_id"] == "admin"
+    assert decided[-1]["payload"]["identity_source"] == "hypertrade_session"
