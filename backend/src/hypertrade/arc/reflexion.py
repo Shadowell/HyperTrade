@@ -63,6 +63,9 @@ _CONSTRAINT_BY_REASON_CODE: dict[ARCReasonCode, str] = {
     ARCReasonCode.WALK_FORWARD_INCONSISTENT: (
         "滚动窗口中过半窗口不成立，结论依赖特定时段而非市场结构，必须改用跨状态更稳健的信号"
     ),
+    ARCReasonCode.WALK_FORWARD_STALE_EDGE: (
+        "优势只存在于较早的滚动窗口，最近一折已经失效，必须改用当前市场仍在兑现的信号"
+    ),
     ARCReasonCode.EVIDENCE_REPLAY_FAILED: (
         "候选无法在回放器中执行，策略体存在运行期缺陷，必须重新生成"
     ),

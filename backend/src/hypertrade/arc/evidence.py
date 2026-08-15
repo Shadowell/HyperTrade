@@ -356,30 +356,53 @@ def walk_forward_slices(total_bars: int) -> tuple[tuple[int, int], ...]:
     )
 
 
-def _judge_folds(folds: Sequence[CandidateBacktestResult]) -> tuple[AttackFinding, ...]:
-    if not folds:
-        return ()
-    surviving = sum(
-        1
-        for fold in folds
-        if not fold.is_inert
+def _fold_survives(fold: CandidateBacktestResult) -> bool:
+    return (
+        not fold.is_inert
         and fold.sharpe >= MIN_ADMISSIBLE_OOS_SHARPE
         and fold.max_drawdown <= MAX_ADMISSIBLE_DRAWDOWN
     )
-    required = math.ceil(len(folds) * MIN_SURVIVING_FOLD_FRACTION)
-    if surviving >= required:
+
+
+def _judge_folds(folds: Sequence[CandidateBacktestResult]) -> tuple[AttackFinding, ...]:
+    if not folds:
         return ()
-    return (
-        AttackFinding(
-            code=ARCReasonCode.WALK_FORWARD_INCONSISTENT,
-            gate=GATE,
-            detail=(
-                f"only {surviving} of {len(folds)} rolling windows cleared the "
-                f"out-of-sample bar, below the {required} required; the result does not "
-                "hold across market conditions"
-            ),
-        ),
-    )
+    surviving = sum(1 for fold in folds if _fold_survives(fold))
+    required = math.ceil(len(folds) * MIN_SURVIVING_FOLD_FRACTION)
+    findings: list[AttackFinding] = []
+    if surviving < required:
+        findings.append(
+            AttackFinding(
+                code=ARCReasonCode.WALK_FORWARD_INCONSISTENT,
+                gate=GATE,
+                detail=(
+                    f"only {surviving} of {len(folds)} rolling windows cleared the "
+                    f"out-of-sample bar, below the {required} required; the result does not "
+                    "hold across market conditions"
+                ),
+            )
+        )
+    elif not _fold_survives(folds[-1]):
+        # The fraction alone does not say *which* folds survived, so a candidate whose
+        # edge died months ago clears it on older folds. Measured on BTC 1H: two
+        # mean-reversion candidates passed on folds 2-3 (Sharpe +2.60, +5.60) while
+        # fold 4 lost money, and BitPro's self-test -- which replays the most recent
+        # 90 days -- then refused them. Requiring the newest fold makes the evidence
+        # gate and the self-test agree by construction instead of by luck.
+        newest = folds[-1]
+        findings.append(
+            AttackFinding(
+                code=ARCReasonCode.WALK_FORWARD_STALE_EDGE,
+                gate=GATE,
+                detail=(
+                    f"{surviving} of {len(folds)} rolling windows cleared the out-of-sample "
+                    f"bar, but the most recent did not (Sharpe {newest.sharpe:.2f}, drawdown "
+                    f"{newest.max_drawdown:.1%}); the edge is in the past, not in the market "
+                    "the candidate would trade"
+                ),
+            )
+        )
+    return tuple(findings)
 
 
 def _fold_metrics(folds: Sequence[CandidateBacktestResult]) -> dict[str, Any]:

@@ -228,6 +228,75 @@ def test_a_result_that_holds_in_only_one_period_is_rejected():
     assert ARCReasonCode.WALK_FORWARD_INCONSISTENT in {f.code for f in verdict.blocking}
 
 
+def _fold(sharpe: float, *, drawdown: float = 0.05, trades: int = 12):
+    """A fold result carrying only what the fold rule reads."""
+    from hypertrade.backtest.candidate import CandidateBacktestResult, Trade
+
+    filled = tuple(
+        Trade(
+            symbol="BTC-USDT-SWAP",
+            side="long",
+            entry_timestamp=f"2026-01-{index + 1:02d}T00:00:00Z",
+            exit_timestamp=f"2026-01-{index + 1:02d}T01:00:00Z",
+            entry_price=100.0,
+            exit_price=101.0,
+            notional=100.0,
+            leverage=1.0,
+            pnl=1.0,
+        )
+        for index in range(trades)
+    )
+    return CandidateBacktestResult(
+        class_name="Probe",
+        bars=1_500,
+        trades=filled,
+        starting_equity=10_000.0,
+        ending_equity=10_500.0,
+        total_return=0.05,
+        sharpe=sharpe,
+        max_drawdown=drawdown,
+        turnover=1.0,
+        exposure=0.5,
+        fees_paid=0.0,
+        equity_curve=(10_000.0, 10_500.0),
+    )
+
+
+def test_an_edge_that_died_in_the_newest_fold_is_rejected():
+    """The fraction does not say which folds survived, so a dead edge cleared it.
+
+    Measured on production BTC 1H: two mean-reversion candidates passed on folds 2-3
+    while fold 4 lost money, and BitPro's self-test -- which replays the most recent
+    90 days -- then refused them. The gate has to notice before a validation slot is
+    spent on a candidate whose edge is in the past.
+    """
+    from hypertrade.arc.evidence import _judge_folds
+
+    findings = _judge_folds([_fold(-0.8), _fold(2.6), _fold(5.6), _fold(-1.1)])
+
+    codes = {finding.code for finding in findings}
+    assert ARCReasonCode.WALK_FORWARD_STALE_EDGE in codes
+    assert ARCReasonCode.WALK_FORWARD_INCONSISTENT not in codes, (
+        "the candidate is not unstable across regimes; it worked and then stopped, "
+        "and the two call for different mutations"
+    )
+
+
+def test_a_surviving_newest_fold_still_passes():
+    from hypertrade.arc.evidence import _judge_folds
+
+    assert _judge_folds([_fold(-1.8), _fold(0.5), _fold(-0.1), _fold(0.7)]) == ()
+
+
+def test_too_few_surviving_folds_is_still_reported_as_inconsistency():
+    """A candidate failing everywhere must not be relabelled as merely stale."""
+    from hypertrade.arc.evidence import _judge_folds
+
+    findings = _judge_folds([_fold(-0.8), _fold(-0.4), _fold(0.6), _fold(-1.1)])
+
+    assert {f.code for f in findings} == {ARCReasonCode.WALK_FORWARD_INCONSISTENT}
+
+
 def test_reported_win_rate_is_measured_rather_than_derived_from_the_verdict():
     """It used to be 0.65 on a pass and 0.42 on a failure: the verdict in metric costume."""
     from hypertrade.arc.adversarial import RedTeamQuant

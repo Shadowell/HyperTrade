@@ -47,6 +47,11 @@ class ARCReasonCode(StrEnum):
     IS_OOS_DEGRADATION = "IS_OOS_DEGRADATION"
     PERMANENT_EXPOSURE = "PERMANENT_EXPOSURE"
     WALK_FORWARD_INCONSISTENT = "WALK_FORWARD_INCONSISTENT"
+    # Enough folds cleared the bar, but not the newest one. Distinct from
+    # WALK_FORWARD_INCONSISTENT because the remedy differs: the candidate is not
+    # unstable across regimes, it worked and then stopped, so mutation should look
+    # for a signal the current market still pays for rather than a steadier one.
+    WALK_FORWARD_STALE_EDGE = "WALK_FORWARD_STALE_EDGE"
     OOS_SAMPLE_TOO_SMALL = "OOS_SAMPLE_TOO_SMALL"
     # The platform failed, not the candidate. Every self-test failure that did not name
     # a success criterion used to be filed as EVIDENCE_REPLAY_FAILED, so a BitPro outage
