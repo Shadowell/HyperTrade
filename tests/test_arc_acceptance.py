@@ -91,6 +91,33 @@ def test_missing_window_never_completes_or_reaches_paper() -> None:
     assert "evidence_window_unavailable" in reasons
 
 
+def test_budget_reaches_every_family_in_the_catalogue() -> None:
+    """Exploration must not be contingent on mutation failing to produce a frontier.
+
+    The re-seed that reaches untried families was guarded by `if not frontier`, and
+    mutating the last rejects nearly always fills the frontier, so the guard never
+    opened: the first seeding picked three families and the entire budget went into
+    re-tuning them. A 90-candidate ETH mission on real history proposed exactly three
+    of the six families and never once proposed donchian_breakout, the only family
+    with a held-out edge on that market.
+    """
+    import hypertrade.arc.router as router_module
+    from hypertrade.research.codegen import FAMILIES
+
+    ctrl = _start(_goal(max_candidates=len(FAMILIES) * 4))
+    original = router_module.build_default_window
+    router_module.build_default_window = lambda *args, **kwargs: _flat_window()
+    try:
+        run_autonomous_arc_loop(ctrl.mission_id)
+    finally:
+        router_module.build_default_window = original
+
+    proposed = {att.strategy_spec.get("family") for att in ctrl.projection.attempts}
+    assert proposed == {family.key for family in FAMILIES}, (
+        f"budget funded the whole catalogue but the search only reached {sorted(proposed)}"
+    )
+
+
 def test_loop_searches_across_structurally_different_hypotheses() -> None:
     """The search used to explore one family and tune its parameters."""
     import hypertrade.arc.router as router_module

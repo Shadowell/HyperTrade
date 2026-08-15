@@ -522,6 +522,32 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
         )
         return [mutated]
 
+    def seed_untried_families(parent_id: str) -> list[MCTSNode]:
+        """Nodes for families the mission has never proposed, bounded by the budget.
+
+        Returns [] once the catalogue is covered, so callers can invoke it every
+        generation without special-casing exhaustion.
+        """
+        remaining = budget.max_candidates - budget.candidates_used
+        if remaining <= 0:
+            return []
+        tried = {
+            str(item.strategy_spec.get("family") or "") for item in ctrl.projection.attempts
+        }
+        nodes: list[MCTSNode] = []
+        for seed in blue_team.propose_diverse_frontier(
+            goal.objective,
+            symbol,
+            max(1, min(_MAX_SEED_WIDTH, remaining)),
+            timeframe=timeframe,
+            exclude_families=tried,
+        ):
+            if budget.is_exhausted():
+                break
+            ctrl.apply_event("candidate_proposed", {"attempt": seed.model_dump()})
+            nodes.append(mcts_engine.add_child(parent_id, seed))
+        return nodes
+
     validated = next(
         (
             item
@@ -564,26 +590,7 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
                     },
                 )
                 frontier.append(mcts_engine.add_child(root.node_id, mutated))
-            if not frontier:
-                extra = max(1, min(_MAX_SEED_WIDTH, budget.max_candidates - budget.candidates_used))
-                # Spend a re-seed on hypotheses the mission has not tried. Without this
-                # the walk restarted at the head of the catalogue and re-proposed the
-                # families it had just rejected.
-                tried = {
-                    str(item.strategy_spec.get("family") or "")
-                    for item in ctrl.projection.attempts
-                }
-                for seed in blue_team.propose_diverse_frontier(
-                    goal.objective,
-                    symbol,
-                    extra,
-                    timeframe=timeframe,
-                    exclude_families=tried,
-                ):
-                    if budget.is_exhausted():
-                        break
-                    ctrl.apply_event("candidate_proposed", {"attempt": seed.model_dump()})
-                    frontier.append(mcts_engine.add_child(root.node_id, seed))
+            frontier.extend(seed_untried_families(root.node_id))
 
         while frontier and validated is None:
             rollouts = mcts_engine.simulate(frontier, eval_candidate)
@@ -659,6 +666,15 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
             next_generation: list[MCTSNode] = []
             for node, _, _ in rollouts:
                 next_generation.extend(mcts_engine.expand(node.node_id, repair))
+            # Every generation after the first was produced purely by mutating the
+            # previous one, so the search could only ever tune the `_MAX_SEED_WIDTH`
+            # families the initial seeding happened to pick. On real ETH history a
+            # 90-candidate mission spent all of it on three of the six families and
+            # never proposed donchian_breakout, the one family with a held-out edge
+            # on that market. Exploring the rest of the catalogue is not something to
+            # do only when mutation runs dry.
+            if rollouts:
+                next_generation.extend(seed_untried_families(rollouts[0][0].node_id))
             frontier = next_generation
 
     if validated is None:

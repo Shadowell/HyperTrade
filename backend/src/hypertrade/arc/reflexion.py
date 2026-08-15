@@ -73,6 +73,14 @@ _CONSTRAINT_BY_REASON_CODE: dict[ARCReasonCode, str] = {
 }
 
 
+def constraint_for_reason_code(code: str) -> str:
+    """Canonical remediation for a reason code, or empty when the code has none."""
+    for reason, constraint in _CONSTRAINT_BY_REASON_CODE.items():
+        if reason.value == code:
+            return constraint
+    return ""
+
+
 class RegimeAttributionResult(BaseModel):
     regime_name: str
     sharpe: float
@@ -222,6 +230,9 @@ class ARCReflexionLedger:
             failed_gates=sorted(set(failed_gates)),
             observed_metrics=observed_metrics,
             negative_constraints=sorted(set(negative_constraints)),
+            reason_details={
+                finding.code.value: finding.detail for finding in findings if finding.detail
+            },
         )
 
         self._records.append(event)

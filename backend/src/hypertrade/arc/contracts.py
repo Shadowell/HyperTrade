@@ -97,6 +97,11 @@ class ARCReflexionEventV1(BaseModel):
     failed_gates: list[str]
     observed_metrics: dict[str, Any]
     negative_constraints: list[str]
+    # What each reason code actually measured. `negative_constraints` is deduped, sorted
+    # mutation guidance with no positional relationship to `reason_codes`, so pairing the
+    # two by index attributed the wrong explanation to every objection. Defaults empty so
+    # projections persisted before this field still load.
+    reason_details: dict[str, str] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 

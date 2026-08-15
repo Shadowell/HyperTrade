@@ -127,13 +127,22 @@ def _candidate_row(attempt: ARCCandidateAttemptV1) -> dict[str, Any]:
 
 
 def _rejections(events: list[ARCReflexionEventV1]) -> list[dict[str, str]]:
+    """Each objection with its own explanation.
+
+    `negative_constraints` is deduped, sorted mutation guidance whose order has nothing
+    to do with `reason_codes`; pairing them by index handed the operator a remediation
+    string belonging to a different gate. The finding's own detail is authoritative, and
+    the canonical remediation covers rows recorded before details were kept.
+    """
+    from hypertrade.arc.reflexion import constraint_for_reason_code
+
     rows: list[dict[str, str]] = []
     for event in events:
-        texts = list(event.negative_constraints)
         codes = list(event.reason_codes) or [event.failure_class]
-        for index, code in enumerate(codes):
-            text = texts[index] if index < len(texts) else (texts[-1] if texts else "")
-            rows.append({"code": str(code), "text": str(text)})
+        for code in codes:
+            key = str(code)
+            text = event.reason_details.get(key) or constraint_for_reason_code(key)
+            rows.append({"code": key, "text": text})
     return rows
 
 
