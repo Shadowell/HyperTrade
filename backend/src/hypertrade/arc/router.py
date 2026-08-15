@@ -304,9 +304,15 @@ def _findings_from_self_test(result: SelfTestResult) -> list[AttackFinding]:
             )
         )
     if not findings:
+        # A reason that names no success criterion is a platform failure: the call to
+        # BitPro raised, was rejected, or came back without a result reference. Blaming
+        # the candidate for that discards a sound strategy and writes a false lesson.
+        platform = any(reason.startswith("bitpro_") for reason in result.reasons)
         findings.append(
             AttackFinding(
-                ARCReasonCode.EVIDENCE_REPLAY_FAILED,
+                ARCReasonCode.BITPRO_SELF_TEST_UNAVAILABLE
+                if platform
+                else ARCReasonCode.EVIDENCE_REPLAY_FAILED,
                 "bitpro_self_test",
                 result.message or "; ".join(result.reasons) or "BitPro self-test failed",
             )
@@ -440,8 +446,19 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
                 frontier.append(mcts_engine.add_child(root.node_id, mutated))
             if not frontier:
                 extra = max(1, min(_MAX_SEED_WIDTH, budget.max_candidates - budget.candidates_used))
+                # Spend a re-seed on hypotheses the mission has not tried. Without this
+                # the walk restarted at the head of the catalogue and re-proposed the
+                # families it had just rejected.
+                tried = {
+                    str(item.strategy_spec.get("family") or "")
+                    for item in ctrl.projection.attempts
+                }
                 for seed in blue_team.propose_diverse_frontier(
-                    goal.objective, symbol, extra, timeframe=timeframe
+                    goal.objective,
+                    symbol,
+                    extra,
+                    timeframe=timeframe,
+                    exclude_families=tried,
                 ):
                     if budget.is_exhausted():
                         break

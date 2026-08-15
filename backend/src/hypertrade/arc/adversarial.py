@@ -4,7 +4,7 @@ ARC Red-Blue Adversarial Game Engine & Monte Carlo Overfitting Attack Matrix
 
 import hashlib
 import random
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Any
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1
@@ -90,6 +90,7 @@ class BlueTeamQuant:
         count: int,
         *,
         timeframe: str = "1H",
+        exclude_families: Collection[str] = (),
         parameter_bounds: Mapping[str, Mapping[str, float]] | None = None,
     ) -> list[ARCCandidateAttemptV1]:
         """Seed the search with `count` structurally different hypotheses.
@@ -105,11 +106,21 @@ class BlueTeamQuant:
         recording that the other side was never on the table. An explicit mandate is
         still obeyed - "仅做多" is a constraint, not a preference - but silence is now
         treated as unexplored rather than as a decision.
+
+        `exclude_families` carries what the search has already tried. The walk always
+        restarted from the head of the catalogue, so a second seeding round re-proposed
+        the families that had just been rejected and the last three were unreachable at
+        any budget. On real ETH history the only family with a held-out edge was one of
+        them, so the search could not have found it however long it ran.
         """
+        skip = set(exclude_families)
         primary = self.propose_initial_strategy(
             objective, symbol, timeframe=timeframe, parameter_bounds=parameter_bounds
         )
-        frontier = [primary]
+        frontier = [] if primary.strategy_spec["family"] in skip else [primary]
+        if not frontier:
+            # The objective's own reading is exhausted; fall through to the catalogue.
+            skip.add(primary.strategy_spec["family"])
 
         spec = self.build_spec(objective, symbol, timeframe=timeframe)
         # long_short leads: it is the most expressive of the three, so when the budget
@@ -124,7 +135,7 @@ class BlueTeamQuant:
         for family in FAMILIES:
             if len(frontier) >= max(1, count):
                 break
-            if family.key == primary.strategy_spec["family"]:
+            if family.key == primary.strategy_spec["family"] or family.key in skip:
                 continue
             frontier.append(
                 self.propose_initial_strategy(

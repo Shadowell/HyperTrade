@@ -438,8 +438,13 @@ FAMILIES: tuple[StrategyFamily, ...] = (
             "海龟",
             "新高",
             "唐奇安",
+            # Names the family, so it belongs with the signature tier. Filed as a theme
+            # it scored no higher than the incidental "趋势" in "捕捉下行趋势", and the
+            # tie went to whichever family was declared first: a mandate that asked for
+            # a channel breakout in Chinese got a moving-average crossover.
+            "通道突破",
         ),
-        theme=("breakout", "break out", "range break", "通道突破", "突破", "区间"),
+        theme=("breakout", "break out", "range break", "突破", "区间"),
         parameters=(TunableParameter("channel_period", 20, 3, 300),),
         helpers=(),
         span_expression="self.p_channel_period + 2",
