@@ -33,3 +33,6 @@ tmp-*/
 frontend/vite.config.js
 frontend/vite.config.d.ts
 .gstack/
+.claude-flow/
+.claude/proven-config.json
+.claude/.proven-config-version
