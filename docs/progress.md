@@ -1,5 +1,30 @@
 # Progress Log
 
+## 第一份真实行情证据，以及它暴露的四个缺陷 — 2026-08-15
+
+- **真实数据**：OKX 在本网络不可达，改用可达交易所拉真实小时线灌本地归档
+  （`scratch/seed_real_archive.py`，研究工具，不进产品；HyperTrade 不自持行情）。
+  5 个品种 × 833 天真实历史。
+- **第一份非合成结果**：6 族 × 3 方向 × 5 品种 = 90 个真实候选，**只有 1 个**通过留出
+  证据（ETH 唐奇安做空，样本外夏普 1.64）。门禁的拒绝是对的，不是过严。
+- **ARC 路由裸奔（安全）**：`arc_router` 未挂 `require_admin`，匿名即可创建 mission、
+  读审批包、调 `live-approval/decide`；`X-Operator-Id` 只校验非空，实盘审批的操作人
+  记录可伪造。现已挂鉴权，操作人取自已验证会话，并补 `tests/test_arc_router_auth.py`。
+- **搜索够不到后半个族目录**：`propose_diverse_frontier` 每轮从目录头部重走，重播种只会
+  重复刚被否的族，后三族任何预算都到不了——唯一有优势的那族正在其中。方向同理：默认
+  `long_only` 且全前沿共用，跌 45% 的行情里全部预算只押单边。均已修。
+- **把平台故障算到策略头上**：自检失败只要没提到成功标准，一律记 `EVIDENCE_REPLAY_FAILED`
+  （含义是策略跑不起来、必须重写），于是 BitPro 掉线会丢弃好候选并写入假教训。现有独立
+  的 `BITPRO_SELF_TEST_UNAVAILABLE`。
+- **未确认的模拟盘实例可当实盘证据**：快照没报实例 id 时 `instance_matched` 记为 True，
+  且审批包从不据此拦截。现改为未知，且未确认即阻断审批（force 也不行）。
+- **check.sh 不确定**：`test_web_thread_turn_contract` 依赖真实 LLM 在 2 秒内返回，本机
+  3 次挂 1~2 次。改为由测试释放 planner 调用，8 次稳定通过且不再打付费 API。
+- **Gate 2 端到端**：真实 ETH 行情 → 证据门禁 → 红队 → BitPro validate/create/backtest →
+  `success_criteria` 裁决 → configure/start → `paper_observing` + 观察快照，全程走通
+  （BitPro 用契约替身，回测指标由同一真实窗口重放得出）。真身握手仍未验证。
+- **验证**：`./scripts/check.sh` 992 通过。
+
 ## 研究自测、自动模拟盘、一次实盘审批 — 2026-08-15
 
 - **产品闭环**：ARC 仍是唯一入口。本地回放只做预筛；幸存者必须拿到 BitPro backtest ref，
