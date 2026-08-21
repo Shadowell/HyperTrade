@@ -1,5 +1,19 @@
 # Progress Log
 
+## ARC 真身闭环与 Provider 假设层合同激活 — 2026-08-19
+
+- **背景**：对当前实现与北极星的差距做了代码级评估。结论：闭环真实且诚实（90 个真实候选
+  仅 1 个过留存门禁、生产 mission 诚实停在 `needs_operator`），但 `arc/` 包内没有任何 LLM
+  调用——候选只来自 `research/codegen.py` 的 6 个确定性族，Gate 2 端到端只在契约替身上验证，
+  证据窗口来源是替代交易所而非 OKX。
+- **决策**：产品所有者确认第一档目标。激活
+  [User-Directed ARC 真身闭环与 Provider 假设层](contracts/user-directed-arc-real-closure.md)：
+  四个 Slice——证据来源合同（`source_origin` 显式化）、Provider 假设通道（蓝队双来源、白名单
+  AST、provenance 落投影）、真实 BitPro 正路（去替身）、生产真身 canary（诚实终态入档）。
+- **边界不变**：ARC 仍是唯一入口；Live / Testnet / 订单 / 资金为零；Sprint 132–134 保持未激活；
+  M0 合同 Safety Boundaries 全部继承。本地回放与 BitPro 回测的口径只钉 `prefilter_only`
+  标注，合并在 Handoff。
+
 ## 两个进程共写一个 mission，以及控制台看不到进度 — 2026-08-15
 
 - **缺陷**：`store.MISSIONS` 是进程内缓存，`get_controller` 命中后不再读库。生产上

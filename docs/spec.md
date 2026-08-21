@@ -55,8 +55,14 @@ Provider、Mission、BitPro 策略/回测、统一验证和 Paper Incubation 能
 
 开发设计见
 [Goal-Driven Autonomous Research Loop M0](architecture/36-goal-driven-autonomous-research-loop-m0.md)，
-当前执行合同见
+M0 合同见
 [User-Directed Autonomous Strategy Research Loop M0](contracts/user-directed-autonomous-strategy-research-loop-m0.md)。
+
+2026-08-19 产品所有者确认第一档目标，激活
+[User-Directed ARC 真身闭环与 Provider 假设层](contracts/user-directed-arc-real-closure.md)
+为当前最高优先执行合同。它填充 M0 的两个未达成项：Provider 产生的候选（M0 Done Means #2）
+与生产正路的真身验证（Done Means #14）。ARC 仍是唯一产品入口；Live 边界、Sprint 132–134
+未激活状态与 M0 的其余安全边界不变。
 
 ## Current Product Path — ARC Research, Paper Observe, One Live Approval
 
