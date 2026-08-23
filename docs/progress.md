@@ -1,5 +1,19 @@
 # Progress Log
 
+## Deletion Sprint A 档：清除零引用死代码 — 2026-08-23
+
+- **删除**：`arc_agi/`、`hyperarc/`（ARC-AGI 竞赛实验，产品代码零引用，仅自身测试文件引用）
+  与根目录 Vide 集成残留（`test_vide_api_direct.py`、`test_vide_coding.py`、
+  `VIDE_CODING_INTEGRATION_REPORT.md`，全仓零引用）。共 9 文件 906 行。
+- **核查**：全仓 grep（backend / tests / scripts / .github / pyproject）确认零外部引用；
+  spec.md 与活动合同从未承诺 HyperARC 能力，无需文档同步。`scratch/` 探针保留
+  （progress 历史引用过，有复跑价值）。
+- **验证**：`./scripts/check.sh` 通过——1059 passed，较删除前少的 1 个正是移除的
+  hyperarc 测试；前端 lint/test/build 全绿；部署 workflow success（run 32643078563）。
+- **后续**：B 档（README 宣传但未接线的 memory_v2 四件套 / harness 未接线组件 /
+  canary_vault / macro_event——逐项"删或接线"二选一）、C 档（三套编排收敛、
+  13 角色 ResearchGraph 下线、`main.py` 拆分）另行立项。
+
 ## ARC 真身闭环与 Provider 假设层合同激活 — 2026-08-19
 
 - **背景**：对当前实现与北极星的差距做了代码级评估。结论：闭环真实且诚实（90 个真实候选
