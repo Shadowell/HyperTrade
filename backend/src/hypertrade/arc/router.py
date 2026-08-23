@@ -65,6 +65,10 @@ class CreateARCMissionRequest(BaseModel):
     min_paper_trades: int = 10
     live_max_capital_u: Decimal = Field(default=Decimal("100"))
     live_mandate_hours: int = 24
+    # Operator consent for evidence windows whose origin is not provably OKX.
+    # Default False: a mission on an undeclared or alternative-exchange archive stops
+    # at needs_operator before spending any candidate budget.
+    alternative_source_confirmed: bool = False
 
 
 class ContinueARCMissionRequest(BaseModel):
@@ -150,6 +154,7 @@ async def create_arc_mission(
             min_hours=request.min_paper_hours,
             min_trades=request.min_paper_trades,
         ),
+        alternative_source_confirmed=request.alternative_source_confirmed,
         live_max_capital_u=request.live_max_capital_u,
         live_mandate_hours=request.live_mandate_hours,
     )
@@ -479,6 +484,27 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
         ctrl.apply_event(
             "operator_needed",
             {"reason": "evidence_window_unavailable", "preflight": preflight},
+        )
+        return
+
+    # A window whose origin is not provably OKX is a substitute, not OKX evidence. It
+    # may still be used, but only when the operator said so at mission creation; the
+    # preflight payload keeps the substitute origin visible in the projection either way.
+    if (
+        preflight.get("alternative_source_confirmation_required")
+        and not goal.alternative_source_confirmed
+    ):
+        ctrl.apply_event(
+            "operator_needed",
+            {
+                "reason": "evidence_window_unavailable",
+                "message": (
+                    "evidence window source_origin="
+                    f"{preflight.get('source_origin')!r} is not okx_swap and this "
+                    "mission was not created with alternative_source_confirmed=true"
+                ),
+                "preflight": preflight,
+            },
         )
         return
 

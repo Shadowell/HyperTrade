@@ -113,6 +113,15 @@ class Settings(BaseSettings):
         default=False,
         alias="ARC_EVIDENCE_LIVE_FALLBACK_ENABLED",
     )
+    # Declared origin of the mounted kline archive: "okx_swap", "alternative_exchange",
+    # or empty/unspecified (reported as archive_unknown). The archive file carries no
+    # provenance of its own, so an operator must declare what was seeded into it; ARC
+    # refuses to spend a candidate budget on non-OKX evidence unless the mission was
+    # created with alternative_source_confirmed=true.
+    arc_evidence_archive_origin: str = Field(
+        default="",
+        alias="ARC_EVIDENCE_ARCHIVE_ORIGIN",
+    )
     # Hashed service principals only. Format: label:arc:read+arc:start:sha256hex, comma-separated.
     # No token value can carry an approve capability; approval is not a token scope.
     arc_service_tokens: str = Field(default="", alias="ARC_SERVICE_TOKENS")

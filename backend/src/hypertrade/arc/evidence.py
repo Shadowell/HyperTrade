@@ -18,6 +18,7 @@ not a defect in the candidate, and silently failing every candidate would hide i
 
 from __future__ import annotations
 
+import hashlib
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -97,11 +98,17 @@ class ArchiveThenLiveWindow:
     archive: CandleWindowSource | None = None
     live: CandleWindowSource | None = None
 
+    def members(self) -> tuple[tuple[str, CandleWindowSource], ...]:
+        """Configured sources in read order, so callers can attribute what served."""
+        return tuple(
+            (label, source)
+            for label, source in (("archive", self.archive), ("live", self.live))
+            if source is not None
+        )
+
     def read(self, *, symbol: str, timeframe: str, limit: int) -> Sequence[Any]:
         errors: list[str] = []
-        for label, source in (("archive", self.archive), ("live", self.live)):
-            if source is None:
-                continue
+        for label, source in self.members():
             try:
                 candles = source.read(symbol=symbol, timeframe=timeframe, limit=limit)
             except Exception as exc:
@@ -184,9 +191,103 @@ def _configured_archive(raw_path: Any) -> ArchiveWindow | None:
     return ArchiveWindow(text)
 
 
+ORIGIN_OKX_SWAP = "okx_swap"
+ORIGIN_ALTERNATIVE = "alternative_exchange"
+ORIGIN_ARCHIVE_UNKNOWN = "archive_unknown"
+
+_DECLARED_ORIGINS = {
+    "okx_swap": ORIGIN_OKX_SWAP,
+    "alternative_exchange": ORIGIN_ALTERNATIVE,
+}
+
+
+def _declared_archive_origin(settings: Any) -> str:
+    raw = str(getattr(settings, "arc_evidence_archive_origin", "") or "").strip().lower()
+    return _DECLARED_ORIGINS.get(raw, ORIGIN_ARCHIVE_UNKNOWN)
+
+
+def _origin_for_slot(label: str, settings: Any = None) -> str | None:
+    """Attribute a served window slot to its market origin, or None when unknowable.
+
+    Attribution is by slot, not by object type: within a composite window the archive
+    slot *is* whatever the deployment mounted, so its origin is the operator's
+    declaration; the live slot is OKX by construction. A directly injected bare
+    source (tests, custom callers) has no provable origin and reports None rather
+    than a guess.
+    """
+    if label == "live":
+        return ORIGIN_OKX_SWAP
+    if label == "archive":
+        return _declared_archive_origin(settings)
+    return None
+
+
+def window_fingerprint(symbol: str, bars: Sequence[Any]) -> dict[str, Any]:
+    """as-of timestamp and content hash of the exact window a verdict rests on."""
+    if not bars:
+        return {"window_as_of": None, "window_source_hash": None}
+    digest = hashlib.sha256()
+    for bar in bars:
+        digest.update(
+            "|".join(
+                (
+                    symbol,
+                    str(bar.timestamp),
+                    repr(bar.open),
+                    repr(bar.high),
+                    repr(bar.low),
+                    repr(bar.close),
+                    repr(getattr(bar, "volume", 0)),
+                )
+            ).encode("utf-8")
+        )
+        digest.update(b"\n")
+    return {
+        "window_as_of": str(bars[-1].timestamp),
+        "window_source_hash": digest.hexdigest(),
+    }
+
+
 # Archive reader already caps at 20_000. Using that as the default means a 1m
 # window is judged on the history that is actually mounted, not a 1500-bar stub.
 MAX_WINDOW_BARS = 20_000
+
+
+def _read_with_attribution(
+    source: CandleWindowSource,
+    *,
+    symbol: str,
+    timeframe: str,
+    limit: int,
+) -> tuple[Sequence[Any], str]:
+    """Read a window and report which configured slot actually served it.
+
+    Mirrors ``ArchiveThenLiveWindow.read`` ordering exactly, so attribution here is
+    the same attribution the gate relied on. A single unnamed source re-raises its own
+    error so injected-window callers keep seeing the message they always saw.
+    """
+    members: tuple[tuple[str, CandleWindowSource], ...]
+    if isinstance(source, ArchiveThenLiveWindow):
+        members = source.members()
+    else:
+        members = (("window", source),)
+    errors: list[str] = []
+    last_error: Exception | None = None
+    for label, member in members:
+        try:
+            candles = member.read(symbol=symbol, timeframe=timeframe, limit=limit)
+        except Exception as exc:
+            errors.append(f"{label}:{type(exc).__name__}")
+            last_error = exc
+            continue
+        if candles:
+            return candles, label
+        errors.append(f"{label}:empty")
+    if len(members) == 1 and last_error is not None:
+        raise last_error
+    raise CandidateBacktestError(
+        "no_candle_window_available:" + (",".join(errors) or "no_source_configured")
+    )
 
 
 def preflight_window(
@@ -200,43 +301,64 @@ def preflight_window(
 
     Without this an operator learns that the archive has no history for a symbol only
     after a mission has spent its candidate budget and completed on advisories alone —
-    the run looks successful and the absent evidence is a line in the metrics.
+    the run looks successful and the absent evidence is a line in the metrics. The
+    report also names where those bars come from: an alternative-exchange window is a
+    fact the operator must confirm, never a silent substitute for OKX evidence.
     """
-    source = window if window is not None else build_default_window()
-    configured = [
-        label
-        for label, member in (("archive", getattr(source, "archive", None)),
-                              ("live", getattr(source, "live", None)))
-        if member is not None
-    ]
+    from hypertrade.config import get_settings
+
+    settings = get_settings()
+    source = window if window is not None else build_default_window(settings)
+    raw_members: tuple[tuple[str, CandleWindowSource], ...]
+    if isinstance(source, ArchiveThenLiveWindow):
+        raw_members = source.members()
+    else:
+        # A directly injected window (tests, custom callers) has no named slots:
+        # sources_configured stays empty exactly as it read before this contract.
+        raw_members = (("window", source),)
+    configured = [label for label, _member in raw_members if label != "window"]
     try:
-        candles = source.read(symbol=symbol, timeframe=timeframe, limit=bars)
+        candles, served_label = _read_with_attribution(
+            source, symbol=symbol, timeframe=timeframe, limit=bars
+        )
     except Exception as exc:
         return {
             "symbol": symbol,
             "timeframe": timeframe,
             "sources_configured": configured,
+            "source_origin": None,
             "bars_available": 0,
             "evidence_possible": False,
             "walk_forward_folds": 0,
+            "alternative_source_confirmation_required": False,
+            "window_as_of": None,
+            "window_source_hash": None,
             "detail": str(exc)[:200],
         }
 
-    available = len(bars_from_candles(symbol, candles))
+    bars_read = bars_from_candles(symbol, candles)
+    available = len(bars_read)
     folds = len(walk_forward_slices(available))
+    origin = _origin_for_slot(served_label, settings)
+    fingerprint = window_fingerprint(symbol, bars_read)
     return {
         "symbol": symbol,
         "timeframe": timeframe,
         "sources_configured": configured,
+        "source_origin": origin,
         "bars_available": available,
         "bars_required": MIN_EVIDENCE_BARS,
         "evidence_possible": available >= MIN_EVIDENCE_BARS,
         "walk_forward_folds": folds,
+        "alternative_source_confirmation_required": (
+            origin is not None and origin != ORIGIN_OKX_SWAP
+        ),
         "detail": (
             "ok"
             if folds
             else "window supports a single split but is too short for rolling folds"
         ),
+        **fingerprint,
     }
 
 
@@ -277,15 +399,28 @@ class HistoricalEvidenceGate:
         if self.window is None:
             return _advisory("no_candle_window_configured")
         try:
-            candles = self.window.read(symbol=symbol, timeframe=timeframe, limit=self.bars)
+            candles, served_label = _read_with_attribution(
+                self.window, symbol=symbol, timeframe=timeframe, limit=self.bars
+            )
         except Exception as exc:
             return _advisory(str(exc)[:200])
 
         bars = bars_from_candles(symbol, candles)
+        # Provenance rides on every verdict: which market the bars came from, the
+        # as-of of the last bar, and a content hash of the exact window judged.
+        provenance: dict[str, Any] = {
+            "window_bars": len(bars),
+            "window_source_origin": _origin_for_slot(served_label),
+            **window_fingerprint(symbol, bars),
+        }
         if len(bars) < MIN_EVIDENCE_BARS:
-            return _advisory(
+            advisory = _advisory(
                 f"window of {len(bars)} bars is shorter than the {MIN_EVIDENCE_BARS} "
                 "needed for an out-of-sample half to be meaningful"
+            )
+            return EvidenceVerdict(
+                findings=advisory.findings,
+                metrics={**advisory.metrics, **provenance},
             )
 
         split = int(len(bars) * IN_SAMPLE_FRACTION)
@@ -311,6 +446,7 @@ class HistoricalEvidenceGate:
         findings = _judge(in_sample, out_of_sample) + _judge_folds(folds)
         metrics = _metrics(in_sample, out_of_sample)
         metrics.update(_fold_metrics(folds))
+        metrics.update(provenance)
         return EvidenceVerdict(findings=findings, metrics=metrics)
 
     def _walk_forward(

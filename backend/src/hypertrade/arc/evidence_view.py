@@ -69,8 +69,27 @@ def build_mission_summary(projection: ARCMissionProjection) -> dict[str, Any]:
     summary["survivor_count"] = sum(
         1 for item in projection.attempts if item.state in _SURVIVOR_STATES
     )
+    summary["evidence"] = {
+        "source_origin": _latest_preflight(projection).get("source_origin"),
+        "as_of": _latest_preflight(projection).get("window_as_of"),
+        "bars_available": _latest_preflight(projection).get("bars_available"),
+        "alternative_source_confirmed": (
+            projection.goal.alternative_source_confirmed
+            if projection.goal is not None
+            else None
+        ),
+    }
     summary["pipeline"] = build_pipeline_badge(projection)
     return summary
+
+
+def _latest_preflight(projection: ARCMissionProjection) -> dict[str, Any]:
+    """The newest recorded evidence-window report, or an empty placeholder."""
+    for event in reversed(projection.events):
+        preflight = event.payload.get("preflight")
+        if isinstance(preflight, dict):
+            return preflight
+    return {}
 
 
 def _mission_summary(projection: ARCMissionProjection) -> dict[str, Any]:
@@ -122,6 +141,10 @@ def _candidate_row(attempt: ARCCandidateAttemptV1) -> dict[str, Any]:
         "folds_passed": _folds_passed(metrics),
         "folds_total": folds_total,
         "ranking_basis": metrics.get("ranking_basis"),
+        # Window provenance recorded by the historical evidence gate.
+        "window_source_origin": metrics.get("window_source_origin"),
+        "window_as_of": metrics.get("window_as_of"),
+        "window_bars": _as_int(metrics.get("window_bars")),
         "rejections": _rejections(attempt.reflexion_events),
     }
 

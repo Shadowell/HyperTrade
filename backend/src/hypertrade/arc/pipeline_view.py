@@ -194,12 +194,22 @@ def _stage_metrics(projection: ARCMissionProjection, clock: datetime) -> dict[st
     approval = projection.live_approval
     paper = _paper_metrics(projection, clock)
     live_attempt = next((item for item in attempts if item.live_instance_id), None)
+    evidence_origin = None
+    for event in reversed(projection.events):
+        preflight = event.payload.get("preflight")
+        if isinstance(preflight, dict):
+            evidence_origin = preflight.get("source_origin")
+            break
     return {
         "goal": {
             "detail": goal.objective if goal is not None else "",
             "metrics": {
                 "symbol": (goal.symbols[0] if goal and goal.symbols else None),
                 "timeframe": (goal.timeframes[0] if goal and goal.timeframes else None),
+                "evidence_source_origin": evidence_origin,
+                "alternative_source_confirmed": (
+                    goal.alternative_source_confirmed if goal is not None else None
+                ),
             },
         },
         "explore": {
@@ -322,10 +332,17 @@ def _blocked_reason(projection: ARCMissionProjection) -> dict[str, Any] | None:
         if event.event_type not in {"operator_needed", "mission_failed"}:
             continue
         missing = event.payload.get("missing")
+        preflight = event.payload.get("preflight")
         return {
             "reason": str(event.payload.get("reason") or event.event_type),
             "message": str(event.payload.get("message") or "")[:300],
             "missing": [str(item) for item in missing] if isinstance(missing, list) else [],
+            # A window stopped for provenance must show what it actually is.
+            "source_origin": (
+                preflight.get("source_origin")
+                if isinstance(preflight, dict)
+                else None
+            ),
             "at": event.timestamp.isoformat(),
         }
     return None

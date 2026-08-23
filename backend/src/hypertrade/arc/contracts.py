@@ -82,6 +82,10 @@ class ARCGoalV1(BaseModel):
     observation: PaperObservationPolicyV1 = Field(default_factory=PaperObservationPolicyV1)
     budget: ARCBudgetV1 = Field(default_factory=ARCBudgetV1)
     paper_authorization: PaperPreauthorizationV1 | None = None
+    # Evidence-window provenance consent. The gate refuses to spend candidate budget on
+    # a window whose origin is not provably OKX unless the operator set this at mission
+    # creation; it is a mission fact, so restarts and replays keep the same consent.
+    alternative_source_confirmed: bool = False
     live_allowed: Literal[False] = False
     live_max_capital_u: Decimal = Field(default=Decimal("100"))
     live_mandate_hours: int = Field(default=24, ge=1, le=24 * 30)
