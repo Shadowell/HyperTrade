@@ -122,6 +122,13 @@ class Settings(BaseSettings):
         default="",
         alias="ARC_EVIDENCE_ARCHIVE_ORIGIN",
     )
+    # Provider hypothesis channel for ARC missions. Opt-in like the live evidence
+    # fallback: a loop calling a paid model on its own initiative is a side effect,
+    # so production enables this explicitly once the canary contract allows it.
+    arc_provider_hypotheses_enabled: bool = Field(
+        default=False,
+        alias="ARC_PROVIDER_HYPOTHESES_ENABLED",
+    )
     # Hashed service principals only. Format: label:arc:read+arc:start:sha256hex, comma-separated.
     # No token value can carry an approve capability; approval is not a token scope.
     arc_service_tokens: str = Field(default="", alias="ARC_SERVICE_TOKENS")

@@ -83,6 +83,46 @@ class BlueTeamQuant:
             },
         )
 
+    def propose_from_provider(self, proposal: Any) -> ARCCandidateAttemptV1:
+        """Compile a provider-shaped spec into a candidate with provider provenance.
+
+        The spec was already validated and compiled once by the hypothesis channel;
+        compiling again here keeps BlueTeam the single place attempts are minted.
+        Identity is derived from the spec content hash so the same provider spec is
+        idempotent, mirroring the family path's derivation.
+        """
+        from hypertrade.arc.provider_hypothesis import ProviderProposal
+
+        if not isinstance(proposal, ProviderProposal):  # pragma: no cover - typing guard
+            raise TypeError("propose_from_provider expects a ProviderProposal")
+        generated = generate_strategy(proposal.spec)
+        symbol = (proposal.spec.get("symbols") or ["BTC-USDT-SWAP"])[0]
+        timeframe = (proposal.spec.get("timeframes") or ["1H"])[0]
+        digest = hashlib.blake2s(
+            f"provider|{proposal.request_hash}|{generated.family}|{generated.direction}".encode(),
+            digest_size=3,
+        )
+        token = digest.hexdigest()
+        return ARCCandidateAttemptV1(
+            attempt_id=f"att_prov_{token}",
+            candidate_id=f"cand_prov_{token}",
+            hypothesis=proposal.hypothesis,
+            strategy_code=generated.code,
+            origin="provider_hypothesis",
+            provider_model=f"{proposal.provider}:{proposal.model}",
+            provider_request_hash=proposal.request_hash,
+            strategy_spec={
+                "source": "provider_hypothesis",
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "family": generated.family,
+                "direction": generated.direction,
+                "risk_overlays": list(generated.risk_overlays),
+                "tunable_parameters": dict(generated.tunable_parameters),
+                "parameter_bounds": dict(generated.parameter_bounds),
+            },
+        )
+
     def propose_diverse_frontier(
         self,
         objective: str,

@@ -44,6 +44,7 @@ from hypertrade.arc.mcts import ARCParallelMCTSEngine, MCTSNode
 from hypertrade.arc.mutation import ARCGeneticMutator
 from hypertrade.arc.observation import observe_mission
 from hypertrade.arc.pipeline_view import build_pipeline_view
+from hypertrade.arc.provider_hypothesis import build_provider_hypothesist
 from hypertrade.arc.reflexion import ARCReflexionLedger
 from hypertrade.arc.self_test import ARCSelfTestService, SelfTestResult
 from hypertrade.arc.skills import ARCSkillDistiller, ARCSkillLibrary
@@ -518,6 +519,46 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     skill_distiller = ARCSkillDistiller()
     incubation_resolver = ARCPaperIncubationResolver()
 
+    # Provider hypothesis channel. None means no chat provider is configured: the
+    # mission still runs the deterministic family path and records why.
+    hypothesist = build_provider_hypothesist()
+    if hypothesist is None:
+        ctrl.apply_event("provider_status", {"status": "provider_unavailable"})
+    provider_state: dict[str, str] = {}
+
+    def note_provider_status(status: str) -> None:
+        """Record provider facts once per state change, never as spam."""
+        if provider_state.get("last") != status:
+            provider_state["last"] = status
+            ctrl.apply_event("provider_status", {"status": status})
+
+    def propose_provider_candidate(
+        parent_id: str | None,
+        failure_reasons: tuple[str, ...] = (),
+    ) -> MCTSNode | None:
+        """One provider-shaped candidate per call, into the same budget and frontier.
+
+        The channel can only fail closed: invalid or unavailable proposals record
+        their reason code and the deterministic search continues untouched.
+        """
+        if hypothesist is None or budget.is_exhausted():
+            return None
+        proposal, status = hypothesist.propose(
+            objective=goal.objective,
+            symbol=symbol,
+            timeframe=timeframe,
+            failure_reasons=failure_reasons,
+        )
+        if proposal is None or status != "ok":
+            note_provider_status(status)
+            return None
+        note_provider_status("ok")
+        attempt = blue_team.propose_from_provider(proposal)
+        ctrl.apply_event("candidate_proposed", {"attempt": attempt.model_dump()})
+        if parent_id is None:
+            return mcts_engine.add_root(attempt)
+        return mcts_engine.add_child(parent_id, attempt)
+
     reviews: dict[str, tuple[dict[str, Any], list[Any]]] = {}
 
     def eval_candidate(cand: ARCCandidateAttemptV1) -> tuple[bool, float]:
@@ -599,6 +640,11 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
                     frontier.append(root)
                 else:
                     frontier.append(mcts_engine.add_child(root_id, seed))
+            # One provider-shaped hypothesis joins the opening frontier so a mission
+            # is never only as diverse as the fixed family catalogue.
+            provider_node = propose_provider_candidate(root_id)
+            if provider_node is not None:
+                frontier.append(provider_node)
         else:
             rejected = [item for item in ctrl.projection.attempts if item.state == "rejected"]
             source = rejected[-1] if rejected else ctrl.projection.attempts[-1]
@@ -701,6 +747,20 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
             # do only when mutation runs dry.
             if rollouts:
                 next_generation.extend(seed_untried_families(rollouts[0][0].node_id))
+                # Failure-informed provider hypothesis for this generation: the reason
+                # codes accumulated so far steer the next proposal away from rejects.
+                failure_reasons = tuple(
+                    code
+                    for event in ctrl.projection.events
+                    if event.event_type == "reflexion_recorded"
+                    for code in (event.payload.get("reflexion", {}).get("reason_codes") or [])
+                    if isinstance(code, str)
+                )
+                provider_node = propose_provider_candidate(
+                    rollouts[0][0].node_id, failure_reasons
+                )
+                if provider_node is not None:
+                    next_generation.append(provider_node)
             frontier = next_generation
 
     if validated is None:

@@ -195,10 +195,17 @@ def _stage_metrics(projection: ARCMissionProjection, clock: datetime) -> dict[st
     paper = _paper_metrics(projection, clock)
     live_attempt = next((item for item in attempts if item.live_instance_id), None)
     evidence_origin = None
+    provider_status = None
     for event in reversed(projection.events):
-        preflight = event.payload.get("preflight")
-        if isinstance(preflight, dict):
-            evidence_origin = preflight.get("source_origin")
+        payload = event.payload
+        if provider_status is None and event.event_type == "provider_status":
+            provider_status = str(payload.get("status") or "")
+        if (
+            isinstance(payload.get("preflight"), dict)
+            and evidence_origin is None
+        ):
+            evidence_origin = payload["preflight"].get("source_origin")
+        if evidence_origin is not None and provider_status is not None:
             break
     return {
         "goal": {
@@ -210,6 +217,7 @@ def _stage_metrics(projection: ARCMissionProjection, clock: datetime) -> dict[st
                 "alternative_source_confirmed": (
                     goal.alternative_source_confirmed if goal is not None else None
                 ),
+                "provider_channel": provider_status,
             },
         },
         "explore": {
@@ -218,6 +226,9 @@ def _stage_metrics(projection: ARCMissionProjection, clock: datetime) -> dict[st
                 "used": len(attempts),
                 "budget": budget.max_candidates if budget else 0,
                 "rejected": sum(1 for item in attempts if item.state == "rejected"),
+                "provider_origin": sum(
+                    1 for item in attempts if item.origin == "provider_hypothesis"
+                ),
                 "ratio": _ratio(len(attempts), budget.max_candidates if budget else 0),
             },
         },

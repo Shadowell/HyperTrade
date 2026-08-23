@@ -129,6 +129,8 @@ def _candidate_row(attempt: ARCCandidateAttemptV1) -> dict[str, Any]:
         "attempt_id": attempt.attempt_id,
         "candidate_id": attempt.candidate_id,
         "state": attempt.state,
+        "origin": attempt.origin,
+        "provider_model": attempt.provider_model,
         "family": str(attempt.strategy_spec.get("family") or ""),
         "direction": str(attempt.strategy_spec.get("direction") or ""),
         "oos_sharpe": _as_float(

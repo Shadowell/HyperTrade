@@ -114,6 +114,12 @@ class ARCCandidateAttemptV1(BaseModel):
 
     attempt_id: str
     candidate_id: str
+    # Where the hypothesis came from. Defaults keep pre-provider events replayable.
+    origin: Literal["deterministic_family", "provider_hypothesis"] = (
+        "deterministic_family"
+    )
+    provider_model: str | None = None
+    provider_request_hash: str | None = None
     state: Literal[
         "proposed",
         "mutated",
