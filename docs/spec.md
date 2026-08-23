@@ -82,6 +82,14 @@ ref、paper instance、观察窗或对账时包状态为 `incomplete`，`POST ..
 `needs_operator(evidence_window_unavailable)`，且替代来源在进度视图与证据视图中可见——
 替代数据是显式事实，不是静默降级。
 
+Provider 假设通道（2026-08-23，真身已验证）：`ARC_PROVIDER_HYPOTHESES_ENABLED=true` 时，
+配置的 ChatProvider 以"假设提出者"身份参与蓝队——只能产出 `research_strategy_spec.v1`
+形状的 spec 并经同一确定性 codegen 与静态门禁编译，候选携带 `origin=provider_hypothesis`
+与模型/request-hash 溯源；预算、验证门槛、Paper 授权不在模型词表内，非法回复记显式
+`provider_status` 且确定性路径不受影响。BitPro 写链路（validate → create → backtest →
+result）已于生产真身验证；成功指标按 BitPro 实际键名与 `*_pct` 单位翻译后由
+`success_criteria` 裁决。
+
 `api` 与 `worker` 是两个进程，同时推进同一个 mission：前者跑研究循环并服务审批，后者推进模拟盘
 观察。`arc_missions.revision` 区分缓存投影与已提交投影：读命中缓存时先比对 revision，落后就重载；
 写在 mission 行上串行，发现行已前进就把控制器 rebase 到已提交投影再重放该事件。任何一方都不会

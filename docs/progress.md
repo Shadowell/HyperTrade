@@ -1,5 +1,34 @@
 # Progress Log
 
+## 合同交付：ARC 真身闭环与 Provider 假设层（Slice 2–4）— 2026-08-23
+
+- **Slice 3 真身探针**（生产容器内，run `03baf9b7`）：生产同款 codegen 候选经真实 BitPro
+  `strategy_validate_code`（valid=true, smoke=true）→ `strategy_create`（strategy_id=445，
+  命名 `ARC-canary-probe-03baf9b7`，留库审计）→ `backtest_start_job` 90 天（backtest_id=450）
+  全链首次真身打通。真实结果指标为字符串编码的 `*_pct` 字段 + `sharpe_ratio`/`trade_count`
+  键名——`apply_success_criteria` 的单位翻译被真身确认。
+  新增 `tests/test_arc_real_bitpro_path.py` 钉住真实载荷形状与超时/重复/未知结局三条故障路径。
+- **Slice 2 Provider 假设通道**：新增 `arc/provider_hypothesis.py`。模型只能产出
+  `research_strategy_spec.v1` 形状的 spec（family_key/direction 白名单短路），经确定性
+  codegen 编译并过同一静态门禁；预算/门槛/授权不在其词表内。非法或不可用回复记显式
+  `provider_status` 事实，确定性路径不受影响。attempt 合同新增 `origin` /
+  `provider_model` / `provider_request_hash`（默认值保持旧事件可重放）。开关
+  `ARC_PROVIDER_HYPOTHESES_ENABLED` 默认关闭——自治循环不主动打付费模型。
+  新增 `tests/test_arc_provider_hypothesis.py` 8 用例：双来源黄金路径、越界无效、
+  故障降级、flag 关闭零调用。
+- **生产配置**：`/opt/hypertrade/.env` 增加 `ARC_EVIDENCE_ARCHIVE_ORIGIN=alternative_exchange`
+  （如实声明现网归档来源）与 `ARC_PROVIDER_HYPOTHESES_ENABLED=true`，容器重建生效。
+- **Slice 4 真身 canary**：mission `arc_8b18d07c4d66`（BTC-USDT-SWAP 1H，预算 6，
+  alternative_source_confirmed=true）。终态 **needs_operator(no_validated_candidate)**：
+  6/6 候选 = 5 确定性族 + 1 Provider 假设（codex:gpt-5.4 提出 Donchian 双向突破假设，
+  经同一红队门禁）；拒绝理由全为真实 reason code（OOS_SHARPE_TOO_LOW /
+  WALK_FORWARD_INCONSISTENT / OOS_DRAWDOWN_EXCEEDED），无 fixture、无编造 ref、
+  paper 实例为零——按 M0 Canopy 规则这是合格交付，不是失败。
+- **并发说明**：本轮实施期间工作区出现另一会话的工具面重构（`d371ba4`、`b6e48d2`，
+  registry 成为 schema 单一真相源），已先落库；本合同提交基于其上，合并树 CI 全绿。
+- **遗留小项**：`build_evidence_view` 的 mission 摘要走 `_mission_summary`，
+  不含 `evidence` 来源块（`GET /missions/{id}` 的列表摘要有）；下轮补齐。
+
 ## Slice 1 落地：证据窗口来源合同 — 2026-08-23
 
 - **合同**：[ARC 真身闭环与 Provider 假设层](contracts/user-directed-arc-real-closure.md)

@@ -1,6 +1,6 @@
 # User-Directed Contract — ARC 真身闭环与 Provider 假设层
 
-> 状态：Active。
+> 状态：Delivered（2026-08-23 四个 Slice 全部交付，生产 canary 完成；待产品所有者验收）。
 >
 > 激活原因：产品所有者于 2026-08-19 确认第一档目标——把 ARC 研究闭环在**真实 BitPro + 真实
 > 行情 + 真实 Provider** 上第一次走通正路，并把 LLM 以"假设提出者"身份接回蓝队。
@@ -11,6 +11,12 @@
 > [User-Directed M0 合同](user-directed-autonomous-strategy-research-loop-m0.md) 的延续，填充其两个
 > 未达成项：Done Means #2（真实 Provider 产生候选）与 #14（生产 Canary 的正路真身验证）。M0 的
 > Safety Boundaries 1–15 全部继续有效，本合同不再重复。
+>
+> 交付记录（2026-08-23）：Slice 1 `fb16c80`；Slice 3 真身探针 run `03baf9b7`
+> （validate/create/backtest 首次真身全链，strategy_id=445、backtest_id=450）；Slice 2
+> `02a55ef`（Provider 通道，flag 默认关闭）；Slice 4 生产 canary mission
+> `arc_8b18d07c4d66` 诚实终态 needs_operator(no_validated_candidate)，6/6 候选含
+> 1 个 Provider 假设（codex:gpt-5.4），零 fixture 零编造 ref。
 
 ## Goal
 
