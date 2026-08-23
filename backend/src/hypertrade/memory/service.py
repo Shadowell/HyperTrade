@@ -7,6 +7,7 @@ from and let an operator disable it.
 """
 
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select
 
@@ -87,34 +88,58 @@ class MemoryService:
         normalized_query = query.casefold().strip()
         normalized_kind = kind.strip()
         normalized_tag = tag.casefold().strip()
+
+        # Equality filters are pushed into SQL so the Python-side substring
+        # scan only sees the relevant partition; ranking layers can replace it
+        # later without changing the audit semantics of usage tracking.
+        statement = select(MemoryItem).where(MemoryItem.disabled.is_(False))
+        if normalized_kind:
+            statement = statement.where(MemoryItem.kind == normalized_kind)
+        statement = statement.order_by(MemoryItem.created_at.desc())
+
         with self.db.session() as session:
-            items = session.scalars(
-                select(MemoryItem)
-                .where(MemoryItem.disabled.is_(False))
-                .order_by(MemoryItem.created_at.desc())
-            ).all()
+            candidates = session.scalars(statement).all()
             filtered: list[MemoryItem] = []
-            for item in items:
+            for item in candidates:
                 tags = [str(value).casefold() for value in item.tags]
-                # Search stays transparent for auditability: query, kind, and
-                # tag filters are applied in Python before future vector or
-                # full-text ranking layers are added.
-                if normalized_kind and item.kind != normalized_kind:
-                    continue
                 if normalized_tag and normalized_tag not in tags:
                     continue
                 if normalized_query:
                     haystack = " ".join([item.kind, item.content, *tags]).casefold()
                     if normalized_query not in haystack:
                         continue
-                item.usage_count += 1
-                item.last_used_at = utc_now()
-                filtered.append(item)
-            session.flush()
-            result = filtered[: max(1, min(limit, 100))]
-            for item in result:
                 session.expunge(item)
+                filtered.append(item)
+            result = filtered[: max(1, min(limit, 100))]
+            # Usage is audited only for items actually returned to the Agent;
+            # scanning a row must not count as remembering it.
+            for item in result:
+                self._mark_used(session, item.id)
             return list(result)
+
+    @staticmethod
+    def _mark_used(session: Any, memory_id: str) -> None:
+        item = session.get(MemoryItem, memory_id)
+        if item is not None:
+            item.usage_count += 1
+            item.last_used_at = utc_now()
+
+    def prompt_context(self, *, limit: int = 5) -> list[MemoryItem]:
+        """Deterministic top-K recall for system-prompt injection.
+
+        Ordered by importance then recency so the same DB state always yields
+        the same context window; bounded to keep prompt cost predictable.
+        """
+        with self.db.session() as session:
+            items = session.scalars(
+                select(MemoryItem)
+                .where(MemoryItem.disabled.is_(False))
+                .order_by(MemoryItem.importance.desc(), MemoryItem.created_at.desc())
+                .limit(max(1, min(limit, 20)))
+            ).all()
+            for item in items:
+                session.expunge(item)
+            return list(items)
 
     def _refresh_governed_assertions(self) -> None:
         # Governed assertions fail closed before every read. Governance owns

@@ -221,7 +221,12 @@ class AgentKernel:
             tool_call_sink=lambda record: self._record_tool_call(run_id, record),
         )
         executor = self._build_executor(run_id, event_sink=event_sink)
-        result: PlannerResult = planner.run(prompt, executor, intent=intent)
+        result: PlannerResult = planner.run(
+            prompt,
+            executor,
+            intent=intent,
+            system_suffix=self._memory_prompt_suffix(),
+        )
 
         observability = _planner_observability(result, provider=llm.name, model=llm.model)
         self._set_run_observability(run_id, observability)
@@ -562,10 +567,19 @@ class AgentKernel:
                 kind=kind,
                 source_run_id=run_id,
                 source_tool="memory.write",
+                tags=_memory_tags_from_args(args),
+                importance=_bounded_unit_interval(args.get("importance"), Decimal("0.50")),
+                confidence=_bounded_unit_interval(args.get("confidence"), Decimal("0.70")),
             )
             result = {"memory_id": item.id}
+
         elif tool_name == "memory_search":
-            items = self.memory.search(query=str(args.get("query", "")), limit=10)
+            items = self.memory.search(
+                query=str(args.get("query", "")),
+                kind=str(args.get("kind", "")),
+                tag=str(args.get("tag", "")),
+                limit=int(args.get("limit", 10)),
+            )
             result = {
                 "items": [
                     {
@@ -573,9 +587,10 @@ class AgentKernel:
                         "kind": m.kind,
                         "content": m.content[:200],
                         "tags": m.tags,
+                        "importance": str(m.importance),
                         "usage_count": m.usage_count,
                     }
-                    for m in items[-10:]
+                    for m in items
                 ]
             }
 
@@ -840,6 +855,39 @@ class AgentKernel:
             # run can continue deterministically.
             future.cancel()
             return self._tool_timeout_payload(tool_name, policy)
+
+    def _memory_prompt_suffix(self) -> str:
+        """Close the memory write->recall loop.
+
+        Without injection, memories were write-only archives: recall depended
+        on the model spontaneously calling memory_search. Top-K governed
+        assertions and high-importance items are surfaced deterministically so
+        the same DB state yields the same context window. Best-effort: a ledger
+        read failure degrades to no context instead of failing the run.
+        """
+        settings = self._settings if self._settings is not None else get_settings()
+        if not getattr(settings, "agent_memory_prompt_injection", False):
+            return ""
+        lines: list[str] = []
+        try:
+            from hypertrade.memory.governance import MemoryAssertionService
+
+            for assertion in MemoryAssertionService(self.db).active_for_prompt(limit=5):
+                claim = str(assertion.get("claim", "")).strip()[:200]
+                confidence = assertion.get("confidence", "")
+                lines.append(f"- [assertion|confidence {confidence}] {claim}")
+            for item in self.memory.prompt_context(limit=5):
+                lines.append(
+                    f"- [memory {item.id}|{item.kind}|importance {item.importance}] "
+                    f"{item.content[:200]}"
+                )
+        except Exception:
+            logger.warning("memory prompt injection skipped", exc_info=True)
+            return ""
+        if not lines:
+            return ""
+        block = "\n".join(lines)[:1200]
+        return "## Active governed memory context\nTreat as audited evidence; cite ids.\n" + block
 
     def _execution_mode(self) -> str:
         return "evaluation" if self.evaluation_mode else "standard"
@@ -2521,6 +2569,26 @@ class AgentKernel:
         ):
             return "\n".join(sections)
         return "\n".join([*sections, final_message])
+
+
+def _memory_tags_from_args(args: dict[str, Any]) -> list[str] | None:
+    """Normalize planner-supplied tags; untrusted input, so bound and clean it."""
+    raw = args.get("tags")
+    if not isinstance(raw, list):
+        return None
+    tags = [str(tag).strip().casefold()[:32] for tag in raw if str(tag).strip()]
+    return tags[:8] or None
+
+
+def _bounded_unit_interval(value: Any, default: Decimal) -> Decimal:
+    """Clamp untrusted numeric memory weights into [0, 1] with a fixed default."""
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return default
+    if parsed != parsed or parsed in (Decimal("Infinity"), Decimal("-Infinity")):
+        return default
+    return max(Decimal("0.0000"), min(Decimal("1.0000"), parsed)).quantize(Decimal("0.0001"))
 
 
 def _compact_final_message(value: object, *, max_chars: int = 240) -> str:

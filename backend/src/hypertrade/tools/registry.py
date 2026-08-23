@@ -480,7 +480,11 @@ RUNTIME_TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
         "type": "function",
         "function": {
             "name": "memory_write",
-            "description": "Persist an audited long-term memory item for future reference.",
+            "description": (
+                "Persist an audited long-term memory item for future reference. "
+                "Use kind for the category and importance (0..1) for how much "
+                "future runs should weight this observation."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -488,6 +492,19 @@ RUNTIME_TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
                     "kind": {
                         "type": "string",
                         "description": "Category such as market_summary or strategy_note",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional short lowercase tags for later filtering.",
+                    },
+                    "importance": {
+                        "type": "number",
+                        "description": "Weight for future recall, between 0 and 1.",
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "description": "Confidence in the observation, between 0 and 1.",
                     },
                 },
                 "required": ["content"],
@@ -498,8 +515,33 @@ RUNTIME_TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
         "type": "function",
         "function": {
             "name": "memory_search",
-            "description": "Retrieve recent active long-term memory items.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "description": (
+                "Search active long-term memory by free-text query, kind, or tag. "
+                "Always search memory before answering from prior observations; "
+                "an empty query returns the most recent items."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Free-text query matched against content, kind and tags.",
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "Optional exact kind filter such as risk_note.",
+                    },
+                    "tag": {
+                        "type": "string",
+                        "description": "Optional tag filter.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of items to return (default 10).",
+                    },
+                },
+                "required": [],
+            },
         },
     },
     {

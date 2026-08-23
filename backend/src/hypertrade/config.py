@@ -166,6 +166,10 @@ class Settings(BaseSettings):
         default="",
         alias="SKILL_EVAL_ATTESTATION_SECRET",
     )
+    agent_memory_prompt_injection: bool = Field(
+        default=True,
+        alias="AGENT_MEMORY_PROMPT_INJECTION",
+    )
     agent_tool_timeout_quick_seconds: float = Field(
         default=5.0,
         alias="AGENT_TOOL_TIMEOUT_QUICK_SECONDS",

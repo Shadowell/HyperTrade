@@ -225,6 +225,7 @@ class AgentPlanner:
         executor: ToolExecutor,
         *,
         intent: ResearchIntentV2 | None = None,
+        system_suffix: str = "",
     ) -> PlannerResult:
         active_intent = intent or default_research_intent(evaluation_mode=False)
         candidates = build_candidate_tool_set(active_intent, TOOL_SCHEMAS)
@@ -233,8 +234,11 @@ class AgentPlanner:
             for schema in candidates.schemas
             if isinstance(schema.get("function"), dict)
         }
+        system_content = (
+            f"{_SYSTEM_PROMPT}\n\n{system_suffix}" if system_suffix else _SYSTEM_PROMPT
+        )
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": prompt},
         ]
         tool_calls: list[ToolCallRecord] = []

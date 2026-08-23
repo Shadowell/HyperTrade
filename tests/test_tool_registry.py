@@ -108,3 +108,17 @@ def test_read_only_tool_names_derive_from_registry_policy():
     for write_tool in ("live_order_intent", "bitpro_paper_start", "memory_write"):
         assert write_tool not in read_only
     assert "market_summary" in read_only
+
+
+def test_memory_tool_schemas_expose_recall_and_weighting_parameters():
+    from hypertrade.tools.registry import default_runtime_schemas
+
+    schemas = {
+        str(schema["function"]["name"]): schema for schema in default_runtime_schemas()
+    }
+
+    search_props = schemas["memory_search"]["function"]["parameters"]["properties"]
+    assert {"query", "kind", "tag", "limit"} <= set(search_props)
+
+    write_props = schemas["memory_write"]["function"]["parameters"]["properties"]
+    assert {"content", "kind", "tags", "importance", "confidence"} <= set(write_props)
