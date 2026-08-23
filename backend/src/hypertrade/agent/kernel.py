@@ -13,6 +13,8 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -20,7 +22,6 @@ from typing import Any
 
 from sqlalchemy import select
 
-from hypertrade.agent.formatters import AgentOutputFormatter
 from hypertrade.agent.planner import (
     AgentPlanner,
     ModelCallRecord,
@@ -94,6 +95,14 @@ class AgentKernel:
         self.rag = RagService(db, knowledge_dir=knowledge_dir)
         self.tools = ToolRegistry.default()
         self.governance = RiskGovernancePolicy(self.tools)
+        # Shared worker pool enforcing per-tool wall-clock deadlines. A hung
+        # provider call must return control to the planner as a timeout payload
+        # instead of stalling the whole run (or, at the API layer, the event
+        # loop). The underlying thread may linger until its IO unblocks; it is
+        # never allowed to block the caller beyond policy timeout.
+        self._tool_pool = ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="hypertrade-tool"
+        )
 
     def run_chat(self, prompt: str) -> CompletedAgentRun:
         return self.run_chat_with_events(prompt)
@@ -446,349 +455,16 @@ class AgentKernel:
             # This dispatch table is the Agent "tool call" bridge. The LLM only
             # selects a name and JSON arguments; trusted Python code performs the
             # actual database, OKX, RAG, memory, or strategy operation.
-            if tool_name == "market_summary":
-                result = self._market_summary_payload()
-            elif tool_name == "market_ticker":
-                result = self._market_ticker_payload(str(args.get("symbol", "")))
-            elif tool_name == "market_candles":
-                result = self._market_candles_payload(
-                    symbol=str(args.get("symbol", "")),
-                    bar=str(args.get("bar", "1H")),
-                    limit=int(args.get("limit", 100)),
-                )
-            elif tool_name == "market_compare":
-                raw_symbols = args.get("symbols", [])
-                symbols = raw_symbols if isinstance(raw_symbols, list) else [raw_symbols]
-                result = self._market_compare_payload(
-                    symbols=[str(symbol) for symbol in symbols],
-                    bar=str(args.get("bar", "4H")),
-                    limit=int(args.get("limit", 100)),
-                )
-            elif tool_name == "market_intelligence":
-                result = self._market_intelligence_payload(
-                    symbol=str(args.get("symbol", "")),
-                    include_curated=bool(args.get("include_curated", True)),
-                )
-
-                # Format output for better readability
-                formatted_output = AgentOutputFormatter.format_tool_result(tool_name, result)
-                logger.info(f"Formatted {tool_name} output:\n{formatted_output}")
-            elif tool_name == "world_model_snapshot":
-                settings = self._settings if self._settings is not None else get_settings()
-                result = WorldModelService(self.db, settings=settings).snapshot()
-
-                # Format output for better readability
-                formatted_output = AgentOutputFormatter.format_tool_result(tool_name, result)
-                logger.info(f"Formatted world_model_snapshot output:\n{formatted_output}")
-
-            elif tool_name == "global_market_snapshot":
-                from hypertrade.global_market.service import GlobalMarketService
-
-                snapshot = GlobalMarketService().get_snapshot()
-                result = snapshot.model_dump()
-
-                # Format output for better readability
-                formatted_output = AgentOutputFormatter.format_tool_result(tool_name, result)
-                logger.info(f"Formatted global_market_snapshot output:\n{formatted_output}")
-
-            elif tool_name == "rag_search":
-                self.rag.scan_once()
-                query = str(args.get("query", "market risk"))
-                limit = int(args.get("limit", 3))
-                hits = self.rag.search(query, limit=limit)
-                result = {
-                    "hits": [
-                        {
-                            "source_path": h.source_path,
-                            "title": h.title,
-                            "chunk_index": h.chunk_index,
-                            "content": h.content_preview,
-                            "score": h.score,
-                        }
-                        for h in hits
-                    ]
-                }
-
-                # Format output for better readability
-                formatted_output = AgentOutputFormatter.format_tool_result(tool_name, result)
-                logger.info(f"Formatted {tool_name} output:\n{formatted_output}")
-            elif tool_name == "memory_write":
-                content = str(args.get("content", ""))
-                kind = str(args.get("kind", "agent_note"))
-                item = self.memory.write(
-                    content=content,
-                    kind=kind,
-                    source_run_id=run_id,
-                    source_tool="memory.write",
-                )
-                result = {"memory_id": item.id}
-            elif tool_name == "memory_search":
-                items = self.memory.search(query=str(args.get("query", "")), limit=10)
-                result = {
-                    "items": [
-                        {
-                            "id": m.id,
-                            "kind": m.kind,
-                            "content": m.content[:200],
-                            "tags": m.tags,
-                            "usage_count": m.usage_count,
-                        }
-                        for m in items[-10:]
-                    ]
-                }
-
-                # Format output for better readability
-                formatted_output = AgentOutputFormatter.format_tool_result(tool_name, result)
-                logger.info(f"Formatted {tool_name} output:\n{formatted_output}")
-            elif tool_name == "strategy_library_search":
-                result = StrategyLibraryService(self.db).search(
-                    query=str(args.get("query", "")),
-                    strategy_key=str(args.get("strategy_key", "")),
-                    limit=int(args.get("limit", 10)),
-                )
-
-                # Format output for better readability
-                formatted_output = AgentOutputFormatter.format_tool_result(tool_name, result)
-                logger.info(f"Formatted {tool_name} output:\n{formatted_output}")
-            elif tool_name == "strategy_experiment_plan":
-                result = StrategyIterationService(self.db).plan(
-                    str(args.get("prompt", "")),
-                    strategy_key=str(args.get("strategy_key", "momentum_breakout_v1")),
-                    max_variants=int(args.get("max_variants", 3)),
-                )
-            elif tool_name == "research_mandate_read":
-                result = ResearchProgramService(self.db).get_mandate(
-                    str(args.get("mandate_id", ""))
-                )
-            elif tool_name == "research_strategy_spec_draft":
-                result = ResearchProgramService(self.db).draft_strategy_spec(
-                    str(args.get("mandate_id", "")), str(args.get("prompt", ""))
-                )
-            elif tool_name == "research_job_report":
-                result = ResearchProgramService(self.db).report(str(args.get("job_id", "")))
-            elif tool_name == "strategy_draft":
-                research_prompt = str(args.get("prompt", ""))
-                result = StrategyResearchService(self.db).create(research_prompt)
-            elif tool_name == "backtest_run":
-                research_id = str(args.get("research_id", ""))
-                strategy_key = str(args.get("strategy_key", "momentum_breakout_v1"))
-                result = BacktestService(self.db).run(
-                    research_id=research_id,
-                    strategy_key=strategy_key,
-                )
-            elif tool_name == "bitpro_capabilities":
-                result = self._bitpro_adapter().capabilities()
-            elif tool_name == "bitpro_health":
-                result = self._bitpro_adapter().health()
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_market_klines":
-                result = self._bitpro_adapter().market_klines(
-                    symbol=str(args.get("symbol", "BTC")),
-                    timeframe=str(args.get("timeframe", args.get("bar", "1h"))),
-                    limit=int(args.get("limit", 200)),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_paper_dashboard":
-                strategy_id = args.get("strategy_id")
-                result = self._bitpro_adapter().paper_dashboard(
-                    strategy_id=int(strategy_id) if strategy_id is not None else None,
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_paper_snapshot":
-                strategy_id = args.get("strategy_id")
-                result = self._bitpro_adapter().paper_snapshot(
-                    strategy_id=int(strategy_id) if strategy_id is not None else None,
-                    instance_id=str(args["instance_id"]) if args.get("instance_id") else None,
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_paper_strategy_performance":
-                result = self._bitpro_adapter().paper_strategy_performance(
-                    limit=int(args.get("limit", 20)),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_paper_events":
-                strategy_id = args.get("strategy_id")
-                result = self._bitpro_adapter().paper_events(
-                    strategy_id=int(strategy_id) if strategy_id is not None else None,
-                    limit=int(args.get("limit", 50)),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_paper_equity_curve":
-                strategy_id = args.get("strategy_id")
-                result = self._bitpro_adapter().paper_equity_curve(
-                    strategy_id=int(strategy_id) if strategy_id is not None else None,
-                    sample_limit=int(args.get("sample_limit", 50)),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_paper_monitor_snapshot":
-                strategy_id = args.get("strategy_id")
-                result = BitProPaperMonitorService(
-                    self.db,
-                    bitpro_adapter=self._bitpro_adapter(),
-                ).capture(
-                    strategy_id=int(strategy_id) if strategy_id is not None else None,
-                    event_limit=int(args.get("event_limit", 50)),
-                    equity_sample_limit=int(args.get("equity_sample_limit", 50)),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_live_positions":
-                result = self._bitpro_adapter().live_positions(
-                    exchange=str(args.get("exchange", "okx")),
-                    symbol=str(args["symbol"]) if args.get("symbol") else None,
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_live_order_history":
-                result = self._bitpro_adapter().live_order_history(
-                    exchange=str(args.get("exchange", "okx")),
-                    symbol=str(args["symbol"]) if args.get("symbol") else None,
-                    limit=int(args.get("limit", 50)),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_live_strategy_performance":
-                result = self._bitpro_adapter().live_strategy_performance(
-                    exchange=str(args.get("exchange", "okx")),
-                    limit=int(args.get("limit", 20)),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_strategy_search":
-                result = self._bitpro_adapter().strategy_search(
-                    search=str(args.get("search", "")),
-                    page=int(args.get("page", 1)),
-                    per_page=int(args.get("per_page", 18)),
-                    status=str(args.get("status", "all")),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_strategy_generate":
-                result = self._bitpro_adapter().strategy_generate(
-                    prompt=str(args.get("prompt", "")),
-                    symbol=str(args.get("symbol", "BTC")),
-                    timeframe=str(args.get("timeframe", "1h")),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_strategy_create":
-                raw_symbols = args.get("symbols", [])
-                symbols = raw_symbols if isinstance(raw_symbols, list) else [raw_symbols]
-                raw_config = args.get("config", {})
-                result = self._bitpro_adapter().strategy_create(
-                    name=str(args.get("name", "")),
-                    script_content=str(args.get("script_content", "")),
-                    description=str(args["description"]) if args.get("description") else None,
-                    config=raw_config if isinstance(raw_config, dict) else {},
-                    exchange=str(args.get("exchange", "okx")),
-                    symbols=[str(symbol) for symbol in symbols],
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_strategy_update":
-                raw_symbols = args.get("symbols")
-                update_symbols = (
-                    raw_symbols
-                    if isinstance(raw_symbols, list)
-                    else ([raw_symbols] if raw_symbols is not None else None)
-                )
-                raw_config = args.get("config")
-                result = self._bitpro_adapter().strategy_update(
-                    strategy_id=int(args.get("strategy_id", 0)),
-                    name=str(args["name"]) if args.get("name") is not None else None,
-                    script_content=(
-                        str(args["script_content"])
-                        if args.get("script_content") is not None
-                        else None
-                    ),
-                    description=(
-                        str(args["description"]) if args.get("description") is not None else None
-                    ),
-                    config=raw_config if isinstance(raw_config, dict) else None,
-                    exchange=str(args["exchange"]) if args.get("exchange") is not None else None,
-                    symbols=(
-                        [str(symbol) for symbol in update_symbols]
-                        if update_symbols is not None
-                        else None
-                    ),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_backtest_start_job":
-                result = self._bitpro_adapter().backtest_start_job(
-                    strategy_id=int(args.get("strategy_id", 0)),
-                    start_date=str(args.get("start_date", "")),
-                    end_date=str(args.get("end_date", "")),
-                    initial_capital=float(args.get("initial_capital", 10000.0)),
-                    exchange=str(args.get("exchange", "okx")),
-                    symbol=str(args["symbol"]) if args.get("symbol") else None,
-                    timeframe=str(args["timeframe"]) if args.get("timeframe") else None,
-                    wait_for_result=True,
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_backtest_get_job":
-                result = self._bitpro_adapter().backtest_get_job(job_id=str(args.get("job_id", "")))
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_backtest_list_results":
-                min_return = args.get("min_total_return_pct")
-                result = self._bitpro_adapter().backtest_list_results(
-                    min_total_return_pct=(float(min_return) if min_return is not None else None),
-                    status=str(args.get("status", "completed")),
-                    sort_by=str(args.get("sort_by", "return")),
-                    sort_order=str(args.get("sort_order", "desc")),
-                    limit=int(args.get("limit", 100)),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_backtest_get_result":
-                result = self._bitpro_adapter().backtest_get_result(
-                    backtest_id=str(args.get("backtest_id", "")),
-                    sample_limit=int(args.get("sample_limit", 20)),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_paper_configure":
-                result = self._bitpro_adapter().paper_configure(
-                    strategy_id=int(args.get("strategy_id", 0)),
-                    initial_equity=float(args.get("initial_equity", 10000.0)),
-                    exchange=str(args.get("exchange", "okx")),
-                    loop_interval_sec=int(args.get("loop_interval_sec", 60)),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_paper_start":
-                result = self._bitpro_adapter().paper_start(
-                    strategy_id=int(args.get("strategy_id", 0))
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_paper_pause":
-                result = self._bitpro_adapter().paper_pause(
-                    strategy_id=int(args.get("strategy_id", 0))
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_paper_resume":
-                result = self._bitpro_adapter().paper_resume(
-                    strategy_id=int(args.get("strategy_id", 0))
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "bitpro_paper_stop":
-                result = self._bitpro_adapter().paper_stop(
-                    strategy_id=int(args.get("strategy_id", 0)),
-                    clear_metrics=bool(args.get("clear_metrics", False)),
-                )
-                self._trace_bitpro_tool_calls(run_id, result)
-            elif tool_name == "live_order_intent":
-                settings = self._settings if self._settings is not None else get_settings()
-                result = LiveOrderIntentService(self.db, settings=settings).create(
-                    symbol=str(args.get("symbol", "")),
-                    side=str(args.get("side", "")),
-                    size=str(args.get("size", "")),
-                    order_type=str(args.get("order_type", "market")),
-                    price=str(args["price"]) if args.get("price") else None,
-                    reason=str(args.get("reason", "")),
-                    source="agent",
-                    source_run_id=run_id,
-                )
-            else:
-                result = self._tool_error_payload(
+            def dispatch() -> dict[str, Any]:
+                return self._dispatch_tool(
                     tool_name,
-                    policy,
-                    error_type="unknown_tool",
-                    message=f"unknown tool: {tool_name}",
-                    retryable=False,
+                    args,
+                    run_id=run_id,
+                    policy=policy,
                 )
+
+            result = self._invoke_tool_with_timeout(tool_name, dispatch, policy)
             duration_seconds = time.monotonic() - started_at
-            if duration_seconds > self._tool_timeout_seconds(policy):
-                result = self._tool_timeout_payload(tool_name, policy)
             result = self._attach_tool_execution_metadata(
                 result,
                 policy,
@@ -807,6 +483,363 @@ class AgentKernel:
             return result
 
         return executor
+
+
+    def _dispatch_tool(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        *,
+        run_id: str,
+        policy: ToolPolicy,
+    ) -> dict[str, Any]:
+        """Trusted tool handler table.
+
+        The planner selects a runtime tool name and JSON arguments; this method
+        performs the actual database, OKX, RAG, memory, BitPro, or strategy
+        operation and always returns a structured payload. Exceptions propagate
+        to the harness retry layer; timeouts are enforced by the caller.
+        """
+        if tool_name == "market_summary":
+            result = self._market_summary_payload()
+        elif tool_name == "market_ticker":
+            result = self._market_ticker_payload(str(args.get("symbol", "")))
+        elif tool_name == "market_candles":
+            result = self._market_candles_payload(
+                symbol=str(args.get("symbol", "")),
+                bar=str(args.get("bar", "1H")),
+                limit=int(args.get("limit", 100)),
+            )
+        elif tool_name == "market_compare":
+            raw_symbols = args.get("symbols", [])
+            symbols = raw_symbols if isinstance(raw_symbols, list) else [raw_symbols]
+            result = self._market_compare_payload(
+                symbols=[str(symbol) for symbol in symbols],
+                bar=str(args.get("bar", "4H")),
+                limit=int(args.get("limit", 100)),
+            )
+        elif tool_name == "market_intelligence":
+            result = self._market_intelligence_payload(
+                symbol=str(args.get("symbol", "")),
+                include_curated=bool(args.get("include_curated", True)),
+            )
+
+        elif tool_name == "world_model_snapshot":
+            settings = self._settings if self._settings is not None else get_settings()
+            result = WorldModelService(self.db, settings=settings).snapshot()
+
+
+        elif tool_name == "global_market_snapshot":
+            from hypertrade.global_market.service import GlobalMarketService
+
+            snapshot = GlobalMarketService().get_snapshot()
+            result = snapshot.model_dump()
+
+
+        elif tool_name == "rag_search":
+            self.rag.scan_once()
+            query = str(args.get("query", "market risk"))
+            limit = int(args.get("limit", 3))
+            hits = self.rag.search(query, limit=limit)
+            result = {
+                "hits": [
+                    {
+                        "source_path": h.source_path,
+                        "title": h.title,
+                        "chunk_index": h.chunk_index,
+                        "content": h.content_preview,
+                        "score": h.score,
+                    }
+                    for h in hits
+                ]
+            }
+
+        elif tool_name == "memory_write":
+            content = str(args.get("content", ""))
+            kind = str(args.get("kind", "agent_note"))
+            item = self.memory.write(
+                content=content,
+                kind=kind,
+                source_run_id=run_id,
+                source_tool="memory.write",
+            )
+            result = {"memory_id": item.id}
+        elif tool_name == "memory_search":
+            items = self.memory.search(query=str(args.get("query", "")), limit=10)
+            result = {
+                "items": [
+                    {
+                        "id": m.id,
+                        "kind": m.kind,
+                        "content": m.content[:200],
+                        "tags": m.tags,
+                        "usage_count": m.usage_count,
+                    }
+                    for m in items[-10:]
+                ]
+            }
+
+        elif tool_name == "strategy_library_search":
+            result = StrategyLibraryService(self.db).search(
+                query=str(args.get("query", "")),
+                strategy_key=str(args.get("strategy_key", "")),
+                limit=int(args.get("limit", 10)),
+            )
+
+        elif tool_name == "strategy_experiment_plan":
+            result = StrategyIterationService(self.db).plan(
+                str(args.get("prompt", "")),
+                strategy_key=str(args.get("strategy_key", "momentum_breakout_v1")),
+                max_variants=int(args.get("max_variants", 3)),
+            )
+        elif tool_name == "research_mandate_read":
+            result = ResearchProgramService(self.db).get_mandate(
+                str(args.get("mandate_id", ""))
+            )
+        elif tool_name == "research_strategy_spec_draft":
+            result = ResearchProgramService(self.db).draft_strategy_spec(
+                str(args.get("mandate_id", "")), str(args.get("prompt", ""))
+            )
+        elif tool_name == "research_job_report":
+            result = ResearchProgramService(self.db).report(str(args.get("job_id", "")))
+        elif tool_name == "strategy_draft":
+            research_prompt = str(args.get("prompt", ""))
+            result = StrategyResearchService(self.db).create(research_prompt)
+        elif tool_name == "backtest_run":
+            research_id = str(args.get("research_id", ""))
+            strategy_key = str(args.get("strategy_key", "momentum_breakout_v1"))
+            result = BacktestService(self.db).run(
+                research_id=research_id,
+                strategy_key=strategy_key,
+            )
+        elif tool_name == "bitpro_capabilities":
+            result = self._bitpro_adapter().capabilities()
+        elif tool_name == "bitpro_health":
+            result = self._bitpro_adapter().health()
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_market_klines":
+            result = self._bitpro_adapter().market_klines(
+                symbol=str(args.get("symbol", "BTC")),
+                timeframe=str(args.get("timeframe", args.get("bar", "1h"))),
+                limit=int(args.get("limit", 200)),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_paper_dashboard":
+            strategy_id = args.get("strategy_id")
+            result = self._bitpro_adapter().paper_dashboard(
+                strategy_id=int(strategy_id) if strategy_id is not None else None,
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_paper_snapshot":
+            strategy_id = args.get("strategy_id")
+            result = self._bitpro_adapter().paper_snapshot(
+                strategy_id=int(strategy_id) if strategy_id is not None else None,
+                instance_id=str(args["instance_id"]) if args.get("instance_id") else None,
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_paper_strategy_performance":
+            result = self._bitpro_adapter().paper_strategy_performance(
+                limit=int(args.get("limit", 20)),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_paper_events":
+            strategy_id = args.get("strategy_id")
+            result = self._bitpro_adapter().paper_events(
+                strategy_id=int(strategy_id) if strategy_id is not None else None,
+                limit=int(args.get("limit", 50)),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_paper_equity_curve":
+            strategy_id = args.get("strategy_id")
+            result = self._bitpro_adapter().paper_equity_curve(
+                strategy_id=int(strategy_id) if strategy_id is not None else None,
+                sample_limit=int(args.get("sample_limit", 50)),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_paper_monitor_snapshot":
+            strategy_id = args.get("strategy_id")
+            result = BitProPaperMonitorService(
+                self.db,
+                bitpro_adapter=self._bitpro_adapter(),
+            ).capture(
+                strategy_id=int(strategy_id) if strategy_id is not None else None,
+                event_limit=int(args.get("event_limit", 50)),
+                equity_sample_limit=int(args.get("equity_sample_limit", 50)),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_live_positions":
+            result = self._bitpro_adapter().live_positions(
+                exchange=str(args.get("exchange", "okx")),
+                symbol=str(args["symbol"]) if args.get("symbol") else None,
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_live_order_history":
+            result = self._bitpro_adapter().live_order_history(
+                exchange=str(args.get("exchange", "okx")),
+                symbol=str(args["symbol"]) if args.get("symbol") else None,
+                limit=int(args.get("limit", 50)),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_live_strategy_performance":
+            result = self._bitpro_adapter().live_strategy_performance(
+                exchange=str(args.get("exchange", "okx")),
+                limit=int(args.get("limit", 20)),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_strategy_search":
+            result = self._bitpro_adapter().strategy_search(
+                search=str(args.get("search", "")),
+                page=int(args.get("page", 1)),
+                per_page=int(args.get("per_page", 18)),
+                status=str(args.get("status", "all")),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_strategy_generate":
+            result = self._bitpro_adapter().strategy_generate(
+                prompt=str(args.get("prompt", "")),
+                symbol=str(args.get("symbol", "BTC")),
+                timeframe=str(args.get("timeframe", "1h")),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_strategy_create":
+            raw_symbols = args.get("symbols", [])
+            symbols = raw_symbols if isinstance(raw_symbols, list) else [raw_symbols]
+            raw_config = args.get("config", {})
+            result = self._bitpro_adapter().strategy_create(
+                name=str(args.get("name", "")),
+                script_content=str(args.get("script_content", "")),
+                description=str(args["description"]) if args.get("description") else None,
+                config=raw_config if isinstance(raw_config, dict) else {},
+                exchange=str(args.get("exchange", "okx")),
+                symbols=[str(symbol) for symbol in symbols],
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_strategy_update":
+            raw_symbols = args.get("symbols")
+            update_symbols = (
+                raw_symbols
+                if isinstance(raw_symbols, list)
+                else ([raw_symbols] if raw_symbols is not None else None)
+            )
+            raw_config = args.get("config")
+            result = self._bitpro_adapter().strategy_update(
+                strategy_id=int(args.get("strategy_id", 0)),
+                name=str(args["name"]) if args.get("name") is not None else None,
+                script_content=(
+                    str(args["script_content"])
+                    if args.get("script_content") is not None
+                    else None
+                ),
+                description=(
+                    str(args["description"]) if args.get("description") is not None else None
+                ),
+                config=raw_config if isinstance(raw_config, dict) else None,
+                exchange=str(args["exchange"]) if args.get("exchange") is not None else None,
+                symbols=(
+                    [str(symbol) for symbol in update_symbols]
+                    if update_symbols is not None
+                    else None
+                ),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_backtest_start_job":
+            result = self._bitpro_adapter().backtest_start_job(
+                strategy_id=int(args.get("strategy_id", 0)),
+                start_date=str(args.get("start_date", "")),
+                end_date=str(args.get("end_date", "")),
+                initial_capital=float(args.get("initial_capital", 10000.0)),
+                exchange=str(args.get("exchange", "okx")),
+                symbol=str(args["symbol"]) if args.get("symbol") else None,
+                timeframe=str(args["timeframe"]) if args.get("timeframe") else None,
+                wait_for_result=True,
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_backtest_get_job":
+            result = self._bitpro_adapter().backtest_get_job(job_id=str(args.get("job_id", "")))
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_backtest_list_results":
+            min_return = args.get("min_total_return_pct")
+            result = self._bitpro_adapter().backtest_list_results(
+                min_total_return_pct=(float(min_return) if min_return is not None else None),
+                status=str(args.get("status", "completed")),
+                sort_by=str(args.get("sort_by", "return")),
+                sort_order=str(args.get("sort_order", "desc")),
+                limit=int(args.get("limit", 100)),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_backtest_get_result":
+            result = self._bitpro_adapter().backtest_get_result(
+                backtest_id=str(args.get("backtest_id", "")),
+                sample_limit=int(args.get("sample_limit", 20)),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_paper_configure":
+            result = self._bitpro_adapter().paper_configure(
+                strategy_id=int(args.get("strategy_id", 0)),
+                initial_equity=float(args.get("initial_equity", 10000.0)),
+                exchange=str(args.get("exchange", "okx")),
+                loop_interval_sec=int(args.get("loop_interval_sec", 60)),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_paper_start":
+            result = self._bitpro_adapter().paper_start(
+                strategy_id=int(args.get("strategy_id", 0))
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_paper_pause":
+            result = self._bitpro_adapter().paper_pause(
+                strategy_id=int(args.get("strategy_id", 0))
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_paper_resume":
+            result = self._bitpro_adapter().paper_resume(
+                strategy_id=int(args.get("strategy_id", 0))
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "bitpro_paper_stop":
+            result = self._bitpro_adapter().paper_stop(
+                strategy_id=int(args.get("strategy_id", 0)),
+                clear_metrics=bool(args.get("clear_metrics", False)),
+            )
+            self._trace_bitpro_tool_calls(run_id, result)
+        elif tool_name == "live_order_intent":
+            settings = self._settings if self._settings is not None else get_settings()
+            result = LiveOrderIntentService(self.db, settings=settings).create(
+                symbol=str(args.get("symbol", "")),
+                side=str(args.get("side", "")),
+                size=str(args.get("size", "")),
+                order_type=str(args.get("order_type", "market")),
+                price=str(args["price"]) if args.get("price") else None,
+                reason=str(args.get("reason", "")),
+                source="agent",
+                source_run_id=run_id,
+            )
+        else:
+            result = self._tool_error_payload(
+                tool_name,
+                policy,
+                error_type="unknown_tool",
+                message=f"unknown tool: {tool_name}",
+                retryable=False,
+            )
+        return result
+
+    def _invoke_tool_with_timeout(
+        self,
+        tool_name: str,
+        dispatch: Callable[[], dict[str, Any]],
+        policy: ToolPolicy,
+    ) -> dict[str, Any]:
+        """Enforce the registry timeout_class as a hard wall-clock deadline."""
+        future = self._tool_pool.submit(dispatch)
+        try:
+            return future.result(timeout=self._tool_timeout_seconds(policy))
+        except FuturesTimeoutError:
+            # The worker thread may still finish in the background; its result
+            # is discarded and the planner receives a structured timeout so the
+            # run can continue deterministically.
+            future.cancel()
+            return self._tool_timeout_payload(tool_name, policy)
 
     def _execution_mode(self) -> str:
         return "evaluation" if self.evaluation_mode else "standard"
@@ -2742,6 +2775,9 @@ def _planner_observability(
             "total_execution_ms": round(total_execution_ms, 3),
             "slowest": slowest,
             "calls": tool_calls,
+            # Harness-level per-tool latency/error/retry aggregates collected
+            # across every planning iteration of this run.
+            "telemetry": dict(result.tool_telemetry or {}),
         },
         "memory": {
             "read_ids": list(dict.fromkeys(memory_reads)),
@@ -2766,6 +2802,7 @@ def _empty_observability() -> dict[str, Any]:
             "total_execution_ms": 0.0,
             "slowest": None,
             "calls": [],
+            "telemetry": {},
         },
         "memory": {
             "read_ids": [],
