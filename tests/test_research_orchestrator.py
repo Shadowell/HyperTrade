@@ -140,7 +140,10 @@ def test_orchestrator_persists_bitpro_matrix_evidence_without_paper_action() -> 
     assert report["job"]["status"] == "evidence_recorded"
     assert len(report["evidence"]) == 3
     assert {row["status"] for row in report["evidence"]} == {"evidence_recorded"}
-    assert report["outcome"]["paper_promotion"] == "not_available_in_sprint_82"
+    assert (
+        report["outcome"]["paper_promotion"]
+        == "requestable_via_paper_promotion_request_pending_operator_approval"
+    )
     assert "paper_configure" not in adapter.calls
     assert "paper_start" not in adapter.calls
     assert adapter.calls.count("backtest_start_job") == 13

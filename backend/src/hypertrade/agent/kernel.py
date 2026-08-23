@@ -617,6 +617,10 @@ class AgentKernel:
             )
         elif tool_name == "research_job_report":
             result = ResearchProgramService(self.db).report(str(args.get("job_id", "")))
+        elif tool_name == "research_validation_gate":
+            result = self._research_validation_gate_payload(args)
+        elif tool_name == "paper_promotion_request":
+            result = self._paper_promotion_request_payload(args)
         elif tool_name == "strategy_draft":
             research_prompt = str(args.get("prompt", ""))
             result = StrategyResearchService(self.db).create(research_prompt)
@@ -855,6 +859,107 @@ class AgentKernel:
             # run can continue deterministically.
             future.cancel()
             return self._tool_timeout_payload(tool_name, policy)
+
+    def _research_validation_gate_payload(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Advisory gate self-check against operator-locked mandate criteria.
+
+        Thresholds are loaded server-side from the mandate so the model can
+        never weaken them; the results rows come from the planner context and
+        the verdict is advisory — authoritative gating runs when the
+        orchestrator records evidence.
+        """
+        from hypertrade.research.service import ResearchProgramService
+        from hypertrade.research.validation import ValidationGate
+
+        mandate_id = str(args.get("mandate_id", ""))
+        raw_rows = args.get("results")
+        rows: list[dict[str, Any]] = (
+            [row for row in raw_rows if isinstance(row, dict)]
+            if isinstance(raw_rows, list)
+            else []
+        )
+        if not mandate_id:
+            return {
+                "status": "error",
+                "error": {"type": "missing_mandate", "message": "mandate_id is required"},
+            }
+        if not rows:
+            return {
+                "status": "error",
+                "error": {
+                    "type": "missing_results",
+                    "message": "at least one backtest result row is required",
+                },
+            }
+        try:
+            mandate = ResearchProgramService(self.db).get_mandate(mandate_id)
+        except (KeyError, ValueError) as exc:
+            return {
+                "status": "unavailable",
+                "execution_status": "error",
+                "unavailable_reason": "mandate_not_found",
+                "error": {"type": "mandate_not_found", "message": str(exc)[:200]},
+                "tool_name": "research_validation_gate",
+            }
+        verdict = ValidationGate().evaluate(
+            results=rows[:20],
+            validation=dict(mandate.get("validation") or {}),
+            data_complete=bool(args.get("data_complete", True)),
+            costs_declared=bool(args.get("costs_declared", True)),
+        )
+        return {
+            "status": "ok",
+            "mandate_id": mandate_id,
+            "evaluated_rows": len(rows[:20]),
+            **verdict,
+            "note": (
+                "Advisory only. Authoritative gates run server-side when research "
+                "evidence is recorded."
+            ),
+        }
+
+    def _paper_promotion_request_payload(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Create an operator approval request for fully passing evidence.
+
+        This never touches BitPro: configure/start stay behind the explicit
+        human approval record created here. Rejections surface as structured
+        errors so the planner can pick different evidence instead of guessing.
+        """
+        from hypertrade.research.paper_promotion import PaperPromotionService
+
+        evidence_id = str(args.get("evidence_id", ""))
+        reason = str(args.get("reason", ""))
+        if not evidence_id or not reason.strip():
+            return {
+                "status": "error",
+                "error": {
+                    "type": "invalid_arguments",
+                    "message": "evidence_id and a non-empty reason are required",
+                },
+            }
+        try:
+            promotion = PaperPromotionService(self.db).request(
+                evidence_id=evidence_id,
+                reason=reason,
+            )
+        except ValueError as exc:
+            return {
+                "status": "denied",
+                "execution_status": "denied",
+                "error": {
+                    "type": "promotion_request_rejected",
+                    "message": str(exc)[:240],
+                },
+                "tool_name": "paper_promotion_request",
+                "missing_data": [
+                    {
+                        "field": "passing_evidence",
+                        "reason": "promotion_requires_fully_passing_evidence",
+                        "source_of_truth": "research_experiment_evidence",
+                    }
+                ],
+            }
+        return {"status": "ok", "promotion": promotion}
 
     def _memory_prompt_suffix(self) -> str:
         """Close the memory write->recall loop.

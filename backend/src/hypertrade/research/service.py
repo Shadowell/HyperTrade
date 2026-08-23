@@ -226,7 +226,9 @@ class ResearchProgramService:
             "outcome": {
                 "status": job["status"],
                 "passing_candidate_count": len(passing),
-                "paper_promotion": "not_available_in_sprint_82",
+                "paper_promotion": (
+                    "requestable_via_paper_promotion_request_pending_operator_approval"
+                ),
                 "live_mode": "disabled",
             },
         }

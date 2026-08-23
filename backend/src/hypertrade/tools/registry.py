@@ -161,6 +161,22 @@ class ToolRegistry:
                     "research",
                 ),
                 ToolDefinition(
+                    "research.validation_gate",
+                    (
+                        "Evaluate BitPro backtest result rows against the "
+                        "operator-locked mandate validation criteria."
+                    ),
+                    "research",
+                ),
+                ToolDefinition(
+                    "paper.promotion_request",
+                    (
+                        "Request operator approval to promote fully passing "
+                        "validation evidence onto the BitPro paper market."
+                    ),
+                    "paper",
+                ),
+                ToolDefinition(
                     "research.evidence_read",
                     "Read active, source-bound Evidence V2 records for the current Task.",
                     "research",
@@ -654,6 +670,75 @@ RUNTIME_TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
                 "type": "object",
                 "properties": {"job_id": {"type": "string", "description": "Research job id."}},
                 "required": ["job_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "research_validation_gate",
+            "description": (
+                "Run the deterministic validation gates over BitPro backtest result "
+                "rows using the operator-locked criteria from one research mandate. "
+                "Advisory self-check for strategy research: thresholds always come "
+                "from the mandate and cannot be supplied or weakened by the model. "
+                "Authoritative gating still happens server-side when evidence is "
+                "recorded. This is read-only."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mandate_id": {
+                        "type": "string",
+                        "description": "Research mandate id owning the locked criteria.",
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": (
+                            "Backtest result rows shaped like bitpro_backtest_get_result "
+                            "samples: each row carries window/label plus metrics with "
+                            "total_return_pct, max_drawdown_pct, trade_count."
+                        ),
+                    },
+                    "data_complete": {
+                        "type": "boolean",
+                        "description": "Whether real data coverage was adequate, default true.",
+                    },
+                    "costs_declared": {
+                        "type": "boolean",
+                        "description": "Whether cost assumptions were declared, default true.",
+                    },
+                },
+                "required": ["mandate_id", "results"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "paper_promotion_request",
+            "description": (
+                "Request operator approval to promote one fully passing research "
+                "evidence record onto the BitPro paper market. Only evidence in "
+                "status evidence_recorded with all validation gates passed qualifies; "
+                "the request creates a pending approval item and never configures or "
+                "starts anything by itself. Never claim paper trading started before "
+                "an operator approved."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "evidence_id": {
+                        "type": "string",
+                        "description": "Passing research experiment evidence id.",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Why this candidate deserves paper incubation.",
+                    },
+                },
+                "required": ["evidence_id", "reason"],
             },
         },
     },
@@ -1264,6 +1349,7 @@ _IDEMPOTENCY_REQUIRED_TOOL_NAMES = {
     "bitpro_paper_pause",
     "bitpro_paper_resume",
     "bitpro_paper_stop",
+    "paper_promotion_request",
     "live_order_intent",
 }
 
@@ -1424,7 +1510,6 @@ def _default_policy_for(
         )
     return ToolPolicy()
 
-
 _RUNTIME_TO_REGISTRY_NAME = {
     "market_summary": "market.summary",
     "market_ticker": "market.ticker",
@@ -1442,6 +1527,8 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "research_mandate_read": "research.mandate_read",
     "research_strategy_spec_draft": "research.strategy_spec_draft",
     "research_job_report": "research.job_report",
+    "research_validation_gate": "research.validation_gate",
+    "paper_promotion_request": "paper.promotion_request",
     "backtest_run": "backtest.run",
     "bitpro_capabilities": "bitpro.capabilities",
     "bitpro_health": "bitpro.health",
@@ -1563,6 +1650,19 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
     "research.mandate_read": _policy(source="hypertrade_db", timeout="quick", sample=1),
     "research.strategy_spec_draft": _policy(source="hypertrade_db", timeout="quick", sample=1),
     "research.job_report": _policy(source="hypertrade_db", timeout="quick", sample=3),
+    "research.validation_gate": _policy(
+        source="hypertrade_db+model_input",
+        timeout="quick",
+        sample=20,
+        failure="return_structured_error",
+    ),
+    "paper.promotion_request": _policy(
+        scope="paper_write",
+        idempotency="required",
+        source="hypertrade_db",
+        timeout="standard",
+        sample=1,
+    ),
     "backtest.run": _policy(
         scope="research_write",
         source="hypertrade_db",

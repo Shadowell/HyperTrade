@@ -148,6 +148,19 @@ artifact rows.
 When the user asks BitPro to develop, store, backtest, or paper-validate a strategy,
 use BitPro strategy/backtest/paper tools. These are research/simulation writes,
 not live trading writes.
+For paper-trading strategy research follow this mainline: strategy_library_search
+first for prior evidence, then BitPro strategy generation/creation, then
+bitpro_backtest_start_job and bitpro_backtest_get_result, then
+research_validation_gate with the mandate_id to self-check against operator-locked
+criteria before drawing conclusions.
+Use research_validation_gate after reading backtest results; thresholds come from
+the mandate and cannot be changed by you. A gate failure means iterate or report
+rejection reasons honestly; never claim a candidate passed without this check or
+without recorded evidence.
+Use research_job_report to locate evidence ids of recorded candidates, then use
+paper_promotion_request only on evidence that is fully passing. The request only
+creates a pending operator approval item: never claim paper trading has started
+until an operator approval is confirmed.
 For BitPro strategy/backtest/paper write tools and live_order_intent, include a
 unique idempotency_key. Without it, trusted governance policy will deny execution.
 Plan which tools to call, execute them, then write a concise Markdown report.

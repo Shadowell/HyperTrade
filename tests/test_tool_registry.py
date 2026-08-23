@@ -122,3 +122,32 @@ def test_memory_tool_schemas_expose_recall_and_weighting_parameters():
 
     write_props = schemas["memory_write"]["function"]["parameters"]["properties"]
     assert {"content", "kind", "tags", "importance", "confidence"} <= set(write_props)
+
+
+def test_paper_research_mainline_tools_are_registered_with_correct_policies():
+    registry = ToolRegistry.default()
+
+    gate = registry.get("research.validation_gate")
+    assert gate.policy.scope == "read"
+    assert gate.policy.source_of_truth == "hypertrade_db+model_input"
+
+    promotion = registry.get("paper.promotion_request")
+    assert promotion.policy.scope == "paper_write"
+    assert promotion.policy.idempotency == "required"
+    # Creating a pending approval record must stay agent-executable; only the
+    # actual configure/start remain blocked for the agent.
+    assert promotion.policy.approval == "none"
+    assert registry.get("bitpro.paper_start").policy.approval == "blocked"
+
+
+def test_paper_promotion_request_schema_carries_idempotency_key():
+    from hypertrade.tools.registry import default_runtime_schemas
+
+    schemas = {
+        str(schema["function"]["name"]): schema for schema in default_runtime_schemas()
+    }
+    props = schemas["paper_promotion_request"]["function"]["parameters"]["properties"]
+
+    assert "idempotency_key" in props
+    gate_props = schemas["research_validation_gate"]["function"]["parameters"]["properties"]
+    assert set(gate_props) >= {"mandate_id", "results"}
