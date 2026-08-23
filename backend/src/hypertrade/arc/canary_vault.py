@@ -1,5 +1,10 @@
 """
 ARC Live Canary Vault & Deterministic Risk Engine Pipeline (Phase 7 / Sprint 132)
+
+FROZEN (2026-08-23): not wired to any runtime path. live_allowed is Literal[False]
+everywhere, so no vault stage can ever execute; revisit only when Sprint 132-134
+(LiveTradingMandate / Live Canary) are explicitly approved, and then against the
+real Risk Engine contract rather than this sketch.
 """
 
 from decimal import Decimal

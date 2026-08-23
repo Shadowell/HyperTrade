@@ -1,5 +1,10 @@
 """
 Macro & Unstructured Event Causal Factor Extraction Engine & Free Provider Adapters
+
+FROZEN (2026-08-23): not wired to any runtime path and has no live news source.
+Revisit only with a reviewed, source-bound news contract; an autonomous loop
+fetching unvetted external feeds on its own initiative is a side effect no
+research verdict should require.
 """
 
 import xml.etree.ElementTree as ET

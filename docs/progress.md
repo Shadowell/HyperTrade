@@ -1,5 +1,23 @@
 # Progress Log
 
+## Deletion Sprint B 档：未接线基础设施层移除与空转对象冻结 — 2026-08-23
+
+- **背景**：引用核查发现 README 宣传的"Harness 3.0 / Context 2.0 / Memory 3.0 /
+  飞行记录仪"组件群多数从未被任何生产路径调用——`main.py` 只挂载 canonical
+  Thread/Turn 与 ARC 两个 router，这些组件在包外零引用或仅被彼此引用。
+- **删除（11 模块 + 6 测试文件）**：memory v2 四件套（`memory_v2` / `flusher` /
+  `regime_filter` / `resolver`）；harness 未接线组件（`context_v2` / `compactor` /
+  `tool_pipeline` / `harness_cache` / `mcp_harness` / `flight_recorder`）。
+  保留 planner 在用的 `agent/harness_v2.py`（仅依赖标准库），修剪
+  `test_agent_harness_sota.py` 中 ContextCompactor 用例。
+- **README 同步**："工业级基础设施"章节重写为实际接线清单（harness_v2 执行层、
+  observability 端点、审计记忆），并注明历史组件群已按 deletion sprint 移除、
+  architecture 53–55/57–59 作为历史记录保留。
+- **冻结（不删）**：`arc/canary_vault.py`、`arc/portfolio.py`（组合协同进化）、
+  `strategy/macro_event.py` 加 FROZEN 边界注释——Live 解禁前空转，
+  待 Sprint 132–134 显式批准后按真实合同重建评估。
+- **验证**：`./scripts/check.sh` 通过；部署 workflow success。
+
 ## Deletion Sprint A 档：清除零引用死代码 — 2026-08-23
 
 - **删除**：`arc_agi/`、`hyperarc/`（ARC-AGI 竞赛实验，产品代码零引用，仅自身测试文件引用）

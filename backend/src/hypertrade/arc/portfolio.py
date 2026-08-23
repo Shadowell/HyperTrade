@@ -1,5 +1,9 @@
 """
 ARC Portfolio MCTS Co-Evolution Engine & Low-Correlation Portfolio Allocator
+
+FROZEN (2026-08-23): not wired to any runtime path; portfolio-level co-evolution
+stays out of the ARC loop until the research loop closes on the real BitPro
+pipeline and a reviewed portfolio contract exists.
 """
 
 import math
