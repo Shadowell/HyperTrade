@@ -1724,7 +1724,15 @@ def create_app(
             idempotency_key=request.headers.get("Idempotency-Key") or new_id("agentreq"),
         )
         try:
-            run = AgentTaskExecutor(database).execute_chat(task.id, kernel, payload.prompt)
+            # The kernel is synchronous end to end (LLM SDK + tool IO). Offload
+            # the whole run to a worker thread so one long research request
+            # cannot stall the event loop serving SSE streams and health probes.
+            run = await asyncio.to_thread(
+                AgentTaskExecutor(database).execute_chat,
+                task.id,
+                kernel,
+                payload.prompt,
+            )
         except TaskExecutionError as exc:
             raise HTTPException(
                 status_code=503 if exc.error.get("retryable") else 500,
