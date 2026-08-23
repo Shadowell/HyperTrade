@@ -92,8 +92,11 @@
 
 实际接线到运行路径的基础设施以代码引用为准：
 
-* **工具执行层 (`agent/harness_v2.py`)**：`SmartToolExecutionHealer` 对网络类临时故障做指数退避重试；`AsyncParallelToolDispatcher` 并行分发无依赖的只读工具调用。二者由 `agent/planner.py` 在多工具规划轮次中使用。
-* **并行流水线 (`ParallelToolPipeline`)**：planner 内置的无依赖工具并发执行池。
+* **工具执行层 (`agent/harness_v2.py`)**：`SmartToolExecutionHealer` 对网络类临时故障做指数退避重试；`AsyncParallelToolDispatcher` 并行分发无依赖的只读工具调用。二者由 `agent/planner.py` 在多工具规划轮次中使用，每 run 聚合一次延迟/错误/重试 telemetry 并写入 run observability。
+* **工具单一事实来源 (`tools/registry.py`)**：planner 的 43 个 function schema 与并行只读白名单均从 registry 定义与 policy scope 派生，新增工具只改 registry 一处；漂移由测试守卫。
+* **硬超时 (`agent/kernel.py`)**：所有受信工具执行经 `AgentKernel._dispatch_tool` + 线程池按 registry `timeout_class`（quick/standard/long → 5s/30s/120s）强制 wall-clock deadline，挂死调用返回结构化 timeout payload，不再无限阻塞规划循环。
+* **事件循环隔离**：同步 kernel 执行在 API 层经 worker 线程卸载，长请求不会阻塞 SSE 流与健康检查。
+* **记忆召回闭环 (`memory/service.py`)**：高重要性 Memory 与 governed assertions 确定性注入 planner system prompt（`AGENT_MEMORY_PROMPT_INJECTION` 可关）；`memory_search` 支持 query/kind/tag 过滤。
 * **运行可观测 (`GET /api/agent/runs/{run_id}/observability`)**：按 run 投影有序的 graph/model/tool/policy/Memory 时间线、provider 上报的 Token 用量与工具延迟；prompt、密钥与私有推理文本不进入投影。
 * **审计记忆**：带 policy 字段、去重、检索与审计元数据的 Memory 服务（disable/delete 可控），由 Agent 工具面读写。
 

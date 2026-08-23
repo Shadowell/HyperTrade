@@ -1,5 +1,34 @@
 # Progress Log
 
+## 工业级 Agent Runtime 加固 — 2026-08-24
+
+- **合同**：[sprint-136-industrial-agent-runtime-hardening](contracts/sprint-136-industrial-agent-runtime-hardening.md)。
+  按工业级 Agent 标准修复评审发现的四类结构性缺陷。
+- **工具单一事实来源**（`d371ba4`）：43 个 planner-facing schema 移入
+  `tools/registry.py`（RUNTIME_TOOL_SCHEMAS），并行只读白名单改为从 registry policy
+  scope 派生；新增漂移守卫测试。副作用：`bitpro_paper_monitor_snapshot`
+  （research_write）退出并行集合，`bitpro_paper_snapshot`（read）进入。
+- **planner 清理**（`b6e48d2`）：healer/dispatcher 每 run 只实例化一次，telemetry 跨迭代
+  聚合并经 `PlannerResult.tool_telemetry` 回传；删除无生产引用的
+  `ParallelToolPipeline`/`ToolExecutionSelfHealer`/`ModelCallHarnessNormalizer`。
+- **真超时 + telemetry 落库**（`e0a2fcc`）：40 工具 if/elif 链提为 `AgentKernel._dispatch_tool`，
+  经共享线程池以 timeout_class（5s/30s/120s）做硬 deadline，超时返回结构化 payload；
+  原"事后比时长改标签"逻辑移除。harness 聚合指标写入 observability 的 `tools.telemetry`。
+  同时移除工具分发中的全量输出 INFO 日志。
+- **事件循环卸载**（`57af4cf`）：`POST /api/agent/runs` 的同步 kernel 执行移入
+  `asyncio.to_thread`；此前单个长请求会卡住整个 API 进程（含 SSE 与健康检查）。
+- **Water cooler 递归化**（`9174f3d`）：嵌套数组/字符串不再能绕过截断预算。
+- **Memory write→recall 闭环**（`f26b93a`）：`memory_search` schema 补 query/kind/tag/limit
+  （原空参数对象导致模型无法传查询，检索退化为"最近 10 条"）；`memory_write` 补
+  tags/importance/confidence 并在服务端 clamp；search 的等值过滤下推 SQL、usage 只为
+  实际返回条目计数；新增 `prompt_context()` 按 importance→recency 确定性取 top-K，
+  由 kernel 注入 planner system prompt（`AGENT_MEMORY_PROMPT_INJECTION` 默认开，
+  字符预算 1200，best-effort 失败降级为不注入）。
+- **RAG 门控重扫**（`080ae66`）：scan_once 先比对 (path, mtime_ns, size) 目录签名，
+  未变化跳过全盘读取；内容编辑经 mtime 变化仍会触发，文件级 hash 校验保留为第二层。
+- **已知边界**：超时后工作线程可能继续等待底层 IO 至自然结束（结果被丢弃），
+  Provider 全异步化前无法真正取消；幂等锁仍为进程内并发锁，跨进程去重由下游 DB 承担。
+
 ## 合同交付：ARC 真身闭环与 Provider 假设层（Slice 2–4）— 2026-08-23
 
 - **Slice 3 真身探针**（生产容器内，run `03baf9b7`）：生产同款 codegen 候选经真实 BitPro
