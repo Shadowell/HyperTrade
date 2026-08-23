@@ -1,5 +1,24 @@
 # Progress Log
 
+## 主线激活：模拟盘策略研究工具面补全（sprint-137）— 2026-08-24
+
+- **合同**：[paper-strategy-research-mainline](contracts/sprint-137-paper-strategy-research-mainline.md)。
+  应用户要求把「Agent 驱动的模拟盘策略研究」定为主线；服务层
+  （orchestrator/`PaperPromotionService`）早已存在，缺的是 Agent 工具面入口。
+- **`research.validation_gate`（只读）**：以 mandate 的 operator 锁定标准为唯一阈值来源，
+  服务端跑 `ValidationGate.evaluate` 对 BitPro 回测结果行做判定。模型只能交结果行，
+  不能自带或放宽阈值（测试钉住该边界）；定位为 advisory 自检——权威门禁仍在
+  orchestrator 落证据时执行，两者同源 mandate 不存在双标。
+- **`paper.promotion_request`（paper_write + 幂等必填）**：包装
+  `PaperPromotionService.request`，仅接受 `evidence_recorded` 且门禁全过的证据，
+  创建 `pending_paper_approval` 待审批记录；拒绝路径返回结构化 denial。
+  实际 configure/start 仍对 agent blocked（Sprint 83 边界不动），重复请求幂等返回同一记录。
+- **System prompt 主线路由**：库检索 → 策略生成/创建 → BitPro 回测 → 门禁自检 →
+  job report 定位证据 → 晋升请求，并写明"operator 批准前不得声称已开始模拟盘"。
+- **编排验证**：planner 级测试证明门禁自检+晋升请求可在单轮并行调用中完成，
+  全链路 2 个规划轮收敛，harness telemetry 覆盖两个新工具；
+  `research_job_report.outcome.paper_promotion` 过期标签同步校准。
+
 ## 工业级 Agent Runtime 加固 — 2026-08-24
 
 - **合同**：[sprint-136-industrial-agent-runtime-hardening](contracts/sprint-136-industrial-agent-runtime-hardening.md)。

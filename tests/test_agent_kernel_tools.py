@@ -196,3 +196,80 @@ def test_promotion_request_creates_pending_approval_for_passing_evidence(memory_
     with memory_db.session() as session:
         count = len(session.scalars(select(PaperPromotion)).all())
     assert count == 1
+
+
+def test_planner_can_orchestrate_full_mainline_within_iteration_budget(memory_db):
+    """主线全链路：门禁自检 -> 晋升请求 -> 最终答复，2 个规划轮内完成。"""
+    from unittest.mock import MagicMock
+
+    from hypertrade.agent.planner import AgentPlanner
+    from hypertrade.db import ResearchExperimentEvidence
+    from hypertrade.providers.chat import ChatResponse, ToolCallRequest
+
+    kernel, mandate_id = _kernel_with_mandate(memory_db)
+    program = ResearchProgramService(memory_db)
+    job = program.queue_job(
+        mandate_id,
+        ResearchJobCreate(prompt="test mainline orchestration", idempotency_key="k-main-1"),
+    )
+    with memory_db.session() as session:
+        evidence = ResearchExperimentEvidence(
+            job_id=str(job["id"]),
+            mandate_id=mandate_id,
+            variant_id="v1",
+            status="evidence_recorded",
+            strategy_key="momentum_breakout_v1",
+            gate_results_json={
+                "real_data_coverage": True,
+                "cost_assumptions_declared": True,
+                "locked_sample_available": True,
+                "reported_metrics_complete": True,
+                "trade_count": True,
+                "drawdown": True,
+            },
+            rejection_reasons_json=[],
+        )
+        session.add(evidence)
+        session.flush()
+        evidence_id = evidence.id
+
+    llm = MagicMock()
+    llm.name = "replay"
+    llm.model = "mainline"
+    llm.chat.side_effect = [
+        ChatResponse(
+            content="",
+            tool_calls=[
+                ToolCallRequest(
+                    id="c1",
+                    name="research_validation_gate",
+                    arguments={"mandate_id": mandate_id, "results": _passing_rows()},
+                ),
+                ToolCallRequest(
+                    id="c2",
+                    name="paper_promotion_request",
+                    arguments={
+                        "evidence_id": evidence_id,
+                        "reason": "gates passed on locked OOS window",
+                        "idempotency_key": "promo-main-1",
+                    },
+                ),
+            ],
+        ),
+        ChatResponse(content="## 结论\n门禁通过，已提交模拟盘晋升审批。"),
+    ]
+
+    run_id = kernel._create_run("推进 BTC 策略到模拟盘", execution_mode="standard")
+    executor = kernel._build_executor(run_id)
+    result = AgentPlanner(llm).run("推进 BTC 策略到模拟盘", executor)
+
+    assert [call.tool_name for call in result.tool_calls] == [
+        "research_validation_gate",
+        "paper_promotion_request",
+    ]
+    assert result.tool_calls[0].output_json["passed"] is True
+    assert result.tool_calls[1].output_json["promotion"]["status"] == "pending_paper_approval"
+    assert "pending_paper_approval" in result.final_message or len(result.final_message) > 0
+
+    # Telemetry covers both mainline tools.
+    assert set(result.tool_telemetry) >= {"research_validation_gate", "paper_promotion_request"}
