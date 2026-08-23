@@ -1,5 +1,25 @@
 # Progress Log
 
+## Slice 1 落地：证据窗口来源合同 — 2026-08-23
+
+- **合同**：[ARC 真身闭环与 Provider 假设层](contracts/user-directed-arc-real-closure.md)
+  Slice 1（证据来源合同）交付。
+- **语义**：归档文件自身不带溯源，来源由部署经 `ARC_EVIDENCE_ARCHIVE_ORIGIN` 显式声明；
+  归因按槽位而非类型——composite 窗口里 archive 槽位读部署声明、live 槽位即 `okx_swap`、
+  裸注入源不可判定记 None。`preflight` 返回 `source_origin` / `window_as_of` /
+  `window_source_hash`；`HistoricalEvidenceGate` 把同一组溯源写进**每个 attempt** 的
+  metrics，候选下钻因此可见"这个结论建立在哪段行情上"。
+- **门禁**：窗口来源不可证明为 OKX 且 mission 未带 `alternative_source_confirmed=true`
+  时，循环在消耗任何候选预算前停在 `needs_operator(evidence_window_unavailable)`，
+  preflight 全文随事件入投影；`_blocked_reason` 与 goal 阶段 metrics 渲染来源事实。
+  生产现网归档即替代交易所数据——该部署此后要么如实声明并逐任务确认，要么换回 OKX 源。
+- **兼容性设计**：现有验收测试经 monkeypatch 注入裸窗口（非 composite），按既有语义
+  `sources_configured=[]`、origin=None、不设确认门槛——测试替身不代表任何市场，
+  也无需冒充 OKX；真实路径才受门禁约束。
+- **验证**：新增 `tests/test_arc_evidence_source.py`（10 用例：preflight 归因、缺失窗口、
+  goal/request 默认值、未确认停止且零预算消耗、确认后正常进入候选、gate 溯源字段、
+  默认窗口构造）。全 ARC 面 341 passed，完整 `./scripts/check.sh` 1051 passed。
+
 ## Deletion Sprint B 档：未接线基础设施层移除与空转对象冻结 — 2026-08-23
 
 - **背景**：引用核查发现 README 宣传的"Harness 3.0 / Context 2.0 / Memory 3.0 /

@@ -74,6 +74,14 @@ ref、paper instance、观察窗或对账时包状态为 `incomplete`，`POST ..
 拒绝批准。操作员批准后才走审批绑定的 `authorized_live_promote`；`call_tool("live_promote")`
 和现货/合约下单、划转仍然拦截。Mission 投影落在 `arc_missions`，重启可恢复。
 
+证据窗口带来源合同（2026-08-23）：preflight 与每个 attempt 的证据记录携带
+`source_origin`（`okx_swap` / `alternative_exchange` / `archive_unknown`）、`window_as_of`
+与 `window_source_hash`。归档文件自身无溯源，来源由部署通过 `ARC_EVIDENCE_ARCHIVE_ORIGIN`
+声明。窗口来源不可证明为 OKX 时，mission 必须在创建参数中显式
+`alternative_source_confirmed=true` 才允许消耗候选预算，否则停在
+`needs_operator(evidence_window_unavailable)`，且替代来源在进度视图与证据视图中可见——
+替代数据是显式事实，不是静默降级。
+
 `api` 与 `worker` 是两个进程，同时推进同一个 mission：前者跑研究循环并服务审批，后者推进模拟盘
 观察。`arc_missions.revision` 区分缓存投影与已提交投影：读命中缓存时先比对 revision，落后就重载；
 写在 mission 行上串行，发现行已前进就把控制器 rebase 到已提交投影再重放该事件。任何一方都不会
