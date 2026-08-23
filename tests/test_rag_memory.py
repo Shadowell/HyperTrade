@@ -250,3 +250,25 @@ def test_kernel_memory_injection_can_be_disabled(monkeypatch, tmp_path):
     kernel.run_chat("review memory")
 
     assert "[memory" not in captured["system"]
+
+
+def test_rag_scan_is_gated_by_file_metadata(tmp_path: Path):
+    """目录签名未变时 scan_once 不再全盘重读文件。"""
+    db = Database(f"sqlite:///{tmp_path}/rag.db")
+    db.create_all()
+    knowledge_dir = tmp_path / "knowledge"
+    knowledge_dir.mkdir()
+    (knowledge_dir / "a.md").write_text("# A\nfirst", encoding="utf-8")
+
+    rag = RagService(db, knowledge_dir=knowledge_dir)
+    first = rag.scan_once()
+    assert first.ingested_files == 1
+
+    # No metadata change -> skip re-ingest without reading file contents.
+    skipped = rag.scan_once()
+    assert skipped.ingested_files == 0
+
+    # Content edit changes mtime/size -> rescan picks it up.
+    (knowledge_dir / "a.md").write_text("# A\nsecond revision", encoding="utf-8")
+    updated = rag.scan_once()
+    assert updated.ingested_files == 1

@@ -35,10 +35,30 @@ class RagService:
     def __init__(self, db: Database, *, knowledge_dir: Path | str) -> None:
         self.db = db
         self.knowledge_dir = Path(knowledge_dir)
+        # Cheap staleness gate: file metadata only (no content reads). Search
+        # calls scan on every invocation, but unchanged trees must not pay an
+        # O(corpus) disk read each time.
+        self._scan_signature: tuple[tuple[str, int, int], ...] | None = None
+
+    def _current_signature(self) -> tuple[tuple[str, int, int], ...]:
+        entries: list[tuple[str, int, int]] = []
+        for path in sorted(self.knowledge_dir.rglob("*.md")):
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            entries.append((str(path), stat.st_mtime_ns, stat.st_size))
+        return tuple(entries)
 
     def scan_once(self) -> RagScanResult:
         if not self.knowledge_dir.exists():
+            self._scan_signature = ()
             return RagScanResult(scanned_files=0, ingested_files=0)
+
+        signature = self._current_signature()
+        if signature == self._scan_signature:
+            return RagScanResult(scanned_files=len(signature), ingested_files=0)
+
         scanned = 0
         ingested = 0
         for path in sorted(self.knowledge_dir.rglob("*.md")):
@@ -82,6 +102,7 @@ class RagService:
                         )
                     )
                 ingested += 1
+        self._scan_signature = signature
         return RagScanResult(scanned_files=scanned, ingested_files=ingested)
 
     def search(self, query: str, *, limit: int = 5) -> list[RagHit]:
