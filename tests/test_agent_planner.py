@@ -605,3 +605,23 @@ class TestAgentPlannerDeepSeekReasoningContent:
             message for message in second_messages if message.get("role") == "assistant"
         ]
         assert assistant_messages[-1]["reasoning_content"] == "thinking tokens"
+
+
+def test_planner_aggregates_tool_telemetry_across_iterations() -> None:
+    """Telemetry must survive across iterations instead of being discarded."""
+    call = ToolCallRequest(id="c1", name="market_summary", arguments={})
+    llm = _fake_llm(
+        ChatResponse(content="", tool_calls=[call]),
+        ChatResponse(content="done", tool_calls=[]),
+    )
+    planner = AgentPlanner(llm)
+
+    def slow_executor(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+        return {"ok": True}
+
+    result = planner.run("market", slow_executor)
+
+    assert "market_summary" in result.tool_telemetry
+    entry = result.tool_telemetry["market_summary"]
+    assert entry["calls"] == 1
+    assert entry["error_rate"] == 0

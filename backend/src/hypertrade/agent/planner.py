@@ -13,6 +13,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from hypertrade.agent.harness_v2 import (
+    AsyncParallelToolDispatcher,
+    SmartToolExecutionHealer,
+)
 from hypertrade.agent.quality import (
     CandidateToolSet,
     ResearchIntentV2,
@@ -192,6 +196,9 @@ class PlannerResult:
     intent: ResearchIntentV2 | None = None
     tool_plan: ToolPlanV2 | None = None
     candidate_count: int = 0
+    # Aggregated per-tool latency/error/retry metrics collected by the harness
+    # across every planning iteration of this run.
+    tool_telemetry: dict[str, Any] = field(default_factory=dict)
 
 
 class PlannerValidationFailed(RuntimeError):
@@ -233,6 +240,10 @@ class AgentPlanner:
         tool_calls: list[ToolCallRecord] = []
         model_calls: list[ModelCallRecord] = []
         repair_count = 0
+        # One harness per planning run: telemetry aggregates across iterations
+        # instead of being discarded with every per-iteration instantiation.
+        healer = SmartToolExecutionHealer(executor)
+        dispatcher = AsyncParallelToolDispatcher(healer)
 
         for iteration in range(1, self.MAX_ITERATIONS + 1):
             started_at = time.monotonic()
@@ -285,6 +296,7 @@ class AgentPlanner:
                     intent=active_intent,
                     tool_plan=plan,
                     candidate_count=len(candidates.schemas),
+                    tool_telemetry=healer.telemetry.get_summary(),
                 )
 
             validation_errors = _validate_provider_calls(response, candidates, schemas_by_name)
@@ -318,14 +330,6 @@ class AgentPlanner:
             assistant_msg = _assistant_tool_message(response)
             messages.append(assistant_msg)
 
-            from hypertrade.agent.harness_v2 import (
-                AsyncParallelToolDispatcher,
-                SmartToolExecutionHealer,
-            )
-
-            healer = SmartToolExecutionHealer(executor)
-            dispatcher = AsyncParallelToolDispatcher(healer)
-
             tool_reqs = [(tc.name, tc.arguments) for tc in response.tool_calls]
             executed_results = dispatcher.dispatch_batch(tool_reqs)
 
@@ -354,6 +358,7 @@ class AgentPlanner:
                 repair_count=repair_count,
             ),
             candidate_count=len(candidates.schemas),
+            tool_telemetry=healer.telemetry.get_summary(),
         )
 
 
@@ -413,133 +418,3 @@ def _tool_plan(
 def _provider_label(provider: Any, field_name: str) -> str:
     value = getattr(provider, field_name, "")
     return value if isinstance(value, str) else ""
-
-
-def _executor_error_payload(tool_name: str, exc: Exception) -> dict[str, Any]:
-    return {
-        "status": "unavailable",
-        "execution_status": "error",
-        "unavailable_reason": "execution_error",
-        "error": {
-            "type": "execution_error",
-            "message": str(exc)[:240],
-            "retryable": True,
-        },
-        "missing_data": [
-            {
-                "field": "tool_result",
-                "reason": "execution_error",
-                "source_of_truth": "tool_executor",
-            }
-        ],
-        "tool_name": tool_name,
-    }
-
-
-class ModelCallHarnessNormalizer:
-    """
-    Industrial Harness Normalizer sanitizing heterogeneous LLM tool call payloads
-    (DeepSeek, OpenAI, Claude, Qwen), handling raw JSON strings & schema edge cases.
-    """
-
-    @staticmethod
-    def normalize_tool_call(raw_call: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(raw_call, dict):
-            return {"name": "invalid", "arguments": {}}
-
-        name = str(raw_call.get("name") or raw_call.get("tool_name") or "unknown")
-        args = raw_call.get("arguments") or raw_call.get("parameters") or {}
-
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except Exception:
-                args = {}
-
-        if not isinstance(args, dict):
-            args = {}
-
-        return {"name": name, "arguments": args}
-
-
-class ToolExecutionSelfHealer:
-    """
-    Self-healing Tool Execution Harness intercepting tool execution errors
-    and executing 1-step LLM self-correction retries.
-    """
-
-    def __init__(self, executor: ToolExecutor) -> None:
-        self.executor = executor
-
-    def execute_with_self_healing(
-        self,
-        tool_name: str,
-        tool_args: dict[str, Any],
-        fallback_retry_fn: Callable[[str, str], dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
-        try:
-            res = self.executor(tool_name, tool_args)
-            if isinstance(res, dict) and res.get("status") == "error":
-                raise RuntimeError(res.get("message", "Tool returned status error"))
-            return res
-        except Exception as exc:
-            err_msg = str(exc)
-            if fallback_retry_fn:
-                try:
-                    repaired = fallback_retry_fn(tool_name, err_msg)
-                    if isinstance(repaired, dict):
-                        return repaired
-                except Exception:
-                    pass
-            return _executor_error_payload(tool_name, exc)
-
-
-class ParallelToolPipeline:
-    """
-    SOTA Parallel Tool Execution Engine matching Claude Code / Codex concurrency.
-    Executes independent, non-interdependent tool calls concurrently via thread pools,
-    reducing tool invocation latency by up to 70%.
-    """
-
-    def __init__(self, executor: ToolExecutor, max_workers: int = 4) -> None:
-        self.executor = executor
-        self.max_workers = max_workers
-
-    def execute_parallel_tools(
-        self, tool_calls: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        """
-        Executes a batch of independent tool calls concurrently.
-        """
-        if not tool_calls:
-            return []
-
-        if len(tool_calls) == 1:
-            name = tool_calls[0].get("name", "unknown")
-            args = tool_calls[0].get("arguments", {})
-            return [self.executor(name, args)]
-
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        results: list[tuple[int, dict[str, Any]]] = []
-        with ThreadPoolExecutor(max_workers=min(len(tool_calls), self.max_workers)) as ex:
-            future_to_idx = {
-                ex.submit(
-                    self.executor,
-                    call.get("name", "unknown"),
-                    call.get("arguments", {}),
-                ): idx
-                for idx, call in enumerate(tool_calls)
-            }
-            for future in as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                try:
-                    res = future.result()
-                    results.append((idx, res))
-                except Exception as exc:
-                    results.append((idx, _executor_error_payload("parallel_tool", exc)))
-
-        results.sort(key=lambda item: item[0])
-        return [res for _, res in results]
-
-
