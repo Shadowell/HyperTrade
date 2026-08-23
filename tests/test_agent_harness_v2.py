@@ -84,3 +84,30 @@ def test_async_parallel_tool_dispatcher():
     assert results[0]["val"] == 1
     assert results[1]["val"] == 2
     assert results[2]["val"] == 3
+
+
+def test_water_cooler_truncates_nested_payloads_recursively():
+    cooler = HarnessContextWaterCooler(max_payload_chars=200)
+
+    nested = {
+        "status": "ok",
+        "data": {
+            "rows": [{"i": i} for i in range(30)],
+            "note": "B" * 800,
+        },
+    }
+
+    cooled = cooler.water_cool_payload("bitpro_backtest_get_result", nested)
+
+    assert cooled["_water_cooler"]["truncated"] is True
+    rows = cooled["data"]["rows"]
+    assert len(rows) == 6  # head + truncation marker
+    assert "truncated 25 items" in rows[-1]
+    assert cooled["data"]["note"].endswith("... [truncated] ...")
+
+
+def test_water_cooler_leaves_small_nested_payloads_untouched():
+    cooler = HarnessContextWaterCooler(max_payload_chars=2000)
+
+    payload = {"a": {"b": [1, 2, 3], "c": "short"}}
+    assert cooler.water_cool_payload("tool", payload) == payload

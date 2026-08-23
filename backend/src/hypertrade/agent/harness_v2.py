@@ -43,7 +43,17 @@ class ToolIdempotencyLockGuard:
 
 
 class HarnessContextWaterCooler:
-    """Dynamic context water-cooler truncating large JSON tool outputs."""
+    """Dynamic context water-cooler truncating large JSON tool outputs.
+
+    Truncation is recursive so deeply nested payloads cannot smuggle unbounded
+    arrays or strings past the budget. Metadata fields stay intact and every
+    truncation is self-describing for the planner.
+    """
+
+    MAX_LIST_ITEMS = 10
+    KEEP_HEAD_ITEMS = 5
+    MAX_STRING_CHARS = 500
+    KEEP_STRING_CHARS = 250
 
     def __init__(self, max_payload_chars: int = 2000) -> None:
         self.max_payload_chars = max_payload_chars
@@ -56,8 +66,9 @@ class HarnessContextWaterCooler:
         if len(raw_str) <= self.max_payload_chars:
             return payload
 
-        # Keep metadata fields intact while truncating large nested arrays
-        cooled = dict(payload)
+        cooled: dict[str, Any] = {
+            key: self._cool_value(value) for key, value in payload.items()
+        }
         cooled["_water_cooler"] = {
             "truncated": True,
             "original_bytes": len(raw_str),
@@ -67,15 +78,21 @@ class HarnessContextWaterCooler:
                 f"({len(raw_str)} bytes)."
             ),
         }
-
-        for key in list(cooled.keys()):
-            val = cooled[key]
-            if isinstance(val, list) and len(val) > 10:
-                cooled[key] = val[:5] + [f"... truncated {len(val) - 5} items ..."]
-            elif isinstance(val, str) and len(val) > 500:
-                cooled[key] = val[:250] + "... [truncated] ..."
-
         return cooled
+
+    @classmethod
+    def _cool_value(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: cls._cool_value(item) for key, item in value.items()}
+        if isinstance(value, list):
+            if len(value) > cls.MAX_LIST_ITEMS:
+                kept = [cls._cool_value(item) for item in value[: cls.KEEP_HEAD_ITEMS]]
+                kept.append(f"... truncated {len(value) - cls.KEEP_HEAD_ITEMS} items ...")
+                return kept
+            return [cls._cool_value(item) for item in value]
+        if isinstance(value, str) and len(value) > cls.MAX_STRING_CHARS:
+            return value[: cls.KEEP_STRING_CHARS] + "... [truncated] ..."
+        return value
 
 
 class HarnessTelemetryCollector:
