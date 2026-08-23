@@ -5,8 +5,9 @@ frontend what tools exist and which ones need approval, while the actual trusted
 execution lives in `hypertrade.agent.kernel.AgentKernel`.
 """
 
+from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 ToolScope = Literal[
     "read",
@@ -313,6 +314,965 @@ class ToolRegistry:
 
     def get_for_runtime_name(self, name: str) -> ToolDefinition:
         return self.get(_RUNTIME_TO_REGISTRY_NAME.get(name, name))
+
+
+# The planner-facing OpenAI function schemas. This is the single source of
+# truth for the tool surface: registry policy, runtime names and provider
+# schemas are all derived from the definitions in this module.
+RUNTIME_TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
+    {
+        "type": "function",
+        "function": {
+            "name": "market_summary",
+            "description": (
+                "Fetch and summarize the latest OKX SWAP all-market state, including "
+                "market heat, breadth, sentiment, top movers, and risk appetite."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "market_ticker",
+            "description": (
+                "Fetch one OKX SWAP ticker for any requested listed symbol, "
+                "for example ETH, SOL-USDT, or PEPE-USDT-SWAP."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or OKX instrument id.",
+                    },
+                },
+                "required": ["symbol"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "market_candles",
+            "description": (
+                "Fetch recent OKX candlesticks for one SWAP instrument and calculate "
+                "trend features such as return, range, moving averages, and close position."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or OKX instrument id.",
+                    },
+                    "bar": {
+                        "type": "string",
+                        "description": "OKX candle bar such as 15m, 1H, 4H, or 1D.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of candles to fetch, default 100.",
+                    },
+                },
+                "required": ["symbol"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "market_compare",
+            "description": (
+                "Compare relative strength across multiple OKX SWAP symbols using "
+                "recent candle trend features."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbols": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Coin symbols or OKX instrument ids to compare.",
+                    },
+                    "bar": {
+                        "type": "string",
+                        "description": "OKX candle bar such as 15m, 1H, 4H, or 1D.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of candles to fetch per symbol, default 100.",
+                    },
+                },
+                "required": ["symbols"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "market_intelligence",
+            "description": (
+                "Read-only multi-source market intelligence for one symbol, including "
+                "OKX public funding, open interest, and curated market context."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or OKX SWAP instrument id.",
+                    },
+                    "include_curated": {
+                        "type": "boolean",
+                        "description": "Include deterministic curated context, default true.",
+                    },
+                },
+                "required": ["symbol"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "world_model_snapshot",
+            "description": (
+                "Read-only global operator WorldState snapshot across market, strategy, "
+                "execution, tool health, deployment, missing data, source refs, and "
+                "safe candidate actions, plus portfolio scheduling recommendations. "
+                "Use for global/cross-asset world-model state and portfolio review."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "global_market_snapshot",
+            "description": (
+                "Read current global market regime classifications across equities, "
+                "volatility, FX, commodities, and rates. Returns risk_regime, "
+                "volatility_regime, dollar_pressure, rates_pressure, cross_asset_signal, "
+                "and ticker data for S&P 500, Nasdaq, VIX, DXY, Gold, Oil, Treasuries."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "rag_search",
+            "description": "Search the project knowledge base for relevant trading context.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query text"},
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results (default 3)",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "memory_write",
+            "description": "Persist an audited long-term memory item for future reference.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "Content to remember"},
+                    "kind": {
+                        "type": "string",
+                        "description": "Category such as market_summary or strategy_note",
+                    },
+                },
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "memory_search",
+            "description": "Retrieve recent active long-term memory items.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "strategy_library_search",
+            "description": (
+                "Search aggregated strategy_knowledge memory evidence before proposing "
+                "or iterating strategy research. Returns best/latest evidence, failures, "
+                "next experiments, and source memory ids."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Optional keyword such as symbol, variant, failure, or note."
+                        ),
+                    },
+                    "strategy_key": {
+                        "type": "string",
+                        "description": "Optional canonical strategy key filter.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum strategy summaries to return, default 10.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "strategy_experiment_plan",
+            "description": (
+                "Read strategy-library evidence and produce bounded candidate variants "
+                "for the next strategy experiment without running paper, live, or "
+                "BitPro write tools."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "Strategy iteration prompt or operator goal.",
+                    },
+                    "strategy_key": {
+                        "type": "string",
+                        "description": "Optional canonical strategy key filter.",
+                    },
+                    "max_variants": {
+                        "type": "integer",
+                        "description": "Maximum bounded candidate variants to plan.",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "research_mandate_read",
+            "description": (
+                "Read an operator-approved research mandate before drafting a "
+                "research StrategySpec."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mandate_id": {"type": "string", "description": "Research mandate id."}
+                },
+                "required": ["mandate_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "research_strategy_spec_draft",
+            "description": (
+                "Draft a schema-valid StrategySpec within an active research mandate. "
+                "This tool cannot queue jobs, run backtests, or write to BitPro."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mandate_id": {"type": "string", "description": "Active research mandate id."},
+                    "prompt": {
+                        "type": "string",
+                        "description": "Bounded research hypothesis or strategy question.",
+                    },
+                },
+                "required": ["mandate_id", "prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "research_job_report",
+            "description": (
+                "Read a persisted Sprint 82 research job report, including BitPro "
+                "references and deterministic gate outcomes. This is read-only."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"job_id": {"type": "string", "description": "Research job id."}},
+                "required": ["job_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "strategy_draft",
+            "description": "Create a strategy research record from a hypothesis or question.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "Strategy research hypothesis or question",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "backtest_run",
+            "description": "Run a Backtrader backtest against sample candles.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "research_id": {
+                        "type": "string",
+                        "description": "Research record ID (srch_*). Empty = default strategy.",
+                    },
+                    "strategy_key": {
+                        "type": "string",
+                        "description": "Strategy key to run (default: momentum_breakout_v1)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_capabilities",
+            "description": "Read BitPro MCP contract, tool groups, permissions, and data policy.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_health",
+            "description": "Check BitPro API health before calling BitPro data tools.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_market_klines",
+            "description": (
+                "Read real K-line data from BitPro through the MCP tool contract. "
+                "Use this when the user explicitly asks for BitPro, MCP, "
+                "or BitPro data direct access."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or BitPro/OKX instrument id.",
+                    },
+                    "timeframe": {
+                        "type": "string",
+                        "description": "BitPro timeframe such as 1h, 4h, or 1d.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of candles to fetch, default 200.",
+                    },
+                },
+                "required": ["symbol"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_snapshot",
+            "description": (
+                "Read one immutable BitPro paper evidence snapshot by strategy "
+                "or instance id. Read-only."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer"},
+                    "instance_id": {"type": "string"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_dashboard",
+            "description": (
+                "Read BitPro paper/simulation dashboard state. Read-only. "
+                "When no strategy_id is provided, HyperTrade also returns the BitPro "
+                "running strategy inventory so all/哪些/几个 paper strategy questions "
+                "are not answered from the current dashboard instance alone."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {
+                        "type": "integer",
+                        "description": (
+                            "Optional explicit BitPro strategy id filter. Omit this for all/"
+                            "全部/哪些/几个 running paper strategy questions."
+                        ),
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_strategy_performance",
+            "description": (
+                "Read and rank running BitPro paper/simulation strategy performance. "
+                "Read-only. Use this for best/highest-return paper strategy questions. "
+                "The tool rejects dashboard evidence whose returned strategy id does not "
+                "match the requested strategy and reports comparison coverage explicitly."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum running strategies to validate, default 20.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_events",
+            "description": (
+                "Read BitPro paper/simulation event stream. Read-only. Use this "
+                "for paper errors, logs, lifecycle events, order rejects, and "
+                "monitoring evidence."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {
+                        "type": "integer",
+                        "description": "Optional BitPro strategy id filter.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum events to request and show, default 50.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_equity_curve",
+            "description": (
+                "Read BitPro paper/simulation equity curve and drawdown samples. "
+                "Read-only. Use this for paper PnL curve, equity drift, drawdown, "
+                "and monitoring evidence."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {
+                        "type": "integer",
+                        "description": "Optional BitPro strategy id filter.",
+                    },
+                    "sample_limit": {
+                        "type": "integer",
+                        "description": (
+                            "Maximum curve rows to include in the Agent output, default 50."
+                        ),
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_monitor_snapshot",
+            "description": (
+                "Capture a durable BitPro paper/simulation monitoring snapshot. "
+                "Read-only. Reads dashboard, event stream, and equity curve evidence, "
+                "then compares it with the previous snapshot for drift."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {
+                        "type": "integer",
+                        "description": "Optional BitPro strategy id filter.",
+                    },
+                    "event_limit": {
+                        "type": "integer",
+                        "description": "Maximum paper events to request, default 50.",
+                    },
+                    "equity_sample_limit": {
+                        "type": "integer",
+                        "description": "Maximum equity curve rows to sample, default 50.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_live_positions",
+            "description": "Read BitPro live account positions for diagnostics only. Never writes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "exchange": {"type": "string", "description": "Exchange name, default okx."},
+                    "symbol": {"type": "string", "description": "Optional symbol filter."},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_live_order_history",
+            "description": (
+                "Read-only BitPro live account order history for diagnostics. Use this "
+                "for recent/latest live orders, 最近一笔实盘订单, real-account order "
+                "history, filled/rejected order audit, and strategy attribution. Never writes."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "exchange": {"type": "string", "description": "Exchange name, default okx."},
+                    "symbol": {"type": "string", "description": "Optional symbol filter."},
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum history rows to request, default 50.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_live_strategy_performance",
+            "description": (
+                "Read-only BitPro live strategy performance ranking for diagnostics. Use this "
+                "for highest/best live strategy return, 实盘收益最高, 实盘策略收益, "
+                "live strategy PnL, and return_pct ranking questions. Never writes."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "exchange": {"type": "string", "description": "Exchange name, default okx."},
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum ranked strategy rows to request, default 20.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_strategy_search",
+            "description": (
+                "Search BitPro strategy library before creating or selecting a strategy."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "search": {"type": "string", "description": "Strategy name or keyword."},
+                    "page": {"type": "integer", "description": "Result page, default 1."},
+                    "per_page": {"type": "integer", "description": "Page size, default 18."},
+                    "status": {"type": "string", "description": "Status filter, default all."},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_strategy_generate",
+            "description": (
+                "Use BitPro strategy-generation skills to draft strategy code for research, "
+                "backtesting, or paper validation. Not for live trading."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Strategy idea or requirement."},
+                    "symbol": {"type": "string", "description": "Trading symbol, default BTC."},
+                    "timeframe": {
+                        "type": "string",
+                        "description": "Strategy timeframe, default 1h.",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_strategy_create",
+            "description": "Create a BitPro strategy definition from generated or reviewed code.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Strategy name."},
+                    "script_content": {"type": "string", "description": "Strategy Python code."},
+                    "description": {"type": "string", "description": "Optional strategy notes."},
+                    "config": {"type": "object", "description": "Optional strategy config."},
+                    "exchange": {"type": "string", "description": "Exchange, default okx."},
+                    "symbols": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Symbols the strategy supports.",
+                    },
+                },
+                "required": ["name", "script_content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_strategy_update",
+            "description": (
+                "Update BitPro strategy metadata or DB-backed strategy content, such as "
+                "renaming a strategy to the canonical BitPro naming format. Not live trading."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer", "description": "BitPro strategy id."},
+                    "name": {"type": "string", "description": "Canonical strategy name."},
+                    "script_content": {
+                        "type": "string",
+                        "description": "Optional replacement strategy Python code.",
+                    },
+                    "description": {"type": "string", "description": "Optional strategy notes."},
+                    "config": {"type": "object", "description": "Optional strategy config."},
+                    "exchange": {"type": "string", "description": "Optional exchange."},
+                    "symbols": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional symbols the strategy supports.",
+                    },
+                },
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_backtest_start_job",
+            "description": "Start a BitPro-owned backtest job for a strategy.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer", "description": "BitPro strategy id."},
+                    "start_date": {"type": "string", "description": "Start date YYYY-MM-DD."},
+                    "end_date": {"type": "string", "description": "End date YYYY-MM-DD."},
+                    "initial_capital": {
+                        "type": "number",
+                        "description": "Initial capital, default 10000.",
+                    },
+                    "exchange": {"type": "string", "description": "Exchange, default okx."},
+                    "symbol": {"type": "string", "description": "Optional symbol override."},
+                    "timeframe": {"type": "string", "description": "Optional timeframe override."},
+                },
+                "required": ["strategy_id", "start_date", "end_date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_backtest_get_job",
+            "description": "Read status/progress for a BitPro backtest job.",
+            "parameters": {
+                "type": "object",
+                "properties": {"job_id": {"type": "string", "description": "Backtest job id."}},
+                "required": ["job_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_backtest_list_results",
+            "description": (
+                "Read BitPro-owned backtest result records and filter by actual total "
+                "backtest return. Use this for questions like 回测收益大于100%, "
+                "best backtests, result ranking, or page parity. Do not use annualized "
+                "return as total return."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "min_total_return_pct": {
+                        "type": "number",
+                        "description": "Optional minimum actual total return percent.",
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Backtest status filter, default completed.",
+                    },
+                    "sort_by": {
+                        "type": "string",
+                        "description": "Sort key for BitPro, default return.",
+                    },
+                    "sort_order": {
+                        "type": "string",
+                        "description": "Sort order asc or desc, default desc.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum records to inspect, default 100.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_backtest_get_result",
+            "description": (
+                "Read one BitPro-owned backtest result detail, including metrics, "
+                "equity curve, trades, orders, fills, and drawdown artifact samples. "
+                "Use this when the user asks for a specific result id or evidence details."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "backtest_id": {
+                        "type": "string",
+                        "description": (
+                            "BitPro backtest result id, usually from backtest list results."
+                        ),
+                    },
+                    "sample_limit": {
+                        "type": "integer",
+                        "description": "Maximum rows to sample per artifact, default 20.",
+                    },
+                },
+                "required": ["backtest_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_configure",
+            "description": "Configure a BitPro paper/simulation instance for a strategy.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer", "description": "BitPro strategy id."},
+                    "initial_equity": {
+                        "type": "number",
+                        "description": "Paper equity, default 10000.",
+                    },
+                    "exchange": {"type": "string", "description": "Exchange, default okx."},
+                    "loop_interval_sec": {
+                        "type": "integer",
+                        "description": "Loop interval seconds, default 60.",
+                    },
+                },
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_start",
+            "description": "Start a specific BitPro paper/simulation instance. Not live trading.",
+            "parameters": {
+                "type": "object",
+                "properties": {"strategy_id": {"type": "integer", "description": "Instance id."}},
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_pause",
+            "description": "Pause a specific BitPro paper/simulation instance. Not live trading.",
+            "parameters": {
+                "type": "object",
+                "properties": {"strategy_id": {"type": "integer", "description": "Instance id."}},
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_resume",
+            "description": "Resume a specific BitPro paper/simulation instance. Not live trading.",
+            "parameters": {
+                "type": "object",
+                "properties": {"strategy_id": {"type": "integer", "description": "Instance id."}},
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_paper_stop",
+            "description": "Stop a specific BitPro paper/simulation instance. Not live trading.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer", "description": "Instance id."},
+                    "clear_metrics": {
+                        "type": "boolean",
+                        "description": "Whether BitPro should clear metrics.",
+                    },
+                },
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "live_order_intent",
+            "description": (
+                "Create a testnet/live order intent that must be approved by a human. "
+                "This tool never executes an exchange order."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or OKX instrument id.",
+                    },
+                    "side": {"type": "string", "enum": ["buy", "sell"]},
+                    "size": {
+                        "type": "string",
+                        "description": "Contract/order size as decimal text.",
+                    },
+                    "order_type": {"type": "string", "enum": ["market", "limit"]},
+                    "price": {
+                        "type": "string",
+                        "description": "Limit price, if order_type is limit.",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Why this order is being proposed.",
+                    },
+                },
+                "required": ["symbol", "side", "size"],
+            },
+        },
+    },
+)
+
+
+_IDEMPOTENCY_REQUIRED_TOOL_NAMES = {
+    "bitpro_strategy_generate",
+    "bitpro_strategy_create",
+    "bitpro_strategy_update",
+    "bitpro_backtest_start_job",
+    "bitpro_paper_configure",
+    "bitpro_paper_start",
+    "bitpro_paper_pause",
+    "bitpro_paper_resume",
+    "bitpro_paper_stop",
+    "live_order_intent",
+}
+
+# Write tools must carry an idempotency_key in their planner schema so the
+# model is nudged to supply one; governance still denies missing keys.
+for schema in RUNTIME_TOOL_SCHEMAS:
+    function = schema.get("function", {})
+    name = function.get("name")
+    if name not in _IDEMPOTENCY_REQUIRED_TOOL_NAMES:
+        continue
+    parameters = function.get("parameters", {})
+    properties = parameters.setdefault("properties", {})
+    properties.setdefault(
+        "idempotency_key",
+        {
+            "type": "string",
+            "description": (
+                "Unique key for this requested write action, for example run id + tool purpose."
+            ),
+        },
+    )
+
+
+def default_runtime_schemas() -> list[dict[str, Any]]:
+    """Deep-copied planner-facing schemas; callers may safely mutate results."""
+
+    return list(deepcopy(RUNTIME_TOOL_SCHEMAS))
+
+
+def read_only_runtime_tool_names() -> frozenset[str]:
+    """Runtime tool names whose trusted policy scope is read-only.
+
+    Derived from registry policy instead of a hand-maintained list so parallel
+    dispatch can never widen beyond what governance considers safe to run
+    concurrently.
+    """
+
+    registry = ToolRegistry.default()
+    names: set[str] = set()
+    for schema in RUNTIME_TOOL_SCHEMAS:
+        name = str(schema.get("function", {}).get("name", ""))
+        if not name:
+            continue
+        try:
+            definition = registry.get_for_runtime_name(name)
+        except KeyError:
+            continue
+        if definition.policy.scope in ("read", "live_diagnostic_read"):
+            names.add(name)
+    return frozenset(names)
+
 
 
 def _default_policy_for(

@@ -14,35 +14,13 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
+from hypertrade.tools.registry import read_only_runtime_tool_names
+
 logger = logging.getLogger(__name__)
 
-READ_ONLY_TOOL_NAMES: set[str] = {
-    "market_summary",
-    "market_ticker",
-    "market_candles",
-    "market_compare",
-    "market_intelligence",
-    "world_model_snapshot",
-    "global_market_snapshot",
-    "rag_search",
-    "memory_search",
-    "strategy_library_search",
-    "research_mandate_read",
-    "research_job_report",
-    "bitpro_capabilities",
-    "bitpro_health",
-    "bitpro_market_klines",
-    "bitpro_paper_dashboard",
-    "bitpro_paper_events",
-    "bitpro_paper_equity_curve",
-    "bitpro_paper_strategy_performance",
-    "bitpro_paper_monitor_snapshot",
-    "bitpro_live_positions",
-    "bitpro_live_order_history",
-    "bitpro_live_strategy_performance",
-    "bitpro_backtest_list_results",
-    "bitpro_backtest_get_result",
-}
+# Derived from registry policy scopes so the parallel dispatcher can never run
+# a tool concurrently that governance does not classify as read-only.
+READ_ONLY_TOOL_NAMES: frozenset[str] = read_only_runtime_tool_names()
 
 
 class ToolIdempotencyLockGuard:

@@ -71,3 +71,40 @@ def test_global_market_runtime_name_uses_the_read_only_registry_policy():
     assert tool.policy.scope == "read"
     assert tool.policy.approval == "none"
     assert tool.policy.source_of_truth == "yfinance+alpha_vantage"
+
+
+def test_runtime_schemas_all_map_to_registered_tools():
+    """Single-source-of-truth guard: planner schemas and registry never drift."""
+    from hypertrade.tools.registry import default_runtime_schemas
+
+    registry = ToolRegistry.default()
+    seen: set[str] = set()
+
+    for schema in default_runtime_schemas():
+        function = schema["function"]
+        name = function["name"]
+        assert name not in seen, f"duplicate runtime schema: {name}"
+        seen.add(name)
+        # Raises KeyError when a schema exists without a registry entry.
+        definition = registry.get_for_runtime_name(name)
+        assert definition.description
+        assert isinstance(function["parameters"], dict)
+
+    assert len(seen) >= 40
+
+
+def test_read_only_tool_names_derive_from_registry_policy():
+    from hypertrade.tools.registry import (
+        default_runtime_schemas,
+        read_only_runtime_tool_names,
+    )
+
+    read_only = read_only_runtime_tool_names()
+    schema_names = {
+        str(schema["function"]["name"]) for schema in default_runtime_schemas()
+    }
+
+    assert read_only <= schema_names
+    for write_tool in ("live_order_intent", "bitpro_paper_start", "memory_write"):
+        assert write_tool not in read_only
+    assert "market_summary" in read_only
