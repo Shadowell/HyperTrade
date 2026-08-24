@@ -1,5 +1,21 @@
 # Progress Log
 
+## 标准 MCP 客户端层（sprint-142）— 2026-08-24
+
+- **合同**：[standard-mcp-client-layer](contracts/sprint-142-standard-mcp-client-layer.md)。
+  从"自造 REST 映射 + 单工具硬编码 SDK 调用"升级为通用标准 MCP 客户端层。
+- **`connectors/mcp_client.py`**：`McpClientRegistry` 多 server 注册、
+  `tools/list` 动态发现（TTL 缓存 + force_refresh）、`tools/call` 任意调用、
+  传输类错误指数退避重试（工具级 isError 是结构化失败，不重试但计入熔断）、
+  每 server 熔断器（连续 N 败→open→半开探针恢复）、未知工具错误自动失效
+  发现缓存。Transport 可注入：生产=官方 SDK Streamable HTTP，测试=fake
+  （韧性语义零网络验证）。
+- **Agent 工具面**（registry 单一事实来源）：`mcp.discover`（read）与
+  `mcp.invoke_tool`（research_write + 幂等必填——外部工具保守归类为潜在变更）；
+  `MCP_SERVERS_JSON` 显式白名单，未配置时两工具返回结构化不可用。
+- **验证**：8 个新测试；`./scripts/check.sh` 全绿（1126 passed）。
+  BitPro REST shim 保持不动（迁移留后续）。
+
 ## 对话 Agent 质量修复：100 用例评测驱动的五项缺陷修复 — 2026-08-24
 
 - **背景**：按产品所有者要求搭建 100 用例对话质量评测（`scratch/agent_eval_100.py`，10 类别
