@@ -1,5 +1,20 @@
 # Progress Log
 
+## Token Streaming（sprint-144）— 2026-08-24
+
+- **合同**：[token-streaming](contracts/sprint-144-token-streaming.md)。
+  最终回答从"转圈等整块报告"变为逐 token 实时出字。P1 最后一项。
+- **provider 层**：`stream_chat`（stream=True + include_usage）——内容增量实时
+  `on_delta`；tool_call 增量按 index 跨块累积为完整调用；usage 走共享归一化；
+  reasoning_content 累积但**永不**进操作者可见流；client 可注入实现 chunk 级测试。
+  非流式 `chat()` 重构到共享响应解析器。
+- **planner/kernel/CLI 全链**：`delta_sink` → `answer_delta` 事件 → SSE/队列转发 →
+  CLI 首个 delta 停动画实时出字；流内完整交付的 run 以精简 footer 收尾（防全文
+  重复渲染），断线恢复路径永远全量渲染（live delta 只是残片）。不支持流式的
+  provider（Codex Responses）自动回落，行为不变。
+- **验证**：6 个新测试（增量顺序/跨块累积/usage/reasoning 隔离/planner 集成/
+  kernel 事件）；`./scripts/check.sh` 全绿（1143 passed）。
+
 ## 代码工作区工具面（sprint-143）— 2026-08-24
 
 - **合同**：[agent-code-workspace](contracts/sprint-143-agent-code-workspace.md)。
