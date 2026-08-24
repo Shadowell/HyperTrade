@@ -98,7 +98,7 @@ from hypertrade.runtime.adapters.context_engine import (
     SqlContextArtifactStore,
 )
 from hypertrade.runtime.adapters.memory_store import InMemoryMissionStore
-from hypertrade.runtime.adapters.research_planner import ProviderBackedResearchPlanner
+from hypertrade.runtime.adapters.research_planner import build_mission_planner
 from hypertrade.runtime.adapters.sql_store import SqlAlchemyMissionStore
 from hypertrade.runtime.adapters.tool_runtime import (
     GovernedToolExecutor,
@@ -1992,11 +1992,12 @@ class LocalAgentClient:
         await catalog.bootstrap(builtin_capabilities())
         runtime = MissionRuntime(
             store,
-            ProviderBackedResearchPlanner(
-                provider=ProviderRuntime(self.settings).get_chat_provider(
+            build_mission_planner(
+                self.settings,
+                ProviderRuntime(self.settings).get_chat_provider(
                     selected=self.selected_provider,
                     selected_model=self.selected_provider_model or None,
-                )
+                ),
             ),
             GovernedToolExecutor(
                 catalog,

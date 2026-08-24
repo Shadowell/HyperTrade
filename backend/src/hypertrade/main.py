@@ -168,7 +168,7 @@ from hypertrade.runtime.adapters.effect_store import (
     SqlEffectGovernanceStore,
 )
 from hypertrade.runtime.adapters.memory_store import InMemoryMissionStore
-from hypertrade.runtime.adapters.research_planner import ProviderBackedResearchPlanner
+from hypertrade.runtime.adapters.research_planner import build_mission_planner
 from hypertrade.runtime.adapters.sandbox import (
     InMemorySandboxStore,
     SqlSandboxStore,
@@ -494,10 +494,11 @@ def create_app(
     # fallback is deterministic and the catalog remains the pre-dispatch gate.
     mission_runtime = MissionRuntime(
         mission_store,
-        ProviderBackedResearchPlanner(
-            provider=ProviderRuntime(app_settings).get_chat_provider(
+        build_mission_planner(
+            app_settings,
+            ProviderRuntime(app_settings).get_chat_provider(
                 selected=app_settings.active_chat_provider,
-            )
+            ),
         ),
         tool_executor,
         CatalogCapabilityPolicy(capability_catalog),

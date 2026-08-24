@@ -200,6 +200,340 @@ class ProviderBackedResearchPlanner:
             return fallback
 
 
+_INSTRUMENT_ARGUMENT_KEYS = frozenset({"inst_id", "symbol", "inst_ids"})
+_LLM_PLAN_MAX_STEPS = 8
+_LLM_PLAN_MAX_ARGUMENT_CHARS = 200
+
+
+class LlmPlanV2Planner:
+    """LLM proposes the step DAG; deterministic contracts validate every step.
+
+    Unlike :class:`ProviderBackedResearchPlanner` (model only extracts intent
+    entities), this planner lets the model choose WHICH reviewed read
+    capabilities to use, in what order, and with which bounded arguments. The
+    trust boundary is unchanged: capabilities must resolve inside the reviewed
+    read-only envelope, arguments must satisfy the catalog JSON Schema,
+    market entities must be copied verbatim from the objective, and any
+    validation failure falls back to the deterministic plan. Dispatch still
+    re-validates through CatalogCapabilityPolicy and GovernedToolExecutor.
+    """
+
+    def __init__(
+        self,
+        *,
+        provider: ChatProvider | None,
+        fallback: DeterministicResearchPlanner | None = None,
+        capabilities: Sequence[Any] | None = None,
+    ) -> None:
+        from hypertrade.runtime.adapters.capability_catalog import builtin_capabilities
+
+        self.provider = provider
+        self.fallback = fallback or DeterministicResearchPlanner()
+        definitions = tuple(capabilities) if capabilities else builtin_capabilities()
+        self._envelope: dict[str, dict[str, Any]] = {}
+        for definition in definitions:
+            if (
+                getattr(definition, "scope", "read") != "read"
+                or getattr(definition, "approval", "none") != "none"
+                or getattr(definition, "side_effect", "none") != "none"
+            ):
+                continue
+            self._envelope[str(definition.capability_id)] = {
+                "title": str(getattr(definition, "title", "")),
+                "description": str(getattr(definition, "description", "")),
+                "input_schema": dict(getattr(definition, "input_schema", {}) or {}),
+                "output_schema": dict(getattr(definition, "output_schema", {}) or {}),
+            }
+
+    async def plan(self, mission: MissionProjection) -> PlanV2:
+        fallback = await self.fallback.plan(mission)
+        return await self._propose(mission, fallback, previous=None, request=None)
+
+    async def replan(
+        self,
+        mission: MissionProjection,
+        previous: PlanV2,
+        request: ReplanRequestV1,
+    ) -> PlanV2:
+        fallback = await self.fallback.replan(mission, previous, request)
+        return await self._propose(mission, fallback, previous=previous, request=request)
+
+    async def _propose(
+        self,
+        mission: MissionProjection,
+        fallback: PlanV2,
+        *,
+        previous: PlanV2 | None,
+        request: ReplanRequestV1 | None,
+    ) -> PlanV2:
+        if self.provider is None or not self._envelope:
+            return fallback
+        messages = _llm_plan_messages(
+            mission, fallback, previous, request, envelope=self._envelope
+        )
+        # One proposal + one bounded repair round; anything worse falls back.
+        for attempt in range(2):
+            try:
+                response = await anyio.to_thread.run_sync(self.provider.chat, messages)
+                return _apply_provider_plan(
+                    response.content,
+                    mission=mission,
+                    fallback=fallback,
+                    previous=previous,
+                    request=request,
+                    envelope=self._envelope,
+                )
+            except _PlanValidationError as exc:
+                if attempt == 1:
+                    return fallback
+                messages = [
+                    *messages,
+                    {"role": "assistant", "content": exc.content},
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "plan_rejected": exc.reason,
+                                "instruction": (
+                                    "Return a corrected JSON plan that satisfies every "
+                                    "constraint. JSON only, no prose."
+                                ),
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                ]
+            except Exception:  # noqa: BLE001 - untrusted provider boundary falls back safely
+                return fallback
+        return fallback
+
+
+class _PlanValidationError(ValueError):
+    """Carries the raw model content so the repair round can quote it."""
+
+    def __init__(self, reason: str, content: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.content = content
+
+
+def _llm_plan_messages(
+    mission: MissionProjection,
+    fallback: PlanV2,
+    previous: PlanV2 | None,
+    request: ReplanRequestV1 | None,
+    *,
+    envelope: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    del fallback  # the deterministic plan is the safety net, not model context
+    system = {
+        "role": "system",
+        "content": (
+            "You are the HyperTrade mission planner. Return JSON only, no prose. "
+            "Propose a short read-only research plan as "
+            '{"goal_interpretation": string, "steps": [{"step_id": string, '
+            '"title": string, "capability_id": string, "arguments": object, '
+            '"depends_on": [string]}]}. '
+            "Rules: use ONLY the listed capability ids; step arguments must obey each "
+            "capability input_schema; the first step must be runtime.objective_inspection "
+            "with the objective argument; market instrument ids must be copied verbatim "
+            "from the objective; keep the plan under 8 steps; step_id must be "
+            "snake_case and unique; depends_on must reference earlier step ids only; "
+            "never propose writes, approvals, or capabilities outside the list."
+        ),
+    }
+    payload: dict[str, Any] = {
+        "objective": mission.objective,
+        "constraints": list(mission.constraints),
+        "max_steps": min(mission.budget.max_steps_per_plan, _LLM_PLAN_MAX_STEPS),
+        "capabilities": [
+            {
+                "capability_id": capability_id,
+                "title": spec["title"],
+                "description": spec["description"],
+                "input_schema": spec["input_schema"],
+            }
+            for capability_id, spec in sorted(envelope.items())
+        ],
+    }
+    if previous is not None:
+        payload["replan"] = {
+            "trigger": request.trigger if request is not None else "user_steer",
+            "summary": request.summary if request is not None else "",
+            "failed_step_id": request.failed_step_id if request is not None else "",
+            "previous_version": previous.version,
+            "previous_steps": [
+                {"step_id": step.step_id, "capability_id": step.capability_id}
+                for step in previous.steps
+            ],
+        }
+    return [system, {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
+
+
+def _apply_provider_plan(
+    content: str,
+    *,
+    mission: MissionProjection,
+    fallback: PlanV2,
+    previous: PlanV2 | None,
+    request: ReplanRequestV1 | None,
+    envelope: dict[str, dict[str, Any]],
+) -> PlanV2:
+    """Validate a model-proposed DAG into a PlanV2, or raise _PlanValidationError."""
+
+    try:
+        raw = json.loads(_json_object(content))
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise _PlanValidationError("response is not a JSON object", content) from exc
+    if not isinstance(raw, dict):
+        raise _PlanValidationError("plan response must be an object", content)
+    goal = str(raw.get("goal_interpretation", "")).strip()
+    if not (3 <= len(goal) <= 2000):
+        raise _PlanValidationError("goal_interpretation must be 3..2000 chars", content)
+    raw_steps = raw.get("steps")
+    if not isinstance(raw_steps, list) or not raw_steps:
+        raise _PlanValidationError("steps must be a non-empty array", content)
+    max_steps = min(mission.budget.max_steps_per_plan, _LLM_PLAN_MAX_STEPS)
+    if len(raw_steps) > max_steps:
+        raise _PlanValidationError(f"plan exceeds {max_steps} steps", content)
+
+    steps: list[PlanStepV2] = []
+    seen_ids: set[str] = set()
+    for index, item in enumerate(raw_steps):
+        step = _validated_provider_step(
+            item,
+            index=index,
+            envelope=envelope,
+            objective=mission.objective,
+            seen_ids=seen_ids,
+            content=content,
+        )
+        steps.append(step)
+
+    version = previous.version + 1 if previous is not None else 1
+    kept = tuple(
+        step.step_id
+        for step in (previous.steps if previous is not None else ())
+        if step.step_id in {item.step_id for item in steps}
+    )
+    try:
+        return PlanV2(
+            plan_id=_plan_id(mission.mission_id, version),
+            version=version,
+            parent_version=previous.version if previous is not None else None,
+            goal_interpretation=goal,
+            assumptions=(
+                "LLM proposed plan; every step re-validates against the reviewed "
+                "capability catalog at dispatch.",
+                "Only reviewed read capabilities may be dispatched.",
+                "Completion is derived from validated observations, not model prose.",
+                *(
+                    (f"Replan trigger: {request.trigger}.",)
+                    if request is not None
+                    else ()
+                ),
+            ),
+            completion_checks=tuple(item.criterion_id for item in mission.success_criteria),
+            steps=tuple(steps),
+            diff=PlanDiffV1(
+                kept=kept,
+                added=tuple(step.step_id for step in steps if step.step_id not in kept),
+                removed=tuple(
+                    step.step_id
+                    for step in (previous.steps if previous is not None else ())
+                    if step.step_id not in {item.step_id for item in steps}
+                ),
+                reason_code=request.trigger if request is not None else "llm_initial_plan",
+            ),
+        )
+    except ValueError as exc:
+        raise _PlanValidationError(f"plan failed contract validation: {exc}", content) from exc
+
+
+def _validated_provider_step(
+    item: Any,
+    *,
+    index: int,
+    envelope: dict[str, dict[str, Any]],
+    objective: str,
+    seen_ids: set[str],
+    content: str,
+) -> PlanStepV2:
+    from typing import NoReturn
+
+    from jsonschema import Draft202012Validator
+    from jsonschema import ValidationError as JsonSchemaValidationError
+
+    def _reject(reason: str) -> NoReturn:
+        raise _PlanValidationError(f"step[{index}]: {reason}", content)
+
+    if not isinstance(item, dict):
+        _reject("step must be an object")
+    capability_id = str(item.get("capability_id", ""))
+    spec = envelope.get(capability_id)
+    if spec is None:
+        _reject(f"capability {capability_id!r} is outside the reviewed read-only envelope")
+    step_id = str(item.get("step_id", ""))
+    if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", step_id):
+        _reject("step_id must be snake_case")
+    if step_id in seen_ids:
+        _reject("duplicate step_id")
+    title = str(item.get("title", "")).strip()
+    if not (3 <= len(title) <= 240):
+        _reject("title must be 3..240 chars")
+    raw_arguments = item.get("arguments")
+    if not isinstance(raw_arguments, dict):
+        _reject("arguments must be an object")
+    try:
+        Draft202012Validator(spec["input_schema"]).validate(raw_arguments)
+    except JsonSchemaValidationError as exc:
+        _reject(f"arguments violate {capability_id} input_schema: {exc.message[:160]}")
+    arguments: dict[str, Any] = {}
+    for key, value in raw_arguments.items():
+        if isinstance(value, str) and len(value) > _LLM_PLAN_MAX_ARGUMENT_CHARS:
+            _reject(f"argument {key} exceeds {_LLM_PLAN_MAX_ARGUMENT_CHARS} chars")
+        arguments[str(key)] = value
+    for key in sorted(set(arguments) & _INSTRUMENT_ARGUMENT_KEYS):
+        values = arguments[key] if isinstance(arguments[key], list) else [arguments[key]]
+        for value in values:
+            if not isinstance(value, str):
+                _reject(f"argument {key} must contain string instruments")
+            if _validated_provider_market_instrument(value, objective) is None:
+                _reject(
+                    f"instrument {value!r} for {key} is not verbatim in the objective"
+                )
+    depends_on_raw = item.get("depends_on", [])
+    if not isinstance(depends_on_raw, list) or any(
+        not isinstance(dep, str) for dep in depends_on_raw
+    ):
+        _reject("depends_on must be an array of step ids")
+    seen_ids.add(step_id)
+    return PlanStepV2(
+        step_id=step_id,
+        title=title,
+        depends_on=tuple(str(dep) for dep in depends_on_raw),
+        capability_id=capability_id,
+        arguments=arguments,
+        expected_output_schema=dict(spec["output_schema"]),
+        read_only=True,
+        requires_approval=False,
+    )
+
+
+def build_mission_planner(settings: Any, provider: ChatProvider | None) -> Any:
+    """Mission planner factory: LLM DAG proposal with deterministic safety net.
+
+    The flag-off and no-provider paths preserve the exact pre-existing behavior
+    so operators can revert without code changes.
+    """
+    fallback = DeterministicResearchPlanner()
+    if provider is None:
+        return fallback
+    if not bool(getattr(settings, "mission_llm_planner_enabled", False)):
+        return ProviderBackedResearchPlanner(provider=provider, fallback=fallback)
+    return LlmPlanV2Planner(provider=provider, fallback=fallback)
+
+
 def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
     lowered = objective.casefold()
     capabilities = ["runtime.objective_inspection"]

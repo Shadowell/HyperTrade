@@ -1,5 +1,25 @@
 # Progress Log
 
+## 自主性支柱①：Mission LLM Planner（sprint-138）— 2026-08-24
+
+- **合同**：[mission-llm-planner](contracts/sprint-138-mission-llm-planner.md)。
+  Mission 规划层从"LLM 只抽意图符号 + 关键词路由"升级为 **LLM 直接提议步骤 DAG**
+  （选哪些已审核能力、什么顺序、什么参数）。
+- **`LlmPlanV2Planner`**：单次提议 + 一次修复回合 + 确定性回落。信任边界不变：
+  能力只能来自 read/approval=none/side_effect=none 的目录信封；参数过目录
+  JSON Schema；金融实体必须逐字来自用户目标（复用既有校验器）；步数受
+  mission budget 约束；output schema 一律取自目录而非模型；分发时
+  `CatalogCapabilityPolicy` + `GovernedToolExecutor` 仍二次校验。
+- **工厂 `build_mission_planner`**：flag `MISSION_LLM_PLANNER_ENABLED`（默认开）
+  关闭或无 provider 时与旧行为逐字节一致；main/worker/cli 三处构造点接线。
+- **测试密闭化（重要副产物）**：发现仓库 `.env` 的 DeepSeek key 经
+  pydantic-settings 泄漏进测试——旧 `ProviderBackedResearchPlanner` 一直在
+  测试里静默打真 API（意图抽取失败静默回落所以未暴露），新 planner 把它放大成
+  7 步计划导致断言失败。新增 `tests/conftest.py` autouse 夹具清空 provider key
+  环境变量（显式传 key 的测试不受影响），mission 测试 169s → 3s，全套件快约 60s。
+- **验证**：新增 9 个 planner 测试钉住全部信任边界；`./scripts/check.sh` 全绿
+  （1096 passed）。
+
 ## Operator Console 专业化与断线自恢复 — 2026-08-24
 
 - **断线不再丢结果**（修复用户实测报障）：`render_run_stream` 此前在 httpx 断开时

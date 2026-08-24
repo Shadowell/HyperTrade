@@ -43,7 +43,7 @@ from hypertrade.runtime.adapters.context_engine import (
     ContextArtifactEngine,
     SqlContextArtifactStore,
 )
-from hypertrade.runtime.adapters.research_planner import ProviderBackedResearchPlanner
+from hypertrade.runtime.adapters.research_planner import build_mission_planner
 from hypertrade.runtime.adapters.sql_store import SqlAlchemyMissionStore
 from hypertrade.runtime.adapters.tool_runtime import (
     GovernedToolExecutor,
@@ -74,10 +74,11 @@ async def _mission_runtime_resources(
     await catalog.bootstrap(builtin_capabilities())
     runtime = MissionRuntime(
         store,
-        ProviderBackedResearchPlanner(
-            provider=ProviderRuntime(settings).get_chat_provider(
+        build_mission_planner(
+            settings,
+            ProviderRuntime(settings).get_chat_provider(
                 selected=settings.active_chat_provider,
-            )
+            ),
         ),
         GovernedToolExecutor(
             catalog,
