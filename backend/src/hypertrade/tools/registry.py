@@ -177,6 +177,22 @@ class ToolRegistry:
                     "paper",
                 ),
                 ToolDefinition(
+                    "mcp.discover",
+                    (
+                        "List configured standard MCP servers and dynamically "
+                        "discovered tools via tools/list."
+                    ),
+                    "mcp",
+                ),
+                ToolDefinition(
+                    "mcp.invoke_tool",
+                    (
+                        "Invoke one tool on a configured standard MCP server "
+                        "via tools/call."
+                    ),
+                    "mcp",
+                ),
+                ToolDefinition(
                     "research.evidence_read",
                     "Read active, source-bound Evidence V2 records for the current Task.",
                     "research",
@@ -739,6 +755,62 @@ RUNTIME_TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
                     },
                 },
                 "required": ["evidence_id", "reason"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "mcp_discover",
+            "description": (
+                "List configured standard MCP servers and their dynamically "
+                "discovered tools (tools/list). Use this before mcp_invoke_tool "
+                "to learn each tool's name, purpose and argument schema. "
+                "Set force_refresh when a server may have deployed new tools."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "server": {
+                        "type": "string",
+                        "description": "Optional server name; omit to list all servers.",
+                    },
+                    "force_refresh": {
+                        "type": "boolean",
+                        "description": "Bypass the discovery cache, default false.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "mcp_invoke_tool",
+            "description": (
+                "Invoke one tool on a configured standard MCP server (tools/call). "
+                "Arguments must match the tool's input schema from mcp_discover. "
+                "External tools are treated as potentially mutating: include a "
+                "unique idempotency_key."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "server": {
+                        "type": "string",
+                        "description": "Configured MCP server name.",
+                    },
+                    "tool": {
+                        "type": "string",
+                        "description": "Tool name as returned by mcp_discover.",
+                    },
+                    "arguments": {
+                        "type": "object",
+                        "description": "Arguments matching the tool input schema.",
+                    },
+                },
+                "required": ["server", "tool"],
             },
         },
     },
@@ -1350,6 +1422,7 @@ _IDEMPOTENCY_REQUIRED_TOOL_NAMES = {
     "bitpro_paper_resume",
     "bitpro_paper_stop",
     "paper_promotion_request",
+    "mcp_invoke_tool",
     "live_order_intent",
 }
 
@@ -1529,6 +1602,8 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "research_job_report": "research.job_report",
     "research_validation_gate": "research.validation_gate",
     "paper_promotion_request": "paper.promotion_request",
+    "mcp_discover": "mcp.discover",
+    "mcp_invoke_tool": "mcp.invoke_tool",
     "backtest_run": "backtest.run",
     "bitpro_capabilities": "bitpro.capabilities",
     "bitpro_health": "bitpro.health",
@@ -1661,6 +1736,19 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
         idempotency="required",
         source="hypertrade_db",
         timeout="standard",
+        sample=1,
+    ),
+    "mcp.discover": _policy(
+        source="mcp_servers",
+        timeout="standard",
+        sample=50,
+        failure="return_unavailable",
+    ),
+    "mcp.invoke_tool": _policy(
+        scope="research_write",
+        idempotency="required",
+        source="mcp_servers",
+        timeout="long",
         sample=1,
     ),
     "backtest.run": _policy(

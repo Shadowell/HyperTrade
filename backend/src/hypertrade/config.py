@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     agent_task_lease_seconds: int = Field(default=60, alias="AGENT_TASK_LEASE_SECONDS")
     mission_runtime_enabled: bool = Field(default=False, alias="MISSION_RUNTIME_ENABLED")
     mission_llm_planner_enabled: bool = Field(default=True, alias="MISSION_LLM_PLANNER_ENABLED")
+    mcp_servers_json: str = Field(
+        default="",
+        alias="MCP_SERVERS_JSON",
+        description=(
+            'JSON array of standard MCP servers: [{"name","url","timeout_seconds",'
+            '"auth_header","auth_token","max_retries","breaker_threshold"}]. '
+            "Empty disables the standard MCP agent surface."
+        ),
+    )
     mission_runtime_canary_percent: int = Field(
         default=0,
         ge=0,

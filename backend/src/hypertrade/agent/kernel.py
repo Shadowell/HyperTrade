@@ -103,6 +103,8 @@ class AgentKernel:
         self._tool_pool = ThreadPoolExecutor(
             max_workers=4, thread_name_prefix="hypertrade-tool"
         )
+        # Standard MCP layer: disabled unless MCP_SERVERS_JSON is configured.
+        self._mcp_registry = self._build_mcp_registry()
 
     def run_chat(self, prompt: str) -> CompletedAgentRun:
         return self.run_chat_with_events(prompt)
@@ -621,6 +623,10 @@ class AgentKernel:
             result = self._research_validation_gate_payload(args)
         elif tool_name == "paper_promotion_request":
             result = self._paper_promotion_request_payload(args)
+        elif tool_name == "mcp_discover":
+            result = self._mcp_discover_payload(args)
+        elif tool_name == "mcp_invoke_tool":
+            result = self._mcp_invoke_payload(args)
         elif tool_name == "strategy_draft":
             research_prompt = str(args.get("prompt", ""))
             result = StrategyResearchService(self.db).create(research_prompt)
@@ -960,6 +966,117 @@ class AgentKernel:
                 ],
             }
         return {"status": "ok", "promotion": promotion}
+
+    def _build_mcp_registry(self) -> Any | None:
+        from hypertrade.connectors.mcp_client import (
+            McpClientRegistry,
+            parse_mcp_server_configs,
+        )
+
+        settings = self._settings if self._settings is not None else get_settings()
+        servers = parse_mcp_server_configs(str(getattr(settings, "mcp_servers_json", "") or ""))
+        return McpClientRegistry(servers) if servers else None
+
+    def _mcp_discover_payload(self, args: dict[str, Any]) -> dict[str, Any]:
+        from hypertrade.connectors.mcp_client import run_async
+
+        if self._mcp_registry is None:
+            return {
+                "status": "unavailable",
+                "execution_status": "unavailable",
+                "unavailable_reason": "mcp_not_configured",
+                "error": {
+                    "type": "mcp_not_configured",
+                    "message": "No MCP servers configured (MCP_SERVERS_JSON empty).",
+                },
+            }
+        server = str(args.get("server", "")).strip()
+        force = bool(args.get("force_refresh", False))
+        try:
+            if server:
+                tools = run_async(
+                    self._mcp_registry.list_tools(server, force_refresh=force)
+                )
+                payload = {
+                    "status": "ok",
+                    "server": server,
+                    "tools": [
+                        {
+                            "server": tool.server,
+                            "name": tool.name,
+                            "description": tool.description[:300],
+                            "input_schema": tool.input_schema,
+                        }
+                        for tool in tools[:50]
+                    ],
+                }
+            else:
+                servers = self._mcp_registry.server_names()
+                all_tools: list[dict[str, str]] = []
+                for name in servers:
+                    tools = run_async(self._mcp_registry.list_tools(name))
+                    all_tools.extend(
+                        {
+                            "server": tool.server,
+                            "name": tool.name,
+                            "description": tool.description[:200],
+                        }
+                        for tool in tools[:25]
+                    )
+                payload = {"status": "ok", "servers": list(servers), "tools": all_tools}
+            return payload
+        except Exception as exc:  # noqa: BLE001 - structured tool failure
+            return {
+                "status": "unavailable",
+                "execution_status": "error",
+                "unavailable_reason": "mcp_discover_failed",
+                "error": {"type": type(exc).__name__, "message": str(exc)[:300]},
+            }
+
+    def _mcp_invoke_payload(self, args: dict[str, Any]) -> dict[str, Any]:
+        from hypertrade.connectors.mcp_client import McpClientError, run_async
+
+        if self._mcp_registry is None:
+            return {
+                "status": "unavailable",
+                "execution_status": "unavailable",
+                "unavailable_reason": "mcp_not_configured",
+                "error": {
+                    "type": "mcp_not_configured",
+                    "message": "No MCP servers configured (MCP_SERVERS_JSON empty).",
+                },
+            }
+        server = str(args.get("server", "")).strip()
+        tool = str(args.get("tool", "")).strip()
+        raw_arguments = args.get("arguments")
+        arguments = dict(raw_arguments) if isinstance(raw_arguments, dict) else {}
+        if not server or not tool:
+            return {
+                "status": "error",
+                "error": {
+                    "type": "invalid_arguments",
+                    "message": "server and tool are required",
+                },
+            }
+        try:
+            result = run_async(self._mcp_registry.call_tool(server, tool, arguments))
+            return {"status": "ok", "server": server, "tool": tool, "result": result}
+        except McpClientError as exc:
+            return {
+                "status": "unavailable",
+                "execution_status": "error",
+                "unavailable_reason": "mcp_tool_failed",
+                "error": {"type": type(exc).__name__, "message": str(exc)[:300]},
+                "tool_name": tool,
+            }
+        except Exception as exc:  # noqa: BLE001 - structured tool failure
+            return {
+                "status": "unavailable",
+                "execution_status": "error",
+                "unavailable_reason": "mcp_invoke_failed",
+                "error": {"type": type(exc).__name__, "message": str(exc)[:300]},
+                "tool_name": tool,
+            }
 
     def _memory_prompt_suffix(self) -> str:
         """Close the memory write->recall loop.

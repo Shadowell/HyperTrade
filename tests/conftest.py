@@ -27,3 +27,8 @@ _PROVIDER_KEY_ENV_VARS = (
 def _hermetic_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     for var in _PROVIDER_KEY_ENV_VARS:
         monkeypatch.setenv(var, "")
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
