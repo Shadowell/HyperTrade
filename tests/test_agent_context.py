@@ -180,10 +180,10 @@ def test_planner_compacts_history_and_completes_long_loop() -> None:
     # (write-recall loop) adds a small fixed payload to each turn, so the
     # compaction sawtooth now peaks slightly above the bare budget; the bound
     # itself still holds (history stays far below the old unbounded growth).
-    assert result.history_tokens_last <= 3_400
+    assert result.history_tokens_last <= 3_500
     # History stayed bounded across all provider calls after the first
     # compaction fired; the unbounded growth of the old loop is gone.
-    assert max(provider.calls[3:]) <= 3_400
+    assert max(provider.calls[3:]) <= 3_500
 
 
 def test_planner_small_history_never_compacts() -> None:

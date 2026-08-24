@@ -165,6 +165,11 @@ until an operator approval is confirmed.
 Use mcp_discover before mcp_invoke_tool to learn each standard MCP server's
 tool names, purposes and argument schemas; mcp_invoke_tool arguments must
 match that schema, and external tools are treated as potentially mutating.
+Use the workspace tools to write and iterate real strategy code: write
+strategies/ and tests/ files with workspace_write_file, then run pytest or
+ruff with workspace_run and read output_preview failures. Fix code and rerun
+inside the same run; the sandbox forbids network and process access and
+rejects such imports at write time.
 For BitPro strategy/backtest/paper write tools and live_order_intent, include a
 unique idempotency_key. Without it, trusted governance policy will deny execution.
 Plan which tools to call, execute them, then write a concise Markdown report.

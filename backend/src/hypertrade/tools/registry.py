@@ -193,6 +193,26 @@ class ToolRegistry:
                     "mcp",
                 ),
                 ToolDefinition(
+                    "workspace.write_file",
+                    "Write one strategy/test file into the governed sandbox workspace.",
+                    "workspace",
+                ),
+                ToolDefinition(
+                    "workspace.read_file",
+                    "Read one file from the sandbox workspace.",
+                    "workspace",
+                ),
+                ToolDefinition(
+                    "workspace.list_files",
+                    "List files in the sandbox workspace.",
+                    "workspace",
+                ),
+                ToolDefinition(
+                    "workspace.run",
+                    "Run a whitelisted command (ruff/pytest) inside the sandbox.",
+                    "workspace",
+                ),
+                ToolDefinition(
                     "research.evidence_read",
                     "Read active, source-bound Evidence V2 records for the current Task.",
                     "research",
@@ -811,6 +831,82 @@ RUNTIME_TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
                     },
                 },
                 "required": ["server", "tool"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "workspace_write_file",
+            "description": (
+                "Write one file into the governed sandbox workspace. Paths must "
+                "start with strategies/ or tests/ and end with .py, .json, .yaml "
+                "or .yml; Python sources may not import network/process modules "
+                "or use eval/exec. Rejected writes return the reason immediately."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Workspace-relative path."},
+                    "content": {"type": "string", "description": "Full file content."},
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "workspace_read_file",
+            "description": "Read one file back from the sandbox workspace.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Workspace-relative path."}
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "workspace_list_files",
+            "description": (
+                "List workspace files with sizes and content hashes. Use before "
+                "workspace_run to confirm what will execute."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "workspace_run",
+            "description": (
+                "Run one whitelisted command (ruff or pytest) inside the governed "
+                "sandbox over the whole workspace. No network, resource-limited; "
+                "identical content replays the same persisted run. Read the "
+                "output_preview to iterate on failures."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "ruff or pytest.",
+                        "enum": ["ruff", "pytest", "limited_backtest"],
+                    },
+                    "args": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Bounded arguments without path separators (sandbox "
+                            "contract); bare pytest auto-discovers tests/."
+                        ),
+                    },
+                },
+                "required": ["command"],
             },
         },
     },
@@ -1604,6 +1700,10 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "paper_promotion_request": "paper.promotion_request",
     "mcp_discover": "mcp.discover",
     "mcp_invoke_tool": "mcp.invoke_tool",
+    "workspace_write_file": "workspace.write_file",
+    "workspace_read_file": "workspace.read_file",
+    "workspace_list_files": "workspace.list_files",
+    "workspace_run": "workspace.run",
     "backtest_run": "backtest.run",
     "bitpro_capabilities": "bitpro.capabilities",
     "bitpro_health": "bitpro.health",
@@ -1748,6 +1848,20 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
         scope="research_write",
         idempotency="required",
         source="mcp_servers",
+        timeout="long",
+        sample=1,
+    ),
+    "workspace.write_file": _policy(
+        scope="research_write",
+        source="sandbox_workspace",
+        timeout="quick",
+        sample=1,
+    ),
+    "workspace.read_file": _policy(source="sandbox_workspace", timeout="quick", sample=1),
+    "workspace.list_files": _policy(source="sandbox_workspace", timeout="quick", sample=50),
+    "workspace.run": _policy(
+        scope="research_write",
+        source="sandbox_workspace",
         timeout="long",
         sample=1,
     ),

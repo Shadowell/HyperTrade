@@ -380,6 +380,12 @@ class AgentKernel:
         *,
         event_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> ToolExecutor:
+        # Per-run code workspace: files never leak across agent runs, and the
+        # sandbox artifacts ledger keeps the content-addressed audit trail.
+        from hypertrade.agent.workspace import AgentWorkspace
+
+        self._workspace = AgentWorkspace(run_id=run_id)
+
         def executor(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
             decision = self.governance.evaluate(tool_name, args)
             if self.evaluation_mode and decision.policy.scope not in {
@@ -627,6 +633,21 @@ class AgentKernel:
             result = self._mcp_discover_payload(args)
         elif tool_name == "mcp_invoke_tool":
             result = self._mcp_invoke_payload(args)
+        elif tool_name == "workspace_write_file":
+            result = self._workspace.write_file(
+                path=str(args.get("path", "")),
+                content=str(args.get("content", "")),
+            )
+        elif tool_name == "workspace_read_file":
+            result = self._workspace.read_file(path=str(args.get("path", "")))
+        elif tool_name == "workspace_list_files":
+            result = self._workspace.list_files()
+        elif tool_name == "workspace_run":
+            raw_args = args.get("args")
+            result = self._workspace.run(
+                command=str(args.get("command", "")),
+                args=[str(item) for item in raw_args] if isinstance(raw_args, list) else None,
+            )
         elif tool_name == "strategy_draft":
             research_prompt = str(args.get("prompt", ""))
             result = StrategyResearchService(self.db).create(research_prompt)
