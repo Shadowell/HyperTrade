@@ -1,5 +1,23 @@
 # Progress Log
 
+## 自主性支柱③：ARC 搜索智能接线（sprint-140）— 2026-08-24
+
+- **合同**：[arc-search-intelligence-wiring](contracts/sprint-140-arc-search-intelligence-wiring.md)。
+  ARC 里"存在但不在生产路径"的搜索智能全部接线完成。
+- **UCB1 进生产循环**：新增 `ARCMCTSEngine.select_mutation_parents`——代际变异父本
+  按 UCB1 排序（回传均值做利用、访问缺口做探索），预算紧张时只变异 top 片段；
+  测试钉住"高价值低访问节点凭探索加成胜出"这一 UCB1 区别于裸分数排序的本质行为。
+- **MAP-Elites 反哺**：`qd_grid.get_elites()` 每代被消费，cell 精英加入变异父本集
+  （预算充足时，去重、宽度+2 上限），落 `qd_elites_consulted` 审计事件——档案从
+  只写变读写。
+- **Voyager 回路第一层**：技能以 `skill_registered` 事件持久化，循环重启从
+  projection 重建（`_rebuild_skill_library`，损坏事件跳过不阻塞）；prompt 摘要
+  有界化（最新优先、字符硬顶）；技能库以 `validated_skill_library` 注入 provider
+  假设通道 payload——"注册即遗忘"语义移除。
+- **预算**：默认 `max_candidates` 5→10（六家族目录下 5 个撑不起搜索叙事）。
+- **验证**：48 个 ARC 测试全绿。注：并行会话正在改 tool_runtime.py（数字格式化
+  WIP，含临时语法错误），其归属的 market_ticker 断言失败与本次无关，未纳入提交。
+
 ## 自主性支柱②：Team LLM Worker（sprint-139）— 2026-08-24
 
 - **合同**：[team-llm-worker](contracts/sprint-139-team-llm-worker.md)。
