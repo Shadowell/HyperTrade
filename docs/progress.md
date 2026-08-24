@@ -1,5 +1,20 @@
 # Progress Log
 
+## 交互台预置命令美化（sprint-146）— 2026-08-24
+
+- **合同**：[console-command-polish](contracts/sprint-146-console-command-polish.md)。
+  banner 与 `/help` 原为手工空格对齐 + 中英混排 + 49 条平铺无分组。
+- **Banner 重构**：TTY 下 rich Panel + grid（状态网格、主线快捷与运维控制
+  等宽着色列、统一中文描述）；plain 回退版同步中文化并用**东亚宽度感知
+  padding**（CJK 双宽字符对齐——`/research <目标>` 与 `/paper best` 描述列
+  现已严格对齐）。
+- **`/help` 分组渲染**：七个功能组（主线/行情快照/研究与证据/任务与运行/
+  记忆与技能/模拟盘与实盘/配置与诊断）rich 表格对齐 + 组标题着色；
+  未匹配命令落入「其他」组——新增命令永不静默消失；命令列限宽 36 + fold
+  溢出，80 列终端下描述仍有可用宽度；管道环境回退平铺。
+- **验证**：`./scripts/check.sh` 全绿（1149 passed）；真机 `ht chat` 预览
+  对齐效果。
+
 ## 流式输出格式化（sprint-145）— 2026-08-24
 
 - **合同**：[streaming-output-formatting](contracts/sprint-145-streaming-output-formatting.md)。
