@@ -1,5 +1,19 @@
 # Progress Log
 
+## 上下文工程：token 预算与协议安全压缩（sprint-141）— 2026-08-24
+
+- **合同**：[agent-context-engineering](contracts/sprint-141-agent-context-engineering.md)。
+  planner 历史此前只靠 `MAX_ITERATIONS=8` 硬顶 + 单条水冷截断，总历史无管理。
+- **`agent/context.py`**：CJK 感知确定性 token 估算 + `compact_messages`——
+  (assistant.tool_calls + 其 tool 结果) 为一组，旧组合并为带摘要的单条 assistant
+  消息；协议合法性逐条断言（每个 tool 响应仍紧跟其所属 assistant 调用）；
+  system+首条 user 与最近 N 组原样保留；仍超预算时二次激进压缩。
+- **planner 集成**：每次 provider 调用前超预算即压缩（零 LLM 成本的确定性摘要，
+  完整原文仍在 trace 可审计）；`context_compactions`/`history_tokens_last` 进
+  PlannerResult 与 run observability；`MAX_ITERATIONS` 8→12（长程主线研究：
+  多轮回测→门禁→晋升有了空间）。
+- **验证**：6 个新测试；`./scripts/check.sh` 全绿（1118 passed）。
+
 ## 自主性支柱③：ARC 搜索智能接线（sprint-140）— 2026-08-24
 
 - **合同**：[arc-search-intelligence-wiring](contracts/sprint-140-arc-search-intelligence-wiring.md)。
