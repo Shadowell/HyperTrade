@@ -1828,6 +1828,66 @@ def _stream_timeout(*, config: CliConfig) -> httpx.Timeout:
     return httpx.Timeout(timeout=config.timeout_seconds, read=None)
 
 
+_DEFAULT_DOCKER_DATABASE_URL = (
+    "postgresql+psycopg://hypertrade:hypertrade@postgres:5432/hypertrade"
+)
+_LOCAL_SQLITE_PATH = Path.home() / ".hypertrade" / "local.db"
+# backend/src/hypertrade/cli.py -> repository root.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _resolve_local_database_url(database_url: str) -> str:
+    """Resolve the database URL for the standalone local runtime.
+
+    The compiled default points at the docker-network host `postgres`, which is
+    unreachable on an operator laptop. When that exact default survives into
+    the local runtime, substitute a per-user SQLite file so bare `ht` works
+    outside docker. Any explicitly configured URL is respected as-is.
+    """
+    if not database_url or database_url == _DEFAULT_DOCKER_DATABASE_URL:
+        return f"sqlite:///{_LOCAL_SQLITE_PATH}"
+    return database_url
+
+
+def _ensure_sqlite_schema(database_url: str) -> None:
+    """Create the schema for local SQLite databases; idempotent and cheap.
+
+    Production PostgreSQL keeps Alembic-managed schema and must not be touched
+    from the CLI bootstrap path.
+    """
+    if not database_url.startswith("sqlite"):
+        return
+    path_part = database_url.removeprefix("sqlite:///")
+    if path_part and path_part != ":memory:":
+        Path(path_part).parent.mkdir(parents=True, exist_ok=True)
+    Database(database_url).create_all()
+
+
+def _local_runtime_settings() -> Settings:
+    """Settings for `ht` running standalone from any working directory.
+
+    - Load the repo `.env` when the current directory has none so API keys
+      resolve outside the checkout.
+    - Replace the docker-network default DATABASE_URL with per-user SQLite and
+      ensure its schema; an explicit DATABASE_URL (env or .env) always wins.
+    - Resolve docs/knowledge relative to the repo when cwd has no such
+      directory so RAG context stays available.
+    """
+    cwd_env = Path.cwd() / ".env"
+    env_file = cwd_env if cwd_env.exists() else _REPO_ROOT / ".env"
+    settings = Settings(_env_file=str(env_file))
+    database_url = _resolve_local_database_url(str(settings.database_url))
+    _ensure_sqlite_schema(database_url)
+    knowledge_dir = Path("docs/knowledge")
+    if not knowledge_dir.exists():
+        knowledge_dir = _REPO_ROOT / "docs" / "knowledge"
+    return Settings(
+        _env_file=str(env_file),
+        DATABASE_URL=database_url,
+        KNOWLEDGE_DIR=str(knowledge_dir),
+    )
+
+
 class LocalAgentClient:
     def __init__(self, *, settings: Settings | None = None, db: Database | None = None) -> None:
         self.settings = settings or get_settings()
@@ -8073,7 +8133,7 @@ def _use_local_runtime(args: argparse.Namespace) -> bool:
 
 def _default_client_factory(config: CliConfig, local: bool) -> AgentClient:
     if local:
-        return LocalAgentClient()
+        return LocalAgentClient(settings=_local_runtime_settings())
     return AgentApiClient(config)
 
 

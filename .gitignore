@@ -36,3 +36,6 @@ frontend/vite.config.d.ts
 .claude-flow/
 .claude/proven-config.json
 .claude/.proven-config-version
+*.db
+*.sqlite3
+hypertrade-local.db

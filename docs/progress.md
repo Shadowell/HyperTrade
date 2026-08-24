@@ -1,5 +1,20 @@
 # Progress Log
 
+## 本地 CLI 零配置直用：任意目录裸敲 `ht` — 2026-08-24
+
+- **诉求**：operator 要求"本地打 `ht` 就能用"。此前裸 `ht` 有三个坑：默认
+  `DATABASE_URL` 指向 docker 网络的 `postgres` 主机名（本地必挂）、新库无 schema、
+  仓库外运行读不到 `.env`（API key 丢失）。
+- **修复**（cli.py 本地运行时引导）：`_local_runtime_settings()` 在 cwd 无 `.env`
+  时回退加载仓库 `.env`；docker 默认库地址自动替换为用户级 SQLite
+  （`~/.hypertrade/local.db`）并幂等建表；显式配置的 URL 永远优先；
+  `docs/knowledge` 在 cwd 不存在时回退仓库路径保住 RAG。生产 PostgreSQL
+  （Alembic 管理）不经过该引导，行为不变。
+- **全局命令**：`~/.local/bin/ht` 与 `~/.local/bin/hypertrade` symlink 到项目
+  `.venv` 入口脚本。
+- **验证**：从 `/tmp` 裸敲 `ht ask` 真实完成一次 DeepSeek+OKX 行情问答；
+  新增 `tests/test_cli_local_runtime.py` 4 用例钉住回退与幂等建表。
+
 ## 主线激活：模拟盘策略研究工具面补全（sprint-137）— 2026-08-24
 
 - **合同**：[paper-strategy-research-mainline](contracts/sprint-137-paper-strategy-research-mainline.md)。
