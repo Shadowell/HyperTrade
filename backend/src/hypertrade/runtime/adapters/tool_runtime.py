@@ -746,11 +746,12 @@ def builtin_handlers(
                 unknowns=(f"未找到 {inst_id} 的可验证资金费率和持仓量。",),
                 public_summary=f"未找到 {inst_id} 的可验证资金费率和持仓量。",
             )
-        oi_text = (
-            f"，当前持仓量 {_fmt_num(item['open_interest'])} 张"
-            if item.get("open_interest")
-            else ""
-        )
+        raw_oi = item.get("open_interest") or ""
+        try:
+            # OKX ships OI as a JSON float; contracts count in whole units.
+            oi_text = f"，当前持仓量 {round(float(raw_oi)):,} 张" if raw_oi else ""
+        except ValueError:
+            oi_text = f"，当前持仓量 {raw_oi}" if raw_oi else ""
         return ToolResult(
             payload={"items": [item], "count": 1},
             source_refs=(f"okx_rest:funding_rate:{inst_id}",),
