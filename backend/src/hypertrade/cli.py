@@ -5687,6 +5687,135 @@ def render_backtests(items: list[dict[str, Any]], *, output: TextIO) -> None:
         )
 
 
+class _LiveMarkdownStreamer:
+    """Format streaming answer deltas as live rich Markdown.
+
+    Rich + TTY + non-plain mode: deltas buffer and re-render through
+    ``rich.live.Live`` at a bounded refresh rate, so headings, tables and
+    lists render properly while the answer is still being written. Plain
+    mode (pipe, HYPERTRADE_STREAM_RENDERER=plain, or rich unavailable)
+    writes raw text exactly like the pre-formatting behavior.
+    """
+
+    FLUSH_CHARS = 120
+    MIN_FLUSH_INTERVAL_SECONDS = 0.2
+
+    def __init__(self, output: TextIO) -> None:
+        self._output = output
+        self._plain = not self._rich_live_available(output)
+        self._buffer = ""
+        self._streamed_chars = 0
+        self._last_flush = 0.0
+        self._live: Any | None = None
+        self._console: Any | None = None
+        self._started = False
+
+    @staticmethod
+    def _rich_live_available(output: TextIO) -> bool:
+        if os.getenv("HYPERTRADE_STREAM_RENDERER", "auto").strip().lower() == "plain":
+            return False
+        if not getattr(output, "isatty", lambda: False)():
+            return False
+        try:
+            import rich.live  # noqa: F401
+            import rich.markdown  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
+
+    def start(self) -> None:
+        if self._plain or self._started:
+            return
+        from rich.console import Console
+        from rich.live import Live
+
+        self._console = Console(
+            file=self._output,
+            force_terminal=True,
+            color_system=_rich_color_system(),
+        )
+        self._live = Live(
+            console=self._console,
+            refresh_per_second=4,
+            vertical_overflow="visible",
+        )
+        self._live.start()
+        self._started = True
+
+    def append(self, text: str) -> None:
+        self._streamed_chars += len(text)
+        if self._plain:
+            self._output.write(text)
+            self._output.flush()
+            return
+        if not self._started:
+            self.start()
+        self._buffer += text
+        now = time.monotonic()
+        if len(self._buffer) >= self.FLUSH_CHARS or (
+            now - self._last_flush >= self.MIN_FLUSH_INTERVAL_SECONDS
+        ):
+            self.flush()
+
+    def print_tool_line(self, text: str) -> None:
+        """Compact tool status above the live region while streaming."""
+        if self._plain or self._console is None:
+            return
+        self._console.print(_paint(f"  · {text}", "muted", output=self._output))
+
+    def flush(self) -> None:
+        if self._plain or self._live is None:
+            return
+        from rich.markdown import Markdown
+
+        self._live.update(Markdown(self._buffer))
+        self._last_flush = time.monotonic()
+
+    def finish(self) -> None:
+        if self._plain:
+            self._output.write("\n")
+            self._output.flush()
+            return
+        self.flush()
+        if self._live is not None:
+            self._live.stop()
+            self._live = None
+
+    @property
+    def streamed_chars(self) -> int:
+        # Counted in both modes: plain-mode runs must still suppress the
+        # duplicate full-report render after streaming raw text.
+        return self._streamed_chars
+
+
+def _stream_footer(final_run: dict[str, Any]) -> list[str]:
+    """Structured close-out after a fully streamed answer."""
+    observability = final_run.get("observability")
+    if not isinstance(observability, dict):
+        observability = {}
+    usage_value = observability.get("usage")
+    usage: dict[str, Any] = dict(usage_value) if isinstance(usage_value, dict) else {}
+    tools_value = observability.get("tools")
+    tools: dict[str, Any] = dict(tools_value) if isinstance(tools_value, dict) else {}
+    context_value = observability.get("context")
+    context: dict[str, Any] = dict(context_value) if isinstance(context_value, dict) else {}
+    duration_ms = observability.get("duration_ms")
+    parts = [f"run {final_run.get('id', 'unknown')}"]
+    if isinstance(duration_ms, (int, float)) and duration_ms > 0:
+        parts.append(f"{duration_ms / 1000:.1f}s")
+    total_tokens = usage.get("total_tokens")
+    if isinstance(total_tokens, int) and total_tokens > 0:
+        parts.append(f"{total_tokens} tokens")
+    call_count = tools.get("call_count")
+    if isinstance(call_count, int) and call_count > 0:
+        parts.append(f"{call_count} tools")
+    compactions = context.get("compactions")
+    if isinstance(compactions, int) and compactions > 0:
+        parts.append(f"{compactions} compactions")
+    return [f"── 回答已实时输出 · {' · '.join(parts)} ──"]
+
+
 def render_run(run: dict[str, Any], *, output: TextIO | None = None) -> None:
     output = output or sys.stdout
 
@@ -7863,8 +7992,9 @@ def render_run_stream(
     final_run: dict[str, Any] | None = None
     stream_failed = False
     stream_error: httpx.HTTPError | None = None
-    terminal_error: dict[str, str] | None = None
+    final_from_stream = False
     stream_run_ids: list[str] = []
+    streamer = _LiveMarkdownStreamer(output)
     streamed_chars = 0
     final_from_stream = False
     animator.start("Thinking")
@@ -7912,6 +8042,8 @@ def render_run_stream(
                             output=output,
                         )
                     )
+                elif streamer.streamed_chars > 0:
+                    streamer.print_tool_line(f"tool {tool_name} running")
                 animator.update(f"Executing tool {tool_name}")
             elif event_name == "tool_completed":
                 tool_name = event.get("tool_name", "unknown")
@@ -7925,22 +8057,22 @@ def render_run_stream(
                             output=output,
                         )
                     )
+                elif streamer.streamed_chars > 0:
+                    streamer.print_tool_line(f"tool {tool_name} {status}")
                 if _show_full_progress():
                     animator.print_line(
                         _status_line("Agent status: planning next step", "muted", output=output)
                     )
                 animator.update("Planning next step")
             elif event_name == "answer_delta":
-                # Live token streaming: stop the spinner once and print the
-                # final answer as it is written. The full report is not
-                # re-rendered at `final` when deltas already reached the
-                # operator; a compact footer closes the run instead.
+                # Live token streaming: formatted markdown re-renders through
+                # rich Live (TTY) or raw text (pipe/plain). A fully in-stream
+                # answer closes with a structured footer instead of a duplicate
+                # full-report render.
                 text = str(event.get("text", "") or "")
                 if text:
                     animator.stop()
-                    streamed_chars += len(text)
-                    output.write(text)
-                    output.flush()
+                    streamer.append(text)
             elif event_name == "run_completed":
                 if _show_full_progress():
                     animator.print_line(
@@ -7983,6 +8115,8 @@ def render_run_stream(
         stream_error = exc
     finally:
         animator.stop()
+        streamer.finish()
+    streamed_chars = streamer.streamed_chars
     if stream_failed:
         # A dropped connection does not mean the run is lost: the server keeps
         # executing and persists the projection. Attempt durable recovery
@@ -8048,17 +8182,14 @@ def render_run_stream(
     if final_run is not None:
         print("", file=output)
         if streamed_chars > 0 and final_from_stream:
-            # The answer already streamed live; a full re-render would print
-            # the same report twice. Close with a compact run footer.
-            run_id = str(final_run.get("id") or (stream_run_ids[-1] if stream_run_ids else ""))
-            print(
-                _paint(
-                    f"── 回答已实时输出 · run {run_id} ──",
-                    "muted",
-                    output=output,
-                ),
-                file=output,
-            )
+            # The answer already streamed live (formatted); a full re-render
+            # would print the same report twice. Close with a structured
+            # footer built from run observability.
+            for line in _stream_footer(final_run):
+                print(
+                    _paint(line, "muted", output=output),
+                    file=output,
+                )
         else:
             render_run(final_run, output=output)
     else:
