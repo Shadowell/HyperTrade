@@ -358,13 +358,21 @@ def _llm_plan_messages(
             "with the objective argument; market instrument ids must be copied verbatim "
             "from the objective; keep the plan under 8 steps; step_id must be "
             "snake_case and unique; depends_on must reference earlier step ids only; "
-            "never propose writes, approvals, or capabilities outside the list."
+            "never propose writes, approvals, or capabilities outside the list. "
+            "When suggested_capabilities is non-empty, include EVERY listed capability "
+            "exactly once with its required arguments — the deterministic router "
+            "matched them to the objective's own words."
         ),
     }
     payload: dict[str, Any] = {
         "objective": mission.objective,
         "constraints": list(mission.constraints),
         "max_steps": min(mission.budget.max_steps_per_plan, _LLM_PLAN_MAX_STEPS),
+        "suggested_capabilities": [
+            capability_id
+            for capability_id in _capabilities_for_objective(mission.objective)
+            if capability_id != "runtime.objective_inspection"
+        ],
         "capabilities": [
             {
                 "capability_id": capability_id,
