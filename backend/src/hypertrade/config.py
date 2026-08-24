@@ -83,6 +83,13 @@ class Settings(BaseSettings):
         default=False,
         alias="MISSION_RUNTIME_WORKER_ENABLED",
     )
+    # Independent mission_worker loops, each claiming through the durable lease.
+    # 1 keeps chat strictly serial; raise only when the provider gateway and the
+    # capability backends can take the concurrent load.
+    mission_runtime_worker_concurrency: int = Field(
+        default=1,
+        alias="MISSION_RUNTIME_WORKER_CONCURRENCY",
+    )
     mission_runtime_poll_interval_seconds: float = Field(
         default=1.0,
         ge=0.25,

@@ -87,7 +87,7 @@ async def test_explicit_bare_symbol_returns_the_requested_quote(tmp_path) -> Non
     assert step.arguments == {"limit": 10, "inst_id": "LAB-USDT-SWAP"}
     assert observation.source_refs == ("hypertrade_db:market_tickers:LAB-USDT-SWAP",)
     assert response.outcome == "completed"
-    assert "LAB-USDT-SWAP 最新价 0.480000000000" in response.decision
+    assert "LAB-USDT-SWAP 最新价 0.48" in response.decision
     assert "已读取 10 个最新合约行情快照" not in rendered
 
 

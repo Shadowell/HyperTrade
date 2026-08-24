@@ -481,7 +481,11 @@ async def main() -> None:
     if settings.agent_task_worker_enabled and not full_mission_cutover:
         tasks.append(agent_task_worker_loop(db))
     if settings.mission_runtime_enabled and settings.mission_runtime_worker_enabled:
-        tasks.append(mission_worker_loop(db))
+        # Each loop owns its runtime resources and claims through the durable lease,
+        # so fencing — not this count — is what prevents double execution. Default
+        # stays 1: chat requests queue behind each other until an operator opts in.
+        for _ in range(max(1, settings.mission_runtime_worker_concurrency)):
+            tasks.append(mission_worker_loop(db))
     if settings.research_triggers_enabled and not full_mission_cutover:
         tasks.append(research_trigger_loop(db))
     tasks.append(arc_observation_loop(db))

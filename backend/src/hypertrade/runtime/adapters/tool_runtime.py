@@ -48,6 +48,21 @@ from hypertrade.runtime.domain.models import (
 )
 
 
+def _fmt_num(value: Any) -> str:
+    """Render a stored numeric for an operator-facing summary.
+
+    Numeric columns arrive as fixed-precision Decimals ("77170.100000000000");
+    reading that scale aloud is noise. normalize() strips trailing zeros and
+    format(..., "f") keeps small magnitudes out of scientific notation.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        return format(Decimal(str(value)).normalize(), "f")
+    except (InvalidOperation, ValueError):
+        return str(value)
+
+
 @dataclass(frozen=True)
 class ToolResult:
     payload: dict[str, Any]
@@ -545,7 +560,8 @@ def builtin_handlers(
         if requested_inst_id:
             item = items[0]
             summary = (
-                f"{item['inst_id']} 最新价 {item['last']}，24h 变动 {item['change_utc0_pct']}%。"
+                f"{item['inst_id']} 最新价 {_fmt_num(item['last'])}，"
+                f"24h 变动 {_fmt_num(item['change_utc0_pct'])}%。"
             )
             source_refs = (f"hypertrade_db:market_tickers:{requested_inst_id}",)
         else:
@@ -574,16 +590,29 @@ def builtin_handlers(
 
         def read() -> list[dict[str, Any]]:
             repository = MarketRepository(db)
+            adapter = BitProToolAdapter()
             rows: list[dict[str, Any]] = []
-            for inst_id in inst_ids:
-                ticker = repository.get_ticker(inst_id)
-                if ticker is not None:
-                    rows.append(
-                        {
-                            "inst_id": ticker.inst_id,
-                            "change_1h_pct": str(ticker.raw.get("change_1h_pct", "")),
-                        }
-                    )
+            # 1h strength is computed from BitPro klines on demand; the ticker
+            # snapshot carries no hourly change. Bounded to five symbols so a
+            # comparison stays one bounded read per leg.
+            for inst_id in inst_ids[:5]:
+                change = ""
+                try:
+                    payload = adapter.market_klines(symbol=inst_id, timeframe="1h", limit=2)
+                    candles = payload.get("candles") or []
+                    if len(candles) >= 2:
+                        prev = float(candles[0]["close"])
+                        last = float(candles[-1]["close"])
+                        if prev:
+                            change = f"{(last - prev) / prev * 100.0:.2f}"
+                except Exception:
+                    change = ""
+                if not change:
+                    ticker = repository.get_ticker(inst_id)
+                    stored = str((ticker.raw or {}).get("change_1h_pct", "")) if ticker else ""
+                    change = stored
+                if change:
+                    rows.append({"inst_id": inst_id, "change_1h_pct": change})
             return rows
 
         items = await anyio.to_thread.run_sync(read, limiter=limiter)
@@ -601,8 +630,8 @@ def builtin_handlers(
             payload={"items": ranked, "count": len(ranked)},
             source_refs=tuple(f"hypertrade_db:market_tickers:{item['inst_id']}" for item in ranked),
             public_summary=(
-                f"1H 强弱：{leader['inst_id']}（{leader['change_1h_pct']}%）强于 "
-                f"{laggard['inst_id']}（{laggard['change_1h_pct']}%）。"
+                f"1H 强弱：{leader['inst_id']}（{_fmt_num(leader['change_1h_pct'])}%）强于 "
+                f"{laggard['inst_id']}（{_fmt_num(laggard['change_1h_pct'])}%）。"
             ),
         )
 
@@ -615,33 +644,57 @@ def builtin_handlers(
     ) -> ToolResult:
         del mission, plan, step, attempt
         inst_id = str(arguments.get("inst_id", "")).upper()
+        bar = str(arguments.get("bar", "1H"))
 
-        def read() -> dict[str, Any] | None:
-            ticker = MarketRepository(db).get_ticker(inst_id)
-            if ticker is None:
-                return None
+        def read() -> dict[str, str]:
+            # The local store keeps ticker snapshots only — candle-derived facts are
+            # computed on demand from BitPro-owned klines, which own market data.
+            adapter = BitProToolAdapter()
+            payload = adapter.market_klines(symbol=inst_id, timeframe="1h", limit=25)
+            candles = payload.get("candles") or []
+            if len(candles) < 3:
+                raise ValueError(f"BitPro returned only {len(candles)} klines")
+            closes = [float(candle["close"]) for candle in candles]
+            base = closes[0]
+            change = (closes[-1] - base) / base * 100.0 if base else 0.0
+            if closes[-1] > closes[-2] > closes[-3]:
+                trend = "上行"
+            elif closes[-1] < closes[-2] < closes[-3]:
+                trend = "下行"
+            else:
+                trend = "震荡"
             return {
-                "inst_id": ticker.inst_id,
-                "bar": str(arguments.get("bar", "1H")),
-                "trend": str(ticker.raw.get("trend_1h", "")),
-                "return_pct": str(ticker.raw.get("return_1h_pct", "")),
+                "inst_id": inst_id,
+                "bar": bar,
+                "trend": trend,
+                "return_pct": f"{change:.2f}",
+                "bars": str(len(closes)),
             }
 
-        item = await anyio.to_thread.run_sync(read, limiter=limiter)
-        if item is None or not item["trend"]:
+        detail = ""
+        try:
+            item: dict[str, str] | None = await anyio.to_thread.run_sync(
+                read, limiter=limiter
+            )
+        except Exception as exc:
+            item = None
+            detail = f"{type(exc).__name__}: {exc}"[:140]
+        if item is None:
             return ToolResult(
                 payload={"items": [], "count": 0},
-                source_refs=(f"hypertrade_db:market_tickers:{inst_id}",)
-                if item is not None
-                else ("market:no_matches",),
+                source_refs=(f"bitpro_mcp:market_klines:{inst_id}",),
                 unknowns=(f"未找到 {inst_id} 的可验证 1H K 线趋势。",),
-                public_summary=f"未找到 {inst_id} 的可验证 1H K 线趋势。",
+                public_summary=(
+                    f"未找到 {inst_id} 的可验证 1H K 线趋势。"
+                    + (f"（{detail}）" if detail else "")
+                ),
             )
         return ToolResult(
             payload={"items": [item], "count": 1},
-            source_refs=(f"hypertrade_db:market_tickers:{inst_id}",),
+            source_refs=(f"bitpro_mcp:market_klines:{inst_id}",),
             public_summary=(
-                f"{item['inst_id']} 1H 趋势：{item['trend']}；区间收益 {item['return_pct']}%。"
+                f"{item['inst_id']} 1H 趋势：{item['trend']}；"
+                f"区间收益 {_fmt_num(item['return_pct'])}%。"
             ),
         )
 
@@ -655,33 +708,54 @@ def builtin_handlers(
         del mission, plan, step, attempt
         inst_id = str(arguments.get("inst_id", "")).upper()
 
-        def read() -> dict[str, str] | None:
-            ticker = MarketRepository(db).get_ticker(inst_id)
-            if ticker is None:
-                return None
-            return {
-                "inst_id": ticker.inst_id,
-                "funding_rate": str(ticker.raw.get("funding_rate", "")),
-                "open_interest_change_pct": str(ticker.raw.get("open_interest_change_pct", "")),
-            }
+        def read() -> dict[str, str]:
+            # Funding rate and open interest are OKX public endpoints, read on
+            # demand — the ticker snapshot never carried them. OI arrives as an
+            # absolute size; a *change* percentage needs history we do not keep,
+            # so that stays an explicit unknown instead of an invented number.
+            import asyncio
 
-        item = await anyio.to_thread.run_sync(read, limiter=limiter)
-        if item is None or not item["funding_rate"]:
+            from hypertrade.config import get_settings
+            from hypertrade.market.client import OkxRestClient
+
+            async def fetch() -> dict[str, str]:
+                client = OkxRestClient(get_settings())
+                funding = await client.fetch_funding_rate(inst_id=inst_id)
+                oi = await client.fetch_open_interest(inst_id=inst_id)
+                return {
+                    "funding_rate": str(funding.get("funding_rate", "")),
+                    "open_interest": str(oi.get("oi", "") or oi.get("open_interest", "")),
+                    "open_interest_ccy": str(oi.get("oiCcy", "") or ""),
+                }
+
+            return asyncio.run(fetch())
+
+        try:
+            item: dict[str, str] | None = await anyio.to_thread.run_sync(
+                read, limiter=limiter
+            )
+        except Exception:
+            item = None
+        if item is None or not item.get("funding_rate"):
             return ToolResult(
                 payload={"items": [], "count": 0},
-                source_refs=(f"hypertrade_db:market_tickers:{inst_id}",)
-                if item is not None
-                else ("market:no_matches",),
-                unknowns=(f"未找到 {inst_id} 的可验证资金费率和持仓量变化。",),
-                public_summary=f"未找到 {inst_id} 的可验证资金费率和持仓量变化。",
+                source_refs=(f"okx_rest:funding_rate:{inst_id}",),
+                unknowns=(f"未找到 {inst_id} 的可验证资金费率和持仓量。",),
+                public_summary=f"未找到 {inst_id} 的可验证资金费率和持仓量。",
             )
+        oi_text = (
+            f"，当前持仓量 {_fmt_num(item['open_interest'])} 张"
+            if item.get("open_interest")
+            else ""
+        )
         return ToolResult(
             payload={"items": [item], "count": 1},
-            source_refs=(f"hypertrade_db:market_tickers:{inst_id}",),
-            unknowns=("单一时点的资金费率和持仓量不足以判断后续方向。",),
+            source_refs=(f"okx_rest:funding_rate:{inst_id}",),
+            unknowns=(
+                "单一时点的资金费率和持仓量不足以判断后续方向；持仓量变化率缺少历史窗口。",
+            ),
             public_summary=(
-                f"{inst_id} 资金费率 {item['funding_rate']}，持仓量变化 "
-                f"{item['open_interest_change_pct']}%。"
+                f"{inst_id} 资金费率 {_fmt_num(item['funding_rate'])}{oi_text}。"
             ),
         )
 
