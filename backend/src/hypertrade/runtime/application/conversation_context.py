@@ -63,6 +63,15 @@ def _ambiguous_strategy_pair(previous: str, current: str) -> bool:
 
 def _market_instruments(value: str) -> tuple[str, ...]:
     # Chinese text has no ASCII word boundary around tickers, so ``\b`` would
-    # miss “比较 BTC 和 ETH”. Tickers are a fixed bounded set here.
+    # miss “比较 BTC 和 ETH”. Tickers are a fixed bounded set here, and Chinese
+    # asset aliases (“比特币”) resolve through the same closed table the planner
+    # uses — a Chinese follow-up question must not lose the symbol context.
     found = re.findall(r"(BTC|ETH|SOL)", value.upper())
+    from hypertrade.runtime.adapters.research_planner import _MARKET_SYMBOL_ALIASES
+
+    for base, aliases in _MARKET_SYMBOL_ALIASES.items():
+        if base in found:
+            continue
+        if any(alias in value for alias in aliases):
+            found.append(base)
     return tuple(dict.fromkeys(found))

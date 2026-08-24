@@ -25,6 +25,25 @@ from hypertrade.runtime.domain.models import (
 )
 
 _MARKET_TERMS = ("market", "price", "ticker", "行情", "价格", "市场", "合约")
+# Chinese asset names never contain the ASCII ticker, so the verbatim-symbol gate
+# needs an explicit, closed alias table. Only aliases listed here may validate a
+# model-returned symbol against a Chinese objective; anything else still fails.
+_MARKET_SYMBOL_ALIASES: dict[str, tuple[str, ...]] = {
+    "BTC": ("比特币", "比特幣", "大饼"),
+    "ETH": ("以太坊", "以太币", "以太"),
+    "SOL": ("索拉纳", "索尔"),
+    "XRP": ("瑞波币", "瑞波"),
+    "DOGE": ("狗狗币", "狗狗"),
+    "LTC": ("莱特币",),
+    "BNB": ("币安币",),
+    "ADA": ("艾达币",),
+    "DOT": ("波卡币", "波卡"),
+    "AVAX": ("雪崩币",),
+    "LINK": ("链币",),
+    "TRX": ("波场币", "波场"),
+    "SHIB": ("柴犬币",),
+    "PEPE": ("佩佩币",),
+}
 _MARKET_SYMBOL_STOPWORDS = frozenset(
     {
         "BACKTEST",
@@ -804,6 +823,11 @@ def _requested_market_instruments(objective: str) -> tuple[str, ...]:
     # such as “当前市场怎么样” remains an all-market summary.
     for match in _BARE_MARKET_SYMBOL.finditer(objective):
         append(match.group(1), allow_bare=True)
+    # Chinese asset names resolve deterministically too, so a ticker question
+    # keeps working when no provider is configured to name the symbol.
+    for base, aliases in _MARKET_SYMBOL_ALIASES.items():
+        if any(alias in objective for alias in aliases):
+            append(base, allow_bare=True)
     return tuple(instruments)
 
 
@@ -821,7 +845,17 @@ def _validated_provider_market_instrument(asset: str, objective: str) -> str | N
         objective,
         flags=re.IGNORECASE,
     ):
-        return None
+        # Chinese operators name assets in Chinese: “比特币现在多少钱” carries no
+        # ASCII token for the model to copy. A closed alias table keeps the
+        # anti-hallucination gate intact — only a listed alias, matched inside the
+        # objective, validates the model's symbol; invented symbols still fail.
+        token = re.sub(r"[-_/]", "", raw).upper()
+        base = token[: -len("USDTSWAP")] if token.endswith("USDTSWAP") else (
+            token[: -len("USDT")] if token.endswith("USDT") else token
+        )
+        aliases = _MARKET_SYMBOL_ALIASES.get(base, ())
+        if not aliases or not any(alias in objective for alias in aliases):
+            return None
     return _market_instrument_from_token(raw, allow_bare=True)
 
 

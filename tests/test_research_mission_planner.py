@@ -223,6 +223,18 @@ class _InventedMarketQuoteProvider:
         )
 
 
+class _BtcQuoteProvider:
+    name = "test"
+    model = "semantic-intent"
+
+    def chat(self, messages, tools=None):  # type: ignore[no-untyped-def]
+        del messages, tools
+        return ChatResponse(
+            content='{"intent":{"kind":"market_quote","assets":["BTC"]}}',
+            usage=TokenUsage(total_tokens=12, reported=True),
+        )
+
+
 @pytest.mark.anyio
 async def test_provider_cannot_expand_capability_scope() -> None:
     mission = await _mission("研究 BTC 市场状态")
@@ -282,3 +294,36 @@ async def test_provider_cannot_extract_a_partial_market_symbol_from_a_word() -> 
     )
 
     assert plan.steps[-1].arguments == {"limit": 10}
+
+
+@pytest.mark.anyio
+async def test_chinese_alias_binds_the_symbol_on_the_deterministic_path() -> None:
+    """“比特币” carries no ASCII token; the closed alias table resolves it."""
+    mission = await _mission("比特币现在多少钱一个？")
+
+    plan = await DeterministicResearchPlanner().plan(mission)
+
+    assert plan.steps[-1].capability_id == "market.summary"
+    assert plan.steps[-1].arguments == {"limit": 10, "inst_id": "BTC-USDT-SWAP"}
+
+
+@pytest.mark.anyio
+async def test_chinese_alias_validates_the_provider_symbol() -> None:
+    mission = await _mission("比特币现在多少钱一个？")
+
+    plan = await ProviderBackedResearchPlanner(provider=_BtcQuoteProvider()).plan(mission)
+
+    assert plan.steps[-1].capability_id == "market.summary"
+    assert plan.steps[-1].arguments == {"limit": 10, "inst_id": "BTC-USDT-SWAP"}
+
+
+@pytest.mark.anyio
+async def test_provider_symbol_without_alias_fails_closed_on_chinese_objective() -> None:
+    """An invented symbol still fails: only the closed alias table unlocks Chinese."""
+    mission = await _mission("比特币现在多少钱一个？")
+
+    plan = await ProviderBackedResearchPlanner(provider=_InventedMarketQuoteProvider()).plan(
+        mission
+    )
+
+    assert plan.steps[-1].arguments == {"limit": 10, "inst_id": "BTC-USDT-SWAP"}
