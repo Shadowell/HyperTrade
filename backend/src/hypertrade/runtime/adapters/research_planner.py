@@ -441,6 +441,24 @@ def _apply_provider_plan(
         )
         steps.append(step)
 
+    # The suggested capabilities come from the deterministic keyword router, so a
+    # plan that drops them is a routing regression, not a style choice. Rejecting
+    # sends the proposal through the repair round and, failing that, the
+    # deterministic fallback — which routed these objectives correctly all along.
+    suggested = [
+        capability_id
+        for capability_id in _capabilities_for_objective(mission.objective)
+        if capability_id != "runtime.objective_inspection"
+    ]
+    if suggested:
+        chosen = {step.capability_id for step in steps}
+        missing = [capability_id for capability_id in suggested if capability_id not in chosen]
+        if missing:
+            raise _PlanValidationError(
+                f"plan omits suggested capabilities: {','.join(missing)}",
+                content,
+            )
+
     version = previous.version + 1 if previous is not None else 1
     kept = tuple(
         step.step_id

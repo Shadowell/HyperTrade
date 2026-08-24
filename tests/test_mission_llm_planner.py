@@ -163,13 +163,20 @@ async def test_llm_plan_rejects_capabilities_outside_the_read_envelope() -> None
 
     plan = await planner.plan(_mission())
 
-    # Repair round dropped the out-of-envelope step and the corrected plan won.
-    assert [step.capability_id for step in plan.steps] == ["runtime.objective_inspection"]
-    assert plan.diff.reason_code == "llm_initial_plan"
+    # Repair round dropped the out-of-envelope step, but the inspect-only repair
+    # then omits the suggested capabilities, so the deterministic plan wins.
+    assert [step.capability_id for step in plan.steps] == [
+        "runtime.objective_inspection",
+        "market.summary",
+        "rag.search",
+    ]
+    assert plan.diff.reason_code == "initial_plan"
     assert len(provider.calls) == 2
-    rejected = provider.calls[1][-1]["content"]
-    assert "plan_rejected" in rejected
-    assert "outside the reviewed read-only envelope" in rejected
+    # The repair round's user message carries the first round's rejection reason;
+    # the suggested-capabilities rejection terminalizes to the deterministic plan
+    # without a third provider call.
+    repair_rejected = provider.calls[1][-1]["content"]
+    assert "outside the reviewed read-only envelope" in repair_rejected
 
 
 @pytest.mark.anyio
@@ -246,7 +253,20 @@ async def test_llm_plan_cannot_invent_market_entity_absent_from_objective() -> N
 
     plan = await planner.plan(_mission())
 
-    assert all("inst_id" not in step.arguments for step in plan.steps)
+    # The repaired inspect-only plan omits the deterministically suggested
+    # capabilities, so the planner falls back to the deterministic plan — whose
+    # market step carries the objective's OWN symbol, never the invented ETH.
+    assert [step.capability_id for step in plan.steps] == [
+        "runtime.objective_inspection",
+        "market.summary",
+        "rag.search",
+    ]
+    inst_ids = [
+        step.arguments.get("inst_id")
+        for step in plan.steps
+        if "inst_id" in step.arguments
+    ]
+    assert inst_ids == ["BTC-USDT-SWAP"]
 
 
 @pytest.mark.anyio
@@ -267,7 +287,14 @@ async def test_llm_plan_step_budget_is_enforced() -> None:
 
     plan = await planner.plan(_mission())
 
-    assert len(plan.steps) <= 2  # fell back after budget rejection
+    # The budget-rejected proposal goes through repair; the repaired inspect-only
+    # plan then omits the suggested capabilities and the deterministic fallback
+    # (which respects the step budget) wins.
+    assert [step.capability_id for step in plan.steps] == [
+        "runtime.objective_inspection",
+        "market.summary",
+        "rag.search",
+    ]
 
 
 @pytest.mark.anyio
