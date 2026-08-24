@@ -2985,7 +2985,98 @@ def run_chat(
             render_run_stream(client, prompt, output=output)
 
 
+_BANNER_MAINLINE: tuple[tuple[str, str], ...] = (
+    ("/research <目标>", "证据检索 → 策略回测 → 门禁自检 → 晋升审批（人工批准后上模拟盘）"),
+    ("/paper best", "模拟盘策略真实收益排名"),
+)
+
+_BANNER_CONTROLS: tuple[tuple[str, str], ...] = (
+    ("/status", "系统姿态 · 风控门 · 会话"),
+    ("/tasks", "任务队列与安全点控制"),
+    ("/runs", "运行证据与 trace 下钻"),
+    ("/live intents", "待审批 Testnet 执行意图"),
+    ("/model", "查看当前模型与 provider"),
+    ("/help", "全部命令（分组索引）"),
+)
+
+
 def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
+    if _render_welcome_banner_rich(client=client, output=output):
+        return
+    _render_welcome_banner_plain(client=client, output=output)
+
+
+def _render_welcome_banner_rich(*, client: AgentClient, output: TextIO) -> bool:
+    if not getattr(output, "isatty", lambda: False)() or os.getenv("NO_COLOR"):
+        return False
+    try:
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+    except ImportError:
+        return False
+
+    provider, model = _welcome_model_label(client)
+    runtime_label = _welcome_runtime_label(client)
+    console = Console(file=output, force_terminal=True, color_system=_rich_color_system())
+
+    status = Table.grid(padding=(0, 3))
+    status.add_column(justify="right", style="bold dim")
+    status.add_column()
+    status.add_row("MODEL", Text(f"{provider} / {model}"))
+    status.add_row("RUNTIME", Text(runtime_label))
+    execution = Text("PAPER + TESTNET GATED", style="yellow")
+    mainnet = Text("BLOCKED", style="bold red")
+    status_row = Table.grid(padding=(0, 3))
+    status_row.add_column(justify="right", style="bold dim")
+    status_row.add_column()
+    status_row.add_row("EXECUTION", execution)
+    status_row.add_row("MAINNET", mainnet)
+
+    shortcuts = Table.grid(padding=(0, 2))
+    shortcuts.add_column(width=max(len(command) for command, _ in _BANNER_MAINLINE), no_wrap=True)
+    shortcuts.add_column()
+    for command, description in _BANNER_MAINLINE:
+        shortcuts.add_row(Text(command, style="bold cyan"), Text(description, style="dim"))
+
+    controls = Table.grid(padding=(0, 2))
+    controls.add_column(width=max(len(command) for command, _ in _BANNER_CONTROLS), no_wrap=True)
+    controls.add_column()
+    for command, description in _BANNER_CONTROLS:
+        controls.add_row(Text(command, style="cyan"), Text(description, style="dim"))
+
+    body = Table.grid(padding=(0, 0))
+    body.add_column()
+    body.add_row(status)
+    body.add_row(status_row)
+    body.add_row(Text(""))
+    body.add_row(Text("◈ 主线 · 模拟盘策略研究", style="bold magenta"))
+    body.add_row(shortcuts)
+    body.add_row(Text(""))
+    body.add_row(Text("◈ 运维控制", style="bold magenta"))
+    body.add_row(controls)
+
+    console.print()
+    console.print(
+        Panel(
+            body,
+            title=Text("HyperTrade / Operator Console", style="bold cyan"),
+            subtitle=Text("自主研究 · 证据治理 · 受控执行", style="dim"),
+            border_style="cyan",
+            padding=(0, 2),
+        )
+    )
+    console.print(
+        Text(
+            "自然语言直接研究。exit / quit / :q 退出。",
+            style="dim",
+        )
+    )
+    return True
+
+
+def _render_welcome_banner_plain(*, client: AgentClient, output: TextIO) -> None:
     color = _banner_colors(output)
     provider, model = _welcome_model_label(client)
     runtime_label = _welcome_runtime_label(client)
@@ -3010,48 +3101,25 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
         file=output,
     )
     print(divider, file=output)
-    print(f"{color['section']}PAPER RESEARCH MAINLINE{color['reset']}", file=output)
-    print(
-        f"  {color['cmd']}/research <目标>{color['reset']}   "
-        f"{color['muted']}"
-        f"证据检索 → 策略回测 → 门禁自检 → 晋升审批（人工批准后上模拟盘）"
-        f"{color['reset']}",
-        file=output,
-    )
-    print(
-        f"  {color['cmd']}/paper best{color['reset']}        "
-        f"{color['muted']}模拟盘策略真实收益排名{color['reset']}",
-        file=output,
-    )
-    print(f"{color['section']}OPERATOR CONTROLS{color['reset']}", file=output)
-    print(
-        f"  {color['cmd']}/status{color['reset']}        System posture, risk gates, and session",
-        file=output,
-    )
-    print(
-        f"  {color['cmd']}/tasks{color['reset']}         Mission queue and safe-point controls",
-        file=output,
-    )
-    print(
-        f"  {color['cmd']}/runs{color['reset']}          Research evidence and trace drill-down",
-        file=output,
-    )
-    print(
-        f"  {color['cmd']}/live intents{color['reset']}  Review pending Testnet execution intents",
-        file=output,
-    )
-    print(
-        f"  {color['cmd']}/model{color['reset']}         Inspect the active model and provider",
-        file=output,
-    )
-    print(
-        f"  {color['cmd']}/help{color['reset']}          Commands, syntax, and safety guardrails",
-        file=output,
-    )
+    print(f"{color['section']}◈ 主线 · 模拟盘策略研究{color['reset']}", file=output)
+    mainline_width = max(_display_width(command) for command, _ in _BANNER_MAINLINE)
+    for command, description in _BANNER_MAINLINE:
+        print(
+            f"  {color['cmd']}{_pad_display(command, mainline_width)}{color['reset']}  "
+            f"{color['muted']}{description}{color['reset']}",
+            file=output,
+        )
+    print(f"{color['section']}◈ 运维控制{color['reset']}", file=output)
+    controls_width = max(_display_width(command) for command, _ in _BANNER_CONTROLS)
+    for command, description in _BANNER_CONTROLS:
+        print(
+            f"  {color['cmd']}{_pad_display(command, controls_width)}{color['reset']}  "
+            f"{color['muted']}{description}{color['reset']}",
+            file=output,
+        )
     print("", file=output)
     print(
-        f"{color['muted']}Use natural language for research. "
-        f"Type exit, quit, or :q to leave.{color['reset']}",
+        f"{color['muted']}自然语言直接研究。exit / quit / :q 退出。{color['reset']}",
         file=output,
     )
 
@@ -3076,6 +3144,19 @@ def _welcome_model_label(client: AgentClient) -> tuple[str, str]:
     provider = str(status.get("default_provider") or "provider").strip() or "provider"
     model = str(status.get("model") or "unavailable").strip() or "unavailable"
     return (provider, model)
+
+
+def _display_width(text: str) -> int:
+    """Terminal display width: East Asian Wide/Fullwidth chars count as 2."""
+    import unicodedata
+
+    return sum(
+        2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1 for char in text
+    )
+
+
+def _pad_display(text: str, width: int) -> str:
+    return text + " " * max(0, width - _display_width(text))
 
 
 def _banner_colors(output: TextIO) -> dict[str, str]:
@@ -3299,6 +3380,9 @@ def handle_slash_command(
 
 
 def render_slash_help(*, output: TextIO) -> None:
+    """Grouped, aligned command reference (rich on TTY, plain list otherwise)."""
+    if _render_slash_help_rich(output=output):
+        return
     print(_paint("Slash commands:", "section", output=output), file=output)
     command_width = max(len(command) for command, _ in SLASH_COMMAND_HELP)
     for command, description in SLASH_COMMAND_HELP:
@@ -3308,6 +3392,78 @@ def render_slash_help(*, output: TextIO) -> None:
             f"{_paint(description, 'muted', output=output)}",
             file=output,
         )
+
+
+# Ordered functional groups for the /help surface. Commands outside every
+# group fall into 「其他」 so new entries can never silently disappear.
+_HELP_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("主线 · 模拟盘策略研究", ("/research", "/paper", "/backtest", "/backtests")),
+    ("行情快照", ("/price", "/ticker", "/candles", "/compare")),
+    ("研究与证据", ("/research-program", "/rag", "/cards", "/evolution", "/experiment")),
+    ("任务与运行", ("/runs", "/run", "/sessions", "/tasks", "/task")),
+    ("记忆与技能", ("/memory", "/assertions", "/skills")),
+    ("模拟盘与实盘", ("/live", "/monitor", "/monitors", "/alerts")),
+    ("配置与诊断", (
+        "/status",
+        "/model",
+        "/providers",
+        "/tools",
+        "/connectors",
+        "/triggers",
+        "/validations",
+        "/ledger",
+        "/strategy",
+        "/evals",
+        "/help",
+    )),
+)
+
+
+def _render_slash_help_rich(*, output: TextIO) -> bool:
+    if not getattr(output, "isatty", lambda: False)() or os.getenv("NO_COLOR"):
+        return False
+    try:
+        from rich.console import Console
+        from rich.table import Table
+        from rich.text import Text
+    except ImportError:
+        return False
+
+    grouped: dict[str, list[tuple[str, str]]] = {}
+    section_of: dict[str, str] = {}
+    for section_title, prefixes in _HELP_SECTIONS:
+        for prefix in prefixes:
+            section_of[prefix] = section_title
+    other: list[tuple[str, str]] = []
+    for command, description in SLASH_COMMAND_HELP:
+        assigned_section = section_of.get(command.split(maxsplit=1)[0])
+        if assigned_section is None:
+            other.append((command, description))
+        else:
+            grouped.setdefault(assigned_section, []).append((command, description))
+
+    console = Console(file=output, force_terminal=True, color_system=_rich_color_system())
+    command_width = min(max(len(command) for command, _ in SLASH_COMMAND_HELP), 36)
+    for section_title, _prefixes in _HELP_SECTIONS:
+        entries = grouped.get(section_title)
+        if not entries:
+            continue
+        table = Table.grid(padding=(0, 2))
+        table.add_column(width=command_width, no_wrap=True, overflow="fold")
+        table.add_column(ratio=1)
+        for command, description in entries:
+            table.add_row(Text(command, style="cyan"), Text(description, style="dim"))
+        console.print(Text(f"◈ {section_title}", style="bold magenta"))
+        console.print(table)
+    if other:
+        table = Table.grid(padding=(0, 2))
+        table.add_column(width=command_width, no_wrap=True, overflow="fold")
+        table.add_column(ratio=1)
+        for command, description in other:
+            table.add_row(Text(command, style="cyan"), Text(description, style="dim"))
+        console.print(Text("◈ 其他", style="bold magenta"))
+        console.print(table)
+    return True
 
 
 def render_slash_command_candidates(prefix: str, *, output: TextIO) -> None:

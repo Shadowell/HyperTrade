@@ -1768,19 +1768,19 @@ def test_welcome_banner_prioritizes_tasks_and_operator_controls() -> None:
     rendered = output.getvalue()
     assert "HyperTrade / Operator Console" in rendered
     assert "deepseek / deepseek-v4-flash" in rendered
-    assert "PAPER RESEARCH MAINLINE" in rendered
+    assert "主线 · 模拟盘策略研究" in rendered
     assert "/research <目标>" in rendered
     assert "/paper best" in rendered
-    assert "OPERATOR CONTROLS" in rendered
+    assert "运维控制" in rendered
     assert "MAINNET  BLOCKED" in rendered
     assert "/tasks" in rendered
     assert "/live intents" in rendered
-    assert "System posture, risk gates, and session" in rendered
-    assert "Mission queue and safe-point controls" in rendered
-    assert "Research evidence and trace drill-down" in rendered
-    assert "Review pending Testnet execution intents" in rendered
-    assert "Inspect the active model and provider" in rendered
-    assert "Commands, syntax, and safety guardrails" in rendered
+    assert "系统姿态 · 风控门 · 会话" in rendered
+    assert "任务队列与安全点控制" in rendered
+    assert "运行证据与 trace 下钻" in rendered
+    assert "待审批 Testnet 执行意图" in rendered
+    assert "查看当前模型与 provider" in rendered
+    assert "全部命令（分组索引）" in rendered
     assert "Inspect or change this session's provider" not in rendered
     assert "/paper close" not in rendered
     assert "Exact ticker shortcut" not in rendered
