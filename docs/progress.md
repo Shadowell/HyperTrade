@@ -1,5 +1,21 @@
 # Progress Log
 
+## 流式输出格式化（sprint-145）— 2026-08-24
+
+- **合同**：[streaming-output-formatting](contracts/sprint-145-streaming-output-formatting.md)。
+  修复 sprint-144 的显示回归：流式回答原为裸文本（无 markdown、无宽度自适应），
+  且流式后跳过 rich 渲染——用户主要看到裸 markdown。
+- **`_LiveMarkdownStreamer`**：TTY 下经 `rich.live.Live` + `Markdown` 节流增量
+  重渲染（标题/表格/列表全程格式化）；plain 模式（管道/`HYPERTRADE_STREAM_RENDERER=
+  plain`/rich 缺失）保持逐字节裸文本直通。
+- **流式期间工具事件可见**：以紧凑 muted 单行打印在 Live 渲染区上方（plain
+  模式下抑制以免污染答案流）。
+- **结构化收尾 footer**：run id + 时长 + token + 工具数 + 压缩次数（取自
+  observability），替代只有 run id 的一行。
+- **测试抓出一个真 bug**：`streamed_chars` 原只统计 rich 缓冲，plain 模式恒 0
+  会导致管道场景重复渲染全文——计数改为双模式。
+- **验证**：6 个新测试；`./scripts/check.sh` 全绿（1149 passed）。
+
 ## Token Streaming（sprint-144）— 2026-08-24
 
 - **合同**：[token-streaming](contracts/sprint-144-token-streaming.md)。
