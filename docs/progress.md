@@ -1,5 +1,23 @@
 # Progress Log
 
+## 代码工作区工具面（sprint-143）— 2026-08-24
+
+- **合同**：[agent-code-workspace](contracts/sprint-143-agent-code-workspace.md)。
+  planner 获得 OpenCode 式代码迭代能力：逐文件写策略/测试、读回、列目录、
+  在真沙箱里跑 ruff/pytest。
+- **`agent/workspace.py`**：per-run `AgentWorkspace`——写时即过沙箱门
+  （strategies//tests/ 白名单、扩展名、256KB 配额、AST 禁网络/进程/动态执行，
+  危险代码在写入时就被拒并给出原因）；`run` 把累积工作区提交
+  `StrategySandbox`（幂等键=内容哈希，相同内容+命令重放同一持久化 run），
+  命令失败经 `output_preview` 可读，支撑"写→跑→读错→修"闭环。
+- **工具面**（registry 单一事实来源）：`workspace.write_file`/`read_file`/
+  `list_files`（read）/`run`（research_write，long 超时）。`_build_executor`
+  每 run 新建工作区——文件不跨 run 泄漏；沙箱 artifacts 账本保留内容寻址审计。
+- **验证**：11 个新测试（含真实 pytest 三部曲：通过→故意改坏→失败可见→
+  幂等重放同 run id）；`./scripts/check.sh` 全绿（1137 passed）。
+- **边界说明**：沙箱命令参数禁止路径分隔符（既有合同防逃逸），裸 pytest
+  自动发现 tests/；生产 UDS 容器 runner 经既有 SandboxRunner 协议兼容接入。
+
 ## 标准 MCP 客户端层（sprint-142）— 2026-08-24
 
 - **合同**：[standard-mcp-client-layer](contracts/sprint-142-standard-mcp-client-layer.md)。
