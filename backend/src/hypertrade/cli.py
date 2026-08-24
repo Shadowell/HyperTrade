@@ -485,6 +485,8 @@ DEFAULT_REMOTE_API_URL = "http://47.79.36.92:3333"
 
 SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("/help", "Show this command list."),
+    ("/research <objective>", "Run the governed paper-strategy research mainline."),
+    ("/paper best", "Rank BitPro paper strategies by real return metrics."),
     ("/status", "Show runtime, session, market, memory, and tool counts."),
     ("/model", "Show the active provider and model."),
     ("/model <provider>", "Switch the active chat provider for this CLI session."),
@@ -643,7 +645,7 @@ SLASH_ARGUMENT_COMPLETIONS: dict[str, tuple[str, ...]] = {
     "/validations": ("list", "show"),
     "/triggers": ("list", "fires", "enable", "disable", "run", "kill"),
     "/backtest": ("list", "latest", "--live", "--source bitpro_mcp"),
-    "/paper": ("status", "pause", "resume", "close", "reset"),
+    "/paper": ("best", "status", "pause", "resume", "close", "reset"),
     "/live": ("intents", "intent", "approve", "reject", "execute"),
     "/price": ("BTC", "ETH", "SOL", "DOGE", "PEPE"),
     "/ticker": ("BTC", "ETH", "SOL", "DOGE", "PEPE"),
@@ -2985,6 +2987,7 @@ def run_chat(
 def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
     color = _banner_colors(output)
     provider, model = _welcome_model_label(client)
+    runtime_label = _welcome_runtime_label(client)
     divider = f"{color['border']}{'─' * 72}{color['reset']}"
     print("", file=output)
     print(f"{color['title']}HyperTrade / Operator Console{color['reset']}", file=output)
@@ -2995,8 +2998,8 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
     print(divider, file=output)
     print(
         f"{color['label']}MODEL{color['reset']}  {color['value']}{provider} / {model}"
-        f"{color['reset']}    {color['label']}WORKSPACE{color['reset']}"
-        f"  {color['value']}RESEARCH{color['reset']}",
+        f"{color['reset']}    {color['label']}RUNTIME{color['reset']}"
+        f"  {color['value']}{runtime_label}{color['reset']}",
         file=output,
     )
     print(
@@ -3006,14 +3009,17 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
         file=output,
     )
     print(divider, file=output)
-    print(f"{color['section']}START WITH A TASK{color['reset']}", file=output)
+    print(f"{color['section']}PAPER RESEARCH MAINLINE{color['reset']}", file=output)
     print(
-        f"  {color['value']}研究 ETH 的趋势策略，限定 1H 数据并要求样本外验证。{color['reset']}",
+        f"  {color['cmd']}/research <目标>{color['reset']}   "
+        f"{color['muted']}"
+        f"证据检索 → 策略回测 → 门禁自检 → 晋升审批（人工批准后上模拟盘）"
+        f"{color['reset']}",
         file=output,
     )
     print(
-        f"  {color['value']}查看 momentum_breakout 的模拟盘证据，并给出是否需要人工复核。"
-        f"{color['reset']}",
+        f"  {color['cmd']}/paper best{color['reset']}        "
+        f"{color['muted']}模拟盘策略真实收益排名{color['reset']}",
         file=output,
     )
     print(f"{color['section']}OPERATOR CONTROLS{color['reset']}", file=output)
@@ -3047,6 +3053,16 @@ def render_welcome_banner(*, client: AgentClient, output: TextIO) -> None:
         f"Type exit, quit, or :q to leave.{color['reset']}",
         file=output,
     )
+
+
+def _welcome_runtime_label(client: AgentClient) -> str:
+    """Label where prompts will actually execute; never blocks the banner."""
+
+    config = getattr(client, "config", None)
+    api_url = str(getattr(config, "api_url", "") or "")
+    if api_url:
+        return f"REMOTE {api_url}"
+    return "LOCAL"
 
 
 def _welcome_model_label(client: AgentClient) -> tuple[str, str]:
@@ -3252,6 +3268,24 @@ def handle_slash_command(
         handle_candles_command(command, client=client, output=output)
     elif name == "/compare":
         handle_compare_command(command, client=client, output=output)
+    elif name == "/research":
+        parts = command.split(maxsplit=1)
+        objective = parts[1].strip() if len(parts) > 1 else ""
+        if not objective:
+            print(
+                _paint("Usage: /research <objective>", "muted", output=output),
+                file=output,
+            )
+            print(
+                _paint(
+                    "Example: /research ETH 1H 趋势策略，要求样本外验证",
+                    "muted",
+                    output=output,
+                ),
+                file=output,
+            )
+            return
+        render_run_stream(client, _mainline_research_prompt(objective), output=output)
     elif name == "/paper":
         handle_paper_command(command, client=client, output=output)
     elif name == "/live":
@@ -3737,9 +3771,43 @@ def handle_compare_command(command: str, *, client: AgentClient, output: TextIO)
         print(f"Compare failed: {exc}", file=output)
 
 
+def _mainline_research_prompt(objective: str) -> str:
+    """Canned mainline prompt: paper strategy research under governance.
+
+    Keeps the operator on the sprint-137 loop (evidence -> strategy -> backtest
+    -> gate self-check -> promotion request) instead of ad-hoc phrasing that
+    the planner may route differently.
+    """
+    return (
+        f"推进模拟盘策略研究主线，目标：{objective}\n"
+        "按以下顺序执行并汇报：\n"
+        "1. strategy_library_search 检索历史证据与失败教训；\n"
+        "2. 基于证据创建或生成策略，并用 bitpro_backtest_start_job 回测、"
+        "bitpro_backtest_get_result 读取真实指标；\n"
+        "3. research_validation_gate 用 mandate 锁定标准做门禁自检；\n"
+        "4. 未过检则如实给出 rejection_reasons 并停止，不编造结论；\n"
+        "5. 过检则用 research_job_report 定位 evidence_recorded 证据，"
+        "并对全过检证据调用 paper_promotion_request 发起晋升审批。\n"
+        "最后用 Markdown 汇报：结论、门禁结果、已创建的审批项、下一步建议。"
+    )
+
+
 def handle_paper_command(command: str, *, client: AgentClient, output: TextIO) -> None:
     parts = command.split()
     subcommand = parts[1].lower() if len(parts) > 1 else "status"
+    if subcommand == "best":
+        # BitPro paper strategy ranking goes through the governed agent path so
+        # evidence stays sourced and rendered by the validated report renderer.
+        render_run_stream(
+            client,
+            (
+                "列出模拟盘收益最好的策略排名：使用 bitpro_paper_strategy_performance，"
+                "只报告 BitPro 返回的真实 return_pct 指标，给出前 5 名、"
+                "各自的关键指标与数据缺口，不要编造缺失策略的收益。"
+            ),
+            output=output,
+        )
+        return
     if subcommand in {"status", "show"}:
         try:
             render_paper_status(client.get_paper_status(), output=output)
@@ -7793,6 +7861,7 @@ def render_run_stream(
         return
     final_run: dict[str, Any] | None = None
     stream_failed = False
+    stream_error: httpx.HTTPError | None = None
     terminal_error: dict[str, str] | None = None
     stream_run_ids: list[str] = []
     animator.start("Thinking")
@@ -7895,10 +7964,58 @@ def render_run_stream(
                 terminal_error = _stream_terminal_error(event)
     except httpx.HTTPError as exc:
         stream_failed = True
-        animator.print_line(_status_line(_format_remote_api_error(exc), "error", output=output))
+        stream_error = exc
     finally:
         animator.stop()
     if stream_failed:
+        # A dropped connection does not mean the run is lost: the server keeps
+        # executing and persists the projection. Attempt durable recovery
+        # before asking the operator to retype anything.
+        recovered_run, recovered_run_id = _recover_stream_final_run(client, stream_run_ids)
+        if recovered_run is not None:
+            print(
+                _status_line(
+                    (
+                        "Connection dropped, but the run finished server-side; "
+                        f"recovered it ({recovered_run_id})."
+                    ),
+                    "warning",
+                    output=output,
+                ),
+                file=output,
+            )
+            print("", file=output)
+            render_run(recovered_run, output=output)
+            return
+        if stream_error is not None:
+            animator.print_line(
+                _status_line(_format_remote_api_error(stream_error), "error", output=output)
+            )
+        last_run_id = stream_run_ids[-1] if stream_run_ids else ""
+        if last_run_id:
+            print(
+                _paint(
+                    (
+                        "Run stream disconnected before the final report. The run may "
+                        f"still be executing remotely; fetch it later via /run {last_run_id}."
+                    ),
+                    "warning",
+                    output=output,
+                ),
+                file=output,
+            )
+        else:
+            print(
+                _paint(
+                    (
+                        "Run stream disconnected before the run started. "
+                        "Retry in a moment or check /runs."
+                    ),
+                    "warning",
+                    output=output,
+                ),
+                file=output,
+            )
         return
     recovered_run_id = ""
     if final_run is None:

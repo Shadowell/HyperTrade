@@ -1768,7 +1768,9 @@ def test_welcome_banner_prioritizes_tasks_and_operator_controls() -> None:
     rendered = output.getvalue()
     assert "HyperTrade / Operator Console" in rendered
     assert "deepseek / deepseek-v4-flash" in rendered
-    assert "START WITH A TASK" in rendered
+    assert "PAPER RESEARCH MAINLINE" in rendered
+    assert "/research <目标>" in rendered
+    assert "/paper best" in rendered
     assert "OPERATOR CONTROLS" in rendered
     assert "MAINNET  BLOCKED" in rendered
     assert "/tasks" in rendered
@@ -3329,3 +3331,91 @@ def _capture_client(
 ) -> FakeAgentClient:
     captured.append((config, local))
     return FakeAgentClient()
+
+
+def test_run_stream_recovers_completed_run_after_connection_drop() -> None:
+    """断线不丢结果：流中断后必须从服务器持久化投影找回已完成运行。"""
+    import httpx
+
+    class DroppingStreamClient:
+        def run_agent_events(self, prompt: str):
+            del prompt
+            yield {"event": "run_started", "run_id": "run_dropped"}
+            raise httpx.ConnectError("connection reset by peer")
+
+        def get_run(self, run_id: str) -> dict[str, Any]:
+            assert run_id == "run_dropped"
+            return {
+                "id": run_id,
+                "status": "completed",
+                "report_markdown": "## 结论\n断线恢复的最终报告。",
+                "trace_events": [],
+            }
+
+    output = StringIO()
+
+    render_run_stream(DroppingStreamClient(), "看下ETH行情", output=output)
+
+    rendered = output.getvalue()
+    assert "recovered it (run_dropped)" in rendered
+    assert "断线恢复的最终报告" in rendered
+    assert "Remote API connection failed" not in rendered
+
+
+def test_run_stream_disconnect_before_start_gives_actionable_hint() -> None:
+    import httpx
+
+    class DeadStreamClient:
+        def run_agent_events(self, prompt: str):
+            del prompt
+            raise httpx.ConnectError("refused")
+            yield  # pragma: no cover - makes this a generator
+
+        def get_run(self, run_id: str) -> dict[str, Any]:  # pragma: no cover
+            raise KeyError(run_id)
+
+    output = StringIO()
+
+    render_run_stream(DeadStreamClient(), "看下ETH行情", output=output)
+
+    rendered = output.getvalue()
+    assert "disconnected before the run started" in rendered
+    assert "Retry in a moment" in rendered
+
+
+def test_mainline_research_prompt_pins_the_governed_loop() -> None:
+    from hypertrade.cli import _mainline_research_prompt
+
+    prompt = _mainline_research_prompt("ETH 1H 趋势策略")
+
+    assert "ETH 1H 趋势策略" in prompt
+    assert "strategy_library_search" in prompt
+    assert "bitpro_backtest_start_job" in prompt
+    assert "research_validation_gate" in prompt
+    assert "paper_promotion_request" in prompt
+    assert "rejection_reasons" in prompt
+
+
+def test_welcome_banner_labels_local_vs_remote_runtime() -> None:
+    from hypertrade.cli import render_welcome_banner
+
+    class LocalLikeClient:
+        def get_model_status(self) -> dict[str, Any]:
+            return {"provider": "deepseek", "model": "deepseek-chat"}
+
+    class RemoteLikeClient(LocalLikeClient):
+        class _Config:
+            api_url = "http://47.79.36.92:3333"
+
+        config = _Config()
+
+    local_out = StringIO()
+    render_welcome_banner(client=LocalLikeClient(), output=local_out)
+    assert "LOCAL" in local_out.getvalue()
+
+    remote_out = StringIO()
+    render_welcome_banner(client=RemoteLikeClient(), output=remote_out)
+    rendered = remote_out.getvalue()
+    assert "REMOTE http://47.79.36.92:3333" in rendered
+    assert "/research <目标>" in rendered
+    assert "/paper best" in rendered

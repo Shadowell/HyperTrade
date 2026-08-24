@@ -1,5 +1,21 @@
 # Progress Log
 
+## Operator Console 专业化与断线自恢复 — 2026-08-24
+
+- **断线不再丢结果**（修复用户实测报障）：`render_run_stream` 此前在 httpx 断开时
+  提前 return，跳过已有的 `_recover_stream_final_run` 恢复逻辑。现在断线后先查
+  服务器持久化投影：运行已结束则直接渲染最终报告（"Connection dropped, but the
+  run finished server-side; recovered it"）；仍在执行则给出 `/run <id>` 精确取回
+  指引；未启动才提示重试。错误行改为恢复失败才打印，避免"先报错又找回"的矛盾体验。
+- **主线 slash 命令**：新增 `/research <目标>`（固定 sprint-137 主线 prompt：
+  证据检索→策略回测→门禁自检→晋升审批，防自由措辞被 planner 路由偏）与
+  `/paper best`（走受治理 agent 路径取 BitPro 模拟盘真实收益排名，只报真实
+  return_pct）。
+- **Banner 专业化**：WORKSPACE 行替换为 RUNTIME 行（LOCAL / REMOTE <url>），
+  直接回答"我的命令在哪跑"；新增 PAPER RESEARCH MAINLINE 快捷区。
+- **验证**：新增 4 个 CLI 测试（断线恢复/未启动断连/主线 prompt 钉住/banner 标签），
+  真机 `ht chat` 验证新 banner；88 个 cli 测试全绿。
+
 ## 本地 CLI 零配置直用：任意目录裸敲 `ht` — 2026-08-24
 
 - **诉求**：operator 要求"本地打 `ht` 就能用"。此前裸 `ht` 有三个坑：默认
