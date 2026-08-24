@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from hypertrade.agent.context import compact_messages, estimate_messages_tokens
 from hypertrade.agent.harness_v2 import (
     AsyncParallelToolDispatcher,
     SmartToolExecutionHealer,
@@ -188,6 +189,7 @@ class ModelCallRecord:
     tool_call_count: int
     response_type: str
     usage: TokenUsage
+    history_tokens: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -198,6 +200,7 @@ class ModelCallRecord:
             "tool_call_count": self.tool_call_count,
             "response_type": self.response_type,
             "usage": self.usage.to_dict(),
+            "history_tokens": self.history_tokens,
         }
 
 
@@ -212,6 +215,10 @@ class PlannerResult:
     # Aggregated per-tool latency/error/retry metrics collected by the harness
     # across every planning iteration of this run.
     tool_telemetry: dict[str, Any] = field(default_factory=dict)
+    # Context engineering: how many times history was compacted before a
+    # provider call, and the final pre-call history token estimate.
+    context_compactions: int = 0
+    history_tokens_last: int = 0
 
 
 class PlannerValidationFailed(RuntimeError):
@@ -219,7 +226,12 @@ class PlannerValidationFailed(RuntimeError):
 
 
 class AgentPlanner:
-    MAX_ITERATIONS = 8
+    # 12 iterations with compaction: long research loops (backtest -> gate ->
+    # promotion) need more turns than the old hard cap of 8, which existed only
+    # because total history was unmanaged.
+    MAX_ITERATIONS = 12
+    MAX_HISTORY_TOKENS = 24_000
+    KEEP_RECENT_GROUPS = 4
 
     def __init__(
         self,
@@ -227,10 +239,14 @@ class AgentPlanner:
         *,
         model_call_sink: Callable[[ModelCallRecord], None] | None = None,
         tool_call_sink: Callable[[ToolCallRecord], None] | None = None,
+        max_history_tokens: int | None = None,
     ) -> None:
         self._llm = llm
         self._model_call_sink = model_call_sink
         self._tool_call_sink = tool_call_sink
+        self._max_history_tokens = (
+            max_history_tokens if max_history_tokens is not None else self.MAX_HISTORY_TOKENS
+        )
 
     def run(
         self,
@@ -257,12 +273,26 @@ class AgentPlanner:
         tool_calls: list[ToolCallRecord] = []
         model_calls: list[ModelCallRecord] = []
         repair_count = 0
+        context_compactions = 0
+        history_tokens_last = 0
         # One harness per planning run: telemetry aggregates across iterations
         # instead of being discarded with every per-iteration instantiation.
         healer = SmartToolExecutionHealer(executor)
         dispatcher = AsyncParallelToolDispatcher(healer)
 
         for iteration in range(1, self.MAX_ITERATIONS + 1):
+            # Context engineering: compact protocol-valid old tool groups before
+            # the provider call when history exceeds the budget. Full originals
+            # stay in the trace for audit; only the provider view is compacted.
+            compaction = compact_messages(
+                messages,
+                max_history_tokens=self._max_history_tokens,
+                keep_recent_groups=self.KEEP_RECENT_GROUPS,
+            )
+            if compaction.compacted_groups:
+                messages = compaction.messages
+                context_compactions += 1
+            history_tokens_last = estimate_messages_tokens(messages)
             started_at = time.monotonic()
             response: ChatResponse = self._llm.chat(messages, tools=list(candidates.schemas))
             model_call = ModelCallRecord(
@@ -273,6 +303,7 @@ class AgentPlanner:
                 tool_call_count=len(response.tool_calls),
                 response_type="tool_calls" if response.tool_calls else "final",
                 usage=response.usage,
+                history_tokens=history_tokens_last,
             )
             model_calls.append(model_call)
             if self._model_call_sink is not None:
@@ -314,6 +345,8 @@ class AgentPlanner:
                     tool_plan=plan,
                     candidate_count=len(candidates.schemas),
                     tool_telemetry=healer.telemetry.get_summary(),
+                    context_compactions=context_compactions,
+                    history_tokens_last=history_tokens_last,
                 )
 
             validation_errors = _validate_provider_calls(response, candidates, schemas_by_name)
@@ -376,6 +409,8 @@ class AgentPlanner:
             ),
             candidate_count=len(candidates.schemas),
             tool_telemetry=healer.telemetry.get_summary(),
+            context_compactions=context_compactions,
+            history_tokens_last=history_tokens_last,
         )
 
 

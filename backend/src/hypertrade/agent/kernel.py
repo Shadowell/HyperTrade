@@ -2958,6 +2958,10 @@ def _planner_observability(
             "read_count": len(memory_reads),
             "write_count": len(memory_writes),
         },
+        "context": {
+            "compactions": int(result.context_compactions),
+            "history_tokens_last": int(result.history_tokens_last),
+        },
         "private_reasoning_stored": False,
     }
 
@@ -2982,6 +2986,10 @@ def _empty_observability() -> dict[str, Any]:
             "write_ids": [],
             "read_count": 0,
             "write_count": 0,
+        },
+        "context": {
+            "compactions": 0,
+            "history_tokens_last": 0,
         },
         "private_reasoning_stored": False,
     }
