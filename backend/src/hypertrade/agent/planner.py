@@ -263,6 +263,7 @@ class AgentPlanner:
         *,
         intent: ResearchIntentV2 | None = None,
         system_suffix: str = "",
+        delta_sink: Callable[[str], None] | None = None,
     ) -> PlannerResult:
         active_intent = intent or default_research_intent(evaluation_mode=False)
         candidates = build_candidate_tool_set(active_intent, TOOL_SCHEMAS)
@@ -302,7 +303,15 @@ class AgentPlanner:
                 context_compactions += 1
             history_tokens_last = estimate_messages_tokens(messages)
             started_at = time.monotonic()
-            response: ChatResponse = self._llm.chat(messages, tools=list(candidates.schemas))
+            stream_chat = getattr(self._llm, "stream_chat", None)
+            if delta_sink is not None and callable(stream_chat):
+                response: ChatResponse = stream_chat(
+                    messages,
+                    list(candidates.schemas),
+                    on_delta=delta_sink,
+                )
+            else:
+                response = self._llm.chat(messages, tools=list(candidates.schemas))
             model_call = ModelCallRecord(
                 iteration=iteration,
                 provider=_provider_label(self._llm, "name"),

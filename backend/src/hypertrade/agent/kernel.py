@@ -223,11 +223,22 @@ class AgentKernel:
             tool_call_sink=lambda record: self._record_tool_call(run_id, record),
         )
         executor = self._build_executor(run_id, event_sink=event_sink)
+        # Final-answer tokens stream out as answer_delta events the moment the
+        # provider produces them; SSE/queue consumers forward them verbatim.
+        delta_sink: Callable[[str], None] | None = None
+        if event_sink is not None:
+            def delta_sink(text: str) -> None:
+                _emit(
+                    event_sink,
+                    {"event": "answer_delta", "run_id": run_id, "text": text},
+                )
+
         result: PlannerResult = planner.run(
             prompt,
             executor,
             intent=intent,
             system_suffix=self._memory_prompt_suffix(),
+            delta_sink=delta_sink,
         )
 
         observability = _planner_observability(result, provider=llm.name, model=llm.model)

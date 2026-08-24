@@ -7865,6 +7865,8 @@ def render_run_stream(
     stream_error: httpx.HTTPError | None = None
     terminal_error: dict[str, str] | None = None
     stream_run_ids: list[str] = []
+    streamed_chars = 0
+    final_from_stream = False
     animator.start("Thinking")
     try:
         for event in events:
@@ -7928,6 +7930,17 @@ def render_run_stream(
                         _status_line("Agent status: planning next step", "muted", output=output)
                     )
                 animator.update("Planning next step")
+            elif event_name == "answer_delta":
+                # Live token streaming: stop the spinner once and print the
+                # final answer as it is written. The full report is not
+                # re-rendered at `final` when deltas already reached the
+                # operator; a compact footer closes the run instead.
+                text = str(event.get("text", "") or "")
+                if text:
+                    animator.stop()
+                    streamed_chars += len(text)
+                    output.write(text)
+                    output.flush()
             elif event_name == "run_completed":
                 if _show_full_progress():
                     animator.print_line(
@@ -7955,10 +7968,12 @@ def render_run_stream(
                 animator.update("Generating final report")
                 if isinstance(event.get("run"), dict):
                     final_run = dict(event["run"])
+                    final_from_stream = True
             elif event_name == "final":
                 if isinstance(event.get("run"), dict):
                     animator.update("Rendering final report")
                     final_run = dict(event["run"])
+                    final_from_stream = True
                 else:
                     terminal_error = _stream_terminal_error(event)
             elif event_name == "error" or (event_name == "warning" and event.get("code")):
@@ -8032,7 +8047,20 @@ def render_run_stream(
             )
     if final_run is not None:
         print("", file=output)
-        render_run(final_run, output=output)
+        if streamed_chars > 0 and final_from_stream:
+            # The answer already streamed live; a full re-render would print
+            # the same report twice. Close with a compact run footer.
+            run_id = str(final_run.get("id") or (stream_run_ids[-1] if stream_run_ids else ""))
+            print(
+                _paint(
+                    f"── 回答已实时输出 · run {run_id} ──",
+                    "muted",
+                    output=output,
+                ),
+                file=output,
+            )
+        else:
+            render_run(final_run, output=output)
     else:
         print(
             _paint(

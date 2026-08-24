@@ -10,6 +10,7 @@ inside the graph.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -70,10 +71,18 @@ class ChatProvider(Protocol):
 class OpenAICompatibleChatProvider:
     """Adapter for providers that implement the OpenAI chat-completions shape."""
 
-    def __init__(self, *, name: str, api_key: str, base_url: str, model: str) -> None:
+    def __init__(
+        self,
+        *,
+        name: str,
+        api_key: str,
+        base_url: str,
+        model: str,
+        client: Any | None = None,
+    ) -> None:
         self.name = name
         self.model = model
-        self._client = OpenAI(api_key=api_key, base_url=base_url)
+        self._client = client if client is not None else OpenAI(api_key=api_key, base_url=base_url)
 
     def chat(
         self,
@@ -87,27 +96,114 @@ class OpenAICompatibleChatProvider:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
         response = self._client.chat.completions.create(**kwargs)
-        message = response.choices[0].message
+        return _response_to_chat_response(response)
+
+    def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        *,
+        on_delta: Callable[[str], None],
+    ) -> ChatResponse:
+        """Streaming chat: content deltas are emitted via on_delta as they
+        arrive; tool-call deltas accumulate into complete calls; the returned
+        ChatResponse is equivalent to the non-streaming chat().
+
+        reasoning_content accumulates but is never emitted through on_delta —
+        private reasoning must not leak into operator-visible streams.
+        """
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+        stream = self._client.chat.completions.create(**kwargs)
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        # tool_call deltas arrive split across chunks, keyed by their index.
+        tool_acc: dict[int, dict[str, str]] = {}
+        usage = TokenUsage()
+        for chunk in stream:
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                usage = _openai_token_usage(chunk_usage)
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            if delta is None:
+                continue
+            reasoning = str(getattr(delta, "reasoning_content", "") or "")
+            if reasoning:
+                reasoning_parts.append(reasoning)
+            content_delta = str(getattr(delta, "content", "") or "")
+            if content_delta:
+                content_parts.append(content_delta)
+                on_delta(content_delta)
+            for tc_delta in getattr(delta, "tool_calls", None) or []:
+                index = int(getattr(tc_delta, "index", 0) or 0)
+                acc = tool_acc.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                tc_id = str(getattr(tc_delta, "id", "") or "")
+                if tc_id:
+                    acc["id"] = tc_id
+                function = getattr(tc_delta, "function", None)
+                if function is not None:
+                    fn_name = str(getattr(function, "name", "") or "")
+                    if fn_name:
+                        acc["name"] = fn_name
+                    fn_args = getattr(function, "arguments", None)
+                    if fn_args:
+                        acc["arguments"] = acc["arguments"] + str(fn_args)
         tool_calls: list[ToolCallRequest] = []
-        if message.tool_calls:
-            for tc in message.tool_calls:
-                raw = tc.function.arguments or "{}"
-                try:
-                    args: dict[str, Any] = json.loads(raw)
-                except json.JSONDecodeError:
-                    # Tool arguments come from the model, so they are treated as
-                    # untrusted input and normalized before reaching AgentKernel.
-                    args = {}
-                if not isinstance(args, dict):
-                    args = {}
-                tool_calls.append(ToolCallRequest(id=tc.id, name=tc.function.name, arguments=args))
-        reasoning_content = str(getattr(message, "reasoning_content", "") or "")
+        for index in sorted(tool_acc):
+            acc = tool_acc[index]
+            raw = acc["arguments"] or "{}"
+            try:
+                args: dict[str, Any] = json.loads(raw)
+            except json.JSONDecodeError:
+                # Tool arguments come from the model, so they are treated as
+                # untrusted input and normalized before reaching AgentKernel.
+                args = {}
+            if not isinstance(args, dict):
+                args = {}
+            tool_calls.append(
+                ToolCallRequest(id=acc["id"] or f"call_{index}", name=acc["name"], arguments=args)
+            )
         return ChatResponse(
-            content=message.content or "",
-            reasoning_content=reasoning_content,
+            content="".join(content_parts),
+            reasoning_content="".join(reasoning_parts),
             tool_calls=tool_calls,
-            usage=_openai_token_usage(getattr(response, "usage", None)),
+            usage=usage,
         )
+
+
+def _response_to_chat_response(response: Any) -> ChatResponse:
+    """Normalize one non-streaming completion into ChatResponse."""
+    message = response.choices[0].message
+    tool_calls: list[ToolCallRequest] = []
+    if message.tool_calls:
+        for tc in message.tool_calls:
+            raw = tc.function.arguments or "{}"
+            try:
+                args: dict[str, Any] = json.loads(raw)
+            except json.JSONDecodeError:
+                # Tool arguments come from the model, so they are treated as
+                # untrusted input and normalized before reaching AgentKernel.
+                args = {}
+            if not isinstance(args, dict):
+                args = {}
+            tool_calls.append(ToolCallRequest(id=tc.id, name=tc.function.name, arguments=args))
+    reasoning_content = str(getattr(message, "reasoning_content", "") or "")
+    return ChatResponse(
+        content=message.content or "",
+        reasoning_content=reasoning_content,
+        tool_calls=tool_calls,
+        usage=_openai_token_usage(getattr(response, "usage", None)),
+    )
 
 
 def _openai_token_usage(value: Any) -> TokenUsage:
