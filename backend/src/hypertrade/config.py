@@ -100,6 +100,10 @@ class Settings(BaseSettings):
         alias="HYPERTRADE_OPERATOR_EVAL_FIXTURES_ENABLED",
     )
     dynamic_team_enabled: bool = Field(default=False, alias="AGENT_DYNAMIC_TEAM_ENABLED")
+    agent_team_llm_worker_enabled: bool = Field(
+        default=True,
+        alias="AGENT_TEAM_LLM_WORKER_ENABLED",
+    )
     strategy_sandbox_enabled: bool = Field(default=False, alias="AGENT_STRATEGY_SANDBOX_ENABLED")
     strategy_sandbox_image: str = Field(default="", alias="AGENT_STRATEGY_SANDBOX_IMAGE")
     strategy_sandbox_socket_path: str = Field(

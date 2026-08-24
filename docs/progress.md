@@ -1,5 +1,23 @@
 # Progress Log
 
+## 自主性支柱②：Team LLM Worker（sprint-139）— 2026-08-24
+
+- **合同**：[team-llm-worker](contracts/sprint-139-team-llm-worker.md)。
+  supervisor 的 `AssignmentWorker` 从确定性罐头桩升级为**真 LLM worker**：
+  每个 assignment（research_lead/market_analyst/evidence_analyst/critic）基于
+  Mission Context Pack 的 `rendered_content` 证据推理，产出结构化
+  claims/unknowns/summary——多角色协作第一次有真实对抗语义。
+- **信任边界**：worker 无分发权无写面；handoff 必须引用所分配 Context Pack
+  （引用不可读即诚实失败，不伪造出处）；输出过 HandoffV1 哈希绑定 + 禁词合同；
+  单次提议 + 一次修复回合；双败/provider 异常回落确定性桩并在 claims 显式标注
+  `mode=deterministic_fallback` 供审计区分。
+- **端到端验证**：supervisor 集成测试里 market_analyst 出 "bullish"、critic 出
+  "bearish"，矛盾 claim 正确进入 `MergeDecisionV1.conflicts`（`conflict:market.posture`），
+  而非被吞掉——这是 bull/bear 对抗的第一次真实现。
+- **接线**：`POST /api/agent/missions/{id}/team/run` 经 `build_team_worker` 工厂；
+  flag `AGENT_TEAM_LLM_WORKER_ENABLED`（默认开）关闭时行为与现状一致。
+- **验证**：8 个新测试；`./scripts/check.sh` 全绿（1107 passed）。
+
 ## 自主性支柱①：Mission LLM Planner（sprint-138）— 2026-08-24
 
 - **合同**：[mission-llm-planner](contracts/sprint-138-mission-llm-planner.md)。

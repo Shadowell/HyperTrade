@@ -182,7 +182,7 @@ from hypertrade.runtime.adapters.supervisor import (
     InMemorySupervisionStore,
     RoleCatalog,
     SqlSupervisionStore,
-    deterministic_worker,
+    build_team_worker,
 )
 from hypertrade.runtime.adapters.thread_store import (
     InMemoryThreadStore,
@@ -1417,7 +1417,26 @@ def create_app(
             }
             if not requested_context_refs <= allowed_context_refs:
                 raise ValueError("assignment references an unknown Mission Context Pack")
-            merge = await supervisor.run(mission, payload, deterministic_worker())
+            packs_by_ref = {
+                f"context:{pack.context_pack_id}@{pack.manifest_hash}": pack
+                for pack in packs
+            }
+
+            async def load_pack(ref: str) -> Any | None:
+                return packs_by_ref.get(ref)
+
+            merge = await supervisor.run(
+                mission,
+                payload,
+                build_team_worker(
+                    app_settings,
+                    provider=ProviderRuntime(app_settings).get_chat_provider(
+                        selected=app_settings.active_chat_provider,
+                    ),
+                    pack_loader=load_pack,
+                    roles=role_catalog,
+                ),
+            )
             await mission_store.append_event(
                 mission_id,
                 "team.completed",

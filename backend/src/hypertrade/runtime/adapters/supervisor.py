@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 import anyio
 from sqlalchemy import func, select
@@ -493,6 +494,238 @@ def deterministic_worker(delay: float = 0.0) -> AssignmentWorker:
         )
 
     return run
+
+
+_TEAM_LLM_MAX_CLAIMS = 24
+_TEAM_LLM_MAX_UNKNOWNS = 20
+_TEAM_LLM_MAX_PACK_CHARS = 12_000
+_TEAM_LLM_MAX_VALUE_CHARS = 500
+
+
+class _TeamHandoffValidationError(ValueError):
+    """Carries raw model content so the repair round can quote it."""
+
+    def __init__(self, reason: str, content: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.content = content
+
+
+def llm_assignment_worker(
+    provider: Any | None,
+    *,
+    pack_loader: Callable[[str], Awaitable[Any | None]],
+    roles: RoleCatalog | None = None,
+    fallback: AssignmentWorker | None = None,
+) -> AssignmentWorker:
+    """LLM worker: reason over Context Pack evidence into a structured handoff.
+
+    The worker has no dispatch authority and no write surface: it reads the
+    assigned Context Packs, produces bounded claims/unknowns, and every output
+    re-validates through the HandoffV1 contract (citation requirement, output
+    hash binding, forbidden-transcript guard). Provider failure or invalid
+    output after one repair round degrades to the deterministic worker with an
+    explicit audit marker instead of failing the whole team run.
+    """
+
+    catalog = roles or RoleCatalog()
+    baseline = fallback or deterministic_worker()
+
+    async def run(assignment: AssignmentV1) -> HandoffV1:
+        role = catalog.get(assignment.role_id)
+        pack_evidence, missing_refs = await _load_pack_evidence(
+            pack_loader, assignment.context_pack_refs
+        )
+        if not pack_evidence:
+            # Citing a pack the worker could not read would fabricate provenance.
+            raise ValueError(
+                f"assignment {assignment.assignment_id} has no readable context pack "
+                f"content (refs={','.join(missing_refs) or 'none'})"
+            )
+        if provider is None:
+            return await baseline(assignment)
+        messages = _team_worker_messages(
+            assignment=assignment,
+            role=role,
+            pack_evidence=pack_evidence,
+        )
+        for attempt in range(2):
+            try:
+                response = await anyio.to_thread.run_sync(provider.chat, messages)
+                return _handoff_from_model(
+                    response.content,
+                    assignment=assignment,
+                    role=role,
+                    pack_evidence_chars=sum(len(text) for text, _ in pack_evidence),
+                )
+            except _TeamHandoffValidationError as exc:
+                if attempt == 1:
+                    break
+                messages = [
+                    *messages,
+                    {"role": "assistant", "content": exc.content},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Handoff rejected: {exc.reason}. Return corrected JSON only."
+                        ),
+                    },
+                ]
+            except Exception:  # noqa: BLE001 - untrusted provider boundary degrades safely
+                break
+        degraded = await baseline(assignment)
+        return degraded.model_copy(
+            update={
+                "claims": {
+                    **degraded.claims,
+                    f"{assignment.role_id}.mode": "deterministic_fallback",
+                },
+            }
+        )
+
+    return run
+
+
+async def _load_pack_evidence(
+    pack_loader: Callable[[str], Awaitable[Any | None]],
+    context_pack_refs: Sequence[str],
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """Resolve Context Pack refs into bounded (ref, rendered_content) pairs."""
+
+    evidence: list[tuple[str, str]] = []
+    missing: list[str] = []
+    budget = _TEAM_LLM_MAX_PACK_CHARS
+    for ref in context_pack_refs:
+        try:
+            pack = await pack_loader(ref)
+        except Exception:  # noqa: BLE001 - unreadable pack counts as missing
+            pack = None
+        if pack is None:
+            missing.append(ref)
+            continue
+        for decision in getattr(pack, "decisions", ()) or ():
+            content = str(getattr(decision, "rendered_content", "") or "")
+            if not content:
+                continue
+            if budget <= 0:
+                break
+            trimmed = content[:budget]
+            budget -= len(trimmed)
+            evidence.append((ref, trimmed))
+    return evidence, missing
+
+
+def _team_worker_messages(
+    *,
+    assignment: AssignmentV1,
+    role: RoleDefinitionV1,
+    pack_evidence: list[tuple[str, str]],
+) -> list[dict[str, str]]:
+    system = {
+        "role": "system",
+        "content": (
+            f"You are the {role.title} ({assignment.role_id}) in a governed research "
+            f"team. Purpose: {role.purpose} Reason ONLY over the provided context pack "
+            "evidence. Return JSON only: {\"summary\": string, \"claims\": "
+            "{claim_key: string}, \"unknowns\": [string]}. Rules: every claim must be "
+            "grounded in the evidence; never invent numbers or sources; keep claims "
+            f"under {_TEAM_LLM_MAX_VALUE_CHARS} chars each and at most "
+            f"{_TEAM_LLM_MAX_CLAIMS} claims; list at most {_TEAM_LLM_MAX_UNKNOWNS} "
+            "unknowns; never include private reasoning or raw transcripts; no prose "
+            "outside JSON."
+        ),
+    }
+    evidence_blocks = "\n\n".join(
+        f"### {ref}\n{text}" for ref, text in pack_evidence
+    )
+    user = {
+        "role": "user",
+        "content": (
+            f"Assignment objective: {assignment.objective}\n\n"
+            f"Context pack evidence:\n{evidence_blocks}"
+        ),
+    }
+    return [system, user]
+
+
+def _handoff_from_model(
+    content: str,
+    *,
+    assignment: AssignmentV1,
+    role: RoleDefinitionV1,
+    pack_evidence_chars: int,
+) -> HandoffV1:
+    def _reject(reason: str) -> None:
+        raise _TeamHandoffValidationError(reason, content)
+
+    try:
+        raw = json.loads(_team_json_object(content))
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise _TeamHandoffValidationError("response is not a JSON object", content) from exc
+    if not isinstance(raw, dict):
+        _reject("handoff response must be an object")
+    summary = str(raw.get("summary", "")).strip()
+    if not (1 <= len(summary) <= 4000):
+        _reject("summary must be 1..4000 chars")
+    raw_claims = raw.get("claims")
+    if not isinstance(raw_claims, dict):
+        _reject("claims must be an object")
+    if len(raw_claims) > _TEAM_LLM_MAX_CLAIMS:
+        _reject(f"claims exceed {_TEAM_LLM_MAX_CLAIMS} entries")
+    claims: dict[str, str] = {}
+    for key, value in raw_claims.items():
+        claim_key = str(key).strip()[:160]
+        if not claim_key:
+            _reject("claim keys must be non-empty")
+        text = str(value).strip()[:_TEAM_LLM_MAX_VALUE_CHARS]
+        if not text:
+            _reject(f"claim {claim_key!r} is empty")
+        claims[claim_key] = text
+    raw_unknowns = raw.get("unknowns", [])
+    if not isinstance(raw_unknowns, list) or len(raw_unknowns) > _TEAM_LLM_MAX_UNKNOWNS:
+        _reject(f"unknowns must be an array of at most {_TEAM_LLM_MAX_UNKNOWNS} strings")
+    unknowns = tuple(str(item).strip()[:300] for item in raw_unknowns if str(item).strip())
+    if not claims and not unknowns:
+        _reject("handoff must contain at least one claim or unknown")
+    try:
+        return HandoffV1(
+            handoff_id=f"hndf_{supervision_hash(assignment.assignment_id)[:20]}",
+            mission_id=assignment.mission_id,
+            assignment_id=assignment.assignment_id,
+            role_id=assignment.role_id,
+            summary=summary,
+            claims=claims,
+            source_refs=assignment.context_pack_refs + assignment.artifact_refs,
+            artifact_refs=assignment.artifact_refs,
+            unknowns=unknowns,
+        )
+    except ValueError as exc:
+        raise _TeamHandoffValidationError(
+            f"handoff contract rejected output: {exc}", content
+        ) from exc
+
+
+def _team_json_object(content: str) -> str:
+    """Extract the outermost JSON object from a model response."""
+    start = content.find("{")
+    end = content.rfind("}")
+    if start == -1 or end <= start:
+        raise ValueError("no JSON object found")
+    return content[start : end + 1]
+
+
+def build_team_worker(
+    settings: Any,
+    *,
+    provider: Any | None,
+    pack_loader: Callable[[str], Awaitable[Any | None]],
+    roles: RoleCatalog | None = None,
+) -> AssignmentWorker:
+    """Team worker factory: LLM reasoning with deterministic degradation."""
+
+    if provider is None or not bool(getattr(settings, "agent_team_llm_worker_enabled", False)):
+        return deterministic_worker()
+    return llm_assignment_worker(provider, pack_loader=pack_loader, roles=roles)
 
 
 def _assignment_id(request: TeamRunRequestV1, item: AssignmentCreateV1) -> str:
