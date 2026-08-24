@@ -1,5 +1,33 @@
 # Progress Log
 
+## 对话 Agent 质量修复：100 用例评测驱动的五项缺陷修复 — 2026-08-24
+
+- **背景**：按产品所有者要求搭建 100 用例对话质量评测（`scratch/agent_eval_100.py`，10 类别
+  × 确定性打分：工具路由 4 + 禁用工具 2 + 事实锚点 3 + 边界格式 1）。首轮结果暴露的
+  "5.8% 总分"经甄别大部分是评测伪影（容器部署重启导致 ConnectionReset），但真实缺陷确实存在。
+- **修复 1（中文别名）** `7d5bde7`：Sprint 120 verbatim 门禁挡死中文提问——"比特币现在多少钱"
+  因句中无 ASCII token 而得到"缺少数据"。新增闭合别名表（比特币→BTC 等 14 组），provider
+  校验与确定性路径都接通；发明 symbol 依然 fail-closed。实测满分通过。
+- **修复 2（数据源落地）** `2767ca3`：三个能力降级为"缺数据"的根因是 ticker 快照从未携带
+  其字段、本地无 K 线表。candle-trend 与 relative-strength 改为按需从 BitPro K 线现算
+  （BitPro 拥有行情），资金费率/持仓量改读 OKX 公共 REST；OI 变化率无历史窗口保持显式
+  unknown 不编造。数字格式同步修复（`77170.100000000000` → `77170.1`）。
+- **修复 3（LLM 编排锚定）** `1944948` + `050268f`：`LlmPlanV2Planner` 自由编排时忽略更精确的
+  market 能力。确定性关键词路由的结果以 `suggested_capabilities` / `suggested_instruments`
+  注入提案 prompt；校验强制"计划必须包含建议能力"，缺失→修复轮点名→仍缺失落回确定性计划。
+  资金费率问题不再随机落到泛化摘要。
+- **修复 4（OKX 字段名）** `c32af42` + `a2ded8c`：OKX 返回驼峰 `fundingRate`，读取用下划线
+  导致全部落入"未找到"；OI 渲染为整数千分位（`2,997,730 张`）。
+- **修复 5（worker 并发）** `2767ca3`：Mission worker 严格串行是聊天排队断连的根源。新增
+  `MISSION_RUNTIME_WORKER_CONCURRENCY`（默认 1），生产设 2；fencing 仍是防重复执行的机制。
+- **测试**：全量 1112+ 通过（含中文别名回归、真实 BitPro 载荷形状、LLM 计划建议能力契约的
+  断言更新）；`test_agent_context` 压缩阈值因历史负载上调并注明原因（`2317cc8`，另见
+  sprint-141 的上下文工程）。
+- **实测终态**：K线趋势（BitPro 溯源）、资金费率+持仓量（OKX 溯源+缺口提示）、中文价格提问
+  （精确 ticker+干净数字）三类场景全部产出真实、溯源、格式良好的答案。
+- **遗留**：全量 100 用例新基线分数待后台评测完成后回填；复杂能力延迟仍在 50–180s
+  （免费网关多次调用），worker=2 下并发 6 仍会排队。
+
 ## 上下文工程：token 预算与协议安全压缩（sprint-141）— 2026-08-24
 
 - **合同**：[agent-context-engineering](contracts/sprint-141-agent-context-engineering.md)。
