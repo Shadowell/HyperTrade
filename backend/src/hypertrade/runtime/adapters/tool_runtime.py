@@ -722,8 +722,11 @@ def builtin_handlers(
                 client = OkxRestClient(get_settings())
                 funding = await client.fetch_funding_rate(inst_id=inst_id)
                 oi = await client.fetch_open_interest(inst_id=inst_id)
+                # OKX returns camelCase fields (fundingRate / oi / oiCcy).
                 return {
-                    "funding_rate": str(funding.get("funding_rate", "")),
+                    "funding_rate": str(
+                        funding.get("fundingRate") or funding.get("funding_rate") or ""
+                    ),
                     "open_interest": str(oi.get("oi", "") or oi.get("open_interest", "")),
                     "open_interest_ccy": str(oi.get("oiCcy", "") or ""),
                 }

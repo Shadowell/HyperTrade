@@ -361,7 +361,10 @@ def _llm_plan_messages(
             "never propose writes, approvals, or capabilities outside the list. "
             "When suggested_capabilities is non-empty, include EVERY listed capability "
             "exactly once with its required arguments — the deterministic router "
-            "matched them to the objective's own words."
+            "matched them to the objective's own words. "
+            "When suggested_instruments is non-empty, market steps must pass them via "
+            "inst_id/inst_ids — the router resolved them from the objective, including "
+            "Chinese asset names."
         ),
     }
     payload: dict[str, Any] = {
@@ -373,6 +376,7 @@ def _llm_plan_messages(
             for capability_id in _capabilities_for_objective(mission.objective)
             if capability_id != "runtime.objective_inspection"
         ],
+        "suggested_instruments": list(_requested_market_instruments(mission.objective)),
         "capabilities": [
             {
                 "capability_id": capability_id,
