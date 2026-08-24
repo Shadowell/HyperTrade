@@ -104,21 +104,21 @@ class ProviderHypothesist:
         symbol: str,
         timeframe: str,
         failure_reasons: tuple[str, ...] = (),
+        skills_context: str = "",
     ) -> tuple[ProviderProposal | None, str]:
+        user_payload: dict[str, Any] = {
+            "objective": objective,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "prior_failure_reasons": list(failure_reasons)[-12:],
+        }
+        if skills_context:
+            # Distilled skills from previously validated candidates: reusable
+            # building blocks the hypothesis may compose from, never new scopes.
+            user_payload["validated_skill_library"] = skills_context
         messages = [
             {"role": "system", "content": _SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "objective": objective,
-                        "symbol": symbol,
-                        "timeframe": timeframe,
-                        "prior_failure_reasons": list(failure_reasons)[-12:],
-                    },
-                    ensure_ascii=False,
-                ),
-            },
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
         ]
         request_hash = hashlib.sha256(
             json.dumps(messages, ensure_ascii=False, sort_keys=True).encode("utf-8")

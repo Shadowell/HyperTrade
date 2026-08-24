@@ -32,7 +32,10 @@ class PaperObservationPolicyV1(BaseModel):
 class ARCBudgetV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    max_candidates: int = Field(default=5)
+    # 5 candidates could not support any search narrative: the catalogue alone
+    # has six families. Ten leaves room for seeds, mutations and one provider
+    # hypothesis while staying inside an operator-approved mission budget.
+    max_candidates: int = Field(default=10)
     max_model_calls: int = Field(default=20)
     max_tool_calls: int = Field(default=30)
     max_backtests: int = Field(default=10)

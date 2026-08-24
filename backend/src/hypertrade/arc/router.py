@@ -2,6 +2,7 @@
 ARC API Router - Single Entry Autonomous Exploration & Event Streaming
 """
 
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -47,7 +48,7 @@ from hypertrade.arc.pipeline_view import build_pipeline_view
 from hypertrade.arc.provider_hypothesis import build_provider_hypothesist
 from hypertrade.arc.reflexion import ARCReflexionLedger
 from hypertrade.arc.self_test import ARCSelfTestService, SelfTestResult
-from hypertrade.arc.skills import ARCSkillDistiller, ARCSkillLibrary
+from hypertrade.arc.skills import ARCSkill, ARCSkillDistiller, ARCSkillLibrary
 from hypertrade.arc.store import MISSIONS, get_controller, list_mission_ids, save_mission
 
 _ARC_MISSIONS = MISSIONS
@@ -446,6 +447,25 @@ def _findings_from_self_test(result: SelfTestResult) -> list[AttackFinding]:
     return findings
 
 
+def _rebuild_skill_library(events: Sequence[Any]) -> ARCSkillLibrary:
+    """Voyager 回路第一层：技能库跨循环持久化。
+
+    技能以 `skill_registered` 事件落 projection，重启/续跑的循环从事件重建，
+    "注册即遗忘"的局部变量语义被移除。损坏的历史事件跳过而不阻塞任务。
+    """
+    library = ARCSkillLibrary()
+    for event in events:
+        if getattr(event, "event_type", "") != "skill_registered":
+            continue
+        payload_skill = event.payload.get("skill")
+        if isinstance(payload_skill, dict):
+            try:
+                library.register_skill(ARCSkill.model_validate(payload_skill))
+            except Exception:  # noqa: BLE001 - corrupt legacy events cannot block a mission
+                continue
+    return library
+
+
 def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     """
     Production SOTA Autonomous Execution Engine Loop with Multi-Agent Parallel Rollouts:
@@ -515,7 +535,7 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     reflexion_ledger = ARCReflexionLedger()
     reflexion_ledger._records.extend(ctrl.projection.reflexion_history)
     mcts_engine = ARCParallelMCTSEngine(parallel_workers=parallel_workers)
-    skill_library = ARCSkillLibrary()
+    skill_library = _rebuild_skill_library(ctrl.projection.events)
     skill_distiller = ARCSkillDistiller()
     incubation_resolver = ARCPaperIncubationResolver()
 
@@ -535,6 +555,7 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     def propose_provider_candidate(
         parent_id: str | None,
         failure_reasons: tuple[str, ...] = (),
+        skills_context: str = "",
     ) -> MCTSNode | None:
         """One provider-shaped candidate per call, into the same budget and frontier.
 
@@ -548,6 +569,7 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
             symbol=symbol,
             timeframe=timeframe,
             failure_reasons=failure_reasons,
+            skills_context=skills_context,
         )
         if proposal is None or status != "ok":
             note_provider_status(status)
@@ -735,8 +757,24 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
             if validated is not None:
                 break
 
+            # --- Search-intelligence parent selection ---------------------
+            # UCB1 ranks this generation's rollouts and MAP-Elites cell elites
+            # join the parent set (see engine method). The consultation event
+            # keeps the archive read path auditable.
+            elites = mcts_engine.qd_grid.get_elites()
+            if elites:
+                ctrl.apply_event(
+                    "qd_elites_consulted",
+                    {
+                        "elite_count": len(elites),
+                        "cells": [list(node.feature_descriptor) for node in elites[:8]],
+                    },
+                )
+            remaining = budget.max_candidates - budget.candidates_used
+            parent_nodes = mcts_engine.select_mutation_parents(rollouts, remaining)
+
             next_generation: list[MCTSNode] = []
-            for node, _, _ in rollouts:
+            for node in parent_nodes:
                 next_generation.extend(mcts_engine.expand(node.node_id, repair))
             # Every generation after the first was produced purely by mutating the
             # previous one, so the search could only ever tune the `_MAX_SEED_WIDTH`
@@ -748,7 +786,8 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
             if rollouts:
                 next_generation.extend(seed_untried_families(rollouts[0][0].node_id))
                 # Failure-informed provider hypothesis for this generation: the reason
-                # codes accumulated so far steer the next proposal away from rejects.
+                # codes accumulated so far steer the next proposal away from rejects,
+                # and the distilled skill library offers validated building blocks.
                 failure_reasons = tuple(
                     code
                     for event in ctrl.projection.events
@@ -757,7 +796,9 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
                     if isinstance(code, str)
                 )
                 provider_node = propose_provider_candidate(
-                    rollouts[0][0].node_id, failure_reasons
+                    rollouts[0][0].node_id,
+                    failure_reasons,
+                    skills_context=skill_library.format_skills_for_prompt(),
                 )
                 if provider_node is not None:
                     next_generation.append(provider_node)
@@ -796,6 +837,7 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
 
     for skill in skill_distiller.distill_skills_from_candidate(validated):
         skill_library.register_skill(skill)
+        ctrl.apply_event("skill_registered", {"skill": skill.model_dump()})
 
     if not goal.paper_authorization:
         ctrl.apply_event("operator_needed", {"reason": "paper_preauthorization_missing"})

@@ -178,3 +178,92 @@ def test_map_elites_quality_diversity_grid():
     updated2 = grid.add_candidate(node2)
     assert updated2 is True
     assert grid.archive[("short_term", "trending_strong")].node_id == "att_2"
+
+
+def test_select_mutation_parents_ranks_by_ucb1_and_caps_by_budget():
+    """预算压力下：UCB1 高分（高价值/低访问）节点先成为变异父本。"""
+    import pytest
+
+    pytest.importorskip("hypertrade.arc.mcts")
+    mcts = ARCMCTSEngine()
+
+    root = mcts.add_root(
+        ARCCandidateAttemptV1(
+            attempt_id="att_root",
+            candidate_id="cand_root",
+            hypothesis="root",
+            strategy_code="lookback_period = 20\nstop_loss = 0.12",
+            observed_metrics={"sharpe_after_attack": 0.5},
+        )
+    )
+
+    rollouts: list[tuple[object, bool, float]] = []
+    for index, (score, visits) in enumerate([(1.8, 5), (0.2, 1), (1.5, 1)]):
+        attempt = ARCCandidateAttemptV1(
+            attempt_id=f"att_{index}",
+            candidate_id=f"cand_{index}",
+            hypothesis=f"variant {index}",
+            strategy_code=f"lookback_period = {10 + index}\nstop_loss = 0.1",
+            observed_metrics={"sharpe_after_attack": score},
+        )
+        node = mcts.add_child(root.node_id, attempt)
+        # Simulate prior visit counts to differentiate exploitation/exploration.
+        for _ in range(visits):
+            mcts.backpropagate(node.node_id, score)
+        rollouts.append((node, True, score))
+
+    # Plenty of budget: every rollout is a parent, plus archive elites
+    # (here the root, elite of its own cell) reinforce the parent set.
+    parents = mcts.select_mutation_parents(rollouts, remaining_budget=10)
+    assert {"att_0", "att_1", "att_2"} <= {node.node_id for node in parents}
+    assert "att_root" in {node.node_id for node in parents}
+
+    # Budget pressure: strictly the top-UCB1 slice, elites do not dilute focus.
+    squeezed = mcts.select_mutation_parents(rollouts, remaining_budget=1)
+    assert len(squeezed) == 1
+    # att_2 (high value, one visit) must outrank att_0 (high value, five visits):
+    # the exploration bonus is exactly what UCB1 adds over raw score sorting.
+    assert squeezed[0].node_id == "att_2"
+
+
+def test_select_mutation_parents_appends_qd_elites():
+    """精英反哺：档案里的 cell 精英加入父本集（去重、有界）。"""
+    mcts = ARCMCTSEngine()
+    root = mcts.add_root(
+        ARCCandidateAttemptV1(
+            attempt_id="att_root",
+            candidate_id="cand_root",
+            hypothesis="root",
+            strategy_code="lookback_period = 20\nstop_loss = 0.12",
+            observed_metrics={"sharpe_after_attack": 0.5},
+        )
+    )
+    mcts.add_child(
+        root.node_id,
+        ARCCandidateAttemptV1(
+            attempt_id="att_strong",
+            candidate_id="cand_strong",
+            hypothesis="strong in its cell",
+            strategy_code="lookback_period = 5\nstop_loss = 0.08",
+            observed_metrics={"sharpe_after_attack": 2.2},
+        ),
+    )
+    weak = mcts.add_child(
+        root.node_id,
+        ARCCandidateAttemptV1(
+            attempt_id="att_weak",
+            candidate_id="cand_weak",
+            hypothesis="weak",
+            strategy_code="lookback_period = 50\nstop_loss = 0.05",
+            observed_metrics={"sharpe_after_attack": 0.3},
+        ),
+    )
+    rollouts = [(weak, False, 0.3)]
+
+    parents = mcts.select_mutation_parents(rollouts, remaining_budget=1)
+
+    # The only rollout leads the parent set; archive elites (root of its own
+    # cell, and the strong performer from another cell) join as extra mutation
+    # material even though they were not in this generation.
+    assert parents[0].node_id == "att_weak"
+    assert {node.node_id for node in parents[1:]} == {"att_root", "att_strong"}

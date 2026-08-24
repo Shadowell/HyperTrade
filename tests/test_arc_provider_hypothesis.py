@@ -281,3 +281,37 @@ def test_unavailable_provider_records_fact_and_deterministic_path_runs(monkeypat
         )
     finally:
         _ARC_MISSIONS.pop(ctrl.mission_id, None)
+
+
+def test_provider_hypothesis_receives_distilled_skill_library():
+    """技能注入：validated_skill_library 出现在 provider 用户 payload 中。"""
+    import json as _json
+
+
+    class _CapturingProvider:
+        name = "capturing"
+        model = "test"
+
+        def __init__(self) -> None:
+            self.last_messages: list[dict[str, str]] = []
+
+        def chat(self, messages):
+            self.last_messages = messages
+            from hypertrade.providers.chat import ChatResponse
+
+            return ChatResponse(content="")
+
+    provider = _CapturingProvider()
+    from hypertrade.arc.provider_hypothesis import ProviderHypothesist
+
+    hypothesist = ProviderHypothesist(provider)
+    hypothesist.propose(
+        objective="研究 BTC 趋势策略",
+        symbol="BTC-USDT-SWAP",
+        timeframe="1H",
+        skills_context="### Available Validated Modular Skills Library:\n- **helper**",
+    )
+
+    user_payload = _json.loads(provider.last_messages[1]["content"])
+    assert "validated_skill_library" in user_payload
+    assert "helper" in user_payload["validated_skill_library"]

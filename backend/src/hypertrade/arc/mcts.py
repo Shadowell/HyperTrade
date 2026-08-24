@@ -165,6 +165,46 @@ class ARCMCTSEngine:
 
             return current
 
+    def select_mutation_parents(
+        self,
+        rollouts: list[tuple["MCTSNode", bool, float]],
+        remaining_budget: int,
+        *,
+        max_extra_elites: int = 2,
+    ) -> list[MCTSNode]:
+        """Production UCB1 parent selection for the generational loop.
+
+        Rollouts are ranked by UCB1 (exploitation from backpropagated mean
+        value, exploration from visit deficit against the parent). Under budget
+        pressure only the top slice becomes a mutation parent. MAP-Elites cell
+        elites that are not already parents join the set so the best attempt in
+        an under-sampled cell steers the next generation.
+        """
+
+        def _ucb1_key(pair: tuple[MCTSNode, bool, float]) -> float:
+            node = pair[0]
+            parent = self.nodes.get(node.parent_id) if node.parent_id else None
+            parent_visits = max(parent.visits if parent else node.visits, 1)
+            return node.ucb1_score(parent_visits, self.exploration_weight)
+
+        ranked = sorted(rollouts, key=_ucb1_key, reverse=True)
+        width = max(1, min(len(ranked), remaining_budget))
+        parents = [pair[0] for pair in ranked[:width]]
+        # Elite reinforcement only when the budget is not the binding
+        # constraint: under pressure the parent set stays strictly at
+        # `remaining_budget` so spend concentrates on the UCB1 top slice.
+        parent_ids = {node.node_id for node in parents}
+        elite_cap = width + max_extra_elites
+        if remaining_budget >= len(ranked):
+            for elite in self.qd_grid.get_elites():
+                if len(parents) >= elite_cap:
+                    break
+                if elite.node_id in parent_ids:
+                    continue
+                parents.append(elite)
+                parent_ids.add(elite.node_id)
+        return parents
+
     def expand(
         self,
         parent_id: str,

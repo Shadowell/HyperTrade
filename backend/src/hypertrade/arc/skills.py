@@ -40,16 +40,33 @@ class ARCSkillLibrary:
     def list_skills(self) -> list[ARCSkill]:
         return list(self._skills.values())
 
-    def format_skills_for_prompt(self) -> str:
+    def format_skills_for_prompt(
+        self,
+        *,
+        max_skills: int = 5,
+        max_chars: int = 2400,
+    ) -> str:
+        """Bounded skill digest for LLM prompts.
+
+        The library grows across missions; an unbounded dump would blow the
+        provider context budget, so prompts see the newest skills first within
+        a hard character cap.
+        """
         if not self._skills:
             return "No registered modular skills available yet."
 
-        output = ["### Available Validated Modular Skills Library:"]
-        for skill in self._skills.values():
-            output.append(
+        skills = list(self._skills.values())[-max_skills:]
+        output: list[str] = ["### Available Validated Modular Skills Library:"]
+        used = 0
+        for skill in reversed(skills):
+            block = (
                 f"- **{skill.name}** (`{skill.skill_id}`): {skill.description}\n"
                 f"```python\n{skill.code_snippet}\n```"
             )
+            if used + len(block) > max_chars:
+                break
+            output.append(block)
+            used += len(block)
         return "\n".join(output)
 
 
