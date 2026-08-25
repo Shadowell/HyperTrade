@@ -356,11 +356,21 @@ def test_factory_respects_flag_and_provider_availability() -> None:
     # The envelope only contains reviewed read capabilities.
     assert "paper.start" not in on._envelope
     assert "market.summary" in on._envelope
+    # Sprint-148: the envelope now carries read + research_write capabilities
+    # (per-profile filtering happens at plan time); trading-write scopes stay
+    # invisible.
     catalog_ids = {
         definition.capability_id
         for definition in builtin_capabilities()
-        if definition.scope == "read"
+        if definition.scope in ("read", "research_write")
         and definition.approval == "none"
-        and definition.side_effect == "none"
     }
     assert set(on._envelope) <= catalog_ids
+    assert "workspace.write_file" in on._envelope
+    assert "paper.summary" in on._envelope
+    trading_write = {
+        definition.capability_id
+        for definition in builtin_capabilities()
+        if definition.scope in ("paper_write", "testnet_write", "live_write")
+    }
+    assert not (set(on._envelope) & trading_write)

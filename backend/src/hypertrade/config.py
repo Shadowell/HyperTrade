@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     agent_task_lease_seconds: int = Field(default=60, alias="AGENT_TASK_LEASE_SECONDS")
     mission_runtime_enabled: bool = Field(default=False, alias="MISSION_RUNTIME_ENABLED")
     mission_llm_planner_enabled: bool = Field(default=True, alias="MISSION_LLM_PLANNER_ENABLED")
+    mission_research_profile_enabled: bool = Field(
+        default=False,
+        alias="MISSION_RESEARCH_PROFILE_ENABLED",
+    )
     mcp_servers_json: str = Field(
         default="",
         alias="MCP_SERVERS_JSON",

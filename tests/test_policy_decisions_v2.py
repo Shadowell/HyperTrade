@@ -108,9 +108,23 @@ async def test_approved_arguments_cannot_be_changed_before_dispatch() -> None:
         )
 
 
-def test_production_builtin_catalog_physically_contains_no_write_capability() -> None:
+def test_production_builtin_catalog_scopes_stay_within_mission_admissible_set() -> None:
+    """Sprint-148: research_write joins the catalog behind the research.v1
+    profile; trading-write scopes remain physically absent."""
     definitions = builtin_capabilities()
 
     assert definitions
-    assert all(row.side_effect == "none" for row in definitions)
-    assert all(row.scope in {"read", "live_read"} for row in definitions)
+    assert all(row.scope in {"read", "research_write"} for row in definitions)
+    write_rows = [row for row in definitions if row.scope == "research_write"]
+    for row in write_rows:
+        # Writes are idempotent, declared, and never trading scopes.
+        assert row.side_effect == "idempotent_write"
+        assert row.idempotency == "required"
+        assert row.approval == "none"
+    expected_writes = {
+        "workspace.write_file",
+        "workspace.run",
+        "bitpro.strategy_create",
+        "bitpro.backtest_start",
+    }
+    assert {row.capability_id for row in write_rows} == expected_writes

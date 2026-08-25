@@ -27,6 +27,22 @@ from hypertrade.runtime.domain.models import (
 from hypertrade.runtime.ports import MissionStore
 
 
+def active_mission_permission_profile() -> str:
+    """Operator-gated mission permission profile for chat-derived missions.
+
+    read_only.v1 remains the default; research.v1 additionally admits
+    research_write capabilities (sandbox workspace, BitPro research writes)
+    behind MISSION_RESEARCH_PROFILE_ENABLED. paper/testnet/live scopes are
+    never admissible.
+    """
+    from hypertrade.config import get_settings
+
+    settings = get_settings()
+    if bool(getattr(settings, "mission_research_profile_enabled", False)):
+        return "research.v1"
+    return "read_only.v1"
+
+
 def mission_request_for_prompt(
     prompt: str,
     *,
@@ -39,11 +55,20 @@ def mission_request_for_prompt(
 
     resolved = resolve_operator_turn(prompt=prompt, prior_turns=prior_turns)
     normalized = resolved.objective
-    constraints = [
-        "Research-only read scope.",
-        "No paper, live, order or capital mutation.",
-        "Completion requires validated observations and provenance.",
-    ]
+    profile = active_mission_permission_profile()
+    if profile == "research.v1":
+        constraints = [
+            "Research scope: read + research_write (sandbox workspace and "
+            "BitPro research writes such as strategy create and backtest).",
+            "No paper, live, order or capital mutation.",
+            "Completion requires validated observations and provenance.",
+        ]
+    else:
+        constraints = [
+            "Research-only read scope.",
+            "No paper, live, order or capital mutation.",
+            "Completion requires validated observations and provenance.",
+        ]
     if fixture := fixture_constraint(evaluation_case_id):
         constraints.append(fixture)
     if resolved.context_ref:
@@ -66,7 +91,7 @@ def mission_request_for_prompt(
             ),
         ),
         constraints=tuple(constraints),
-        permission_profile_ref="read_only.v1",
+        permission_profile_ref=profile,
         created_by=actor,
         idempotency_key=idempotency_key,
     )

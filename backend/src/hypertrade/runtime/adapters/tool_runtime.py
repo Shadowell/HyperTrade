@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from hashlib import sha256
 from math import isfinite
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import uuid4
 
 import anyio
@@ -423,14 +423,22 @@ class GovernedToolExecutor:
         request: ToolRequestV2,
         mission: MissionProjection,
     ) -> None:
+        from hypertrade.runtime.adapters.capability_catalog import CatalogCapabilityPolicy
+
         definition = snapshot.definition
         if (
             request.contract_hash != snapshot.contract_hash
             or request.policy_hash != snapshot.policy_hash
         ):
             raise ValueError("capability hash mismatch")
-        if mission.permission_profile_ref == "read_only.v1" and definition.scope != "read":
-            raise CapabilityUnavailable("permission profile denies write capability")
+        allowed_scopes = CatalogCapabilityPolicy._PROFILE_ALLOWED_SCOPES.get(
+            mission.permission_profile_ref, frozenset({"read"})
+        )
+        if definition.scope not in allowed_scopes:
+            raise CapabilityUnavailable(
+                f"permission profile {mission.permission_profile_ref} denies "
+                f"{definition.scope} capability"
+            )
         if definition.approval == "blocked":
             raise CapabilityUnavailable("capability is policy blocked")
         if definition.approval == "required" and not request.approval_ref:
@@ -1429,6 +1437,233 @@ def builtin_handlers(
             public_summary=f"已读取 {len(items)} 条 Testnet 交易意图元数据；未执行订单。",
         )
 
+    # ------------------------------------------------------------------
+    # Authored-strategy capabilities (research.v1 profile).
+    # The workspace is per-mission state; bootstrap contract files make
+    # agent-authored BaseStrategy code testable under sandbox pytest.
+    # ------------------------------------------------------------------
+    workspaces: dict[str, Any] = {}
+
+    def _workspace_for(mission: MissionProjection) -> Any:
+        from hypertrade.agent.workspace import AgentWorkspace
+
+        workspace = workspaces.get(mission.mission_id)
+        if workspace is None:
+            workspace = AgentWorkspace(run_id=mission.mission_id)
+            workspaces[mission.mission_id] = workspace
+        return workspace
+
+    async def workspace_write_file(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        workspace = _workspace_for(mission)
+        result = await anyio.to_thread.run_sync(
+            lambda: workspace.write_file(
+                path=str(arguments["path"]), content=str(arguments["content"])
+            ),
+            limiter=limiter,
+        )
+        if result.get("status") != "ok":
+            raise ValueError(str((result.get("error") or {}).get("message", "write rejected")))
+        return ToolResult(
+            payload={
+                "status": "ok",
+                "path": result["path"],
+                "workspace_files": result["workspace_files"],
+            },
+            source_refs=(f"mission:{mission.mission_id}", "sandbox:workspace"),
+            public_summary=(
+                f"已写入 {result['path']}（工作区共 {result['workspace_files']} 个文件）。"
+            ),
+        )
+
+    async def workspace_run(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        workspace = _workspace_for(mission)
+        raw_args = arguments.get("args")
+        result = await anyio.to_thread.run_sync(
+            lambda: workspace.run(
+                command=str(arguments["command"]),
+                args=[str(item) for item in raw_args] if isinstance(raw_args, list) else None,
+            ),
+            limiter=limiter,
+        )
+        if result.get("status") != "ok":
+            raise ValueError(str((result.get("error") or {}).get("message", "run rejected")))
+        commands = result.get("commands", [])
+        first = commands[0] if isinstance(commands, list) and commands else {}
+        failed = result.get("sandbox_status") != "validated"
+        return ToolResult(
+            payload={
+                "sandbox_status": result.get("sandbox_status"),
+                "commands": commands,
+                "sandbox_run_id": result.get("sandbox_run_id", ""),
+            },
+            source_refs=(
+                f"mission:{mission.mission_id}",
+                f"sandbox:{result.get('sandbox_run_id', '')}",
+            ),
+            unknowns=("沙箱命令失败，请阅读 output_preview 修复后重跑。",) if failed else (),
+            public_summary=(
+                f"沙箱 {arguments['command']} 结果: {result.get('sandbox_status')}；"
+                f"{str(first.get('output_preview', ''))[:300]}"
+            ),
+        )
+
+    async def research_validate_strategy_code(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        import ast as ast_module
+        from hashlib import sha256
+
+        from hypertrade.research.codegen import static_code_rejections
+
+        workspace = _workspace_for(mission)
+        path = str(arguments["path"])
+        read_result = await anyio.to_thread.run_sync(
+            lambda: workspace.read_file(path), limiter=limiter
+        )
+        if read_result.get("status") != "ok":
+            raise ValueError(str((read_result.get("error") or {}).get("message", "file missing")))
+        code = str(read_result.get("content", ""))
+        try:
+            ast_module.parse(code, filename=path)
+        except SyntaxError as exc:
+            rejections = [f"invalid_python_syntax:{exc.lineno}"]
+        else:
+            rejections = static_code_rejections(code)
+        passed = not rejections
+        return ToolResult(
+            payload={
+                "passed": passed,
+                "rejections": rejections,
+                "content_hash": sha256(code.encode("utf-8")).hexdigest()[:16],
+                "next_steps": (
+                    "bitpro.strategy_create with this script_content, then "
+                    "bitpro.backtest_start"
+                    if passed
+                    else "fix the rejected constructs and re-run this gate"
+                ),
+            },
+            source_refs=(f"mission:{mission.mission_id}", "research:static-code-gate-v1"),
+            unknowns=() if passed else ("静态门拒绝，见 rejections。",),
+            public_summary=(
+                f"静态门 {'通过' if passed else '拒绝'}: {path}"
+                + (f"（{', '.join(rejections)}）" if rejections else "")
+            ),
+        )
+
+    async def bitpro_strategy_create(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        # The factory type is the read-only protocol; the runtime object is the
+        # full BitPro adapter. Write access is gated by the research.v1 profile
+        # in _preflight, not by this local type.
+        adapter = cast(Any, adapter_factory())
+        raw_symbols = arguments.get("symbols")
+        created = await anyio.to_thread.run_sync(
+            lambda: adapter.strategy_create(
+                name=str(arguments["name"]),
+                script_content=str(arguments["script_content"]),
+                description=str(arguments.get("description", "")) or None,
+                exchange=str(arguments.get("exchange", "okx")),
+                symbols=(
+                    [str(item) for item in raw_symbols]
+                    if isinstance(raw_symbols, list)
+                    else None
+                ),
+            ),
+            limiter=limiter,
+        )
+        payload = created if isinstance(created, dict) else {}
+        strategy_id = payload.get("strategy_id") or payload.get("id")
+        if strategy_id is None:
+            raise ValueError(f"BitPro strategy_create returned no strategy_id: {payload}")
+        return ToolResult(
+            payload={"strategy_id": strategy_id, "name": payload.get("name", arguments["name"])},
+            source_refs=(f"bitpro:strategy:{strategy_id}",),
+            public_summary=f"BitPro 策略已创建 strategy_id={strategy_id}。",
+        )
+
+    async def bitpro_backtest_start(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        adapter = cast(Any, adapter_factory())
+        started_job = await anyio.to_thread.run_sync(
+            lambda: adapter.backtest_start_job(
+                strategy_id=int(arguments["strategy_id"]),
+                start_date=str(arguments["start_date"]),
+                end_date=str(arguments["end_date"]),
+                initial_capital=float(arguments.get("initial_capital", 10_000.0)),
+                exchange="okx",
+                symbol=str(arguments.get("symbol", "")) or None,
+                timeframe=str(arguments.get("timeframe", "")) or None,
+                wait_for_result=True,
+            ),
+            limiter=limiter,
+        )
+        payload = started_job if isinstance(started_job, dict) else {}
+        backtest_id = str(
+            payload.get("backtest_id") or (payload.get("job") or {}).get("backtest_id", "")
+        )
+        metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
+        if not backtest_id and not metrics:
+            raise ValueError(f"BitPro backtest_start returned no backtest_id: {str(payload)[:200]}")
+        return ToolResult(
+            payload={"backtest_id": backtest_id, "metrics": metrics},
+            source_refs=(
+                (f"bitpro:backtest:{backtest_id}",) if backtest_id else ("bitpro:backtest",)
+            ),
+            public_summary=(
+                f"BitPro 回测完成 backtest_id={backtest_id}；"
+                f"核心指标 {json.dumps(metrics, ensure_ascii=False)[:200]}"
+            ),
+        )
+
+    async def bitpro_backtest_result(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        adapter = cast(Any, adapter_factory())
+        result = await anyio.to_thread.run_sync(
+            lambda: adapter.backtest_get_result(
+                backtest_id=str(arguments["backtest_id"]),
+                sample_limit=int(arguments.get("sample_limit", 20)),
+            ),
+            limiter=limiter,
+        )
+        payload = result if isinstance(result, dict) else {}
+        metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
+        return ToolResult(
+            payload={"metrics": metrics, "items": payload.get("artifacts", [])[:10], "count": 1},
+            source_refs=(f"bitpro:backtest:{arguments['backtest_id']}",),
+            public_summary=f"已读取回测 {arguments['backtest_id']} 的真实指标。",
+        )
+
     return {
         "runtime.objective_inspection": objective,
         "market.summary": market_summary,
@@ -1449,6 +1684,12 @@ def builtin_handlers(
         "world_model.snapshot": world_model_snapshot,
         "monitor.summary": monitor_summary,
         "execution.intent_summary": execution_intent_summary,
+        "workspace.write_file": workspace_write_file,
+        "workspace.run": workspace_run,
+        "research.validate_strategy_code": research_validate_strategy_code,
+        "bitpro.strategy_create": bitpro_strategy_create,
+        "bitpro.backtest_start": bitpro_backtest_start,
+        "bitpro.backtest_result": bitpro_backtest_result,
     }
 
 

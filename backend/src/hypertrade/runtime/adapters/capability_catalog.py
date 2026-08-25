@@ -299,14 +299,28 @@ class SqlCapabilityCatalog(InMemoryCapabilityCatalog):
 
 
 class CatalogCapabilityPolicy:
+    # Permission profiles: read_only.v1 is the historical strict default;
+    # research.v1 additionally admits research_write capabilities so a mission
+    # can author and validate strategy code. paper/testnet/live scopes are not
+    # admissible in any mission profile.
+    _PROFILE_ALLOWED_SCOPES: dict[str, frozenset[str]] = {
+        "read_only.v1": frozenset({"read"}),
+        "research.v1": frozenset({"read", "research_write"}),
+    }
+
     def __init__(self, catalog: InMemoryCapabilityCatalog) -> None:
         self.catalog = catalog
 
     def validate_step(self, step: PlanStepV2, permission_profile_ref: str) -> None:
         snapshot = self.catalog.resolve_sync(step.capability_id, step.capability_version)
         definition = snapshot.definition
-        if permission_profile_ref == "read_only.v1" and definition.scope != "read":
-            raise CapabilityUnavailable("read-only Mission cannot use write capability")
+        allowed_scopes = self._PROFILE_ALLOWED_SCOPES.get(
+            permission_profile_ref, frozenset({"read"})
+        )
+        if definition.scope not in allowed_scopes:
+            raise CapabilityUnavailable(
+                f"permission profile {permission_profile_ref} denies {definition.scope} capability"
+            )
         if definition.approval != "none" and not step.requires_approval:
             raise CapabilityUnavailable("capability approval requirement missing from plan")
         if definition.side_effect != "none" and step.read_only:
@@ -571,6 +585,215 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
                 "required": ["strategies", "count", "source_available"],
             },
             max_result_bytes=12_000,
+        ),
+        CapabilityDefinitionV1(
+            capability_id="workspace.write_file",
+            title="Workspace write file",
+            description=(
+                "Write one strategy/test file into the governed sandbox "
+                "workspace for this mission. Paths must start with strategies/ "
+                "or tests/ and end with .py/.json/.yaml/.yml; Python sources "
+                "pass the AST gate (no network/process imports, no eval/exec)."
+            ),
+            source_owner="hypertrade.agent-workspace",
+            handler_key="workspace.write_file",
+            scope="research_write",
+            side_effect="idempotent_write",
+            idempotency="required",
+            timeout_seconds=30.0,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "minLength": 3, "maxLength": 200},
+                    "content": {"type": "string", "minLength": 1, "maxLength": 200_000},
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "path": {"type": "string"},
+                    "workspace_files": {"type": "integer"},
+                },
+                "required": ["status", "path", "workspace_files"],
+            },
+            max_result_bytes=4_096,
+        ),
+        CapabilityDefinitionV1(
+            capability_id="workspace.run",
+            title="Workspace run command",
+            description=(
+                "Run a whitelisted command (ruff/pytest) inside the governed "
+                "sandbox over the mission workspace; no network, resource "
+                "limited, identical content replays the same run."
+            ),
+            source_owner="hypertrade.agent-workspace",
+            handler_key="workspace.run",
+            scope="research_write",
+            side_effect="idempotent_write",
+            idempotency="required",
+            timeout_seconds=120.0,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "enum": ["ruff", "pytest", "limited_backtest"]},
+                    "args": {
+                        "type": "array",
+                        "items": {"type": "string", "maxLength": 120},
+                        "maxItems": 12,
+                    },
+                },
+                "required": ["command"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "sandbox_status": {"type": "string"},
+                    "commands": {"type": "array"},
+                },
+                "required": ["sandbox_status", "commands"],
+            },
+            max_result_bytes=24_000,
+        ),
+        CapabilityDefinitionV1(
+            capability_id="research.validate_strategy_code",
+            title="Strategy code static gate",
+            description=(
+                "Run the same static gate codegen candidates must pass over one "
+                "workspace strategy file: exactly one BaseStrategy subclass, "
+                "forbidden-token scan, syntax check. Fail fast before any "
+                "BitPro backtest spend."
+            ),
+            source_owner="hypertrade.research",
+            handler_key="research.validate_strategy_code",
+            timeout_seconds=30.0,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "minLength": 3, "maxLength": 200},
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "passed": {"type": "boolean"},
+                    "rejections": {"type": "array"},
+                    "content_hash": {"type": "string"},
+                },
+                "required": ["passed", "rejections", "content_hash"],
+            },
+            max_result_bytes=8_000,
+        ),
+        CapabilityDefinitionV1(
+            capability_id="bitpro.strategy_create",
+            title="BitPro strategy create",
+            description=(
+                "Create one BitPro strategy definition from full script content "
+                "for research validation. Research write, never starts paper or "
+                "live trading."
+            ),
+            source_owner="bitpro.mcp",
+            handler_key="bitpro.strategy_create",
+            scope="research_write",
+            side_effect="idempotent_write",
+            idempotency="required",
+            timeout_seconds=120.0,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "minLength": 1, "maxLength": 160},
+                    "script_content": {"type": "string", "minLength": 20, "maxLength": 200_000},
+                    "description": {"type": "string", "maxLength": 500},
+                    "exchange": {"type": "string", "maxLength": 32},
+                    "symbols": {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 5, "maxLength": 64},
+                        "maxItems": 8,
+                    },
+                },
+                "required": ["name", "script_content"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer"},
+                    "name": {"type": "string"},
+                },
+                "required": ["strategy_id"],
+            },
+            max_result_bytes=8_000,
+        ),
+        CapabilityDefinitionV1(
+            capability_id="bitpro.backtest_start",
+            title="BitPro backtest start",
+            description=(
+                "Start one BitPro backtest job for a strategy id and wait for "
+                "its result (bounded). Research write with idempotent replay."
+            ),
+            source_owner="bitpro.mcp",
+            handler_key="bitpro.backtest_start",
+            scope="research_write",
+            side_effect="idempotent_write",
+            idempotency="required",
+            timeout_seconds=300.0,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer", "minimum": 1},
+                    "start_date": {"type": "string", "minLength": 8, "maxLength": 32},
+                    "end_date": {"type": "string", "minLength": 8, "maxLength": 32},
+                    "symbol": {"type": "string", "maxLength": 64},
+                    "timeframe": {"type": "string", "maxLength": 8},
+                    "initial_capital": {"type": "number", "minimum": 100, "maximum": 1_000_000},
+                },
+                "required": ["strategy_id", "start_date", "end_date"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "backtest_id": {"type": "string"},
+                    "metrics": {"type": "object"},
+                },
+                "required": ["backtest_id"],
+            },
+            max_result_bytes=24_000,
+        ),
+        CapabilityDefinitionV1(
+            capability_id="bitpro.backtest_result",
+            title="BitPro backtest result",
+            description=(
+                "Read one bounded BitPro backtest result with real metrics and "
+                "artifact samples. Read-only."
+            ),
+            source_owner="bitpro.mcp",
+            handler_key="bitpro.backtest_result",
+            timeout_seconds=120.0,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "backtest_id": {"type": "string", "minLength": 1, "maxLength": 64},
+                    "sample_limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "required": ["backtest_id"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "metrics": {"type": "object"},
+                    "items": {"type": "array"},
+                    "count": {"type": "integer"},
+                },
+                "required": ["metrics"],
+            },
+            max_result_bytes=24_000,
         ),
         CapabilityDefinitionV1(
             capability_id="strategy.draft",

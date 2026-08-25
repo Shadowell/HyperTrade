@@ -8,6 +8,7 @@ from typing import Any
 
 from hypertrade.db import new_id
 from hypertrade.runtime.application.entrypoint import (
+    active_mission_permission_profile,
     mission_request_for_prompt,
     mission_run_projection,
 )
@@ -209,7 +210,9 @@ class ThreadTurnService:
                 "turn.started",
                 actor="thread_runtime",
                 idempotency_key=f"{turn_id}:started",
-                policy_snapshot_hash=content_hash({"permission_profile": "read_only.v1"}),
+                policy_snapshot_hash=content_hash(
+                    {"permission_profile": active_mission_permission_profile()}
+                ),
                 payload={"turn_id": turn_id, "mission_id": mission.mission_id},
             )
             turn = snapshot.turn(turn_id)

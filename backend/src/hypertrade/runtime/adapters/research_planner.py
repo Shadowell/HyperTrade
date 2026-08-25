@@ -16,6 +16,7 @@ from typing import Any
 import anyio
 
 from hypertrade.providers.chat import ChatProvider
+from hypertrade.runtime.adapters.capability_catalog import CatalogCapabilityPolicy
 from hypertrade.runtime.domain.models import (
     MissionProjection,
     PlanDiffV1,
@@ -253,19 +254,43 @@ class LlmPlanV2Planner:
         self.fallback = fallback or DeterministicResearchPlanner()
         definitions = tuple(capabilities) if capabilities else builtin_capabilities()
         self._envelope: dict[str, dict[str, Any]] = {}
+        # Construction keeps every capability admissible under SOME mission
+        # profile (read + research_write); paper/testnet/live scopes are never
+        # planner-visible. Per-mission filtering happens in
+        # _envelope_for_profile at plan time.
+        admissible_scopes = frozenset().union(
+            *CatalogCapabilityPolicy._PROFILE_ALLOWED_SCOPES.values()
+        )
         for definition in definitions:
             if (
-                getattr(definition, "scope", "read") != "read"
+                getattr(definition, "scope", "read") not in admissible_scopes
                 or getattr(definition, "approval", "none") != "none"
-                or getattr(definition, "side_effect", "none") != "none"
             ):
                 continue
             self._envelope[str(definition.capability_id)] = {
                 "title": str(getattr(definition, "title", "")),
                 "description": str(getattr(definition, "description", "")),
+                "scope": str(getattr(definition, "scope", "read")),
                 "input_schema": dict(getattr(definition, "input_schema", {}) or {}),
                 "output_schema": dict(getattr(definition, "output_schema", {}) or {}),
             }
+
+    def _envelope_for_profile(self, permission_profile_ref: str) -> dict[str, dict[str, Any]]:
+        """Capabilities visible to the planner under the mission's profile.
+
+        Mirrors CatalogCapabilityPolicy._PROFILE_ALLOWED_SCOPES so the model
+        can never plan a step the dispatcher would deny.
+        """
+        from hypertrade.runtime.adapters.capability_catalog import CatalogCapabilityPolicy
+
+        allowed = CatalogCapabilityPolicy._PROFILE_ALLOWED_SCOPES.get(
+            permission_profile_ref, frozenset({"read"})
+        )
+        return {
+            capability_id: spec
+            for capability_id, spec in self._envelope.items()
+            if spec.get("scope", "read") in allowed
+        }
 
     async def plan(self, mission: MissionProjection) -> PlanV2:
         fallback = await self.fallback.plan(mission)
@@ -290,8 +315,11 @@ class LlmPlanV2Planner:
     ) -> PlanV2:
         if self.provider is None or not self._envelope:
             return fallback
+        profile_envelope = self._envelope_for_profile(mission.permission_profile_ref)
+        if not profile_envelope:
+            return fallback
         messages = _llm_plan_messages(
-            mission, fallback, previous, request, envelope=self._envelope
+            mission, fallback, previous, request, envelope=profile_envelope
         )
         # One proposal + one bounded repair round; anything worse falls back.
         for attempt in range(2):
@@ -303,7 +331,7 @@ class LlmPlanV2Planner:
                     fallback=fallback,
                     previous=previous,
                     request=request,
-                    envelope=self._envelope,
+                    envelope=profile_envelope,
                 )
             except _PlanValidationError as exc:
                 if attempt == 1:
@@ -448,11 +476,16 @@ def _apply_provider_plan(
     # plan that drops them is a routing regression, not a style choice. Rejecting
     # sends the proposal through the repair round and, failing that, the
     # deterministic fallback — which routed these objectives correctly all along.
-    suggested = [
-        capability_id
-        for capability_id in _capabilities_for_objective(mission.objective)
-        if capability_id != "runtime.objective_inspection"
-    ]
+    # Research-profile missions are exempt: their authored-code plans legitimately
+    # route through workspace capabilities the keyword router does not know, and
+    # the executor still re-validates every step against the reviewed catalog.
+    suggested = []
+    if mission.permission_profile_ref not in ("research.v1",):
+        suggested = [
+            capability_id
+            for capability_id in _capabilities_for_objective(mission.objective)
+            if capability_id != "runtime.objective_inspection"
+        ]
     if suggested:
         chosen = {step.capability_id for step in steps}
         missing = [capability_id for capability_id in suggested if capability_id not in chosen]
@@ -567,7 +600,7 @@ def _validated_provider_step(
         capability_id=capability_id,
         arguments=arguments,
         expected_output_schema=dict(spec["output_schema"]),
-        read_only=True,
+        read_only=spec.get("scope", "read") == "read",
         requires_approval=False,
     )
 
