@@ -62,7 +62,7 @@ class FixtureBitProAdapter:
         assert (
             "from app.core.execution.base_strategy import BaseStrategy" in kwargs["script_content"]
         )
-        assert "async def on_bar(self, bar):" in kwargs["script_content"]
+        assert "async def on_bar(self, bar: BarData):" in kwargs["script_content"]
         assert "def __init__" not in kwargs["script_content"]
         assert "get_recent_bars" not in kwargs["script_content"]
         assert kwargs["symbols"] == ["BTC"]

@@ -260,7 +260,7 @@ def test_validate_strategy_code_gate_passes_codegen_style_code(workspace: AgentW
         "\n"
         "\n"
         "class CodegenStyle(BaseStrategy):\n"
-        "    async def on_bar(self, bar):\n"
+        "    async def on_bar(self, bar: BarData):\n"
         "        return None\n",
     )
     kernel = AgentKernel(Database("sqlite:///:memory:"), knowledge_dir="docs/knowledge")

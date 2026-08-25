@@ -93,6 +93,12 @@ _WORKSPACE_BOOTSTRAP_FILES: tuple[tuple[str, str], ...] = (
         '_stub = types.ModuleType("app.core.execution.base_strategy")\n'
         "\n"
         "\n"
+        "class BarData:\n"
+        "        def __init__(self, symbol: str = '', close: float = 0.0):\n"
+        "            self.symbol = symbol\n"
+        "            self.close = close\n"
+        "\n"
+        "        \n"
         "class BaseStrategy:\n"
         '    """In-memory contract stub: orders are recorded, not matched."""\n'
         "\n"
@@ -120,12 +126,18 @@ _WORKSPACE_BOOTSTRAP_FILES: tuple[tuple[str, str], ...] = (
         "    async def on_init(self):\n"
         "        raise NotImplementedError\n"
         "\n"
-        "    async def on_bar(self, bar):\n"
+        "    async def on_bar(self, bar: BarData):\n"
         "        raise NotImplementedError\n"
         "\n"
         "\n"
         "_stub.BaseStrategy = BaseStrategy\n"
-        'sys.modules["app.core.execution.base_strategy"] = _stub\n',
+        "_stub.BarData = BarData\n"
+        'sys.modules["app.core.execution.base_strategy"] = _stub\n'
+        "# BitPro's execution environment provides BarData globally; mirror that\n"
+        "# so annotated strategy definitions resolve without imports.\n"
+        "import builtins\n"
+        "\n"
+        "builtins.BarData = BarData\n"
     ),
 )
 

@@ -241,9 +241,12 @@ def discovery_request(
             ),
         ),
         "strategy_code": (
+            "from app.core.execution.base_strategy import BaseStrategy\n"
+            "\n"
+            "\n"
             "class FundingReversal(BaseStrategy):\n"
-            "    def generate_signal(self, data):\n"
-            "        return 0\n"
+            "    async def on_bar(self, bar: BarData):\n"
+            "        return None\n"
         ),
         "template_version": "discovery-template-v1",
         "novelty_comparisons": [

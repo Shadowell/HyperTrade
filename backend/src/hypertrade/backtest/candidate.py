@@ -263,7 +263,13 @@ def load_candidate_class(code: str) -> type[SimulatedStrategyRuntime]:
         for node in tree.body
         if not (isinstance(node, ast.ImportFrom) and node.module == _BITPRO_BASE_MODULE)
     ]
-    namespace: dict[str, Any] = {"BaseStrategy": SimulatedStrategyRuntime, "deque": deque}
+    namespace: dict[str, Any] = {
+        "BaseStrategy": SimulatedStrategyRuntime,
+        "deque": deque,
+        # BitPro strategies annotate on_bar with BarData; the replay runtime
+        # provides a structural stand-in so the annotation resolves at def time.
+        "BarData": type("BarData", (), {}),
+    }
     exec(compile(tree, filename="<candidate>", mode="exec"), namespace)  # noqa: S102
 
     classes = [

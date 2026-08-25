@@ -126,7 +126,7 @@ def test_every_family_emits_admissible_parseable_code(family: Any) -> None:
     ast.parse(generated.code)
     assert static_code_rejections(generated.code) == []
     assert "from app.core.execution.base_strategy import BaseStrategy" in generated.code
-    assert "async def on_bar(self, bar):" in generated.code
+    assert "async def on_bar(self, bar: BarData):" in generated.code
     assert "async def on_init(self):" in generated.code
     assert "def __init__" not in generated.code
 
@@ -314,4 +314,18 @@ def test_static_gate_rejects_inadmissible_constructs(code: str, reason: str) -> 
 
 
 def test_static_gate_accepts_a_minimal_admissible_candidate() -> None:
-    assert static_code_rejections("class A(BaseStrategy):\n    pass\n") == []
+    # A class body without on_bar now fails the BitPro on_bar contract.
+    assert static_code_rejections("class A(BaseStrategy):\n    pass\n") == [
+        "code_requires_async_on_bar_with_bardata"
+    ]
+    assert (
+        static_code_rejections(
+            "from app.core.execution.base_strategy import BaseStrategy\n"
+            "\n"
+            "\n"
+            "class A(BaseStrategy):\n"
+            "    async def on_bar(self, bar: BarData):\n"
+            "        return None\n"
+        )
+        == []
+    )

@@ -86,11 +86,54 @@ def static_code_rejections(code: str) -> list[str]:
         import_modules = _basestrategy_import_modules(code)
         if import_modules and _CANONICAL_BASE_STRATEGY_MODULE not in import_modules:
             reasons.append("code_requires_canonical_basestrategy_import")
+    on_bar_rejection = _on_bar_contract_rejection(code)
+    if on_bar_rejection:
+        reasons.append(on_bar_rejection)
     for reason, tokens in FORBIDDEN_CODE_TOKENS.items():
         if any(token in lowered for token in tokens):
             reasons.append(reason)
     reasons.extend(_unknown_self_method_calls(code))
     return sorted(set(reasons))
+
+
+def _on_bar_contract_rejection(code: str) -> str:
+    """BitPro requires the strategy class to implement the exact on_bar signature.
+
+    ``async def on_bar(self, bar: BarData)`` — inherited stubs do not count:
+    the upload checker inspects the submitted class body.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return ""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        if not any(
+            isinstance(base, ast.Name) and base.id == "BaseStrategy"
+            for base in node.bases
+        ):
+            continue
+        for item in node.body:
+            if (
+                isinstance(item, ast.AsyncFunctionDef)
+                and item.name == "on_bar"
+                and len(item.args.args) >= 2
+                and item.args.args[1].arg == "bar"
+            ):
+                annotation = item.args.args[1].annotation
+                annotation_name = getattr(annotation, "id", "") or (
+                    annotation.value
+                    if isinstance(annotation, ast.Constant)
+                    else ""
+                )
+                if annotation_name == "BarData":
+                    return ""
+                return "code_requires_async_on_bar_with_bardata"
+        return "code_requires_async_on_bar_with_bardata"
+    return "code_requires_async_on_bar_with_bardata"
 
 
 def _unknown_self_method_calls(code: str) -> list[str]:
@@ -933,7 +976,7 @@ def _on_bar_lines(
     overlays: tuple[str, ...],
 ) -> list[str]:
     lines = [
-        "    async def on_bar(self, bar):",
+        "    async def on_bar(self, bar: BarData):",
         "        symbol = bar.symbol",
         "        close = float(bar.close)",
         "        if symbol not in self._closes or close <= 0.0:",
