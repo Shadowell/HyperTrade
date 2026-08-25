@@ -228,7 +228,10 @@ class ProviderBackedResearchPlanner:
 
 _INSTRUMENT_ARGUMENT_KEYS = frozenset({"inst_id", "symbol", "inst_ids"})
 _LLM_PLAN_MAX_STEPS = 8
-_LLM_PLAN_MAX_ARGUMENT_CHARS = 200
+# Authored strategy code is a legitimate plan argument (the capability
+# schema caps content at 200k); 20k chars keeps plan payloads bounded
+# while admitting real implementations.
+_LLM_PLAN_MAX_ARGUMENT_CHARS = 20_000
 
 
 class LlmPlanV2Planner:
