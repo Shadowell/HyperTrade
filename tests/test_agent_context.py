@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from hypertrade.agent.context import (
     compact_messages,
     estimate_messages_tokens,
