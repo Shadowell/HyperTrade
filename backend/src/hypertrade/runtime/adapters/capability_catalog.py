@@ -641,7 +641,13 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
                     "command": {"type": "string", "enum": ["ruff", "pytest", "limited_backtest"]},
                     "args": {
                         "type": "array",
-                        "items": {"type": "string", "maxLength": 120},
+                        "items": {
+                            "type": "string",
+                            "maxLength": 120,
+                            # Sandbox contract: no path separators or escapes in
+                            # command arguments; bare pytest auto-discovers tests/.
+                            "pattern": "^[^/\\\\]+$",
+                        },
                         "maxItems": 12,
                     },
                 },
