@@ -1,5 +1,25 @@
 # Progress Log
 
+## 主线融合：agent 原创策略代码进入验证漏斗（sprint-147）— 2026-08-24
+
+- **合同**：[agent-strategy-code-fusion](contracts/sprint-147-agent-strategy-code-fusion.md)。
+  agent 现在可以写真实 BitPro BaseStrategy 实现——6 家族模板目录不再是上限。
+- **契约 stub 注入**：工作区自动注入 `tests/conftest.py`（系统内容、agent 不可写）：
+  以 sys.modules 预注册方式在 BitPro 精确点分路径上提供内存版 BaseStrategy
+  （orders 记录式），并提供 **os.pipe 基底的 socketpair shim**——沙箱 guard 拒绝
+  一切 socket 构造，而 asyncio 事件循环需要 self-pair；shim 让 async 策略测试
+  可跑且 AF_INET 网络仍被拒（纵深防御不放宽）。
+- **`research.validate_strategy_code`（read）**：对工作区文件跑与 codegen 产物
+  **同一**的 `static_code_rejections` 静态门 + 语法检查 + 稳定内容哈希——
+  在花费 BitPro 回测预算前 fail-fast，rejections 以 reason codes 返回。
+- **主线路由更新**：workspace 写码 → pytest → 静态门 → bitpro_strategy_create →
+  回测 → 门禁 → 晋升请求。
+- **验证**：4 个新测试，旗舰用例为 agent 原创的 Donchian BaseStrategy 子类 +
+  行为单测在真沙箱跑绿（突破恰好触发一次开仓）；`./scripts/check.sh` 全绿
+  （1152 passed）。
+- **边界**：stub 是内存简化版（不撮合），真实绩效判定仍以 BitPro 回测为准；
+  ARC HistoricalEvidenceGate 仍走既有回测路径，证据语义不变。
+
 ## 交互台预置命令美化（sprint-146）— 2026-08-24
 
 - **合同**：[console-command-polish](contracts/sprint-146-console-command-polish.md)。
