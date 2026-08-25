@@ -33,6 +33,26 @@ FORBIDDEN_CODE_TOKENS: dict[str, tuple[str, ...]] = {
 _BASE_STRATEGY_SUBCLASS = re.compile(r"class\s+\w+\s*\([^)]*BaseStrategy[^)]*\)\s*:")
 
 
+_CANONICAL_BASE_STRATEGY_MODULE = "app.core.execution.base_strategy"
+
+
+def _basestrategy_import_modules(code: str) -> set[str]:
+    """Modules from which the code imports a BaseStrategy symbol (AST-based)."""
+    import ast
+
+    modules: set[str] = set()
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return modules
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported = {alias.name for alias in node.names}
+            if "BaseStrategy" in imported:
+                modules.add(node.module)
+    return modules
+
+
 def static_code_rejections(code: str) -> list[str]:
     """Return sorted reason codes for why `code` may not be run as a strategy.
 
@@ -44,6 +64,13 @@ def static_code_rejections(code: str) -> list[str]:
     reasons: list[str] = []
     if len(_BASE_STRATEGY_SUBCLASS.findall(code)) != 1:
         reasons.append("code_requires_single_basestrategy_subclass")
+    else:
+        # BitPro's upload checker rejects BaseStrategy imports from any module
+        # other than the canonical one; catch it here so the rejection surfaces
+        # as a reason code instead of a failed platform upload.
+        import_modules = _basestrategy_import_modules(code)
+        if import_modules and _CANONICAL_BASE_STRATEGY_MODULE not in import_modules:
+            reasons.append("code_requires_canonical_basestrategy_import")
     for reason, tokens in FORBIDDEN_CODE_TOKENS.items():
         if any(token in lowered for token in tokens):
             reasons.append(reason)

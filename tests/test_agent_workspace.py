@@ -299,3 +299,28 @@ def test_validate_strategy_code_gate_returns_reason_codes(workspace: AgentWorksp
     assert "code_requires_single_basestrategy_subclass" in result["rejections"]
     assert "secret_access" in result["rejections"]
     assert "re-run this gate" in result["next_steps"]
+
+
+def test_validate_strategy_code_requires_canonical_basestrategy_import(
+    workspace: AgentWorkspace,
+) -> None:
+    """BitPro 平台拒绝非规范导入——静态门必须先行拦截同一契约。"""
+    from hypertrade.agent.kernel import AgentKernel
+    from hypertrade.db import Database
+
+    workspace.write_file(
+        "strategies/short_import.py",
+        "from strategy_base import BaseStrategy\n"
+        "\n"
+        "\n"
+        "class Short(BaseStrategy):\n"
+        "    async def on_bar(self, bar):\n"
+        "        return None\n",
+    )
+    kernel = AgentKernel(Database("sqlite:///:memory:"), knowledge_dir="docs/knowledge")
+    kernel._workspace = workspace
+
+    result = kernel._validate_strategy_code_payload({"path": "strategies/short_import.py"})
+
+    assert result["passed"] is False
+    assert "code_requires_canonical_basestrategy_import" in result["rejections"]
