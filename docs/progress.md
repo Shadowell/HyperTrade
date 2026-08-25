@@ -1,5 +1,26 @@
 # Progress Log
 
+## 主线阻塞修复：mission research profile（sprint-148）— 2026-08-25
+
+- **实弹发现**：生产 chat 流量 100% 走 mission 运行时（canary=100%），而
+  sprint-143/147 的 authored-code 能力只在 AgentKernel——chat 主线够不着。
+  本合同把能力补进 mission 目录。
+- **目录新增 6 能力**：`workspace.write_file`/`workspace.run`（research_write +
+  幂等必填）、`research.validate_strategy_code`（read）、`bitpro.strategy_create`/
+  `bitpro.backtest_start`（research_write，回测 wait 式 300s）、
+  `bitpro.backtest_result`（read）。交易写 scope 物理不存在于目录。
+- **`research.v1` 权限档**：CatalogCapabilityPolicy 与 executor `_preflight`
+  双处放行 read+research_write；`read_only.v1` 行为不变；未知档回退只读严格。
+- **`MISSION_RESEARCH_PROFILE_ENABLED`**（默认关）：开启时 chat 派生 mission 用
+  research.v1 且约束文本显式声明写边界；关闭时行为逐字节一致。settings 缓存
+  在测试间双向清理（修掉一起测试污染）。
+- **planner 信封按档过滤**：research mission 可见写能力、PlanStepV2.read_only
+  取自 capability scope；「suggested capabilities 超集」校验限定 read_only 档
+  （authored-code 计划合法地走 keyword router 不认识的 workspace 能力）。
+- **验证**：executor 端到端（mission 步骤写策略+测试并跑真 pytest 通过）、
+  BitPro 写 handler（fake adapter）、目录不变量测试更新为新合同；
+  `./scripts/check.sh` 全绿（1158 passed）。
+
 ## 对话能力面补齐：策略草稿/订单历史/BitPro 元信息 + Paper 格式化 — 2026-08-25
 
 - **背景**：100 用例评测（真实基线 61.8%）的失败归因显示三类系统性缺口：
