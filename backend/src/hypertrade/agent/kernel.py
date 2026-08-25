@@ -659,6 +659,8 @@ class AgentKernel:
                 command=str(args.get("command", "")),
                 args=[str(item) for item in raw_args] if isinstance(raw_args, list) else None,
             )
+        elif tool_name == "research_validate_strategy_code":
+            result = self._validate_strategy_code_payload(args)
         elif tool_name == "strategy_draft":
             research_prompt = str(args.get("prompt", ""))
             result = StrategyResearchService(self.db).create(research_prompt)
@@ -1109,6 +1111,49 @@ class AgentKernel:
                 "error": {"type": type(exc).__name__, "message": str(exc)[:300]},
                 "tool_name": tool,
             }
+
+    def _validate_strategy_code_payload(self, args: dict[str, Any]) -> dict[str, Any]:
+        """ARC static gate over workspace code, before any BitPro spend.
+
+        Same single-source validator the codegen pipeline must pass
+        (research.codegen.static_code_rejections), so agent-authored code can
+        never be held to a different standard than generated candidates.
+        """
+        import ast
+        from hashlib import sha256
+
+        from hypertrade.research.codegen import static_code_rejections
+
+        path = str(args.get("path", ""))
+        read_result = self._workspace.read_file(path)
+        if read_result.get("status") != "ok":
+            return read_result
+        code = str(read_result.get("content", ""))
+        try:
+            ast.parse(code, filename=path)
+        except SyntaxError as exc:
+            return {
+                "status": "ok",
+                "path": path,
+                "passed": False,
+                "rejections": [f"invalid_python_syntax:{exc.lineno}"],
+                "content_hash": sha256(code.encode("utf-8")).hexdigest()[:16],
+                "next_steps": "fix the syntax error, then re-run this gate",
+            }
+        rejections = static_code_rejections(code)
+        return {
+            "status": "ok",
+            "path": path,
+            "passed": not rejections,
+            "rejections": rejections,
+            "content_hash": sha256(code.encode("utf-8")).hexdigest()[:16],
+            "next_steps": (
+                "create the strategy via bitpro_strategy_create with this "
+                "script_content, then backtest with bitpro_backtest_start_job"
+                if not rejections
+                else "fix the rejected constructs, then re-run this gate"
+            ),
+        }
 
     def _memory_prompt_suffix(self) -> str:
         """Close the memory write->recall loop.

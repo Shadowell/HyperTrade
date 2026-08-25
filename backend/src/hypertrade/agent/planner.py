@@ -169,7 +169,13 @@ Use the workspace tools to write and iterate real strategy code: write
 strategies/ and tests/ files with workspace_write_file, then run pytest or
 ruff with workspace_run and read output_preview failures. Fix code and rerun
 inside the same run; the sandbox forbids network and process access and
-rejects such imports at write time.
+rejects such imports at write time. A tests/conftest.py stub is pre-injected
+so strategy code can `from app.core.execution.base_strategy import
+BaseStrategy` under pytest. Before spending a BitPro backtest, run
+research_validate_strategy_code on the file: it applies the same static gate
+as codegen candidates and returns rejection reason codes. Then follow the
+mainline: bitpro_strategy_create with the script_content, backtest, gate,
+promotion request.
 For BitPro strategy/backtest/paper write tools and live_order_intent, include a
 unique idempotency_key. Without it, trusted governance policy will deny execution.
 Plan which tools to call, execute them, then write a concise Markdown report.

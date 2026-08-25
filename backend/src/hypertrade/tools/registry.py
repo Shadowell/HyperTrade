@@ -213,6 +213,14 @@ class ToolRegistry:
                     "workspace",
                 ),
                 ToolDefinition(
+                    "research.validate_strategy_code",
+                    (
+                        "Static gate for strategy code: single BaseStrategy "
+                        "subclass, forbidden-token scan, syntax check."
+                    ),
+                    "research",
+                ),
+                ToolDefinition(
                     "research.evidence_read",
                     "Read active, source-bound Evidence V2 records for the current Task.",
                     "research",
@@ -907,6 +915,30 @@ RUNTIME_TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
                     },
                 },
                 "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "research_validate_strategy_code",
+            "description": (
+                "Run the same static gate that codegen candidates must pass, "
+                "over one workspace strategy file: exactly one BaseStrategy "
+                "subclass, forbidden-token scan (network/filesystem/process/"
+                "dynamic execution/secrets/unbounded loops), syntax check. "
+                "Run this before spending a BitPro backtest on your code; "
+                "rejections come back as reason codes."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Workspace-relative path of the strategy file.",
+                    }
+                },
+                "required": ["path"],
             },
         },
     },
@@ -1704,6 +1736,7 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "workspace_read_file": "workspace.read_file",
     "workspace_list_files": "workspace.list_files",
     "workspace_run": "workspace.run",
+    "research_validate_strategy_code": "research.validate_strategy_code",
     "backtest_run": "backtest.run",
     "bitpro_capabilities": "bitpro.capabilities",
     "bitpro_health": "bitpro.health",
@@ -1863,6 +1896,11 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
         scope="research_write",
         source="sandbox_workspace",
         timeout="long",
+        sample=1,
+    ),
+    "research.validate_strategy_code": _policy(
+        source="sandbox_workspace",
+        timeout="quick",
         sample=1,
     ),
     "backtest.run": _policy(
