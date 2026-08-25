@@ -573,6 +573,71 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
             max_result_bytes=12_000,
         ),
         CapabilityDefinitionV1(
+            capability_id="strategy.draft",
+            title="BitPro strategy draft",
+            description=(
+                "Ask BitPro to generate one strategy draft for a named symbol; "
+                "read-only generation, never creates, backtests or starts anything."
+            ),
+            source_owner="bitpro.mcp",
+            handler_key="strategy.draft",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "minLength": 1, "maxLength": 800},
+                    "symbol": {"type": "string", "minLength": 5, "maxLength": 64},
+                    "timeframe": {"type": "string", "maxLength": 8},
+                },
+                "required": ["prompt"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"items": {"type": "array"}, "count": {"type": "integer"}},
+                "required": ["items", "count"],
+            },
+            max_result_bytes=12_000,
+        ),
+        CapabilityDefinitionV1(
+            capability_id="bitpro.order_history",
+            title="BitPro live order history",
+            description=(
+                "Read bounded recent BitPro live orders, newest first, without mutation."
+            ),
+            source_owner="bitpro.mcp",
+            handler_key="bitpro.order_history",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "symbol": {"type": "string", "maxLength": 64},
+                },
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"items": {"type": "array"}, "count": {"type": "integer"}},
+                "required": ["items", "count"],
+            },
+            max_result_bytes=12_000,
+        ),
+        CapabilityDefinitionV1(
+            capability_id="bitpro.meta",
+            title="BitPro capabilities and health",
+            description=(
+                "Read the BitPro MCP contract version, health status and tool surface "
+                "size; pure preflight, no trading state."
+            ),
+            source_owner="bitpro.mcp",
+            handler_key="bitpro.meta",
+            input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            output_schema={
+                "type": "object",
+                "properties": {"items": {"type": "array"}, "count": {"type": "integer"}},
+                "required": ["items", "count"],
+            },
+        ),
+        CapabilityDefinitionV1(
             capability_id="paper.summary",
             title="Paper portfolio summary",
             description="Read bounded paper position/order metadata without paper mutation.",

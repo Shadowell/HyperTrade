@@ -1156,6 +1156,157 @@ def builtin_handlers(
             public_summary=summary,
         )
 
+    async def strategy_draft(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del plan, step, attempt
+        prompt = str(arguments.get("prompt", "")).strip() or str(mission.objective)
+        symbol = str(arguments.get("symbol", "")).upper().strip() or "BTC-USDT-SWAP"
+        timeframe = str(arguments.get("timeframe", "1H"))
+
+        def read() -> dict[str, Any]:
+            # BitPro owns strategy generation; HyperTrade only frames the request
+            # and relays the draft. No create, no backtest job, no paper action.
+            return BitProToolAdapter().strategy_generate(
+                prompt=prompt[:800], symbol=symbol, timeframe=timeframe
+            )
+
+        try:
+            payload = await anyio.to_thread.run_sync(read, limiter=limiter)
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}"[:140]
+            return ToolResult(
+                payload={"items": [], "count": 0},
+                source_refs=(f"bitpro_mcp:strategy_generate:{symbol}",),
+                unknowns=("BitPro 策略生成暂不可用。",),
+                public_summary=f"BitPro 策略生成暂不可用（{detail}）。",
+            )
+        strategy = payload.get("strategy")
+        if not isinstance(strategy, dict) or not strategy:
+            return ToolResult(
+                payload={"items": [], "count": 0},
+                source_refs=(f"bitpro_mcp:strategy_generate:{symbol}",),
+                unknowns=("BitPro 未返回可用的策略草稿。",),
+                public_summary="BitPro 未返回可用的策略草稿，请调整描述后重试。",
+            )
+        name = str(strategy.get("name") or strategy.get("strategy_name") or "draft")
+        description = str(
+            strategy.get("description") or strategy.get("logic") or ""
+        )[:220]
+        summary = f"已生成 {symbol} {timeframe} 策略草稿「{name}」。"
+        if description:
+            summary += f"逻辑要点：{description}"
+        summary += "；草稿未入库、未回测，创建与回测需要操作员走受治理流程。"
+        return ToolResult(
+            payload={"items": [strategy], "count": 1},
+            source_refs=(f"bitpro_mcp:strategy_generate:{symbol}",),
+            unknowns=("草稿未经过回测验证，不构成收益承诺。",),
+            public_summary=summary,
+        )
+
+    async def bitpro_order_history(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        limit = max(1, min(int(arguments.get("limit", 5)), 20))
+        symbol = str(arguments.get("symbol", "")).upper().strip() or None
+
+        def read() -> dict[str, Any]:
+            return BitProToolAdapter().live_order_history(
+                exchange="okx", symbol=symbol, limit=limit
+            )
+
+        try:
+            payload = await anyio.to_thread.run_sync(read, limiter=limiter)
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}"[:140]
+            return ToolResult(
+                payload={"items": [], "count": 0},
+                source_refs=("bitpro_mcp:trading_order_history",),
+                unknowns=("BitPro 实盘订单历史暂不可用。",),
+                public_summary=f"BitPro 实盘订单历史暂不可用（{detail}）。",
+            )
+        orders = payload.get("orders") or []
+        if not orders:
+            return ToolResult(
+                payload={"items": [], "count": 0},
+                source_refs=("bitpro_mcp:trading_order_history",),
+                unknowns=("查询窗口内没有实盘订单记录。",),
+                public_summary="查询窗口内没有实盘订单记录。",
+            )
+        latest = orders[0]
+        order_id = latest.get("order_id") or latest.get("id") or ""
+        parts = [str(part) for part in (
+            order_id,
+            latest.get("symbol") or latest.get("inst_id"),
+            latest.get("side"),
+            latest.get("status"),
+        ) if part]
+        summary = f"最近一笔实盘订单：{' '.join(str(p) for p in parts)}。"
+        if len(orders) > 1:
+            summary += f"（共读取 {len(orders)} 条，按时间倒序）"
+        return ToolResult(
+            payload={"items": list(orders[:limit]), "count": len(orders)},
+            source_refs=("bitpro_mcp:trading_order_history",),
+            unknowns=("成交明细与手续费归属以 BitPro 对账为准。",),
+            public_summary=summary,
+        )
+
+    async def bitpro_meta(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+
+        def read() -> dict[str, Any]:
+            adapter = BitProToolAdapter()
+            capabilities = adapter.capabilities()
+            health = adapter.health()
+            return {"capabilities": capabilities, "health": health}
+
+        try:
+            payload = await anyio.to_thread.run_sync(read, limiter=limiter)
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}"[:140]
+            return ToolResult(
+                payload={"items": [], "count": 0},
+                source_refs=("bitpro_mcp:capabilities",),
+                unknowns=("BitPro 能力/健康预检暂不可用。",),
+                public_summary=f"BitPro 能力/健康预检暂不可用（{detail}）。",
+            )
+        capabilities = payload.get("capabilities") or {}
+        health = (payload.get("health") or {}).get("health") or {}
+        version = str(capabilities.get("contract_version", ""))
+        status = str(health.get("status", ""))
+        tools = capabilities.get("tools") or capabilities.get("tool_count") or []
+        tool_note = f"，暴露 {len(tools)} 个工具" if isinstance(tools, list) else ""
+        return ToolResult(
+            payload={
+                "items": [{
+                    "contract_version": version,
+                    "health_status": status,
+                    "tool_count": len(tools) if isinstance(tools, list) else None,
+                }],
+                "count": 1,
+            },
+            source_refs=("bitpro_mcp:capabilities",),
+            unknowns=("工具清单细节以 BitPro 能力文档为准。",),
+            public_summary=(
+                f"BitPro 契约 {version or '未知'}，健康状态 {status or '未知'}{tool_note}。"
+            ),
+        )
+
     async def portfolio_assessment(
         arguments: dict[str, Any],
         mission: MissionProjection,
@@ -1290,7 +1441,10 @@ def builtin_handlers(
         "memory.search": memory_search,
         "strategy.performance_summary": strategy_performance_summary,
         "strategy.compare": strategy_compare,
+        "strategy.draft": strategy_draft,
         "bitpro.live_strategy_summary": bitpro_live_strategy_summary,
+        "bitpro.order_history": bitpro_order_history,
+        "bitpro.meta": bitpro_meta,
         "paper.summary": paper_summary,
         "portfolio.assessment": portfolio_assessment,
         "world_model.snapshot": world_model_snapshot,
@@ -1407,19 +1561,19 @@ def _paper_summary_text(
         return "；".join(f"最近订单：{item['inst_id']}，状态 {item['status']}" for item in orders)
     if focus == "pnl":
         return "；".join(
-            f"{item['inst_id']} {item['side']} 仓位浮盈亏 {item['unrealized_pnl']}"
+            f"{item['inst_id']} {item['side']} 仓位浮盈亏 {_fmt_num(item['unrealized_pnl'])}"
             for item in positions
         )
     if focus == "risk":
         return "；".join(
-            f"{item['inst_id']} {item['side']} 仓位名义金额 {item['notional']}；"
+            f"{item['inst_id']} {item['side']} 仓位名义金额 {_fmt_num(item['notional'])}；"
             "缺少完整风险限额，不能自动调整仓位"
             for item in positions
         )
     position_text = "；".join(
         (
-            f"持仓：{item['inst_id']} {item['side']}，金额 {item['notional']}，"
-            f"浮盈亏 {item['unrealized_pnl']}"
+            f"持仓：{item['inst_id']} {item['side']}，金额 {_fmt_num(item['notional'])}，"
+            f"浮盈亏 {_fmt_num(item['unrealized_pnl'])}"
         )
         for item in positions
     )

@@ -87,10 +87,13 @@ _CAPABILITY_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["items", "count", "found"],
     },
     "strategy.compare": {"type": "object", "required": ["items", "count", "found"]},
+    "strategy.draft": {"type": "object", "required": ["items", "count"]},
     "bitpro.live_strategy_summary": {
         "type": "object",
         "required": ["strategies", "count", "source_available"],
     },
+    "bitpro.order_history": {"type": "object", "required": ["items", "count"]},
+    "bitpro.meta": {"type": "object", "required": ["items", "count"]},
     "paper.summary": {"type": "object", "required": ["positions", "orders", "count"]},
     "portfolio.assessment": {"type": "object", "required": ["items", "count"]},
     "world_model.snapshot": {"type": "object", "required": ["items", "count"]},
@@ -588,10 +591,16 @@ def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
     capabilities = ["runtime.objective_inspection"]
     if _is_terminal_without_read(lowered):
         return tuple(capabilities)
-    if _live_strategy_lookup_requested(lowered):
-        return (*capabilities, "bitpro.live_strategy_summary")
+    if _strategy_draft_requested(lowered):
+        return (*capabilities, "strategy.draft")
+    if _bitpro_meta_requested(lowered):
+        return (*capabilities, "bitpro.meta")
     if _execution_intent_lookup_requested(lowered) and not _paper_lookup_requested(lowered):
         return (*capabilities, "execution.intent_summary")
+    if _live_order_history_requested(lowered):
+        return (*capabilities, "bitpro.order_history")
+    if _live_strategy_lookup_requested(lowered):
+        return (*capabilities, "bitpro.live_strategy_summary")
     if _paper_lookup_requested(lowered) and not any(
         term in lowered for term in ("回测", "backtest")
     ):
@@ -792,6 +801,16 @@ def _input_schema_for(capability_id: str) -> dict[str, Any]:
             "sort": "optional asc|desc",
             "presentation": "inventory|performance|best|worst|ranking",
         }
+    if capability_id == "strategy.draft":
+        return {
+            "prompt": "string 1..800",
+            "symbol": "optional string instrument id",
+            "timeframe": "optional string like 1H",
+        }
+    if capability_id == "bitpro.order_history":
+        return {"limit": "integer 1..20", "symbol": "optional string"}
+    if capability_id == "bitpro.meta":
+        return {}
     return {"query": "string", "limit": "integer"}
 
 
@@ -922,6 +941,46 @@ def _live_strategy_lookup_requested(objective: str) -> bool:
     )
 
 
+_STRATEGY_DRAFT_VERBS = (
+    "做一个",
+    "做个",
+    "写一个",
+    "写个",
+    "生成",
+    "设计一个",
+    "设计个",
+    "草稿",
+    "回测一个",
+    "回测个",
+    "做什么策略",
+    "适合做什么",
+)
+
+
+def _strategy_draft_requested(lowered: str) -> bool:
+    """“做一个策略” wants a draft, not a lookup of past performance."""
+    if "策略" not in lowered and "strategy" not in lowered:
+        return False
+    return any(term in lowered for term in _STRATEGY_DRAFT_VERBS)
+
+
+def _live_order_history_requested(lowered: str) -> bool:
+    return (
+        "订单" in lowered
+        and "实盘" in lowered
+        and not _execution_intent_lookup_requested(lowered)
+    )
+
+
+def _bitpro_meta_requested(lowered: str) -> bool:
+    if "bitpro" not in lowered:
+        return False
+    return any(
+        term in lowered
+        for term in ("支持哪些", "哪些能力", "什么能力", "能力清单", "健康", "服务状态")
+    )
+
+
 def _requested_strategy_key(objective: str) -> str:
     match = re.search(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b", objective.casefold())
     return match.group(1) if match else ""
@@ -951,7 +1010,10 @@ def _step_id_for_capability(capability_id: str) -> str:
         "memory.search": "memory_context",
         "strategy.performance_summary": "strategy_performance",
         "strategy.compare": "strategy_compare",
+        "strategy.draft": "strategy_draft",
         "bitpro.live_strategy_summary": "live_strategy_inventory",
+        "bitpro.order_history": "live_order_history",
+        "bitpro.meta": "bitpro_meta",
         "paper.summary": "paper_summary",
         "portfolio.assessment": "portfolio_assessment",
         "world_model.snapshot": "world_model_snapshot",
@@ -1040,6 +1102,19 @@ def _step_arguments(capability_id: str, objective: str) -> dict[str, Any]:
         if presentation != "inventory":
             result["presentation"] = presentation
         return result
+    if capability_id == "strategy.draft":
+        return {
+            "prompt": objective[:800],
+            "symbol": inst_id or "BTC-USDT-SWAP",
+            "timeframe": "1H",
+        }
+    if capability_id == "bitpro.order_history":
+        order_args: dict[str, Any] = {"limit": 5}
+        if inst_id:
+            order_args["symbol"] = inst_id
+        return order_args
+    if capability_id == "bitpro.meta":
+        return {}
     if capability_id == "paper.summary":
         focus = (
             "anomaly"
