@@ -35,6 +35,21 @@ _BASE_STRATEGY_SUBCLASS = re.compile(r"class\s+\w+\s*\([^)]*BaseStrategy[^)]*\)\
 
 _CANONICAL_BASE_STRATEGY_MODULE = "app.core.execution.base_strategy"
 
+# The BaseStrategy method surface strategies may call on `self`: the contract
+# methods BitPro actually provides, plus anything the code defines itself.
+# Unknown self.<method>() calls are rejected because BitPro's upload checker
+# refuses deprecated/shortcuts (open_long, place_order, ...) that once existed
+# or never did — each one previously cost a wasted platform upload to discover.
+_CONTRACT_METHODS = frozenset(
+    {
+        "open_contract",
+        "close_contract",
+        "symbols",
+        "on_init",
+        "on_bar",
+    }
+)
+
 
 def _basestrategy_import_modules(code: str) -> set[str]:
     """Modules from which the code imports a BaseStrategy symbol (AST-based)."""
@@ -74,7 +89,35 @@ def static_code_rejections(code: str) -> list[str]:
     for reason, tokens in FORBIDDEN_CODE_TOKENS.items():
         if any(token in lowered for token in tokens):
             reasons.append(reason)
+    reasons.extend(_unknown_self_method_calls(code))
     return sorted(set(reasons))
+
+
+def _unknown_self_method_calls(code: str) -> list[str]:
+    """Reject self.<method>() calls outside the contract surface."""
+    import ast
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+    defined: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            defined.add(node.name)
+    unknown: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "self"
+        ):
+            name = node.func.attr
+            if name in _CONTRACT_METHODS or name in defined or name.startswith("__"):
+                continue
+            unknown.add(name)
+    return sorted(f"code_uses_unknown_base_strategy_method:{name}" for name in unknown)
 
 
 class StrategyCodegenError(RuntimeError):
