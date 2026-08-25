@@ -27,7 +27,10 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-def _mission(objective: str = "研究 BTC-USDT-SWAP 现在的行情并给出结论") -> MissionProjection:
+def _mission(
+    objective: str = "研究 BTC-USDT-SWAP 现在的行情并给出结论",
+    profile: str = "read_only.v1",
+) -> MissionProjection:
     from hypertrade.runtime.domain.models import (
         MissionBudgetV1,
         MissionStatus,
@@ -48,7 +51,7 @@ def _mission(objective: str = "研究 BTC-USDT-SWAP 现在的行情并给出结�
         constraints=(),
         status=MissionStatus.PLANNING,
         budget=MissionBudgetV1(),
-        permission_profile_ref="read_only.v1",
+        permission_profile_ref=profile,
         context_policy_ref="mission_context.v1",
         created_by="operator",
     )
@@ -374,3 +377,57 @@ def test_factory_respects_flag_and_provider_availability() -> None:
         if definition.scope in ("paper_write", "testnet_write", "live_write")
     }
     assert not (set(on._envelope) & trading_write)
+
+
+@pytest.mark.anyio
+async def test_bitpro_backtest_symbol_may_derive_from_partial_objective_mention() -> None:
+    """BitPro 研究工具允许从部分提及推导完整合约号（SOL → SOL-USDT-SWAP）。"""
+    provider = _ScriptedProvider(
+        _plan_content(
+            [
+                _base_step(),
+                {
+                    "step_id": "submit_backtest",
+                    "title": "Backtest the strategy on BitPro",
+                    "capability_id": "bitpro.backtest_start",
+                    "arguments": {
+                        "strategy_id": 42,
+                        "start_date": "2025-01-01",
+                        "end_date": "2025-04-01",
+                        "symbol": "SOL-USDT-SWAP",
+                        "timeframe": "4H",
+                    },
+                    "depends_on": ["inspect_objective"],
+                },
+            ],
+            goal="SOL 回测",
+        ),
+    )
+    planner = LlmPlanV2Planner(provider=provider)
+    mission = _mission(
+        objective="研究 SOL 4H 双均线趋势策略并回测", profile="research.v1"
+    )
+
+    plan = await planner.plan(mission)
+
+    backtest_steps = [s for s in plan.steps if s.capability_id == "bitpro.backtest_start"]
+    assert backtest_steps, f"plan fell back: {plan.assumptions[:1]}"
+    assert backtest_steps[0].arguments["symbol"] == "SOL-USDT-SWAP"
+    assert backtest_steps[0].read_only is False
+
+
+@pytest.mark.anyio
+async def test_market_tools_keep_strict_verbatim_in_research_profile() -> None:
+    """market.* 数据工具仍严格逐字：BTC 目标里塞 ETH 必须拒绝。"""
+    provider = _ScriptedProvider(
+        _plan_content([_base_step(), _summary_step("ETH-USDT-SWAP")]),
+        _plan_content([_base_step()]),
+    )
+    planner = LlmPlanV2Planner(provider=provider)
+    mission = _mission(
+        objective="研究 SOL 4H 双均线趋势策略并回测", profile="research.v1"
+    )
+
+    plan = await planner.plan(mission)
+
+    assert all("inst_id" not in step.arguments for step in plan.steps)

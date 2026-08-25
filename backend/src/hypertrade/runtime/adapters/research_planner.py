@@ -588,15 +588,25 @@ def _validated_provider_step(
         if isinstance(value, str) and len(value) > _LLM_PLAN_MAX_ARGUMENT_CHARS:
             _reject(f"argument {key} exceeds {_LLM_PLAN_MAX_ARGUMENT_CHARS} chars")
         arguments[str(key)] = value
+    strict_instruments = capability_id.startswith("market.")
     for key in sorted(set(arguments) & _INSTRUMENT_ARGUMENT_KEYS):
         values = arguments[key] if isinstance(arguments[key], list) else [arguments[key]]
         for value in values:
             if not isinstance(value, str):
                 _reject(f"argument {key} must contain string instruments")
-            if _validated_provider_market_instrument(value, objective) is None:
-                _reject(
-                    f"instrument {value!r} for {key} is not verbatim in the objective"
-                )
+            if _validated_provider_market_instrument(value, objective) is not None:
+                continue
+            # BitPro research tools legitimately normalize a partial user
+            # mention ("SOL") into the full instrument ("SOL-USDT-SWAP"): that
+            # is derivation, not hallucination. Accept it when the base asset
+            # appears verbatim in the objective. market.* data tools keep the
+            # strict verbatim rule.
+            base_asset = value.split("-", 1)[0].strip().upper()
+            if not strict_instruments and base_asset and base_asset in str(objective).upper():
+                continue
+            _reject(
+                f"instrument {value!r} for {key} is not verbatim in the objective"
+            )
     depends_on_raw = item.get("depends_on", [])
     if not isinstance(depends_on_raw, list) or any(
         not isinstance(dep, str) for dep in depends_on_raw
