@@ -1289,21 +1289,20 @@ def builtin_handlers(
         health = (payload.get("health") or {}).get("health") or {}
         version = str(capabilities.get("contract_version", ""))
         status = str(health.get("status", ""))
-        tools = capabilities.get("tools") or capabilities.get("tool_count") or []
-        tool_note = f"，暴露 {len(tools)} 个工具" if isinstance(tools, list) else ""
+        # The capabilities payload is contract/transport/auth metadata; it does
+        # not enumerate tools, so the summary only claims what it read.
         return ToolResult(
             payload={
                 "items": [{
                     "contract_version": version,
                     "health_status": status,
-                    "tool_count": len(tools) if isinstance(tools, list) else None,
                 }],
                 "count": 1,
             },
             source_refs=("bitpro_mcp:capabilities",),
             unknowns=("工具清单细节以 BitPro 能力文档为准。",),
             public_summary=(
-                f"BitPro 契约 {version or '未知'}，健康状态 {status or '未知'}{tool_note}。"
+                f"BitPro 契约 {version or '未知'}，健康状态 {status or '未知'}。"
             ),
         )
 
