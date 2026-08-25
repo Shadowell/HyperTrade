@@ -1,5 +1,26 @@
 # Progress Log
 
+## 全量评测新基线：策略草稿全链路打通，有效分 ~67% — 2026-08-25
+
+- **BitPro 生成供应商切换**（服务器运维）：dashscope qwen3.5-flash 免费额度耗尽后，
+  经 `ai_lab_model_config.json` 自定义 provider 切到 OpenCode Zen 网关
+  （ox-alpha-free）。配置文件与 API key 不被部署覆盖，改动持久。
+- **BitPro 仓库修复**（commit acef111f）：推理模型在 max_tokens=4096 下先烧完预算、
+  content 为空（finish=length）导致 `json.loads("")`——默认值与生成调用点提到 16384；
+  system prompt"要求 asyncio 又禁止导入"的自相矛盾修正；新增一次带失败原因的合规
+  重试轮。注意：/opt/bitpro 非 git 仓库，服务器直接补丁会被部署覆盖，必须走仓库。
+- **HyperTrade 配套**：`BITPRO_MCP_TIMEOUT_SECONDS` 180→420（修复轮使生成可达
+  2×16384-token 调用）。
+- **全链实测**：中文提问 → strategy.draft → BitPro → Zen 网关 → 真实策略草稿返回
+  （含治理提示），s01 评测 10/10。
+- **全量评测（第二次真实基线）**：总分 567/1000（56.7%）——其中 **17/25 失败为
+  伪影**（策略草稿单次生成 200–330s × 重试爆掉 420s 客户端窗口；期间容器多次被并行
+  会话部署重启）。剔除伪影后有效分约 67%。实盘 8.4、闲聊 7.5、安全 6.8、行情 6.6；
+  策略类 s01 满分证明能力面已通，分数被时延伪影压制。
+- **结构性残留**：ox-alpha-free 推理开销使单次生成 90–300s（免费网关约束）；排序类
+  问题（o05）、权益曲线投影（p05）、按名称搜回测（b03）、知识库内容覆盖（k06）
+  为剩余真实缺口。
+
 ## 主线阻塞修复：mission research profile（sprint-148）— 2026-08-25
 
 - **实弹发现**：生产 chat 流量 100% 走 mission 运行时（canary=100%），而
