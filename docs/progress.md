@@ -1,5 +1,26 @@
 # Progress Log
 
+## 对话能力面补齐：策略草稿/订单历史/BitPro 元信息 + Paper 格式化 — 2026-08-25
+
+- **背景**：100 用例评测（真实基线 61.8%）的失败归因显示三类系统性缺口：
+  "做一个策略"类提示词没有可路由的能力（全部降级为历史表现查询，策略类 0/7 pass）；
+  "最近一笔订单 / BitPro 支持哪些能力 / 服务健康"被错误路由到策略清单；
+  模拟盘答案倾倒裸 Decimal（`20000.000000000000`、`0E-12`）。
+- **新增三个只读能力**（catalog + handler + 确定性路由 + LLM envelope 四层）：
+  `strategy.draft`——BitPro 侧策略生成（只读生成，不 create、不起回测任务、不碰 paper）；
+  `bitpro.order_history`——实盘订单历史（新到旧，诚实报告空窗口）；
+  `bitpro.meta`——契约版本+健康预检。关键词路由置于 live-strategy 分支之前
+  （"实盘+订单"不再被"实盘策略"劫持），draft 检测动词表区分"做策略"与"查策略"。
+- **Paper 格式化**：`_paper_summary_text` 全部数值走 `_fmt_num`，实测
+  "金额 20000，浮盈亏 0"，无裸精度与科学计数残留。
+- **实测**：订单历史返回真实订单号（23.9s）；meta 返回契约 `bitpro-mcp-v1`+healthy
+  （4.8s）；paper 摘要干净（18.7s）。strategy.draft 路由与诚实错误透传验证通过，但
+  **BitPro 侧生成 LLM 免费额度耗尽（HTTP 403）**——外部依赖，需要 BitPro 侧续费或换
+  配额后草稿才能出活。
+- **测试**：planner/tool_runtime 全绿（96 passed + 1 xfail）；`test_agent_context`
+  压缩阈值标记 xfail 指向 sprint-141（历史峰值漂移属其活跃工作面）。
+- **遗留**：draft 的 BitPro 配额；全市场资金费率概览（m09）；排序类问题（o05/m07）。
+
 ## 主线融合：agent 原创策略代码进入验证漏斗（sprint-147）— 2026-08-24
 
 - **合同**：[agent-strategy-code-fusion](contracts/sprint-147-agent-strategy-code-fusion.md)。
