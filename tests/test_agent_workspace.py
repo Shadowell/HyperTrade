@@ -324,3 +324,31 @@ def test_validate_strategy_code_requires_canonical_basestrategy_import(
 
     assert result["passed"] is False
     assert "code_requires_canonical_basestrategy_import" in result["rejections"]
+
+
+def test_validate_strategy_code_rejects_fallback_import_pattern(
+    workspace: AgentWorkspace,
+) -> None:
+    """try/except 双导入回退也必须拒绝：BitPro 是 token 扫描，不看控制流。"""
+    from hypertrade.agent.kernel import AgentKernel
+    from hypertrade.db import Database
+
+    workspace.write_file(
+        "strategies/fallback_import.py",
+        "try:\n"
+        "    from app.core.execution.base_strategy import BaseStrategy\n"
+        "except ImportError:\n"
+        "    from strategy_base import BaseStrategy\n"
+        "\n"
+        "\n"
+        "class Fallback(BaseStrategy):\n"
+        "    async def on_bar(self, bar: BarData):\n"
+        "        return None\n",
+    )
+    kernel = AgentKernel(Database("sqlite:///:memory:"), knowledge_dir="docs/knowledge")
+    kernel._workspace = workspace
+
+    result = kernel._validate_strategy_code_payload({"path": "strategies/fallback_import.py"})
+
+    assert result["passed"] is False
+    assert "code_requires_canonical_basestrategy_import" in result["rejections"]

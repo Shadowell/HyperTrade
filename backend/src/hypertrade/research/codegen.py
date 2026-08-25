@@ -84,7 +84,12 @@ def static_code_rejections(code: str) -> list[str]:
         # other than the canonical one; catch it here so the rejection surfaces
         # as a reason code instead of a failed platform upload.
         import_modules = _basestrategy_import_modules(code)
-        if import_modules and _CANONICAL_BASE_STRATEGY_MODULE not in import_modules:
+        # Strict: BitPro's checker token-scans the source, so even a
+        # try/except fallback importing BaseStrategy from anywhere else
+        # (strategy_base, ...) fails the upload. Any non-canonical import
+        # module rejects the code outright.
+        non_canonical = import_modules - {_CANONICAL_BASE_STRATEGY_MODULE}
+        if non_canonical:
             reasons.append("code_requires_canonical_basestrategy_import")
     on_bar_rejection = _on_bar_contract_rejection(code)
     if on_bar_rejection:
