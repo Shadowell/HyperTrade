@@ -95,6 +95,18 @@ def static_code_rejections(code: str) -> list[str]:
     if len(_BASE_STRATEGY_SUBCLASS.findall(code)) != 1:
         reasons.append("code_requires_single_basestrategy_subclass")
     else:
+        # BitPro rejects any additional class: helpers must be functions.
+        import ast
+
+        try:
+            tree = ast.parse(code)
+            class_count = sum(
+                1 for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
+            )
+            if class_count > 1:
+                reasons.append("code_allows_only_one_strategy_class")
+        except SyntaxError:
+            pass
         on_bar_rejection = _on_bar_contract_rejection(code)
         if on_bar_rejection:
             reasons.append(on_bar_rejection)
