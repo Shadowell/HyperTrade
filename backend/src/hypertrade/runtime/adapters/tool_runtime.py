@@ -1577,11 +1577,43 @@ def builtin_handlers(
         # full BitPro adapter. Write access is gated by the research.v1 profile
         # in _preflight, not by this local type.
         adapter = cast(Any, adapter_factory())
+        # Provenance binding: when workspace_path is supplied the submitted
+        # code IS the validated workspace file - the model cannot paraphrase
+        # code between the static gate and the platform upload.
+        workspace_path = str(arguments.get("workspace_path", "")).strip()
+        script_content = str(arguments.get("script_content", ""))
+        if workspace_path:
+            from hashlib import sha256
+
+            workspace = _workspace_for(mission)
+            read_result = await anyio.to_thread.run_sync(
+                lambda: workspace.read_file(workspace_path), limiter=limiter
+            )
+            if read_result.get("status") != "ok":
+                raise ValueError(
+                    f"workspace file {workspace_path} not found; run "
+                    "research.validate_strategy_code on it first"
+                )
+            script_content = str(read_result.get("content", ""))
+            content_hash = sha256(script_content.encode("utf-8")).hexdigest()[:16]
+            if (
+                arguments.get("validated_content_hash")
+                and content_hash != str(arguments["validated_content_hash"])
+            ):
+                raise ValueError(
+                    "workspace file changed since the static gate "
+                    f"(now {content_hash}); re-run research.validate_strategy_code"
+                )
+        if len(script_content) < 20:
+            raise ValueError(
+                "supply workspace_path (preferred) or script_content with the "
+                "full strategy code"
+            )
         raw_symbols = arguments.get("symbols")
         created = await anyio.to_thread.run_sync(
             lambda: adapter.strategy_create(
                 name=str(arguments["name"]),
-                script_content=str(arguments["script_content"]),
+                script_content=script_content,
                 description=str(arguments.get("description", "")) or None,
                 exchange=str(arguments.get("exchange", "okx")),
                 symbols=(

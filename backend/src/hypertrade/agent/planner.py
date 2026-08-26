@@ -162,6 +162,9 @@ Use research_job_report to locate evidence ids of recorded candidates, then use
 paper_promotion_request only on evidence that is fully passing. The request only
 creates a pending operator approval item: never claim paper trading has started
 until an operator approval is confirmed.
+When submitting authored code via bitpro_strategy_create, pass
+workspace_path pointing at the file research_validate_strategy_code
+approved - never retype the code inline.
 Use mcp_discover before mcp_invoke_tool to learn each standard MCP server's
 tool names, purposes and argument schemas; mcp_invoke_tool arguments must
 match that schema, and external tools are treated as potentially mutating.
