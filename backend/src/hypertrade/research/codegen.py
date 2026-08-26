@@ -66,6 +66,22 @@ _CONTRACT_METHODS = frozenset(
     }
 )
 
+# Deprecated/shortcut names BitPro forbids EVEN WHEN the strategy defines
+# them itself (live fire round 10: a user-defined open_long wrapper still
+# failed the upload checker).
+_FORBIDDEN_METHOD_NAMES = frozenset(
+    {
+        "open_long",
+        "open_short",
+        "close_long",
+        "close_short",
+        "buy",
+        "sell",
+        "place_order",
+        "submit_order",
+    }
+)
+
 
 def static_code_rejections(code: str) -> list[str]:
     """Return sorted reason codes for why `code` may not be run as a strategy.
@@ -167,7 +183,14 @@ def _unknown_self_method_calls(code: str) -> list[str]:
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             defined.add(node.name)
+    forbidden_definitions: set[str] = set()
     unknown: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name in _FORBIDDEN_METHOD_NAMES
+        ):
+            forbidden_definitions.add(node.name)
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.Call)
@@ -176,10 +199,17 @@ def _unknown_self_method_calls(code: str) -> list[str]:
             and node.func.value.id == "self"
         ):
             name = node.func.attr
+            if name in _FORBIDDEN_METHOD_NAMES:
+                unknown.add(name)
+                continue
             if name in _CONTRACT_METHODS or name in defined or name.startswith("__"):
                 continue
             unknown.add(name)
-    return sorted(f"code_uses_unknown_base_strategy_method:{name}" for name in unknown)
+    reasons = [
+        f"code_defines_forbidden_contract_method:{name}" for name in forbidden_definitions
+    ]
+    reasons.extend(f"code_uses_unknown_base_strategy_method:{name}" for name in unknown)
+    return reasons
 
 
 class StrategyCodegenError(RuntimeError):

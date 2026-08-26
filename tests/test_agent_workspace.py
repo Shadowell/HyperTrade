@@ -323,7 +323,7 @@ def test_validate_strategy_code_requires_canonical_basestrategy_import(
     result = kernel._validate_strategy_code_payload({"path": "strategies/short_import.py"})
 
     assert result["passed"] is False
-    assert "code_requires_canonical_basestrategy_import" in result["rejections"]
+    assert "code_imports_non_allowlisted_module:strategy_base" in result["rejections"]
 
 
 def test_validate_strategy_code_rejects_fallback_import_pattern(
@@ -351,4 +351,32 @@ def test_validate_strategy_code_rejects_fallback_import_pattern(
     result = kernel._validate_strategy_code_payload({"path": "strategies/fallback_import.py"})
 
     assert result["passed"] is False
-    assert "code_requires_canonical_basestrategy_import" in result["rejections"]
+    assert "code_imports_non_allowlisted_module:strategy_base" in result["rejections"]
+
+
+def test_validate_strategy_code_rejects_forbidden_method_wrappers(
+    workspace: AgentWorkspace,
+) -> None:
+    """自定义 open_long 包装也拒绝：BitPro 按名字拉黑，不看定义。"""
+    from hypertrade.agent.kernel import AgentKernel
+    from hypertrade.db import Database
+
+    workspace.write_file(
+        "strategies/wrapper.py",
+        "from app.core.execution.base_strategy import BaseStrategy\n"
+        "\n"
+        "\n"
+        "class Wrapper(BaseStrategy):\n"
+        "    async def open_long(self, symbol):\n"
+        "        await self.open_contract(symbol, 'long', 100.0)\n"
+        "\n"
+        "    async def on_bar(self, bar: BarData):\n"
+        "        await self.open_long(bar.symbol)\n",
+    )
+    kernel = AgentKernel(Database("sqlite:///:memory:"), knowledge_dir="docs/knowledge")
+    kernel._workspace = workspace
+
+    result = kernel._validate_strategy_code_payload({"path": "strategies/wrapper.py"})
+
+    assert result["passed"] is False
+    assert "code_defines_forbidden_contract_method:open_long" in result["rejections"]
