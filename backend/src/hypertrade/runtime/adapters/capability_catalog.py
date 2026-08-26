@@ -713,15 +713,13 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "minLength": 1, "maxLength": 160},
-                    "script_content": {"type": "string", "minLength": 20, "maxLength": 200_000},
+                    # Submission is bound to the validated workspace file: the
+                    # model cannot retype code between the static gate and the
+                    # platform upload (live fire rounds 9-11).
                     "workspace_path": {
                         "type": "string",
                         "minLength": 3,
                         "maxLength": 200,
-                        "description": (
-                            "Preferred: submit the exact workspace file that "
-                            "research.validate_strategy_code already passed."
-                        ),
                     },
                     "description": {"type": "string", "maxLength": 500},
                     "exchange": {"type": "string", "maxLength": 32},
@@ -731,7 +729,7 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
                         "maxItems": 8,
                     },
                 },
-                "required": ["name"],
+                "required": ["name", "workspace_path"],
                 "additionalProperties": False,
             },
             output_schema={

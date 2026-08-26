@@ -312,12 +312,29 @@ def test_bitpro_write_handlers_use_fake_adapter(tmp_path):
         completion_checks=("validated_steps",),
         steps=(
             PlanStepV2(
+                step_id="write_code",
+                title="Write the strategy file",
+                capability_id="workspace.write_file",
+                arguments={
+                    "path": "strategies/agent_sma.py",
+                    "content": (
+                        "from app.core.execution.base_strategy import BaseStrategy\n"
+                        "\n"
+                        "\n"
+                        "class AgentSma(BaseStrategy):\n"
+                        "    async def on_bar(self, bar: BarData):\n"
+                        "        return None\n"
+                    ),
+                },
+                read_only=False,
+            ),
+            PlanStepV2(
                 step_id="create",
                 title="Create strategy",
                 capability_id="bitpro.strategy_create",
                 arguments={
                     "name": "agent_sma_v1",
-                    "script_content": "class X(BaseStrategy):\n    pass\n",
+                    "workspace_path": "strategies/agent_sma.py",
                     "symbols": ["SOL-USDT-SWAP"],
                 },
                 read_only=False,
@@ -339,15 +356,20 @@ def test_bitpro_write_handlers_use_fake_adapter(tmp_path):
         diff=PlanDiffV1(reason_code="initial_plan"),
     )
 
-    first = asyncio.run(executor.execute(mission, plan, plan.steps[0], 1))
-    assert first.status == "succeeded"
-    assert first.result["strategy_id"] == 777
-    assert fake.created["name"] == "agent_sma_v1"
+    write_obs = asyncio.run(executor.execute(mission, plan, plan.steps[0], 1))
+    assert write_obs.status == "succeeded"
 
-    second = asyncio.run(executor.execute(mission, plan, plan.steps[1], 1))
-    assert second.status == "succeeded"
-    assert second.result["backtest_id"] == "bt_9001"
-    assert second.result["metrics"]["sharpe_ratio"] == "1.1"
+    created_obs = asyncio.run(executor.execute(mission, plan, plan.steps[1], 1))
+    assert created_obs.status == "succeeded"
+    assert created_obs.result["strategy_id"] == 777
+    assert fake.created["name"] == "agent_sma_v1"
+    # Provenance binding: the submitted code IS the workspace file content.
+    assert "class AgentSma(BaseStrategy)" in fake.created["script_content"]
+
+    backtest_obs = asyncio.run(executor.execute(mission, plan, plan.steps[2], 1))
+    assert backtest_obs.status == "succeeded"
+    assert backtest_obs.result["backtest_id"] == "bt_9001"
+    assert backtest_obs.result["metrics"]["sharpe_ratio"] == "1.1"
     assert fake.started["strategy_id"] == 777
     assert fake.started["wait_for_result"] is True
 
