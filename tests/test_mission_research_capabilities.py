@@ -335,6 +335,22 @@ def test_bitpro_write_handlers_use_fake_adapter(tmp_path):
                 arguments={
                     "name": "agent_sma_v1",
                     "workspace_path": "strategies/agent_sma.py",
+                    # Hash from the static gate step (cross-step binding):
+                    # sha256 of the exact file written by step 0.
+                    "validated_content_hash": (
+                        __import__("hashlib")
+                        .sha256(
+                            
+                                b"from app.core.execution.base_strategy import BaseStrategy\n"
+                                b"\n"
+                                b"\n"
+                                b"class AgentSma(BaseStrategy):\n"
+                                b"    async def on_bar(self, bar: BarData):\n"
+                                b"        return None\n"
+                            
+                        )
+                        .hexdigest()[:16]
+                    ),
                     "symbols": ["SOL-USDT-SWAP"],
                 },
                 read_only=False,
