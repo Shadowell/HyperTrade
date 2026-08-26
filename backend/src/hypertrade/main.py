@@ -961,6 +961,18 @@ def create_app(
     def list_strategy_evolution_runs(_: AdminUser) -> dict[str, list[dict[str, Any]]]:
         return {"items": StrategyEvolutionService(database).list()}
 
+    @app.get("/api/research/evolution-readiness")
+    def evolution_readiness_inventory(
+        _: AdminUser, limit: int = 20
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Which running strategies can enter the evolution loop today — and
+        which preconditions they are missing. Read-only; never mutates."""
+        from hypertrade.bitpro.mcp import BitProToolAdapter
+        from hypertrade.research.evolution_readiness import running_inventory_readiness
+
+        projections = running_inventory_readiness(database, BitProToolAdapter(), limit=limit)
+        return {"items": [p.as_dict() for p in projections]}
+
     @app.get("/api/research/evolution-runs/{run_id}")
     def get_strategy_evolution_run(run_id: str, _: AdminUser) -> dict[str, Any]:
         try:
