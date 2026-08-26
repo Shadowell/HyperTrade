@@ -92,7 +92,11 @@ def static_code_rejections(code: str) -> list[str]:
     """
     lowered = code.casefold()
     reasons: list[str] = []
-    if len(_BASE_STRATEGY_SUBCLASS.findall(code)) != 1:
+    # BitPro's upload checker scans line-by-line for the exact canonical
+    # form; multi-line or multi-base class definitions pass a loose regex
+    # but fail the platform (live fire round 13). Mirror the strict form.
+    strict_class = re.compile(r"^class\s+\w+\(BaseStrategy\)\s*:", re.MULTILINE)
+    if len(strict_class.findall(code)) != 1:
         reasons.append("code_requires_single_basestrategy_subclass")
     else:
         # BitPro rejects any additional class: helpers must be functions.
