@@ -721,6 +721,15 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
                         "minLength": 3,
                         "maxLength": 200,
                     },
+                    "validated_content_hash": {
+                        "type": "string",
+                        "minLength": 16,
+                        "maxLength": 32,
+                        "description": (
+                            "The content_hash returned by "
+                            "research.validate_strategy_code for this exact file."
+                        ),
+                    },
                     "description": {"type": "string", "maxLength": 500},
                     "exchange": {"type": "string", "maxLength": 32},
                     "symbols": {
@@ -729,7 +738,7 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
                         "maxItems": 8,
                     },
                 },
-                "required": ["name", "workspace_path"],
+                "required": ["name", "workspace_path", "validated_content_hash"],
                 "additionalProperties": False,
             },
             output_schema={
