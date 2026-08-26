@@ -1,5 +1,22 @@
 # Progress Log
 
+# Progress Log
+
+## 进化闭环 Handoff：口径裁判 + readiness 投影上线（Slice 1–2）— 2026-08-26
+
+- **合同**：[现有策略进化闭环](contracts/user-directed-strategy-evolution-handoff.md)
+  （M0 Handoff 第一步）激活并交付 Slice 1–2。
+- **Slice 1 口径裁判**（`research/comparison_caliber.py`）：比较结论只能引用
+  `bitpro_mcp:*` 来源，本地回放恒为 `prefilter_only`；混入非 BitPro 来源即抛错。
+  测试钉死契约常量与混合来源拒绝。
+- **Slice 2 readiness 投影**（`research/evolution_readiness.py` +
+  `GET /api/research/evolution-readiness`）：对 BitPro running 清单逐个输出进化前置
+  缺口（结算证据、内部版本映射、≥2 结算 Outcome），只读不造数。
+- **生产实测发现**：6 个 running 策略全部报齐三项缺口——它们先于整个证据账本存在，
+  尚未建立 lineage 映射。**进化循环的第一步是为 legacy 策略补建 lineage 引导**
+  （拉取其历史表现为证据记录 + 创建内部版本映射），已列为 Slice 3 的前置子步。
+- **测试**：caliber 契约 + readiness 投影 9 用例全绿；部署成功。
+
 ## 全量评测新基线：策略草稿全链路打通，有效分 ~67% — 2026-08-25
 
 - **BitPro 生成供应商切换**（服务器运维）：dashscope qwen3.5-flash 免费额度耗尽后，
