@@ -35,6 +35,22 @@ _BASE_STRATEGY_SUBCLASS = re.compile(r"class\s+\w+\s*\([^)]*BaseStrategy[^)]*\)\
 
 _CANONICAL_BASE_STRATEGY_MODULE = "app.core.execution.base_strategy"
 
+# BitPro's upload checker rejects `from <module> import ...` for any module
+# outside its allowlist (strategy_base, strategy, ... all failed in live
+# fire). The local gate mirrors that with the conservative set of modules
+# the platform and generated code legitimately use.
+_ALLOWED_IMPORT_FROM_MODULES = frozenset(
+    {
+        _CANONICAL_BASE_STRATEGY_MODULE,
+        "collections",
+        "math",
+        "statistics",
+        "datetime",
+        "typing",
+        "dataclasses",
+    }
+)
+
 # The BaseStrategy method surface strategies may call on `self`: the contract
 # methods BitPro actually provides, plus anything the code defines itself.
 # Unknown self.<method>() calls are rejected because BitPro's upload checker
@@ -51,23 +67,6 @@ _CONTRACT_METHODS = frozenset(
 )
 
 
-def _basestrategy_import_modules(code: str) -> set[str]:
-    """Modules from which the code imports a BaseStrategy symbol (AST-based)."""
-    import ast
-
-    modules: set[str] = set()
-    try:
-        tree = ast.parse(code)
-    except SyntaxError:
-        return modules
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module:
-            imported = {alias.name for alias in node.names}
-            if "BaseStrategy" in imported:
-                modules.add(node.module)
-    return modules
-
-
 def static_code_rejections(code: str) -> list[str]:
     """Return sorted reason codes for why `code` may not be run as a strategy.
 
@@ -80,25 +79,40 @@ def static_code_rejections(code: str) -> list[str]:
     if len(_BASE_STRATEGY_SUBCLASS.findall(code)) != 1:
         reasons.append("code_requires_single_basestrategy_subclass")
     else:
-        # BitPro's upload checker rejects BaseStrategy imports from any module
-        # other than the canonical one; catch it here so the rejection surfaces
-        # as a reason code instead of a failed platform upload.
-        import_modules = _basestrategy_import_modules(code)
-        # Strict: BitPro's checker token-scans the source, so even a
-        # try/except fallback importing BaseStrategy from anywhere else
-        # (strategy_base, ...) fails the upload. Any non-canonical import
-        # module rejects the code outright.
-        non_canonical = import_modules - {_CANONICAL_BASE_STRATEGY_MODULE}
-        if non_canonical:
-            reasons.append("code_requires_canonical_basestrategy_import")
-    on_bar_rejection = _on_bar_contract_rejection(code)
-    if on_bar_rejection:
-        reasons.append(on_bar_rejection)
+        on_bar_rejection = _on_bar_contract_rejection(code)
+        if on_bar_rejection:
+            reasons.append(on_bar_rejection)
     for reason, tokens in FORBIDDEN_CODE_TOKENS.items():
         if any(token in lowered for token in tokens):
             reasons.append(reason)
+    reasons.extend(_non_allowlisted_from_imports(code))
     reasons.extend(_unknown_self_method_calls(code))
     return sorted(set(reasons))
+
+
+def _non_allowlisted_from_imports(code: str) -> list[str]:
+    """Reject ``from <module> import ...`` for modules outside the allowlist.
+
+    BitPro's upload checker token-scans every from-import; strategy_base,
+    strategy and similar modules all failed in live fire. The local gate
+    mirrors that behavior so the rejection surfaces before the platform
+    spend.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+    offending: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module
+            and node.module not in _ALLOWED_IMPORT_FROM_MODULES
+        ):
+            offending.add(node.module)
+    return sorted(f"code_imports_non_allowlisted_module:{name}" for name in offending)
 
 
 def _on_bar_contract_rejection(code: str) -> str:
