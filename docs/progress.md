@@ -2,6 +2,25 @@
 
 # Progress Log
 
+## Slice 3a 探明：legacy lineage 引导被 BitPro 侧三缺口阻塞 — 2026-08-26
+
+- 对试点策略 BSB（378）实测 BitPro 证据面的三个数据层：
+  1. `live` return series：`live_return_series_unavailable`（BitPro 未回填 running
+     策略的 live 序列历史）；
+  2. `backtest` return series：**存在但被 BitPro 自身契约校验拒绝**——
+     "cost model missing funding mode"（存量回测早于 funding-mode 字段）；
+  3. `paper`：source not found。
+- 另：MCP 契约没有读取存量策略代码的工具（只有 validate/create/update），
+  `strategy_code_sha256` 无法诚实计算，内部 StrategyVersion 映射无从建立。
+- **结论**：legacy 策略进化的前置在 BitPro 侧，共三项——①回填 running 策略的
+  live 序列或修复存量回测的 cost-model 元数据；②MCP 契约增加策略代码读取工具；
+  ③（可选）paper 序列回填。HyperTrade 侧 readiness 投影正确报告了全部缺口，
+  系统行为符合设计：诚实缺数据，不造数。
+- BitPro 侧三项补齐后，HyperTrade 的 bootstrap（证据入账 + lineage 映射）
+  可立即实施（Slice 3a 剩余部分）。
+
+# Progress Log
+
 ## 进化闭环 Handoff：口径裁判 + readiness 投影上线（Slice 1–2）— 2026-08-26
 
 - **合同**：[现有策略进化闭环](contracts/user-directed-strategy-evolution-handoff.md)
