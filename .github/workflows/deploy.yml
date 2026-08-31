@@ -3,8 +3,6 @@ name: Deploy HyperTrade
 on:
   push:
     branches: [main]
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       force_deploy:
@@ -13,8 +11,8 @@ on:
         default: "false"
 
 concurrency:
-  group: hypertrade-production-${{ github.event_name == 'schedule' && 'schedule' || 'push' }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+  group: hypertrade-production-deploy
+  cancel-in-progress: true
 
 jobs:
   deploy:

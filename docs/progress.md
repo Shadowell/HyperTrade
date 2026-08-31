@@ -1,5 +1,10 @@
 # Progress Log
 
+## 部署触发收口 — 2026-08-31
+
+- 移除生产部署的五分钟定时轮询；后续仅由 `main` push 或显式人工 dispatch 触发。
+- 部署并发组收口为单一 `hypertrade-production-deploy`，新部署取消旧的进行中部署。
+
 # Progress Log
 
 ## Slice 3a 探明：legacy lineage 引导被 BitPro 侧三缺口阻塞 — 2026-08-26
