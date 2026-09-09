@@ -241,6 +241,16 @@ class ARCSelfTestService:
         create_key = f"arc-selftest-create-{scope}"
         backtest_key = f"arc-selftest-backtest-{scope}"
         validate_key = f"arc-selftest-validate-{scope}"
+        strategy_name = f"ARC self-test {attempt.candidate_id}"
+        if goal.paper_review_required:
+            # BitPro replaces on its unique name key. The display name must carry
+            # the same immutable namespace as dispatch, or a new job can erase an old strategy.
+            asset_type = "合约" if symbol.endswith("-SWAP") else "现货"
+            base_symbol = symbol.split("-")[0]
+            strategy_name = (
+                f"[{asset_type}][{timeframe.upper()}][CTA] {base_symbol} · "
+                f"ARC-{scope} · {goal.paper_initial_equity}U"
+            )
 
         try:
             validated = client.strategy_validate_code(
@@ -270,7 +280,7 @@ class ARCSelfTestService:
 
         try:
             created = client.strategy_create(
-                name=f"ARC self-test {attempt.candidate_id}",
+                name=strategy_name,
                 script_content=attempt.strategy_code,
                 description=f"ARC self-test {attempt.candidate_id} for {symbol}",
                 exchange="okx",

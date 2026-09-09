@@ -157,6 +157,9 @@ def test_review_missions_do_not_reuse_another_missions_strategy() -> None:
     keys = [call["idempotency_key"] for call in adapter.create_calls]
     assert keys[0] == keys[1]
     assert keys[0] != keys[2]
+    names = [call["name"] for call in adapter.create_calls]
+    assert names[0] == names[1]
+    assert names[0] != names[2], "BitPro uses a unique name with INSERT OR REPLACE"
 
 
 def test_incubation_reuses_probe_strategy_without_a_second_create() -> None:
