@@ -249,7 +249,13 @@ def _perform(
                 ]
             }
         if arguments["target"] == "candidate":
-            return _candidate(controller, arguments.get("attempt_id", "")).model_dump(mode="json")
+            candidate = _candidate(controller, arguments.get("attempt_id", ""))
+            return {
+                **candidate.model_dump(mode="json"),
+                "development": controller.projection.avo.get("development", {}).get(
+                    candidate.attempt_id
+                ),
+            }
         return {
             "candidates": [
                 {"attempt_id": a.attempt_id, "hypothesis": a.hypothesis, "spec": a.strategy_spec}

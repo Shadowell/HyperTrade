@@ -1,5 +1,12 @@
 # Progress Log
 
+## AVO 证据读取补齐 — 2026-09-09
+
+- CLI evidence 单独输出开发实验、窗口、预算与待确认操作；单候选检查可取回对应开发反馈。
+- 仅有最终窗口及回测引用时，才把 BitPro 最终 Sharpe/成交数投影到样本外栏，不把开发分数冒充最终结论。
+- 验证：完整 scripts/check.sh 通过，1193 passed / 1 xfailed；保持历史 ARC 输出兼容。
+
+
 ## AVO 有预算研究与持久恢复 — 2026-09-09
 
 - 新增模型工具循环，复用 ChatProvider、codegen、BitPro 和现有 ARC 投影；任务默认由 worker 领取，不依赖 API 后台线程存活。

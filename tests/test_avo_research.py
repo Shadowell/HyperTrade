@@ -279,3 +279,35 @@ def test_unimplemented_validation_policy_is_not_silently_claimed(mission):
     assert provider.calls == 0
     assert experiments.calls == []
     assert mission.projection.state == "needs_operator"
+
+
+def test_inspecting_one_candidate_recovers_its_development_feedback(mission):
+    class Inspect(ScriptProvider):
+        def chat(self, messages, tools=None):
+            if self.calls < 2:
+                return super().chat(messages, tools)
+            self.calls += 1
+            last = json.loads(messages[-1]["content"])
+            if self.calls == 3:
+                return ChatResponse(
+                    "",
+                    tool_calls=[
+                        ToolCallRequest(
+                            "3",
+                            "inspect",
+                            {
+                                "target": "candidate",
+                                "attempt_id": last["attempt_id"],
+                            },
+                        )
+                    ],
+                )
+            assert last["development"]["metrics"]["net_return"] == -0.1
+            return ChatResponse(
+                "", tool_calls=[ToolCallRequest("4", "stop", {"reason": "inspected"})]
+            )
+
+    provider = Inspect()
+    run_avo_research(mission.mission_id, provider=provider, experiments=Experiments())
+    assert provider.calls == 4
+    assert any(e.payload.get("reason") == "avo_no_candidate" for e in mission.projection.events)

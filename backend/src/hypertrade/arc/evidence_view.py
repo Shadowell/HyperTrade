@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCReflexionEventV1
@@ -26,11 +27,29 @@ def build_evidence_view(projection: ARCMissionProjection) -> dict[str, Any]:
     promoted = _promoted_attempt(projection)
     approval = projection.live_approval
     review = None
+    research: dict[str, Any] = {}
+    if projection.goal and projection.goal.research_mode == "avo":
+        pending = projection.avo.get("pending") or {}
+        research = {
+            "research": {
+                "mode": "avo",
+                "budget": projection.goal.budget.model_dump(mode="json"),
+                "windows": projection.goal.research_windows.model_dump(mode="json")
+                if projection.goal.research_windows
+                else None,
+                "development": list(projection.avo.get("development", {}).values()),
+                "final_window_consumed": bool(projection.avo.get("final_window_consumed")),
+                "pending_action": {key: pending.get(key) for key in ("kind", "id", "name")}
+                if pending
+                else None,
+            }
+        }
     if projection.goal and projection.goal.paper_review_required:
         from hypertrade.arc.paper_review import build_paper_review
 
         review = build_paper_review(projection)
     return {
+        **research,
         "mission": _mission_summary(projection),
         "candidates": [_candidate_row(item) for item in projection.attempts],
         "promotion": _promotion(projection, promoted),
@@ -129,7 +148,14 @@ def _awaiting_approval(projection: ARCMissionProjection) -> bool:
 
 
 def _candidate_row(attempt: ARCCandidateAttemptV1) -> dict[str, Any]:
-    metrics = attempt.observed_metrics
+    metrics = dict(attempt.observed_metrics)
+    window = metrics.get("evaluation_window")
+    if isinstance(window, dict) and window.get("purpose") == "final" and attempt.bitpro_backtest_id:
+        # These are BitPro final-window metrics; development feedback never fills
+        # an OOS cell, and no projection changes the stored experiment evidence.
+        metrics["out_of_sample_sharpe"] = metrics.get("sharpe_ratio", metrics.get("sharpe"))
+        metrics["out_of_sample_trades"] = metrics.get("trade_count", metrics.get("trades"))
+        metrics["ranking_basis"] = "out_of_sample"
     folds_total = _as_int(metrics.get("walk_forward_folds"))
     return {
         "attempt_id": attempt.attempt_id,
@@ -227,13 +253,16 @@ def _promotion(
 
 def _as_float(value: Any) -> float | None:
     try:
-        return None if value is None else float(value)
+        if value is None or isinstance(value, bool):
+            return None
+        number = float(value)
+        return number if math.isfinite(number) else None
     except (TypeError, ValueError):
         return None
 
 
 def _as_int(value: Any) -> int | None:
     try:
-        return None if value is None else int(value)
-    except (TypeError, ValueError):
+        return None if value is None or isinstance(value, bool) else int(value)
+    except (TypeError, ValueError, OverflowError):
         return None
