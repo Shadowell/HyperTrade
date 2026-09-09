@@ -2,7 +2,7 @@
 ARC (Autonomous Research Core) Domain Contracts and Value Objects
 """
 
-from datetime import datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -44,6 +44,7 @@ class ARCBudgetV1(BaseModel):
     candidates_used: int = Field(default=0)
     model_calls_used: int = Field(default=0)
     backtests_used: int = Field(default=0)
+    tool_calls_used: int = Field(default=0)
 
     def is_exhausted(self) -> bool:
         return (
@@ -69,11 +70,30 @@ class PaperPreauthorizationV1(BaseModel):
     policy_hash: str = Field(default="policy_sha256_placeholder")
 
 
+class ResearchWindowsV1(BaseModel):
+    """Calendar windows frozen once, with a gap even if the upstream end is inclusive."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    as_of: date = Field(default_factory=lambda: datetime.now(UTC).date() - timedelta(days=1))
+    development_days: int = Field(default=119, ge=1, le=3650)
+    embargo_days: int = Field(default=1, ge=1, le=365)
+    validation_days: int = Field(default=60, ge=1, le=3650)
+
+    def window(self, purpose: Literal["development", "final"]) -> tuple[date, date]:
+        validation_start = self.as_of - timedelta(days=self.validation_days)
+        if purpose == "final":
+            return validation_start, self.as_of
+        development_end = validation_start - timedelta(days=self.embargo_days)
+        return development_end - timedelta(days=self.development_days), development_end
+
+
 class ARCGoalV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal["arc_goal.v1"] = "arc_goal.v1"
     objective: str
+    research_mode: Literal["arc", "avo"] = "arc"
+    research_windows: ResearchWindowsV1 | None = None
     platform: Literal["bitpro"] = "bitpro"
     market_type: str = Field(default="crypto_swap")
     symbols: list[str] = Field(default_factory=lambda: ["BTC-USDT-SWAP"])
@@ -123,9 +143,7 @@ class ARCCandidateAttemptV1(BaseModel):
     attempt_id: str
     candidate_id: str
     # Where the hypothesis came from. Defaults keep pre-provider events replayable.
-    origin: Literal["deterministic_family", "provider_hypothesis"] = (
-        "deterministic_family"
-    )
+    origin: Literal["deterministic_family", "provider_hypothesis"] = "deterministic_family"
     provider_model: str | None = None
     provider_request_hash: str | None = None
     state: Literal[

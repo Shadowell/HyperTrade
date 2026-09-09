@@ -1,5 +1,15 @@
 # Progress Log
 
+## AVO 有预算研究与持久恢复 — 2026-09-09
+
+- 新增模型工具循环，复用 ChatProvider、codegen、BitPro 和现有 ARC 投影；任务默认由 worker 领取，不依赖 API 后台线程存活。
+- 固定开发/隔离/最终窗口，统一初始资金，隔离最终反馈；加入模型/工具/回测预算、追加幂等、独占执行和回执匹配恢复。
+- 保留逐版本 Paper 人审；读取新哈希不能批准未重新验证的代码；没有候选时允许模型诚实结束。
+- 定向测试覆盖真实工具序列形状、越权、预算、防重复、中断后精确回执恢复和最终窗口隔离；不支持的验证策略在调用前拒绝。
+- 验证：完整 scripts/check.sh 通过，后端 1191 passed / 1 xfailed，前端 lint/test/build、Ruff 与 mypy 通过。
+- 真实 Provider 与实验 canary 待部署后验证，不把替身测试作为真实研究成果。
+
+
 ## 研究版本名称隔离补强 — 2026-09-09
 
 - 核对 BitPro `strategies.name UNIQUE` 与保存时的 `INSERT OR REPLACE`，新研究不仅隔离幂等键，

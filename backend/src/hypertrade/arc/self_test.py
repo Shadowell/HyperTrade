@@ -10,7 +10,7 @@ import hashlib
 import math
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCGoalV1, ARCSuccessCriteriaV1
 from hypertrade.bitpro.mcp import BitProToolAdapter
@@ -106,9 +106,7 @@ def apply_success_criteria(
     if trades is None:
         reasons.append("trade count not reported by the backtest result")
     elif trades < criteria.min_trades:
-        reasons.append(
-            f"trades {trades} below success_criteria.min_trades {criteria.min_trades}"
-        )
+        reasons.append(f"trades {trades} below success_criteria.min_trades {criteria.min_trades}")
     if net_return is None:
         reasons.append("net_return not reported by the backtest result")
     elif net_return < float(criteria.min_oos_net_return):
@@ -219,15 +217,19 @@ class ARCSelfTestService:
     def __init__(self, client: SelfTestClient | None = None) -> None:
         self._client = client
 
-    def run(self, attempt: ARCCandidateAttemptV1, goal: ARCGoalV1) -> SelfTestResult:
+    def run(
+        self,
+        attempt: ARCCandidateAttemptV1,
+        goal: ARCGoalV1,
+        *,
+        purpose: Literal["development", "final"] = "final",
+    ) -> SelfTestResult:
         client = self._client or BitProToolAdapter()
-        symbol = (
-            str(attempt.strategy_spec.get("symbol") or "")
-            or (goal.symbols[0] if goal.symbols else "BTC-USDT-SWAP")
+        symbol = str(attempt.strategy_spec.get("symbol") or "") or (
+            goal.symbols[0] if goal.symbols else "BTC-USDT-SWAP"
         )
-        timeframe = (
-            str(attempt.strategy_spec.get("timeframe") or "")
-            or (goal.timeframes[0] if goal.timeframes else "1H")
+        timeframe = str(attempt.strategy_spec.get("timeframe") or "") or (
+            goal.timeframes[0] if goal.timeframes else "1H"
         )
         scope = attempt.candidate_id
         if goal.paper_review_required:
@@ -308,11 +310,20 @@ class ARCSelfTestService:
 
         end = date.today()
         start = end - timedelta(days=90)
+        if goal.research_windows is not None:
+            start, end = goal.research_windows.window(purpose)
+            window_digest = hashlib.sha256(
+                f"{scope}|{purpose}|{start}|{end}|{goal.paper_initial_equity}".encode()
+            ).hexdigest()
+            backtest_key = f"arc-window-{window_digest}"
         try:
             backtest = client.backtest_start_job(
                 strategy_id=strategy_id,
                 start_date=start.isoformat(),
                 end_date=end.isoformat(),
+                initial_capital=float(goal.paper_initial_equity)
+                if goal.paper_review_required
+                else 10000.0,
                 symbol=symbol,
                 timeframe=timeframe,
                 wait_for_result=True,
@@ -330,6 +341,13 @@ class ARCSelfTestService:
 
         backtest_id = _backtest_id(backtest)
         metrics = _result_metrics(backtest)
+        if goal.research_windows is not None:
+            metrics["evaluation_window"] = {
+                "purpose": purpose,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "research_id": goal.research_id,
+            }
         if not backtest_id:
             return SelfTestResult(
                 passed=False,

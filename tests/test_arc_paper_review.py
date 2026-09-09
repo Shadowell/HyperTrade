@@ -93,6 +93,14 @@ def test_modified_code_invalidates_review(controller):
         decide(controller, Provisioner(), package_hash=package_hash)
 
 
+def test_reading_a_new_hash_cannot_approve_unrevalidated_code(controller):
+    controller.projection.attempts[0].strategy_code += "\n# different code"
+    runner = Provisioner()
+    with pytest.raises(PermissionError):
+        decide(controller, runner)
+    assert runner.calls == 0
+
+
 def test_missing_backtest_blocks_approval(controller):
     controller.projection.attempts[0].bitpro_backtest_id = None
     with pytest.raises(PermissionError):

@@ -10,9 +10,13 @@ read here is revision-checked and every write happens under the mission row.
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, suppress
+from threading import Lock
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProjection
 from hypertrade.db import ArcMission, Database
@@ -21,6 +25,53 @@ MISSIONS: dict[str, ARCController] = {}
 _MEMORY: dict[str, dict[str, Any]] = {}
 _MEMORY_REVISIONS: dict[str, int] = {}
 _database: Database | None = None
+_research_locks: dict[str, Any] = {}
+_research_lock_guard = Lock()
+
+
+@contextmanager
+def research_lock(mission_id: str) -> Iterator[Callable[[], None] | None]:
+    """One research owner. PostgreSQL locks survive commits and release on session death.
+
+    SQLite/in-memory are single-process development backends; their local mutex is
+    deliberately not advertised as distributed locking.
+    """
+    with _research_lock_guard:
+        lock = _research_locks.setdefault(mission_id, Lock())
+    if not lock.acquire(blocking=False):
+        yield None
+        return
+    try:
+        if _database is None or _database.engine.dialect.name != "postgresql":
+            yield lambda: None
+            return
+        key = int.from_bytes(
+            hashlib.sha256(f"avo/{mission_id}".encode()).digest()[:8], "big", signed=True
+        )
+        with _database.engine.connect() as connection:
+            acquired = connection.execute(
+                text("SELECT pg_try_advisory_lock(:key)"), {"key": key}
+            ).scalar()
+            pid = connection.execute(text("SELECT pg_backend_pid()")).scalar()
+            connection.commit()
+            if not acquired:
+                yield None
+                return
+
+            def check_owner() -> None:
+                current = connection.execute(text("SELECT pg_backend_pid()")).scalar()
+                connection.commit()
+                if current != pid:
+                    raise RuntimeError("research_lock_lost")
+
+            try:
+                yield check_owner
+            finally:
+                with suppress(Exception):
+                    connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+                    connection.commit()
+    finally:
+        lock.release()
 
 
 def configure_store(database: Database | None) -> None:

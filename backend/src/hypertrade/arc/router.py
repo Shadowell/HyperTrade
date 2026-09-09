@@ -23,6 +23,7 @@ from hypertrade.arc.contracts import (
     ARCBudgetV1,
     ARCCandidateAttemptV1,
     ARCGoalV1,
+    ARCSuccessCriteriaV1,
     PaperObservationPolicyV1,
 )
 from hypertrade.arc.controller import ARCController
@@ -61,10 +62,24 @@ router = APIRouter(prefix="/api/v1/arc", tags=["arc"])
 
 
 class CreateARCMissionRequest(BaseModel):
-    objective: str
+    objective: str = Field(min_length=1, max_length=2000)
+    research_mode: Literal["arc", "avo"] = "avo"
+    max_model_calls: int = Field(default=20, ge=1, le=50)
+    max_tool_calls: int = Field(default=30, ge=3, le=100)
+    max_backtests: int = Field(default=10, ge=2, le=50)
+    max_wall_seconds: int = Field(default=3600, ge=30, le=7200)
+    success_criteria: ARCSuccessCriteriaV1 = Field(
+        default_factory=lambda: ARCSuccessCriteriaV1(
+            min_oos_net_return=Decimal("0.00000001"),
+            min_oos_sharpe=Decimal("0"),
+            max_drawdown=Decimal("0.2"),
+            min_trades=30,
+            required_validation_policy="arc_windowed_v1",
+        )
+    )
     symbol: str = "BTC-USDT-SWAP"
     timeframe: str = "1H"
-    max_candidates: int = 5
+    max_candidates: int = Field(default=5, ge=1, le=200)
     paper_preauth_approved: bool = False
     paper_initial_equity: Decimal = Field(default=Decimal("100"), gt=0, le=10000)
     parallel_workers: int = 4
@@ -79,7 +94,11 @@ class CreateARCMissionRequest(BaseModel):
 
 
 class ContinueARCMissionRequest(BaseModel):
-    extra_candidates: int = Field(default=3, ge=1, le=50)
+    extra_candidates: int = Field(default=3, ge=0, le=50)
+    extra_model_calls: int = Field(default=0, ge=0, le=50)
+    extra_tool_calls: int = Field(default=0, ge=0, le=100)
+    extra_backtests: int = Field(default=0, ge=0, le=50)
+    extra_wall_seconds: int = Field(default=0, ge=0, le=7200)
 
 
 class PaperDecisionRequest(BaseModel):
@@ -199,9 +218,17 @@ async def create_arc_mission(
     """
     goal = ARCGoalV1(
         objective=request.objective,
+        research_mode=request.research_mode,
+        success_criteria=request.success_criteria,
         symbols=[request.symbol],
         timeframes=[request.timeframe],
-        budget=ARCBudgetV1(max_candidates=request.max_candidates),
+        budget=ARCBudgetV1(
+            max_candidates=request.max_candidates,
+            max_model_calls=request.max_model_calls,
+            max_tool_calls=request.max_tool_calls,
+            max_backtests=request.max_backtests,
+            max_wall_seconds=request.max_wall_seconds,
+        ),
         paper_review_required=True,
         paper_initial_equity=request.paper_initial_equity,
         observation=PaperObservationPolicyV1(
@@ -217,22 +244,23 @@ async def create_arc_mission(
     controller.projection.created_by = _actor_label(request_context)
     save_mission(controller)
 
-    background_tasks.add_task(
-        run_autonomous_arc_loop,
-        controller.mission_id,
-        request.parallel_workers,
-    )
+    if goal.research_mode == "arc":
+        background_tasks.add_task(
+            run_autonomous_arc_loop,
+            controller.mission_id,
+            request.parallel_workers,
+        )
 
     return {
         "mission_id": controller.mission_id,
         "status": controller.projection.state,
         "objective": request.objective,
         "timeframe": request.timeframe,
-        "parallel_workers": request.parallel_workers,
-        "message": (
-            f"Production-Grade SOTA ARC Autonomous Exploration Loop started "
-            f"with {request.parallel_workers} parallel Rollout workers"
-        ),
+        "parallel_workers": request.parallel_workers if goal.research_mode == "arc" else 1,
+        "research_mode": goal.research_mode,
+        "message": "研究已排队；最终验证后等待人工审核"
+        if goal.research_mode == "avo"
+        else "研究已启动；回测通过后等待人工审核",
     }
 
 
@@ -338,21 +366,33 @@ async def continue_arc_mission(
             "status": ctrl.projection.state,
             "message": "research already finished; continue does not reset history",
         }
-    ctrl.apply_event(
-        "budget_extended",
-        {
-            "extra_candidates": request.extra_candidates,
-            "operator_id": actor,
-            "idempotency_key": key,
-        },
-    )
-    background_tasks.add_task(run_autonomous_arc_loop, mission_id)
+    if (ctrl.projection.avo.get("pending") or {}).get("kind") == "tool" or ctrl.projection.avo.get(
+        "final_window_consumed"
+    ):
+        raise HTTPException(
+            status_code=409, detail="未确认操作需先核对；已揭示的最终窗口不能继续调参"
+        )
+    try:
+        event = ctrl.apply_event(
+            "budget_extended",
+            {
+                **request.model_dump(),
+                "operator_id": actor,
+                "idempotency_key": key,
+            },
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if ctrl.projection.goal is None or ctrl.projection.goal.research_mode == "arc":
+        background_tasks.add_task(run_autonomous_arc_loop, mission_id)
     return {
         "mission_id": mission_id,
         "status": ctrl.projection.state,
         "max_candidates": (
             ctrl.projection.goal.budget.max_candidates if ctrl.projection.goal else None
         ),
+        "budget": ctrl.projection.goal.budget.model_dump() if ctrl.projection.goal else {},
+        "idempotent": bool(event.payload.get("idempotent")),
     }
 
 
@@ -542,6 +582,11 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
     if not goal:
         return
     if ctrl.projection.state in _RESEARCH_DONE:
+        return
+    if goal.research_mode == "avo":
+        from hypertrade.arc.avo import run_avo_research
+
+        run_avo_research(mission_id)
         return
 
     if not any(event.event_type == "goal_compiled" for event in ctrl.projection.events):

@@ -1,0 +1,281 @@
+import json
+from dataclasses import replace
+
+import pytest
+from hypertrade.arc.avo import run_avo_research
+from hypertrade.arc.contracts import ARCBudgetV1, ARCGoalV1, ARCSuccessCriteriaV1
+from hypertrade.arc.controller import ARCController
+from hypertrade.arc.self_test import SelfTestResult
+from hypertrade.arc.store import reset_store, save_mission
+from hypertrade.providers.chat import ChatResponse, ToolCallRequest
+
+
+@pytest.fixture
+def mission():
+    reset_store()
+    ctrl = ARCController(
+        goal=ARCGoalV1(
+            objective="研究趋势策略",
+            paper_review_required=True,
+            research_mode="avo",
+            budget=ARCBudgetV1(max_candidates=2),
+            success_criteria=ARCSuccessCriteriaV1(required_validation_policy="arc_windowed_v1"),
+        )
+    )
+    save_mission(ctrl)
+    yield ctrl
+    reset_store()
+
+
+class ScriptProvider:
+    name = "fixture"
+    model = "unit-test"
+
+    def __init__(self):
+        self.calls = 0
+        self.seen = []
+
+    def chat(self, messages, tools=None):
+        self.seen.append(json.loads(json.dumps(messages)))
+        self.calls += 1
+        last = json.loads(messages[-1]["content"]) if messages[-1]["role"] == "tool" else {}
+        if self.calls in (1, 3):
+            if self.calls == 3:
+                assert last["metrics"]["net_return"] < 0
+            name, args = (
+                "propose",
+                {
+                    "hypothesis": "trend",
+                    "family_key": "ma_crossover" if self.calls == 1 else "donchian_breakout",
+                    "direction": "long_only",
+                    "parameter_bounds": {},
+                },
+            )
+        elif self.calls in (2, 4):
+            name, args = "develop", {"attempt_id": last["attempt_id"]}
+        else:
+            name, args = "finish", {"attempt_id": last["attempt_id"]}
+        return ChatResponse(content="", tool_calls=[ToolCallRequest(str(self.calls), name, args)])
+
+
+class Experiments:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, attempt, goal, *, purpose="final"):
+        self.calls.append(purpose)
+        result = SelfTestResult(
+            True,
+            "val-final",
+            "445",
+            "bt-final" if purpose == "final" else f"bt-dev-{len(self.calls)}",
+            metrics={"net_return": 0.2},
+        )
+        if len(self.calls) == 1:
+            return replace(result, passed=False, metrics={"net_return": -0.1}, reasons=["loss"])
+        return result
+
+
+def test_agent_uses_development_feedback_and_final_result_is_not_fed_back(mission):
+    provider, experiments = ScriptProvider(), Experiments()
+    run_avo_research(mission.mission_id, provider=provider, experiments=experiments)
+    assert experiments.calls == ["development", "development", "final"]
+    assert provider.calls == 5
+    assert mission.projection.state == "paper_review_ready"
+    assert len(mission.projection.attempts) == 2
+    assert all(a.paper_instance_id is None for a in mission.projection.attempts)
+    assert "bt-final" not in json.dumps(provider.seen)
+    assert mission.projection.goal.budget.model_calls_used == 5
+    assert mission.projection.goal.budget.backtests_used == 3
+    assert [
+        json.loads(messages[1]["content"])["budget"]["model_calls_used"]
+        for messages in provider.seen
+    ] == list(range(5))
+
+
+def test_pending_effect_on_restart_stops_without_reissuing(mission):
+    mission.apply_event("avo_tool_requested", {"id": "lost", "name": "develop", "arguments": {}})
+    provider = ScriptProvider()
+    run_avo_research(mission.mission_id, provider=provider, experiments=Experiments())
+    assert provider.calls == 0
+    assert mission.projection.state == "needs_operator"
+    assert mission.projection.events[-1].payload["reason"] == "avo_effect_unknown"
+
+
+def test_model_budget_is_enforced_before_another_call(mission):
+    mission.projection.goal.budget.max_model_calls = 1
+    provider = ScriptProvider()
+    experiments = Experiments()
+    run_avo_research(mission.mission_id, provider=provider, experiments=experiments)
+    assert provider.calls == 1
+    assert experiments.calls == []
+    assert mission.projection.state == "needs_operator"
+
+
+def test_consumed_final_window_cannot_be_reused_for_more_research(mission):
+    mission.apply_event("avo_final_requested", {"attempt_id": "x"})
+    provider = ScriptProvider()
+    run_avo_research(mission.mission_id, provider=provider, experiments=Experiments())
+    assert provider.calls == 0
+    assert mission.projection.events[-1].payload["reason"] == "avo_fresh_validation_window_required"
+
+
+def test_concurrent_worker_cannot_issue_another_model_call(mission):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    entered, release = Event(), Event()
+    mission.projection.goal.budget.max_model_calls = 1
+
+    class Blocking(ScriptProvider):
+        def chat(self, messages, tools=None):
+            entered.set()
+            assert release.wait(5)
+            return super().chat(messages, tools)
+
+    provider = Blocking()
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(
+            run_avo_research, mission.mission_id, provider=provider, experiments=Experiments()
+        )
+        assert entered.wait(5)
+        second = run_avo_research(mission.mission_id, provider=provider, experiments=Experiments())
+        release.set()
+        first.result(timeout=5)
+    assert second["status"] == "busy"
+    assert provider.calls == 1
+
+
+def test_pending_dispatch_survives_database_reload(mission, tmp_path):
+    from hypertrade.arc.store import configure_store, get_controller, reset_runtime
+    from hypertrade.db import Database
+
+    db = Database(f"sqlite:///{tmp_path}/avo.db")
+    db.create_all()
+    configure_store(db)
+    save_mission(mission)
+    mission.apply_event("avo_tool_requested", {"id": "pending", "name": "develop", "arguments": {}})
+    reset_runtime()
+    provider = ScriptProvider()
+    run_avo_research(mission.mission_id, provider=provider, experiments=Experiments())
+    assert provider.calls == 0
+    restored = get_controller(mission.mission_id)
+    assert restored.projection.avo["pending"]["id"] == "pending"
+    assert restored.projection.state == "needs_operator"
+
+
+def test_model_cannot_add_budget_or_execute_paper(mission):
+    class Malicious:
+        name = "fixture"
+        model = "malicious-test"
+        calls = 0
+
+        def chat(self, messages, tools=None):
+            self.calls += 1
+            if self.calls == 1:
+                return ChatResponse(
+                    "", tool_calls=[ToolCallRequest("1", "paper_start", {"strategy_id": 1})]
+                )
+            if self.calls == 2:
+                return ChatResponse(
+                    "",
+                    tool_calls=[
+                        ToolCallRequest(
+                            "2",
+                            "propose",
+                            {
+                                "hypothesis": "bad",
+                                "family_key": "ma_crossover",
+                                "direction": "long_only",
+                                "parameter_bounds": {},
+                                "max_candidates": 999,
+                            },
+                        )
+                    ],
+                )
+            return ChatResponse("I am finished")
+
+    experiments = Experiments()
+    run_avo_research(mission.mission_id, provider=Malicious(), experiments=experiments)
+    assert experiments.calls == []
+    assert mission.projection.attempts == []
+    assert mission.projection.goal.budget.max_candidates == 2
+    rejected = [e for e in mission.projection.events if e.event_type == "avo_tool_finished"]
+    assert all(e.payload["result"]["status"] == "rejected" for e in rejected)
+
+
+@pytest.mark.parametrize("crash_event", ["avo_tool_finished", "paper_review_requested"])
+def test_acknowledged_experiment_is_recovered_without_rerun(mission, monkeypatch, crash_event):
+    class Crash(BaseException):
+        pass
+
+    provider, experiments = ScriptProvider(), Experiments()
+    original = mission.apply_event
+    fired = False
+
+    def interrupt(kind, payload):
+        nonlocal fired
+        if (
+            not fired
+            and kind == crash_event
+            and (kind == "paper_review_requested" or payload.get("id") == "2")
+        ):
+            fired = True
+            raise Crash()
+        return original(kind, payload)
+
+    monkeypatch.setattr(mission, "apply_event", interrupt)
+    with pytest.raises(Crash):
+        run_avo_research(mission.mission_id, provider=provider, experiments=experiments)
+    monkeypatch.setattr(mission, "apply_event", original)
+    run_avo_research(mission.mission_id, provider=provider, experiments=experiments)
+    assert experiments.calls == ["development", "development", "final"]
+    assert provider.calls == 5
+    assert mission.projection.state == "paper_review_ready"
+    assert mission.projection.avo["pending"] is None
+
+
+def test_budget_extension_is_idempotent_and_cannot_change_on_retry(mission):
+    payload = {
+        "extra_candidates": 1,
+        "extra_model_calls": 2,
+        "operator_id": "op",
+        "idempotency_key": "extension",
+    }
+    mission.apply_event("budget_extended", payload)
+    mission.apply_event("budget_extended", dict(payload))
+    assert mission.projection.goal.budget.max_candidates == 3
+    assert mission.projection.goal.budget.max_model_calls == 22
+    with pytest.raises(PermissionError):
+        mission.apply_event("budget_extended", {**payload, "extra_candidates": 2})
+
+
+def test_agent_can_end_without_fabricating_a_winner(mission):
+    class Stop:
+        name = "fixture"
+        model = "stop-test"
+        calls = 0
+
+        def chat(self, messages, tools=None):
+            self.calls += 1
+            return ChatResponse(
+                "",
+                tool_calls=[ToolCallRequest(str(self.calls), "stop", {"reason": "不足以支持假设"})],
+            )
+
+    mission.projection.goal.budget.max_model_calls = 2
+    provider, experiments = Stop(), Experiments()
+    run_avo_research(mission.mission_id, provider=provider, experiments=experiments)
+    assert provider.calls == 1
+    assert experiments.calls == []
+    assert mission.projection.state == "needs_operator"
+    assert any(e.payload.get("reason") == "avo_no_candidate" for e in mission.projection.events)
+
+
+def test_unimplemented_validation_policy_is_not_silently_claimed(mission):
+    mission.projection.goal.success_criteria.required_validation_policy = "validation_policy_v2"
+    provider, experiments = ScriptProvider(), Experiments()
+    run_avo_research(mission.mission_id, provider=provider, experiments=experiments)
+    assert provider.calls == 0
+    assert experiments.calls == []
+    assert mission.projection.state == "needs_operator"

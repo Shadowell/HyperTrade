@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import uuid
 from typing import TYPE_CHECKING, Any, TextIO
 from urllib.parse import quote
 
@@ -18,6 +19,9 @@ def add_research_parser(subparsers: Any) -> None:
     commands = research.add_subparsers(dest="research_action", required=True)
     start = commands.add_parser("start", help="发起研究；回测后等待人工审核")
     start.add_argument("objective", nargs="+")
+    start.add_argument("--mode", choices=("avo", "arc"), default="avo")
+    start.add_argument("--max-model-calls", type=int, default=20)
+    start.add_argument("--max-backtests", type=int, default=10)
     start.add_argument("--symbol", default="BTC-USDT-SWAP")
     start.add_argument("--timeframe", default="1H")
     start.add_argument("--max-candidates", type=int, default=5)
@@ -31,6 +35,11 @@ def add_research_parser(subparsers: Any) -> None:
             command.add_argument("attempt_id")
         if name == "continue":
             command.add_argument("--extra-candidates", type=int, default=3)
+            command.add_argument("--extra-model-calls", type=int, default=0)
+            command.add_argument("--extra-tool-calls", type=int, default=0)
+            command.add_argument("--extra-backtests", type=int, default=0)
+            command.add_argument("--extra-wall-seconds", type=int, default=0)
+            command.add_argument("--idempotency-key")
         if name == "decide":
             command.add_argument("--decision", choices=("approve", "reject"), required=True)
             command.add_argument("--reason", required=True)
@@ -49,6 +58,9 @@ def research_request(args: argparse.Namespace) -> tuple[str, str, dict[str, Any]
             root,
             {
                 "objective": " ".join(args.objective),
+                "research_mode": args.mode,
+                "max_model_calls": args.max_model_calls,
+                "max_backtests": args.max_backtests,
                 "symbol": args.symbol,
                 "timeframe": args.timeframe,
                 "max_candidates": args.max_candidates,
@@ -73,7 +85,18 @@ def research_request(args: argparse.Namespace) -> tuple[str, str, dict[str, Any]
             },
         )
     if action == "continue":
-        return "POST", f"{path}/continue", {"extra_candidates": args.extra_candidates}, {}
+        return (
+            "POST",
+            f"{path}/continue",
+            {
+                "extra_candidates": args.extra_candidates,
+                "extra_model_calls": args.extra_model_calls,
+                "extra_tool_calls": args.extra_tool_calls,
+                "extra_backtests": args.extra_backtests,
+                "extra_wall_seconds": args.extra_wall_seconds,
+            },
+            {"Idempotency-Key": args.idempotency_key or f"cli-continue-{uuid.uuid4().hex}"},
+        )
     suffix = {"status": "progress", "evidence": "evidence", "review": "paper-review"}
     if action == "candidate":
         return "GET", f"{path}/candidates/{quote(args.attempt_id, safe='')}", {}, {}

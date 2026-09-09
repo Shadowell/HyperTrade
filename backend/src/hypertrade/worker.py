@@ -489,6 +489,8 @@ async def main() -> None:
     if settings.research_triggers_enabled and not full_mission_cutover:
         tasks.append(research_trigger_loop(db))
     tasks.append(arc_observation_loop(db))
+    if settings.mission_runtime_worker_enabled:
+        tasks.append(avo_research_loop(db))
     await asyncio.gather(*tasks)
 
 
@@ -503,6 +505,19 @@ async def arc_observation_loop(db: Database) -> None:
         except Exception:
             logger.exception("arc_observation failed")
         await asyncio.sleep(60)
+
+
+async def avo_research_loop(db: Database) -> None:
+    """Claim persisted AVO research. Historical ARC/Paper instances are never restarted here."""
+    from hypertrade.arc.avo import run_pending_avo_once
+
+    configure_store(db)
+    while True:
+        try:
+            await asyncio.to_thread(run_pending_avo_once)
+        except Exception:
+            logger.exception("avo_research worker failed")
+        await asyncio.sleep(5)
 
 
 if __name__ == "__main__":

@@ -28,6 +28,15 @@ STAGES: tuple[tuple[str, str], ...] = (
 _BLOCKED_STATES = {"needs_operator", "failed"}
 
 _EVENT_LABELS = {
+    "avo_initialized": "AVO 研究已准备",
+    "avo_model_requested": "请求模型规划",
+    "avo_model_replied": "模型已选择研究操作",
+    "avo_tool_requested": "执行研究操作",
+    "avo_tool_finished": "研究操作完成",
+    "avo_development_requested": "开始开发回测",
+    "avo_development_result": "开发回测结果已入账",
+    "avo_final_requested": "冻结候选并开始最终验证",
+    "avo_unknown_result": "研究操作结果待核对",
     "goal_compiled": "目标已编译",
     "candidate_proposed": "提出候选",
     "candidate_mutated": "变异候选",
@@ -52,6 +61,10 @@ _EVENT_LABELS = {
 
 # Scalars only. Anything not named here never reaches the console.
 _SAFE_EVENT_FIELDS = (
+    "name",
+    "provider",
+    "model",
+    "request_hash",
     "attempt_id",
     "passed",
     "reason",
@@ -400,6 +413,15 @@ def _ratio(value: float, limit: float) -> float:
 
 def _paper_review_pipeline(projection: ARCMissionProjection, clock: datetime) -> dict[str, Any]:
     labels = STAGES[:4] + (("approval", "人工审核"), ("paper", "模拟盘运行"))
+    is_avo = projection.goal is not None and projection.goal.research_mode == "avo"
+    if is_avo:
+        labels = (
+            ("goal", "任务准备"),
+            ("explore", "AVO 自主研究"),
+            ("red_team", "开发实验"),
+            ("validate", "最终验证"),
+        ) + labels[4:]
+
     review = projection.paper_review
     done = [
         any(e.event_type == "goal_compiled" for e in projection.events),
@@ -411,12 +433,28 @@ def _paper_review_pipeline(projection: ARCMissionProjection, clock: datetime) ->
         (review.get("decision") or {}).get("decision") == "approve",
         bool(review.get("paper_instance_id")) and review.get("status") == "paper_observing",
     ]
+    if is_avo:
+        done[2] = bool(projection.avo.get("development"))
     # A committed later-stage receipt also proves entry into earlier stages.
     completed = [value or any(done[i + 1 :]) for i, value in enumerate(done)]
     frontier = _frontier(completed)
+    if is_avo and not review.get("package_hash") and projection.avo.get("phase"):
+        frontier = {"research": 1, "development": 2, "final": 3}.get(
+            projection.avo["phase"], frontier
+        )
     blocked = projection.state in _BLOCKED_STATES
     metrics = _stage_metrics(projection, clock)
     metrics["approval"] = {"metrics": {"status": review.get("status"), "kind": "paper"}}
+    if is_avo and projection.goal is not None:
+        budget = projection.goal.budget
+        metrics["explore"]["detail"] = (
+            f"{len(projection.attempts)} 个候选 · {budget.model_calls_used} 次模型调用 · "
+            f"{budget.tool_calls_used} 次工具调用"
+        )
+        metrics["red_team"]["detail"] = (
+            f"{len(projection.avo.get('development', {}))} 个候选完成开发实验"
+        )
+
     stages = [
         {
             "key": key,

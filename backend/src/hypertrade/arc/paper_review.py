@@ -13,7 +13,11 @@ if TYPE_CHECKING:
     from hypertrade.arc.controller import ARCController, ARCMissionProjection
 
 
-def build_paper_review(projection: ARCMissionProjection) -> dict[str, Any]:
+def build_paper_review(
+    projection: ARCMissionProjection,
+    *,
+    newly_validated: bool = False,
+) -> dict[str, Any]:
     stored = projection.paper_review
     selected = next(
         (a for a in projection.attempts if a.attempt_id == stored.get("attempt_id")),
@@ -53,6 +57,8 @@ def build_paper_review(projection: ARCMissionProjection) -> dict[str, Any]:
             "loop_interval_sec": 60,
         },
     }
+    if goal is not None and goal.research_windows is not None:
+        binding["research_windows"] = goal.research_windows.model_dump(mode="json")
     try:
         digest = hashlib.sha256(
             json.dumps(
@@ -65,6 +71,8 @@ def build_paper_review(projection: ARCMissionProjection) -> dict[str, Any]:
     except (ValueError, TypeError):
         digest = ""
         unknowns.append("invalid_review_values")
+    if stored.get("package_hash") and stored["package_hash"] != digest and not newly_validated:
+        unknowns.append("review_evidence_changed")
     status = "incomplete" if unknowns else "ready"
     if digest and stored.get("package_hash") == digest and not unknowns:
         status = str(stored.get("status") or status)
@@ -79,7 +87,10 @@ def build_paper_review(projection: ARCMissionProjection) -> dict[str, Any]:
 
 
 def request_paper_review(controller: ARCController) -> dict[str, Any]:
-    package = build_paper_review(controller.projection)
+    package = build_paper_review(
+        controller.projection,
+        newly_validated=controller.projection.state == "paper_authorizing",
+    )
     if controller.projection.paper_review.get("package_hash") == package["package_hash"]:
         return package
     controller.apply_event("paper_review_requested", {"package": package})

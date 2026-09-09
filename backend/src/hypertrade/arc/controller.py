@@ -13,6 +13,7 @@ from hypertrade.arc.contracts import (
     ARCGoalV1,
     ARCReflexionEventV1,
     LiveApprovalPackageV1,
+    ResearchWindowsV1,
 )
 
 ARCMissionState = Literal[
@@ -53,6 +54,7 @@ class ARCMissionProjection(BaseModel):
     events: list[ARCEventV1] = Field(default_factory=list)
     live_approval: LiveApprovalPackageV1 | None = None
     paper_review: dict[str, Any] = Field(default_factory=dict)
+    avo: dict[str, Any] = Field(default_factory=dict)
     paper_observation: dict[str, Any] = Field(default_factory=dict)
     paper_started_at: datetime | None = None
     self_test_records: list[dict[str, Any]] = Field(default_factory=list)
@@ -70,6 +72,11 @@ class ARCController:
         self.mission_id = mission_id or f"arc_{uuid.uuid4().hex[:12]}"
         if goal is not None and goal.paper_review_required and goal.research_id is None:
             goal.research_id = self.mission_id
+        if goal is not None and goal.research_mode == "avo":
+            if not goal.paper_review_required:
+                raise ValueError("AVO requires version-bound Paper review")
+            if goal.research_windows is None:
+                goal.research_windows = ResearchWindowsV1()
         self.projection = ARCMissionProjection(mission_id=self.mission_id, goal=goal)
         # Storage revision this projection was read at. The store compares it against
         # the committed row to tell a stale cache from the current mission.
@@ -108,6 +115,12 @@ class ARCController:
         p.updated_at = evt.timestamp
         et = evt.event_type
         payload = evt.payload
+
+        if et.startswith("avo_"):
+            from hypertrade.arc.avo import reduce_avo_event
+
+            reduce_avo_event(p, evt)
+            return
 
         if et == "goal_compiled":
             p.goal = ARCGoalV1(**payload["goal"])
@@ -199,6 +212,7 @@ class ARCController:
                 p.state != "paper_review_ready"
                 or review_package["unknowns"]
                 or review_package["package_hash"] != payload["package_hash"]
+                or p.paper_review.get("package_hash") != payload["package_hash"]
                 or p.paper_review.get("decision")
             ):
                 raise PermissionError("review changed or already claimed")
@@ -277,9 +291,36 @@ class ARCController:
             p.state = "needs_operator"
 
         elif et == "budget_extended":
-            extra = int(payload.get("extra_candidates") or 0)
-            if p.goal is not None and extra > 0:
-                p.goal.budget.max_candidates += extra
+            fields = {
+                "extra_candidates": "max_candidates",
+                "extra_model_calls": "max_model_calls",
+                "extra_tool_calls": "max_tool_calls",
+                "extra_backtests": "max_backtests",
+                "extra_wall_seconds": "max_wall_seconds",
+            }
+            key = payload.get("idempotency_key")
+            previous = next(
+                (
+                    event.payload
+                    for event in p.events
+                    if event.event_type == et
+                    and key
+                    and event.payload.get("idempotency_key") == key
+                ),
+                None,
+            )
+            if previous is not None:
+                if any(
+                    previous.get(name, 0) != payload.get(name, 0) for name in fields
+                ) or previous.get("operator_id") != payload.get("operator_id"):
+                    raise PermissionError("budget extension key is bound to another request")
+                payload["idempotent"] = True
+                return
+            if p.goal is not None:
+                for field, target in fields.items():
+                    extra = int(payload.get(field) or 0)
+                    if extra > 0:
+                        setattr(p.goal.budget, target, getattr(p.goal.budget, target) + extra)
             if p.state == "needs_operator":
                 p.state = "exploring_candidates"
 

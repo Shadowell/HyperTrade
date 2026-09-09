@@ -6,7 +6,7 @@
 默认连接配置中的 API（未配置为 localhost:3334）；`--remote URL` 选择远端。它不启动第二套本地交易执行器。
 
 ```bash
-ht --remote http://localhost:3334 research start "研究 BTC 趋势策略" --symbol BTC-USDT-SWAP
+ht --remote http://localhost:3334 research start "研究 BTC 趋势策略" --symbol BTC-USDT-SWAP --mode avo --max-model-calls 8 --max-backtests 3
 ht research list
 ht research status <mission_id>
 ht research evidence <mission_id>
@@ -16,6 +16,8 @@ ht research decide <mission_id> --decision approve --reason "已审核" --packag
 ```
 
 批准及拒绝都要求原因和准确审核包哈希，重试键默认由哈希与决定稳定派生，也可显式 `--idempotency-key`。
+预算不足可用 `research continue <mission_id> --extra-model-calls 3 --extra-backtests 2 --idempotency-key <本次追加请求键>` 明确追加。最终窗口已使用或存在未确认工具操作时拒绝继续；重复相同键不重复追加预算。
+
 CLI 仍依赖 BitPro 真实回测/Paper 执行底座；“独立访问”不等于无外部数据与执行依赖。
 
 ## English
