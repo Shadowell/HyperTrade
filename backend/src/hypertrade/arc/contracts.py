@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+ChatProviderName = Literal["deepseek", "openai", "codex", "qwen", "openrouter", "vide_coding"]
+
 
 class ARCSuccessCriteriaV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -93,6 +95,7 @@ class ARCGoalV1(BaseModel):
     schema_version: Literal["arc_goal.v1"] = "arc_goal.v1"
     objective: str
     research_mode: Literal["arc", "avo"] = "arc"
+    provider_name: str | None = None
     research_windows: ResearchWindowsV1 | None = None
     platform: Literal["bitpro"] = "bitpro"
     market_type: str = Field(default="crypto_swap")

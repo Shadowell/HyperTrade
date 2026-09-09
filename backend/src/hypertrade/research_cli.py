@@ -5,10 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import uuid
-from typing import TYPE_CHECKING, Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO, get_args
 from urllib.parse import quote
 
 import httpx
+
+from hypertrade.arc.contracts import ChatProviderName
 
 if TYPE_CHECKING:
     from hypertrade.cli import CliConfig
@@ -20,6 +22,7 @@ def add_research_parser(subparsers: Any) -> None:
     start = commands.add_parser("start", help="发起研究；回测后等待人工审核")
     start.add_argument("objective", nargs="+")
     start.add_argument("--mode", choices=("avo", "arc"), default="avo")
+    start.add_argument("--provider", choices=get_args(ChatProviderName))
     start.add_argument("--max-model-calls", type=int, default=20)
     start.add_argument("--max-backtests", type=int, default=10)
     start.add_argument("--symbol", default="BTC-USDT-SWAP")
@@ -34,6 +37,7 @@ def add_research_parser(subparsers: Any) -> None:
         if name == "candidate":
             command.add_argument("attempt_id")
         if name == "continue":
+            command.add_argument("--provider", choices=get_args(ChatProviderName))
             command.add_argument("--extra-candidates", type=int, default=3)
             command.add_argument("--extra-model-calls", type=int, default=0)
             command.add_argument("--extra-tool-calls", type=int, default=0)
@@ -59,6 +63,7 @@ def research_request(args: argparse.Namespace) -> tuple[str, str, dict[str, Any]
             {
                 "objective": " ".join(args.objective),
                 "research_mode": args.mode,
+                "provider_name": args.provider,
                 "max_model_calls": args.max_model_calls,
                 "max_backtests": args.max_backtests,
                 "symbol": args.symbol,
@@ -90,6 +95,7 @@ def research_request(args: argparse.Namespace) -> tuple[str, str, dict[str, Any]
             f"{path}/continue",
             {
                 "extra_candidates": args.extra_candidates,
+                "provider_name": args.provider,
                 "extra_model_calls": args.extra_model_calls,
                 "extra_tool_calls": args.extra_tool_calls,
                 "extra_backtests": args.extra_backtests,

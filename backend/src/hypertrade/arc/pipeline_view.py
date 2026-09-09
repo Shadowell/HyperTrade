@@ -61,6 +61,7 @@ _EVENT_LABELS = {
 
 # Scalars only. Anything not named here never reaches the console.
 _SAFE_EVENT_FIELDS = (
+    "provider_name",
     "name",
     "provider",
     "model",

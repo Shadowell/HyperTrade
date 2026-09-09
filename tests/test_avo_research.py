@@ -317,3 +317,76 @@ def test_inspecting_one_candidate_recovers_its_development_feedback(mission):
     run_avo_research(mission.mission_id, provider=provider, experiments=Experiments())
     assert provider.calls == 4
     assert any(e.payload.get("reason") == "avo_no_candidate" for e in mission.projection.events)
+
+
+def test_provider_can_only_change_before_candidates_exist(mission):
+    mission.apply_event("operator_needed", {"reason": "provider_unavailable"})
+    mission.apply_event(
+        "budget_extended",
+        {
+            "provider_name": "codex",
+            "extra_candidates": 0,
+            "operator_id": "op",
+            "idempotency_key": "select-provider",
+        },
+    )
+    assert mission.projection.goal.provider_name == "codex"
+    mission.projection.goal.budget.max_model_calls = 1
+    run_avo_research(mission.mission_id, provider=ScriptProvider(), experiments=Experiments())
+    assert mission.projection.attempts
+    with pytest.raises(PermissionError):
+        mission.apply_event(
+            "budget_extended",
+            {
+                "provider_name": "openai",
+                "extra_candidates": 0,
+                "operator_id": "op",
+                "idempotency_key": "change-provider",
+            },
+        )
+
+
+def test_switching_provider_discards_unexecuted_old_actions(mission):
+    mission.projection.avo["awaiting"] = [{"id": "old-plan", "name": "propose", "arguments": {}}]
+    mission.projection.avo["messages"] = []
+    mission.apply_event("operator_needed", {"reason": "provider_unavailable"})
+    mission.apply_event(
+        "budget_extended",
+        {
+            "provider_name": "codex",
+            "extra_candidates": 0,
+            "operator_id": "op",
+            "idempotency_key": "switch-old-plan",
+        },
+    )
+    assert mission.projection.avo["awaiting"] == []
+    assert "not_executed" in mission.projection.avo["messages"][-1]["content"]
+
+
+def test_replayed_proposal_keeps_its_original_model_provenance(mission, monkeypatch):
+    class Crash(BaseException):
+        pass
+
+    original = mission.apply_event
+
+    def interrupt(kind, payload):
+        if kind == "avo_tool_requested":
+            raise Crash()
+        return original(kind, payload)
+
+    monkeypatch.setattr(mission, "apply_event", interrupt)
+    with pytest.raises(Crash):
+        run_avo_research(mission.mission_id, provider=ScriptProvider(), experiments=Experiments())
+    monkeypatch.setattr(mission, "apply_event", original)
+
+    class Updated:
+        name = "fixture"
+        model = "new-version"
+
+        def chat(self, messages, tools=None):
+            return ChatResponse(
+                "", tool_calls=[ToolCallRequest("stop-new", "stop", {"reason": "done"})]
+            )
+
+    run_avo_research(mission.mission_id, provider=Updated(), experiments=Experiments())
+    assert mission.projection.attempts[0].provider_model == "fixture:unit-test"

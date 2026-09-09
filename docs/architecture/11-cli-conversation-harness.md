@@ -16,6 +16,8 @@ ht research decide <mission_id> --decision approve --reason "已审核" --packag
 ```
 
 批准及拒绝都要求原因和准确审核包哈希，重试键默认由哈希与决定稳定派生，也可显式 `--idempotency-key`。
+任务可用 `research start ... --provider codex` 显式选择已配置的 Provider；尚无候选且已停止的任务可通过 `research continue <mission_id> --provider codex --extra-candidates 0 --idempotency-key <切换请求键>` 改选，不修改全局默认。
+
 预算不足可用 `research continue <mission_id> --extra-model-calls 3 --extra-backtests 2 --idempotency-key <本次追加请求键>` 明确追加。最终窗口已使用或存在未确认工具操作时拒绝继续；重复相同键不重复追加预算。
 
 CLI 仍依赖 BitPro 真实回测/Paper 执行底座；“独立访问”不等于无外部数据与执行依赖。

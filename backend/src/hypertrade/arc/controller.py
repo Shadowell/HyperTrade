@@ -2,6 +2,7 @@
 ARC Controller Engine and State Machine
 """
 
+import json
 import uuid
 from datetime import datetime
 from typing import Any, Literal
@@ -317,6 +318,33 @@ class ARCController:
                 payload["idempotent"] = True
                 return
             if p.goal is not None:
+                provider = payload.get("provider_name")
+                if provider and provider != p.goal.provider_name:
+                    if (
+                        p.attempts
+                        or p.state != "needs_operator"
+                        or (p.avo.get("pending") or {}).get("kind") == "tool"
+                    ):
+                        raise PermissionError(
+                            "provider can change only on a stopped task without candidates"
+                        )
+                    abandoned = list(p.avo.get("awaiting", []))
+                    for call in abandoned:
+                        p.avo.setdefault("messages", []).append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": call["id"],
+                                "content": json.dumps(
+                                    {
+                                        "status": "not_executed",
+                                        "reason": "operator_changed_provider",
+                                    }
+                                ),
+                            }
+                        )
+                    p.avo["awaiting"] = []
+                    payload["discarded_tool_ids"] = [call["id"] for call in abandoned]
+                    p.goal.provider_name = str(provider)
                 for field, target in fields.items():
                     extra = int(payload.get(field) or 0)
                     if extra > 0:

@@ -224,7 +224,6 @@ def _perform(
     controller: ARCController,
     name: str,
     arguments: dict[str, Any],
-    provider: ChatProvider,
     experiments: ARCSelfTestService,
 ) -> dict[str, Any]:
     goal = controller.projection.goal
@@ -286,17 +285,17 @@ def _perform(
         )
         if spec is None:
             raise ValueError("strategy spec rejected")
-        request_hash = next(
-            event.payload["request_hash"]
+        model_request = next(
+            event.payload
             for event in reversed(controller.projection.events)
             if event.event_type == "avo_model_requested"
         )
         proposal = ProviderProposal(
             spec,
             arguments["hypothesis"],
-            provider.name,
-            provider.model,
-            request_hash,
+            str(model_request["provider"]),
+            str(model_request["model"]),
+            str(model_request["request_hash"]),
         )
         candidate = BlueTeamQuant().propose_from_provider(proposal)
         code_hash = hashlib.sha256(candidate.strategy_code.encode()).hexdigest()
@@ -404,7 +403,9 @@ def _run(
         controller.apply_event("avo_model_abandoned", {"reason": "unacknowledged_model_call"})
     if provider is None:
         try:
-            provider = ProviderRuntime(get_settings()).get_chat_provider()
+            provider = ProviderRuntime(get_settings()).get_chat_provider(
+                selected=goal.provider_name
+            )
         except Exception as exc:
             raise ResearchStopped("avo_provider_unavailable") from exc
     if provider is None:
@@ -507,7 +508,7 @@ def _run(
         try:
             if call["name"] not in _PARAMETERS or len(_json(call["arguments"])) > 16_000:
                 raise ValueError("tool or argument size denied")
-            result = _perform(controller, call["name"], call["arguments"], provider, experiments)
+            result = _perform(controller, call["name"], call["arguments"], experiments)
             if len(_json(result)) > 24_000:
                 result = {"status": "result_too_large", "hint": "inspect a single candidate"}
         except (ValueError, ValidationError, StrategyCodegenError) as exc:

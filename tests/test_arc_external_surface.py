@@ -499,6 +499,28 @@ def _mark_legacy_mission(mission_id: str) -> None:
     ctrl.apply_event("goal_compiled", {"goal": ctrl.projection.goal.model_dump()})
 
 
+def test_provider_selection_is_task_local_and_idempotent(client):
+    default = client.app.state.active_chat_provider
+    headers = {"X-HyperTrade-Service-Token": BOTH_TOKEN}
+    created = client.post(
+        "/api/v1/arc/missions",
+        headers=headers,
+        json={"objective": "provider selection", "provider_name": "codex"},
+    )
+    mission_id = created.json()["mission_id"]
+    ctrl = get_controller(mission_id)
+    assert ctrl.projection.goal.provider_name == "codex"
+    ctrl.apply_event("operator_needed", {"reason": "provider_unavailable"})
+    headers["Idempotency-Key"] = "provider-selection"
+    payload = {"extra_candidates": 0, "provider_name": "openai"}
+    url = f"/api/v1/arc/missions/{mission_id}/continue"
+    assert client.post(url, headers=headers, json=payload).status_code == 200
+    repeated = client.post(url, headers=headers, json=payload)
+    assert repeated.status_code == 200 and repeated.json()["idempotent"]
+    assert ctrl.projection.goal.provider_name == "openai"
+    assert client.app.state.active_chat_provider == default
+
+
 def test_signed_paper_review_rejects_stale_assertion_and_records_human(client):
     from hypertrade.arc.paper_review import request_paper_review
 
