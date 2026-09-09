@@ -1,5 +1,14 @@
 # Progress Log
 
+## 统一研究闭环：孤立实验退役 — 2026-09-09
+
+- 按用户明确授权删除 ARC portfolio、canary_vault、microstructure、vector_screening 及三个专属测试文件。
+- 全库补查发现 scratch/northstar_gap_probe.py 仍引用实验 Canary，属于过期诊断脚本，一并退役。
+- 验证：`./scripts/check.sh` 全部通过，后端 1156 passed / 1 xfailed，前端 lint/test/build、Ruff 和 mypy 通过。
+- 恢复原 PostgreSQL 容器后，数据库完成原地恢复，BitPro 自主研究页面重新读取到 23 个历史任务；未重置数据。
+- 保留主网禁用合同断言，未删除现有风控、MCTS、审批和任何数据；活动合同转至
+  [统一研究闭环实施合同](contracts/user-directed-research-loop-consolidation.md)。
+
 ## AVO 自主研究内循环纳入架构设计 — 2026-09-09
 
 - 根据产品要求与 AVO 原论文，扩充架构 61：自主变异内循环嵌入 ARC 领域主线，复用版本/证据、

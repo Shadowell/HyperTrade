@@ -1,5 +1,7 @@
 # 43. ARC Higher-Order Quant Factor & Operator Library Architecture
 
+> 已退役：其中 arc/microstructure.py 与 arc/vector_screening.py 实验实现已于 2026-09-09 删除；本文保留为历史设计，不代表当前运行能力。
+
 ## 1. Executive Summary
 
 This specification defines **Phase 2 of the ARC Production Evolution Upgrade**: the **Higher-Order Quant Factor & Operator Library Expansion**.

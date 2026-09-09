@@ -1,5 +1,7 @@
 # 46. ARC Portfolio MCTS Co-Evolution Engine & Low-Correlation Allocator
 
+> 已退役：arc/portfolio.py 实验实现已于 2026-09-09 删除；本文仅作历史设计，组合共进化不属于当前研究闭环。
+
 ## 1. Executive Summary
 
 This specification defines **Phase 5 of the ARC Production Evolution Upgrade**: the **Portfolio MCTS Co-Evolution Engine & Low-Correlation Portfolio Allocator**.

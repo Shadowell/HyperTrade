@@ -1,5 +1,7 @@
 # 48. ARC Live Canary Vault & Risk Gate Pipeline Architecture
 
+> 已退役：arc/canary_vault.py 实验实现已于 2026-09-09 删除；本文仅作历史设计，不代表可执行的实盘能力。
+
 ## 1. Executive Summary
 
 This specification defines **Phase 7 (Final Milestone) of the ARC Production Evolution Upgrade**: the **Live Canary Vault & Risk Gate Pipeline**.

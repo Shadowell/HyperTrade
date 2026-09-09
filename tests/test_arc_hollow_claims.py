@@ -8,7 +8,6 @@ from inspect import getsource
 
 from hypertrade.arc import incubation, router
 from hypertrade.arc.adversarial import RedTeamQuant
-from hypertrade.arc.canary_vault import CanaryVaultPipeline
 from hypertrade.arc.contracts import ARCGoalV1
 
 
@@ -50,9 +49,6 @@ def test_missions_are_loaded_from_the_store() -> None:
 
 
 def test_live_write_is_still_unexpressible() -> None:
-    src = getsource(CanaryVaultPipeline)
-    assert "place_order" not in src
-    assert "live_order" not in src
     try:
         ARCGoalV1(objective="x", symbols=["BTC-USDT-SWAP"], live_allowed=True)
     except Exception:

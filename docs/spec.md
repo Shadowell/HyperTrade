@@ -1,5 +1,9 @@
 # HyperTrade Product Spec
 
+实施入口：[统一研究闭环实施合同](contracts/user-directed-research-loop-consolidation.md)。
+产品所有者已批准架构收敛及无用代码直接删除；第一切片移除四个孤立 ARC 实验模块，
+保留仍被真实路径调用的研究和治理能力，后续迁移按该合同推进。
+
 ## Product-owner clarification — 2026-09-09
 
 产品所有者进一步要求引入 AVO（Agentic Variation Operators）式自主研究与进化：
