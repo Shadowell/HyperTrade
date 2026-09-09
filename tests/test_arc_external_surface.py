@@ -32,6 +32,45 @@ BOTH_TOKEN = "ht_svc_test_both"
 ASSERTION_SECRET = "arc-assertion-test-secret"
 
 
+def test_new_mission_requires_paper_review_even_with_legacy_preauth(client):
+    response = client.post(
+        "/api/v1/arc/missions",
+        headers={
+            "X-HyperTrade-Service-Token": BOTH_TOKEN,
+        },
+        json={"objective": "review first", "paper_preauth_approved": True},
+    )
+    assert response.status_code == 200
+    ctrl = get_controller(response.json()["mission_id"])
+    assert ctrl.projection.goal.paper_review_required is True
+    assert ctrl.projection.goal.paper_authorization is None
+
+
+def test_token_cannot_approve_paper_and_missing_package_is_not_approvable(client):
+    ctrl = ARCController(goal=ARCGoalV1(objective="review", paper_review_required=True))
+    save_mission(ctrl)
+    headers = {"X-HyperTrade-Service-Token": BOTH_TOKEN}
+    package = client.get(f"/api/v1/arc/missions/{ctrl.mission_id}/paper-review", headers=headers)
+    assert package.status_code == 200
+    assert package.json()["status"] == "incomplete"
+    response = client.post(
+        f"/api/v1/arc/missions/{ctrl.mission_id}/paper-review/decide",
+        headers={**headers, "Idempotency-Key": "paper-review-test"},
+        json={"decision": "approve", "reason": "reviewed", "package_hash": "a" * 64},
+    )
+    assert response.status_code == 403
+
+
+def test_paper_mission_cannot_request_live_approval(client):
+    ctrl = ARCController(goal=ARCGoalV1(objective="review", paper_review_required=True))
+    save_mission(ctrl)
+    response = client.get(
+        f"/api/v1/arc/missions/{ctrl.mission_id}/live-approval",
+        headers={"X-HyperTrade-Service-Token": BOTH_TOKEN},
+    )
+    assert response.status_code == 409
+
+
 def _catalog() -> str:
     return ",".join(
         [
@@ -80,9 +119,7 @@ def unsigned_client() -> TestClient:
 
 def _login(client: TestClient) -> None:
     assert (
-        client.post(
-            "/api/auth/login", json={"username": "admin", "password": "secret"}
-        ).status_code
+        client.post("/api/auth/login", json={"username": "admin", "password": "secret"}).status_code
         == 200
     )
 
@@ -185,9 +222,7 @@ def test_a_read_scoped_token_lists_and_reads_but_cannot_create_or_approve(
     assert evidence.status_code == 200
     assert "strategy_code" not in json.dumps(evidence.json())
 
-    detail = client.get(
-        f"/api/v1/arc/missions/{mission_id}/candidates/{attempt_id}", headers=read
-    )
+    detail = client.get(f"/api/v1/arc/missions/{mission_id}/candidates/{attempt_id}", headers=read)
     assert detail.status_code == 200
     assert "class Secret" in detail.json()["strategy_code"]
 
@@ -209,9 +244,7 @@ def test_a_read_scoped_token_lists_and_reads_but_cannot_create_or_approve(
             else {"reason": "probe"}
         )
         assert (
-            client.post(
-                path, json=body, headers={**read, "Idempotency-Key": "k-read"}
-            ).status_code
+            client.post(path, json=body, headers={**read, "Idempotency-Key": "k-read"}).status_code
             == 403
         )
 
@@ -277,6 +310,7 @@ def test_a_valid_assertion_decides_and_records_the_signed_operator(
     client: TestClient,
 ) -> None:
     mission_id = _create_mission(client)
+    _mark_legacy_mission(mission_id)
     header = _assertion(mission_id=mission_id, decision="reject")
     decided = client.post(
         f"/api/v1/arc/missions/{mission_id}/live-approval/decide",
@@ -288,9 +322,9 @@ def test_a_valid_assertion_decides_and_records_the_signed_operator(
         },
     )
     assert decided.status_code == 200, decided.text
-    events = client.get(
-        f"/api/v1/arc/missions/{mission_id}", headers=_headers(READ_TOKEN)
-    ).json()["events"]
+    events = client.get(f"/api/v1/arc/missions/{mission_id}", headers=_headers(READ_TOKEN)).json()[
+        "events"
+    ]
     recorded = [event for event in events if event.get("event_type") == "live_decided"]
     assert recorded
     assert recorded[-1]["payload"]["operator_id"] == "bitpro-admin"
@@ -327,12 +361,10 @@ def test_a_tampered_expired_or_mismatched_assertion_records_no_decision(
             headers={"X-Operator-Assertion": header, "Idempotency-Key": "k-bad"},
         )
         assert response.status_code == 401, (header[:24], response.status_code)
-    events = client.get(
-        f"/api/v1/arc/missions/{mission_id}", headers=_headers(READ_TOKEN)
-    ).json()["events"]
-    assert not [
-        event for event in events if event.get("event_type") == "live_decided"
+    events = client.get(f"/api/v1/arc/missions/{mission_id}", headers=_headers(READ_TOKEN)).json()[
+        "events"
     ]
+    assert not [event for event in events if event.get("event_type") == "live_decided"]
 
 
 def test_an_empty_assertion_secret_refuses_every_assertion(
@@ -349,9 +381,7 @@ def test_an_empty_assertion_secret_refuses_every_assertion(
     events = unsigned_client.get(
         f"/api/v1/arc/missions/{mission_id}", headers=_headers(READ_TOKEN)
     ).json()["events"]
-    assert not [
-        event for event in events if event.get("event_type") == "live_decided"
-    ]
+    assert not [event for event in events if event.get("event_type") == "live_decided"]
 
 
 def test_an_admin_session_still_decides_as_hypertrade_session(client: TestClient) -> None:
@@ -360,6 +390,7 @@ def test_an_admin_session_still_decides_as_hypertrade_session(client: TestClient
         "/api/v1/arc/missions",
         json={"objective": "probe", "symbol": "BTC-USDT-SWAP", "max_candidates": 1},
     ).json()["mission_id"]
+    _mark_legacy_mission(mission_id)
     client.post(
         f"/api/v1/arc/missions/{mission_id}/live-approval/decide",
         json={"decision": "reject", "reason": "probe"},
@@ -458,3 +489,45 @@ def test_mission_list_reports_progress_and_awaiting_approval(client: TestClient)
     assert "candidates_used" in row["progress"]
     assert "max_candidates" in row["progress"]
     assert "awaiting_approval" in row
+
+
+def _mark_legacy_mission(mission_id: str) -> None:
+    # Compatibility coverage for historical missions; new HTTP missions cannot opt out.
+    ctrl = get_controller(mission_id)
+    assert ctrl is not None and ctrl.projection.goal is not None
+    ctrl.projection.goal.paper_review_required = False
+    ctrl.apply_event("goal_compiled", {"goal": ctrl.projection.goal.model_dump()})
+
+
+def test_signed_paper_review_rejects_stale_assertion_and_records_human(client):
+    from hypertrade.arc.paper_review import request_paper_review
+
+    ctrl = ARCController(goal=ARCGoalV1(objective="paper", paper_review_required=True))
+    save_mission(ctrl)
+    ctrl.apply_event(
+        "candidate_proposed",
+        {
+            "attempt": ARCCandidateAttemptV1(
+                attempt_id="att_paper",
+                candidate_id="candidate_paper",
+                hypothesis="test",
+                state="validated",
+                strategy_code="class X: pass",
+                bitpro_strategy_id="445",
+                bitpro_backtest_id="450",
+                validation_id="val450",
+            ).model_dump()
+        },
+    )
+    package = request_paper_review(ctrl)
+    digest = package["package_hash"]
+    payload = {"decision": "reject", "reason": "reviewed", "package_hash": digest}
+    signed = _assertion(mission_id=ctrl.mission_id, decision=f"paper:reject:{digest}")
+    headers = {"X-Operator-Assertion": signed, "Idempotency-Key": "k-decide"}
+    url = f"/api/v1/arc/missions/{ctrl.mission_id}/paper-review/decide"
+    bad = client.post(url, headers=headers, json={**payload, "package_hash": "b" * 64})
+    assert bad.status_code == 401
+    result = client.post(url, headers=headers, json=payload)
+    assert result.status_code == 200, result.text
+    assert result.json()["status"] == "rejected"
+    assert result.json()["decision"]["identity_source"] == "bitpro_signed"

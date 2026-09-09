@@ -7,6 +7,7 @@ until BitPro has a result reference and the operator-declared criteria pass.
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
@@ -135,10 +136,12 @@ def _fraction(
 def _number(metrics: dict[str, Any], *keys: str) -> float | None:
     for key in keys:
         value = metrics.get(key)
-        if value is None:
+        if value is None or isinstance(value, bool):
             continue
         try:
-            return float(value)
+            number = float(value)
+            if math.isfinite(number):
+                return number
         except (TypeError, ValueError):
             continue
     return None
@@ -226,9 +229,18 @@ class ARCSelfTestService:
             str(attempt.strategy_spec.get("timeframe") or "")
             or (goal.timeframes[0] if goal.timeframes else "1H")
         )
-        create_key = f"arc-selftest-create-{attempt.candidate_id}"
-        backtest_key = f"arc-selftest-backtest-{attempt.candidate_id}"
-        validate_key = f"arc-selftest-validate-{attempt.candidate_id}"
+        scope = attempt.candidate_id
+        if goal.paper_review_required:
+            if not goal.research_id:
+                return SelfTestResult(
+                    False, None, None, None, reasons=["research_identity_missing"]
+                )
+            scope = hashlib.sha256(
+                f"{goal.research_id}|{attempt.strategy_code}|{symbol}|{timeframe}".encode()
+            ).hexdigest()
+        create_key = f"arc-selftest-create-{scope}"
+        backtest_key = f"arc-selftest-backtest-{scope}"
+        validate_key = f"arc-selftest-validate-{scope}"
 
         try:
             validated = client.strategy_validate_code(

@@ -25,11 +25,17 @@ def build_evidence_view(projection: ARCMissionProjection) -> dict[str, Any]:
     """
     promoted = _promoted_attempt(projection)
     approval = projection.live_approval
+    review = None
+    if projection.goal and projection.goal.paper_review_required:
+        from hypertrade.arc.paper_review import build_paper_review
+
+        review = build_paper_review(projection)
     return {
         "mission": _mission_summary(projection),
         "candidates": [_candidate_row(item) for item in projection.attempts],
         "promotion": _promotion(projection, promoted),
-        "approval": {
+        "approval": review
+        or {
             "status": approval.status if approval is not None else None,
             "unknowns": list(approval.unknowns) if approval is not None else [],
             "recommendation": approval.recommendation if approval is not None else None,
@@ -74,9 +80,7 @@ def build_mission_summary(projection: ARCMissionProjection) -> dict[str, Any]:
         "as_of": _latest_preflight(projection).get("window_as_of"),
         "bars_available": _latest_preflight(projection).get("bars_available"),
         "alternative_source_confirmed": (
-            projection.goal.alternative_source_confirmed
-            if projection.goal is not None
-            else None
+            projection.goal.alternative_source_confirmed if projection.goal is not None else None
         ),
     }
     summary["pipeline"] = build_pipeline_badge(projection)
@@ -116,6 +120,8 @@ def _mission_summary(projection: ARCMissionProjection) -> dict[str, Any]:
 
 
 def _awaiting_approval(projection: ARCMissionProjection) -> bool:
+    if projection.goal and projection.goal.paper_review_required:
+        return projection.state == "paper_review_ready"
     if projection.state == "live_approval_ready":
         return True
     package = projection.live_approval
@@ -133,12 +139,8 @@ def _candidate_row(attempt: ARCCandidateAttemptV1) -> dict[str, Any]:
         "provider_model": attempt.provider_model,
         "family": str(attempt.strategy_spec.get("family") or ""),
         "direction": str(attempt.strategy_spec.get("direction") or ""),
-        "oos_sharpe": _as_float(
-            metrics.get("out_of_sample_sharpe", metrics.get("ranking_sharpe"))
-        ),
-        "trades": _as_int(
-            metrics.get("out_of_sample_trades", metrics.get("trades"))
-        ),
+        "oos_sharpe": _as_float(metrics.get("out_of_sample_sharpe", metrics.get("ranking_sharpe"))),
+        "trades": _as_int(metrics.get("out_of_sample_trades", metrics.get("trades"))),
         "win_rate": _as_float(metrics.get("win_rate", metrics.get("out_of_sample_win_rate"))),
         "folds_passed": _folds_passed(metrics),
         "folds_total": folds_total,

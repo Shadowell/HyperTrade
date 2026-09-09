@@ -151,8 +151,13 @@ class ARCPaperIncubationResolver:
         )
         client = self._client or BitProToolAdapter()
         create_key = f"arc-create-{attempt.candidate_id}"
-        configure_key = f"arc-configure-{attempt.candidate_id}"
-        start_key = f"arc-start-{attempt.candidate_id}"
+        # New review packages bind the operation to mission, code and capital;
+        # equal candidate names in another mission must not reuse this receipt.
+        operation_scope = (
+            preauth.policy_hash if len(preauth.policy_hash) == 64 else attempt.candidate_id
+        )
+        configure_key = f"arc-configure-{operation_scope}"
+        start_key = f"arc-start-{operation_scope}"
 
         existing_id = _as_int(attempt.bitpro_strategy_id)
         strategy_id: int

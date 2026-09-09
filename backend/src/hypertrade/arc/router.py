@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from hypertrade.arc.adversarial import ARCAdversarialEngine, BlueTeamQuant
 from hypertrade.arc.auth import (
@@ -24,7 +24,6 @@ from hypertrade.arc.contracts import (
     ARCCandidateAttemptV1,
     ARCGoalV1,
     PaperObservationPolicyV1,
-    PaperPreauthorizationV1,
 )
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.evidence import (
@@ -44,6 +43,11 @@ from hypertrade.arc.live_promote import decide_live_approval, revoke_live_approv
 from hypertrade.arc.mcts import ARCParallelMCTSEngine, MCTSNode
 from hypertrade.arc.mutation import ARCGeneticMutator
 from hypertrade.arc.observation import observe_mission
+from hypertrade.arc.paper_review import (
+    build_paper_review,
+    decide_paper_review,
+    request_paper_review,
+)
 from hypertrade.arc.pipeline_view import build_pipeline_view
 from hypertrade.arc.provider_hypothesis import build_provider_hypothesist
 from hypertrade.arc.reflexion import ARCReflexionLedger
@@ -61,7 +65,8 @@ class CreateARCMissionRequest(BaseModel):
     symbol: str = "BTC-USDT-SWAP"
     timeframe: str = "1H"
     max_candidates: int = 5
-    paper_preauth_approved: bool = True
+    paper_preauth_approved: bool = False
+    paper_initial_equity: Decimal = Field(default=Decimal("100"), gt=0, le=10000)
     parallel_workers: int = 4
     min_paper_hours: int = 24
     min_paper_trades: int = 10
@@ -75,6 +80,57 @@ class CreateARCMissionRequest(BaseModel):
 
 class ContinueARCMissionRequest(BaseModel):
     extra_candidates: int = Field(default=3, ge=1, le=50)
+
+
+class PaperDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["approve", "reject"]
+    reason: str = Field(min_length=1, max_length=500)
+    package_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+@router.get(
+    "/missions/{mission_id}/paper-review", dependencies=[Depends(require_scope(ARCScope.READ))]
+)
+async def get_paper_review(mission_id: str) -> dict[str, Any]:
+    ctrl = get_controller(mission_id)
+    if ctrl is None:
+        raise HTTPException(status_code=404, detail="ARC Mission not found")
+    return build_paper_review(ctrl.projection)
+
+
+@router.post(
+    "/missions/{mission_id}/paper-review/decide", dependencies=[Depends(reject_token_only_approval)]
+)
+def decide_paper_review_endpoint(
+    mission_id: str,
+    payload: PaperDecisionRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    # The assertion binds action kind and evidence hash, so a captured Live or old
+    # candidate approval cannot be reused for this Paper action.
+    identity, key = _require_operator(
+        request,
+        mission_id=mission_id,
+        decision=f"paper:{payload.decision}:{payload.package_hash}",
+        idempotency_key=idempotency_key,
+    )
+    ctrl = get_controller(mission_id)
+    if ctrl is None:
+        raise HTTPException(status_code=404, detail="ARC Mission not found")
+    try:
+        return decide_paper_review(
+            ctrl,
+            package_hash=payload.package_hash,
+            decision=payload.decision,
+            reason=payload.reason,
+            operator_id=identity.operator_id,
+            identity_source=identity.identity_source,
+            idempotency_key=key,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 class LiveDecisionRequest(BaseModel):
@@ -141,17 +197,13 @@ async def create_arc_mission(
     """
     Create & trigger SOTA ARC autonomous research & evolution loop.
     """
-    preauth = (
-        PaperPreauthorizationV1(symbols=[request.symbol])
-        if request.paper_preauth_approved
-        else None
-    )
     goal = ARCGoalV1(
         objective=request.objective,
         symbols=[request.symbol],
         timeframes=[request.timeframe],
         budget=ARCBudgetV1(max_candidates=request.max_candidates),
-        paper_authorization=preauth,
+        paper_review_required=True,
+        paper_initial_equity=request.paper_initial_equity,
         observation=PaperObservationPolicyV1(
             min_hours=request.min_paper_hours,
             min_trades=request.min_paper_trades,
@@ -312,6 +364,8 @@ async def get_live_approval(mission_id: str) -> dict[str, Any]:
     ctrl = get_controller(mission_id)
     if ctrl is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
+    if ctrl.projection.goal and ctrl.projection.goal.paper_review_required:
+        raise HTTPException(status_code=409, detail="Live is outside this research protocol")
     if ctrl.projection.state == "paper_observing":
         observe_mission(ctrl)
     package = ctrl.projection.live_approval or build_live_approval_package(ctrl.projection)
@@ -338,6 +392,8 @@ async def decide_live_approval_endpoint(
     ctrl = get_controller(mission_id)
     if ctrl is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
+    if ctrl.projection.goal and ctrl.projection.goal.paper_review_required:
+        raise HTTPException(status_code=409, detail="Live is outside this research protocol")
     if ctrl.projection.live_approval is None:
         package = build_live_approval_package(ctrl.projection)
         ctrl.apply_event("live_approval_ready", {"package": package.model_dump(mode="json")})
@@ -388,6 +444,8 @@ async def revoke_live_approval_endpoint(
 # rather than to repairing them. Leaves room for at least one generation of mutation.
 _MAX_SEED_WIDTH = 3
 _RESEARCH_DONE = {
+    "paper_review_ready",
+    "paper_provisioning",
     "paper_observing",
     "live_approval_ready",
     "approved_pending_effect",
@@ -620,9 +678,7 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
         remaining = budget.max_candidates - budget.candidates_used
         if remaining <= 0:
             return []
-        tried = {
-            str(item.strategy_spec.get("family") or "") for item in ctrl.projection.attempts
-        }
+        tried = {str(item.strategy_spec.get("family") or "") for item in ctrl.projection.attempts}
         nodes: list[MCTSNode] = []
         for seed in blue_team.propose_diverse_frontier(
             goal.objective,
@@ -830,14 +886,16 @@ def run_autonomous_arc_loop(mission_id: str, parallel_workers: int = 4) -> None:
             },
         )
         validated = next(
-            item
-            for item in ctrl.projection.attempts
-            if item.attempt_id == validated.attempt_id
+            item for item in ctrl.projection.attempts if item.attempt_id == validated.attempt_id
         )
 
     for skill in skill_distiller.distill_skills_from_candidate(validated):
         skill_library.register_skill(skill)
         ctrl.apply_event("skill_registered", {"skill": skill.model_dump()})
+
+    if goal.paper_review_required:
+        request_paper_review(ctrl)
+        return
 
     if not goal.paper_authorization:
         ctrl.apply_event("operator_needed", {"reason": "paper_preauthorization_missing"})

@@ -165,6 +165,8 @@ def observe_mission(
         {"attempt_id": attempt.attempt_id, "observation": observation},
     )
     goal = controller.projection.goal
+    if goal is not None and goal.paper_review_required:
+        return {"status": "paper_observing", "observation": observation}
     policy = goal.observation if goal is not None else PaperObservationPolicyV1()
     complete, missing = observation_window_complete(
         policy=policy,

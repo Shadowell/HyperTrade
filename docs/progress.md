@@ -1,5 +1,13 @@
 # Progress Log
 
+## 双入口 Paper 审核实现 — 2026-09-09
+
+- 新任务强制逐版本 Paper review；新增审核包及签名决定接口，持久事件领取、防重复执行、未知回执阻断重试。
+- CLI 新增 research 命令族，调用与 BitPro 相同 ARC 服务；新协议观察不自动转向 Live，旧任务可读。
+- 修复 ARC 数值门禁接受 NaN 的问题；新研究创建绑定任务 ID 与代码哈希，Paper 幂等键绑定审核包，避免相同目标复用旧策略/实例。
+- 验证：完整 scripts/check.sh 通过（后端 1177 passed / 1 xfailed），含签名篡改、重复决定、未知回执、历史兼容及 CLI 回归。独立验证、AVO 与 7+7 反馈的后续实施不由本切片冒充完成。
+
+
 ## 统一研究闭环：孤立实验退役 — 2026-09-09
 
 - 按用户明确授权删除 ARC portfolio、canary_vault、microstructure、vector_screening 及三个专属测试文件。

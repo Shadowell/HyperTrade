@@ -1,7 +1,7 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
 <p align="center">
-  <strong>生产级受治理 Agent Runtime 与通用自主进化控制内核 (ARC)</strong>
+  <strong>受治理的策略研究 Agent 与 ARC 研究循环</strong>
 </p>
 
 <p align="center">
@@ -11,7 +11,7 @@
   <a href="#"><img src="https://img.shields.io/badge/React-18+-61DAFB.svg" alt="React" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.0+-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14+-4169E1.svg" alt="PostgreSQL" /></a>
-  <a href="docs/architecture/37-arc-autonomous-research-core-architecture.md"><img src="https://img.shields.io/badge/status-ARC_SOTA_Production-brightgreen.svg" alt="ARC Status" /></a>
+  <a href="docs/architecture/37-arc-autonomous-research-core-architecture.md"><img src="https://img.shields.io/badge/status-Research_Loop_In_Progress-yellow.svg" alt="ARC Status" /></a>
   <a href="#"><img src="https://img.shields.io/badge/tests-11%20passed-success.svg" alt="Tests" /></a>
 </p>
 

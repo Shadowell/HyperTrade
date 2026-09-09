@@ -141,6 +141,24 @@ def test_duplicate_candidate_replays_one_content_bound_key_set() -> None:
     assert len(set(backtest_keys)) == 1
 
 
+def test_review_missions_do_not_reuse_another_missions_strategy() -> None:
+    from hypertrade.arc.controller import ARCController
+
+    adapter = _RealShapeBitPro()
+    service = ARCSelfTestService(client=adapter)
+    goal_a = ARCGoalV1(objective="same research", paper_review_required=True)
+    goal_b = ARCGoalV1(objective="same research", paper_review_required=True)
+    ARCController(mission_id="arc_a", goal=goal_a)
+    ARCController(mission_id="arc_b", goal=goal_b)
+    candidate = _candidate()
+    service.run(candidate, goal_a)
+    service.run(candidate, goal_a)
+    service.run(candidate, goal_b)
+    keys = [call["idempotency_key"] for call in adapter.create_calls]
+    assert keys[0] == keys[1]
+    assert keys[0] != keys[2]
+
+
 def test_incubation_reuses_probe_strategy_without_a_second_create() -> None:
     from hypertrade.arc.contracts import PaperPreauthorizationV1
 

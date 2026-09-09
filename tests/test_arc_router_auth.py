@@ -83,6 +83,12 @@ def test_the_recorded_operator_is_the_session_not_the_header(client: TestClient)
         json={"objective": "probe", "symbol": "BTC-USDT-SWAP", "max_candidates": 1},
     ).json()["mission_id"]
 
+    # This test covers persisted legacy Live audit identity, not new Paper missions.
+    from hypertrade.arc.store import get_controller
+    ctrl = get_controller(mission_id)
+    assert ctrl is not None and ctrl.projection.goal is not None
+    ctrl.projection.goal.paper_review_required = False
+    ctrl.apply_event("goal_compiled", {"goal": ctrl.projection.goal.model_dump()})
     # Incomplete package, so the decision is refused - but the attempt is still recorded.
     client.post(
         f"/api/v1/arc/missions/{mission_id}/live-approval/decide",

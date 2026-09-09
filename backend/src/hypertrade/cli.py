@@ -2876,6 +2876,12 @@ def main(
         configure_remote_login(input_fn=input_fn, output=output)
         return 0
     config = CliConfig.from_env(api_url=args.remote)
+    if args.command == "research":
+        from hypertrade.research_cli import run_research_cli
+
+        if args.local:
+            config = CliConfig.from_env(api_url="http://127.0.0.1:3334")
+        return run_research_cli(args, config, output)
     local = _use_local_runtime(args)
     factory = client_factory or _default_client_factory
     agent_client = client or factory(config, local)
@@ -8546,6 +8552,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Force the local standalone Agent runtime.",
     )
     subparsers = parser.add_subparsers(dest="command")
+    from hypertrade.research_cli import add_research_parser
+
+    add_research_parser(subparsers)
     ask = subparsers.add_parser("ask", help="Run one Agent prompt through the HyperTrade API.")
     ask.add_argument("prompt", nargs="+")
     subparsers.add_parser("chat", help="Start an interactive Agent conversation loop.")

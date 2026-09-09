@@ -1,5 +1,7 @@
 # HyperTrade Product Spec
 
+新研究任务现使用 `paper_review.v1`：回测候选提交人工审核后才配置/启动 Paper，批准绑定代码、回测引用和配置哈希。CLI `ht research` 与 BitPro 代理操作同一 ARC mission。历史任务保持兼容；新协议不自动转入 Live。
+
 实施入口：[统一研究闭环实施合同](contracts/user-directed-research-loop-consolidation.md)。
 产品所有者已批准架构收敛及无用代码直接删除；第一切片移除四个孤立 ARC 实验模块，
 保留仍被真实路径调用的研究和治理能力，后续迁移按该合同推进。

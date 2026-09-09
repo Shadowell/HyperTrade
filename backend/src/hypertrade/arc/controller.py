@@ -23,6 +23,8 @@ ARCMissionState = Literal[
     "red_team_testing",
     "validating",
     "paper_authorizing",
+    "paper_review_ready",
+    "paper_provisioning",
     "paper_observing",
     "live_approval_ready",
     "approved_pending_effect",
@@ -50,6 +52,7 @@ class ARCMissionProjection(BaseModel):
     reflexion_history: list[ARCReflexionEventV1] = Field(default_factory=list)
     events: list[ARCEventV1] = Field(default_factory=list)
     live_approval: LiveApprovalPackageV1 | None = None
+    paper_review: dict[str, Any] = Field(default_factory=dict)
     paper_observation: dict[str, Any] = Field(default_factory=dict)
     paper_started_at: datetime | None = None
     self_test_records: list[dict[str, Any]] = Field(default_factory=list)
@@ -65,6 +68,8 @@ class ARCController:
 
     def __init__(self, mission_id: str | None = None, goal: ARCGoalV1 | None = None):
         self.mission_id = mission_id or f"arc_{uuid.uuid4().hex[:12]}"
+        if goal is not None and goal.paper_review_required and goal.research_id is None:
+            goal.research_id = self.mission_id
         self.projection = ARCMissionProjection(mission_id=self.mission_id, goal=goal)
         # Storage revision this projection was read at. The store compares it against
         # the committed row to tell a stale cache from the current mission.
@@ -90,8 +95,8 @@ class ARCController:
 
     def absorb(self, evt: ARCEventV1) -> None:
         """Append and reduce. The store calls this while holding the mission row."""
-        self.projection.events.append(evt)
         self._reduce(evt)
+        self.projection.events.append(evt)
 
     def rebase(self, projection: ARCMissionProjection, revision: int) -> None:
         """Adopt the committed projection before replaying a local event onto it."""
@@ -179,6 +184,45 @@ class ARCController:
                 p.state = "needs_operator"
             else:
                 p.state = "exploring_candidates"
+
+        elif et == "paper_review_requested":
+            p.paper_review = dict(payload["package"])
+            p.state = (
+                "paper_review_ready" if p.paper_review["status"] == "ready" else "needs_operator"
+            )
+
+        elif et == "paper_review_decided":
+            from hypertrade.arc.paper_review import build_paper_review
+
+            review_package = build_paper_review(p)
+            if (
+                p.state != "paper_review_ready"
+                or review_package["unknowns"]
+                or review_package["package_hash"] != payload["package_hash"]
+                or p.paper_review.get("decision")
+            ):
+                raise PermissionError("review changed or already claimed")
+            p.paper_review["decision"] = dict(payload)
+            p.paper_review["status"] = (
+                "approved_pending_effect" if payload["decision"] == "approve" else "rejected"
+            )
+            p.state = "paper_provisioning" if payload["decision"] == "approve" else "needs_operator"
+
+        elif et == "paper_review_effect":
+            if (
+                p.state != "paper_provisioning"
+                or p.paper_review.get("package_hash") != payload["package_hash"]
+            ):
+                raise PermissionError("paper effect is not bound to an approved review")
+            p.paper_review.update(payload)
+            p.paper_review["status"] = "paper_observing" if payload["ok"] else "effect_unknown"
+            p.state = "paper_observing" if payload["ok"] else "needs_operator"
+            if payload["ok"]:
+                for att in p.attempts:
+                    if att.attempt_id == p.paper_review["attempt_id"]:
+                        att.paper_instance_id = payload["paper_instance_id"]
+                        att.state = "paper_observing"
+                p.paper_started_at = evt.timestamp
 
         elif et == "paper_started":
             attempt_id = payload["attempt_id"]

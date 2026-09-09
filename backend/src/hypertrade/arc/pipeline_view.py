@@ -35,6 +35,9 @@ _EVENT_LABELS = {
     "reflexion_recorded": "记录失败教训",
     "bitpro_self_tested": "BitPro 自测",
     "candidate_validated": "候选通过验证",
+    "paper_review_requested": "等待人工审核",
+    "paper_review_decided": "模拟盘审核决定",
+    "paper_review_effect": "模拟盘执行回执",
     "paper_started": "模拟盘启动",
     "paper_observed": "模拟盘观察",
     "live_approval_ready": "审批包就绪",
@@ -69,6 +72,8 @@ def build_pipeline_view(
     projection: ARCMissionProjection, *, now: datetime | None = None
 ) -> dict[str, Any]:
     clock = now or datetime.now(UTC)
+    if projection.goal and projection.goal.paper_review_required:
+        return _paper_review_pipeline(projection, clock)
     done = _completed_stages(projection)
     frontier = _frontier(done)
     blocked = projection.state in _BLOCKED_STATES
@@ -102,6 +107,19 @@ def build_pipeline_badge(
     projection: ARCMissionProjection, *, now: datetime | None = None
 ) -> dict[str, Any]:
     """The compact form a mission list renders per row."""
+    if projection.goal and projection.goal.paper_review_required:
+        view = _paper_review_pipeline(projection, now or datetime.now(UTC))
+        stages = view["stages"]
+        index = next((i for i, row in enumerate(stages) if row["status"] != "done"), len(stages))
+        return {
+            "current_stage": view["current_stage"],
+            "current_label": stages[index]["label"] if index < len(stages) else "模拟盘运行中",
+            "stage_index": index,
+            "stage_total": len(stages),
+            "percent": view["percent"],
+            "blocked": view["blocked"],
+            "finished": view["finished"],
+        }
     done = _completed_stages(projection)
     frontier = _frontier(done)
     blocked = projection.state in _BLOCKED_STATES
@@ -200,10 +218,7 @@ def _stage_metrics(projection: ARCMissionProjection, clock: datetime) -> dict[st
         payload = event.payload
         if provider_status is None and event.event_type == "provider_status":
             provider_status = str(payload.get("status") or "")
-        if (
-            isinstance(payload.get("preflight"), dict)
-            and evidence_origin is None
-        ):
+        if isinstance(payload.get("preflight"), dict) and evidence_origin is None:
             evidence_origin = payload["preflight"].get("source_origin")
         if evidence_origin is not None and provider_status is not None:
             break
@@ -350,9 +365,7 @@ def _blocked_reason(projection: ARCMissionProjection) -> dict[str, Any] | None:
             "missing": [str(item) for item in missing] if isinstance(missing, list) else [],
             # A window stopped for provenance must show what it actually is.
             "source_origin": (
-                preflight.get("source_origin")
-                if isinstance(preflight, dict)
-                else None
+                preflight.get("source_origin") if isinstance(preflight, dict) else None
             ),
             "at": event.timestamp.isoformat(),
         }
@@ -383,3 +396,51 @@ def _ratio(value: float, limit: float) -> float:
     if limit <= 0:
         return 0.0
     return round(min(1.0, max(0.0, value / limit)), 4)
+
+
+def _paper_review_pipeline(projection: ARCMissionProjection, clock: datetime) -> dict[str, Any]:
+    labels = STAGES[:4] + (("approval", "人工审核"), ("paper", "模拟盘运行"))
+    review = projection.paper_review
+    done = [
+        any(e.event_type == "goal_compiled" for e in projection.events),
+        bool(projection.attempts),
+        any(
+            e.event_type == "red_team_tested" and e.payload.get("passed") for e in projection.events
+        ),
+        bool(review.get("package_hash")) and not review.get("unknowns"),
+        (review.get("decision") or {}).get("decision") == "approve",
+        bool(review.get("paper_instance_id")) and review.get("status") == "paper_observing",
+    ]
+    # A committed later-stage receipt also proves entry into earlier stages.
+    completed = [value or any(done[i + 1 :]) for i, value in enumerate(done)]
+    frontier = _frontier(completed)
+    blocked = projection.state in _BLOCKED_STATES
+    metrics = _stage_metrics(projection, clock)
+    metrics["approval"] = {"metrics": {"status": review.get("status"), "kind": "paper"}}
+    stages = [
+        {
+            "key": key,
+            "label": label,
+            "status": "done"
+            if i < frontier
+            else ("blocked" if blocked else "active")
+            if i == frontier
+            else "pending",
+            **metrics[key],
+        }
+        for i, (key, label) in enumerate(labels)
+    ]
+    return {
+        "mission_id": projection.mission_id,
+        "state": projection.state,
+        "stages": stages,
+        "current_stage": labels[frontier][0] if frontier < len(labels) else None,
+        "blocked": blocked,
+        "blocked_reason": _blocked_reason(projection) if blocked else None,
+        "finished": frontier == len(labels),
+        "percent": 100.0 * frontier / len(labels),
+        "updated_at": projection.updated_at.isoformat(),
+        "seconds_since_update": _age_seconds(projection.updated_at, clock),
+        "event_count": len(projection.events),
+        "activity": [_activity_row(event) for event in projection.events[-12:]][::-1],
+    }

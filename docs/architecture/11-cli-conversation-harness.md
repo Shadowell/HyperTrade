@@ -1,5 +1,23 @@
 # 11 CLI Conversation Harness / CLI 对话 Harness
 
+## 统一研究服务 CLI（2026-09-09）
+
+`ht research` 通过独立部署的 HyperTrade API 使用同一任务和审核协议，BitPro 页面无需打开。
+默认连接配置中的 API（未配置为 localhost:3334）；`--remote URL` 选择远端。它不启动第二套本地交易执行器。
+
+```bash
+ht --remote http://localhost:3334 research start "研究 BTC 趋势策略" --symbol BTC-USDT-SWAP
+ht research list
+ht research status <mission_id>
+ht research evidence <mission_id>
+ht research candidate <mission_id> <attempt_id>
+ht research review <mission_id>
+ht research decide <mission_id> --decision approve --reason "已审核" --package-hash <已阅读的审核包哈希>
+```
+
+批准及拒绝都要求原因和准确审核包哈希，重试键默认由哈希与决定稳定派生，也可显式 `--idempotency-key`。
+CLI 仍依赖 BitPro 真实回测/Paper 执行底座；“独立访问”不等于无外部数据与执行依赖。
+
 ## English
 
 The CLI is a developer harness with two runtime modes:

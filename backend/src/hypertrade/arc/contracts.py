@@ -85,6 +85,11 @@ class ARCGoalV1(BaseModel):
     observation: PaperObservationPolicyV1 = Field(default_factory=PaperObservationPolicyV1)
     budget: ARCBudgetV1 = Field(default_factory=ARCBudgetV1)
     paper_authorization: PaperPreauthorizationV1 | None = None
+    # False only preserves decoding of historical missions; the HTTP creation path
+    # always enables version-bound review for new work.
+    paper_review_required: bool = False
+    research_id: str | None = None
+    paper_initial_equity: Decimal = Field(default=Decimal("100"), gt=0, le=10000)
     # Evidence-window provenance consent. The gate refuses to spend candidate budget on
     # a window whose origin is not provably OKX unless the operator set this at mission
     # creation; it is a mission fact, so restarts and replays keep the same consent.
