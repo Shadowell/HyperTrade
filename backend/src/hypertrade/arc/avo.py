@@ -401,10 +401,12 @@ def _run(
         # Model output was not journalled, so none of its tools ran. Its budget was
         # charged before dispatch; retrying consumes another call, never a free retry.
         controller.apply_event("avo_model_abandoned", {"reason": "unacknowledged_model_call"})
+    if goal.model_name and goal.provider_name not in {"codex", "vide_coding"}:
+        raise ResearchStopped("avo_provider_unavailable")
     if provider is None:
         try:
             provider = ProviderRuntime(get_settings()).get_chat_provider(
-                selected=goal.provider_name
+                selected=goal.provider_name, selected_model=goal.model_name
             )
         except Exception as exc:
             raise ResearchStopped("avo_provider_unavailable") from exc

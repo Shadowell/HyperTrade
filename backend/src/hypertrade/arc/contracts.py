@@ -96,6 +96,7 @@ class ARCGoalV1(BaseModel):
     objective: str
     research_mode: Literal["arc", "avo"] = "arc"
     provider_name: str | None = None
+    model_name: str | None = Field(default=None, min_length=1, max_length=128)
     research_windows: ResearchWindowsV1 | None = None
     platform: Literal["bitpro"] = "bitpro"
     market_type: str = Field(default="crypto_swap")

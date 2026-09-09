@@ -68,6 +68,9 @@ class CreateARCMissionRequest(BaseModel):
     objective: str = Field(min_length=1, max_length=2000)
     research_mode: Literal["arc", "avo"] = "avo"
     provider_name: ChatProviderName | None = None
+    model_name: str | None = Field(
+        default=None, min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9._:/-]+$"
+    )
     max_model_calls: int = Field(default=20, ge=1, le=50)
     max_tool_calls: int = Field(default=30, ge=3, le=100)
     max_backtests: int = Field(default=10, ge=2, le=50)
@@ -99,6 +102,9 @@ class CreateARCMissionRequest(BaseModel):
 
 class ContinueARCMissionRequest(BaseModel):
     provider_name: ChatProviderName | None = None
+    model_name: str | None = Field(
+        default=None, min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9._:/-]+$"
+    )
     extra_candidates: int = Field(default=3, ge=0, le=50)
     extra_model_calls: int = Field(default=0, ge=0, le=50)
     extra_tool_calls: int = Field(default=0, ge=0, le=100)
@@ -224,6 +230,7 @@ async def create_arc_mission(
     goal = ARCGoalV1(
         objective=request.objective,
         research_mode=request.research_mode,
+        model_name=request.model_name,
         provider_name=ProviderRuntime.normalize_provider_name(
             request.provider_name
             or getattr(request_context.app.state, "active_chat_provider", None)

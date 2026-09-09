@@ -311,15 +311,21 @@ class ARCController:
                 None,
             )
             if previous is not None:
-                if any(
-                    previous.get(name, 0) != payload.get(name, 0) for name in fields
-                ) or previous.get("operator_id") != payload.get("operator_id"):
+                if any(previous.get(name, 0) != payload.get(name, 0) for name in fields) or any(
+                    previous.get(name) != payload.get(name)
+                    for name in ("operator_id", "provider_name", "model_name")
+                ):
                     raise PermissionError("budget extension key is bound to another request")
                 payload["idempotent"] = True
                 return
             if p.goal is not None:
                 provider = payload.get("provider_name")
-                if provider and provider != p.goal.provider_name:
+                model = payload.get("model_name")
+                if model and (provider or p.goal.provider_name) not in {"codex", "vide_coding"}:
+                    raise PermissionError("task model overrides require codex or vide_coding")
+                if (provider and provider != p.goal.provider_name) or (
+                    model and model != p.goal.model_name
+                ):
                     if (
                         p.attempts
                         or p.state != "needs_operator"
@@ -344,7 +350,11 @@ class ARCController:
                         )
                     p.avo["awaiting"] = []
                     payload["discarded_tool_ids"] = [call["id"] for call in abandoned]
-                    p.goal.provider_name = str(provider)
+                    if provider and provider != p.goal.provider_name:
+                        p.goal.model_name = None
+                        p.goal.provider_name = str(provider)
+                    if model:
+                        p.goal.model_name = str(model)
                 for field, target in fields.items():
                     extra = int(payload.get(field) or 0)
                     if extra > 0:

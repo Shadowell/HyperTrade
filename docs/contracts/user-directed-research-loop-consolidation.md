@@ -61,5 +61,5 @@ GitNexus 索引未覆盖 ARC 时保留 UNKNOWN 判断，以当前全库静态扫
 
 ### 任务级 Provider 选择
 
-新任务记录显式选择或 API 当前默认的 Provider。CLI start/continue 支持 --provider，worker 使用任务中的选择，重启不依赖 API 进程的临时默认值。
+新任务记录显式选择或 API 当前默认的 Provider。CLI start/continue 支持 --provider 与 --model（模型覆盖目前支持 codex/vide_coding），worker 使用任务中的选择，重启不依赖 API 进程的临时默认值。
 更换仅允许在 needs_operator 且尚无候选时；同一幂等键不能改选不同 Provider。缺配置或计费拒绝时如实停止，不自动购买额度或静默修改全局模型。

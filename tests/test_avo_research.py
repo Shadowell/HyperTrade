@@ -390,3 +390,36 @@ def test_replayed_proposal_keeps_its_original_model_provenance(mission, monkeypa
 
     run_avo_research(mission.mission_id, provider=Updated(), experiments=Experiments())
     assert mission.projection.attempts[0].provider_model == "fixture:unit-test"
+
+
+def test_task_model_selection_is_bound_and_cannot_change_after_proposal(mission):
+    mission.apply_event("operator_needed", {"reason": "provider_unavailable"})
+    payload = {
+        "provider_name": "codex",
+        "model_name": "gpt-6-astra",
+        "operator_id": "op",
+        "idempotency_key": "select-model",
+    }
+    mission.apply_event("budget_extended", payload)
+    assert mission.projection.goal.model_name == "gpt-6-astra"
+    with pytest.raises(PermissionError):
+        mission.apply_event("budget_extended", {**payload, "model_name": "gpt-5.5"})
+    run_avo_research(mission.mission_id, provider=ScriptProvider(), experiments=Experiments())
+    with pytest.raises(PermissionError):
+        mission.apply_event(
+            "budget_extended", {**payload, "idempotency_key": "later", "model_name": "gpt-5.5"}
+        )
+
+
+def test_worker_resolves_task_model(mission, monkeypatch):
+    mission.projection.goal.provider_name = "codex"
+    mission.projection.goal.model_name = "gpt-6-astra"
+    selected = {}
+
+    def resolve(self, **kwargs):
+        selected.update(kwargs)
+        return ScriptProvider()
+
+    monkeypatch.setattr("hypertrade.arc.avo.ProviderRuntime.get_chat_provider", resolve)
+    run_avo_research(mission.mission_id, experiments=Experiments())
+    assert selected == {"selected": "codex", "selected_model": "gpt-6-astra"}

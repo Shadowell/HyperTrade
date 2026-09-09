@@ -23,6 +23,7 @@ def add_research_parser(subparsers: Any) -> None:
     start.add_argument("objective", nargs="+")
     start.add_argument("--mode", choices=("avo", "arc"), default="avo")
     start.add_argument("--provider", choices=get_args(ChatProviderName))
+    start.add_argument("--model", help="任务模型覆盖（codex / vide_coding）")
     start.add_argument("--max-model-calls", type=int, default=20)
     start.add_argument("--max-backtests", type=int, default=10)
     start.add_argument("--symbol", default="BTC-USDT-SWAP")
@@ -38,6 +39,7 @@ def add_research_parser(subparsers: Any) -> None:
             command.add_argument("attempt_id")
         if name == "continue":
             command.add_argument("--provider", choices=get_args(ChatProviderName))
+            command.add_argument("--model", help="任务模型覆盖（codex / vide_coding）")
             command.add_argument("--extra-candidates", type=int, default=3)
             command.add_argument("--extra-model-calls", type=int, default=0)
             command.add_argument("--extra-tool-calls", type=int, default=0)
@@ -64,6 +66,7 @@ def research_request(args: argparse.Namespace) -> tuple[str, str, dict[str, Any]
                 "objective": " ".join(args.objective),
                 "research_mode": args.mode,
                 "provider_name": args.provider,
+                "model_name": args.model,
                 "max_model_calls": args.max_model_calls,
                 "max_backtests": args.max_backtests,
                 "symbol": args.symbol,
@@ -96,6 +99,7 @@ def research_request(args: argparse.Namespace) -> tuple[str, str, dict[str, Any]
             {
                 "extra_candidates": args.extra_candidates,
                 "provider_name": args.provider,
+                "model_name": args.model,
                 "extra_model_calls": args.extra_model_calls,
                 "extra_tool_calls": args.extra_tool_calls,
                 "extra_backtests": args.extra_backtests,
