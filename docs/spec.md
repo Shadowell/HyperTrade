@@ -1,5 +1,19 @@
 # HyperTrade Product Spec
 
+## Product-owner clarification — 2026-09-09
+
+当前第一阶段验收目标收敛为：生成策略、真实回测、逐版本人工 Review 后启动 BitPro Paper；
+按同一策略最近 7 天与前 7 天的 Paper 表现比较，收益率下降或最大回撤扩大达到默认
+10 个百分点（可配置），任意一项即启动自动参数调优与重新回测。新版本再次经人工
+Review 后另开 Paper，与原版本并行；原策略和历史不修改、不重置。同一原策略已有
+调优任务或候选待 Review 时不重复触发。系统提供可配置、每轮冻结的验证默认值。
+
+第一阶段要求真实可恢复闭环，不以找到有效策略为完成条件。该产品边界取代下文早期
+“预授权自动启动 Paper → Live 审批”的当前交付优先级，不表示代码已经切换，也不激活 Live。
+架构现状、保留/合并/删除候选和建议迁移顺序见
+[61 策略研究闭环架构梳理与删减建议](architecture/61-research-loop-architecture-rationalization.md)。
+该文档的实现取舍仍待审阅；当前只交付分析文档，不执行代码删除。
+
 ## Product Summary
 
 HyperTrade is a crypto trading agent for market research and execution. V1 focuses on stable agent capabilities: provider configuration, tool calls, RAG, memory, trace, market ingestion, connector capability discovery, risk gates, testnet execution, BitPro strategy lifecycle orchestration, and operator-facing harnesses.

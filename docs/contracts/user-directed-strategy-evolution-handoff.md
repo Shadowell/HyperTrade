@@ -1,5 +1,12 @@
 # User-Directed Contract — 现有策略进化闭环（M0 Handoff 第一步）
 
+> 2026-09-09 范围澄清：产品所有者已确认以 Paper 自身最近 7 天对比前 7 天，收益率下降
+> 或最大回撤扩大默认 10 个百分点（可配置）触发参数研究；首次及调优版本进入 Paper
+> 均需人工 Review，新旧版本并行，原策略历史保留，活跃调优/待审期间禁止重复触发。
+> 下文以 running/live 清单为出发点的旧切片不能直接视作新闭环验收。
+> 本轮仅进行架构分析与文档交付；[架构取舍审阅稿](../architecture/61-research-loop-architecture-rationalization.md)
+> 确认后再修订具体实施切片，不在本次删除代码或启动策略/Paper。
+
 > 状态：Active。
 >
 > 激活原因：产品所有者于 2026-08-25 确认 C→A 路线——先统一证据口径，再对 BitPro

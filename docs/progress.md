@@ -1,5 +1,16 @@
 # Progress Log
 
+## 策略研究闭环架构审阅稿 — 2026-09-09
+
+- 按产品所有者确认的“回测 → 人工 Review → Paper → 7+7 衰减触发调参 → 再回测/再 Review → 新旧并行”边界，完成
+  [架构梳理与删减建议](architecture/61-research-loop-architecture-rationalization.md)。默认恶化阈值为
+  10 个百分点、任一指标触发、可配置；已有调优/待审候选时禁止重复触发，原策略持续运行。
+- 核对 Thread/Mission、AgentKernel/Task、ResearchGraph、ResearchOrchestrator 与 ARC 多路径，
+  区分保留基础、合并后退出、冻结能力与仅测试引用的实验删除候选。
+- 指出 ARC Paper 预授权/Live 审批与新目标冲突、后台研究恢复缺口、多个裁判与 Paper 执行口、
+  版本证据关联问题；取舍待审阅，未删除或修改业务代码，未调用真实模型/回测/Paper。
+- 文档基于 `origin/main@1d9c863`，在隔离 worktree 编写；保留原工作目录 5 个未提交代码/测试文件。
+
 ## 部署触发收口 — 2026-08-31
 
 - 移除生产部署的五分钟定时轮询；后续仅由 `main` push 或显式人工 dispatch 触发。
