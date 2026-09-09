@@ -286,12 +286,17 @@ def _perform(
         )
         if spec is None:
             raise ValueError("strategy spec rejected")
+        request_hash = next(
+            event.payload["request_hash"]
+            for event in reversed(controller.projection.events)
+            if event.event_type == "avo_model_requested"
+        )
         proposal = ProviderProposal(
             spec,
             arguments["hypothesis"],
             provider.name,
             provider.model,
-            hashlib.sha256(_json(arguments).encode()).hexdigest(),
+            request_hash,
         )
         candidate = BlueTeamQuant().propose_from_provider(proposal)
         code_hash = hashlib.sha256(candidate.strategy_code.encode()).hexdigest()
@@ -443,7 +448,16 @@ def _run(
                 {
                     "provider": provider.name,
                     "model": provider.model,
-                    "request_hash": hashlib.sha256(_json(messages).encode()).hexdigest(),
+                    "request_hash": hashlib.sha256(
+                        _json(
+                            {
+                                "messages": messages,
+                                "tools": TOOLS,
+                                "provider": provider.name,
+                                "model": provider.model,
+                            }
+                        ).encode()
+                    ).hexdigest(),
                     "budget_snapshot": runtime_context["budget"],
                 },
             )

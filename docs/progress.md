@@ -4,7 +4,8 @@
 
 - CLI evidence 单独输出开发实验、窗口、预算与待确认操作；单候选检查可取回对应开发反馈。
 - 仅有最终窗口及回测引用时，才把 BitPro 最终 Sharpe/成交数投影到样本外栏，不把开发分数冒充最终结论。
-- 验证：完整 scripts/check.sh 通过，1193 passed / 1 xfailed；保持历史 ARC 输出兼容。
+- 候选溯源绑定实际模型请求哈希（消息、工具定义、Provider/model），不再把参数哈希误作模型请求引用。
+- 验证：完整 scripts/check.sh 通过，1193 passed / 1 xfailed；保持历史 ARC 输出兼容。生产 PostgreSQL 跨连接互斥及释放后的再领取已验证。
 
 
 ## AVO 有预算研究与持久恢复 — 2026-09-09

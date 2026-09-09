@@ -87,6 +87,12 @@ def test_agent_uses_development_feedback_and_final_result_is_not_fed_back(missio
     assert "bt-final" not in json.dumps(provider.seen)
     assert mission.projection.goal.budget.model_calls_used == 5
     assert mission.projection.goal.budget.backtests_used == 3
+    requests = {
+        e.payload["request_hash"]
+        for e in mission.projection.events
+        if e.event_type == "avo_model_requested"
+    }
+    assert all(a.provider_request_hash in requests for a in mission.projection.attempts)
     assert [
         json.loads(messages[1]["content"])["budget"]["model_calls_used"]
         for messages in provider.seen

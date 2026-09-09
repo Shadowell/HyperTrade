@@ -163,6 +163,7 @@ def _candidate_row(attempt: ARCCandidateAttemptV1) -> dict[str, Any]:
         "state": attempt.state,
         "origin": attempt.origin,
         "provider_model": attempt.provider_model,
+        "provider_request_hash": attempt.provider_request_hash,
         "family": str(attempt.strategy_spec.get("family") or ""),
         "direction": str(attempt.strategy_spec.get("direction") or ""),
         "oos_sharpe": _as_float(metrics.get("out_of_sample_sharpe", metrics.get("ranking_sharpe"))),
