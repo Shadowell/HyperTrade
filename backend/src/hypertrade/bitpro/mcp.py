@@ -466,6 +466,13 @@ class BitProToolAdapter:
             "tool_calls": self.last_tool_calls,
         }
 
+    def strategy_get(self, *, strategy_id: int) -> dict[str, Any]:
+        """Read an existing immutable candidate before reusing its platform identity."""
+        self.last_tool_calls = []
+        self._preflight()
+        raw = _ensure_dict(self._call("strategy_get", {"strategy_id": strategy_id}))
+        return {"status": "ok", "strategy": raw}
+
     def strategy_generate(self, *, prompt: str, symbol: str, timeframe: str) -> dict[str, Any]:
         self.last_tool_calls = []
         capabilities, health = self._preflight()

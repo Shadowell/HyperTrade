@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+import pytest
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCGoalV1, ARCSuccessCriteriaV1
 from hypertrade.arc.self_test import ARCSelfTestService, apply_success_criteria
 
@@ -132,3 +133,48 @@ def test_self_test_passes_only_with_ref_and_criteria() -> None:
     assert result.backtest_id == "bt_9"
     assert result.bitpro_strategy_id == "9"
     assert result.validation_id
+
+
+@pytest.mark.parametrize("mutated", [False, True])
+def test_existing_strategy_is_verified_and_reused_without_create(mutated):
+    code = "class X: pass"
+    calls = []
+
+    class Client:
+        def strategy_validate_code(self, **kwargs):
+            return {"status": "ok"}
+
+        def strategy_get(self, **kwargs):
+            return {"strategy": {"id": 9, "script_content": "different" if mutated else code}}
+
+        def strategy_create(self, **kwargs):
+            raise AssertionError("must not recreate existing strategy")
+
+        def backtest_start_job(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "backtest_result": {
+                    "id": "final-9",
+                    "metrics": {
+                        "sharpe": 1.5,
+                        "max_drawdown": 0.07,
+                        "trades": 20,
+                        "net_return": 0.12,
+                    },
+                }
+            }
+
+    attempt = ARCCandidateAttemptV1(
+        attempt_id="reuse",
+        candidate_id="reuse",
+        hypothesis="x",
+        strategy_code=code,
+        bitpro_strategy_id="9",
+    )
+    result = ARCSelfTestService(Client()).run(attempt, ARCGoalV1(objective="x"))
+    assert result.passed is not mutated
+    assert len(calls) == (0 if mutated else 1)
+    if mutated:
+        assert result.reasons == ["bitpro_existing_strategy_mismatch"]
+    else:
+        assert calls[0]["strategy_id"] == 9

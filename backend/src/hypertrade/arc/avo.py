@@ -342,6 +342,11 @@ def _perform(
     development = controller.projection.avo.get("development", {})
     if final and candidate.attempt_id not in development:
         raise ValueError("develop this immutable candidate before final validation")
+    previous = development.get(candidate.attempt_id, {})
+    if previous.get("bitpro_strategy_id"):
+        candidate = candidate.model_copy(
+            update={"bitpro_strategy_id": previous["bitpro_strategy_id"]}
+        )
     reserve = 2 if goal.feedback_parent else 1
     if final and goal.feedback_parent and budget.max_backtests - budget.backtests_used < 2:
         raise ValueError("two backtests are required for the frozen baseline comparison")

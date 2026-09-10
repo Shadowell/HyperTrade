@@ -17,6 +17,8 @@ from hypertrade.bitpro.mcp import BitProToolAdapter
 
 
 class SelfTestClient(Protocol):
+    def strategy_get(self, *, strategy_id: int) -> dict[str, Any]: ...
+
     def strategy_validate_code(
         self,
         *,
@@ -281,14 +283,33 @@ class ARCSelfTestService:
             )
 
         try:
-            created = client.strategy_create(
-                name=strategy_name,
-                script_content=attempt.strategy_code,
-                description=f"ARC self-test {attempt.candidate_id} for {symbol}",
-                exchange="okx",
-                symbols=[symbol],
-                idempotency_key=create_key,
-            )
+            if attempt.bitpro_strategy_id is not None:
+                existing_id = _as_int(attempt.bitpro_strategy_id)
+                if existing_id is None or existing_id <= 0:
+                    raise ValueError("invalid existing strategy identity")
+                existing = client.strategy_get(strategy_id=existing_id)
+                body = existing.get("strategy", existing)
+                if (
+                    _strategy_id(body) != existing_id
+                    or body.get("script_content") != attempt.strategy_code
+                ):
+                    return SelfTestResult(
+                        False,
+                        None,
+                        str(existing_id),
+                        None,
+                        reasons=["bitpro_existing_strategy_mismatch"],
+                    )
+                created = existing
+            else:
+                created = client.strategy_create(
+                    name=strategy_name,
+                    script_content=attempt.strategy_code,
+                    description=f"ARC self-test {attempt.candidate_id} for {symbol}",
+                    exchange="okx",
+                    symbols=[symbol],
+                    idempotency_key=create_key,
+                )
         except Exception as exc:
             return SelfTestResult(
                 passed=False,

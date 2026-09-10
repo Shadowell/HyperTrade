@@ -526,3 +526,60 @@ def test_feedback_candidate_gets_same_window_baseline_and_human_review(
     )
     assert mission.projection.paper_review["feedback_parent"]["instance_id"] == "source-paper"
     assert mission.projection.attempts[0].paper_instance_id is None
+
+
+def test_development_to_final_reuses_verified_platform_strategy(mission):
+    from hypertrade.arc.self_test import ARCSelfTestService
+
+    class Provider(ScriptProvider):
+        def chat(self, messages, tools=None):
+            if self.calls == 2:
+                self.calls += 1
+                return ChatResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCallRequest(
+                            "3",
+                            "finish",
+                            {"attempt_id": json.loads(messages[-1]["content"])["attempt_id"]},
+                        )
+                    ],
+                )
+            return super().chat(messages, tools)
+
+    class Platform:
+        creates = reads = backtests = 0
+        code = ""
+
+        def strategy_validate_code(self, **kwargs):
+            return {"status": "ok"}
+
+        def strategy_create(self, **kwargs):
+            self.creates += 1
+            self.code = kwargs["script_content"]
+            return {"strategy": {"id": 9}}
+
+        def strategy_get(self, **kwargs):
+            self.reads += 1
+            return {"strategy": {"id": 9, "script_content": self.code}}
+
+        def backtest_start_job(self, **kwargs):
+            self.backtests += 1
+            return {
+                "backtest_result": {
+                    "id": f"bt-{self.backtests}",
+                    "metrics": {
+                        "net_return": 0.12,
+                        "sharpe": 2,
+                        "max_drawdown": 0.05,
+                        "trades": 40,
+                    },
+                }
+            }
+
+    platform = Platform()
+    run_avo_research(
+        mission.mission_id, provider=Provider(), experiments=ARCSelfTestService(platform)
+    )
+    assert (platform.creates, platform.reads, platform.backtests) == (1, 1, 2)
+    assert mission.projection.state == "paper_review_ready"
