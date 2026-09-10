@@ -222,7 +222,7 @@ class Settings(BaseSettings):
         default=15.0,
         alias="BITPRO_MCP_TIMEOUT_SECONDS",
     )
-    active_chat_provider: str = Field(default="deepseek", alias="ACTIVE_CHAT_PROVIDER")
+    active_chat_provider: str = Field(default="codex", alias="ACTIVE_CHAT_PROVIDER")
     openai_base_url: str = Field(default="https://api.openai.com/v1", alias="OPENAI_BASE_URL")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
@@ -235,9 +235,9 @@ class Settings(BaseSettings):
         default_factory=lambda: Path.home() / ".codex" / "auth.json",
         alias="CODEX_AUTH_JSON",
     )
-    codex_model: str = Field(default="gpt-5.4", alias="CODEX_MODEL")
+    codex_model: str = Field(default="gpt-6-astra", alias="CODEX_MODEL")
     codex_model_options: str = Field(
-        default="gpt-5.4,gpt-5.5,gpt-5.4-mini",
+        default="gpt-6-astra,gpt-5.6-sol,gpt-5.5",
         alias="CODEX_MODEL_OPTIONS",
     )
     codex_timeout_seconds: float = Field(default=90.0, alias="CODEX_TIMEOUT_SECONDS")

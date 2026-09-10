@@ -48,7 +48,7 @@ def test_codex_default_model_options_include_gpt_5_5() -> None:
     providers = runtime.list_providers(selected="codex")
     codex = next(provider for provider in providers if provider["name"] == "codex")
 
-    assert codex["model_options"] == ["gpt-5.4", "gpt-5.5", "gpt-5.4-mini"]
+    assert codex["model_options"] == ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.5"]
 
 
 def test_codex_provider_accepts_hermes_openai_codex_alias(tmp_path) -> None:

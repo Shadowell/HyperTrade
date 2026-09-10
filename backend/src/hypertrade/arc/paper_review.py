@@ -57,6 +57,10 @@ def build_paper_review(
             "loop_interval_sec": 60,
         },
     }
+    if selected is not None and selected.strategy_spec.get("execution_policy"):
+        binding["paper_configuration"]["execution_policy"] = selected.strategy_spec[
+            "execution_policy"
+        ]
     if goal is not None and goal.research_windows is not None:
         binding["research_windows"] = goal.research_windows.model_dump(mode="json")
     if goal is not None and goal.feedback_parent:

@@ -78,6 +78,12 @@ class BlueTeamQuant:
                 "family": generated.family,
                 "direction": generated.direction,
                 "risk_overlays": list(generated.risk_overlays),
+                "execution_policy": {
+                    "max_margin_fraction": 0.2,
+                    "default_leverage": 1,
+                    "max_leverage": 2,
+                    "sizing": "equity_fraction",
+                },
                 "tunable_parameters": dict(generated.tunable_parameters),
                 "parameter_bounds": dict(generated.parameter_bounds),
             },
@@ -118,6 +124,12 @@ class BlueTeamQuant:
                 "family": generated.family,
                 "direction": generated.direction,
                 "risk_overlays": list(generated.risk_overlays),
+                "execution_policy": {
+                    "max_margin_fraction": 0.2,
+                    "default_leverage": 1,
+                    "max_leverage": 2,
+                    "sizing": "equity_fraction",
+                },
                 "tunable_parameters": dict(generated.tunable_parameters),
                 "parameter_bounds": dict(generated.parameter_bounds),
             },
@@ -166,9 +178,7 @@ class BlueTeamQuant:
         # long_short leads: it is the most expressive of the three, so when the budget
         # only funds one extra direction it should be the one that can trade either side.
         directions: tuple[str | None, ...] = (
-            (None,)
-            if direction_is_mandated(spec)
-            else ("long_short", "short_only", "long_only")
+            (None,) if direction_is_mandated(spec) else ("long_short", "short_only", "long_only")
         )
 
         slot = 0
@@ -408,9 +418,7 @@ class RedTeamQuant:
 
         # Advisories annotate the verdict without disqualifying the candidate: a window
         # that could not be fetched says nothing about the strategy.
-        passed = not any(
-            finding.severity is FindingSeverity.BLOCKING for finding in findings
-        )
+        passed = not any(finding.severity is FindingSeverity.BLOCKING for finding in findings)
         observed_metrics: dict[str, Any] = {
             "max_drawdown_after_attack": mc_metrics["max_perturbed_drawdown"],
             "sharpe_after_attack": mc_metrics["adverse_perturbed_sharpe"],

@@ -2,7 +2,7 @@ from hypertrade.config import Settings
 from hypertrade.providers.runtime import ProviderRuntime
 
 
-def test_provider_status_hides_keys_and_uses_deepseek_default(monkeypatch):
+def test_provider_status_hides_keys_and_uses_codex_default(monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-secret")
     monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 
@@ -12,6 +12,9 @@ def test_provider_status_hides_keys_and_uses_deepseek_default(monkeypatch):
     deepseek = next(provider for provider in providers if provider["name"] == "deepseek")
 
     assert deepseek["enabled"] is True
-    assert deepseek["default"] is True
+    assert deepseek["default"] is False
+    assert (
+        next(provider for provider in providers if provider["name"] == "codex")["default"] is True
+    )
     assert deepseek["model"] == "deepseek-v4-flash"
     assert "sk-secret" not in str(deepseek)

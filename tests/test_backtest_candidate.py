@@ -104,9 +104,7 @@ def test_every_family_and_direction_is_executable():
                     entry_logic=hint,
                 )
             )
-            result = replay_candidate(
-                generated.code, bars, parameters=generated.tunable_parameters
-            )
+            result = replay_candidate(generated.code, bars, parameters=generated.tunable_parameters)
             outcomes[(family.key, generated.direction)] = result
             assert result.bars == len(bars)
             assert result.trade_count > 0, f"{family.key} never traded"
@@ -186,6 +184,7 @@ def test_a_stop_loss_that_never_arms_cannot_be_confused_with_one_that_holds():
     loose = replay_candidate(
         generated.code, bars, parameters={**generated.tunable_parameters, "stop_loss": 0.45}
     )
+
     def stopped_out(result, threshold: float) -> int:
         stops = 0
         for trade in result.trades:
@@ -250,3 +249,22 @@ def test_candles_adapt_onto_the_simulator_bar():
     assert bars[0].symbol == "ETH-USDT-SWAP"
     assert bars[0].close == 100.5
     assert bars[0].volume == 12.0
+
+
+def test_local_replay_notional_is_not_multiplied_by_leverage():
+    from hypertrade.backtest.candidate import _SimulatedVenue
+
+    venue = _SimulatedVenue(100, BacktestCosts(fee_rate=0, slippage_rate=0))
+    venue.marks["BTC"] = 100
+    venue.open_position("BTC", "long", 40, 2)
+    venue.marks["BTC"] = 110
+    assert venue.equity() == 104
+
+
+def test_local_replay_rejects_unfunded_positions():
+    from hypertrade.backtest.candidate import _SimulatedVenue
+
+    venue = _SimulatedVenue(100, BacktestCosts())
+    venue.marks["BTC"] = 100
+    venue.open_position("BTC", "short", 1000, 2)
+    assert not venue.positions

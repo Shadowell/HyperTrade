@@ -60,6 +60,7 @@ _CONTRACT_METHODS = frozenset(
     {
         "open_contract",
         "close_contract",
+        "get_contract_position",
         "symbols",
         "on_init",
         "on_bar",
@@ -104,9 +105,7 @@ def static_code_rejections(code: str) -> list[str]:
 
         try:
             tree = ast.parse(code)
-            class_count = sum(
-                1 for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
-            )
+            class_count = sum(1 for node in ast.walk(tree) if isinstance(node, ast.ClassDef))
             if class_count > 1:
                 reasons.append("code_allows_only_one_strategy_class")
         except SyntaxError:
@@ -162,10 +161,7 @@ def _on_bar_contract_rejection(code: str) -> str:
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
             continue
-        if not any(
-            isinstance(base, ast.Name) and base.id == "BaseStrategy"
-            for base in node.bases
-        ):
+        if not any(isinstance(base, ast.Name) and base.id == "BaseStrategy" for base in node.bases):
             continue
         for item in node.body:
             if (
@@ -176,9 +172,7 @@ def _on_bar_contract_rejection(code: str) -> str:
             ):
                 annotation = item.args.args[1].annotation
                 annotation_name = getattr(annotation, "id", "") or (
-                    annotation.value
-                    if isinstance(annotation, ast.Constant)
-                    else ""
+                    annotation.value if isinstance(annotation, ast.Constant) else ""
                 )
                 if annotation_name == "BarData":
                     return ""
@@ -221,9 +215,7 @@ def _unknown_self_method_calls(code: str) -> list[str]:
             if name in _CONTRACT_METHODS or name in defined or name.startswith("__"):
                 continue
             unknown.add(name)
-    reasons = [
-        f"code_defines_forbidden_contract_method:{name}" for name in forbidden_definitions
-    ]
+    reasons = [f"code_defines_forbidden_contract_method:{name}" for name in forbidden_definitions]
     reasons.extend(f"code_uses_unknown_base_strategy_method:{name}" for name in unknown)
     return reasons
 
@@ -912,9 +904,9 @@ def _docstring_lines(
         f"    Family: {family.label}",
         f"    Direction: {direction}",
         f"    Risk overlays: {', '.join(overlays) or 'none'}",
-        f'    Hypothesis: {clean(spec.get("hypothesis"))}',
-        f'    Entry: {clean(spec.get("entry_logic"))}',
-        f'    Exit: {clean(spec.get("exit_logic"))}',
+        f"    Hypothesis: {clean(spec.get('hypothesis'))}",
+        f"    Entry: {clean(spec.get('entry_logic'))}",
+        f"    Exit: {clean(spec.get('exit_logic'))}",
         "",
         "    Generated deterministically from research_strategy_spec.v1.",
         '    """',
@@ -934,32 +926,31 @@ def _on_init_lines(
         default = defaults[param.name]
         if param.integral:
             lines.append(
-                f'        self.p_{param.name} = int(max({int(param.minimum)}, '
+                f"        self.p_{param.name} = int(max({int(param.minimum)}, "
                 f'min({int(param.maximum)}, int(float(params.get("{param.name}", '
                 f"{int(default)}))))))"
             )
         else:
             lines.append(
-                f'        self.p_{param.name} = float(max({param.minimum}, '
+                f"        self.p_{param.name} = float(max({param.minimum}, "
                 f'min({param.maximum}, float(params.get("{param.name}", {default})))))'
             )
     if family.key == "ma_crossover":
-        lines.append(
-            "        self.p_slow_window = max(self.p_fast_window + 1, self.p_slow_window)"
-        )
+        lines.append("        self.p_slow_window = max(self.p_fast_window + 1, self.p_slow_window)")
     if family.key == "rsi_reversal":
         lines.append(
             "        self.p_overbought_level = max("
             "self.p_oversold_level + 1.0, self.p_overbought_level)"
         )
     if family.key == "mean_reversion_zscore":
-        lines.append(
-            "        self.p_exit_zscore = min(self.p_exit_zscore, self.p_entry_zscore)"
-        )
+        lines.append("        self.p_exit_zscore = min(self.p_exit_zscore, self.p_entry_zscore)")
     lines += [
-        "        self.trade_notional_usdt = float("
-        'self.config.get("trade_notional_usdt", 1000.0))',
-        '        self.leverage = float(self.config.get("leverage", 2.0))',
+        '        self.trade_notional_usdt = float(self.config.get("trade_notional_usdt", 0.0))',
+        '        self.leverage = float(min(2.0, max(1.0, self.config.get("leverage", 1.0))))',
+        (
+            "        self.margin_fraction = min(0.2, max(0.0, float(self."
+            'config.get("margin_fraction", 0.2))))'
+        ),
         f"        self._span = int({family.span_expression})",
         "        self._closes = {",
         "            symbol: deque(maxlen=self._span) for symbol in self.symbols()",
@@ -983,20 +974,51 @@ def _on_init_lines(
 
 
 def _lifecycle_lines() -> list[str]:
+    # The same compiled sizing and receipt rules run in backtest and Paper.
     return [
         "    async def _enter(self, symbol, side, close):",
-        "        await self.open_contract(",
-        "            symbol, side, self.trade_notional_usdt, leverage=self.leverage",
-        "        )",
+        "        equity = float(self.broker.equity)",
+        '        if not 0.0 < equity < float("inf") or self.trade_notional_usdt < 0.0:',
+        "            return None",
+        "        cap = equity * self.margin_fraction * self.leverage",
+        (
+            "        notional = min(cap, self.trade_notional_usdt) if sel"
+            "f.trade_notional_usdt > 0 else cap"
+        ),
+        "        if notional <= 0.0:",
+        "            return None",
+        (
+            "        receipt = await self.open_contract(symbol, side, not"
+            "ional, leverage=self.leverage)"
+        ),
+        (
+            '        if receipt.get("status") not in ("filled", "closed",'
+            ' "submitted", "partially_filled"):'
+        ),
+        "            return None",
         '        self._state[symbol] = 1 if side == "long" else -1',
         "        self._entry_price[symbol] = close",
         "        self._bars_held[symbol] = 0",
         "",
         "    async def _exit(self, symbol, side):",
-        "        await self.close_contract(symbol, side)",
+        "        receipt = await self.close_contract(symbol, side)",
+        (
+            '        if receipt.get("status") not in ("filled", "closed",'
+            ' "submitted", "partially_filled", "no_position"):'
+        ),
+        "            return None",
         "        self._state[symbol] = 0",
         "        self._entry_price[symbol] = 0.0",
         "        self._bars_held[symbol] = 0",
+        "",
+        "    async def _sync_position(self, symbol):",
+        '        position = await self.get_contract_position(symbol, "long")',
+        "        direction = 1",
+        "        if not position:",
+        '            position = await self.get_contract_position(symbol, "short")',
+        "            direction = -1",
+        "        self._state[symbol] = direction if position else 0",
+        '        self._entry_price[symbol] = float(position["entry_price"]) if position else 0.0',
     ]
 
 
@@ -1046,6 +1068,7 @@ def _on_bar_lines(
         "        close = float(bar.close)",
         "        if symbol not in self._closes or close <= 0.0:",
         "            return None",
+        "        await self._sync_position(symbol)",
         "        self._closes[symbol].append(close)",
     ]
     if family.needs_high_low:

@@ -24,7 +24,9 @@ _PROVIDER_KEY_ENV_VARS = (
 
 
 @pytest.fixture(autouse=True)
-def _hermetic_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+def _hermetic_provider_keys(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    # Codex can authenticate from a local file even when CODEX_API_KEY is empty.
+    monkeypatch.setenv("CODEX_AUTH_JSON", str(tmp_path / "absent-codex-auth.json"))
     for var in _PROVIDER_KEY_ENV_VARS:
         monkeypatch.setenv(var, "")
 

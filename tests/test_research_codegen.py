@@ -186,12 +186,42 @@ def test_no_family_emits_a_call_bitpro_forbids(family: Any, direction: str) -> N
 # inside `strategy_validate_code`, which ARC then records as a BitPro outage.
 _BITPRO_SANDBOX_BUILTINS = frozenset(
     {
-        "range", "len", "abs", "max", "min", "round", "int", "float", "bool", "str",
-        "list", "dict", "tuple", "set", "enumerate", "zip", "sorted", "reversed",
-        "sum", "any", "all", "isinstance", "hasattr", "print",
-        "Exception", "ValueError", "TypeError", "KeyError", "IndexError",
-        "RuntimeError", "ZeroDivisionError",
-        "__import__", "__build_class__", "True", "False", "None",
+        "range",
+        "len",
+        "abs",
+        "max",
+        "min",
+        "round",
+        "int",
+        "float",
+        "bool",
+        "str",
+        "list",
+        "dict",
+        "tuple",
+        "set",
+        "enumerate",
+        "zip",
+        "sorted",
+        "reversed",
+        "sum",
+        "any",
+        "all",
+        "isinstance",
+        "hasattr",
+        "print",
+        "Exception",
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "IndexError",
+        "RuntimeError",
+        "ZeroDivisionError",
+        "__import__",
+        "__build_class__",
+        "True",
+        "False",
+        "None",
     }
 )
 
@@ -211,9 +241,7 @@ def test_every_family_builds_under_bitpro_restricted_builtins(family: Any) -> No
         )
     )
     body = "\n".join(
-        line
-        for line in generated.code.splitlines()
-        if not line.startswith(("from ", "import "))
+        line for line in generated.code.splitlines() if not line.startswith(("from ", "import "))
     )
 
     namespace: dict[str, Any] = {
@@ -305,8 +333,10 @@ def test_missing_strategy_key_is_rejected() -> None:
         ("class A(BaseStrategy):\n    x = open('/etc/passwd')\n", "filesystem_access"),
         ("import socket\n\nclass A(BaseStrategy):\n    pass\n", "network_access"),
         ("class A(BaseStrategy):\n    x = eval('1')\n", "dynamic_execution"),
-        ("class A(BaseStrategy):\n    x = 1\n\nclass B(BaseStrategy):\n    y = 2\n",
-         "code_requires_single_basestrategy_subclass"),
+        (
+            "class A(BaseStrategy):\n    x = 1\n\nclass B(BaseStrategy):\n    y = 2\n",
+            "code_requires_single_basestrategy_subclass",
+        ),
     ],
 )
 def test_static_gate_rejects_inadmissible_constructs(code: str, reason: str) -> None:
@@ -329,3 +359,50 @@ def test_static_gate_accepts_a_minimal_admissible_candidate() -> None:
         )
         == []
     )
+
+
+def test_generated_strategy_sizes_from_equity_and_does_not_invent_rejected_positions():
+    import asyncio
+    from collections import deque
+    from types import SimpleNamespace
+
+    class Base:
+        def __init__(self, status):
+            self.config = {}
+            self.broker = SimpleNamespace(equity=100)
+            self.status, self.orders = status, []
+
+        def symbols(self):
+            return ["BTC"]
+
+        async def open_contract(self, symbol, side, amount, leverage):
+            self.orders.append((amount, leverage))
+            return {"status": self.status}
+
+        async def close_contract(self, symbol, side):
+            return {"status": "rejected"}
+
+        async def get_contract_position(self, symbol, side):
+            return None
+
+    generated = generate_strategy(_spec(family_key="ma_crossover"))
+    body = "\n".join(
+        line for line in generated.code.splitlines() if not line.startswith(("import ", "from "))
+    )
+    namespace = {"BaseStrategy": Base, "deque": deque}
+    exec(compile(body, "<funding-test>", "exec"), namespace)
+
+    async def run():
+        rejected = namespace[generated.class_name]("rejected")
+        await rejected.on_init()
+        await rejected._enter("BTC", "long", 100)
+        amount, leverage = rejected.orders[0]
+        assert amount / leverage <= 20
+        assert rejected._state["BTC"] == 0
+        submitted = namespace[generated.class_name]("submitted")
+        await submitted.on_init()
+        await submitted._enter("BTC", "long", 100)
+        await submitted.on_bar(SimpleNamespace(symbol="BTC", close=100, high=100, low=100))
+        assert submitted._state["BTC"] == 0
+
+    asyncio.run(run())

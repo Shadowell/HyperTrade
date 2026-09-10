@@ -29,7 +29,7 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 # To use the server's logged-in Codex CLI, set the following after setup:
 # ACTIVE_CHAT_PROVIDER=codex
 # CODEX_AUTH_SOURCE_PATH=/root/.codex/auth.json
-# CODEX_MODEL=gpt-5.4
+# CODEX_MODEL=gpt-6-astra
 QWEN_EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 QWEN_EMBEDDING_MODEL=text-embedding-v4
 QWEN_EMBEDDING_DIMENSIONS=1024

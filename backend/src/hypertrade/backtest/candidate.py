@@ -145,7 +145,7 @@ class _Position:
         edge = (mark - self.entry_price) / self.entry_price
         if self.side == "short":
             edge = -edge
-        return edge * self.notional * self.leverage
+        return edge * self.notional
 
 
 class _SimulatedVenue:
@@ -162,23 +162,35 @@ class _SimulatedVenue:
         self.timestamp = ""
 
     def _charge(self, notional: float, leverage: float) -> None:
-        exposure = notional * leverage
+        exposure = notional
         cost = exposure * (self.costs.fee_rate + self.costs.slippage_rate)
         self.fees_paid += cost
         self.cash -= cost
         self.gross_notional += exposure
 
-    def open_position(self, symbol: str, side: str, notional: float, leverage: float) -> None:
+    def open_position(self, symbol: str, side: str, notional: float, leverage: float) -> bool:
         # One position per symbol: a repeated entry is ignored rather than averaged, so
         # a candidate cannot accumulate unbounded exposure through a signal that fires
         # on consecutive bars.
-        if symbol in self.positions or notional <= 0.0:
-            return
+        if (
+            symbol in self.positions
+            or side not in {"long", "short"}
+            or not math.isfinite(notional)
+            or notional <= 0.0
+            or not math.isfinite(leverage)
+            or leverage < 1
+        ):
+            return False
         mark = self.marks.get(symbol, 0.0)
         if mark <= 0.0:
-            return
+            return False
+        used = sum(position.notional / position.leverage for position in self.positions.values())
+        fees = notional * (self.costs.fee_rate + self.costs.slippage_rate)
+        if notional / leverage + fees > self.equity() - used:
+            return False
         self._charge(notional, leverage)
         self.positions[symbol] = _Position(side, mark, notional, leverage, self.timestamp)
+        return True
 
     def close_position(self, symbol: str, side: str | None = None) -> None:
         position = self.positions.get(symbol)
@@ -188,7 +200,7 @@ class _SimulatedVenue:
             return
         mark = self.marks.get(symbol, position.entry_price)
         pnl = position.unrealized(mark)
-        self._charge(position.notional, position.leverage)
+        self._charge(position.notional * mark / position.entry_price, position.leverage)
         self.cash += pnl
         self.trades.append(
             Trade(
@@ -225,6 +237,24 @@ class SimulatedStrategyRuntime:
         self._symbols = tuple(symbols)
         self._venue = venue
 
+    @property
+    def broker(self) -> SimulatedStrategyRuntime:
+        return self
+
+    @property
+    def equity(self) -> float:
+        return self._venue.equity()
+
+    async def get_contract_position(self, symbol: str, side: str) -> dict[str, Any] | None:
+        position = self._venue.positions.get(symbol)
+        if position is None or position.side != side:
+            return None
+        return {
+            "entry_price": position.entry_price,
+            "side": position.side,
+            "notional_usdt": position.notional,
+        }
+
     def symbols(self) -> tuple[str, ...]:
         return self._symbols
 
@@ -236,11 +266,13 @@ class SimulatedStrategyRuntime:
 
     async def open_contract(
         self, symbol: str, side: str, notional: float, leverage: float = 1.0
-    ) -> None:
-        self._venue.open_position(symbol, side, float(notional), float(leverage))
+    ) -> dict[str, Any]:
+        opened = self._venue.open_position(symbol, side, float(notional), float(leverage))
+        return {"status": "filled" if opened else "rejected"}
 
-    async def close_contract(self, symbol: str, side: str | None = None) -> None:
+    async def close_contract(self, symbol: str, side: str | None = None) -> dict[str, Any]:
         self._venue.close_position(symbol, side)
+        return {"status": "closed"}
 
 
 def load_candidate_class(code: str) -> type[SimulatedStrategyRuntime]:
@@ -292,8 +324,8 @@ def replay_candidate(
     parameters: Mapping[str, float] | None = None,
     symbols: Sequence[str] | None = None,
     starting_equity: float = 10_000.0,
-    trade_notional_usdt: float = 1_000.0,
-    leverage: float = 2.0,
+    trade_notional_usdt: float = 0.0,
+    leverage: float = 1.0,
     timeframe: str = "1H",
     costs: BacktestCosts | None = None,
 ) -> CandidateBacktestResult:
@@ -326,6 +358,8 @@ def replay_candidate(
         for bar in bars:
             venue.timestamp = bar.timestamp
             venue.marks[bar.symbol] = bar.close
+            if not math.isfinite(venue.equity()) or venue.equity() <= 0:
+                raise CandidateBacktestError("candidate_equity_exhausted")
             await strategy.on_bar(bar)
             equity_curve.append(venue.equity())
         # Mark the book flat at the final bar so an open position's paper gain is
