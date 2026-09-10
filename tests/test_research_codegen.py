@@ -406,3 +406,46 @@ def test_generated_strategy_sizes_from_equity_and_does_not_invent_rejected_posit
         assert submitted._state["BTC"] == 0
 
     asyncio.run(run())
+
+
+def test_ema_macd_kdj_goal_has_real_composite_indicators() -> None:
+    generated = generate_strategy(_spec(hypothesis="EMA5 EMA20交叉结合MACD和KDJ"))
+    assert generated.family == "ema_macd_kdj"
+    assert "self._update_confluence(symbol, close)" in generated.code
+    assert generated.tunable_parameters["fast_window"] == 5
+    assert generated.tunable_parameters["slow_window"] == 20
+    assert not static_code_rejections(generated.code)
+    tree = ast.parse(generated.code)
+    method = next(
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef) and n.name == "_update_confluence"
+    )
+    ns: dict[str, Any] = {}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), "<indicator-test>", "exec"), ns)
+    from types import SimpleNamespace
+
+    state = SimpleNamespace(
+        _indicators={},
+        _highs={"BTC": [10.0]},
+        _lows={"BTC": [0.0]},
+        p_fast_window=5,
+        p_slow_window=20,
+        p_macd_fast=12,
+        p_macd_slow=26,
+        p_macd_signal=9,
+        p_kdj_period=9,
+        p_kdj_smooth=3,
+    )
+    update = ns["_update_confluence"]
+    update(state, "BTC", 5.0)
+    update(state, "BTC", 8.0)
+    values = state._indicators["BTC"]
+    assert values["fast"] == pytest.approx(6.0)  # EMA, not SMA 6.5
+    assert values["slow"] == pytest.approx(5 + 6 / 21)
+    assert values["dif"] == pytest.approx(6 / 13 - 6 / 27)
+    assert values["dea"] == pytest.approx(values["dif"] / 5)
+    assert values["k"] == pytest.approx(60)
+    assert values["d"] == pytest.approx(160 / 3)
+    assert values["j"] == pytest.approx(220 / 3)
+    assert values["cross_up"] is True

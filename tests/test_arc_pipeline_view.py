@@ -170,10 +170,10 @@ def test_activity_never_carries_strategy_source() -> None:
 
 def test_activity_is_newest_first_and_bounded() -> None:
     controller = _mission()
-    for index in range(20):
+    for index in range(120):
         _propose(controller, f"att_{index}")
     view = build_pipeline_view(controller.projection)
-    assert len(view["activity"]) == 12
+    assert len(view["activity"]) == 100
     stamps = [row["at"] for row in view["activity"]]
     assert stamps == sorted(stamps, reverse=True)
 
@@ -272,3 +272,25 @@ def test_view_matches_the_projection_after_a_reload() -> None:
     assert build_pipeline_view(reloaded.projection, now=now) == build_pipeline_view(
         controller.projection, now=now
     )
+
+
+def test_activity_logs_include_arguments_and_metrics_but_not_secrets_or_source() -> None:
+    controller = _mission()
+    controller.apply_event(
+        "avo_tool_requested",
+        {
+            "id": "call_1",
+            "name": "propose",
+            "arguments": {
+                "hypothesis": "EMA and MACD and KDJ",
+                "family_key": "ema_macd_kdj",
+                "parameter_bounds": {"fast_window": {"min": 5, "max": 5}},
+                "api_key": "do-not-expose",
+                "strategy_code": SECRET_CODE,
+            },
+        },
+    )
+    row = build_pipeline_view(controller.projection)["activity"][0]
+    assert row["logs"]["arguments"]["parameter_bounds"]["fast_window"]["min"] == 5
+    assert "do-not-expose" not in repr(row)
+    assert SECRET_CODE not in repr(row)

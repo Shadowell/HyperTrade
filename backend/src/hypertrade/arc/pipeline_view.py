@@ -10,10 +10,12 @@ including ``strategy_code``, which stays behind candidate drill-down.
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 from typing import Any
 
 from hypertrade.arc.controller import ARCEventV1, ARCMissionProjection
+from hypertrade.research.codegen import FAMILIES
 
 STAGES: tuple[tuple[str, str], ...] = (
     ("goal", "目标编译"),
@@ -118,7 +120,7 @@ def build_pipeline_view(
         "updated_at": projection.updated_at.isoformat(),
         "seconds_since_update": _age_seconds(projection.updated_at, clock),
         "event_count": len(projection.events),
-        "activity": [_activity_row(event) for event in projection.events[-12:]][::-1],
+        "activity": [_activity_row(event) for event in projection.events[-100:]][::-1],
     }
 
 
@@ -391,6 +393,87 @@ def _blocked_reason(projection: ARCMissionProjection) -> dict[str, Any] | None:
     return None
 
 
+_LOG_FIELDS = (
+    frozenset(_SAFE_EVENT_FIELDS)
+    | {
+        "id",
+        "arguments",
+        "result",
+        "calls",
+        "usage",
+        "budget_snapshot",
+        "attempt",
+        "goal",
+        "objective",
+        "hypothesis",
+        "family",
+        "family_key",
+        "direction",
+        "parameter_bounds",
+        "tunable_parameters",
+        "strategy_spec",
+        "min",
+        "max",
+        "target",
+        "message",
+        "hint",
+        "metrics",
+        "development",
+        "self_test",
+        "reasons",
+        "rejection_reasons",
+        "warnings",
+        "total_return_pct",
+        "total_return",
+        "net_return_pct",
+        "max_drawdown",
+        "max_drawdown_pct",
+        "sharpe_ratio",
+        "trade_count",
+        "total_trades",
+        "initial_capital",
+        "final_equity",
+        "backtest_result_id",
+        "backtest_job_id",
+        "research_finished",
+        "duration_ms",
+        "model_calls_used",
+        "max_model_calls",
+        "tool_calls_used",
+        "max_tool_calls",
+        "backtests_used",
+        "max_backtests",
+        "candidates_used",
+        "max_candidates",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "prompt_tokens",
+        "completion_tokens",
+    }
+    | {p.name for family in FAMILIES for p in family.parameters}
+)
+
+
+def _safe_log(value: Any, depth: int = 0) -> Any:
+    # Explicit field allowlist: no provider environment, source, auth or full chat context.
+    if depth > 6:
+        return "[详细内容超过展示层级]"
+    if isinstance(value, str):
+        return value[:4000] + ("…[已截断]" if len(value) > 4000 else "")
+    if value is None or isinstance(value, bool | int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, list):
+        return [_safe_log(item, depth + 1) for item in value[:20]]
+    if isinstance(value, dict):
+        return {
+            key: _safe_log(item, depth + 1) for key, item in value.items() if key in _LOG_FIELDS
+        }
+    return None
+
+
 def _activity_row(event: ARCEventV1) -> dict[str, Any]:
     detail = {
         key: event.payload[key]
@@ -403,6 +486,7 @@ def _activity_row(event: ARCEventV1) -> dict[str, Any]:
         "label": _EVENT_LABELS.get(event.event_type, event.event_type),
         "at": event.timestamp.isoformat(),
         "detail": detail,
+        "logs": _safe_log(event.payload),
     }
 
 
@@ -466,7 +550,7 @@ def _paper_review_pipeline(projection: ARCMissionProjection, clock: datetime) ->
             "key": key,
             "label": label,
             "status": "done"
-            if i < frontier
+            if i < frontier or (completed[i] and i != frontier)
             else ("blocked" if blocked else "active")
             if i == frontier
             else "pending",
@@ -486,5 +570,5 @@ def _paper_review_pipeline(projection: ARCMissionProjection, clock: datetime) ->
         "updated_at": projection.updated_at.isoformat(),
         "seconds_since_update": _age_seconds(projection.updated_at, clock),
         "event_count": len(projection.events),
-        "activity": [_activity_row(event) for event in projection.events[-12:]][::-1],
+        "activity": [_activity_row(event) for event in projection.events[-100:]][::-1],
     }

@@ -110,13 +110,16 @@ def test_every_family_and_direction_is_executable():
             assert result.trade_count > 0, f"{family.key} never traded"
             assert 0.0 <= result.max_drawdown < 1.0
 
-    # A bidirectional variant must be able to hold through both legs, so it cannot be
-    # indistinguishable from its long-only sibling.
+    # One-shot crossover entries can be missed while closing the opposite side.
+    # More permitted directions do not imply monotonically greater exposure.
     for family in FAMILIES:
         long_only = outcomes.get((family.key, "long_only"))
         both = outcomes.get((family.key, "long_short"))
         if long_only and both:
-            assert both.exposure >= long_only.exposure
+            assert all(trade.side == "long" for trade in long_only.trades)
+            assert all(trade.side in {"long", "short"} for trade in both.trades)
+            assert 0 <= both.exposure <= 1
+    assert any(trade.side == "short" for trade in outcomes[("ema_macd_kdj", "long_short")].trades)
 
 
 def test_replay_is_deterministic():

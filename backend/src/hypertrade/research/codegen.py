@@ -372,6 +372,22 @@ def _emit_ma_crossover(family: StrategyFamily, direction: Direction) -> SignalBl
     )
 
 
+def _emit_ema_macd_kdj(family: StrategyFamily, direction: Direction) -> SignalBlock:
+    return SignalBlock(
+        setup=(
+            "        signal = self._indicators[symbol]",
+            '        bullish = signal["dif"] > signal["dea"]',
+            '        bearish = signal["dif"] < signal["dea"]',
+            '        kdj_up = signal["j"] > signal["k"] > signal["d"]',
+            '        kdj_down = signal["j"] < signal["k"] < signal["d"]',
+        ),
+        long_entry='signal["cross_up"] and bullish and kdj_up',
+        short_entry='signal["cross_down"] and bearish and kdj_down',
+        long_exit='signal["fast"] < signal["slow"]',
+        short_exit='signal["fast"] > signal["slow"]',
+    )
+
+
 def _emit_atr_breakout(family: StrategyFamily, direction: Direction) -> SignalBlock:
     return SignalBlock(
         setup=(
@@ -496,6 +512,7 @@ def _emit_state_machine(block: SignalBlock, direction: Direction) -> list[str]:
 
 _SIGNAL_EMITTERS: dict[str, Any] = {
     "ma_crossover": _emit_ma_crossover,
+    "ema_macd_kdj": _emit_ema_macd_kdj,
     "atr_breakout": _emit_atr_breakout,
     "mean_reversion_zscore": _emit_mean_reversion_zscore,
     "rsi_reversal": _emit_rsi_reversal,
@@ -505,6 +522,26 @@ _SIGNAL_EMITTERS: dict[str, Any] = {
 
 
 FAMILIES: tuple[StrategyFamily, ...] = (
+    StrategyFamily(
+        key="ema_macd_kdj",
+        label="EMA crossover confirmed by MACD DIF/DEA and KDJ J/K/D alignment",
+        signature=("ema", "macd", "kdj", "指数均线"),
+        theme=("组合指标", "交叉"),
+        parameters=(
+            TunableParameter("fast_window", 5, 2, 120),
+            TunableParameter("slow_window", 20, 3, 400),
+            TunableParameter("macd_fast", 12, 2, 120),
+            TunableParameter("macd_slow", 26, 3, 400),
+            TunableParameter("macd_signal", 9, 2, 120),
+            TunableParameter("kdj_period", 9, 2, 120),
+            TunableParameter("kdj_smooth", 3, 2, 20),
+        ),
+        helpers=("_update_confluence",),
+        span_expression=(
+            "max(self.p_slow_window, self.p_macd_slow + self.p_macd_signal, self.p_kdj_period) + 1"
+        ),
+        needs_high_low=True,
+    ),
     StrategyFamily(
         key="ma_crossover",
         label="moving-average crossover trend follower",
@@ -664,6 +701,28 @@ _MAX_HOLDING_MARKERS = (
 # failure -- indistinguishable, from ARC's side, from BitPro being down. Every call
 # site already goes through `self`, so binding these costs nothing.
 _HELPER_SOURCES: dict[str, tuple[str, ...]] = {
+    "_update_confluence": (
+        "    def _update_confluence(self, symbol, close):",
+        "        prev = self._indicators.get(symbol)",
+        "        if prev is None:",
+        '            prev = {"fast": close, "slow": close, "mf": close, "ms": close,',
+        '                        "dif": 0.0, "dea": 0.0, "k": 50.0, "d": 50.0, "j": 50.0}',
+        '        fast = prev["fast"] + 2.0 / (self.p_fast_window + 1) * (close - prev["fast"])',
+        '        slow = prev["slow"] + 2.0 / (self.p_slow_window + 1) * (close - prev["slow"])',
+        '        mf = prev["mf"] + 2.0 / (self.p_macd_fast + 1) * (close - prev["mf"])',
+        '        ms = prev["ms"] + 2.0 / (self.p_macd_slow + 1) * (close - prev["ms"])',
+        "        dif = mf - ms",
+        '        dea = prev["dea"] + 2.0 / (self.p_macd_signal + 1) * (dif - prev["dea"])',
+        "        high = max(list(self._highs[symbol])[-self.p_kdj_period:])",
+        "        low = min(list(self._lows[symbol])[-self.p_kdj_period:])",
+        "        rsv = 100.0 * (close - low) / (high - low) if high > low else 50.0",
+        '        k = prev["k"] + (rsv - prev["k"]) / self.p_kdj_smooth',
+        '        d = prev["d"] + (k - prev["d"]) / self.p_kdj_smooth',
+        '        self._indicators[symbol] = {"fast": fast, "slow": slow, "mf": mf, "ms": ms,',
+        '            "dif": dif, "dea": dea, "k": k, "d": d, "j": 3.0 * k - 2.0 * d,',
+        '            "cross_up": prev["fast"] <= prev["slow"] and fast > slow,',
+        '            "cross_down": prev["fast"] >= prev["slow"] and fast < slow}',
+    ),
     "_mean": (
         "    def _mean(self, values):",
         "        return sum(values) / len(values) if values else 0.0",
@@ -935,8 +994,13 @@ def _on_init_lines(
                 f"        self.p_{param.name} = float(max({param.minimum}, "
                 f'min({param.maximum}, float(params.get("{param.name}", {default})))))'
             )
-    if family.key == "ma_crossover":
+    if family.key in {"ma_crossover", "ema_macd_kdj"}:
         lines.append("        self.p_slow_window = max(self.p_fast_window + 1, self.p_slow_window)")
+    if family.key == "ema_macd_kdj":
+        lines += [
+            "        self.p_macd_slow = max(self.p_macd_fast + 1, self.p_macd_slow)",
+            "        self._indicators = {}",
+        ]
     if family.key == "rsi_reversal":
         lines.append(
             "        self.p_overbought_level = max("
@@ -1084,6 +1148,9 @@ def _on_bar_lines(
             "        self._highs[symbol].append(max(high, close))",
             "        self._lows[symbol].append(min(low, close))",
         ]
+    if family.key == "ema_macd_kdj":
+        # Update recursive indicators on every historical bar before the entry warmup gate.
+        lines.append("        self._update_confluence(symbol, close)")
     lines += [
         "        state = self._state[symbol]",
         "        if state != 0:",
