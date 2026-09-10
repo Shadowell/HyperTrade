@@ -99,6 +99,10 @@ Choose your investigation order. Only finish a candidate already developed.
 The final validation window is hidden from iterative feedback. Finish ends the research attempt.
 Never change budgets, evaluation criteria, permissions, running strategies or approvals.
 No Paper/live actions exist here. Use stop to end honestly without a winner.
+The server budget and remaining quotas are CURRENT totals including ALL actions in history
+and this model request. Never add historical tool calls or candidates to those totals again.
+Use remaining directly; candidate_ids are already counted. Zero candidate slots still allows
+developing or finishing existing candidates. One backtest slot is reserved for final validation.
 """
 
 
@@ -444,7 +448,28 @@ def _run(
             current_goal = controller.projection.goal
             assert current_goal is not None
             runtime_context = json.loads(messages[1]["content"])
-            runtime_context["budget"] = current_goal.budget.model_dump(mode="json")
+            # Present the same post-reservation totals the ledger will have before dispatch.
+            # Historical tool messages are evidence, never additional budget consumption.
+            budget = current_goal.budget.model_dump(mode="json")
+            budget["model_calls_used"] += 1
+            runtime_context["budget"] = budget
+            runtime_context["budget_semantics"] = (
+                "current_server_totals_including_history_and_this_model_request"
+            )
+            runtime_context["remaining"] = {
+                "candidates": max(0, budget["max_candidates"] - budget["candidates_used"]),
+                "model_calls": max(0, budget["max_model_calls"] - budget["model_calls_used"]),
+                "tool_calls": max(0, budget["max_tool_calls"] - budget["tool_calls_used"]),
+                "backtests": max(0, budget["max_backtests"] - budget["backtests_used"]),
+                "development_backtests": max(
+                    0, budget["max_backtests"] - budget["backtests_used"] - 1
+                ),
+            }
+            runtime_context["candidate_ids"] = [
+                candidate.attempt_id for candidate in controller.projection.attempts
+            ]
+            # Refresh instructions too when resuming tasks initialized by an older worker.
+            messages[0]["content"] = _SYSTEM
             messages[1]["content"] = _json(runtime_context)
             controller.apply_event(
                 "avo_model_requested",

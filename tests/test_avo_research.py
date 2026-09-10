@@ -96,7 +96,7 @@ def test_agent_uses_development_feedback_and_final_result_is_not_fed_back(missio
     assert [
         json.loads(messages[1]["content"])["budget"]["model_calls_used"]
         for messages in provider.seen
-    ] == list(range(5))
+    ] == list(range(1, 6))
 
 
 def test_pending_effect_on_restart_stops_without_reissuing(mission):
@@ -423,3 +423,20 @@ def test_worker_resolves_task_model(mission, monkeypatch):
     monkeypatch.setattr("hypertrade.arc.avo.ProviderRuntime.get_chat_provider", resolve)
     run_avo_research(mission.mission_id, experiments=Experiments())
     assert selected == {"selected": "codex", "selected_model": "gpt-6-astra"}
+
+
+def test_budget_context_reports_remaining_without_recounting_tool_history(mission):
+    provider = ScriptProvider()
+    run_avo_research(mission.mission_id, provider=provider, experiments=Experiments())
+    contexts = [json.loads(messages[1]["content"]) for messages in provider.seen]
+    assert [c["remaining"]["candidates"] for c in contexts] == [2, 1, 1, 0, 0]
+    assert [c["budget"]["model_calls_used"] for c in contexts] == [1, 2, 3, 4, 5]
+    assert contexts[2]["remaining"]["development_backtests"] == 8
+    assert (
+        contexts[2]["budget_semantics"]
+        == "current_server_totals_including_history_and_this_model_request"
+    )
+    assert len(contexts[2]["candidate_ids"]) == 1
+    # Request snapshots use exactly the same totals as the actual model input.
+    events = [e for e in mission.projection.events if e.event_type == "avo_model_requested"]
+    assert [e.payload["budget_snapshot"] for e in events] == [c["budget"] for c in contexts]
