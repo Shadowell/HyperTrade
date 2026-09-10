@@ -33,6 +33,13 @@ def build_evidence_view(projection: ARCMissionProjection) -> dict[str, Any]:
         research = {
             "research": {
                 "mode": "avo",
+                "paper_feedback": projection.paper_feedback,
+                "feedback_parent": {
+                    k: v
+                    for k, v in (projection.goal.feedback_parent or {}).items()
+                    if k != "baseline"
+                },
+                "feedback_policy": projection.goal.feedback.model_dump(mode="json"),
                 "budget": projection.goal.budget.model_dump(mode="json"),
                 "windows": projection.goal.research_windows.model_dump(mode="json")
                 if projection.goal.research_windows

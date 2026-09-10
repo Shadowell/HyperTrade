@@ -24,6 +24,8 @@ def add_research_parser(subparsers: Any) -> None:
     start.add_argument("--mode", choices=("avo", "arc"), default="avo")
     start.add_argument("--provider", choices=get_args(ChatProviderName))
     start.add_argument("--model", help="任务模型覆盖（codex / vide_coding）")
+    start.add_argument("--feedback-threshold-pp", type=float, default=10)
+    start.add_argument("--no-paper-feedback", action="store_true")
     start.add_argument("--max-model-calls", type=int, default=20)
     start.add_argument("--max-backtests", type=int, default=10)
     start.add_argument("--symbol", default="BTC-USDT-SWAP")
@@ -65,6 +67,10 @@ def research_request(args: argparse.Namespace) -> tuple[str, str, dict[str, Any]
             {
                 "objective": " ".join(args.objective),
                 "research_mode": args.mode,
+                "feedback": {
+                    "enabled": not args.no_paper_feedback,
+                    "threshold_pp": args.feedback_threshold_pp,
+                },
                 "provider_name": args.provider,
                 "model_name": args.model,
                 "max_model_calls": args.max_model_calls,

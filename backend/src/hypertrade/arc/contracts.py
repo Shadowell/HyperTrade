@@ -56,6 +56,18 @@ class ARCBudgetV1(BaseModel):
         )
 
 
+class PaperFeedbackPolicyV1(BaseModel):
+    """Two completed UTC weeks; disabled when decoding historical missions."""
+
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = False
+    threshold_pp: Decimal = Field(default=Decimal("10"), gt=0, le=100)
+    max_gap_seconds: int = Field(default=7200, ge=3600, le=14400)
+    research_max_candidates: int = Field(default=3, ge=1, le=20)
+    research_max_model_calls: int = Field(default=20, ge=1, le=50)
+    research_max_backtests: int = Field(default=8, ge=3, le=50)
+
+
 class PaperPreauthorizationV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -107,6 +119,8 @@ class ARCGoalV1(BaseModel):
     )
     success_criteria: ARCSuccessCriteriaV1 = Field(default_factory=ARCSuccessCriteriaV1)
     observation: PaperObservationPolicyV1 = Field(default_factory=PaperObservationPolicyV1)
+    feedback: PaperFeedbackPolicyV1 = Field(default_factory=PaperFeedbackPolicyV1)
+    feedback_parent: dict[str, Any] | None = None
     budget: ARCBudgetV1 = Field(default_factory=ARCBudgetV1)
     paper_authorization: PaperPreauthorizationV1 | None = None
     # False only preserves decoding of historical missions; the HTTP creation path

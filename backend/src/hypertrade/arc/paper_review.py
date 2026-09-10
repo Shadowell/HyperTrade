@@ -59,6 +59,11 @@ def build_paper_review(
     }
     if goal is not None and goal.research_windows is not None:
         binding["research_windows"] = goal.research_windows.model_dump(mode="json")
+    if goal is not None and goal.feedback_parent:
+        binding["feedback_parent"] = goal.feedback_parent
+        comparison = (selected.observed_metrics if selected else {}).get("baseline_comparison", {})
+        if comparison.get("passed") is not True or not comparison.get("backtest_id"):
+            unknowns.append("missing_or_failed_baseline_comparison")
     try:
         digest = hashlib.sha256(
             json.dumps(

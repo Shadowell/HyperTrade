@@ -28,6 +28,9 @@ STAGES: tuple[tuple[str, str], ...] = (
 _BLOCKED_STATES = {"needs_operator", "failed"}
 
 _EVENT_LABELS = {
+    "paper_feedback_checked": "模拟盘 7+7 反馈",
+    "avo_baseline_requested": "开始原策略同窗回测",
+    "avo_baseline_result": "原策略同窗证据已入账",
     "avo_initialized": "AVO 研究已准备",
     "avo_model_requested": "请求模型规划",
     "avo_model_replied": "模型已选择研究操作",
@@ -61,6 +64,8 @@ _EVENT_LABELS = {
 
 # Scalars only. Anything not named here never reaches the console.
 _SAFE_EVENT_FIELDS = (
+    "child_mission_id",
+    "status",
     "provider_name",
     "name",
     "provider",

@@ -25,6 +25,7 @@ from hypertrade.arc.contracts import (
     ARCGoalV1,
     ARCSuccessCriteriaV1,
     ChatProviderName,
+    PaperFeedbackPolicyV1,
     PaperObservationPolicyV1,
 )
 from hypertrade.arc.controller import ARCController
@@ -70,6 +71,9 @@ class CreateARCMissionRequest(BaseModel):
     provider_name: ChatProviderName | None = None
     model_name: str | None = Field(
         default=None, min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9._:/-]+$"
+    )
+    feedback: PaperFeedbackPolicyV1 = Field(
+        default_factory=lambda: PaperFeedbackPolicyV1(enabled=True)
     )
     max_model_calls: int = Field(default=20, ge=1, le=50)
     max_tool_calls: int = Field(default=30, ge=3, le=100)
@@ -230,6 +234,7 @@ async def create_arc_mission(
     goal = ARCGoalV1(
         objective=request.objective,
         research_mode=request.research_mode,
+        feedback=request.feedback,
         model_name=request.model_name,
         provider_name=ProviderRuntime.normalize_provider_name(
             request.provider_name

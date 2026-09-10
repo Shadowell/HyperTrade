@@ -57,6 +57,7 @@ class ARCMissionProjection(BaseModel):
     paper_review: dict[str, Any] = Field(default_factory=dict)
     avo: dict[str, Any] = Field(default_factory=dict)
     paper_observation: dict[str, Any] = Field(default_factory=dict)
+    paper_feedback: dict[str, Any] = Field(default_factory=dict)
     paper_started_at: datetime | None = None
     self_test_records: list[dict[str, Any]] = Field(default_factory=list)
     created_by: str = "operator"
@@ -249,6 +250,9 @@ class ARCController:
                     break
             p.paper_started_at = evt.timestamp
             p.state = "paper_observing"
+
+        elif et == "paper_feedback_checked":
+            p.paper_feedback.update(payload)
 
         elif et == "paper_observed":
             p.paper_observation = dict(payload.get("observation") or {})

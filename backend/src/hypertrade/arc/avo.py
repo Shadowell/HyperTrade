@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -102,7 +102,8 @@ No Paper/live actions exist here. Use stop to end honestly without a winner.
 The server budget and remaining quotas are CURRENT totals including ALL actions in history
 and this model request. Never add historical tool calls or candidates to those totals again.
 Use remaining directly; candidate_ids are already counted. Zero candidate slots still allows
-developing or finishing existing candidates. One backtest slot is reserved for final validation.
+developing or finishing existing candidates. Use final_backtests_reserved;
+optimization includes a baseline comparison.
 """
 
 
@@ -172,11 +173,13 @@ def reduce_avo_event(projection: ARCMissionProjection, event: ARCEventV1) -> Non
         state["pending"] = None
         if payload.get("recovered") and not state.get("final_window_consumed"):
             projection.state = "exploring_candidates"
-    elif kind in {"avo_development_requested", "avo_final_requested"}:
+    elif kind in {"avo_development_requested", "avo_final_requested", "avo_baseline_requested"}:
         goal.budget.backtests_used += 1
-        if kind == "avo_final_requested":
+        if kind in {"avo_final_requested", "avo_baseline_requested"}:
             state["final_window_consumed"] = True
         projection.state = "validating"
+    elif kind == "avo_baseline_result":
+        state["baseline_final"] = payload
     elif kind == "avo_development_result":
         state["phase"] = "research"
         state.setdefault("development", {})[payload["attempt_id"]] = payload["result"]
@@ -229,6 +232,7 @@ def _perform(
     name: str,
     arguments: dict[str, Any],
     experiments: ARCSelfTestService,
+    check_owner: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     goal = controller.projection.goal
     assert goal is not None
@@ -271,6 +275,13 @@ def _perform(
             raise ValueError(
                 "candidate budget exhausted; inspect/develop/finish an existing candidate"
             )
+        parent = goal.feedback_parent
+        baseline_spec = (parent or {}).get("baseline", {}).get("strategy_spec", {})
+        if parent and (
+            arguments["family_key"] != baseline_spec.get("family")
+            or arguments["direction"] != baseline_spec.get("direction")
+        ):
+            raise ValueError("parameter optimization must preserve source family and direction")
         family = next(f for f in FAMILIES if f.key == arguments["family_key"])
         parameters = {p.name: p for p in family.parameters}
         for key, pair in arguments["parameter_bounds"].items():
@@ -301,7 +312,22 @@ def _perform(
             str(model_request["model"]),
             str(model_request["request_hash"]),
         )
+        if parent:
+            # Risk overlays remain source parameters; the model varies family parameters only.
+            for key, value in baseline_spec.get("tunable_parameters", {}).items():
+                if key not in parameters:
+                    spec["parameter_bounds"][key] = {"min": value, "max": value}
+            for key, value in baseline_spec.get("tunable_parameters", {}).items():
+                spec["parameter_bounds"].setdefault(key, {"min": value, "max": value})
         candidate = BlueTeamQuant().propose_from_provider(proposal)
+        if parent and candidate.strategy_spec["tunable_parameters"] == baseline_spec.get(
+            "tunable_parameters"
+        ):
+            raise ValueError("parameter optimization must change at least one source parameter")
+        if parent and candidate.strategy_spec["risk_overlays"] != baseline_spec.get(
+            "risk_overlays"
+        ):
+            raise ValueError("parameter optimization cannot change source risk overlays")
         code_hash = hashlib.sha256(candidate.strategy_code.encode()).hexdigest()
         for old in controller.projection.attempts:
             if hashlib.sha256(old.strategy_code.encode()).hexdigest() == code_hash:
@@ -316,8 +342,29 @@ def _perform(
     development = controller.projection.avo.get("development", {})
     if final and candidate.attempt_id not in development:
         raise ValueError("develop this immutable candidate before final validation")
-    if budget.backtests_used >= budget.max_backtests - (0 if final else 1):
-        raise ValueError("backtest budget exhausted; one slot is reserved for final validation")
+    reserve = 2 if goal.feedback_parent else 1
+    if final and goal.feedback_parent and budget.max_backtests - budget.backtests_used < 2:
+        raise ValueError("two backtests are required for the frozen baseline comparison")
+    if budget.backtests_used >= budget.max_backtests - (0 if final else reserve):
+        raise ValueError(f"backtest budget exhausted; final validation reserves {reserve} slots")
+    if final and goal.feedback_parent:
+        baseline = ARCCandidateAttemptV1.model_validate(goal.feedback_parent["baseline"])
+        controller.apply_event("avo_baseline_requested", {"attempt_id": baseline.attempt_id})
+        try:
+            baseline_result = experiments.run(baseline, goal, purpose="final")
+        except Exception as exc:
+            raise ResearchStopped("avo_effect_unknown") from exc
+        if not baseline_result.backtest_id:
+            raise ResearchStopped("avo_effect_unknown")
+        controller.apply_event("avo_baseline_result", asdict(baseline_result))
+        # A baseline run may take minutes. Recheck ownership/time before the second effect.
+        if check_owner is not None:
+            check_owner()
+        started = datetime.fromisoformat(controller.projection.avo["started_at"]).replace(
+            tzinfo=UTC
+        )
+        if (datetime.now(UTC) - started).total_seconds() >= budget.max_wall_seconds:
+            raise ResearchStopped("avo_wall_budget_exhausted")
     controller.apply_event(
         "avo_final_requested" if final else "avo_development_requested",
         {"attempt_id": candidate.attempt_id},
@@ -326,6 +373,18 @@ def _perform(
         result = experiments.run(candidate, goal, purpose="final" if final else "development")
     except Exception as exc:
         raise ResearchStopped("avo_effect_unknown") from exc
+    if final and goal.feedback_parent:
+        from hypertrade.arc.feedback import compare_backtests
+
+        baseline_receipt = controller.projection.avo["baseline_final"]
+        comparison = compare_backtests(result.metrics, baseline_receipt)
+        result = replace(
+            result,
+            passed=result.passed and comparison["passed"],
+            metrics={**result.metrics, "baseline_comparison": comparison},
+            reasons=list(result.reasons)
+            + ([] if comparison["passed"] else ["baseline_not_improved"]),
+        )
     payload = {
         "attempt_id": candidate.attempt_id,
         **asdict(result),
@@ -450,6 +509,18 @@ def _run(
             runtime_context = json.loads(messages[1]["content"])
             # Present the same post-reservation totals the ledger will have before dispatch.
             # Historical tool messages are evidence, never additional budget consumption.
+            if current_goal.feedback_parent:
+                runtime_context["optimization"] = {
+                    "baseline_spec": current_goal.feedback_parent["baseline"]["strategy_spec"],
+                    "paper_feedback": current_goal.feedback_parent["evidence"],
+                    "rule": (
+                        "Preserve source family/direction/risk overlays; "
+                        "change family parameters only. "
+                        "Finish compares baseline and candidate on the same frozen window."
+                    ),
+                }
+            reserve = 2 if current_goal.feedback_parent else 1
+            runtime_context["final_backtests_reserved"] = reserve
             budget = current_goal.budget.model_dump(mode="json")
             budget["model_calls_used"] += 1
             runtime_context["budget"] = budget
@@ -462,7 +533,7 @@ def _run(
                 "tool_calls": max(0, budget["max_tool_calls"] - budget["tool_calls_used"]),
                 "backtests": max(0, budget["max_backtests"] - budget["backtests_used"]),
                 "development_backtests": max(
-                    0, budget["max_backtests"] - budget["backtests_used"] - 1
+                    0, budget["max_backtests"] - budget["backtests_used"] - reserve
                 ),
             }
             runtime_context["candidate_ids"] = [
@@ -535,7 +606,7 @@ def _run(
         try:
             if call["name"] not in _PARAMETERS or len(_json(call["arguments"])) > 16_000:
                 raise ValueError("tool or argument size denied")
-            result = _perform(controller, call["name"], call["arguments"], experiments)
+            result = _perform(controller, call["name"], call["arguments"], experiments, check_owner)
             if len(_json(result)) > 24_000:
                 result = {"status": "result_too_large", "hint": "inspect a single candidate"}
         except (ValueError, ValidationError, StrategyCodegenError) as exc:

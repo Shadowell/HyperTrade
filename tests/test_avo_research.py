@@ -440,3 +440,89 @@ def test_budget_context_reports_remaining_without_recounting_tool_history(missio
     # Request snapshots use exactly the same totals as the actual model input.
     events = [e for e in mission.projection.events if e.event_type == "avo_model_requested"]
     assert [e.payload["budget_snapshot"] for e in events] == [c["budget"] for c in contexts]
+
+
+@pytest.mark.parametrize("expire_after_baseline", [False, True])
+def test_feedback_candidate_gets_same_window_baseline_and_human_review(
+    mission, expire_after_baseline
+):
+    from hypertrade.arc.adversarial import BlueTeamQuant
+
+    baseline = BlueTeamQuant().propose_initial_strategy(
+        "trend", "BTC-USDT-SWAP", family_key="ma_crossover", direction="long_only"
+    )
+    baseline.attempt_id = "baseline"
+    mission.projection.goal.feedback_parent = {
+        "mission_id": "parent",
+        "instance_id": "source-paper",
+        "evidence": {},
+        "baseline": baseline.model_dump(mode="json"),
+    }
+
+    class Provider:
+        name, model = "fixture", "unit"
+        calls = 0
+
+        def chat(self, messages, tools=None):
+            self.calls += 1
+            if self.calls == 1:
+                name, args = (
+                    "propose",
+                    {
+                        "hypothesis": "longer trend",
+                        "family_key": "ma_crossover",
+                        "direction": "long_only",
+                        "parameter_bounds": {
+                            "fast_window": {"min": 16, "max": 16},
+                            "slow_window": {"min": 64, "max": 64},
+                        },
+                    },
+                )
+            else:
+                last = json.loads(messages[-1]["content"])
+                name, args = (
+                    ("develop" if self.calls == 2 else "finish"),
+                    {"attempt_id": last["attempt_id"]},
+                )
+            return ChatResponse(
+                content="", tool_calls=[ToolCallRequest(str(self.calls), name, args)]
+            )
+
+    class Compare:
+        def __init__(self):
+            self.calls = []
+
+        def run(self, attempt, goal, *, purpose="final"):
+            self.calls.append((attempt.attempt_id, purpose))
+            if expire_after_baseline and attempt.attempt_id == "baseline":
+                mission.projection.avo["started_at"] = "2000-01-01T00:00:00"
+            return SelfTestResult(
+                True,
+                "validated",
+                "strategy",
+                f"bt-{len(self.calls)}",
+                metrics={
+                    "net_return": ".1" if attempt.attempt_id == "baseline" else ".2",
+                    "max_drawdown": ".1",
+                    "evaluation_window": {"purpose": purpose, "research_id": goal.research_id},
+                },
+            )
+
+    experiments = Compare()
+    run_avo_research(mission.mission_id, provider=Provider(), experiments=experiments)
+    if expire_after_baseline:
+        assert mission.projection.state == "needs_operator"
+        assert len(experiments.calls) == 2
+        assert mission.projection.avo["final_window_consumed"]
+        assert not mission.projection.paper_review
+        return
+    assert mission.projection.state == "paper_review_ready"
+    assert experiments.calls[1] == ("baseline", "final")
+    assert len(experiments.calls) == 3
+    assert mission.projection.goal.budget.backtests_used == 3
+    assert (
+        mission.projection.attempts[0].observed_metrics["baseline_comparison"]["backtest_id"]
+        == "bt-2"
+    )
+    assert mission.projection.paper_review["feedback_parent"]["instance_id"] == "source-paper"
+    assert mission.projection.attempts[0].paper_instance_id is None

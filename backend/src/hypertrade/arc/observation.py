@@ -200,5 +200,10 @@ def observe_arc_missions_once(client: PaperObservationClient | None = None) -> d
         controller = get_controller(mission_id)
         if controller is None:
             continue
-        results.append({"mission_id": mission_id, **observe_mission(controller, client)})
+        result = {"mission_id": mission_id, **observe_mission(controller, client)}
+        if controller.projection.goal and controller.projection.goal.feedback.enabled:
+            from hypertrade.arc.feedback import check_paper_feedback
+
+            result["feedback"] = check_paper_feedback(mission_id, client)
+        results.append(result)
     return {"observed": len(results), "results": results}
