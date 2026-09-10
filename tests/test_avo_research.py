@@ -360,7 +360,8 @@ def test_switching_provider_discards_unexecuted_old_actions(mission):
         },
     )
     assert mission.projection.avo["awaiting"] == []
-    assert "not_executed" in mission.projection.avo["messages"][-1]["content"]
+    assert "not_executed" in mission.projection.avo["messages"][-2]["content"]
+    assert mission.projection.avo["messages"][-1]["role"] == "user"
 
 
 def test_replayed_proposal_keeps_its_original_model_provenance(mission, monkeypatch):
@@ -583,3 +584,82 @@ def test_development_to_final_reuses_verified_platform_strategy(mission):
     )
     assert (platform.creates, platform.reads, platform.backtests) == (1, 1, 2)
     assert mission.projection.state == "paper_review_ready"
+
+
+def test_text_only_reply_gets_bounded_budgeted_retry(mission):
+    class RecoveringProvider:
+        name = "fixture"
+        model = "unit-test"
+        calls = 0
+
+        def chat(self, messages, tools=None):
+            self.calls += 1
+            if self.calls == 1:
+                return ChatResponse(content="I will continue researching.")
+            assert messages[-1]["role"] == "user"
+            return ChatResponse(
+                content="",
+                tool_calls=[ToolCallRequest("retry-action", "inspect", {"target": "knowledge"})],
+            )
+
+    provider = RecoveringProvider()
+    mission.projection.goal.budget.max_model_calls = 2
+    run_avo_research(mission.projection.mission_id, provider=provider, experiments=Experiments())
+    assert provider.calls == 2
+    assert mission.projection.goal.budget.model_calls_used == 2
+    assert any(e.event_type == "avo_tool_finished" for e in mission.projection.events)
+
+
+def test_repeated_text_only_replies_stop_after_three_calls(mission):
+    class TextProvider:
+        name = "fixture"
+        model = "unit-test"
+        calls = 0
+
+        def chat(self, messages, tools=None):
+            self.calls += 1
+            return ChatResponse(content="A summary without an action.")
+
+    provider = TextProvider()
+    run_avo_research(mission.projection.mission_id, provider=provider, experiments=Experiments())
+    assert provider.calls == 3
+    assert mission.projection.events[-1].payload["reason"] == "avo_model_returned_no_action"
+    assert mission.projection.goal.budget.tool_calls_used == 0
+
+
+def test_operator_resume_is_visible_to_model_and_idempotent(mission):
+    mission.projection.avo["messages"] = [{"role": "assistant", "content": "Research stopped."}]
+    mission.apply_event("operator_needed", {"reason": "avo_no_candidate"})
+    payload = {"idempotency_key": "resume-test", "extra_candidates": 0, "operator_id": "op"}
+    mission.apply_event("budget_extended", payload)
+    messages = list(mission.projection.avo["messages"])
+    assert messages[-1]["role"] == "user"
+    assert "resumed" in messages[-1]["content"]
+    mission.apply_event("budget_extended", dict(payload))
+    assert mission.projection.avo["messages"] == messages
+
+
+def test_resume_does_not_insert_user_before_outstanding_tool_results(mission):
+    mission.projection.avo["messages"] = [{"role": "assistant", "content": ""}]
+    mission.projection.avo["awaiting"] = [{"id": "queued", "name": "inspect", "arguments": {}}]
+    mission.apply_event("operator_needed", {"reason": "avo_model_budget_exhausted"})
+    mission.apply_event(
+        "budget_extended", {"idempotency_key": "queued-resume", "extra_model_calls": 1}
+    )
+    assert mission.projection.avo["messages"][-1]["role"] == "assistant"
+    assert mission.projection.avo["awaiting"][0]["id"] == "queued"
+
+
+def test_replaying_legacy_resume_does_not_invent_a_model_message(mission):
+    from hypertrade.arc.controller import ARCEventV1
+
+    mission.projection.avo["messages"] = [{"role": "assistant", "content": "stopped"}]
+    mission.apply_event("operator_needed", {"reason": "avo_no_candidate"})
+    mission.absorb(
+        ARCEventV1(
+            mission_id=mission.mission_id,
+            event_type="budget_extended",
+            payload={"idempotency_key": "legacy-resume", "extra_candidates": 0},
+        )
+    )
+    assert mission.projection.avo["messages"] == [{"role": "assistant", "content": "stopped"}]

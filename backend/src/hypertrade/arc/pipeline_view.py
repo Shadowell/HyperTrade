@@ -34,6 +34,7 @@ _EVENT_LABELS = {
     "avo_baseline_requested": "开始原策略同窗回测",
     "avo_baseline_result": "原策略同窗证据已入账",
     "avo_initialized": "AVO 研究已准备",
+    "avo_action_retry_requested": "模型未执行操作，正在重试",
     "avo_model_requested": "请求模型规划",
     "avo_model_replied": "模型已选择研究操作",
     "avo_tool_requested": "执行研究操作",
@@ -58,7 +59,7 @@ _EVENT_LABELS = {
     "live_decided": "实盘决策",
     "live_promoted": "实盘灰度上线",
     "live_revoked": "实盘授权撤销",
-    "budget_extended": "追加候选预算",
+    "budget_extended": "继续研究 / 更新预算",
     "operator_needed": "需要人工介入",
     "mission_completed": "任务完成",
     "mission_failed": "任务失败",
@@ -498,13 +499,21 @@ def _activity_row(event: ARCEventV1) -> dict[str, Any]:
         for key in _SAFE_EVENT_FIELDS
         if key in event.payload and isinstance(event.payload[key], str | int | float | bool)
     }
+    logs = _safe_log(event.payload)
+    label = _EVENT_LABELS.get(event.event_type, event.event_type)
+    if event.event_type == "avo_model_replied" and not event.payload.get("calls"):
+        label = "模型返回说明，未执行操作"
+        message = event.payload.get("message") or {}
+        if isinstance(message, dict) and isinstance(message.get("content"), str):
+            # Only the public assistant response, never reasoning or full model context.
+            logs["message"] = _safe_log(message["content"])
     return {
         "event_id": event.event_id,
         "type": event.event_type,
-        "label": _EVENT_LABELS.get(event.event_type, event.event_type),
+        "label": label,
         "at": event.timestamp.isoformat(),
         "detail": detail,
-        "logs": _safe_log(event.payload),
+        "logs": logs,
     }
 
 

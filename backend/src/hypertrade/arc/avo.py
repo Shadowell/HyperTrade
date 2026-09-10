@@ -158,6 +158,11 @@ def reduce_avo_event(projection: ARCMissionProjection, event: ARCEventV1) -> Non
         state["awaiting"] = list(payload["calls"])
         state["pending"] = None
         state["last_usage"] = payload["usage"]
+        state["empty_action_streak"] = (
+            0 if payload["calls"] else int(state.get("empty_action_streak", 0)) + 1
+        )
+    elif kind == "avo_action_retry_requested":
+        state.setdefault("messages", []).append({"role": "user", "content": payload["message"]})
     elif kind == "avo_model_abandoned":
         state["pending"] = None
         state["usage_unknown"] = True
@@ -613,6 +618,20 @@ def _run(
                 },
             )
             if not calls:
+                # No external action ran. Retry at most twice, charging normal model budget.
+                if int(controller.projection.avo.get("empty_action_streak", 0)) <= 2:
+                    controller.apply_event(
+                        "avo_action_retry_requested",
+                        {
+                            "message": (
+                                "Research remains active. A summary does not execute an action. "
+                                "Choose a tool to inspect, propose, develop "
+                                "or finish. If research cannot continue, use stop with a concrete "
+                                "reason. Follow remaining budgets and never invent results."
+                            ),
+                        },
+                    )
+                    continue
                 raise ResearchStopped("avo_model_returned_no_action")
         call = controller.projection.avo["awaiting"][0]
         _check_budget(controller)

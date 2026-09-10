@@ -92,6 +92,17 @@ class ARCController:
         Reducing against a stale local snapshot and writing it back whole is how one
         process silently erases the other's progress.
         """
+        if event_type == "budget_extended":
+            # Persist the operator directive in new events; never invent it during old replay.
+            payload = {
+                **payload,
+                "resume_message": (
+                    "The operator explicitly resumed this research. The prior stop is historical, "
+                    "not a summary request. Re-read available tools; capabilities "
+                    "may have changed. Continue from recorded experiments using remaining server "
+                    "budgets and the original objective. Choose a research tool now."
+                ),
+            }
         evt = ARCEventV1(
             mission_id=self.mission_id,
             event_type=event_type,
@@ -364,6 +375,15 @@ class ARCController:
                     if extra > 0:
                         setattr(p.goal.budget, target, getattr(p.goal.budget, target) + extra)
             if p.state == "needs_operator":
+                if (
+                    p.goal is not None
+                    and p.goal.research_mode == "avo"
+                    and p.avo.get("messages")
+                    and not p.avo.get("awaiting")
+                    and isinstance(payload.get("resume_message"), str)
+                ):
+                    p.avo["messages"].append({"role": "user", "content": payload["resume_message"]})
+                    p.avo["empty_action_streak"] = 0
                 p.state = "exploring_candidates"
 
         elif et == "operator_needed":
