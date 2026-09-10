@@ -294,3 +294,31 @@ def test_activity_logs_include_arguments_and_metrics_but_not_secrets_or_source()
     assert row["logs"]["arguments"]["parameter_bounds"]["fast_window"]["min"] == 5
     assert "do-not-expose" not in repr(row)
     assert SECRET_CODE not in repr(row)
+
+
+def test_activity_logs_preserve_knowledge_and_real_metric_aliases() -> None:
+    controller = _mission()
+    controller.apply_event(
+        "avo_tool_requested",
+        {"id": "call_1", "name": "inspect", "arguments": {"target": "knowledge"}},
+    )
+    controller.apply_event(
+        "avo_tool_finished",
+        {
+            "id": "call_1",
+            "result": {
+                "families": [
+                    {
+                        "key": "ema_macd_kdj",
+                        "parameters": [
+                            {"name": "fast_window", "default": 5, "minimum": 2, "maximum": 120}
+                        ],
+                    }
+                ],
+                "metrics": {"net_return": -0.01, "max_drawdown": 0.04, "sharpe": -0.1},
+            },
+        },
+    )
+    logs = build_pipeline_view(controller.projection)["activity"][0]["logs"]
+    assert logs["result"]["families"][0]["parameters"][0]["default"] == 5
+    assert logs["result"]["metrics"]["net_return"] == -0.01

@@ -2,6 +2,8 @@
 
 ## 组合指标与可见工作流 — 2026-09-10
 
+- 线上原任务26条活动均带日志，桌面逐条展开/收起通过，20个BitPro原模拟实例连续性通过。补齐知识查询与net_return等真实字段别名；完整检查1227 passed / 1 xfailed。
+
 - 真实任务arc_4fe8b33dc5ca因模板不支持EMA/MACD/KDJ只做SMA后停止；新增递推组合指标和明确语义提示。数值/方向回归通过，BitPro真实结构检查及smoke通过。
 - 活动详情采用递归字段白名单、最近100条，每条可展开；迭代回到研究阶段时已完成开发不再显示未开始。配套BitPro置顶workflow和语义色。
 - 完整scripts/check.sh通过：1226 passed / 1 xfailed，Ruff/mypy及前端检查通过；97项定向回归、BitPro代码校验和结构smoke通过。部署后继续原任务验收待执行；不变更门槛或Paper历史。
