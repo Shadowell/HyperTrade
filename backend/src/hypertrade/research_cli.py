@@ -21,6 +21,8 @@ def add_research_parser(subparsers: Any) -> None:
     commands = research.add_subparsers(dest="research_action", required=True)
     start = commands.add_parser("start", help="发起研究；回测后等待人工审核")
     start.add_argument("objective", nargs="+")
+    start.add_argument("--detach", action="store_true", help="只提交任务，不跟进输出")
+    start.add_argument("--plain", action="store_true", help="逐行流式日志，不打开交互界面")
     start.add_argument("--mode", choices=("avo", "arc"), default="avo")
     start.add_argument("--provider", choices=get_args(ChatProviderName))
     start.add_argument("--model", help="任务模型覆盖（codex / vide_coding）")
@@ -34,9 +36,13 @@ def add_research_parser(subparsers: Any) -> None:
     start.add_argument("--paper-capital", type=float, default=100)
     start.add_argument("--alternative-source-confirmed", action="store_true")
     commands.add_parser("list", help="列出与 BitPro 页面相同的研究任务")
-    for name in ("status", "evidence", "review", "candidate", "continue", "decide"):
+    for name in ("status", "evidence", "review", "candidate", "continue", "decide", "watch"):
         command = commands.add_parser(name)
         command.add_argument("mission_id")
+        if name in {"watch", "continue"}:
+            command.add_argument("--plain", action="store_true")
+        if name == "continue":
+            command.add_argument("--detach", action="store_true")
         if name == "candidate":
             command.add_argument("attempt_id")
         if name == "continue":
@@ -113,7 +119,12 @@ def research_request(args: argparse.Namespace) -> tuple[str, str, dict[str, Any]
             },
             {"Idempotency-Key": args.idempotency_key or f"cli-continue-{uuid.uuid4().hex}"},
         )
-    suffix = {"status": "progress", "evidence": "evidence", "review": "paper-review"}
+    suffix = {
+        "status": "progress",
+        "evidence": "evidence",
+        "review": "paper-review",
+        "watch": "progress",
+    }
     if action == "candidate":
         return "GET", f"{path}/candidates/{quote(args.attempt_id, safe='')}", {}, {}
     return "GET", f"{path}/{suffix[action]}", {}, {}
@@ -139,7 +150,27 @@ def run_research_cli(args: argparse.Namespace, config: CliConfig, output: TextIO
                 method, path, headers=headers, json=body if method == "POST" else None
             )
             response.raise_for_status()
-            print(json.dumps(response.json(), ensure_ascii=False, indent=2), file=output)
+            payload = response.json()
+            follow = args.research_action in {"start", "continue", "watch"} and not getattr(
+                args, "detach", False
+            )
+            if follow:
+                from hypertrade.research_follow import follow_research
+
+                mission_id = str(payload.get("mission_id") or getattr(args, "mission_id", ""))
+                if not mission_id:
+                    print("提交响应缺少任务ID，请查看任务列表；不要重复提交。", file=output)
+                    return 1
+                return follow_research(
+                    client, mission_id, output, plain=getattr(args, "plain", False)
+                )
+            print(json.dumps(payload, ensure_ascii=False, indent=2), file=output)
+        return 0
+    except KeyboardInterrupt:
+        print(
+            "\n已退出观看；服务器研究继续运行。使用 ht research watch <任务ID> 重新连接。",
+            file=output,
+        )
         return 0
     except httpx.HTTPError as exc:
         message = "研究服务不可用"

@@ -58,6 +58,7 @@ from hypertrade.arc.reflexion import ARCReflexionLedger
 from hypertrade.arc.self_test import ARCSelfTestService, SelfTestResult
 from hypertrade.arc.skills import ARCSkill, ARCSkillDistiller, ARCSkillLibrary
 from hypertrade.arc.store import MISSIONS, get_controller, list_mission_ids, save_mission
+from hypertrade.arc.streaming import router as stream_router
 from hypertrade.arc.universe import resolve_universe
 from hypertrade.config import get_settings
 from hypertrade.providers.runtime import ProviderRuntime
@@ -65,6 +66,7 @@ from hypertrade.providers.runtime import ProviderRuntime
 _ARC_MISSIONS = MISSIONS
 
 router = APIRouter(prefix="/api/v1/arc", tags=["arc"])
+router.include_router(stream_router)
 
 
 class CreateARCMissionRequest(BaseModel):
