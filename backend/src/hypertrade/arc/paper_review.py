@@ -50,6 +50,7 @@ def build_paper_review(
             "metrics": selected.observed_metrics if selected else {},
         },
         "criteria": goal.success_criteria.model_dump(mode="json") if goal else {},
+        "feedback_policy": goal.feedback.model_dump(mode="json") if goal else {},
         "paper_configuration": {
             "initial_equity": str(goal.paper_initial_equity) if goal else "100",
             "symbols": list(goal.symbols) if goal else [],

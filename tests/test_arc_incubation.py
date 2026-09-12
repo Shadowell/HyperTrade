@@ -299,3 +299,66 @@ def test_existing_paper_history_is_never_reconfigured():
     )
     assert not ok and reason == "paper_source_already_has_runtime_history"
     assert client.calls == ["strategy_get"]
+
+
+def test_reviewed_provision_uses_guarded_endpoints_without_legacy_fallback():
+    class Guarded(_RecordingClient):
+        def paper_configure_reviewed(self, **kwargs):
+            self.calls.append("configure_reviewed")
+            self.configure_binding = kwargs
+            return {
+                "status": "ok",
+                "paper": {
+                    "configured": True,
+                    "strategy_id": kwargs["strategy_id"],
+                    "instance_id": "paper_bound",
+                    "guard_version": "paper_review_binding.v1",
+                    "review_hash": kwargs["review_hash"],
+                    "code_sha256": kwargs["code_sha256"],
+                    "config_version": "sha256:" + "c" * 64,
+                    "strategy_version": "sha256:"
+                    + hashlib.sha256(
+                        json.dumps(
+                            {"script_content": _validated().strategy_code},
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode()
+                    ).hexdigest(),
+                },
+            }
+
+        def paper_start_reviewed(self, **kwargs):
+            self.calls.append("start_reviewed")
+            assert kwargs["instance_id"] == "paper_bound"
+            assert kwargs["config_version"] == "sha256:" + "c" * 64
+            return {
+                "status": "ok",
+                "paper": {**kwargs, "started": True, "guard_version": "paper_review_binding.v1"},
+            }
+
+    client = Guarded()
+    attempt = _validated(tunable_parameters={"fast_window": 5, "slow_window": 20})
+    attempt.bitpro_strategy_id = "42"
+    ok, instance, _, _ = ARCPaperIncubationResolver(client).resolve_and_provision_paper_trading(
+        attempt, PaperPreauthorizationV1(symbols=["BTC-USDT-SWAP"], policy_hash="a" * 64)
+    )
+    assert ok and instance == "paper_bound"
+    assert client.calls == ["strategy_get", "configure_reviewed", "start_reviewed"]
+    assert client.configure_binding["parameters"] == attempt.strategy_spec["tunable_parameters"]
+
+
+def test_reviewed_provision_never_downgrades_when_server_lacks_guarded_api():
+    class Missing(_RecordingClient):
+        def paper_configure_reviewed(self, **kwargs):
+            self.calls.append("configure_reviewed")
+            raise RuntimeError("404")
+
+    client = Missing()
+    attempt = _validated()
+    attempt.bitpro_strategy_id = "42"
+    ok, instance, _, _ = ARCPaperIncubationResolver(client).resolve_and_provision_paper_trading(
+        attempt, PaperPreauthorizationV1(symbols=["BTC-USDT-SWAP"], policy_hash="a" * 64)
+    )
+    assert not ok and instance is None
+    assert client.calls == ["strategy_get", "configure_reviewed"]

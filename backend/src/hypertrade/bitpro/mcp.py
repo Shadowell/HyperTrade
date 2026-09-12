@@ -79,6 +79,8 @@ RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "backtest_start_job": {"method": "POST", "path": "/backtest/run_job"},
     "backtest_cancel_job": {"method": "POST", "path": "/backtest/job/{job_id}/cancel"},
     "backtest_resume_job": {"method": "POST", "path": "/backtest/job/{job_id}/resume"},
+    "paper_configure_reviewed": {"method": "POST", "path": "/live/reviewed/configure"},
+    "paper_start_reviewed": {"method": "POST", "path": "/live/reviewed/start"},
     "paper_configure": {"method": "POST", "path": "/live/configure"},
     "paper_start": {"method": "POST", "path": "/live/start"},
     "paper_pause": {"method": "POST", "path": "/live/pause"},
@@ -99,6 +101,8 @@ RESEARCH_MUTATION_TOOLS = {
     "backtest_start_job",
     "backtest_cancel_job",
     "backtest_resume_job",
+    "paper_configure_reviewed",
+    "paper_start_reviewed",
     "paper_configure",
     "paper_start",
     "paper_pause",
@@ -880,6 +884,16 @@ class BitProToolAdapter:
             if strategy_id in strategy_names:
                 row["strategy_name"] = strategy_names[strategy_id]
 
+    def paper_configure_reviewed(self, **parameters: Any) -> dict[str, Any]:
+        self.last_tool_calls = []
+        self._preflight()
+        return {"status": "ok", "paper": self._call("paper_configure_reviewed", parameters)}
+
+    def paper_start_reviewed(self, **parameters: Any) -> dict[str, Any]:
+        self.last_tool_calls = []
+        self._preflight()
+        return {"status": "ok", "paper": self._call("paper_start_reviewed", parameters)}
+
     def paper_configure(
         self,
         *,
@@ -1436,6 +1450,8 @@ def _post_payload(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
                 "idempotency_key": params.get("idempotency_key"),
             }
         )
+    if tool_name in {"paper_configure_reviewed", "paper_start_reviewed"}:
+        return dict(params)
     if tool_name == "paper_configure":
         return _compact(
             {

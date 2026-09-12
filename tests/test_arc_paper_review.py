@@ -182,3 +182,14 @@ def test_real_loop_defers_all_paper_effects_until_review(monkeypatch):
     assert pipeline["current_stage"] == "approval"
     assert [stage["key"] for stage in pipeline["stages"]][-2:] == ["approval", "paper"]
     reset_store()
+
+
+def test_feedback_policy_is_part_of_the_human_review_binding(controller):
+    from decimal import Decimal
+
+    before = build_paper_review(controller.projection)
+    controller.projection.goal.feedback.threshold_pp = Decimal("0.1")
+    after = build_paper_review(controller.projection)
+    assert after["feedback_policy"]["threshold_pp"] == "0.1"
+    assert before["package_hash"] != after["package_hash"]
+    assert "review_evidence_changed" in after["unknowns"]

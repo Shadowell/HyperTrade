@@ -20,6 +20,10 @@ from hypertrade.bitpro.mcp import BitProToolAdapter
 class PaperProvisionClient(Protocol):
     """The BitPro surface this resolver may touch. No live-order methods."""
 
+    def paper_configure_reviewed(self, **parameters: Any) -> dict[str, Any]: ...
+
+    def paper_start_reviewed(self, **parameters: Any) -> dict[str, Any]: ...
+
     def strategy_get(self, *, strategy_id: int) -> dict[str, Any]: ...
 
     def strategy_create(
@@ -154,6 +158,8 @@ class ARCPaperIncubationResolver:
         operation_scope = (
             preauth.policy_hash if len(preauth.policy_hash) == 64 else attempt.candidate_id
         )
+        reviewed = len(preauth.policy_hash) == 64
+        code_sha256 = hashlib.sha256(attempt.strategy_code.encode()).hexdigest()
         configure_key = f"arc-configure-{operation_scope}"
         start_key = f"arc-start-{operation_scope}"
 
@@ -219,13 +225,27 @@ class ARCPaperIncubationResolver:
             return False, None, bitpro_strategy_name, "paper_source_already_has_runtime_history"
 
         try:
-            configured = client.paper_configure(
-                strategy_id=strategy_id,
-                initial_equity=float(capital),
-                exchange="okx",
-                loop_interval_sec=60,
-                idempotency_key=configure_key,
-            )
+            if reviewed:
+                configured = client.paper_configure_reviewed(
+                    strategy_id=strategy_id,
+                    code_sha256=code_sha256,
+                    review_hash=preauth.policy_hash,
+                    initial_equity=float(capital),
+                    exchange="okx",
+                    symbols=list(preauth.symbols),
+                    timeframe=timeframe,
+                    parameters=attempt.strategy_spec.get("tunable_parameters", {}),
+                    execution_policy=attempt.strategy_spec.get("execution_policy", {}),
+                    idempotency_key=configure_key,
+                )
+            else:
+                configured = client.paper_configure(
+                    strategy_id=strategy_id,
+                    initial_equity=float(capital),
+                    exchange="okx",
+                    loop_interval_sec=60,
+                    idempotency_key=configure_key,
+                )
         except Exception as exc:
             return (
                 False,
@@ -271,10 +291,17 @@ class ARCPaperIncubationResolver:
             return False, None, bitpro_strategy_name, "bitpro_paper_configured_code_changed"
 
         try:
-            started = client.paper_start(
-                strategy_id=strategy_id,
-                idempotency_key=start_key,
-            )
+            if reviewed:
+                started = client.paper_start_reviewed(
+                    strategy_id=strategy_id,
+                    instance_id=instance_id,
+                    code_sha256=code_sha256,
+                    review_hash=preauth.policy_hash,
+                    config_version=receipt["config_version"],
+                    idempotency_key=start_key,
+                )
+            else:
+                started = client.paper_start(strategy_id=strategy_id, idempotency_key=start_key)
         except Exception as exc:
             return (
                 False,
@@ -297,6 +324,11 @@ class ARCPaperIncubationResolver:
             or _instance_id(started) != instance_id
         ):
             return False, None, bitpro_strategy_name, "bitpro_paper_start_identity_unconfirmed"
+        if reviewed and any(
+            started_receipt.get(key) != receipt.get(key)
+            for key in ("guard_version", "review_hash", "code_sha256", "config_version")
+        ):
+            return False, None, bitpro_strategy_name, "bitpro_started_review_binding_unconfirmed"
         paper_instance_id = instance_id
         msg = (
             f"Started BitPro paper '{bitpro_strategy_name}' "

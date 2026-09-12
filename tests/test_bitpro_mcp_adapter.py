@@ -98,9 +98,7 @@ def test_authorized_live_promote_requires_package_hash_and_uses_direct_request()
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request.url.path)
         if request.url.path == "/api/v2/system/health":
-            return httpx.Response(
-                200, json={"success": True, "data": {"status": "healthy"}}
-            )
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
         if request.url.path == "/api/v2/live/promote/preflight":
             return httpx.Response(
                 200, json={"success": True, "data": {"status": "ok", "ready": True}}
@@ -109,9 +107,7 @@ def test_authorized_live_promote_requires_package_hash_and_uses_direct_request()
             body = json.loads(request.content)
             assert body["approval_package_hash"] == "pkg_hash"
             assert body["idempotency_key"] == "live-1"
-            return httpx.Response(
-                200, json={"success": True, "data": {"live_instance_id": "L9"}}
-            )
+            return httpx.Response(200, json={"success": True, "data": {"live_instance_id": "L9"}})
         raise AssertionError(f"unexpected request: {request.method} {request.url}")
 
     client = BitProMcpClient(
@@ -1604,3 +1600,39 @@ def json_loads(content: bytes) -> dict[str, Any]:
 
     value = json.loads(content.decode("utf-8"))
     return value if isinstance(value, dict) else {"value": value}
+
+
+def test_reviewed_paper_wire_preserves_conditions_and_uses_dedicated_routes():
+    seen = []
+
+    def handler(request):
+        if request.url.path.endswith("/system/health"):
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        body = json.loads(request.content)
+        seen.append((request.url.path, body))
+        return httpx.Response(200, json={"success": True, "data": body})
+
+    client = BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    adapter = BitProToolAdapter(client)
+    payload = {
+        "strategy_id": 42,
+        "instance_id": "paper_bound",
+        "review_hash": "a" * 64,
+        "code_sha256": "b" * 64,
+        "config_version": "sha256:" + "c" * 64,
+        "idempotency_key": "start-bound",
+    }
+    assert adapter.paper_start_reviewed(**payload)["paper"] == payload
+    assert seen == [("/api/v2/live/reviewed/start", payload)]
+    configuration = {
+        "strategy_id": 42,
+        "review_hash": "a" * 64,
+        "code_sha256": "b" * 64,
+        "parameters": {"fast_window": 5},
+        "idempotency_key": "configure-bound",
+    }
+    assert adapter.paper_configure_reviewed(**configuration)["paper"] == configuration
+    assert seen[-1] == ("/api/v2/live/reviewed/configure", configuration)
