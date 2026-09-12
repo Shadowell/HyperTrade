@@ -101,6 +101,7 @@ jobs:
             --exclude 'data' \
             --exclude 'logs' \
             --exclude 'workspace' \
+            --exclude 'deploy/last_deployed_sha' \
             ./ /opt/hypertrade/
           rsync -a --delete frontend/dist/ /opt/hypertrade/frontend/dist/
 

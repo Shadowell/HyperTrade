@@ -20,7 +20,10 @@ chown 65532:65532 "$ROOT_DIR/workspace/sandbox-ipc"
 chmod 0750 "$ROOT_DIR/workspace/sandbox-ipc"
 
 echo "[deploy] building api, worker, sandbox, and optional TUI client images"
-docker compose build api worker sandbox cli
+# API/worker share layers. Serial export avoids duplicate unpack peaks on this host.
+for service in api worker sandbox cli; do
+  docker compose build "$service"
+done
 
 # The service image is built from this reviewed release. Persist its immutable
 # local content digest so the API and sandbox reject mismatched IPC requests.
