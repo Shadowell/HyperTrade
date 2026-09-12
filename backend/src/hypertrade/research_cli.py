@@ -28,7 +28,7 @@ def add_research_parser(subparsers: Any) -> None:
     start.add_argument("--no-paper-feedback", action="store_true")
     start.add_argument("--max-model-calls", type=int, default=20)
     start.add_argument("--max-backtests", type=int, default=10)
-    start.add_argument("--symbol", default="BTC-USDT-SWAP")
+    start.add_argument("--symbol", action="append", help="可重复指定标的；省略时从可用市场选择")
     start.add_argument("--timeframe", default="1H")
     start.add_argument("--max-candidates", type=int, default=5)
     start.add_argument("--paper-capital", type=float, default=100)
@@ -75,7 +75,7 @@ def research_request(args: argparse.Namespace) -> tuple[str, str, dict[str, Any]
                 "model_name": args.model,
                 "max_model_calls": args.max_model_calls,
                 "max_backtests": args.max_backtests,
-                "symbol": args.symbol,
+                "symbols": args.symbol or [],
                 "timeframe": args.timeframe,
                 "max_candidates": args.max_candidates,
                 "paper_initial_equity": args.paper_capital,

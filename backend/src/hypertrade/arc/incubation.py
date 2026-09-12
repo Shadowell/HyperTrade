@@ -14,6 +14,7 @@ from hypertrade.arc.contracts import (
     ARCCandidateAttemptV1,
     PaperPreauthorizationV1,
 )
+from hypertrade.arc.universe import candidate_symbol
 from hypertrade.bitpro.mcp import BitProToolAdapter
 
 
@@ -142,7 +143,12 @@ class ARCPaperIncubationResolver:
         capital = preauth.max_capital_per_instance
         if not capital.is_finite() or not Decimal("0") < capital <= Decimal("10000"):
             return False, None, None, "paper_capital_outside_supported_range"
-        symbol = preauth.symbols[0] if preauth.symbols else "BTC-USDT-SWAP"
+        try:
+            symbol = candidate_symbol(attempt.strategy_spec, preauth.symbols)
+        except ValueError as exc:
+            return False, None, None, str(exc)
+        if preauth.symbols != [symbol]:
+            return False, None, None, "paper_scope_must_match_candidate"
         timeframe = str(attempt.strategy_spec.get("timeframe") or "1H")
         bitpro_strategy_name = format_bitpro_strategy_name(
             symbol=symbol,

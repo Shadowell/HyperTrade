@@ -25,9 +25,7 @@ def client() -> TestClient:
 
 def _login(client: TestClient) -> None:
     assert (
-        client.post(
-            "/api/auth/login", json={"username": "admin", "password": "secret"}
-        ).status_code
+        client.post("/api/auth/login", json={"username": "admin", "password": "secret"}).status_code
         == 200
     )
 
@@ -85,6 +83,7 @@ def test_the_recorded_operator_is_the_session_not_the_header(client: TestClient)
 
     # This test covers persisted legacy Live audit identity, not new Paper missions.
     from hypertrade.arc.store import get_controller
+
     ctrl = get_controller(mission_id)
     assert ctrl is not None and ctrl.projection.goal is not None
     ctrl.projection.goal.paper_review_required = False
@@ -98,10 +97,16 @@ def test_the_recorded_operator_is_the_session_not_the_header(client: TestClient)
 
     events = client.get(f"/api/v1/arc/missions/{mission_id}").json()
     decided = [
-        event
-        for event in events.get("events", [])
-        if event.get("event_type") == "live_decided"
+        event for event in events.get("events", []) if event.get("event_type") == "live_decided"
     ]
     assert decided, events.get("events")
     assert decided[-1]["payload"]["operator_id"] == "admin"
     assert decided[-1]["payload"]["identity_source"] == "hypertrade_session"
+
+
+@pytest.fixture(autouse=True)
+def instrument_catalog(monkeypatch):
+    monkeypatch.setattr(
+        "hypertrade.arc.router.resolve_universe",
+        lambda requested: requested or ["SOL-USDT-SWAP", "DOGE-USDT-SWAP"],
+    )

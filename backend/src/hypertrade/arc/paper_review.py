@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from hypertrade.arc.contracts import PaperPreauthorizationV1
 from hypertrade.arc.incubation import ARCPaperIncubationResolver
+from hypertrade.arc.universe import candidate_symbol
 
 if TYPE_CHECKING:
     from hypertrade.arc.controller import ARCController, ARCMissionProjection
@@ -32,6 +33,12 @@ def build_paper_review(
             unknowns.append(f"missing_{key}")
     if goal is None or not goal.paper_review_required:
         unknowns.append("paper_review_protocol_required")
+    selected_symbols = []
+    if selected is not None and goal is not None:
+        try:
+            selected_symbols = [candidate_symbol(selected.strategy_spec, goal.symbols)]
+        except ValueError as exc:
+            unknowns.append(str(exc))
     binding: dict[str, Any] = {
         "schema_version": "paper_review.v1",
         "mission_id": projection.mission_id,
@@ -53,7 +60,7 @@ def build_paper_review(
         "feedback_policy": goal.feedback.model_dump(mode="json") if goal else {},
         "paper_configuration": {
             "initial_equity": str(goal.paper_initial_equity) if goal else "100",
-            "symbols": list(goal.symbols) if goal else [],
+            "symbols": selected_symbols,
             "exchange": "okx",
             "loop_interval_sec": 60,
         },

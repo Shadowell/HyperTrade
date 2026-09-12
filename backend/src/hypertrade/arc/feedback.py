@@ -16,6 +16,7 @@ from hypertrade.arc.contracts import (
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.observation import paper_attempt
 from hypertrade.arc.store import get_controller, research_lock, save_mission
+from hypertrade.arc.universe import candidate_symbol
 from hypertrade.bitpro.mcp import BitProToolAdapter
 
 
@@ -312,6 +313,7 @@ def check_paper_feedback(
                 baseline.candidate_id = f"baseline_{key}"
                 baseline.state = "proposed"
                 child_goal = goal.model_copy(deep=True)
+                child_goal.symbols = [candidate_symbol(baseline.strategy_spec, goal.symbols)]
                 child_goal.research_id = child_id
                 child_goal.research_mode = "avo"
                 child_goal.research_windows = ResearchWindowsV1(

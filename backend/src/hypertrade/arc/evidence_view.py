@@ -129,7 +129,14 @@ def _mission_summary(projection: ARCMissionProjection) -> dict[str, Any]:
         "mission_id": projection.mission_id,
         "state": projection.state,
         "objective": goal.objective if goal is not None else "",
-        "symbol": (goal.symbols[0] if goal and goal.symbols else ""),
+        "symbol": (
+            ", ".join(goal.symbols)
+            if goal and len(goal.symbols) <= 3
+            else f"可选标的 {len(goal.symbols)} 个"
+            if goal
+            else ""
+        ),
+        "symbols": list(goal.symbols) if goal else [],
         "timeframe": (goal.timeframes[0] if goal and goal.timeframes else ""),
         "created_by": projection.created_by,
         "created_at": (
@@ -171,6 +178,7 @@ def _candidate_row(attempt: ARCCandidateAttemptV1) -> dict[str, Any]:
         "origin": attempt.origin,
         "provider_model": attempt.provider_model,
         "provider_request_hash": attempt.provider_request_hash,
+        "symbol": str(attempt.strategy_spec.get("symbol") or ""),
         "family": str(attempt.strategy_spec.get("family") or ""),
         "direction": str(attempt.strategy_spec.get("direction") or ""),
         "oos_sharpe": _as_float(metrics.get("out_of_sample_sharpe", metrics.get("ranking_sharpe"))),

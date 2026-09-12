@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.concurrency import run_in_threadpool
 
 from hypertrade.arc.adversarial import ARCAdversarialEngine, BlueTeamQuant
 from hypertrade.arc.auth import (
@@ -57,6 +58,7 @@ from hypertrade.arc.reflexion import ARCReflexionLedger
 from hypertrade.arc.self_test import ARCSelfTestService, SelfTestResult
 from hypertrade.arc.skills import ARCSkill, ARCSkillDistiller, ARCSkillLibrary
 from hypertrade.arc.store import MISSIONS, get_controller, list_mission_ids, save_mission
+from hypertrade.arc.universe import resolve_universe
 from hypertrade.config import get_settings
 from hypertrade.providers.runtime import ProviderRuntime
 
@@ -88,7 +90,8 @@ class CreateARCMissionRequest(BaseModel):
             required_validation_policy="arc_windowed_v1",
         )
     )
-    symbol: str = "BTC-USDT-SWAP"
+    symbol: str | None = None
+    symbols: list[str] = Field(default_factory=list, max_length=1000)
     timeframe: str = "1H"
     max_candidates: int = Field(default=5, ge=1, le=200)
     paper_preauth_approved: bool = False
@@ -231,6 +234,19 @@ async def create_arc_mission(
     """
     Create & trigger SOTA ARC autonomous research & evolution loop.
     """
+    if request.symbol and request.symbols:
+        raise HTTPException(status_code=422, detail="请只提供 symbol 或 symbols")
+    requested = request.symbols or ([request.symbol] if request.symbol else [])
+    try:
+        symbols = await run_in_threadpool(resolve_universe, requested)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail="可用标的读取失败，未创建任务；请稍后重试"
+        ) from exc
+    if request.research_mode == "arc" and len(symbols) != 1:
+        raise HTTPException(status_code=422, detail="多标的选择请使用 AVO 研究模式")
     goal = ARCGoalV1(
         objective=request.objective,
         research_mode=request.research_mode,
@@ -242,7 +258,7 @@ async def create_arc_mission(
             or get_settings().active_chat_provider
         ),
         success_criteria=request.success_criteria,
-        symbols=[request.symbol],
+        symbols=symbols,
         timeframes=[request.timeframe],
         budget=ARCBudgetV1(
             max_candidates=request.max_candidates,

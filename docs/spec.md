@@ -995,3 +995,8 @@ live-order-intent counts.
   path while keeping manual CLI/API monitor runs available.
 - PostgreSQL migration creates business tables and pgvector extension.
 - Deployment workflow runs only on `main` with SHA gating.
+
+
+## 标的范围贯通（2026-09-12）
+
+用户明确标的不限制BTC/ETH。新建API接受symbols（保留显式单symbol兼容），CLI --symbol可重复；省略时读取BitPro当前可用OKX USDT永续列表并冻结为研究范围，列表失败或不支持的标的明确拒绝，不回退默认币种。AVO按目标为候选选择范围内单一标的，在假设中解释依据；研究池不是组合执行。回测、最终审核、Paper仅绑定选中候选标的，反馈子任务继承原Paper标的而非整个研究池。旧任务及运行Paper不迁移。其他市场尚需相应数据和执行适配器，不宣称已支持。

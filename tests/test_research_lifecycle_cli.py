@@ -10,7 +10,7 @@ def test_cli_start_targets_same_arc_service():
     method, path, body, headers = request("start", "研究趋势", "--symbol", "ETH-USDT-SWAP")
     assert (method, path) == ("POST", "/api/v1/arc/missions")
     assert body["objective"] == "研究趋势"
-    assert body["symbol"] == "ETH-USDT-SWAP"
+    assert body["symbols"] == ["ETH-USDT-SWAP"]
     assert "paper_preauth_approved" not in body
 
 
@@ -32,3 +32,11 @@ def test_cli_approval_binds_review_hash_and_retry_key():
     assert first[1] == "/api/v1/arc/missions/arc_1/paper-review/decide"
     assert first[2]["package_hash"] == digest
     assert first[3]["Idempotency-Key"]
+
+
+def test_cli_scope_is_optional_and_repeatable():
+    assert request("start", "研究趋势")[2]["symbols"] == []
+    assert request("start", "研究趋势", "--symbol", "SOL", "--symbol", "DOGE")[2]["symbols"] == [
+        "SOL",
+        "DOGE",
+    ]

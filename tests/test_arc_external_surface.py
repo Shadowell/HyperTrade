@@ -553,3 +553,11 @@ def test_signed_paper_review_rejects_stale_assertion_and_records_human(client):
     assert result.status_code == 200, result.text
     assert result.json()["status"] == "rejected"
     assert result.json()["decision"]["identity_source"] == "bitpro_signed"
+
+
+@pytest.fixture(autouse=True)
+def instrument_catalog(monkeypatch):
+    monkeypatch.setattr(
+        "hypertrade.arc.router.resolve_universe",
+        lambda requested: requested or ["SOL-USDT-SWAP", "DOGE-USDT-SWAP"],
+    )

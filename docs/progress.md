@@ -2819,3 +2819,6 @@
 1. Check cloud security group / caller IP whitelist for public port `3333`.
 2. Add an archived candle source reader for BitPro file-store data if server data expands beyond SQLite.
 3. Run an explicit OKX Testnet tiny-size order smoke after confirming the server `.env` testnet credentials and desired symbol/size.
+
+
+- 2026-09-12 标的范围修复：新任务去除隐式BTC/ETH，实时列表冻结、候选选择/范围校验、单候选Paper绑定、反馈范围继承；CLI支持重复--symbol。1258项通过、1项预期失败，完整check.sh通过；非BTC/ETH候选选择、越界拒绝及反馈保持原标的已回归。生产发布与验收进行中。

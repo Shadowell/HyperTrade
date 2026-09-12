@@ -146,6 +146,7 @@ def test_feedback_creates_one_child_keeps_parent_running_and_recovers_link(monke
     parent = ARCController(
         goal=ARCGoalV1(
             objective="trend",
+            symbols=["SOL-USDT-SWAP", "DOGE-USDT-SWAP"],
             paper_review_required=True,
             research_mode="avo",
             feedback=PaperFeedbackPolicyV1(
@@ -156,7 +157,7 @@ def test_feedback_creates_one_child_keeps_parent_running_and_recovers_link(monke
             ),
         )
     )
-    attempt = BlueTeamQuant().propose_initial_strategy("trend", "BTC-USDT-SWAP")
+    attempt = BlueTeamQuant().propose_initial_strategy("trend", "DOGE-USDT-SWAP")
     attempt.bitpro_strategy_id = "44"
     attempt.paper_instance_id = "paper-session"
     parent.projection.attempts = [attempt]
@@ -181,6 +182,8 @@ def test_feedback_creates_one_child_keeps_parent_running_and_recovers_link(monke
     assert child.projection.goal.budget.max_candidates == 2
     assert child.projection.goal.budget.max_model_calls == 8
     assert child.projection.goal.budget.max_backtests == 4
+    assert child.projection.goal.symbols == ["DOGE-USDT-SWAP"]
+    assert parent.projection.goal.symbols == ["SOL-USDT-SWAP", "DOGE-USDT-SWAP"]
     assert child.projection.goal.paper_authorization is None
     assert child.projection.goal.paper_review_required
     assert child.projection.goal.research_id == child.mission_id

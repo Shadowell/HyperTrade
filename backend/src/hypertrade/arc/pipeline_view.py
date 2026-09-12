@@ -248,7 +248,13 @@ def _stage_metrics(projection: ARCMissionProjection, clock: datetime) -> dict[st
         "goal": {
             "detail": goal.objective if goal is not None else "",
             "metrics": {
-                "symbol": (goal.symbols[0] if goal and goal.symbols else None),
+                "symbol": (
+                    ", ".join(goal.symbols)
+                    if goal and len(goal.symbols) <= 3
+                    else f"可选标的 {len(goal.symbols)} 个"
+                    if goal
+                    else None
+                ),
                 "timeframe": (goal.timeframes[0] if goal and goal.timeframes else None),
                 "evidence_source_origin": evidence_origin,
                 "alternative_source_confirmed": (

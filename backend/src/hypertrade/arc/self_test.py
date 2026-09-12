@@ -13,6 +13,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Protocol
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCGoalV1, ARCSuccessCriteriaV1
+from hypertrade.arc.universe import candidate_symbol
 from hypertrade.bitpro.mcp import BitProToolAdapter
 
 
@@ -227,9 +228,10 @@ class ARCSelfTestService:
         purpose: Literal["development", "final"] = "final",
     ) -> SelfTestResult:
         client = self._client or BitProToolAdapter()
-        symbol = str(attempt.strategy_spec.get("symbol") or "") or (
-            goal.symbols[0] if goal.symbols else "BTC-USDT-SWAP"
-        )
+        try:
+            symbol = candidate_symbol(attempt.strategy_spec, goal.symbols)
+        except ValueError as exc:
+            return SelfTestResult(False, None, None, None, reasons=[str(exc)])
         timeframe = str(attempt.strategy_spec.get("timeframe") or "") or (
             goal.timeframes[0] if goal.timeframes else "1H"
         )

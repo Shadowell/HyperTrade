@@ -19,6 +19,7 @@ from hypertrade.arc.paper_review import request_paper_review
 from hypertrade.arc.provider_hypothesis import ProviderProposal, _bounded_spec
 from hypertrade.arc.self_test import ARCSelfTestService
 from hypertrade.arc.store import get_controller, list_mission_ids, research_lock
+from hypertrade.arc.universe import candidate_symbol
 from hypertrade.config import get_settings
 from hypertrade.providers.chat import ChatProvider
 from hypertrade.providers.runtime import ProviderRuntime
@@ -46,6 +47,7 @@ _PARAMETERS = {
         "type": "object",
         "properties": {
             "hypothesis": {"type": "string", "minLength": 1, "maxLength": 400},
+            "symbol": {"type": "string", "minLength": 1, "maxLength": 64},
             "family_key": {"enum": [family.key for family in FAMILIES]},
             "direction": {"enum": ["long_only", "short_only", "long_short"]},
             "parameter_bounds": {
@@ -93,6 +95,9 @@ TOOLS = [
     for name, parameters in _PARAMETERS.items()
 ]
 _SYSTEM = """You are a strategy research agent using agentic variation operators.
+Choose each candidate symbol explicitly from the supplied symbols, guided by the user objective.
+There is no default BTC/ETH preference. Explain symbol selection in the hypothesis.
+Each candidate is single-instrument; a research universe is not a multi-asset portfolio.
 Use tools to investigate, propose, run development experiments and repair failures.
 Read knowledge for parameter names/ranges. Use observed results, not invented performance.
 Choose your investigation order. Only finish a candidate already developed.
@@ -310,7 +315,7 @@ def _perform(
         spec = _bounded_spec(
             arguments,
             objective=goal.objective,
-            symbol=goal.symbols[0],
+            symbol=candidate_symbol(arguments, goal.symbols),
             timeframe=goal.timeframes[0],
         )
         if spec is None:
