@@ -489,6 +489,7 @@ async def main() -> None:
     if settings.research_triggers_enabled and not full_mission_cutover:
         tasks.append(research_trigger_loop(db))
     tasks.append(arc_observation_loop(db))
+    tasks.append(arc_evolution_loop(db))
     if settings.mission_runtime_worker_enabled:
         tasks.append(avo_research_loop(db))
     await asyncio.gather(*tasks)
@@ -504,6 +505,18 @@ async def arc_observation_loop(db: Database) -> None:
                 logger.info("arc_observation observed=%s", result.get("observed"))
         except Exception:
             logger.exception("arc_observation failed")
+        await asyncio.sleep(60)
+
+
+async def arc_evolution_loop(db: Database) -> None:
+    from hypertrade.arc.evolution import EvolutionService
+    configure_store(db)
+    service = EvolutionService(db)
+    while True:
+        try:
+            await asyncio.to_thread(service.tick)
+        except Exception:
+            logger.exception("arc_evolution failed")
         await asyncio.sleep(60)
 
 

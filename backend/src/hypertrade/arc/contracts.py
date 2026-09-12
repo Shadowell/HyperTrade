@@ -121,6 +121,7 @@ class ARCGoalV1(BaseModel):
     observation: PaperObservationPolicyV1 = Field(default_factory=PaperObservationPolicyV1)
     feedback: PaperFeedbackPolicyV1 = Field(default_factory=PaperFeedbackPolicyV1)
     feedback_parent: dict[str, Any] | None = None
+    evolution_context: dict[str, Any] | None = None
     budget: ARCBudgetV1 = Field(default_factory=ARCBudgetV1)
     paper_authorization: PaperPreauthorizationV1 | None = None
     # False only preserves decoding of historical missions; the HTTP creation path

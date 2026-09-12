@@ -71,6 +71,19 @@ def build_paper_review(
         ]
     if goal is not None and goal.research_windows is not None:
         binding["research_windows"] = goal.research_windows.model_dump(mode="json")
+    if goal is not None and goal.evolution_context:
+        context = goal.evolution_context
+        binding["evolution_source"] = {
+            key: context.get(key) for key in (
+                "source_strategy_id", "source_instance_id", "source_code_sha256", "cycle_id"
+            )
+        }
+        binding["evolution_source"]["context_sha256"] = hashlib.sha256(
+            json.dumps(context, sort_keys=True, ensure_ascii=False).encode()
+        ).hexdigest()
+        comparison = (selected.observed_metrics if selected else {}).get("baseline_comparison", {})
+        if comparison.get("passed") is not True or not comparison.get("backtest_id"):
+            unknowns.append("missing_or_failed_baseline_comparison")
     if goal is not None and goal.feedback_parent:
         binding["feedback_parent"] = goal.feedback_parent
         comparison = (selected.observed_metrics if selected else {}).get("baseline_comparison", {})

@@ -51,6 +51,29 @@ def build_evidence_view(projection: ARCMissionProjection) -> dict[str, Any]:
                 else None,
             }
         }
+    if projection.goal and projection.goal.evolution_context:
+        context = projection.goal.evolution_context
+        research.setdefault("research", {})["evolution"] = {
+            key: context.get(key)
+            for key in (
+                "source_strategy_id",
+                "source_instance_id",
+                "source_code_sha256",
+                "cycle_id",
+                "diagnosis",
+            )
+        }
+        research["research"]["evolution"]["order_sample"] = {
+            k: v for k, v in context.get("orders", {}).items() if k != "fills"
+        }
+        research["research"]["evolution"]["memory_references"] = [
+            {
+                "mission_id": item.get("mission_id"),
+                "candidate_id": item.get("candidate_id"),
+                "backtest_id": item.get("development", {}).get("backtest_id"),
+            }
+            for item in context.get("memory", [])
+        ]
     if projection.goal and projection.goal.paper_review_required:
         from hypertrade.arc.paper_review import build_paper_review
 

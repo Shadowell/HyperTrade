@@ -37,6 +37,7 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "sync_table_stats": {"method": "GET", "path": "/sync/table-stats"},
     "strategy_search": {"method": "GET", "path": "/strategies"},
     "strategy_get": {"method": "GET", "path": "/strategies/{strategy_id}"},
+    "strategy_trades": {"method": "GET", "path": "/strategies/{strategy_id}/trades"},
     "backtest_get_job": {"method": "GET", "path": "/backtest/job/{job_id}"},
     "backtest_list_results": {"method": "GET", "path": "/backtest/results"},
     "backtest_get_result": {"method": "GET", "path": "/backtest/result/{backtest_id}"},
@@ -469,6 +470,17 @@ class BitProToolAdapter:
             "strategies": strategies,
             "tool_calls": self.last_tool_calls,
         }
+
+    def strategy_trades(self, *, strategy_id: int, limit: int = 200) -> list[dict[str, Any]]:
+        self.last_tool_calls = []
+        self._preflight()
+        raw = self._call(
+            "strategy_trades", {"strategy_id": strategy_id, "limit": min(500, max(1, limit))}
+        )
+        rows = raw.get("trades", raw.get("items", [])) if isinstance(raw, dict) else raw
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            raise ValueError("历史成交响应格式不可用")
+        return rows
 
     def strategy_get(self, *, strategy_id: int) -> dict[str, Any]:
         """Read an existing immutable candidate before reusing its platform identity."""

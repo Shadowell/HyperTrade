@@ -443,9 +443,10 @@ def test_budget_context_reports_remaining_without_recounting_tool_history(missio
     assert [e.payload["budget_snapshot"] for e in events] == [c["budget"] for c in contexts]
 
 
+@pytest.mark.parametrize("context_kind", ["feedback", "evolution"])
 @pytest.mark.parametrize("expire_after_baseline", [False, True])
 def test_feedback_candidate_gets_same_window_baseline_and_human_review(
-    mission, expire_after_baseline
+    mission, expire_after_baseline, context_kind
 ):
     from hypertrade.arc.adversarial import BlueTeamQuant
 
@@ -459,6 +460,15 @@ def test_feedback_candidate_gets_same_window_baseline_and_human_review(
         "evidence": {},
         "baseline": baseline.model_dump(mode="json"),
     }
+
+    if context_kind == "evolution":
+        mission.projection.goal.evolution_context = {
+            "source_strategy_id": 44,
+            "source_instance_id": "source-paper",
+            "baseline": baseline.model_dump(mode="json"),
+            "memory": [{"hypothesis": "prior development feedback"}],
+        }
+        mission.projection.goal.feedback_parent = None
 
     class Provider:
         name, model = "fixture", "unit"
@@ -525,7 +535,13 @@ def test_feedback_candidate_gets_same_window_baseline_and_human_review(
         mission.projection.attempts[0].observed_metrics["baseline_comparison"]["backtest_id"]
         == "bt-2"
     )
-    assert mission.projection.paper_review["feedback_parent"]["instance_id"] == "source-paper"
+    if context_kind == "feedback":
+        assert mission.projection.paper_review["feedback_parent"]["instance_id"] == "source-paper"
+    else:
+        assert (
+            mission.projection.paper_review["evolution_source"]["source_instance_id"]
+            == "source-paper"
+        )
     assert mission.projection.attempts[0].paper_instance_id is None
 
 

@@ -37,6 +37,7 @@ class SelfTestClient(Protocol):
         name: str,
         script_content: str,
         description: str | None = None,
+        config: dict[str, Any] | None = None,
         exchange: str = "okx",
         symbols: list[str] | None = None,
         idempotency_key: str = "",
@@ -311,6 +312,11 @@ class ARCSelfTestService:
                     exchange="okx",
                     symbols=[symbol],
                     idempotency_key=create_key,
+                    **(
+                        {"config": attempt.strategy_spec["baseline_config"]}
+                        if "baseline_config" in attempt.strategy_spec
+                        else {}
+                    ),
                 )
         except Exception as exc:
             return SelfTestResult(

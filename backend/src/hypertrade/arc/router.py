@@ -40,6 +40,7 @@ from hypertrade.arc.evidence_view import (
     build_evidence_view,
     build_mission_summary,
 )
+from hypertrade.arc.evolution_router import router as evolution_router
 from hypertrade.arc.findings import ARCReasonCode, AttackFinding
 from hypertrade.arc.incubation import ARCPaperIncubationResolver
 from hypertrade.arc.live_approval import build_live_approval_package
@@ -67,6 +68,7 @@ _ARC_MISSIONS = MISSIONS
 
 router = APIRouter(prefix="/api/v1/arc", tags=["arc"])
 router.include_router(stream_router)
+router.include_router(evolution_router)
 
 
 class CreateARCMissionRequest(BaseModel):
