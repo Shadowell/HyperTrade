@@ -5,6 +5,8 @@ A paper instance id is only returned after BitPro has created the strategy and
 accepted configure + start. A local uuid is not a running simulation.
 """
 
+import hashlib
+import json
 from decimal import Decimal
 from typing import Any, Protocol
 
@@ -17,6 +19,8 @@ from hypertrade.bitpro.mcp import BitProToolAdapter
 
 class PaperProvisionClient(Protocol):
     """The BitPro surface this resolver may touch. No live-order methods."""
+
+    def strategy_get(self, *, strategy_id: int) -> dict[str, Any]: ...
 
     def strategy_create(
         self,
@@ -43,7 +47,8 @@ class PaperProvisionClient(Protocol):
         """Start a paper instance.
 
         BitProToolAdapter keeps the argument name `strategy_id`, but the
-        request body field is `instance_id`. Pass the id returned by configure.
+        request body field is `instance_id`, but that legacy field contains the numeric strategy ID.
+        The immutable paper_... session ID is used only for evidence reads.
         """
         ...
 
@@ -96,18 +101,9 @@ def _instance_id(payload: Any) -> str | None:
     """Read a BitPro paper instance id. Never invent one from the strategy id."""
     if not isinstance(payload, dict):
         return None
-    paper = payload.get("paper")
-    candidates: list[Any] = []
-    if isinstance(paper, dict):
-        candidates.extend(paper.get(key) for key in ("instance_id", "id", "operation_id"))
-    candidates.append(payload.get("instance_id"))
-    for value in candidates:
-        found = _as_int(value)
-        if found is not None:
-            return str(found)
-        if value is not None and str(value).strip():
-            return str(value).strip()
-    return None
+    paper = payload.get("paper", payload)
+    value = paper.get("instance_id") if isinstance(paper, dict) else None
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _ok(payload: Any) -> bool:
@@ -139,7 +135,9 @@ class ARCPaperIncubationResolver:
         if not {"configure", "start"}.issubset(allowed):
             return False, None, None, "paper_preauthorization_missing_configure_or_start"
 
-        capital = min(preauth.max_capital_per_instance, Decimal("10000"))
+        capital = preauth.max_capital_per_instance
+        if not capital.is_finite() or not Decimal("0") < capital <= Decimal("10000"):
+            return False, None, None, "paper_capital_outside_supported_range"
         symbol = preauth.symbols[0] if preauth.symbols else "BTC-USDT-SWAP"
         timeframe = str(attempt.strategy_spec.get("timeframe") or "1H")
         bitpro_strategy_name = format_bitpro_strategy_name(
@@ -188,6 +186,38 @@ class ARCPaperIncubationResolver:
                 return False, None, bitpro_strategy_name, "bitpro_strategy_create_rejected"
             strategy_id = created_id
 
+        # Existing platform IDs are mutable; approval binds the submitted bytes, not just an ID.
+        try:
+            remote = client.strategy_get(strategy_id=strategy_id)
+        except Exception as exc:
+            return (
+                False,
+                None,
+                bitpro_strategy_name,
+                f"paper_source_read_failed:{type(exc).__name__}",
+            )
+        source = remote.get("strategy") if isinstance(remote, dict) else None
+        if (
+            not _ok(remote)
+            or not isinstance(source, dict)
+            or _as_int(source.get("id")) != strategy_id
+            or source.get("script_content") != attempt.strategy_code
+        ):
+            return False, None, bitpro_strategy_name, "paper_source_code_or_identity_changed"
+        config = source.get("config") or {}
+        if isinstance(config, str):
+            try:
+                config = json.loads(config)
+            except (TypeError, ValueError):
+                return False, None, bitpro_strategy_name, "paper_source_config_unreadable"
+        if (
+            not isinstance(config, dict)
+            or config.get("paper_instance_id")
+            or source.get("run_started_at")
+            or source.get("status") == "running"
+        ):
+            return False, None, bitpro_strategy_name, "paper_source_already_has_runtime_history"
+
         try:
             configured = client.paper_configure(
                 strategy_id=strategy_id,
@@ -210,20 +240,39 @@ class ARCPaperIncubationResolver:
                 bitpro_strategy_name,
                 f"bitpro_paper_configure_rejected:strategy_id={strategy_id}",
             )
-        # BitPro paper_start posts strategy_id as instance_id. Starting the
-        # strategy id would either 404 or start a different instance.
-        instance_id = _as_int(_instance_id(configured))
-        if instance_id is None:
+        # Configure returns a string session identity. Start still addresses the numeric strategy.
+        instance_id = _instance_id(configured)
+        receipt = configured.get("paper") or {}
+        if not instance_id:
             return (
                 False,
                 None,
                 bitpro_strategy_name,
                 f"bitpro_paper_configure_missing_instance:strategy_id={strategy_id}",
             )
+        if (
+            receipt.get("configured") is not True
+            or _as_int(receipt.get("strategy_id")) != strategy_id
+        ):
+            return False, None, bitpro_strategy_name, "bitpro_paper_configure_identity_mismatch"
+
+        expected_version = (
+            "sha256:"
+            + hashlib.sha256(
+                json.dumps(
+                    {"script_content": attempt.strategy_code},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+        )
+        if receipt.get("strategy_version") != expected_version:
+            return False, None, bitpro_strategy_name, "bitpro_paper_configured_code_changed"
 
         try:
             started = client.paper_start(
-                strategy_id=instance_id,
+                strategy_id=strategy_id,
                 idempotency_key=start_key,
             )
         except Exception as exc:
@@ -241,7 +290,14 @@ class ARCPaperIncubationResolver:
                 f"bitpro_paper_start_rejected:instance_id={instance_id}",
             )
 
-        paper_instance_id = _instance_id(started) or str(instance_id)
+        started_receipt = started.get("paper") or {}
+        if (
+            started_receipt.get("started") is not True
+            or _as_int(started_receipt.get("strategy_id")) != strategy_id
+            or _instance_id(started) != instance_id
+        ):
+            return False, None, bitpro_strategy_name, "bitpro_paper_start_identity_unconfirmed"
+        paper_instance_id = instance_id
         msg = (
             f"Started BitPro paper '{bitpro_strategy_name}' "
             f"strategy_id={strategy_id} instance={paper_instance_id} capital={capital}"

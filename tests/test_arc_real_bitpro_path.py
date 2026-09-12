@@ -29,6 +29,7 @@ class _RealShapeBitPro:
     """
 
     def __init__(self) -> None:
+        self.code = _candidate().strategy_code
         self.validate_calls = 0
         self.create_calls: list[dict[str, Any]] = []
         self.backtest_calls: list[dict[str, Any]] = []
@@ -43,10 +44,12 @@ class _RealShapeBitPro:
         }
 
     def strategy_create(self, **kwargs: Any) -> dict[str, Any]:
+        self.code = kwargs["script_content"]
         self.create_calls.append(kwargs)
-        if kwargs.get("idempotency_key") == self.create_calls[0]["idempotency_key"] or len(
-            self.create_calls
-        ) == 1:
+        if (
+            kwargs.get("idempotency_key") == self.create_calls[0]["idempotency_key"]
+            or len(self.create_calls) == 1
+        ):
             # Server-side dedupe: the same content-bound key replays the first fact.
             return {"status": "ok", "strategy": {"id": 445}}
         return {"status": "ok", "strategy": {"id": 446}}
@@ -71,11 +74,43 @@ class _RealShapeBitPro:
             },
         }
 
+    def strategy_get(self, *, strategy_id: int) -> dict[str, Any]:
+        return {"status": "ok", "strategy": {"id": strategy_id, "script_content": self.code}}
+
     def paper_configure(self, **kwargs: Any) -> dict[str, Any]:
-        return {"status": "ok", "instance_id": 9001}
+        import hashlib
+        import json
+
+        version = (
+            "sha256:"
+            + hashlib.sha256(
+                json.dumps(
+                    {"script_content": self.code},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+        )
+        return {
+            "status": "ok",
+            "paper": {
+                "configured": True,
+                "instance_id": "paper_9001",
+                "strategy_id": kwargs["strategy_id"],
+                "strategy_version": version,
+            },
+        }
 
     def paper_start(self, **kwargs: Any) -> dict[str, Any]:
-        return {"status": "ok", "instance_id": 9001}
+        return {
+            "status": "ok",
+            "paper": {
+                "started": True,
+                "instance_id": "paper_9001",
+                "strategy_id": kwargs["strategy_id"],
+            },
+        }
 
 
 def _candidate():

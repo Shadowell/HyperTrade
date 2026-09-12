@@ -254,14 +254,45 @@ def test_held_out_survivor_reaches_paper_only_when_bitpro_creates_it() -> None:
     import hypertrade.arc.router as router_module
 
     class _OkBitPro:
+        code = ""
+
         def strategy_create(self, **kwargs: Any) -> Any:
+            self.code = kwargs["script_content"]
             return {"status": "ok", "strategy": {"id": 77}}
 
+        def strategy_get(self, **kwargs: Any) -> Any:
+            return {"status": "ok", "strategy": {"id": 77, "script_content": self.code}}
+
         def paper_configure(self, **kwargs: Any) -> Any:
-            return {"status": "ok", "paper": {"instance_id": 77}}
+            import hashlib
+            import json
+
+            version = (
+                "sha256:"
+                + hashlib.sha256(
+                    json.dumps(
+                        {"script_content": self.code},
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest()
+            )
+            return {
+                "status": "ok",
+                "paper": {
+                    "instance_id": "paper_77",
+                    "strategy_id": 77,
+                    "configured": True,
+                    "strategy_version": version,
+                },
+            }
 
         def paper_start(self, **kwargs: Any) -> Any:
-            return {"status": "ok", "paper": {"instance_id": 77, "status": "running"}}
+            return {
+                "status": "ok",
+                "paper": {"instance_id": "paper_77", "strategy_id": 77, "started": True},
+            }
 
     ctrl = _start(_goal())
     original_window = router_module.build_default_window
@@ -283,7 +314,18 @@ def test_held_out_survivor_reaches_paper_only_when_bitpro_creates_it() -> None:
     router_module.build_default_window = lambda *args, **kwargs: _flat_window()
     router_module.ARCAdversarialEngine.run_adversarial_session = held_out_pass  # type: ignore[method-assign]
     incubation_module.BitProToolAdapter = lambda *args, **kwargs: _OkBitPro()  # type: ignore[misc,assignment]
-    router_module.ARCSelfTestService = _pass_self_test  # type: ignore[assignment]
+
+    def tested_source(*args, **kwargs):
+        service = _pass_self_test()
+
+        class Tested:
+            def run(self, attempt, goal):
+                _OkBitPro.code = attempt.strategy_code
+                return service.run(attempt, goal)
+
+        return Tested()
+
+    router_module.ARCSelfTestService = tested_source  # type: ignore[assignment]
     try:
         run_autonomous_arc_loop(ctrl.mission_id)
     finally:
@@ -297,7 +339,7 @@ def test_held_out_survivor_reaches_paper_only_when_bitpro_creates_it() -> None:
     assert not any(event.event_type == "mission_completed" for event in proj.events)
     papered = [att for att in proj.attempts if att.paper_instance_id]
     assert len(papered) == 1
-    assert papered[0].paper_instance_id == "77"
+    assert papered[0].paper_instance_id == "paper_77"
     assert papered[0].state == "paper_observing"
     assert papered[0].bitpro_backtest_id == "bt_77"
 
