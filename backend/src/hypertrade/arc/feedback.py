@@ -185,6 +185,63 @@ def collect_windows(
     }
 
 
+def _negative_experiment_finished(record: dict[str, Any], goal: ARCGoalV1) -> bool:
+    from hypertrade.arc.self_test import apply_success_criteria
+
+    if record.get("passed") is not False or not record.get("backtest_id"):
+        return False
+    metrics = record.get("metrics") or {}
+    passed, reasons = apply_success_criteria(metrics, goal.success_criteria)
+    if not passed:
+        # Missing or invalid evidence is an operator problem, not a settled rejection.
+        return bool(reasons) and all("success_criteria." in reason for reason in reasons)
+    comparison = metrics.get("baseline_comparison") or {}
+    return (
+        comparison.get("passed") is False
+        and bool(comparison.get("backtest_id"))
+        and not comparison.get("reason")
+    )
+
+
+def _feedback_child_active(child: ARCController) -> bool:
+    projection = child.projection
+    if (
+        projection.state in {"failed", "completed"}
+        or projection.paper_review.get("status") == "rejected"
+    ):
+        return False
+    if (
+        projection.state != "needs_operator"
+        or projection.goal is None
+        or projection.avo.get("pending")
+    ):
+        return True
+    reason = next(
+        (
+            event.payload.get("reason")
+            for event in reversed(projection.events)
+            if event.event_type == "operator_needed"
+        ),
+        None,
+    )
+    if reason == "avo_final_validation_failed" and projection.avo.get("final_window_consumed"):
+        return not any(
+            _negative_experiment_finished(record, projection.goal)
+            for record in projection.self_test_records[-1:]
+        )
+    if (
+        reason == "avo_no_candidate"
+        and projection.attempts
+        and projection.goal.budget.candidates_used >= projection.goal.budget.max_candidates
+    ):
+        development = projection.avo.get("development", {})
+        return not all(
+            _negative_experiment_finished(development.get(attempt.attempt_id, {}), projection.goal)
+            for attempt in projection.attempts
+        )
+    return True
+
+
 def check_paper_feedback(
     mission_id: str, client: Any = None, now: datetime | None = None
 ) -> dict[str, Any]:
@@ -213,11 +270,7 @@ def check_paper_feedback(
         assert parent is not None and parent.projection.goal is not None
         state = parent.projection.paper_feedback
         child = get_controller(str(state.get("child_mission_id", "")))
-        if (
-            child
-            and child.projection.state not in {"failed", "completed"}
-            and child.projection.paper_review.get("status") != "rejected"
-        ):
+        if child and _feedback_child_active(child):
             return {"status": "child_active", "child_mission_id": child.mission_id}
         if state.get("checked_end_at") == end.isoformat():
             return dict(state)

@@ -192,3 +192,85 @@ def test_feedback_creates_one_child_keeps_parent_running_and_recovers_link(monke
     )
     assert len(list_mission_ids()) == 2
     reset_store()
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    ["final_rejected", "development_exhausted", "unknown", "early_stop", "missing_metrics"],
+)
+def test_settled_child_releases_next_day_but_unknown_child_keeps_blocking(outcome):
+    from hypertrade.arc.adversarial import BlueTeamQuant
+    from hypertrade.arc.contracts import ARCBudgetV1, ARCGoalV1
+    from hypertrade.arc.controller import ARCController, ARCEventV1
+    from hypertrade.arc.feedback import check_paper_feedback
+    from hypertrade.arc.store import list_mission_ids, reset_store, save_mission
+
+    reset_store()
+    parent = ARCController(
+        goal=ARCGoalV1(
+            objective="trend",
+            paper_review_required=True,
+            research_mode="avo",
+            feedback=PaperFeedbackPolicyV1(enabled=True),
+        )
+    )
+    attempt = BlueTeamQuant().propose_initial_strategy("trend", "BTC-USDT-SWAP")
+    attempt.bitpro_strategy_id = "44"
+    attempt.paper_instance_id = "paper-session"
+    parent.projection.attempts = [attempt]
+    parent.projection.state = "paper_observing"
+    child = ARCController(
+        goal=ARCGoalV1(
+            objective="tune",
+            paper_review_required=True,
+            research_mode="avo",
+            budget=ARCBudgetV1(max_candidates=1, candidates_used=1),
+        )
+    )
+    child.projection.state = "needs_operator"
+    trial = attempt.model_copy(deep=True)
+    trial.paper_instance_id = None
+    child.projection.attempts = [trial]
+    record = {
+        "passed": False,
+        "backtest_id": "real-shape-test-result",
+        "metrics": {"net_return": -0.1, "sharpe": -1, "max_drawdown": 0.1, "trades": 100},
+    }
+    reason = "avo_final_validation_failed"
+    child.projection.avo = {"final_window_consumed": True, "pending": None}
+    child.projection.self_test_records = [record]
+    if outcome in {"development_exhausted", "early_stop"}:
+        reason = "avo_no_candidate"
+        child.projection.avo = {"development": {trial.attempt_id: record}, "pending": None}
+        if outcome == "early_stop":
+            child.projection.goal.budget.max_candidates = 3
+    if outcome == "unknown":
+        reason = "avo_effect_unknown"
+        child.projection.avo["pending"] = {"kind": "tool"}
+    if outcome == "missing_metrics":
+        record["metrics"] = {}
+    child.projection.events = [
+        ARCEventV1(
+            mission_id=child.mission_id, event_type="operator_needed", payload={"reason": reason}
+        )
+    ]
+    save_mission(child)
+    parent.projection.paper_feedback = {
+        "child_mission_id": child.mission_id,
+        "checked_end_at": "2026-08-14T00:00:00+00:00",
+    }
+    save_mission(parent)
+    now = datetime(2026, 8, 15, tzinfo=UTC)
+    result = check_paper_feedback(parent.mission_id, PaperClient(), now)
+    if outcome in {"final_rejected", "development_exhausted"}:
+        assert result["child_mission_id"] != child.mission_id
+        assert len(list_mission_ids()) == 3
+        assert (
+            check_paper_feedback(parent.mission_id, PaperClient(), now)["status"] == "child_active"
+        )
+    else:
+        assert result["status"] == "child_active"
+        assert len(list_mission_ids()) == 2
+    assert parent.projection.state == "paper_observing"
+    assert parent.projection.attempts[0].paper_instance_id == "paper-session"
+    reset_store()
