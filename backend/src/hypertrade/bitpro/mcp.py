@@ -243,6 +243,13 @@ class BitProMcpClient:
         endpoints = {**READ_TOOL_ENDPOINTS, **RESEARCH_MUTATION_TOOL_ENDPOINTS}
         if tool_name not in endpoints:
             raise KeyError(f"Unknown BitPro MCP tool: {tool_name}")
+        # Legacy Paper REST routes call the numeric strategy selector instance_id.
+        # The canonical snapshot route instead supports the actual paper_... session id.
+        if (
+            tool_name in {"paper_dashboard", "paper_events", "paper_equity_curve"}
+            and "strategy_id" in params
+        ):
+            params["instance_id"] = params.pop("strategy_id")
         spec = endpoints[tool_name]
         method = spec["method"].upper()
         path = _format_path(spec["path"], params)

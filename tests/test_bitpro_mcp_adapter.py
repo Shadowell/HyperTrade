@@ -1005,7 +1005,7 @@ def test_bitpro_paper_dashboard_explicit_strategy_keeps_filtered_scope() -> None
     ]
     assert seen == [
         {"method": "GET", "path": "/api/v2/system/health", "query": {}},
-        {"method": "GET", "path": "/api/v2/live/dashboard", "query": {"strategy_id": "105"}},
+        {"method": "GET", "path": "/api/v2/live/dashboard", "query": {"instance_id": "105"}},
     ]
 
 
@@ -1162,7 +1162,7 @@ def test_bitpro_paper_events_reads_bounded_event_stream() -> None:
         {
             "method": "GET",
             "path": "/api/v2/live/events",
-            "query": {"strategy_id": "105", "limit": "3"},
+            "query": {"instance_id": "105", "limit": "3"},
         },
     ]
 
@@ -1246,7 +1246,7 @@ def test_bitpro_paper_equity_curve_reads_bounded_curve() -> None:
         {
             "method": "GET",
             "path": "/api/v2/live/equity_curve",
-            "query": {"strategy_id": "105"},
+            "query": {"instance_id": "105"},
         },
     ]
 
@@ -1636,3 +1636,27 @@ def test_reviewed_paper_wire_preserves_conditions_and_uses_dedicated_routes():
     }
     assert adapter.paper_configure_reviewed(**configuration)["paper"] == configuration
     assert seen[-1] == ("/api/v2/live/reviewed/configure", configuration)
+
+
+@pytest.mark.parametrize(
+    "tool,path",
+    [
+        ("paper_dashboard", "dashboard"),
+        ("paper_events", "events"),
+        ("paper_equity_curve", "equity_curve"),
+    ],
+)
+def test_legacy_paper_reads_address_the_requested_strategy(tool, path):
+    seen = []
+
+    def handler(request):
+        seen.append(dict(request.url.params))
+        assert request.url.path == "/api/v2/live/" + path
+        return httpx.Response(200, json={"success": True, "data": {}})
+
+    client = BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    client.call_tool(tool, {"strategy_id": 501})
+    assert seen == [{"instance_id": "501"}]
