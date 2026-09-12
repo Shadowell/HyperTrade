@@ -565,9 +565,16 @@ def _paper_review_pipeline(projection: ARCMissionProjection, clock: datetime) ->
         frontier = {"research": 1, "development": 2, "final": 3}.get(
             projection.avo["phase"], frontier
         )
+    if projection.state == "paper_observing" and done[-1]:
+        frontier = len(labels) - 1
     blocked = projection.state in _BLOCKED_STATES
     metrics = _stage_metrics(projection, clock)
-    metrics["approval"] = {"metrics": {"status": review.get("status"), "kind": "paper"}}
+    metrics["approval"] = {
+        "detail": "人工审核已通过" if done[4] else "等待人工审核",
+        "metrics": {"status": review.get("status"), "kind": "paper"},
+    }
+    if projection.state == "paper_observing":
+        metrics["paper"]["detail"] = "持续模拟观察，运行数据用于下一轮研究"
     if is_avo and projection.goal is not None:
         budget = projection.goal.budget
         metrics["explore"]["detail"] = (

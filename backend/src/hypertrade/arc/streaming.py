@@ -19,7 +19,6 @@ router = APIRouter()
 CHECKPOINTS = {
     "needs_operator",
     "paper_review_ready",
-    "paper_observing",
     "completed",
     "failed",
     "rejected",

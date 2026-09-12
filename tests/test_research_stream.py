@@ -209,3 +209,22 @@ def test_hui_exit_keys_work_inside_read_only_evidence(key):
                 assert app.stop_reading.is_set()
 
     asyncio.run(exercise())
+
+
+def test_paper_observation_stays_active_and_keeps_streaming():
+    from hypertrade.arc.pipeline_view import build_pipeline_view
+
+    ctrl = ARCController(goal=ARCGoalV1(objective="observe", paper_review_required=True))
+    ctrl.projection.state = "paper_observing"
+    ctrl.projection.paper_review = {
+        "package_hash": "a" * 64,
+        "unknowns": [],
+        "decision": {"decision": "approve"},
+        "paper_instance_id": "paper-1",
+        "status": "paper_observing",
+    }
+    view = build_pipeline_view(ctrl.projection)
+    assert view["finished"] is False
+    assert view["current_stage"] == "paper"
+    assert view["stages"][-1]["status"] == "active"
+    assert not any(kind == "checkpoint" for kind, _, _ in stream_frames(ctrl.projection, 0))
