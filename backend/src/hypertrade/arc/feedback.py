@@ -18,6 +18,7 @@ from hypertrade.arc.observation import paper_attempt
 from hypertrade.arc.store import get_controller, research_lock, save_mission
 from hypertrade.arc.universe import candidate_symbol
 from hypertrade.bitpro.mcp import BitProToolAdapter
+from hypertrade.bitpro.paced_reads import PacedReadClient
 
 
 def _time(value: str) -> datetime:
@@ -277,7 +278,7 @@ def check_paper_feedback(
             return dict(state)
         try:
             evidence = collect_windows(
-                client or BitProToolAdapter(),
+                client or BitProToolAdapter(PacedReadClient()),
                 instance_id,
                 str(attempt.bitpro_strategy_id),
                 end,

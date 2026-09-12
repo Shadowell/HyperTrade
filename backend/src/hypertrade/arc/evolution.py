@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -26,6 +27,7 @@ from hypertrade.arc.observation import _snapshot_body
 from hypertrade.arc.store import get_controller, research_lock, save_mission
 from hypertrade.arc.universe import normalize_symbols
 from hypertrade.bitpro.mcp import BitProToolAdapter
+from hypertrade.bitpro.paced_reads import PacedReadClient
 from hypertrade.db import ArcMission, Database
 
 
@@ -201,7 +203,13 @@ class EvolutionService:
             self._save_cycle(cycle_id, "scanning", payload)
             try:
                 config = EvolutionConfig.model_validate(payload["config"])
-                diagnostics, chosen = self._scan(config, now)
+                diagnostics, chosen = self._scan(
+                    config,
+                    now,
+                    on_progress=lambda rows: self._save_cycle(
+                        cycle_id, "scanning", {**payload, "diagnostics": list(rows)}
+                    ),
+                )
                 payload["diagnostics"] = diagnostics
                 owner()
                 latest = self.status()
@@ -295,11 +303,14 @@ class EvolutionService:
 
     def _client(self) -> Any:
         if self.client is None:
-            self.client = BitProToolAdapter()
+            self.client = BitProToolAdapter(PacedReadClient())
         return self.client
 
     def _scan(
-        self, config: EvolutionConfig, now: datetime
+        self,
+        config: EvolutionConfig,
+        now: datetime,
+        on_progress: Callable[[list[dict[str, Any]]], Any] | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
         client = self._client()
         inventory = client.paper_strategy_performance(limit=50)
@@ -437,6 +448,9 @@ class EvolutionService:
                         chosen = context
             except Exception as exc:
                 diagnostic.update(status="unavailable", reason=str(exc)[:240])
+            finally:
+                if on_progress is not None:
+                    on_progress(diagnostics)
         return diagnostics, chosen
 
     def _memory(
