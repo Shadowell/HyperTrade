@@ -10,6 +10,7 @@ from urllib.parse import quote
 import httpx
 from textual import work
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Static, TextArea
@@ -22,6 +23,25 @@ def pretty(value: Any) -> str:
 
 
 class EvidenceScreen(ModalScreen[tuple[str, str, str] | None]):
+    BINDINGS = [
+        Binding("escape", "back", "返回", priority=True),
+        Binding("q", "quit_view", "退出观看", priority=True),
+        Binding("ctrl+c", "detach", "退出观看", priority=True),
+    ]
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        return not (action == "quit_view" and isinstance(self.app.focused, Input))
+
+    def action_quit_view(self) -> None:
+        self.action_detach()
+
+    def action_detach(self) -> None:
+        if isinstance(self.app, ResearchApp):
+            self.app.action_detach()
+
+    def action_back(self) -> None:
+        self.dismiss(None)
+
     CSS = """
     EvidenceScreen { align: center middle; }
     #evidence-box { width: 92%; height: 85%; border: round $accent;
@@ -46,7 +66,10 @@ class EvidenceScreen(ModalScreen[tuple[str, str, str] | None]):
         )
         with Vertical(id="evidence-box"):
             yield Static(
-                "逐版本人工审核：阅读标的、参数、最终回测、资金配置与风险后再决定。", markup=False
+                "逐版本人工审核：阅读标的、参数、最终回测、资金配置与风险后再决定。"
+                if self.review
+                else "研究证据：任务、开发回测与来源。Esc返回，Ctrl+C退出观看。",
+                markup=False,
             )
             yield TextArea(pretty(self.package), read_only=True, id="evidence-text")
             if ready:
@@ -77,8 +100,8 @@ class EvidenceScreen(ModalScreen[tuple[str, str, str] | None]):
 class ResearchApp(App[None]):
     TITLE = "HyperTrade · 自主研究"
     BINDINGS = [
-        ("q", "quit", "退出观看"),
-        ("ctrl+c", "quit", "退出观看"),
+        Binding("q", "quit", "退出观看", priority=True),
+        Binding("ctrl+c", "detach", "退出观看", priority=True),
         ("e", "evidence", "研究证据"),
         ("r", "review", "人工审核"),
         ("c", "continue_research", "追加预算"),
@@ -113,6 +136,16 @@ class ResearchApp(App[None]):
             yield DataTable(id="events", cursor_type="row")
             yield TextArea("选择左侧活动，展开其日志。", read_only=True, id="details")
         yield Footer()
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        return not (action == "quit" and isinstance(self.focused, Input))
+
+    async def action_quit(self) -> None:
+        self.action_detach()
+
+    def action_detach(self) -> None:
+        self.stop_reading.set()
+        self.exit()
 
     def on_mount(self) -> None:
         self.query_one("#events", DataTable).add_columns("时间", "研究活动")
@@ -240,6 +273,25 @@ class ResearchApp(App[None]):
 
 
 class BudgetScreen(ModalScreen[dict[str, int] | None]):
+    BINDINGS = [
+        Binding("escape", "back", "返回", priority=True),
+        Binding("q", "quit_view", "退出观看", priority=True),
+        Binding("ctrl+c", "detach", "退出观看", priority=True),
+    ]
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        return not (action == "quit_view" and isinstance(self.app.focused, Input))
+
+    def action_quit_view(self) -> None:
+        self.action_detach()
+
+    def action_detach(self) -> None:
+        if isinstance(self.app, ResearchApp):
+            self.app.action_detach()
+
+    def action_back(self) -> None:
+        self.dismiss(None)
+
     CSS = """
     BudgetScreen {align:center middle;}
     #budget-box {width:60; height:auto; padding:1; border:round $accent; background:$surface;}

@@ -185,3 +185,27 @@ def test_start_creates_once_then_streams(monkeypatch):
     assert calls.count(("POST", "/api/v1/arc/missions")) == 1
     assert "提出候选" in output.getvalue()
     assert "SOL-USDT-SWAP" in output.getvalue()
+
+
+@pytest.mark.parametrize("key", ["q", "ctrl+c"])
+def test_hui_exit_keys_work_inside_read_only_evidence(key):
+    import asyncio
+
+    import httpx
+    from hypertrade.research_ui import EvidenceScreen, ResearchApp
+
+    class StaticApp(ResearchApp):
+        def action_follow(self):
+            pass
+
+    async def exercise():
+        with httpx.Client(base_url="https://test") as client:
+            app = StaticApp(client, "arc_test")
+            async with app.run_test(size=(80, 24)) as pilot:
+                app.push_screen(EvidenceScreen({"state": "test"}))
+                await pilot.pause()
+                await pilot.press(key)
+                await pilot.pause()
+                assert app.stop_reading.is_set()
+
+    asyncio.run(exercise())
