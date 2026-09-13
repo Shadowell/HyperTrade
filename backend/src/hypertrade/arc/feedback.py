@@ -368,8 +368,8 @@ def compare_backtests(metrics: dict[str, Any], baseline: dict[str, Any]) -> dict
 
         new_return = read(metrics, "net_return", "total_return_pct")
         old_return = read(old, "net_return", "total_return_pct")
-        new_dd = read(metrics, "max_drawdown", "max_drawdown_pct")
-        old_dd = read(old, "max_drawdown", "max_drawdown_pct")
+        new_dd = abs(read(metrics, "max_drawdown", "max_drawdown_pct"))
+        old_dd = abs(read(old, "max_drawdown", "max_drawdown_pct"))
         passed = (
             new_return >= old_return
             and new_dd <= old_dd

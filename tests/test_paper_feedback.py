@@ -277,3 +277,34 @@ def test_settled_child_releases_next_day_but_unknown_child_keeps_blocking(outcom
     assert parent.projection.state == "paper_observing"
     assert parent.projection.attempts[0].paper_instance_id == "paper-session"
     reset_store()
+
+
+def test_comparison_normalizes_signed_drawdown_before_judging_improvement():
+    from hypertrade.arc.feedback import compare_backtests
+
+    window = {"purpose": "final", "start_date": "2026-01-01", "end_date": "2026-02-01"}
+    baseline = {
+        "backtest_id": "source",
+        "metrics": {
+            "net_return": 0.1,
+            "max_drawdown": 0.1,
+            "evaluation_window": window,
+        },
+    }
+    assert not compare_backtests(
+        {
+            "net_return": 0.2,
+            "max_drawdown": -0.15,
+            "evaluation_window": window,
+        },
+        baseline,
+    )["passed"]
+    baseline["metrics"]["max_drawdown"] = -0.1
+    assert compare_backtests(
+        {
+            "net_return": 0.2,
+            "max_drawdown": 0.08,
+            "evaluation_window": window,
+        },
+        baseline,
+    )["passed"]
