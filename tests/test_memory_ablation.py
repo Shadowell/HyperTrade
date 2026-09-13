@@ -106,6 +106,32 @@ def test_pair_accepts_the_exact_versioned_memory_service_projection(tmp_path):
     assert manifest["selection"]["input_contract"] == "research_memory.v1"
 
 
+def test_pair_accepts_source_bound_memory_from_an_older_development_window(tmp_path):
+    module = ablation()
+    from hypertrade.arc.evolution_memory import curate_memory
+
+    projected, _ = curate_memory(
+        [record()], symbol="SOL-USDT-SWAP", timeframe="1H", windows=WINDOWS
+    )
+    projected[0]["development"]["window"] = ["2025-12-01", "2026-03-01"]
+    projected[0]["memory_id"] = module._digest({**projected[0], "memory_id": None})
+    manifest = module.create_pair(tmp_path, goal(), projected)
+    assert manifest["memory"] == projected
+
+
+def test_pair_rejects_memory_that_reaches_beyond_the_frozen_development_window(tmp_path):
+    module = ablation()
+    from hypertrade.arc.evolution_memory import curate_memory
+
+    projected, _ = curate_memory(
+        [record()], symbol="SOL-USDT-SWAP", timeframe="1H", windows=WINDOWS
+    )
+    projected[0]["development"]["window"] = ["2026-03-15", "2026-07-14"]
+    projected[0]["memory_id"] = module._digest({**projected[0], "memory_id": None})
+    with pytest.raises(ValueError, match="invalid_research_memory"):
+        module.create_pair(tmp_path, goal(), projected)
+
+
 def test_pair_accepts_valid_legacy_decimal_representation_after_hash_check(tmp_path):
     module = ablation()
     from hypertrade.arc.evolution_memory import curate_memory

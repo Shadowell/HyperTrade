@@ -15,6 +15,7 @@ import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from copy import deepcopy
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -101,7 +102,7 @@ def create_pair(
             raise ValueError("invalid_research_memory_batch")
         memory = []
         seen: set[str] = set()
-        expected_window = [str(value) for value in goal.research_windows.window("development")]
+        development_end = goal.research_windows.window("development")[1]
         for raw in records:
             try:
                 entry = ResearchMemoryV1.model_validate(raw).model_dump(
@@ -111,6 +112,10 @@ def create_pair(
                 if not memory_id or memory_id != _digest({**entry, "memory_id": None}):
                     raise ValueError("memory_identity_mismatch")
                 capital = Decimal(entry["capital"])
+                source_window = entry["development"].get("window")
+                if not isinstance(source_window, list) or len(source_window) != 2:
+                    raise ValueError("invalid_development_window")
+                source_start, source_end = (date.fromisoformat(value) for value in source_window)
                 if (
                     not capital.is_finite()
                     or capital <= 0
@@ -118,7 +123,8 @@ def create_pair(
                     or memory_id in seen
                     or entry["spec"].get("symbol") != goal.symbols[0]
                     or entry["spec"].get("timeframe") != goal.timeframes[0]
-                    or entry["development"].get("window") != expected_window
+                    or source_start > source_end
+                    or source_end > development_end
                     or entry["contamination_reasons"]
                     or (
                         cost_policy_hash is not None
