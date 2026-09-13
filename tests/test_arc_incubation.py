@@ -387,7 +387,7 @@ def test_reviewed_start_binding_fails_on_strategy_version_mismatch():
                     "review_hash": kwargs["review_hash"],
                     "code_sha256": kwargs["code_sha256"],
                     "config_version": "sha256:" + "c" * 64,
-                    "strategy_version": "sha256:" + "b" * 64,
+                    "strategy_version": expected_hash,
                 },
             }
 
@@ -399,13 +399,16 @@ def test_reviewed_start_binding_fails_on_strategy_version_mismatch():
                     **kwargs,
                     "started": True,
                     "guard_version": "paper_review_binding.v1",
-                    "strategy_version": expected_hash,
+                    "strategy_version": "sha256:" + "d" * 64,
                 },
             }
 
     client = Mismatch()
-    ok, instance, _, reason = ARCPaperIncubationResolver(client).resolve_and_provision_paper_trading(
-        attempt, PaperPreauthorizationV1(symbols=["BTC-USDT-SWAP"], policy_hash="a" * 64)
+    ok, instance, _, reason = ARCPaperIncubationResolver(
+        client,
+    ).resolve_and_provision_paper_trading(
+        attempt,
+        PaperPreauthorizationV1(symbols=["BTC-USDT-SWAP"], policy_hash="a" * 64),
     )
     assert not ok
     assert instance is None
