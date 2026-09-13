@@ -22,6 +22,7 @@ from hypertrade.arc.contracts import (
     ResearchWindowsV1,
 )
 from hypertrade.arc.controller import ARCController, ARCMissionProjection
+from hypertrade.arc.evolution_diagnostics import blocked_data_diagnostic
 from hypertrade.arc.evolution_memory import curate_memory
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import _feedback_child_active, collect_windows
@@ -343,6 +344,7 @@ class EvolutionService:
                 continue
             diagnostic: dict[str, Any] = {"strategy_id": sid, "name": row.get("strategy_name")}
             diagnostics.append(diagnostic)
+            snapshot: dict[str, Any] = {}
             try:
                 snapshot = _snapshot_body(client.paper_snapshot(strategy_id=sid))
                 if (
@@ -452,6 +454,14 @@ class EvolutionService:
                         chosen = context
             except Exception as exc:
                 diagnostic.update(status="unavailable", reason=str(exc)[:240])
+                # Explain current sampling separately; never fill the missing historical window.
+                identified = (
+                    snapshot
+                    if str(snapshot.get("strategy_id")) == str(sid)
+                    and snapshot.get("status") == "running"
+                    else {}
+                )
+                diagnostic.update(blocked_data_diagnostic(client, identified, now, str(exc)[:240]))
             finally:
                 if on_progress is not None:
                     on_progress(diagnostics)
