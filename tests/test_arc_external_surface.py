@@ -561,3 +561,30 @@ def instrument_catalog(monkeypatch):
         "hypertrade.arc.router.resolve_universe",
         lambda requested: requested or ["SOL-USDT-SWAP", "DOGE-USDT-SWAP"],
     )
+
+
+def test_research_token_cannot_enable_automatic_paper_policy(client):
+    payload = {"revision": 0, "config": {"enabled": True, "paper_review_mode": "agent"}}
+    url = "/api/v1/arc/evolution"
+    assert (
+        client.put(
+            url, headers={"X-HyperTrade-Service-Token": BOTH_TOKEN}, json=payload
+        ).status_code
+        == 403
+    )
+    policy_token = "test-policy-controller"
+    client.app.state.settings.arc_service_tokens += (
+        f",policy:arc:policy:{hash_service_token(policy_token)}"
+    )
+    response = client.put(url, headers={"X-HyperTrade-Service-Token": policy_token}, json=payload)
+    assert response.status_code == 200
+    assert response.json()["config"]["paper_review_mode"] == "agent"
+    # Policy administration is not a forged human approval identity.
+    assert (
+        client.post(
+            "/api/v1/arc/missions/missing/paper-review/decide",
+            headers={"X-HyperTrade-Service-Token": policy_token, "Idempotency-Key": "no-human"},
+            json={"decision": "approve", "reason": "policy", "package_hash": "a" * 64},
+        ).status_code
+        == 403
+    )

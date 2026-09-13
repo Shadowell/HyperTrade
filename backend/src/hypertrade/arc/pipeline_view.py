@@ -51,6 +51,8 @@ _EVENT_LABELS = {
     "bitpro_self_tested": "BitPro 自测",
     "candidate_validated": "候选通过验证",
     "paper_review_requested": "等待人工审核",
+    "paper_review_policy_selected": "评审模式更新",
+    "paper_auto_review_evaluated": "Agent 自动评审结果",
     "paper_review_decided": "模拟盘审核决定",
     "paper_review_effect": "模拟盘执行回执",
     "paper_started": "模拟盘启动",
@@ -507,6 +509,8 @@ def _activity_row(event: ARCEventV1) -> dict[str, Any]:
     }
     logs = _safe_log(event.payload)
     label = _EVENT_LABELS.get(event.event_type, event.event_type)
+    if event.event_type == "paper_review_requested" and event.payload.get("review_mode") == "agent":
+        label = "等待Agent自动评审"
     if event.event_type == "avo_model_replied" and not event.payload.get("calls"):
         label = "模型返回说明，未执行操作"
         message = event.payload.get("message") or {}
@@ -535,7 +539,14 @@ def _ratio(value: float, limit: float) -> float:
 
 
 def _paper_review_pipeline(projection: ARCMissionProjection, clock: datetime) -> dict[str, Any]:
-    labels = STAGES[:4] + (("approval", "人工审核"), ("paper", "模拟盘运行"))
+    decision = projection.paper_review.get("decision") or {}
+    automatic = (
+        decision.get("identity_source") == "agent_policy"
+        if decision
+        else bool(projection.goal and projection.goal.paper_review_mode == "agent")
+    )
+    review_label = "Agent 自动评审" if automatic else "人工审核"
+    labels = STAGES[:4] + (("approval", review_label), ("paper", "模拟盘运行"))
     is_avo = projection.goal is not None and projection.goal.research_mode == "avo"
     if is_avo:
         labels = (
@@ -570,7 +581,7 @@ def _paper_review_pipeline(projection: ARCMissionProjection, clock: datetime) ->
     blocked = projection.state in _BLOCKED_STATES
     metrics = _stage_metrics(projection, clock)
     metrics["approval"] = {
-        "detail": "人工审核已通过" if done[4] else "等待人工审核",
+        "detail": f"{review_label}已通过" if done[4] else f"等待{review_label}",
         "metrics": {"status": review.get("status"), "kind": "paper"},
     }
     if projection.state == "paper_observing":

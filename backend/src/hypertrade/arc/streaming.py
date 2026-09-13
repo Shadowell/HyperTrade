@@ -39,7 +39,12 @@ def stream_frames(
     snapshot = build_pipeline_view(projection)
     snapshot.pop("activity", None)
     frames.append(("snapshot", None, snapshot))
-    if projection.state in CHECKPOINTS:
+    automatic_review = (
+        projection.state == "paper_review_ready"
+        and projection.goal is not None
+        and projection.goal.paper_review_mode == "agent"
+    )
+    if projection.state in CHECKPOINTS and not automatic_review:
         frames.append(("checkpoint", None, {"state": projection.state}))
     return frames
 

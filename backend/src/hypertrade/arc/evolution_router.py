@@ -23,7 +23,7 @@ async def evolution_status(request: Request) -> dict[str, Any]:
     return await run_in_threadpool(EvolutionService(request.app.state.db).status)
 
 
-@router.put("/evolution", dependencies=[Depends(require_scope(ARCScope.START))])
+@router.put("/evolution", dependencies=[Depends(require_scope(ARCScope.POLICY))])
 async def evolution_update(payload: EvolutionUpdate, request: Request) -> dict[str, Any]:
     from hypertrade.arc.router import _actor_label
 

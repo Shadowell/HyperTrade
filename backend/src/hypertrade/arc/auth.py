@@ -1,9 +1,10 @@
 """Machine and human identity for the ARC external surface.
 
-A service token may start missions and read everything. It may never approve one:
+A research token may start missions and read results. It cannot sign a human approval:
 ``ARCScope`` has no approve member, so no token value can carry that capability.
-Approval is a verified human — either a HyperTrade admin session or a BitPro-signed
-operator assertion bound to the mission, decision, and idempotency key of the request.
+Human approval requires either a HyperTrade admin session or a BitPro-signed
+operator assertion bound to the request. A separate policy scope configures the user-enabled
+autonomous Paper referee; it never impersonates a human or grants Live authority.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ SERVICE_TOKEN_HEADER = "X-HyperTrade-Service-Token"
 OPERATOR_ASSERTION_HEADER = "X-Operator-Assertion"
 _FUTURE_SKEW_SECONDS = 60
 _TOKEN_ENTRY = re.compile(
-    r"^(?P<label>.+):(?P<scopes>(?:arc:(?:read|start)\+)*arc:(?:read|start)):"
+    r"^(?P<label>.+):(?P<scopes>(?:arc:(?:read|start|policy)\+)*arc:(?:read|start|policy)):"
     r"(?P<digest>[0-9a-fA-F]{64})$"
 )
 
@@ -36,6 +37,7 @@ _TOKEN_ENTRY = re.compile(
 class ARCScope(StrEnum):
     READ = "arc:read"
     START = "arc:start"
+    POLICY = "arc:policy"
     # No approve scope exists. Approval is not a token capability.
 
 

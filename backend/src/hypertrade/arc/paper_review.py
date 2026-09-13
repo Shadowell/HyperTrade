@@ -1,4 +1,4 @@
-"""Version-bound human Paper review. Model proposals never authorize execution."""
+"""Version-bound Paper review. Human or enabled policy reviewers own execution decisions."""
 
 from __future__ import annotations
 
@@ -74,8 +74,12 @@ def build_paper_review(
     if goal is not None and goal.evolution_context:
         context = goal.evolution_context
         binding["evolution_source"] = {
-            key: context.get(key) for key in (
-                "source_strategy_id", "source_instance_id", "source_code_sha256", "cycle_id"
+            key: context.get(key)
+            for key in (
+                "source_strategy_id",
+                "source_instance_id",
+                "source_code_sha256",
+                "cycle_id",
             )
         }
         binding["evolution_source"]["context_sha256"] = hashlib.sha256(
@@ -123,7 +127,15 @@ def request_paper_review(controller: ARCController) -> dict[str, Any]:
     )
     if controller.projection.paper_review.get("package_hash") == package["package_hash"]:
         return package
-    controller.apply_event("paper_review_requested", {"package": package})
+    controller.apply_event(
+        "paper_review_requested",
+        {
+            "package": package,
+            "review_mode": controller.projection.goal.paper_review_mode
+            if controller.projection.goal
+            else "human",
+        },
+    )
     return package
 
 

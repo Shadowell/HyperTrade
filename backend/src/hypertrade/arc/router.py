@@ -251,7 +251,11 @@ async def create_arc_mission(
         ) from exc
     if request.research_mode == "arc" and len(symbols) != 1:
         raise HTTPException(status_code=422, detail="多标的选择请使用 AVO 研究模式")
+    from hypertrade.arc.auto_review import configured_review_mode
+
+    review_mode = await run_in_threadpool(configured_review_mode, request_context.app.state.db)
     goal = ARCGoalV1(
+        paper_review_mode=review_mode,
         objective=request.objective,
         research_mode=request.research_mode,
         feedback=request.feedback,
@@ -300,9 +304,9 @@ async def create_arc_mission(
         "timeframe": request.timeframe,
         "parallel_workers": request.parallel_workers if goal.research_mode == "arc" else 1,
         "research_mode": goal.research_mode,
-        "message": "研究已排队；最终验证后等待人工审核"
-        if goal.research_mode == "avo"
-        else "研究已启动；回测通过后等待人工审核",
+        "paper_review_mode": goal.paper_review_mode,
+        "message": "研究已排队；最终验证后由Agent自动评审并启动模拟盘"
+        if goal.paper_review_mode == "agent" else "研究已排队；最终验证后等待人工审核",
     }
 
 

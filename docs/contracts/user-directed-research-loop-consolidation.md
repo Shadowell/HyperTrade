@@ -163,3 +163,22 @@ research start/continue默认持续跟进服务端持久事件；--detach明确�
 开发实验追加hypothesis_assessment：仅比较引用实验的同标的、周期、实际开发窗口和资金下的指标方向。完整可比回执产生observed/not_observed/mixed，缺证据为unknown；后续记忆保留有界摘要。此结果不证明文本因果或样本外有效性，不改变最终验证和逐版本人审。
 
 受阻策略追加最近6小时采样诊断，每个策略最多一次limit=500只读请求，绑定原会话/版本及成本契约并拒绝未完分页。近期正常、过期、缺口与未知读取单独记录；原14天/成交门槛不变，不据此补点、创建旧会话或批准Paper。
+
+## 用户授权变更：模拟盘全自动闭环（2026-09-13）
+
+用户明确要求“不做人工审核，由Agent自己来审、自己来做，不要让人参与”。此决定取代本合同此前
+逐版本人工审核的运行要求，仅适用于Paper；Live、原策略历史及资金/版本保护边界不变。
+
+持久配置paper_review_mode支持human/agent，兼容默认human，按本次授权启用agent。Agent模式由独立
+确定性评审器复核最终回执、代码与验证ID、窗口、数值门槛、原版同窗比较和配置资金上限，随后以
+agent_policy身份调用既有版本保护configure/start；不伪造human签名，不增加模型直接交易工具。
+决策先持久化，重复领取不再次执行，未知结果不盲重试。关闭自主进化或切回human后停止自动评审；
+当前运行Paper保持不动。模式选择记录事件，后代任务继承模式；历史人工决定保留真实身份。
+CLI在Agent待评审阶段继续流式跟进，BitPro显示Agent自动评审并提供模式设置。工程测试和实际自动
+启动分开验收，真实7+7进化链仍需后续运行数据，不降低门槛制造闭环。
+
+
+自动评审政策管理需要独立arc:policy权限，arc:start不能改变政策或冒充human审批。Agent评审同时
+满足任务门槛与系统paper_criteria，并在approve前读取BitPro新候选成本冻结标识、research_costs.v1
+来源/数值/hash与代码身份。新Paper研究strategy_create显式请求_freeze_research_costs=true；
+费用解析由BitPro负责，HT不复制费率规则。旧未冻结候选自动否决并保留历史，读取故障暂缓，不盲重试写入。

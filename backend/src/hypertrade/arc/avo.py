@@ -110,7 +110,7 @@ _DESCRIPTIONS = {
     "inspect": "Read bounded strategy knowledge, candidate lineage or one candidate.",
     "propose": "Compile an immutable candidate using known parameters.",
     "develop": "Run a real BitPro experiment on the development window and inspect feedback.",
-    "finish": "Freeze a developed candidate for final validation, then human review.",
+    "finish": "Freeze a developed candidate for final validation and configured Paper review.",
 }
 TOOLS = [
     {
@@ -156,7 +156,8 @@ For autonomous_evolution, every propose must include evolution_hypothesis with e
 (paper_feedback, order_sample, a memory_id or a developed attempt_id), expected_metric,
 expected_direction and falsification (what observation would refute the hypothesis).
 These are hypotheses, never claims of established causality. Development-only observations
-cannot establish out-of-sample improvement. The final gate and human review are unchanged.
+cannot establish out-of-sample improvement. The final gate and configured Paper reviewer
+control execution.
 """
 
 
@@ -662,6 +663,7 @@ def _run(
             runtime_context["final_backtests_reserved"] = reserve
             budget = current_goal.budget.model_dump(mode="json")
             budget["model_calls_used"] += 1
+            runtime_context["paper_review_mode"] = current_goal.paper_review_mode
             runtime_context["budget"] = budget
             runtime_context["budget_semantics"] = (
                 "current_server_totals_including_history_and_this_model_request"

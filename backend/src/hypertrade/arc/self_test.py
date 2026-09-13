@@ -313,8 +313,17 @@ class ARCSelfTestService:
                     symbols=[symbol],
                     idempotency_key=create_key,
                     **(
-                        {"config": attempt.strategy_spec["baseline_config"]}
-                        if "baseline_config" in attempt.strategy_spec
+                        {
+                            "config": {
+                                **attempt.strategy_spec.get("baseline_config", {}),
+                                **(
+                                    {"_freeze_research_costs": True}
+                                    if goal.paper_review_required
+                                    else {}
+                                ),
+                            }
+                        }
+                        if "baseline_config" in attempt.strategy_spec or goal.paper_review_required
                         else {}
                     ),
                 )

@@ -1022,3 +1022,15 @@ BitPro自主进化开关对应HyperTrade持久配置与worker调度。每小时�
 每个自动进化propose包含evolution_hypothesis（证据引用、预期指标和方向、可证伪条件）；归档内相同代码、
 标的、周期、开发窗口、资金的重复实验需repeat_reason，仍正常计预算。模型不获改写裁判或审批权限。
 论文依据与阶段验收见架构61第11节。经验效用强化学习和生产代码自修改未启用。
+
+### 用户授权的全自动Paper评审（2026-09-13）
+
+本次用户明确撤销逐版本人审要求，允许Agent完成模拟盘闭环。EvolutionConfig.paper_review_mode的
+agent模式受enabled、策略范围、候选资金上限约束；独立评审器核对版本绑定最终回执、数值和原版比较，
+以agent_policy身份记录决策后使用受保护Paper接口。human模式仍可选择，旧决定不改身份。
+不允许Live，不重置原Paper；未知效果保持待核对而非重复执行。自动评审不导致SSE/CLI提前结束。
+
+自动评审政策管理需要独立arc:policy权限，arc:start不能改变政策或冒充human审批。Agent评审同时
+满足任务门槛与系统paper_criteria，并在approve前读取BitPro新候选成本冻结标识、research_costs.v1
+来源/数值/hash与代码身份。新Paper研究strategy_create显式请求_freeze_research_costs=true；
+费用解析由BitPro负责，HT不复制费率规则。旧未冻结候选自动否决并保留历史，读取故障暂缓，不盲重试写入。

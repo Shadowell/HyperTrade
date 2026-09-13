@@ -7,7 +7,7 @@ import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,6 +37,16 @@ from hypertrade.db import ArcMission, Database
 class EvolutionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool = False
+    paper_review_mode: Literal["human", "agent"] = "human"
+    paper_criteria: ARCSuccessCriteriaV1 = Field(
+        default_factory=lambda: ARCSuccessCriteriaV1(
+            min_oos_net_return=Decimal("1E-8"),
+            min_oos_sharpe=Decimal(0),
+            max_drawdown=Decimal(".2"),
+            min_trades=30,
+            required_validation_policy="arc_windowed_v1",
+        )
+    )
     interval_minutes: int = Field(default=60, ge=15, le=1440)
     strategy_ids: list[int] = Field(default_factory=list, max_length=50)
     threshold_pp: Decimal = Field(default=Decimal("10"), gt=0, le=100)
@@ -232,12 +242,13 @@ class EvolutionService:
                 context["memory"] = memory
                 context["cycle_id"] = cycle_id
                 goal = ARCGoalV1(
-                    objective="依据原模拟盘的真实7+7退化、历史成交样本及长期研究记忆，自主判断改进方向并提出候选；保留原策略，通过同窗比较和最终门槛后提交人工审核。",
+                    objective="依据原模拟盘的真实7+7退化、历史成交样本及长期研究记忆，自主判断改进方向并提出候选；保留原策略，通过同窗比较和最终门槛后，由配置的评审流程决定是否启动独立模拟盘。",
                     symbols=[context["baseline"]["strategy_spec"]["symbol"]],
                     timeframes=[context["baseline"]["strategy_spec"]["timeframe"]],
                     research_mode="avo",
                     provider_name="codex",
                     paper_review_required=True,
+                    paper_review_mode=config.paper_review_mode,
                     paper_initial_equity=config.paper_capital,
                     evolution_context=context,
                     research_windows=ResearchWindowsV1.model_validate(context["research_windows"]),
@@ -247,13 +258,7 @@ class EvolutionService:
                         max_model_calls=config.max_model_calls,
                         max_backtests=config.max_backtests,
                     ),
-                    success_criteria=ARCSuccessCriteriaV1(
-                        min_oos_net_return=Decimal("1E-8"),
-                        min_oos_sharpe=Decimal(0),
-                        max_drawdown=Decimal(".2"),
-                        min_trades=30,
-                        required_validation_policy="arc_windowed_v1",
-                    ),
+                    success_criteria=config.paper_criteria.model_copy(deep=True),
                 )
                 ctrl = ARCController(mission_id=mission_id, goal=goal)
                 ctrl.projection.created_by = "paper-evolution-worker"

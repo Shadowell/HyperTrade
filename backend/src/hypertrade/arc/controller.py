@@ -139,6 +139,13 @@ class ARCController:
             p.goal = ARCGoalV1(**payload["goal"])
             p.state = "exploring_candidates"
 
+        elif et == "paper_review_policy_selected":
+            if p.goal is not None and payload.get("mode") in {"human", "agent"}:
+                p.goal.paper_review_mode = payload["mode"]
+
+        elif et == "paper_auto_review_evaluated":
+            p.paper_review["automatic_evaluation"] = dict(payload)
+
         elif et == "candidate_proposed":
             attempt = ARCCandidateAttemptV1(**payload["attempt"])
             p.attempts.append(attempt)

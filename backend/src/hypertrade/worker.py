@@ -490,6 +490,7 @@ async def main() -> None:
         tasks.append(research_trigger_loop(db))
     tasks.append(arc_observation_loop(db))
     tasks.append(arc_evolution_loop(db))
+    tasks.append(arc_auto_review_loop(db))
     if settings.mission_runtime_worker_enabled:
         tasks.append(avo_research_loop(db))
     await asyncio.gather(*tasks)
@@ -518,6 +519,17 @@ async def arc_evolution_loop(db: Database) -> None:
         except Exception:
             logger.exception("arc_evolution failed")
         await asyncio.sleep(60)
+
+
+async def arc_auto_review_loop(db: Database) -> None:
+    from hypertrade.arc.auto_review import auto_review_once
+    configure_store(db)
+    while True:
+        try:
+            await asyncio.to_thread(auto_review_once, db)
+        except Exception:
+            logger.exception("autonomous Paper review failed")
+        await asyncio.sleep(15)
 
 
 async def avo_research_loop(db: Database) -> None:

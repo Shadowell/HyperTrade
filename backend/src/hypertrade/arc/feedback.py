@@ -226,6 +226,16 @@ def _feedback_child_active(child: ARCController) -> bool:
         ),
         None,
     )
+    if projection.goal.paper_review_mode == "agent" and reason in {
+        "avo_model_budget_exhausted",
+        "avo_tool_budget_exhausted",
+        "avo_wall_budget_exhausted",
+        "avo_context_budget_exhausted",
+        "avo_no_candidate",
+    }:
+        # A bounded automatic epoch ends normally; the next eligible window/cooldown may retry.
+        # The pending-effect check above still prevents unsafe recovery by duplication.
+        return False
     if reason == "avo_final_validation_failed" and projection.avo.get("final_window_consumed"):
         return not any(
             _negative_experiment_finished(record, projection.goal)
@@ -334,7 +344,7 @@ def check_paper_feedback(
                 }
                 child_goal.objective = (
                     "根据原策略最近两周模拟盘退化证据，仅调整同策略族和方向的参数；"
-                    "开发回测后提交最终同窗对比，等待人工审核。"
+                    "开发回测后提交最终同窗对比，再由配置的审核模式决定是否启动新模拟盘。"
                 )
                 new = ARCController(
                     mission_id=child_id, goal=ARCGoalV1.model_validate(child_goal.model_dump())

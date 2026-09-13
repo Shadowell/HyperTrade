@@ -178,3 +178,42 @@ def test_existing_strategy_is_verified_and_reused_without_create(mutated):
         assert result.reasons == ["bitpro_existing_strategy_mismatch"]
     else:
         assert calls[0]["strategy_id"] == 9
+
+
+def test_paper_research_requests_cost_freeze_before_backtest():
+    calls = []
+
+    class Client:
+        def strategy_validate_code(self, **kwargs):
+            return {"status": "ok"}
+
+        def strategy_create(self, **kwargs):
+            calls.append(kwargs)
+            return {"strategy": {"id": 9}}
+
+        def backtest_start_job(self, **kwargs):
+            assert calls[0]["config"]["_freeze_research_costs"] is True
+            assert calls[0]["config"]["taker_fee_bps"] == 7
+            return {
+                "backtest_result": {
+                    "id": "proof",
+                    "metrics": {
+                        "sharpe": 2,
+                        "max_drawdown": 0.01,
+                        "trades": 100,
+                        "net_return": 0.1,
+                    },
+                }
+            }
+
+    goal = ARCGoalV1(objective="costs", paper_review_required=True, research_id="cost-test")
+    attempt = ARCCandidateAttemptV1(
+        attempt_id="costs",
+        candidate_id="costs",
+        hypothesis="test",
+        strategy_code="class X: pass",
+        strategy_spec={
+            "baseline_config": {"taker_fee_bps": 7},
+        },
+    )
+    assert ARCSelfTestService(Client()).run(attempt, goal).passed
