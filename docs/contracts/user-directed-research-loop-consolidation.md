@@ -194,3 +194,13 @@ MemoryService.research_context 每次从数据库读取，最多200任务/200记
 后续配对消融需在独立持久实验目录冻结目标、窗口、Provider/model、同额预算及验证政策；两臂仅长期记忆输入不同，保存原始运行 journal、manifest、差异和 unknown。它衡量研究过程，不从单次实验宣称策略盈利或因果，不进入生产调度或 Paper/Live 路径。
 
 配对执行器现在提供 create/run/status CLI，原样保留输入的 human/agent 评审模式。研究控制字段一致，操作来源 ID 则按 pair/arm 隔离，禁止复用既有 research_id 造成跨臂回测复用或改写既有策略。数据库 journal 决定恢复状态，result.json 仅为缓存；未知回测效果不重发，中断模型调用计预算且缺失用量为unknown。未开启 worker，不调用 Paper 评审、配置或启动。
+
+## 任务 A：主动探索与共享研究准入（2026-09-13）
+
+- worker 对完整且未退化的 7+7 Paper 也可生成可证伪优化研究；`proactive_enabled` 为独立开关，旧配置默认 false，不改 enabled、原阈值、审核模式或 Paper。完整会话、版本、成本、覆盖和当前会话成交仍是必要条件；主动探索不绕过 14 天数据门槛。历史开发实验仅消费现有 curate_memory 接口。
+- 所有自动研究生产者（全局 EvolutionService、原任务 Paper feedback）共用 `research_budget.admit`。全局累计限额 `max_research_total` 可选，UTC 每日限额 `max_research_per_day` 默认 4；计量单位是研究任务，单任务候选/模型/回测预算仍冻结保存。配置修订、重启、任务结束和跨日均不清零累计消耗；部署前自动任务也参与计数。
+- `research_budget.v1` 存在既有 EvolutionCycle envelope，`budget_admitted`/`budget_denied` 与扫描回执分开投影。准入锁定同一配置行，任务及额度在同一数据库事务提交；PostgreSQL 提供跨进程互斥，SQLite 只声明单进程开发互斥。不需要 schema migration，不重写旧配置或旧任务。
+- 一轮选择顺序为：来源可运行优先、退化优先、最久未研究来源优先、策略ID破同分。退化优先是确定性优先级，持续退化负载下不承诺主动探索的最低份额。所有入口在准入事务再次核对共享限额、范围与开关。同源活动/待审核/后继观察或未知副作用阻断重复研究。
+- 冷却从最近准入或诚实终态持久更新时间的较晚者开始；长任务结束后仍有完整冷却。拒绝或已确认负向结论保留历史；未知副作用即使任务状态异常终止仍占槽位。`next_run_at=null` 表示等待政策/任务状态变化，不伪造恢复时间。
+- GET evolution 及 `hypertrade research evolution` 只读投影预算和最近20条准入/拒绝回执；底层账本保留全部、不因投影截断清除历史。预览仅诊断，零额度消费、零研究创建。
+- 验收包括周期/总预算、长任务冷却、并发、事务回滚、崩溃补链接、开关/范围、真实读取契约缺口和 CLI 投影；完整 check 与生产只读回执单独报告，不证明收益或真实 14 天闭环。G 的持续验收账本通过最小只读 hook 接入，不在 A 实现。

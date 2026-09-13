@@ -1040,3 +1040,8 @@ agent模式受enabled、策略范围、候选资金上限约束；独立评审�
 满足任务门槛与系统paper_criteria，并在approve前读取BitPro新候选成本冻结标识、research_costs.v1
 来源/数值/hash与代码身份。新Paper研究strategy_create显式请求_freeze_research_costs=true；
 费用解析由BitPro负责，HT不复制费率规则。旧未冻结候选自动否决并保留历史，读取故障暂缓，不盲重试写入。
+
+
+### 主动探索与全局研究预算（2026-09-13）
+
+`proactive_enabled` 允许 worker 对未退化但证据完整的 Paper 发起可证伪研究；旧配置默认为关闭，原总开关与门槛不迁移。7+7 退化与主动探索及任务自身反馈共用持久 `research_budget.v1` 准入账本，按 UTC 日/可选累计任务限额、全局并发及来源冷却控制。任务与扣额原子提交，重启与配置修订不清账；旧自动任务计入消耗。退化优先，同级按最久未研究来源和策略ID选择。冷却计入诚实终态时间，未知效果继续阻断。GET evolution 和 CLI `research evolution` 展示预算、触发来源、拒绝原因与下一可运行时间；预览不扣额。完整数据门槛不降低，不产生 Live 或原 Paper 修改。

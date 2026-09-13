@@ -26,7 +26,7 @@ from hypertrade.arc.evolution_diagnostics import blocked_data_diagnostic
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import _feedback_child_active, collect_windows
 from hypertrade.arc.observation import _snapshot_body
-from hypertrade.arc.store import get_controller, research_lock, save_mission
+from hypertrade.arc.store import get_controller, research_lock
 from hypertrade.arc.universe import normalize_symbols
 from hypertrade.bitpro.mcp import BitProToolAdapter
 from hypertrade.bitpro.paced_reads import PacedReadClient
@@ -37,6 +37,9 @@ from hypertrade.memory.service import MemoryService
 class EvolutionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool = False
+    proactive_enabled: bool = False
+    max_research_per_day: int = Field(default=4, ge=1, le=100)
+    max_research_total: int | None = Field(default=None, ge=1)
     paper_review_mode: Literal["human", "agent"] = "human"
     paper_criteria: ARCSuccessCriteriaV1 = Field(
         default_factory=lambda: ARCSuccessCriteriaV1(
@@ -120,14 +123,24 @@ class EvolutionService:
         self.client = client
 
     def status(self) -> dict[str, Any]:
+        from hypertrade.arc.research_budget import budget_status
+
         with self.db.session() as session:
             row = session.get(EvolutionControl, "global")
             cycles = session.scalars(
-                select(EvolutionCycle).order_by(EvolutionCycle.created_at.desc()).limit(20)
+                select(EvolutionCycle)
+                .where(EvolutionCycle.status.not_in(["budget_admitted", "budget_denied"]))
+                .order_by(EvolutionCycle.created_at.desc())
+                .limit(20)
             ).all()
             return {
                 "config": EvolutionConfig.model_validate(row.config_json if row else {}).model_dump(
                     mode="json"
+                ),
+                "budget": budget_status(
+                    self.db,
+                    EvolutionConfig.model_validate(row.config_json if row else {}),
+                    datetime.now(UTC),
                 ),
                 "revision": row.revision if row else 0,
                 "cycles": [cycle_view(c) for c in cycles],
@@ -176,6 +189,7 @@ class EvolutionService:
             return cycle_view(row)
 
     def tick(self, now: datetime | None = None) -> dict[str, Any]:
+        clock_frozen = now is not None
         now = now or datetime.now(UTC)
         with research_lock("evolution-scanner") as owner:
             if owner is None:
@@ -211,6 +225,11 @@ class EvolutionService:
             mission_id = "arc_evo_" + digest(cycle_id)[:16]
             existing = get_controller(mission_id)
             if existing:
+                with self.db.session() as session:
+                    receipt = session.get(EvolutionCycle, "budget_" + mission_id)
+                    if receipt is not None:
+                        payload["budget"] = dict(receipt.payload_json)
+                        payload["trigger_source"] = receipt.payload_json.get("trigger_source")
                 payload["mission_id"] = mission_id
                 return self._save_cycle(cycle_id, "research_created", payload)
             self._save_cycle(cycle_id, "scanning", payload)
@@ -233,16 +252,17 @@ class EvolutionService:
                 if chosen is None:
                     return self._save_cycle(cycle_id, "no_action", payload)
                 context = chosen
-                memory, active, blocked_source = self._memory(context, config, now)
+                memory, _, _ = self._memory(context, config, now)
                 payload["memory_count"] = len(memory)
                 payload["memory_manifest"] = context["memory_manifest"]
-                if active >= config.max_active_research or blocked_source:
-                    payload["skip_reason"] = "已有研究/待审核版本、同源观察版本或仍在冷却期"
-                    return self._save_cycle(cycle_id, "deferred", payload)
                 context["memory"] = memory
                 context["cycle_id"] = cycle_id
                 goal = ARCGoalV1(
-                    objective="依据原模拟盘的真实7+7退化、历史成交样本及长期研究记忆，自主判断改进方向并提出候选；保留原策略，通过同窗比较和最终门槛后，由配置的评审流程决定是否启动独立模拟盘。",
+                    objective=(
+                        "依据有来源的原Paper观察、历史成交样本和开发实验提出可证伪优化方向；"
+                        "触发来源为" + context["trigger_source"] + "，稳定表现不得声称退化；"
+                        "保留原策略，通过同窗比较和最终门槛后按配置评审独立Paper。"
+                    ),
                     symbols=[context["baseline"]["strategy_spec"]["symbol"]],
                     timeframes=[context["baseline"]["strategy_spec"]["timeframe"]],
                     research_mode="avo",
@@ -294,16 +314,17 @@ class EvolutionService:
                     != context["baseline"]["strategy_spec"]["baseline_config"]
                 ):
                     return self._save_cycle(cycle_id, "source_changed", payload)
-                with self.db.session() as session:
-                    control = session.get(EvolutionControl, "global", with_for_update=True)
-                    if (
-                        control is None
-                        or control.revision != payload["revision"]
-                        or not control.config_json.get("enabled")
-                    ):
-                        return self._save_cycle(cycle_id, "cancelled_by_config", payload)
-                    # Serialize task creation against the product switch, not merely a prior read.
-                    save_mission(ctrl)
+                from hypertrade.arc.research_budget import admit
+
+                payload["budget"] = admit(
+                    ctrl,
+                    now=now if clock_frozen else datetime.now(UTC),
+                    revision=payload["revision"],
+                    db=self.db,
+                )
+                payload["trigger_source"] = context["trigger_source"]
+                if not payload["budget"]["accepted"]:
+                    return self._save_cycle(cycle_id, "deferred", payload)
                 payload["mission_id"] = mission_id
                 payload["source_strategy_id"] = context["source_strategy_id"]
                 return self._save_cycle(cycle_id, "research_created", payload)
@@ -342,8 +363,29 @@ class EvolutionService:
                 }
             )
         chosen = None
+        from hypertrade.arc.research_budget import budget_status
+
+        budget: dict[str, Any] | None = None
+
+        def rank(context: dict[str, Any]) -> tuple[Any, ...]:
+            nonlocal budget
+            if budget is None:
+                budget = budget_status(self.db, config, now)
+            source = budget["sources"].get(context["source_instance_id"], {})
+            until = datetime.fromisoformat(
+                source.get("cooldown_at", "1970-01-01T00:00:00+00:00")
+            ) + timedelta(hours=config.cooldown_hours)
+            blocked = source.get("busy", False) or now < until
+            preferred = "degradation"
+            return (
+                blocked,
+                context["trigger_source"] != preferred,
+                source.get("last_admitted_at", ""),
+                context["source_strategy_id"],
+            )
+
         end = now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-        for row in rows:
+        for row in sorted(rows, key=lambda item: int(item["strategy_id"])):
             sid = int(row["strategy_id"])
             if config.strategy_ids and sid not in config.strategy_ids:
                 continue
@@ -370,9 +412,10 @@ class EvolutionService:
                 diagnostic.update(
                     status="stable", window={k: v for k, v in feedback.items() if k != "receipts"}
                 )
-                if not feedback["triggered"]:
+                if not feedback["triggered"] and not config.proactive_enabled:
                     continue
-                diagnostic["status"] = "opportunity"
+                trigger = "degradation" if feedback["triggered"] else "proactive"
+                diagnostic.update(status="opportunity", trigger_source=trigger)
                 symbols = normalize_symbols(snapshot.get("strategy", {}).get("symbols", []))
                 if len(symbols) != 1:
                     raise ValueError(
@@ -427,6 +470,7 @@ class EvolutionService:
                     },
                 )
                 context = {
+                    "trigger_source": trigger,
                     "source_strategy_id": sid,
                     "source_instance_id": snapshot["instance_id"],
                     "source_snapshot": {
@@ -443,20 +487,18 @@ class EvolutionService:
                         "fills": fills,
                     },
                     "diagnosis": (
-                        "收益下降或回撤扩大达到阈值；"
-                        "用成交与研究记忆判断信号、退出和成本方面的改进方向。"
+                        (
+                            "收益下降或回撤扩大达到阈值；"
+                            if feedback["triggered"]
+                            else "完整观察未达到退化阈值，主动探索可证伪方向；"
+                        )
+                        + "用成交与研究记忆判断信号、退出和成本方面的改进方向。"
                     ),
                 }
                 diagnostic["order_sample_count"] = len(fills)
                 diagnostic["source_code_sha256"] = context["source_code_sha256"]
-                if chosen is None:
+                if chosen is None or rank(context) < rank(chosen):
                     chosen = context
-                else:
-                    # A busy first source must not starve other eligible Paper instances.
-                    _, _, first_blocked = self._memory(chosen, config, now)
-                    _, _, current_blocked = self._memory(context, config, now)
-                    if first_blocked and not current_blocked:
-                        chosen = context
             except Exception as exc:
                 diagnostic.update(status="unavailable", reason=str(exc)[:240])
                 # Explain current sampling separately; never fill the missing historical window.

@@ -15,7 +15,7 @@ from hypertrade.arc.contracts import (
 )
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.observation import paper_attempt
-from hypertrade.arc.store import get_controller, research_lock, save_mission
+from hypertrade.arc.store import get_controller, research_lock
 from hypertrade.arc.universe import candidate_symbol
 from hypertrade.bitpro.mcp import BitProToolAdapter
 from hypertrade.bitpro.paced_reads import PacedReadClient
@@ -311,8 +311,54 @@ def check_paper_feedback(
         if evidence["triggered"]:
             key = hashlib.sha256(f"{instance_id}/{end.isoformat()}".encode()).hexdigest()[:24]
             child_id = f"arc_feedback_{key}"
+            from hypertrade.arc import store
+            from hypertrade.arc.evolution import EvolutionConfig, EvolutionService
+            from hypertrade.arc.research_budget import admit
+
+            if store._database is None:
+                result.update(status="no_action", reason="durable_budget_unavailable")
+                parent.apply_event("paper_feedback_checked", result)
+                return result
             # Stable child identity repairs a crash after child creation but before parent linking.
             if get_controller(child_id) is None:
+                service = EvolutionService(store._database, client)
+                policy = service.status()
+                config = EvolutionConfig.model_validate(policy["config"])
+                if not config.enabled:
+                    result.update(status="no_action", reason="disabled")
+                    parent.apply_event("paper_feedback_checked", result)
+                    return result
+                if (
+                    config.strategy_ids
+                    and int(attempt.bitpro_strategy_id or 0) not in config.strategy_ids
+                ):
+                    result.update(status="no_action", reason="outside_strategy_scope")
+                    parent.apply_event("paper_feedback_checked", result)
+                    return result
+                # The legacy feedback producer consumes the same source eligibility contract:
+                # session/version/cost/coverage and current-session fills, all read-only.
+                diagnostics, context = service._scan(
+                    config.model_copy(
+                        update={
+                            "strategy_ids": [int(attempt.bitpro_strategy_id or 0)],
+                            "threshold_pp": goal.feedback.threshold_pp,
+                            "proactive_enabled": False,
+                        }
+                    ),
+                    now or datetime.now(UTC),
+                )
+                if context is None or context["source_instance_id"] != instance_id:
+                    result.update(status="no_action", reason="needs_data", diagnostics=diagnostics)
+                    parent.apply_event("paper_feedback_checked", result)
+                    return result
+                if context["source_code_sha256"] != hashlib.sha256(
+                    attempt.strategy_code.encode()
+                ).hexdigest() or context["baseline"]["strategy_spec"]["symbol"] != candidate_symbol(
+                    attempt.strategy_spec, goal.symbols
+                ):
+                    result.update(status="no_action", reason="approved_source_changed")
+                    parent.apply_event("paper_feedback_checked", result)
+                    return result
                 baseline = attempt.model_copy(deep=True)
                 baseline.paper_instance_id = None
                 baseline.live_instance_id = None
@@ -346,11 +392,16 @@ def check_paper_feedback(
                     "根据原策略最近两周模拟盘退化证据，仅调整同策略族和方向的参数；"
                     "开发回测后提交最终同窗对比，再由配置的审核模式决定是否启动新模拟盘。"
                 )
-                new = ARCController(
-                    mission_id=child_id, goal=ARCGoalV1.model_validate(child_goal.model_dump())
-                )
+                context["memory"] = service._memory(context, config, now or datetime.now(UTC))[0]
+                child_goal.evolution_context = context
+                new = ARCController(mission_id=child_id, goal=child_goal)
                 new.projection.created_by = "paper-feedback-worker"
-                save_mission(new)
+                admission = admit(new, now=now or datetime.now(UTC), revision=policy["revision"])
+                result["budget"] = admission
+                if not admission["accepted"]:
+                    result.update(status="deferred", reason=admission["reason"])
+                    parent.apply_event("paper_feedback_checked", result)
+                    return result
             result["child_mission_id"] = child_id
         parent.apply_event("paper_feedback_checked", result)
         return result

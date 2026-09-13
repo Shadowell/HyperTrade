@@ -77,11 +77,33 @@ def test_same_window_comparison_requires_improvement_without_other_metric_regres
 
 
 class PaperClient:
-    def __init__(self):
+    def __init__(self, attempt=None):
         self.calls = 0
+        self.code = attempt.strategy_code if attempt else "class Source: pass"
+        self.symbol = attempt.strategy_spec["symbol"] if attempt else "BTC-USDT-SWAP"
+
+    def paper_strategy_performance(self, **kwargs):
+        return {"strategies": [{"strategy_id": 44, "mode": "paper", "timeframe": "1H"}]}
+
+    def strategy_get(self, **kwargs):
+        return {"strategy": {"script_content": self.code, "config": {"timeframe": "1H"}}}
+
+    def strategy_trades(self, **kwargs):
+        return [
+            {
+                "id": 1,
+                "strategy_id": 44,
+                "timestamp": 1786665600000,
+                "symbol": "BTC-USDT-SWAP",
+                "fee": 1,
+                "pnl": -1,
+            }
+        ]
 
     def paper_snapshot(self, **kwargs):
         return {
+            "trade_count": 60,
+            "strategy": {"symbols": [self.symbol]},
             "instance_id": "paper-session",
             "strategy_id": 44,
             "status": "running",
@@ -143,6 +165,14 @@ def test_feedback_creates_one_child_keeps_parent_running_and_recovers_link(monke
     from hypertrade.arc.store import get_controller, list_mission_ids, reset_store, save_mission
 
     reset_store()
+    from hypertrade.arc.evolution import EvolutionConfig, EvolutionService
+    from hypertrade.arc.store import configure_store
+    from hypertrade.db import Database
+
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    configure_store(db)
+    EvolutionService(db).configure(EvolutionConfig(enabled=True), revision=0, actor="test")
     parent = ARCController(
         goal=ARCGoalV1(
             objective="trend",
@@ -173,10 +203,10 @@ def test_feedback_creates_one_child_keeps_parent_running_and_recovers_link(monke
 
     monkeypatch.setattr(parent, "apply_event", crash)
     with pytest.raises(RuntimeError):
-        check_paper_feedback(parent.mission_id, PaperClient(), now)
+        check_paper_feedback(parent.mission_id, PaperClient(attempt), now)
     assert len(list_mission_ids()) == 2
     monkeypatch.setattr(parent, "apply_event", original)
-    result = check_paper_feedback(parent.mission_id, PaperClient(), now)
+    result = check_paper_feedback(parent.mission_id, PaperClient(attempt), now)
     child = get_controller(result["child_mission_id"])
     assert child.projection.goal.feedback_parent["instance_id"] == "paper-session"
     assert child.projection.goal.budget.max_candidates == 2
@@ -190,7 +220,9 @@ def test_feedback_creates_one_child_keeps_parent_running_and_recovers_link(monke
     assert parent.projection.state == "paper_observing"
     assert parent.projection.attempts[0].paper_instance_id == "paper-session"
     assert (
-        check_paper_feedback(parent.mission_id, PaperClient(), now + timedelta(days=1))["status"]
+        check_paper_feedback(parent.mission_id, PaperClient(attempt), now + timedelta(days=1))[
+            "status"
+        ]
         == "child_active"
     )
     assert len(list_mission_ids()) == 2
@@ -209,6 +241,14 @@ def test_settled_child_releases_next_day_but_unknown_child_keeps_blocking(outcom
     from hypertrade.arc.store import list_mission_ids, reset_store, save_mission
 
     reset_store()
+    from hypertrade.arc.evolution import EvolutionConfig, EvolutionService
+    from hypertrade.arc.store import configure_store
+    from hypertrade.db import Database
+
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    configure_store(db)
+    EvolutionService(db).configure(EvolutionConfig(enabled=True), revision=0, actor="test")
     parent = ARCController(
         goal=ARCGoalV1(
             objective="trend",
@@ -264,12 +304,13 @@ def test_settled_child_releases_next_day_but_unknown_child_keeps_blocking(outcom
     }
     save_mission(parent)
     now = datetime(2026, 8, 15, tzinfo=UTC)
-    result = check_paper_feedback(parent.mission_id, PaperClient(), now)
+    result = check_paper_feedback(parent.mission_id, PaperClient(attempt), now)
     if outcome in {"final_rejected", "development_exhausted"}:
         assert result["child_mission_id"] != child.mission_id
         assert len(list_mission_ids()) == 3
         assert (
-            check_paper_feedback(parent.mission_id, PaperClient(), now)["status"] == "child_active"
+            check_paper_feedback(parent.mission_id, PaperClient(attempt), now)["status"]
+            == "child_active"
         )
     else:
         assert result["status"] == "child_active"

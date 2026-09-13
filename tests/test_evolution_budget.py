@@ -1,0 +1,445 @@
+from datetime import timedelta
+
+import pytest
+from hypertrade.arc.evolution import EvolutionConfig, EvolutionService
+from hypertrade.arc.store import (
+    configure_store,
+    get_controller,
+    list_mission_ids,
+    reset_runtime,
+    reset_store,
+    save_mission,
+)
+from hypertrade.db import ArcMission, Database
+from test_arc_evolution import prepare
+
+
+@pytest.fixture
+def service():
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    configure_store(db)
+    yield EvolutionService(db)
+    reset_store()
+
+
+def finish(service, child, when):
+    child.projection.state = "failed"
+    save_mission(child)
+    with service.db.session() as session:
+        row = session.get(ArcMission, child.mission_id)
+        row.updated_at = when
+
+
+def test_period_budget_survives_restart_and_resumes_next_utc_day(service, monkeypatch):
+    now = prepare(service, monkeypatch)
+    service.configure(
+        EvolutionConfig(enabled=True, max_research_per_day=1), revision=1, actor="test"
+    )
+    first = service.tick(now)
+    assert first["status"] == "research_created"
+    child = get_controller(first["payload"]["mission_id"])
+    finish(service, child, now)
+    reset_runtime()
+    restarted = EvolutionService(service.db, service.client)
+    second = restarted.tick(now + timedelta(hours=1))
+    assert second["payload"]["budget"]["reason"] == "period_budget_exhausted"
+    assert second["payload"]["budget"]["period_used"] == 1
+    assert second["payload"]["budget"]["next_run_at"] == "2026-09-13T00:00:00+00:00"
+    assert restarted.tick(now + timedelta(days=1))["status"] == "research_created"
+    assert len(list_mission_ids()) == 2
+
+
+def test_total_budget_does_not_reset_at_period_boundary(service, monkeypatch):
+    now = prepare(service, monkeypatch)
+    service.configure(EvolutionConfig(enabled=True, max_research_total=1), revision=1, actor="test")
+    first = service.tick(now)
+    child = get_controller(first["payload"]["mission_id"])
+    finish(service, child, now)
+    result = service.tick(now + timedelta(days=2))
+    assert result["payload"]["budget"]["reason"] == "total_budget_exhausted"
+    assert result["payload"]["budget"]["total_used"] == 1
+    assert result["payload"]["budget"]["next_run_at"] is None
+
+
+def test_stable_paper_can_be_explored_without_claiming_degradation(service, monkeypatch):
+    now = prepare(service, monkeypatch)
+    service.configure(
+        EvolutionConfig(enabled=True, proactive_enabled=True), revision=1, actor="test"
+    )
+    monkeypatch.setattr(
+        "hypertrade.arc.evolution.collect_windows",
+        lambda *a, **k: {
+            "triggered": False,
+            "reasons": [],
+            "end_at": "2026-09-12T00:00:00Z",
+        },
+    )
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    goal = get_controller(result["payload"]["mission_id"]).projection.goal
+    assert goal.evolution_context["trigger_source"] == "proactive"
+    assert goal.evolution_context["paper_feedback"]["triggered"] is False
+    assert "可证伪" in goal.objective
+    assert result["payload"]["budget"]["period_used"] == 1
+
+
+def test_long_research_terminal_time_starts_cooldown(service, monkeypatch):
+    now = prepare(service, monkeypatch)
+    first = service.tick(now)
+    child = get_controller(first["payload"]["mission_id"])
+    finish(service, child, now + timedelta(days=3))
+    result = service.tick(now + timedelta(days=3, hours=1))
+    assert result["payload"]["budget"]["reason"] == "source_cooldown"
+    assert result["payload"]["budget"]["next_run_at"] == "2026-09-16T12:00:00+00:00"
+    assert service.tick(now + timedelta(days=4))["status"] == "research_created"
+
+
+def test_pending_effect_blocks_even_if_task_is_terminal(service, monkeypatch):
+    now = prepare(service, monkeypatch)
+    first = service.tick(now)
+    child = get_controller(first["payload"]["mission_id"])
+    child.projection.avo["pending"] = {"kind": "tool", "effect": "unknown"}
+    finish(service, child, now)
+    result = service.tick(now + timedelta(days=3))
+    assert result["payload"]["budget"]["reason"] == "source_active"
+    assert result["payload"]["budget"]["active"] == 1
+    assert result["payload"]["budget"]["next_run_at"] is None
+    assert len(list_mission_ids()) == 1
+
+
+def test_shared_admission_is_atomic_and_idempotent(service, monkeypatch):
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.evolution_models import EvolutionCycle
+    from hypertrade.arc.research_budget import admit
+    from sqlalchemy import select
+
+    now = prepare(service, monkeypatch)
+    service.configure(
+        EvolutionConfig(enabled=True, max_active_research=1), revision=1, actor="test"
+    )
+    first = service.tick(now)
+    original = get_controller(first["payload"]["mission_id"])
+    replay = admit(original, now=now, db=service.db)
+    assert replay["accepted"] and replay["replayed"]
+    assert replay["total_used"] == 1
+    other = ARCController(goal=original.projection.goal.model_copy(deep=True))
+    other.projection.goal.evolution_context["source_instance_id"] = "another-paper"
+    other.projection.goal.evolution_context["trigger_source"] = "degradation"
+    other.projection.goal.feedback_parent = {"instance_id": "another-paper"}
+    refusal = admit(other, now=now, db=service.db)
+    assert refusal["reason"] == "concurrency_limit"
+    assert get_controller(other.mission_id) is None
+    with service.db.session() as session:
+        rows = list(
+            session.scalars(
+                select(EvolutionCycle).where(EvolutionCycle.status == "budget_admitted")
+            )
+        )
+        assert len(rows) == 1
+        denied = session.scalar(
+            select(EvolutionCycle).where(EvolutionCycle.status == "budget_denied")
+        )
+        assert denied.payload_json["reason"] == "concurrency_limit"
+
+
+def test_concurrent_producers_never_exceed_shared_limit(service, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.research_budget import admit
+
+    now = prepare(service, monkeypatch)
+    first = service.tick(now)
+    original = get_controller(first["payload"]["mission_id"])
+    finish(service, original, now)
+    service.configure(
+        EvolutionConfig(enabled=True, max_active_research=1), revision=1, actor="test"
+    )
+    barrier = Barrier(2)
+
+    def submit(index):
+        ctrl = ARCController(goal=original.projection.goal.model_copy(deep=True))
+        ctrl.projection.goal.evolution_context["source_instance_id"] = f"paper-{index}"
+        barrier.wait()
+        return admit(ctrl, now=now + timedelta(days=1), db=service.db)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(submit, [1, 2]))
+    assert sum(r["accepted"] for r in results) == 1
+    assert {r["reason"] for r in results} <= {None, "budget_busy", "concurrency_limit"}
+    assert len(list_mission_ids()) == 2
+
+
+def test_switch_and_scope_are_checked_at_atomic_admission(service, monkeypatch):
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.research_budget import admit
+
+    now = prepare(service, monkeypatch)
+    first = service.tick(now)
+    original = get_controller(first["payload"]["mission_id"])
+    other = ARCController(goal=original.projection.goal.model_copy(deep=True))
+    service.configure(EvolutionConfig(enabled=False), revision=1, actor="test")
+    assert admit(other, now=now, db=service.db)["reason"] == "disabled"
+    service.configure(EvolutionConfig(enabled=True, strategy_ids=[99]), revision=2, actor="test")
+    assert admit(other, now=now, db=service.db)["reason"] == "outside_strategy_scope"
+    assert len(list_mission_ids()) == 1
+
+
+def test_cli_exposes_same_read_only_budget_route():
+    import argparse
+
+    from hypertrade.research_cli import add_research_parser, research_request
+
+    parser = argparse.ArgumentParser()
+    add_research_parser(parser.add_subparsers())
+    assert research_request(parser.parse_args(["research", "evolution"])) == (
+        "GET",
+        "/api/v1/arc/evolution",
+        {},
+        {},
+    )
+
+
+@pytest.mark.parametrize("fault", ["session", "version", "cost", "coverage", "fills"])
+def test_proactive_requires_source_evidence_through_real_collector(service, fault):
+    from datetime import UTC, datetime
+
+    from test_paper_feedback import PaperClient
+
+    class Client(PaperClient):
+        def paper_snapshot(self, **kwargs):
+            row = super().paper_snapshot(**kwargs)
+            if fault == "session":
+                row["session"] = {}
+            if fault == "version":
+                row["strategy_version"] = None
+            return row
+
+        def strategy_return_series(self, **kwargs):
+            row = super().strategy_return_series(**kwargs)
+            for point in row["points"]:
+                point["equity"] = "100"
+            if fault == "cost":
+                row["cost_model"] = {}
+            if fault == "coverage":
+                row["pagination"] = {"next_cursor": "not-read"}
+            return row
+
+        def strategy_trades(self, **kwargs):
+            return [] if fault == "fills" else super().strategy_trades(**kwargs)
+
+    service.client = Client()
+    service.configure(
+        EvolutionConfig(enabled=True, proactive_enabled=True), revision=0, actor="test"
+    )
+    result = service.tick(datetime(2026, 8, 15, tzinfo=UTC))
+    assert result["status"] == "no_action"
+    assert result["payload"]["diagnostics"][0]["status"] == "unavailable"
+    assert list_mission_ids() == []
+
+
+def test_degradation_has_priority_over_stable_paper_independent_of_inventory_order(
+    service, monkeypatch
+):
+    from test_arc_evolution import Paper
+
+    now = prepare(service, monkeypatch)
+    service.configure(
+        EvolutionConfig(enabled=True, proactive_enabled=True), revision=1, actor="test"
+    )
+
+    class Multi(Paper):
+        def paper_strategy_performance(self, **kwargs):
+            return {
+                "strategies": [
+                    {"strategy_id": sid, "mode": "paper", "timeframe": "1H"} for sid in [44, 45]
+                ]
+            }
+
+        def paper_snapshot(self, **kwargs):
+            sid = kwargs["strategy_id"]
+            return {
+                **super().paper_snapshot(**kwargs),
+                "strategy_id": sid,
+                "instance_id": f"paper-{sid}",
+            }
+
+        def strategy_trades(self, **kwargs):
+            return [
+                {**row, "strategy_id": kwargs["strategy_id"]}
+                for row in super().strategy_trades(**kwargs)
+            ]
+
+    service.client = Multi()
+    monkeypatch.setattr(
+        "hypertrade.arc.evolution.collect_windows",
+        lambda client, instance, sid, *args: {
+            "triggered": sid == "45",
+            "reasons": ["return_drop"] if sid == "45" else [],
+            "end_at": "2026-09-12T00:00:00Z",
+        },
+    )
+    result = service.tick(now)
+    assert result["payload"]["source_strategy_id"] == 45
+    assert result["payload"]["trigger_source"] == "degradation"
+    second = service.tick(now + timedelta(hours=1))
+    assert second["payload"]["source_strategy_id"] == 44
+    assert second["payload"]["trigger_source"] == "proactive"
+
+
+def test_atomic_rollback_does_not_leave_task_or_consumed_credit(service, monkeypatch):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.evolution_models import EvolutionCycle
+    from hypertrade.arc.research_budget import admit
+    from sqlalchemy import event
+    from sqlalchemy.orm import Session
+
+    service.configure(EvolutionConfig(enabled=True), revision=0, actor="test")
+    ctrl = ARCController(
+        goal=ARCGoalV1(
+            objective="bounded",
+            evolution_context={
+                "source_instance_id": "source",
+                "source_strategy_id": 44,
+                "trigger_source": "degradation",
+            },
+        )
+    )
+
+    def crash(session, *args):
+        if any(
+            isinstance(r, EvolutionCycle) and r.status == "budget_admitted"
+            for r in list(session.new) + list(session.dirty)
+        ):
+            raise RuntimeError("crash before commit")
+
+    event.listen(Session, "before_flush", crash)
+    try:
+        with pytest.raises(RuntimeError, match="crash before commit"):
+            admit(ctrl, now=datetime(2026, 9, 12, tzinfo=UTC), db=service.db)
+    finally:
+        event.remove(Session, "before_flush", crash)
+    assert get_controller(ctrl.mission_id) is None
+    assert service.status()["budget"]["total_used"] == 0
+
+
+def test_feedback_parent_overrides_inherited_ancestor_context(service):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.research_budget import admit
+
+    service.configure(EvolutionConfig(enabled=True, strategy_ids=[44]), revision=0, actor="test")
+    goal = ARCGoalV1(
+        objective="descendant",
+        evolution_context={
+            "source_instance_id": "ancestor",
+            "source_strategy_id": 1,
+            "trigger_source": "proactive",
+        },
+        feedback_parent={
+            "instance_id": "current-paper",
+            "evidence": {"strategy_id": "44"},
+        },
+    )
+    ctrl = ARCController(goal=goal)
+    receipt = admit(ctrl, now=datetime.now(UTC), db=service.db)
+    assert receipt["accepted"] is True
+    assert receipt["source_instance_id"] == "current-paper"
+    assert receipt["trigger_source"] == "degradation"
+    sources = service.status()["budget"]["sources"]
+    assert "current-paper" in sources
+    assert "ancestor" not in sources
+
+
+@pytest.mark.parametrize(
+    ("admitted_at", "expected"),
+    [
+        ("2026-09-12T23:59:59", 1),
+        ("2026-09-13T00:00:00+00:00", 0),
+        ("2026-09-14T00:00:00+08:00", 0),
+    ],
+)
+def test_replayed_period_uses_strict_utc_half_open_window(service, admitted_at, expected):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.evolution_models import EvolutionCycle
+
+    with service.db.session() as session:
+        session.add(
+            EvolutionCycle(
+                id="budget_future",
+                status="budget_admitted",
+                payload_json={
+                    "mission_id": "future",
+                    "source_instance_id": "future-paper",
+                    "trigger_source": "proactive",
+                    "admitted_at": admitted_at,
+                },
+            )
+        )
+    state = service.status()["config"]
+    config = EvolutionConfig.model_validate(state)
+    from hypertrade.arc.research_budget import budget_status
+
+    result = budget_status(service.db, config, datetime(2026, 9, 12, 12, tzinfo=UTC))
+    assert result["period_used"] == expected
+
+
+@pytest.mark.parametrize(
+    ("context", "parent", "reason"),
+    [
+        (
+            {"source_strategy_id": 44, "trigger_source": "degradation"},
+            {},
+            "invalid_source_identity",
+        ),
+        (
+            {
+                "source_instance_id": "paper",
+                "source_strategy_id": "not-a-number",
+                "trigger_source": "degradation",
+            },
+            {},
+            "invalid_strategy_id",
+        ),
+        (
+            {"source_instance_id": "paper", "source_strategy_id": 0, "trigger_source": "proactive"},
+            {},
+            "invalid_strategy_id",
+        ),
+        (
+            {"source_instance_id": "paper", "source_strategy_id": 44, "trigger_source": "manual"},
+            {},
+            "invalid_trigger_source",
+        ),
+        ({}, {"instance_id": "paper", "evidence": {"strategy_id": "bad"}}, "invalid_strategy_id"),
+    ],
+)
+def test_untyped_source_identity_is_rejected_without_raising(service, context, parent, reason):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.research_budget import admit
+
+    service.configure(
+        EvolutionConfig(enabled=True, proactive_enabled=True), revision=0, actor="test"
+    )
+    ctrl = ARCController(
+        goal=ARCGoalV1(
+            objective="malformed automatic source",
+            evolution_context=context,
+            feedback_parent=parent,
+        )
+    )
+    receipt = admit(ctrl, now=datetime.now(UTC), db=service.db)
+    assert receipt["accepted"] is False
+    assert receipt["reason"] == reason
+    assert get_controller(ctrl.mission_id) is None
