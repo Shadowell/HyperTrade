@@ -19,8 +19,10 @@ from hypertrade.arc.contracts import (
     ARCGoalV1,
     ARCSuccessCriteriaV1,
     PaperFeedbackPolicyV1,
+    ResearchWindowsV1,
 )
 from hypertrade.arc.controller import ARCController, ARCMissionProjection
+from hypertrade.arc.evolution_memory import curate_memory
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import _feedback_child_active, collect_windows
 from hypertrade.arc.observation import _snapshot_body
@@ -222,6 +224,7 @@ class EvolutionService:
                 context = chosen
                 memory, active, blocked_source = self._memory(context, config, now)
                 payload["memory_count"] = len(memory)
+                payload["memory_manifest"] = context["memory_manifest"]
                 if active >= config.max_active_research or blocked_source:
                     payload["skip_reason"] = "已有研究/待审核版本、同源观察版本或仍在冷却期"
                     return self._save_cycle(cycle_id, "deferred", payload)
@@ -236,6 +239,7 @@ class EvolutionService:
                     paper_review_required=True,
                     paper_initial_equity=config.paper_capital,
                     evolution_context=context,
+                    research_windows=ResearchWindowsV1.model_validate(context["research_windows"]),
                     feedback=PaperFeedbackPolicyV1(enabled=True, threshold_pp=config.threshold_pp),
                     budget=ARCBudgetV1(
                         max_candidates=config.max_candidates,
@@ -486,20 +490,33 @@ class EvolutionService:
                 )
                 if same and (busy or now - updated < timedelta(hours=config.cooldown_hours)):
                     blocked = True
-                if symbol not in goal.symbols or len(memory) >= 20:
+                if symbol not in goal.symbols or len(memory) >= 200:
                     continue
                 # Only development receipts become cross-task memory. Hidden final metrics
                 # never enter another proposal context as if they were training data.
                 for attempt in projection.attempts:
                     receipt = projection.avo.get("development", {}).get(attempt.attempt_id)
-                    if receipt and len(memory) < 20:
+                    if receipt and len(memory) < 200:
                         memory.append(
                             {
                                 "mission_id": row.mission_id,
                                 "candidate_id": attempt.candidate_id,
                                 "hypothesis": attempt.hypothesis,
                                 "spec": attempt.strategy_spec,
+                                "code_sha256": hashlib.sha256(
+                                    attempt.strategy_code.encode()
+                                ).hexdigest(),
+                                "capital": str(goal.paper_initial_equity),
                                 "development": receipt,
                             }
                         )
+        windows = ResearchWindowsV1(as_of=now.astimezone(UTC).date() - timedelta(days=1))
+        memory, manifest = curate_memory(
+            memory,
+            symbol=symbol,
+            timeframe=context["baseline"]["strategy_spec"]["timeframe"],
+            windows=windows,
+        )
+        context["memory_manifest"] = manifest
+        context["research_windows"] = windows.model_dump(mode="json")
         return memory, active, blocked

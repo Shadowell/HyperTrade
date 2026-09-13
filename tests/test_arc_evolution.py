@@ -202,11 +202,25 @@ def test_long_term_memory_uses_development_receipts_not_final_holdout(service, m
             candidate_id="prior",
             hypothesis="reduce churn",
             strategy_code="pass",
+            strategy_spec={"symbol": "SOL-USDT-SWAP", "timeframe": "1H"},
             observed_metrics={"secret_final_score": 999},
         )
     ]
     old.projection.avo["development"] = {
-        "prior": {"backtest_id": "dev-proof", "metrics": {"net_return": -0.1}}
+        "prior": {
+            "backtest_id": "dev-proof",
+            "passed": False,
+            "purpose": "development",
+            "code_sha256": __import__("hashlib").sha256(b"pass").hexdigest(),
+            "metrics": {
+                "net_return": -0.1,
+                "evaluation_window": {
+                    "purpose": "development",
+                    "start_date": "2026-03-01",
+                    "end_date": "2026-07-01",
+                },
+            },
+        }
     }
     save_mission(old)
     result = service.tick(now)

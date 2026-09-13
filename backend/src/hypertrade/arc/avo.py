@@ -15,6 +15,7 @@ from jsonschema import ValidationError, validate
 from hypertrade.arc.adversarial import BlueTeamQuant
 from hypertrade.arc.contracts import ARCCandidateAttemptV1
 from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProjection
+from hypertrade.arc.evolution_memory import bind_hypothesis, experiment_key
 from hypertrade.arc.paper_review import request_paper_review
 from hypertrade.arc.provider_hypothesis import ProviderProposal, _bounded_spec
 from hypertrade.arc.self_test import ARCSelfTestService
@@ -48,6 +49,29 @@ _PARAMETERS = {
         "properties": {
             "hypothesis": {"type": "string", "minLength": 1, "maxLength": 400},
             "symbol": {"type": "string", "minLength": 1, "maxLength": 64},
+            "repeat_reason": {"type": "string", "minLength": 12, "maxLength": 400},
+            "evolution_hypothesis": {
+                "type": "object",
+                "properties": {
+                    "evidence_refs": {
+                        "type": "array",
+                        "items": _ID,
+                        "minItems": 1,
+                        "maxItems": 10,
+                        "uniqueItems": True,
+                    },
+                    "expected_metric": {"enum": ["net_return", "max_drawdown", "trade_count"]},
+                    "expected_direction": {"enum": ["increase", "decrease"]},
+                    "falsification": {"type": "string", "minLength": 12, "maxLength": 400},
+                },
+                "required": [
+                    "evidence_refs",
+                    "expected_metric",
+                    "expected_direction",
+                    "falsification",
+                ],
+                "additionalProperties": False,
+            },
             "family_key": {"enum": [family.key for family in FAMILIES]},
             "direction": {"enum": ["long_only", "short_only", "long_short"]},
             "parameter_bounds": {
@@ -119,6 +143,15 @@ and this model request. Never add historical tool calls or candidates to those t
 Use remaining directly; candidate_ids are already counted. Zero candidate slots still allows
 developing or finishing existing candidates. Use final_backtests_reserved;
 optimization includes a baseline comparison.
+Evolution memory contains development observations, not established causal lessons.
+Use both successful and failed experiments; match instrument, timeframe and window.
+For an identical archived experiment, provide repeat_reason explaining new evidence or
+why a controlled replication is needed; unchanged repetitions do not establish improvement.
+For autonomous_evolution, every propose must include evolution_hypothesis with evidence_refs
+(paper_feedback, order_sample, a memory_id or a developed attempt_id), expected_metric,
+expected_direction and falsification (what observation would refute the hypothesis).
+These are hypotheses, never claims of established causality. Development-only observations
+cannot establish out-of-sample improvement. The final gate and human review are unchanged.
 """
 
 
@@ -295,6 +328,11 @@ def _perform(
             raise ValueError(
                 "candidate budget exhausted; inspect/develop/finish an existing candidate"
             )
+        bound_hypothesis = None
+        if goal.evolution_context:
+            bound_hypothesis = bind_hypothesis(
+                arguments, goal.evolution_context, controller.projection.avo.get("development", {})
+            )
         parent = goal.feedback_parent
         baseline_spec = (parent or {}).get("baseline", {}).get("strategy_spec", {})
         if parent and (
@@ -352,11 +390,36 @@ def _perform(
         for old in controller.projection.attempts:
             if hashlib.sha256(old.strategy_code.encode()).hexdigest() == code_hash:
                 return {"attempt_id": old.attempt_id, "duplicate": True, "code_sha256": code_hash}
+        repeated = []
+        if goal.evolution_context and goal.research_windows:
+            key = experiment_key(
+                code_hash, candidate.strategy_spec, goal.paper_initial_equity, goal.research_windows
+            )
+            repeated = [
+                entry["memory_id"]
+                for entry in goal.evolution_context.get("memory", [])
+                if entry.get("experiment_key") == key
+            ]
+            reason = arguments.get("repeat_reason", "").strip()
+            if repeated and len(reason) < 12:
+                raise ValueError(
+                    "identical archived experiment; change the hypothesis/parameters or provide "
+                    "repeat_reason for an intentional, budgeted replication"
+                )
+            if repeated:
+                candidate.strategy_spec["repeat_reason"] = reason
+                candidate.strategy_spec["repeated_memory_ids"] = repeated
         candidate.attempt_id = f"att_avo_{code_hash[:24]}"
         candidate.candidate_id = f"cand_avo_{code_hash[:24]}"
         candidate.strategy_spec["variation_operator"] = "avo"
+        if bound_hypothesis:
+            candidate.strategy_spec["evolution_hypothesis"] = bound_hypothesis
         controller.apply_event("candidate_proposed", {"attempt": candidate.model_dump(mode="json")})
-        return {"attempt_id": candidate.attempt_id, "code_sha256": code_hash}
+        return {
+            "attempt_id": candidate.attempt_id,
+            "code_sha256": code_hash,
+            "repeated_memory_ids": repeated,
+        }
     candidate = _candidate(controller, arguments["attempt_id"])
     final = name == "finish"
     development = controller.projection.avo.get("development", {})

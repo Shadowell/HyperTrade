@@ -466,7 +466,7 @@ def test_feedback_candidate_gets_same_window_baseline_and_human_review(
             "source_strategy_id": 44,
             "source_instance_id": "source-paper",
             "baseline": baseline.model_dump(mode="json"),
-            "memory": [{"hypothesis": "prior development feedback"}],
+            "memory": [{"memory_id": "prior", "hypothesis": "prior development feedback"}],
         }
         mission.projection.goal.feedback_parent = None
 
@@ -489,6 +489,13 @@ def test_feedback_candidate_gets_same_window_baseline_and_human_review(
                         },
                     },
                 )
+                if context_kind == "evolution":
+                    args["evolution_hypothesis"] = {
+                        "evidence_refs": ["prior"],
+                        "expected_metric": "net_return",
+                        "expected_direction": "increase",
+                        "falsification": "No improvement over the referenced development trial",
+                    }
             else:
                 last = json.loads(messages[-1]["content"])
                 name, args = (
