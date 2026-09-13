@@ -98,6 +98,10 @@ def test_schedule_creates_source_bound_research_once_per_hour(service, monkeypat
     context = child.projection.goal.evolution_context
     assert context["source_instance_id"] == "paper-source"
     assert context["orders"]["sample_count"] == 1
+    report = context["attribution_report"]
+    assert report == first["payload"]["diagnostics"][0]["attribution_report"]
+    assert report["schema_version"] == "paper_attribution.v1"
+    assert all(d["state"] == "unknown" for d in report["dimensions"].values())
     assert child.projection.goal.paper_authorization is None
     assert child.projection.goal.paper_review_required
     assert service.tick(now)["status"] == "idle"

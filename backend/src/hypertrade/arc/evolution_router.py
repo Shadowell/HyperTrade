@@ -2,10 +2,11 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
+from hypertrade.arc.attribution import read_attribution
 from hypertrade.arc.auth import ARCScope, require_scope
 from hypertrade.arc.evolution import EvolutionConfig, EvolutionService
 
@@ -41,3 +42,10 @@ async def evolution_update(payload: EvolutionUpdate, request: Request) -> dict[s
 @router.post("/evolution/scan", dependencies=[Depends(require_scope(ARCScope.START))])
 async def evolution_preview(request: Request) -> dict[str, Any]:
     return await run_in_threadpool(EvolutionService(request.app.state.db).queue_preview)
+
+
+@router.get(
+    "/evolution/attribution/{strategy_id}", dependencies=[Depends(require_scope(ARCScope.READ))]
+)
+async def evolution_attribution(strategy_id: int = Path(gt=0)) -> dict[str, Any]:
+    return await run_in_threadpool(read_attribution, strategy_id)

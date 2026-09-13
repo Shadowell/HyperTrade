@@ -155,6 +155,11 @@ why a controlled replication is needed; unchanged repetitions do not establish i
 For autonomous_evolution, every propose must include evolution_hypothesis with evidence_refs
 (paper_feedback, order_sample, a memory_id or a developed attempt_id), expected_metric,
 expected_direction and falsification (what observation would refute the hypothesis).
+When attribution_report is present, cite at least one exact field as
+attribution:<report_id>:<dimension>. Unknown fields support investigation only; they
+cannot establish timing, fee or regime problems. State the observation that would
+refute the proposed change. Report metrics are descriptive, never counterfactual
+proof; MFE giveback does not mean the peak was a feasible exit.
 These are hypotheses, never claims of established causality. Development-only observations
 cannot establish out-of-sample improvement. The final gate and configured Paper reviewer
 control execution.

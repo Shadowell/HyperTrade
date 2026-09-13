@@ -268,11 +268,26 @@ def bind_hypothesis(
     if context.get("orders", {}).get("sample_count", 0):
         available.add("order_sample")
     available.update(key for key, result in development.items() if result.get("backtest_id"))
+    diagnostic_fields = []
+    report = context.get("attribution_report")
+    if report:
+        fields = {
+            f"attribution:{report['report_id']}:{name}": {"field": name, "state": row["state"]}
+            for name, row in report["dimensions"].items()
+        }
+        diagnostic_fields = [fields[ref] for ref in hypothesis["evidence_refs"] if ref in fields]
+        if not diagnostic_fields:
+            raise ValueError("evolution_hypothesis requires a specific diagnostic field")
+        falsification = hypothesis.get("falsification")
+        if not isinstance(falsification, str) or not 12 <= len(falsification.strip()) <= 400:
+            raise ValueError("evolution_hypothesis requires explicit falsification")
+        available.update(fields)
     if not set(hypothesis["evidence_refs"]) <= available:
         raise ValueError("evolution_hypothesis cites unavailable evidence")
     return {
         **hypothesis,
         "status": "hypothesis_not_causal_fact",
+        "diagnostic_fields": diagnostic_fields,
         "context_digest": context.get("memory_manifest", {}).get("digest"),
     }
 

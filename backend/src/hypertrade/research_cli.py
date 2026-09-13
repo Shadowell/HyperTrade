@@ -36,6 +36,8 @@ def add_research_parser(subparsers: Any) -> None:
     start.add_argument("--paper-capital", type=float, default=100)
     start.add_argument("--alternative-source-confirmed", action="store_true")
     commands.add_parser("evolution", help="只读持久进化配置、预算与调度回执")
+    diagnostics = commands.add_parser("diagnostics", help="读取自主进化诊断与版本化归因报告")
+    diagnostics.add_argument("--strategy-id", type=int, help="只读查询指定策略的当前归因证据")
     commands.add_parser("list", help="列出与 BitPro 页面相同的研究任务")
     for name in ("status", "evidence", "review", "candidate", "continue", "decide", "watch"):
         command = commands.add_parser(name)
@@ -66,6 +68,10 @@ def research_request(args: argparse.Namespace) -> tuple[str, str, dict[str, Any]
     root = "/api/v1/arc/missions"
     action = args.research_action
     if action == "evolution":
+        return "GET", "/api/v1/arc/evolution", {}, {}
+    if action == "diagnostics":
+        if getattr(args, "strategy_id", None) is not None:
+            return "GET", f"/api/v1/arc/evolution/attribution/{args.strategy_id}", {}, {}
         return "GET", "/api/v1/arc/evolution", {}, {}
     if action == "list":
         return "GET", root, {}, {}

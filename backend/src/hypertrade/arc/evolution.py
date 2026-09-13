@@ -13,6 +13,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
+from hypertrade.arc.attribution import attribution_report, collect_attribution
 from hypertrade.arc.contracts import (
     ARCBudgetV1,
     ARCCandidateAttemptV1,
@@ -393,7 +394,11 @@ class EvolutionService:
             sid = int(row["strategy_id"])
             if config.strategy_ids and sid not in config.strategy_ids:
                 continue
-            diagnostic: dict[str, Any] = {"strategy_id": sid, "name": row.get("strategy_name")}
+            diagnostic: dict[str, Any] = {
+                "strategy_id": sid,
+                "name": row.get("strategy_name"),
+                "attribution_report": attribution_report({"strategy_id": sid}, now),
+            }
             diagnostics.append(diagnostic)
             snapshot: dict[str, Any] = {}
             try:
@@ -404,6 +409,7 @@ class EvolutionService:
                     or str(snapshot.get("strategy_id")) != str(sid)
                 ):
                     raise ValueError("模拟盘身份或运行状态不满足诊断条件")
+                diagnostic["attribution_report"] = collect_attribution(client, snapshot, now)
                 if int(snapshot.get("trade_count") or 0) < config.min_trades:
                     raise ValueError("成交样本不足")
                 feedback = collect_windows(
@@ -485,6 +491,7 @@ class EvolutionService:
                     "source_code_sha256": hashlib.sha256(code.encode()).hexdigest(),
                     "baseline": baseline.model_dump(mode="json"),
                     "paper_feedback": feedback,
+                    "attribution_report": diagnostic["attribution_report"],
                     "orders": {
                         "sample_limit": 200,
                         "sample_count": len(fills),

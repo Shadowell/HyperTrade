@@ -197,6 +197,27 @@ AVO 和 agent/context 复用 compaction.v1；所有 evolution_context、memory/R
 
 验收：长中文/英文、工具并发组、必要来源、未知副作用、超大注入/结果、污染/无效内容、崩溃后的哈希重建、私有访问/脱敏/过期、迁移及完整 check.sh；上线核对部署 SHA 与私有审计机制。工程证据不替代真实 14 天/7+7 或收益证据。
 
+## 执行证据归因报告（任务D，2026-09-13）
+
+扫描在判断研究资格前附加 `paper_attribution.v1`，同一报告进入持久诊断、AVO上下文、
+`GET /api/v1/arc/evolution` 与 `ht research diagnostics`。按需只读查询使用
+`GET /api/v1/arc/evolution/attribution/{strategy_id}` 或 `ht research diagnostics --strategy-id ID`，
+不创建扫描周期或研究任务。新增提案必须引用
+`attribution:<report_id>:<dimension>` 及明确反证条件；unknown 只支持调查，不支持因果断言。
+不改14天门槛、验证、审批或交易权限，原Paper与Live不受写入。
+
+只读消费者使用BitPro `GET /api/v2/strategy-evidence/paper` 的 `paper_evidence.v1`，
+每种kind（trades/equity）最多一页500条。核对同会话、策略/配置版本、明确UTC14天半开窗口[start,end)、
+成本supported/hash、来源和内容hash、完整分页、无未归属历史后才描述窗口内执行流水覆盖。
+数字共享报告scope与来源引用；分页未尽、跨窗口/版本/会话、未知成本、非法数值均unknown。
+执行流水的buy/sell及pnl不能解释为闭合交易的long/short或gross/net收益。
+
+当前上游round_trip、slippage、funding、entry_benchmark、mfe、regime、backtest_ref均unknown：
+报告仍完整列出entry timing、exit timing、costs、long/short、holding duration、regime维度及缺口。
+后续可靠归因还需会话绑定的闭合往返交易、信号时间/基准引用、完整持仓路径/MFE、明确费用与
+资金费、regime方法/行情引用及同窗backtest refs。不得重建旧历史、推测旧费率或用事后峰值
+宣称可实现退出；本切片不宣称已获得这些缺失的分析能力。
+
 ## 任务 B：统一长期研究记忆与配对评测（2026-09-13）
 
 ResearchMemory v1 是原 ARC 开发回执的版本化投影，MemoryService 与 AVO 使用同一投影器；不复制持久摘要作为第二套事实。保留 mission/backtest/candidate、symbol/timeframe/window/capital、code/config/cost hash、hypothesis assessment、正反例和排除清单。缺失历史身份保持 unknown，不从当前配置回填；未知记录不能支持身份比较、审批、晋级或修改政策。

@@ -45,6 +45,7 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "paper_events": {"method": "GET", "path": "/live/events"},
     "paper_equity_curve": {"method": "GET", "path": "/live/equity_curve"},
     "paper_snapshot": {"method": "GET", "path": "/live/paper_snapshot"},
+    "paper_evidence": {"method": "GET", "path": "/strategy-evidence/paper"},
     "strategy_return_series": {
         "method": "GET",
         "path": "/strategy-evidence/return-series",
@@ -386,6 +387,12 @@ class BitProToolAdapter:
             "health": health,
             "tool_calls": self.last_tool_calls,
         }
+
+    def paper_evidence(self, **parameters: Any) -> dict[str, Any]:
+        """Read the versioned Paper ledger; unsupported servers fail closed upstream."""
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(self._call("paper_evidence", dict(parameters)))
 
     def strategy_return_series(self, **parameters: Any) -> dict[str, Any]:
         """Read one bounded BitPro-owned return-series page without recalculating PnL."""
