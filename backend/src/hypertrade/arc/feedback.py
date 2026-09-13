@@ -392,7 +392,7 @@ def check_paper_feedback(
                     "根据原策略最近两周模拟盘退化证据，仅调整同策略族和方向的参数；"
                     "开发回测后提交最终同窗对比，再由配置的审核模式决定是否启动新模拟盘。"
                 )
-                context["memory"] = service._memory(context, config, now or datetime.now(UTC))[0]
+                context["memory"] = service._memory(context, now or datetime.now(UTC))
                 child_goal.evolution_context = context
                 new = ARCController(mission_id=child_id, goal=child_goal)
                 new.projection.created_by = "paper-feedback-worker"

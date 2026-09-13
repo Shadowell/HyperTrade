@@ -26,7 +26,7 @@ from hypertrade.arc.controller import ARCController, ARCMissionProjection
 from hypertrade.arc.evolution_continuation import ContinuationLedger, readiness
 from hypertrade.arc.evolution_diagnostics import blocked_data_diagnostic
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
-from hypertrade.arc.feedback import _feedback_child_active, collect_windows
+from hypertrade.arc.feedback import collect_windows
 from hypertrade.arc.observation import _snapshot_body
 from hypertrade.arc.store import get_controller, research_lock
 from hypertrade.arc.universe import normalize_symbols
@@ -272,7 +272,7 @@ class EvolutionService:
                 if chosen is None:
                     return self._save_cycle(cycle_id, "no_action", payload)
                 context = chosen
-                memory, _, _ = self._memory(context, config, now)
+                memory = self._memory(context, now)
                 payload["memory_count"] = len(memory)
                 payload["memory_manifest"] = context["memory_manifest"]
                 context["memory"] = memory
@@ -550,11 +550,8 @@ class EvolutionService:
                 diagnostic["continuation"] = readiness({}, diagnostic, config, now, profile=profile)
         return diagnostics, chosen
 
-    def _memory(
-        self, context: dict[str, Any], config: EvolutionConfig, now: datetime
-    ) -> tuple[list[dict[str, Any]], int, bool]:
+    def _memory(self, context: dict[str, Any], now: datetime) -> list[dict[str, Any]]:
         memory: list[dict[str, Any]] = []
-        active, blocked = 0, False
         symbol = context["baseline"]["strategy_spec"]["symbol"]
         with self.db.session() as session:
             records = session.scalars(
@@ -565,24 +562,6 @@ class EvolutionService:
                 goal = projection.goal
                 if goal is None:
                     continue
-                source = goal.evolution_context or {}
-                parent = goal.feedback_parent or {}
-                same = (source.get("source_instance_id") or parent.get("instance_id")) == context[
-                    "source_instance_id"
-                ]
-                busy = projection.state not in {"completed", "rejected", "failed"}
-                if projection.state == "needs_operator":
-                    ctrl = get_controller(row.mission_id)
-                    busy = bool(ctrl and _feedback_child_active(ctrl))
-                if source and busy and projection.state != "paper_observing":
-                    active += 1
-                updated = (
-                    row.created_at.replace(tzinfo=UTC)
-                    if row.created_at.tzinfo is None
-                    else row.created_at
-                )
-                if same and (busy or now - updated < timedelta(hours=config.cooldown_hours)):
-                    blocked = True
                 if symbol not in goal.symbols or len(memory) >= 200:
                     continue
                 # Only development receipts become cross-task memory. Hidden final metrics
@@ -612,4 +591,4 @@ class EvolutionService:
         )
         context["memory_manifest"] = manifest
         context["research_windows"] = windows.model_dump(mode="json")
-        return memory, active, blocked
+        return memory
