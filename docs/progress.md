@@ -22,6 +22,12 @@
 - 完整观察未退化可提出可证伪研究；缺会话、版本、成本、覆盖或成交仍no_action。新增CLI只读预算入口；仅消费现有开发经验，不实现归因、记忆压缩或组合执行。
 - 83项进化/反馈/记忆兼容专项及隔离PostgreSQL双进程争用通过；完整scripts/check.sh通过（1416 passed / 1 xfailed），前端、Ruff、mypy通过。部署待主线槽位核验，工程结果不代表真实14天或收益验证。
 
+## 进化就绪映射按策略身份收口 — 2026-09-13
+
+- 修复readiness投影的运行态映射缺陷：原实现只要库中存在任意StrategyVersion且该策略有任意证据即报version_mapped，结算Outcome按全库计数，任何已建内部谱系的运行策略都会被误报为可进化。现按BitPro策略ID精确解析，仅采信同时携带该ID与内部指针的记录：发现候选的版本/清单、孵化成员的清单、Paper晋级与legacy实验证据的mandate/strategy_key；rejected孵化成员不采信；结算Outcome只统计映射所得谱系。
+- 未映射策略如实报no_internal_strategy_version_mapping且outcome_count=0；legacy策略仍须Slice 3a引导后才建立映射。新增回归：未绑定策略不得复用他者账本（该用例在旧实现下失败）、四条映射链路各自成测、rejected成员不映射。只读投影变更，无策略/Paper/Live写入。
+- 完整scripts/check.sh通过（1368 passed / 1 xfailed），Ruff、mypy及前端检查通过。
+
 ## 长期经验的成本身份 — 2026-09-13
 
 - 开发回执的cost_policy_hash来自BitPro创建/读取回执，核对策略ID、源码、交易所、research_costs.v1哈希及显式值；不信任回测metrics自行声称的成本身份，不复制BitPro费用选择规则。

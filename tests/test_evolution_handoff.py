@@ -2,14 +2,23 @@
 
 The projection must never invent readiness: a strategy without settled BitPro
 evidence, an internal version mapping, or two settled outcomes reports its gaps
-explicitly instead of entering the evolution loop.
+explicitly instead of entering the evolution loop. The mapping is per BitPro
+strategy id — another strategy's ledger must never vouch for it.
 """
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+from datetime import UTC, datetime
 
-from hypertrade.db import BitProStrategyEvidenceRecord
+from evolution_fixtures import seeded_evolution_db
+from hypertrade.db import (
+    BitProStrategyEvidenceRecord,
+    Database,
+    PaperIncubationMember,
+    PaperPromotion,
+    ResearchExperimentEvidence,
+    StrategyDiscoveryCandidate,
+)
 from hypertrade.research.evolution_readiness import (
     assess_running_strategy,
     running_inventory_readiness,
@@ -55,6 +64,28 @@ class _FakeAdapter:
         }
 
 
+def _seeded_db_with_bitpro_evidence(sid: str) -> tuple[Database, dict[str, object]]:
+    """One internal lineage with two settled outcomes, plus BitPro evidence
+    that names only the given running strategy id."""
+    db, refs = seeded_evolution_db()
+    with db.session() as session:
+        session.add(
+            BitProStrategyEvidenceRecord(
+                schema_version="strategy_return_series.v1",
+                evidence_type="strategy_return_series",
+                source_layer="paper",
+                source_id=sid,
+                source_hash="sha256:" + "6" * 64,
+                content_hash="sha256:" + "5" * 64,
+                as_of=datetime(2026, 7, 20, tzinfo=UTC),
+                summary_json={"strategy_id": sid, "point_count": 100, "net_return": "0.01"},
+                refs_json={"contract_version": "bitpro-mcp-v1"},
+                created_by="test",
+            )
+        )
+    return db, refs
+
+
 def test_legacy_running_strategy_reports_every_gap() -> None:
     """Production legacy strategies have no ledger linkage yet; say so plainly."""
     p = assess_running_strategy(
@@ -80,53 +111,146 @@ def test_inventory_projection_lists_running_strategies_with_gaps() -> None:
     assert bsb.name.startswith("[合约][1H][CTA] BSB")
 
 
-def test_ready_strategy_reports_no_gaps() -> None:
-    """A fully wired lineage with evidence and outcomes is ready."""
-    calls: list[str] = []
+def test_unbound_strategy_never_reuses_another_lineages_ledger() -> None:
+    """The ledger holds a lineage with two settled outcomes, but nothing in it
+    names this BitPro strategy — so none of it may vouch for it."""
+    db, _refs = _seeded_db_with_bitpro_evidence("378")
+    p = assess_running_strategy(
+        db, bitpro_strategy_id=378, name="BSB EMA5/20", status="running"
+    )
+    assert p.evidence_record_count == 1
+    assert not p.version_mapped
+    assert p.outcome_count == 0
+    assert not p.ready
+    assert set(p.gaps) == {
+        "no_internal_strategy_version_mapping",
+        "fewer_than_two_settled_outcomes",
+    }
 
-    class _Row:
-        def __init__(self, **kwargs):
-            self.__dict__.update(kwargs)
-            self.as_of = None
 
-    class _Session:
-        def __enter__(self):
-            return self
+def test_discovery_candidate_binding_maps_strategy_to_its_version() -> None:
+    db, refs = _seeded_db_with_bitpro_evidence("378")
+    with db.session() as session:
+        session.add(
+            StrategyDiscoveryCandidate(
+                run_id="drun_test",
+                schema_version="strategy_discovery_candidate.v1",
+                fingerprint="f" * 64,
+                phenomenon_hash="a" * 64,
+                hypothesis_hash="b" * 64,
+                status="candidate_ready",
+                strategy_family="TREND",
+                bitpro_strategy_id="378",
+                manifest_id=str(refs["parent_manifest_id"]),
+                experiment_execution_id="exex_test",
+                strategy_version_id=str(refs["parent_version_id"]),
+                phenomenon_json={},
+                hypothesis_json={},
+                novelty_json={},
+                candidate_json={},
+                created_by="test",
+            )
+        )
+    p = assess_running_strategy(
+        db, bitpro_strategy_id=378, name="BSB EMA5/20", status="running"
+    )
+    assert p.version_mapped
+    assert p.outcome_count == 2
+    assert p.ready
+    assert p.gaps == []
 
-        def __exit__(self, *exc):
-            return False
 
-        def scalars(self, query):
-            q = str(query)
-            if "bitpro_strategy_evidence_records" in q:
-                calls.append("evidence")
-                return _Rows([
-                    _Row(
-                        source_id="378",
-                        summary_json={"strategy_id": "378"},
-                        as_of=None,
-                    )
-                ])
-            if "strategy_versions" in q:
-                calls.append("versions")
-                return _Rows([SimpleNamespace(id="sver_1")])
-            if "strategy_outcomes" in q:
-                calls.append("outcomes")
-                return _Rows([SimpleNamespace(id="o1"), SimpleNamespace(id="o2")])
-            return _Rows([])
+def test_incubation_member_binding_maps_via_manifest() -> None:
+    db, refs = _seeded_db_with_bitpro_evidence("439")
+    with db.session() as session:
+        session.add(
+            PaperIncubationMember(
+                mandate_id="pmand_test",
+                candidate_kind="discovery",
+                candidate_id="dcand_test",
+                validation_id="uvld_test",
+                manifest_id=str(refs["parent_manifest_id"]),
+                experiment_execution_id="exex_test",
+                bitpro_strategy_id="439",
+                status="eligible",
+                source_hash="s" * 64,
+                policy_hash="q" * 64,
+            )
+        )
+    p = assess_running_strategy(
+        db, bitpro_strategy_id=439, name="Top60 momentum rotation", status="running"
+    )
+    assert p.version_mapped
+    assert p.outcome_count == 2
+    assert p.ready
 
-    class _Rows(list):
-        def all(self):
-            return list(self)
 
-    class _ReadyDb:
-        def session(self):
-            return _Session()
+def test_rejected_incubation_member_does_not_map() -> None:
+    """A rejected intake row can pair a mismatch manifest with the candidate's
+    BitPro id; a contradictory pairing is not a mapping."""
+    db, refs = _seeded_db_with_bitpro_evidence("439")
+    with db.session() as session:
+        session.add(
+            PaperIncubationMember(
+                mandate_id="pmand_test",
+                candidate_kind="discovery",
+                candidate_id="dcand_test",
+                validation_id="uvld_test",
+                manifest_id=str(refs["parent_manifest_id"]),
+                experiment_execution_id="exex_test",
+                bitpro_strategy_id="439",
+                status="rejected",
+                source_hash="s" * 64,
+                policy_hash="q" * 64,
+            )
+        )
+    p = assess_running_strategy(
+        db, bitpro_strategy_id=439, name="Top60 momentum rotation", status="running"
+    )
+    assert not p.version_mapped
+    assert p.outcome_count == 0
+    assert "no_internal_strategy_version_mapping" in p.gaps
 
-    p = assess_running_strategy(_ReadyDb(), bitpro_strategy_id=378, name="x", status="running")
-    # The direct source_id hit short-circuits the summary scan.
-    assert "no_settled_bitpro_evidence" in p.gaps or p.ready
-    assert p.evidence_record_count >= 1 or "no_settled_bitpro_evidence" in p.gaps
+
+def test_promotion_binding_maps_lineage_via_mandate_key() -> None:
+    db, _refs = _seeded_db_with_bitpro_evidence("445")
+    with db.session() as session:
+        session.add(
+            PaperPromotion(
+                mandate_id="rmand_evolution",
+                job_id="rjob_test",
+                evidence_id="rexp_test",
+                strategy_key="btc_trend_existing",
+                bitpro_strategy_id="445",
+            )
+        )
+    p = assess_running_strategy(
+        db, bitpro_strategy_id=445, name="Promoted BTC trend", status="running"
+    )
+    assert p.version_mapped
+    assert p.outcome_count == 2
+    assert p.ready
+
+
+def test_legacy_experiment_evidence_maps_lineage_via_mandate_key() -> None:
+    db, _refs = _seeded_db_with_bitpro_evidence("378")
+    with db.session() as session:
+        session.add(
+            ResearchExperimentEvidence(
+                job_id="rjob_legacy",
+                mandate_id="rmand_evolution",
+                variant_id="var_1",
+                status="evidence_recorded",
+                strategy_key="btc_trend_existing",
+                bitpro_strategy_id="378",
+            )
+        )
+    p = assess_running_strategy(
+        db, bitpro_strategy_id=378, name="BSB EMA5/20", status="running"
+    )
+    assert p.version_mapped
+    assert p.outcome_count == 2
+    assert p.ready
 
 
 def test_evidence_record_model_has_source_id_column() -> None:
