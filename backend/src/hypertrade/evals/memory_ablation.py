@@ -15,6 +15,7 @@ import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from copy import deepcopy
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -107,14 +108,17 @@ def create_pair(
                     mode="json", exclude_none=False
                 )
                 memory_id = entry.pop("memory_id")
+                if not memory_id or memory_id != _digest({**entry, "memory_id": None}):
+                    raise ValueError("memory_identity_mismatch")
+                capital = Decimal(entry["capital"])
                 if (
-                    not memory_id
-                    or memory_id != _digest({**entry, "memory_id": None})
+                    not capital.is_finite()
+                    or capital <= 0
+                    or capital != goal.paper_initial_equity
                     or memory_id in seen
                     or entry["spec"].get("symbol") != goal.symbols[0]
                     or entry["spec"].get("timeframe") != goal.timeframes[0]
                     or entry["development"].get("window") != expected_window
-                    or entry["capital"] != str(goal.paper_initial_equity)
                     or entry["contamination_reasons"]
                     or (
                         cost_policy_hash is not None
@@ -125,7 +129,7 @@ def create_pair(
                 entry["memory_id"] = memory_id
                 seen.add(memory_id)
                 memory.append(entry)
-            except (KeyError, TypeError, ValueError) as exc:
+            except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
                 raise ValueError("invalid_research_memory") from exc
         selection = {
             "schema_version": "research_memory_manifest.v1",

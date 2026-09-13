@@ -133,7 +133,7 @@ def _entry(
         "code_sha256": code,
         "experiment_key": _digest(identity),
         "spec": clean_spec,
-        "capital": str(capital),
+        "capital": format(capital.normalize(), "f"),
         "evidence_status": "development_only",
         "cost_policy_hash": cost_hash,
         "development": {

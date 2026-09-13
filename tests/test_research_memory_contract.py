@@ -22,6 +22,14 @@ def test_avo_projects_versioned_identity_without_backfilling_unknown_config():
     assert source == before
 
 
+def test_research_memory_canonicalizes_equivalent_capital_identity():
+    source = record(capital="100.0")
+    entries, _ = curate_memory(
+        [source], symbol="SOL-USDT-SWAP", timeframe="1H", windows=WINDOWS
+    )
+    assert entries[0]["capital"] == "100"
+
+
 def test_shared_projection_checks_cost_and_persistent_invalidation(tmp_path):
     url = f"sqlite:///{tmp_path / 'memory.db'}"
     db = Database(url)

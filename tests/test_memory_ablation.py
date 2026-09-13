@@ -106,6 +106,36 @@ def test_pair_accepts_the_exact_versioned_memory_service_projection(tmp_path):
     assert manifest["selection"]["input_contract"] == "research_memory.v1"
 
 
+def test_pair_accepts_valid_legacy_decimal_representation_after_hash_check(tmp_path):
+    module = ablation()
+    from hypertrade.arc.evolution_memory import curate_memory
+
+    projected, _ = curate_memory(
+        [record()], symbol="SOL-USDT-SWAP", timeframe="1H", windows=WINDOWS
+    )
+    projected[0]["capital"] = "100.0"
+    projected[0]["memory_id"] = module._digest({**projected[0], "memory_id": None})
+    manifest = module.create_pair(tmp_path, goal(), projected)
+    assert manifest["memory"][0]["capital"] == "100.0"
+    stored = dict(manifest["memory"][0])
+    memory_id = stored.pop("memory_id")
+    assert memory_id == module._digest({**stored, "memory_id": None})
+
+
+@pytest.mark.parametrize("capital", ["NaN", "Infinity", "-100", "0", "not-a-number"])
+def test_pair_rejects_invalid_legacy_capital_after_hash_check(tmp_path, capital):
+    module = ablation()
+    from hypertrade.arc.evolution_memory import curate_memory
+
+    projected, _ = curate_memory(
+        [record()], symbol="SOL-USDT-SWAP", timeframe="1H", windows=WINDOWS
+    )
+    projected[0]["capital"] = capital
+    projected[0]["memory_id"] = module._digest({**projected[0], "memory_id": None})
+    with pytest.raises(ValueError, match="invalid_research_memory"):
+        module.create_pair(tmp_path, goal(), projected)
+
+
 def test_pair_rejects_tampered_versioned_memory(tmp_path):
     module = ablation()
     from hypertrade.arc.evolution_memory import curate_memory
