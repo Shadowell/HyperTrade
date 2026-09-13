@@ -21,3 +21,18 @@ class EvolutionCycle(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     status: Mapped[str] = mapped_column(String(32), index=True, default="queued")
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class EvolutionContinuation(Base, TimestampMixin):
+    """Latest source-bound eligibility; historical checks live in acceptance entries."""
+
+    __tablename__ = "arc_evolution_continuations"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class EvolutionAcceptance(Base, TimestampMixin):
+    __tablename__ = "arc_evolution_acceptance"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(64), index=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)

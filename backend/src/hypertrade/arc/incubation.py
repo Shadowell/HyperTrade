@@ -7,6 +7,7 @@ accepted configure + start. A local uuid is not a running simulation.
 
 import hashlib
 import json
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Any, Protocol
 
@@ -118,8 +119,14 @@ def _ok(payload: Any) -> bool:
 class ARCPaperIncubationResolver:
     """Create the BitPro strategy, then configure and start its paper instance."""
 
-    def __init__(self, client: PaperProvisionClient | None = None) -> None:
+    def __init__(
+        self,
+        client: PaperProvisionClient | None = None,
+        *,
+        on_receipt: Callable[[str, dict[str, Any]], Any] | None = None,
+    ) -> None:
         self._client = client
+        self._on_receipt = on_receipt
 
     def resolve_and_provision_paper_trading(
         self,
@@ -296,6 +303,11 @@ class ARCPaperIncubationResolver:
         if receipt.get("strategy_version") != expected_version:
             return False, None, bitpro_strategy_name, "bitpro_paper_configured_code_changed"
 
+        if self._on_receipt:
+            # Persist the verified configure receipt before the next external effect.
+            # A failed audit write propagates to the existing unknown-effect stop boundary.
+            self._on_receipt("paper_review_configured", audit_receipt(receipt, preauth.policy_hash))
+
         try:
             if reviewed:
                 started = client.paper_start_reviewed(
@@ -303,6 +315,7 @@ class ARCPaperIncubationResolver:
                     instance_id=instance_id,
                     code_sha256=code_sha256,
                     review_hash=preauth.policy_hash,
+                    strategy_version=receipt["strategy_version"],
                     config_version=receipt["config_version"],
                     idempotency_key=start_key,
                 )
@@ -332,12 +345,43 @@ class ARCPaperIncubationResolver:
             return False, None, bitpro_strategy_name, "bitpro_paper_start_identity_unconfirmed"
         if reviewed and any(
             started_receipt.get(key) != receipt.get(key)
-            for key in ("guard_version", "review_hash", "code_sha256", "config_version")
+            for key in (
+                "guard_version",
+                "review_hash",
+                "code_sha256",
+                "strategy_version",
+                "config_version",
+            )
         ):
             return False, None, bitpro_strategy_name, "bitpro_started_review_binding_unconfirmed"
+        if self._on_receipt:
+            self._on_receipt(
+                "paper_review_started", audit_receipt(started_receipt, preauth.policy_hash)
+            )
         paper_instance_id = instance_id
         msg = (
             f"Started BitPro paper '{bitpro_strategy_name}' "
             f"strategy_id={strategy_id} instance={paper_instance_id} capital={capital}"
         )
         return True, paper_instance_id, bitpro_strategy_name, msg
+
+
+def audit_receipt(receipt: dict[str, Any], package_hash: str) -> dict[str, Any]:
+    """Allowlisted external receipt evidence; never copy configuration or secrets."""
+    return {
+        "schema_version": "paper_review_receipt.v1",
+        "package_hash": package_hash,
+        "paper_instance_id": receipt.get("instance_id"),
+        "ok": True,
+        **{
+            k: receipt.get(k)
+            for k in (
+                "strategy_id",
+                "guard_version",
+                "review_hash",
+                "code_sha256",
+                "strategy_version",
+                "config_version",
+            )
+        },
+    }

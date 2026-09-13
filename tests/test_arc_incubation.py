@@ -332,6 +332,7 @@ def test_reviewed_provision_uses_guarded_endpoints_without_legacy_fallback():
             self.calls.append("start_reviewed")
             assert kwargs["instance_id"] == "paper_bound"
             assert kwargs["config_version"] == "sha256:" + "c" * 64
+            assert kwargs["strategy_version"].startswith("sha256:")
             return {
                 "status": "ok",
                 "paper": {**kwargs, "started": True, "guard_version": "paper_review_binding.v1"},

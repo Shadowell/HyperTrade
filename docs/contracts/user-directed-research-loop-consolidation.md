@@ -216,3 +216,23 @@ MemoryService.research_context 每次从数据库读取，最多200任务/200记
 - 冷却从最近准入或诚实终态持久更新时间的较晚者开始；长任务结束后仍有完整冷却。拒绝或已确认负向结论保留历史；未知副作用即使任务状态异常终止仍占槽位。`next_run_at=null` 表示等待政策/任务状态变化，不伪造恢复时间。
 - GET evolution 及 `hypertrade research evolution` 只读投影预算和最近20条准入/拒绝回执；底层账本保留全部、不因投影截断清除历史。预览仅诊断，零额度消费、零研究创建。
 - 验收包括周期/总预算、长任务冷却、并发、事务回滚、崩溃补链接、开关/范围、真实读取契约缺口和 CLI 投影；完整 check 与生产只读回执单独报告，不证明收益或真实 14 天闭环。G 的持续验收账本通过最小只读 hook 接入，不在 A 实现。
+
+## 持久资格复核与验收账本（任务 G，2026-09-13）
+
+产品 worker 保留每个来源策略/原 Paper 会话的 blockers、observed_at、最早 next_eligible_at、
+next_check_at、证据游标与检查结果。14 天按完整 UTC 日计算；成交阈值、缺失采样、分页、成本与
+会话映射均是条件门槛，时间到了必须重新读取真实证据，不能把计划时间当作已经合格。
+历史检查写入独立不可变账本，重复周期/重启按确定性键去重；调度、预算、冷却和任务创建仍由
+既有 evolution worker / 预算服务负责，不引入 Codex 定时任务或第二套研究执行器。
+
+验收账本按原 ARC 事件引用记录 7+7 触发、有预算 AVO、原版/候选同窗比较、最终验证、
+agent_policy 评审、reviewed configure 和 reviewed start。配置/启动新增仅审计事件
+paper_review_configured / paper_review_started，paper_review_receipt.v1 仅保留已验证身份与
+哈希回执，不复制源码、配置或认证内容。配置回执持久失败不得继续启动；未知外部效果保留
+reconciliation_required，禁止盲重试。已有 paper_observing 缺分阶段回执时列 evidence_incomplete，
+不回填、推断或伪造历史。诚实终态同时保留缺失阶段及原因，后续资格与冷却由产品重新核验。
+
+原 Paper 始终不变。本切片工程测试不代表真实闭环；本 Session 不创建生产研究、不批准候选、
+不启动新 Paper。真实验收由总控统一触发：读取 continuation 和 admission 的最新条件，等原会话
+真实完整窗口与成交/采样达标后由 worker 创建有预算子任务；追踪 ledger 直到真实 reviewed 新
+实例启动或完整缺口终态，再只读比较原/新实例身份、版本、起点及成交连续性。

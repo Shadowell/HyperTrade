@@ -22,6 +22,7 @@ from hypertrade.arc.contracts import (
     ResearchWindowsV1,
 )
 from hypertrade.arc.controller import ARCController, ARCMissionProjection
+from hypertrade.arc.evolution_continuation import ContinuationLedger, readiness
 from hypertrade.arc.evolution_diagnostics import blocked_data_diagnostic
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import _feedback_child_active, collect_windows
@@ -144,6 +145,7 @@ class EvolutionService:
                 ),
                 "revision": row.revision if row else 0,
                 "cycles": [cycle_view(c) for c in cycles],
+                "continuations": ContinuationLedger(self.db).view(),
             }
 
     def configure(self, config: EvolutionConfig, *, revision: int, actor: str) -> dict[str, Any]:
@@ -194,6 +196,7 @@ class EvolutionService:
         with research_lock("evolution-scanner") as owner:
             if owner is None:
                 return {"status": "busy"}
+            ContinuationLedger(self.db).refresh(now)
             state = self.status()
             config = EvolutionConfig.model_validate(state["config"])
             if config.enabled:
@@ -247,6 +250,7 @@ class EvolutionService:
                 latest = self.status()
                 if payload["preview"]:
                     return self._save_cycle(cycle_id, "preview_complete", payload)
+                ContinuationLedger(self.db).record_check(cycle_id, diagnostics, latest["budget"])
                 if not latest["config"]["enabled"] or latest["revision"] != payload["revision"]:
                     return self._save_cycle(cycle_id, "cancelled_by_config", payload)
                 if chosen is None:
@@ -409,6 +413,7 @@ class EvolutionService:
                     end,
                     PaperFeedbackPolicyV1(enabled=True, threshold_pp=config.threshold_pp),
                 )
+                diagnostic["window_receipt_hash"] = digest(feedback.get("receipts", []))
                 diagnostic.update(
                     status="stable", window={k: v for k, v in feedback.items() if k != "receipts"}
                 )
@@ -510,8 +515,13 @@ class EvolutionService:
                 )
                 diagnostic.update(blocked_data_diagnostic(client, identified, now, str(exc)[:240]))
             finally:
+                bound_snapshot = snapshot if str(snapshot.get("strategy_id")) == str(sid) else {}
+                diagnostic["continuation"] = readiness(bound_snapshot, diagnostic, config, now)
                 if on_progress is not None:
                     on_progress(diagnostics)
+        for diagnostic in diagnostics:
+            if "continuation" not in diagnostic and diagnostic.get("strategy_id"):
+                diagnostic["continuation"] = readiness({}, diagnostic, config, now)
         return diagnostics, chosen
 
     def _memory(

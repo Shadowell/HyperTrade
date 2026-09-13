@@ -197,7 +197,7 @@ def decide_paper_review(
         allowed_actions=["configure", "start", "observe"],
         policy_hash=package_hash,
     )
-    runner = resolver or ARCPaperIncubationResolver()
+    runner = resolver or ARCPaperIncubationResolver(on_receipt=controller.apply_event)
     try:
         ok, instance, name, message = runner.resolve_and_provision_paper_trading(
             attempt,

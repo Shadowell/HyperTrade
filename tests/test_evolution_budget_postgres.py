@@ -40,7 +40,12 @@ def test_two_postgres_workers_share_one_atomic_credit(tmp_path):
     if not initdb or not pg_ctl or os.getuid() == 0:
         pytest.skip("isolated PostgreSQL binaries require an unprivileged local user")
     from hypertrade.arc.evolution import EvolutionConfig, EvolutionService
-    from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
+    from hypertrade.arc.evolution_models import (
+        EvolutionAcceptance,
+        EvolutionContinuation,
+        EvolutionControl,
+        EvolutionCycle,
+    )
     from hypertrade.arc.store import configure_store, reset_store
     from hypertrade.db import ArcMission, Database
     from sqlalchemy import select
@@ -82,7 +87,13 @@ def test_two_postgres_workers_share_one_atomic_credit(tmp_path):
     )
     db = Database(f"postgresql+psycopg://budget_test@127.0.0.1:{port}/postgres")
     try:
-        for model in (EvolutionControl, EvolutionCycle, ArcMission):
+        for model in (
+            EvolutionControl,
+            EvolutionCycle,
+            EvolutionContinuation,
+            EvolutionAcceptance,
+            ArcMission,
+        ):
             model.__table__.create(db.engine)
         configure_store(db)
         service = EvolutionService(db)
