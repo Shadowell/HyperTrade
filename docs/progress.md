@@ -1,5 +1,10 @@
 # Progress Log
 
+## 统一长期研究记忆（任务 B）— 2026-09-13
+
+- ResearchMemory v1 保留来源及已知/未知身份、正反例与排除原因；AVO 和 MemoryService 共用原 ARC 开发回执投影，失效墓碑持久且不改原历史。
+- 56 项定向测试通过，含独立 Python 子进程重启读取、成本不匹配、污染、正反例及旧记录兼容。完整 scripts/check.sh 通过（1366 passed / 1 xfailed），前端、Ruff、mypy通过；部署回执待核验，配对评测仍在后续切片，不宣称经验效果。
+
 ## 长期经验的成本身份 — 2026-09-13
 
 - 开发回执的cost_policy_hash来自BitPro创建/读取回执，核对策略ID、源码、交易所、research_costs.v1哈希及显式值；不信任回测metrics自行声称的成本身份，不复制BitPro费用选择规则。

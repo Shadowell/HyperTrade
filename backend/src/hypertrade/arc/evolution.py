@@ -23,7 +23,6 @@ from hypertrade.arc.contracts import (
 )
 from hypertrade.arc.controller import ARCController, ARCMissionProjection
 from hypertrade.arc.evolution_diagnostics import blocked_data_diagnostic
-from hypertrade.arc.evolution_memory import curate_memory
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import _feedback_child_active, collect_windows
 from hypertrade.arc.observation import _snapshot_body
@@ -32,6 +31,7 @@ from hypertrade.arc.universe import normalize_symbols
 from hypertrade.bitpro.mcp import BitProToolAdapter
 from hypertrade.bitpro.paced_reads import PacedReadClient
 from hypertrade.db import ArcMission, Database
+from hypertrade.memory.service import MemoryService
 
 
 class EvolutionConfig(BaseModel):
@@ -526,7 +526,7 @@ class EvolutionService:
                             }
                         )
         windows = ResearchWindowsV1(as_of=now.astimezone(UTC).date() - timedelta(days=1))
-        memory, manifest = curate_memory(
+        memory, manifest = MemoryService(self.db).project_research(
             memory,
             symbol=symbol,
             timeframe=context["baseline"]["strategy_spec"]["timeframe"],

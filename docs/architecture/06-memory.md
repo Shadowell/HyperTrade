@@ -1,5 +1,18 @@
 # 06 Memory / 记忆
 
+## ResearchMemory v1
+
+`memory/research.py` defines the shared, versioned ARC development-evidence projection.
+AVO curation and `MemoryService.research_context` use the same bounded projector;
+the persisted ARC receipt remains authoritative, including negative outcomes.
+`project_research` applies source-bound invalidation tombstones from `memory_items`.
+Tombstones are disabled audit rows and cannot be deleted through ordinary Memory deletion.
+No summary copies are persisted. Old records keep unknown config/cost identities;
+unknown observations are never identity, causal, approval, or promotion evidence.
+An explicit target cost identity filters missing or mismatched receipts. The manifest
+records excluded sources/reasons, quotas, and scan truncation. Reads require an explicit
+symbol, timeframe and frozen research window; generic prompt recall cannot bypass them.
+
 ## English
 
 Memory is automatic but audited. Every memory item stores kind, content, source run id, source tool, timestamps, and disabled status.

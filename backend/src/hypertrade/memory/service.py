@@ -6,17 +6,137 @@ keeps source run/tool metadata so the harness can explain where a memory came
 from and let an operator disable it.
 """
 
+import hashlib
+import json
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select
 
+from hypertrade.arc.contracts import ResearchWindowsV1
 from hypertrade.db import Database, MemoryItem, utc_now
 
 
 class MemoryService:
     def __init__(self, db: Database) -> None:
         self.db = db
+
+    def project_research(
+        self,
+        records: list[dict[str, Any]],
+        *,
+        symbol: str,
+        timeframe: str,
+        windows: ResearchWindowsV1,
+        cost_policy_hash: str | None = None,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Read the common projection; invalidation never modifies source evidence."""
+        from hypertrade.arc.evolution_memory import curate_memory
+
+        refs = {
+            self._research_invalidation_id(
+                str(r.get("mission_id", "")),
+                str((r.get("development") or {}).get("backtest_id", "")),
+            ): r
+            for r in records[:200]
+            if isinstance(r.get("development"), dict)
+        }
+        with self.db.session() as session:
+            invalid_ids = session.scalars(
+                select(MemoryItem.id).where(MemoryItem.id.in_(refs))
+            ).all()
+        invalidated = {
+            (str(refs[key]["mission_id"]), str(refs[key]["development"]["backtest_id"]))
+            for key in invalid_ids
+        }
+        return curate_memory(
+            records,
+            symbol=symbol,
+            timeframe=timeframe,
+            windows=windows,
+            cost_policy_hash=cost_policy_hash,
+            invalidated=invalidated,
+        )
+
+    def research_context(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        windows: ResearchWindowsV1,
+        cost_policy_hash: str | None = None,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Resolve authoritative ARC receipts on every read, bounded to 200 missions/records."""
+        from hypertrade.arc.controller import ARCMissionProjection
+        from hypertrade.db import ArcMission
+
+        records: list[dict[str, Any]] = []
+        with self.db.session() as session:
+            rows = session.scalars(
+                select(ArcMission).order_by(ArcMission.updated_at.desc()).limit(201)
+            ).all()
+            for row in rows[:200]:
+                projection = ARCMissionProjection.model_validate(row.projection_json)
+                goal = projection.goal
+                if goal is None or symbol not in goal.symbols:
+                    continue
+                for attempt in projection.attempts:
+                    receipt = projection.avo.get("development", {}).get(attempt.attempt_id)
+                    if receipt and len(records) < 200:
+                        records.append(
+                            {
+                                "mission_id": row.mission_id,
+                                "candidate_id": attempt.candidate_id,
+                                "hypothesis": attempt.hypothesis,
+                                "spec": attempt.strategy_spec,
+                                "code_sha256": hashlib.sha256(
+                                    attempt.strategy_code.encode()
+                                ).hexdigest(),
+                                "capital": str(goal.paper_initial_equity),
+                                "development": receipt,
+                            }
+                        )
+        entries, manifest = self.project_research(
+            records,
+            symbol=symbol,
+            timeframe=timeframe,
+            windows=windows,
+            cost_policy_hash=cost_policy_hash,
+        )
+        manifest["source_scan_truncated"] = len(rows) > 200 or len(records) == 200
+        return entries, manifest
+
+    @staticmethod
+    def _research_invalidation_id(mission_id: str, backtest_id: str) -> str:
+        payload = json.dumps([mission_id, backtest_id]).encode()
+        return "rmi_" + hashlib.sha256(payload).hexdigest()[:28]
+
+    def invalidate_research(
+        self, *, mission_id: str, backtest_id: str, reason: str, actor: str
+    ) -> None:
+        """Operator-only service API; no Agent write tool can restore invalidated evidence."""
+        if not all(v.strip() for v in (mission_id, backtest_id, reason, actor)):
+            raise ValueError("invalidation_requires_source_reason_actor")
+        key = self._research_invalidation_id(mission_id, backtest_id)
+        with self.db.session() as session:
+            if session.get(MemoryItem, key) is None:
+                session.add(
+                    MemoryItem(
+                        id=key,
+                        kind="research_memory_invalidation",
+                        disabled=True,
+                        source_run_id=mission_id[:32],
+                        source_tool="research_memory.invalidate",
+                        content=json.dumps(
+                            {
+                                "mission_id": mission_id,
+                                "backtest_id": backtest_id,
+                                "reason": reason[:400],
+                                "actor": actor[:128],
+                            }
+                        ),
+                    )
+                )
 
     def write(
         self,
@@ -158,6 +278,8 @@ class MemoryService:
         with self.db.session() as session:
             item = session.get(MemoryItem, memory_id)
             if item is not None:
+                if item.kind == "research_memory_invalidation":
+                    raise ValueError("research_invalidation_is_append_only")
                 session.delete(item)
 
 

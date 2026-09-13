@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any
 
 from hypertrade.arc.contracts import ResearchWindowsV1
+from hypertrade.memory.research import version_projection
 
 _METRICS = {
     "net_return",
@@ -55,6 +56,13 @@ def experiment_key(
 def _entry(
     record: dict[str, Any], symbol: str, timeframe: str, windows: ResearchWindowsV1
 ) -> dict[str, Any]:
+    if any(
+        not isinstance(record.get(key), str) or not record[key].strip()
+        for key in ("mission_id", "candidate_id")
+    ):
+        raise ValueError("unknown_source")
+    if record.get("contamination_reasons"):
+        raise ValueError("contaminated")
     spec, receipt = record["spec"], record["development"]
     if not isinstance(spec, dict) or not isinstance(receipt, dict):
         raise ValueError("malformed_receipt")
@@ -154,7 +162,14 @@ def _entry(
             "scope": "development_metric_direction_only",
             "causal_claim_verified": False,
         }
-    if len(json.dumps(entry, allow_nan=False)) > 2400:
+    config_hash = metrics.get("config_sha256")
+    config_hash = (
+        config_hash
+        if isinstance(config_hash, str) and re.fullmatch("[0-9a-f]{64}", config_hash)
+        else None
+    )
+    entry = version_projection(entry, config_hash)
+    if len(json.dumps(entry, allow_nan=False)) > 3200:
         raise ValueError("entry_too_large")
     entry["memory_id"] = _digest(entry)
     return entry
@@ -166,15 +181,22 @@ def curate_memory(
     symbol: str,
     timeframe: str,
     windows: ResearchWindowsV1,
+    cost_policy_hash: str | None = None,
+    invalidated: set[tuple[str, str]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Deterministic bounded context, keeping both supporting and opposing experiments."""
     excluded: Counter[str] = Counter()
+    exclusions: list[dict[str, str]] = []
     accepted: list[dict[str, Any]] = []
     seen: set[str] = set()
     for record in records[:200]:
         try:
             entry = _entry(record, symbol, timeframe, windows)
             ref = entry["development"]["backtest_id"]
+            if (entry["mission_id"], ref) in (invalidated or set()):
+                raise ValueError("invalidated")
+            if cost_policy_hash is not None and entry["cost_policy_hash"] != cost_policy_hash:
+                raise ValueError("cost_identity_mismatch")
             if ref in seen:
                 raise ValueError("duplicate_receipt")
             seen.add(ref)
@@ -193,8 +215,16 @@ def curate_memory(
                 "invalid_capital",
                 "entry_too_large",
                 "duplicate_receipt",
+                "unknown_source",
+                "contaminated",
+                "invalidated",
+                "cost_identity_mismatch",
             }
-            excluded[reason if reason in allowed else "malformed_receipt"] += 1
+            reason = reason if reason in allowed else "malformed_receipt"
+            excluded[reason] += 1
+            exclusions.append(
+                {"mission_id": str(record.get("mission_id", ""))[:128], "reason": reason}
+            )
     # Preserve a counterexample quota instead of only remembering high returns.
     positive = [e for e in accepted if e["development"]["passed"]]
     negative = [e for e in accepted if not e["development"]["passed"]]
@@ -207,10 +237,12 @@ def curate_memory(
         excluded["scan_budget"] += len(records) - 200
     manifest = {
         "policy": "evidence_context_v1",
+        "schema_version": "research_memory_manifest.v1",
         "selected": len(selected),
         "supporting": sum(e["development"]["passed"] for e in selected),
         "opposing": sum(not e["development"]["passed"] for e in selected),
         "excluded": dict(excluded),
+        "exclusions": exclusions,
         "digest": _digest(selected),
         "rule": "Development observations only, not causal lessons or trading approval.",
     }

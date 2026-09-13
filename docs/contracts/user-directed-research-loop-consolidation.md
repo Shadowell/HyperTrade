@@ -184,3 +184,11 @@ CLI在Agent待评审阶段继续流式跟进，BitPro显示Agent自动评审并�
 费用解析由BitPro负责，HT不复制费率规则。旧未冻结候选自动否决并保留历史，读取故障暂缓，不盲重试写入。
 
 长期经验新增成本身份：开发回执只使用核验过的BitPro源配置research_costs.v1哈希，随后进入有界经验；同窗、资金、标的和周期一致但成本哈希不同或缺失时，hypothesis_assessment为unknown。混合引用不能掩盖成本不匹配；旧无成本身份的方向摘要召回时降级，不修改原历史、不从当前配置倒填旧证据。
+
+## 任务 B：统一长期研究记忆与配对评测（2026-09-13）
+
+ResearchMemory v1 是原 ARC 开发回执的版本化投影，MemoryService 与 AVO 使用同一投影器；不复制持久摘要作为第二套事实。保留 mission/backtest/candidate、symbol/timeframe/window/capital、code/config/cost hash、hypothesis assessment、正反例和排除清单。缺失历史身份保持 unknown，不从当前配置回填；未知记录不能支持身份比较、审批、晋级或修改政策。
+
+MemoryService.research_context 每次从数据库读取，最多200任务/200记录、20条上下文，标记扫描截断。失效墓碑按 mission/backtest 持久保存于 memory_items，默认不参与普通召回，不删除原实验。指定成本哈希不匹配时拒绝；跨最终留出时间、来源不明和显式污染记录拒绝。
+
+后续配对消融需在独立持久实验目录冻结目标、窗口、Provider/model、同额预算及验证政策；两臂仅长期记忆输入不同，保存原始运行 journal、manifest、差异和 unknown。它衡量研究过程，不从单次实验宣称策略盈利或因果，不进入生产调度或 Paper/Live 路径。
