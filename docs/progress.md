@@ -3,7 +3,9 @@
 ## 统一长期研究记忆（任务 B）— 2026-09-13
 
 - 首切片9e524bc经Actions34759224591部署成功，生产last_deployed_sha一致，/api/health正常；未操作原Paper。
-- 第二切片新增独立配对CLI、冻结manifest、实际请求哈希、ARC journal与差异；直接校验MemoryService的ResearchMemory v1输出，保留human/agent模式，禁止复用已有研究namespace和任何Paper授权。14项专项测试覆盖两臂验证、跨进程恢复、中断计费、未知回测不重发及篡改拒绝；完整scripts/check.sh通过（1381 passed / 1 xfailed），前端、Ruff、mypy通过。真实配对运行待部署后验收。
+- 第二切片新增独立配对CLI、冻结manifest、实际请求哈希、ARC journal与差异；直接校验MemoryService的ResearchMemory v1输出，保留human/agent模式，禁止复用已有研究namespace和任何Paper授权。兼容补丁保留旧数值表示及原memory_id，新投影规范化capital；配对允许来源绑定的更早开发窗，但拒绝越过冻结开发边界。完整scripts/check.sh通过（1390 passed / 1 xfailed），前端、Ruff、mypy通过。
+- 真实SOL-USDT-SWAP 1H配对 `2a56bf1e31d2076604096233c2cf2141ec11eccb7439c567fd016efdbfd05057` 在隔离目录完成，冻结Provider/model为Codex/gpt-5.6-sol、as_of=2026-09-12、每臂上限1候选/4模型调用/4工具调用/2回测。memory-on与off均实际使用4次模型、3次工具；on为0候选/0回测，off为1候选/1回测且开发未通过。结论严格为unknown，profitability_claim=false、causal_claim=false；单配对、Provider采样、货币成本、数据快照身份和成本身份缺口完整保留。
+- 配对journal内Paper会话/订单/成交/事件、Paper评审请求及Live意图均为0。生产Actions `34763076834` 已部署 `a386dea`，API健康；原501/509仍保持相同实例、起点、策略/配置版本及running状态，成交数仍为5/1。
 
 - ResearchMemory v1 保留来源及已知/未知身份、正反例与排除原因；AVO 和 MemoryService 共用原 ARC 开发回执投影，失效墓碑持久且不改原历史。
 - 56 项定向测试通过，含独立 Python 子进程重启读取、成本不匹配、污染、正反例及旧记录兼容。完整 scripts/check.sh 通过（1366 passed / 1 xfailed），前端、Ruff、mypy通过；部署回执待核验，配对评测仍在后续切片，不宣称经验效果。
