@@ -13,11 +13,13 @@ def service():
     reset_store()
 
 
-def test_defaults_are_hourly_and_disabled(service):
+def test_defaults_are_hourly_and_enabled(service):
     state = service.status()
-    assert state["config"]["enabled"] is False
+    assert state["config"]["enabled"] is True
+    assert state["config"]["target_id"] == "bitpro"
     assert state["config"]["interval_minutes"] == 60
     assert state["config"]["threshold_pp"] == "10"
+    service.configure(EvolutionConfig(enabled=False), revision=0, actor="test")
     assert service.tick()["status"] == "disabled"
 
 
@@ -28,11 +30,49 @@ def test_config_uses_revision_and_rejects_stale_updates(service):
         service.configure(EvolutionConfig(enabled=False), revision=0, actor="test")
 
 
-def test_preview_queues_without_enabling_background_research(service):
+def test_configure_rejects_unregistered_market_target(service):
+    with pytest.raises(ValueError):
+        service.configure(EvolutionConfig(target_id="not-a-target"), revision=0, actor="test")
+
+
+def test_tick_builds_client_from_configured_market_target(service, monkeypatch):
+    from datetime import UTC, datetime
+
+    from hypertrade.targets import (
+        build_mcp_contract_profile,
+        register_market_target,
+        reset_market_targets,
+    )
+
+    reset_market_targets()
+    fake = Paper()
+    register_market_target(build_mcp_contract_profile("fake", "Fake Target"), lambda: fake)
+    try:
+        service.client = None
+        service.configure(
+            EvolutionConfig(enabled=True, target_id="fake"), revision=0, actor="test"
+        )
+        monkeypatch.setattr(
+            "hypertrade.arc.evolution.collect_windows",
+            lambda *a, **k: {
+                "triggered": True,
+                "reasons": ["return_drop"],
+                "end_at": "2026-09-12T00:00:00Z",
+            },
+        )
+        result = service.tick(datetime(2026, 9, 12, 12, tzinfo=UTC))
+        assert result["status"] == "research_created"
+        assert service.client is fake
+    finally:
+        reset_market_targets()
+
+
+def test_preview_queues_without_creating_research(service):
     cycle = service.queue_preview()
     assert cycle["status"] == "queued"
     assert cycle["payload"]["preview"] is True
-    assert service.status()["config"]["enabled"] is False
+    # Preview never changes the persisted switch state.
+    assert service.status()["config"]["enabled"] is True
 
 
 class Paper:

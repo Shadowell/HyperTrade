@@ -44,6 +44,19 @@ async def evolution_preview(request: Request) -> dict[str, Any]:
     return await run_in_threadpool(EvolutionService(request.app.state.db).queue_preview)
 
 
+@router.get("/evolution/tuning", dependencies=[Depends(require_scope(ARCScope.READ))])
+async def evolution_tuning(request: Request) -> dict[str, Any]:
+    """Advisory offline meta-tuning report; never changes configuration."""
+    from hypertrade.arc.meta_tuning import evaluate_tuning
+
+    def _report() -> dict[str, Any]:
+        service = EvolutionService(request.app.state.db)
+        config = EvolutionConfig.model_validate(service.status()["config"])
+        return evaluate_tuning(service.db, config.threshold_pp).model_dump()
+
+    return await run_in_threadpool(_report)
+
+
 @router.get(
     "/evolution/attribution/{strategy_id}", dependencies=[Depends(require_scope(ARCScope.READ))]
 )

@@ -68,6 +68,16 @@ def get_market_target(target_id: str) -> MarketTargetBinding:
     return binding
 
 
+def adapter_for_target(target_id: str) -> Any:
+    """Build the platform adapter for a target via its registered factory."""
+    binding = get_market_target(target_id)
+    if binding.adapter_factory is None:
+        raise MarketTargetUnavailable(
+            f"market target {target_id!r} has no adapter factory registered"
+        )
+    return binding.adapter_factory()
+
+
 def registered_market_targets() -> list[MarketTargetProfileV1]:
     _ensure_builtin_targets()
     return [binding.profile for binding in _REGISTRY.values()]

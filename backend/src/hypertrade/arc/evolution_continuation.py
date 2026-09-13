@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
@@ -15,6 +15,7 @@ from hypertrade.db import Database
 
 if TYPE_CHECKING:
     from hypertrade.arc.evolution import EvolutionConfig
+    from hypertrade.targets.schemas import MarketTargetProfileV1
 
 
 def key(value: Any) -> str:
@@ -26,6 +27,23 @@ def utc(value: str | datetime) -> datetime:
         datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else value
     )
     return stamp.replace(tzinfo=UTC) if stamp.tzinfo is None else stamp.astimezone(UTC)
+
+
+def window_timezone(profile: MarketTargetProfileV1 | None) -> tzinfo:
+    """Evidence windows align to the market target's calendar timezone."""
+    name = (profile.calendar.timezone if profile is not None else "UTC").strip() or "UTC"
+    if name.upper() in {"UTC", "Z", "GMT"}:
+        return UTC
+    try:
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo(name)
+    except Exception:  # noqa: BLE001 - an unknown tz must not stall eligibility
+        return UTC
+
+
+def window_days(profile: MarketTargetProfileV1 | None) -> int:
+    return profile.calendar.evidence_window_days if profile is not None else 14
 
 
 def complete_receipt_chain(receipts: list[Any], end_at: Any) -> bool:
@@ -55,10 +73,13 @@ def readiness(
     diagnostic: dict[str, Any],
     config: EvolutionConfig,
     now: datetime,
+    profile: MarketTargetProfileV1 | None = None,
 ) -> dict[str, Any]:
     """Known lower bounds are not promises: all evidence is re-read when due."""
     now = utc(now)
-    end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    tz = window_timezone(profile)
+    days = window_days(profile)
+    end = now.astimezone(tz).replace(hour=0, minute=0, second=0, microsecond=0)
     blockers: list[dict[str, Any]] = []
     next_eligible = None
     cursor = {
@@ -68,7 +89,7 @@ def readiness(
     session = snapshot.get("session")
     start = session.get("started_at") if isinstance(session, dict) else None
     cursor["session_started_at"] = start
-    cursor["requested_window_start"] = (end - timedelta(days=14)).isoformat()
+    cursor["requested_window_start"] = (end - timedelta(days=days)).isoformat()
     cursor["requested_window_end"] = end.isoformat()
     cursor["window_receipt_hash"] = diagnostic.get("window_receipt_hash")
     if not all(cursor.get(k) for k in ("instance_id", "strategy_version", "config_version")):
@@ -101,17 +122,18 @@ def readiness(
     try:
         if not start:
             raise ValueError("missing start")
-        minimum = utc(start) + timedelta(days=14)
-        eligible = minimum.replace(hour=0, minute=0, second=0, microsecond=0)
+        minimum = utc(start) + timedelta(days=days)
+        eligible = minimum.astimezone(tz).replace(hour=0, minute=0, second=0, microsecond=0)
         if eligible < minimum:
             eligible += timedelta(days=1)
         if end < minimum:
             next_eligible = eligible.isoformat()
+            calendar_name = tz.tzname(None) or "UTC"
             blockers.append(
                 {
                     "code": "completed_utc_window",
                     "eligible_at": next_eligible,
-                    "condition": "14 complete UTC days within original session",
+                    "condition": f"{days} complete {calendar_name} days within original session",
                 }
             )
     except (ValueError, TypeError, OverflowError):

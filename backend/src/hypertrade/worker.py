@@ -491,9 +491,28 @@ async def main() -> None:
     tasks.append(arc_observation_loop(db))
     tasks.append(arc_evolution_loop(db))
     tasks.append(arc_auto_review_loop(db))
+    tasks.append(arc_meta_tuning_loop(db))
     if settings.mission_runtime_worker_enabled:
         tasks.append(avo_research_loop(db))
     await asyncio.gather(*tasks)
+
+
+async def arc_meta_tuning_loop(db: Database) -> None:
+    """Daily offline meta-tuning of evolution parameters (advisory by default)."""
+    from hypertrade.arc.evolution import EvolutionService
+    from hypertrade.arc.meta_tuning import tune_once
+
+    configure_store(db)
+    service = EvolutionService(db)
+    while True:
+        try:
+            result = await asyncio.to_thread(tune_once, service)
+            if result.get("status") == "applied":
+                revision = result.get("report", {}).get("applied_revision")
+                logger.info("arc_meta_tuning applied=%s", revision)
+        except Exception:
+            logger.exception("arc_meta_tuning failed")
+        await asyncio.sleep(3600)
 
 
 async def arc_observation_loop(db: Database) -> None:

@@ -30,16 +30,23 @@ from hypertrade.arc.feedback import _feedback_child_active, collect_windows
 from hypertrade.arc.observation import _snapshot_body
 from hypertrade.arc.store import get_controller, research_lock
 from hypertrade.arc.universe import normalize_symbols
-from hypertrade.bitpro.mcp import BitProToolAdapter
-from hypertrade.bitpro.paced_reads import PacedReadClient
 from hypertrade.db import ArcMission, Database
 from hypertrade.memory.service import MemoryService
+from hypertrade.targets.registry import (
+    MarketTargetUnavailable,
+    active_market_target_id,
+    adapter_for_target,
+    get_market_target,
+)
 
 
 class EvolutionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    enabled: bool = False
+    enabled: bool = True
     proactive_enabled: bool = False
+    # Which registered market target the loop runs against; resolves through
+    # hypertrade.targets so swapping platforms is configuration, not code.
+    target_id: str = Field(default="bitpro", pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     max_research_per_day: int = Field(default=4, ge=1, le=100)
     max_research_total: int | None = Field(default=None, ge=1)
     paper_review_mode: Literal["human", "agent"] = "human"
@@ -55,6 +62,10 @@ class EvolutionConfig(BaseModel):
     interval_minutes: int = Field(default=60, ge=15, le=1440)
     strategy_ids: list[int] = Field(default_factory=list, max_length=50)
     threshold_pp: Decimal = Field(default=Decimal("10"), gt=0, le=100)
+    # Offline meta-tuning: advisory receipts by default (meta_tuning_enabled),
+    # bounded auto-apply of the threshold step only when explicitly authorized.
+    meta_tuning_enabled: bool = True
+    meta_tuning_auto_apply: bool = False
     min_trades: int = Field(default=30, ge=1, le=10000)
     cooldown_hours: int = Field(default=24, ge=24, le=720)
     max_active_research: int = Field(default=2, ge=1, le=5)
@@ -152,6 +163,10 @@ class EvolutionService:
     def configure(self, config: EvolutionConfig, *, revision: int, actor: str) -> dict[str, Any]:
         if any(x <= 0 for x in config.strategy_ids):
             raise ValueError("策略ID必须为正整数")
+        try:
+            get_market_target(config.target_id)
+        except MarketTargetUnavailable as exc:
+            raise ValueError(str(exc)) from exc
         with research_lock("evolution-control") as owner:
             if owner is None:
                 raise ValueError("配置正在更新，请刷新后重试")
@@ -293,7 +308,7 @@ class EvolutionService:
                 if current["revision"] != payload["revision"] or not current["config"]["enabled"]:
                     return self._save_cycle(cycle_id, "cancelled_by_config", payload)
                 fresh = _snapshot_body(
-                    self._client().paper_snapshot(
+                    self._client(config).paper_snapshot(
                         strategy_id=context["source_strategy_id"],
                         instance_id=context["source_instance_id"],
                     )
@@ -305,7 +320,7 @@ class EvolutionService:
                     payload["skip_reason"] = "原模拟盘身份或版本在诊断期间发生变化"
                     return self._save_cycle(cycle_id, "source_changed", payload)
                 source_now = (
-                    self._client()
+                    self._client(config)
                     .strategy_get(strategy_id=context["source_strategy_id"])
                     .get("strategy", {})
                 )
@@ -337,9 +352,10 @@ class EvolutionService:
                 payload["error"] = type(exc).__name__
                 return self._save_cycle(cycle_id, "error", payload)
 
-    def _client(self) -> Any:
+    def _client(self, config: EvolutionConfig | None = None) -> Any:
         if self.client is None:
-            self.client = BitProToolAdapter(PacedReadClient())
+            target_id = config.target_id if config is not None else active_market_target_id()
+            self.client = adapter_for_target(target_id)
         return self.client
 
     def _scan(
@@ -348,7 +364,8 @@ class EvolutionService:
         now: datetime,
         on_progress: Callable[[list[dict[str, Any]]], Any] | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-        client = self._client()
+        client = self._client(config)
+        profile = get_market_target(config.target_id).profile
         inventory = client.paper_strategy_performance(limit=50)
         rows = inventory.get("strategies", [])
         diagnostics = [
@@ -523,12 +540,14 @@ class EvolutionService:
                 diagnostic.update(blocked_data_diagnostic(client, identified, now, str(exc)[:240]))
             finally:
                 bound_snapshot = snapshot if str(snapshot.get("strategy_id")) == str(sid) else {}
-                diagnostic["continuation"] = readiness(bound_snapshot, diagnostic, config, now)
+                diagnostic["continuation"] = readiness(
+                    bound_snapshot, diagnostic, config, now, profile=profile
+                )
                 if on_progress is not None:
                     on_progress(diagnostics)
         for diagnostic in diagnostics:
             if "continuation" not in diagnostic and diagnostic.get("strategy_id"):
-                diagnostic["continuation"] = readiness({}, diagnostic, config, now)
+                diagnostic["continuation"] = readiness({}, diagnostic, config, now, profile=profile)
         return diagnostics, chosen
 
     def _memory(
