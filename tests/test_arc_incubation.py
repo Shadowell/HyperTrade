@@ -332,7 +332,17 @@ def test_reviewed_provision_uses_guarded_endpoints_without_legacy_fallback():
             self.calls.append("start_reviewed")
             assert kwargs["instance_id"] == "paper_bound"
             assert kwargs["config_version"] == "sha256:" + "c" * 64
-            assert kwargs["strategy_version"].startswith("sha256:")
+            assert kwargs["strategy_version"] == (
+                "sha256:"
+                + hashlib.sha256(
+                    json.dumps(
+                        {"script_content": _validated().strategy_code},
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest()
+            )
             return {
                 "status": "ok",
                 "paper": {**kwargs, "started": True, "guard_version": "paper_review_binding.v1"},
@@ -347,6 +357,60 @@ def test_reviewed_provision_uses_guarded_endpoints_without_legacy_fallback():
     assert ok and instance == "paper_bound"
     assert client.calls == ["strategy_get", "configure_reviewed", "start_reviewed"]
     assert client.configure_binding["parameters"] == attempt.strategy_spec["tunable_parameters"]
+
+
+def test_reviewed_start_binding_fails_on_strategy_version_mismatch():
+    attempt = _validated()
+    attempt.bitpro_strategy_id = "42"
+    expected_hash = (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(
+                {"script_content": attempt.strategy_code},
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+    )
+
+    class Mismatch(_RecordingClient):
+        def paper_configure_reviewed(self, **kwargs):
+            self.calls.append("configure_reviewed")
+            return {
+                "status": "ok",
+                "paper": {
+                    "configured": True,
+                    "strategy_id": kwargs["strategy_id"],
+                    "instance_id": "paper_bound",
+                    "guard_version": "paper_review_binding.v1",
+                    "review_hash": kwargs["review_hash"],
+                    "code_sha256": kwargs["code_sha256"],
+                    "config_version": "sha256:" + "c" * 64,
+                    "strategy_version": "sha256:" + "b" * 64,
+                },
+            }
+
+        def paper_start_reviewed(self, **kwargs):
+            self.calls.append("start_reviewed")
+            return {
+                "status": "ok",
+                "paper": {
+                    **kwargs,
+                    "started": True,
+                    "guard_version": "paper_review_binding.v1",
+                    "strategy_version": expected_hash,
+                },
+            }
+
+    client = Mismatch()
+    ok, instance, _, reason = ARCPaperIncubationResolver(client).resolve_and_provision_paper_trading(
+        attempt, PaperPreauthorizationV1(symbols=["BTC-USDT-SWAP"], policy_hash="a" * 64)
+    )
+    assert not ok
+    assert instance is None
+    assert reason == "bitpro_started_review_binding_unconfirmed"
+    assert client.calls == ["strategy_get", "configure_reviewed", "start_reviewed"]
 
 
 def test_reviewed_provision_never_downgrades_when_server_lacks_guarded_api():
