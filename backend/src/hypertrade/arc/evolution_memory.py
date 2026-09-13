@@ -129,6 +129,21 @@ def _entry(
             "reason_codes": [str(r)[:100] for r in receipt.get("reasons", [])[:10]],
         },
     }
+    assessment = receipt.get("hypothesis_assessment")
+    if (
+        isinstance(assessment, dict)
+        and assessment.get("scope") == "development_metric_direction_only"
+        and assessment.get("status") in ("unknown", "mixed", "observed", "not_observed")
+        and assessment.get("metric") in ("net_return", "max_drawdown", "trade_count")
+        and assessment.get("direction") in ("increase", "decrease")
+    ):
+        entry["hypothesis_assessment"] = {
+            "status": assessment.get("status"),
+            "metric": assessment.get("metric"),
+            "direction": assessment.get("direction"),
+            "scope": "development_metric_direction_only",
+            "causal_claim_verified": False,
+        }
     if len(json.dumps(entry, allow_nan=False)) > 2400:
         raise ValueError("entry_too_large")
     entry["memory_id"] = _digest(entry)
@@ -217,4 +232,116 @@ def bind_hypothesis(
         **hypothesis,
         "status": "hypothesis_not_causal_fact",
         "context_digest": context.get("memory_manifest", {}).get("digest"),
+    }
+
+
+def assess_hypothesis(
+    spec: dict[str, Any],
+    metrics: dict[str, Any],
+    references: list[dict[str, Any]],
+    windows: ResearchWindowsV1,
+    capital: Any,
+) -> dict[str, Any]:
+    """Measure a proposed direction without promoting it to a causal or OOS conclusion."""
+    from hypertrade.arc.self_test import _fraction, _number
+
+    hypothesis = spec.get("evolution_hypothesis")
+    hypothesis = hypothesis if isinstance(hypothesis, dict) else {}
+    metric = hypothesis.get("expected_metric")
+    direction = hypothesis.get("expected_direction")
+
+    def number(values: dict[str, Any]) -> float | None:
+        if metric == "net_return":
+            return _fraction(
+                values,
+                fractions=("net_return", "total_return"),
+                percentages=("total_return_pct", "return_pct"),
+            )
+        if metric == "max_drawdown":
+            value = _fraction(
+                values, fractions=("max_drawdown",), percentages=("max_drawdown_pct",)
+            )
+            return abs(value) if value is not None else None
+        return _number(values, "trade_count", "trades")
+
+    current = number(metrics)
+    comparisons = []
+    expected_window = [str(d) for d in windows.window("development")]
+    window = metrics.get("evaluation_window")
+    # Only the actual development receipt can establish comparability.
+    valid_current = (
+        metric in ("net_return", "max_drawdown", "trade_count")
+        and direction in ("increase", "decrease")
+        and isinstance(window, dict)
+        and window.get("purpose") == "development"
+        and [window.get("start_date"), window.get("end_date")] == expected_window
+    )
+    refs = hypothesis.get("evidence_refs")
+    refs = refs if isinstance(refs, list) else []
+    seen: set[str] = set()
+    for entry in references[:200] if valid_current else []:
+        try:
+            if not isinstance(entry, dict) or entry.get("memory_id") not in refs:
+                continue
+            if not isinstance(entry.get("spec"), dict) or any(
+                entry["spec"].get(k) != spec.get(k) for k in ("symbol", "timeframe")
+            ):
+                continue
+            receipt = entry["development"]
+            prior_capital, current_capital = Decimal(str(entry["capital"])), Decimal(str(capital))
+            if (
+                entry.get("evidence_status") != "development_only"
+                or not re.fullmatch("[0-9a-f]{64}", entry["code_sha256"])
+                or not isinstance(receipt, dict)
+                or not receipt.get("backtest_id")
+                or type(receipt.get("passed")) is not bool
+                or receipt.get("window") != expected_window
+                or not prior_capital.is_finite()
+                or not current_capital.is_finite()
+                or prior_capital <= 0
+                or prior_capital != current_capital
+                or not isinstance(receipt.get("metrics"), dict)
+            ):
+                continue
+            prior = number(receipt["metrics"])
+            if current is None or prior is None or receipt["backtest_id"] in seen:
+                continue
+            seen.add(receipt["backtest_id"])
+        except (KeyError, TypeError, ValueError, ArithmeticError):
+            # Old or incomplete memory must not interrupt a settled experiment.
+            continue
+        change = current - prior
+        if not math.isfinite(change):
+            continue
+        observed = change > 0 if direction == "increase" else change < 0
+        comparisons.append(
+            {
+                "reference_id": entry["memory_id"],
+                "backtest_id": receipt["backtest_id"],
+                "before": prior,
+                "after": current,
+                "delta": change,
+                "observed": observed,
+            }
+        )
+    outcomes = {c["observed"] for c in comparisons}
+    status = (
+        "unknown"
+        if not outcomes
+        else "mixed"
+        if len(outcomes) > 1
+        else "observed"
+        if True in outcomes
+        else "not_observed"
+    )
+    return {
+        "status": status,
+        "metric": metric,
+        "direction": direction,
+        "scope": "development_metric_direction_only",
+        "causal_claim_verified": False,
+        "comparisons": comparisons,
+        "reason": "no_comparable_referenced_development"
+        if not comparisons
+        else "metric_direction_checked; textual_falsifier_requires_review",
     }

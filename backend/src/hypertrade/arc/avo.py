@@ -15,7 +15,12 @@ from jsonschema import ValidationError, validate
 from hypertrade.arc.adversarial import BlueTeamQuant
 from hypertrade.arc.contracts import ARCCandidateAttemptV1
 from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProjection
-from hypertrade.arc.evolution_memory import bind_hypothesis, experiment_key
+from hypertrade.arc.evolution_memory import (
+    assess_hypothesis,
+    bind_hypothesis,
+    curate_memory,
+    experiment_key,
+)
 from hypertrade.arc.paper_review import request_paper_review
 from hypertrade.arc.provider_hypothesis import ProviderProposal, _bounded_spec
 from hypertrade.arc.self_test import ARCSelfTestService
@@ -485,6 +490,42 @@ def _perform(
         controller.apply_event("avo_unknown_result", payload)
         raise ResearchStopped("avo_effect_unknown")
     if not final:
+        if goal.evolution_context and candidate.strategy_spec.get("evolution_hypothesis"):
+            assert goal.research_windows is not None
+            raw_references = [
+                {
+                    "mission_id": controller.projection.mission_id,
+                    "candidate_id": old.candidate_id,
+                    "hypothesis": old.hypothesis,
+                    "spec": old.strategy_spec,
+                    "code_sha256": hashlib.sha256(old.strategy_code.encode()).hexdigest(),
+                    "capital": str(goal.paper_initial_equity),
+                    "development": development[old.attempt_id],
+                }
+                for old in controller.projection.attempts
+                if old.attempt_id in development
+            ]
+            references, _ = curate_memory(
+                raw_references,
+                symbol=candidate.strategy_spec["symbol"],
+                timeframe=candidate.strategy_spec["timeframe"],
+                windows=goal.research_windows,
+            )
+            attempt_ids = {a.candidate_id: a.attempt_id for a in controller.projection.attempts}
+            for entry in references:
+                entry["memory_id"] = attempt_ids[entry["candidate_id"]]
+            references += [
+                e
+                for e in goal.evolution_context.get("memory", [])
+                if isinstance(e, dict) and e.get("memory_id")
+            ]
+            payload["hypothesis_assessment"] = assess_hypothesis(
+                candidate.strategy_spec,
+                result.metrics,
+                references,
+                goal.research_windows,
+                goal.paper_initial_equity,
+            )
         controller.apply_event(
             "avo_development_result", {"attempt_id": candidate.attempt_id, "result": payload}
         )

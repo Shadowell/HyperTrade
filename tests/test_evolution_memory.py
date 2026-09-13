@@ -176,3 +176,234 @@ def test_malformed_history_does_not_break_the_next_research_cycle(field):
     entries, manifest = curate([record(**{field: None}), record()])
     assert len(entries) == 1
     assert manifest["excluded"]["malformed_receipt"] == 1
+
+
+@pytest.mark.parametrize(
+    "metric,old,new,direction,expected",
+    [
+        ("net_return", -0.1, 0.1, "increase", "observed"),
+        ("net_return", 0.1, -0.1, "increase", "not_observed"),
+        ("max_drawdown", 0.2, 0.1, "decrease", "observed"),
+        ("trade_count", 40, 40, "decrease", "not_observed"),
+    ],
+)
+def test_development_assessment_checks_the_predicted_metric_direction(
+    metric, old, new, direction, expected
+):
+    from hypertrade.arc.evolution_memory import assess_hypothesis
+
+    entry = curate([record()])[0][0]
+    entry["development"]["metrics"] = {metric: old}
+    spec = {
+        **entry["spec"],
+        "evolution_hypothesis": {
+            "evidence_refs": [entry["memory_id"]],
+            "expected_metric": metric,
+            "expected_direction": direction,
+        },
+    }
+    result = assess_hypothesis(
+        spec, {**record()["development"]["metrics"], metric: new}, [entry], WINDOWS, "100"
+    )
+    assert result["status"] == expected
+    assert result["scope"] == "development_metric_direction_only"
+    assert result["causal_claim_verified"] is False
+
+
+def test_assessment_does_not_compare_different_capitals_or_windows():
+    from hypertrade.arc.evolution_memory import assess_hypothesis
+
+    entry = curate([record()])[0][0]
+    spec = {
+        **entry["spec"],
+        "evolution_hypothesis": {
+            "evidence_refs": [entry["memory_id"]],
+            "expected_metric": "net_return",
+            "expected_direction": "increase",
+        },
+    }
+    assert (
+        assess_hypothesis(spec, {"net_return": 9}, [entry], WINDOWS, "200")["status"] == "unknown"
+    )
+    entry["development"]["window"][1] = "2026-07-01"
+    assert (
+        assess_hypothesis(spec, {"net_return": 9}, [entry], WINDOWS, "100")["status"] == "unknown"
+    )
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "missing_window",
+        "wrong_window",
+        "final_window",
+        "bad_reference",
+        "bad_spec",
+        "bad_capital",
+        "missing_receipt",
+        "wrong_symbol",
+        "wrong_timeframe",
+        "nan",
+        "invalid_direction",
+        "invalid_metric",
+    ],
+)
+def test_assessment_returns_unknown_for_unverifiable_comparisons(fault):
+    from hypertrade.arc.evolution_memory import assess_hypothesis
+
+    entry = curate([record()])[0][0]
+    spec = {
+        **entry["spec"],
+        "evolution_hypothesis": {
+            "evidence_refs": [entry["memory_id"]],
+            "expected_metric": "net_return",
+            "expected_direction": "increase",
+        },
+    }
+    metrics = {**record()["development"]["metrics"], "net_return": 0.3}
+    if fault == "missing_window":
+        metrics.pop("evaluation_window")
+    elif fault == "wrong_window":
+        metrics["evaluation_window"]["end_date"] = "2026-01-01"
+    elif fault == "final_window":
+        metrics["evaluation_window"]["purpose"] = "final"
+    elif fault == "bad_reference":
+        entry["development"] = None
+    elif fault == "bad_spec":
+        entry["spec"] = None
+    elif fault == "bad_capital":
+        entry["capital"] = "NaN"
+    elif fault == "missing_receipt":
+        entry["development"].pop("backtest_id")
+    elif fault in {"wrong_symbol", "wrong_timeframe"}:
+        entry["spec"] = {**entry["spec"], fault.removeprefix("wrong_"): "OTHER"}
+    elif fault == "nan":
+        metrics["net_return"] = float("nan")
+    elif fault == "invalid_direction":
+        spec["evolution_hypothesis"]["expected_direction"] = "sideways"
+    else:
+        spec["evolution_hypothesis"]["expected_metric"] = "invented"
+    assert assess_hypothesis(spec, metrics, [entry], WINDOWS, "100")["status"] == "unknown"
+
+
+def test_development_assessment_survives_event_storage_and_next_memory_recall():
+    import hashlib
+
+    from hypertrade.arc.avo import _perform
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController, ARCMissionProjection
+    from hypertrade.arc.self_test import SelfTestResult
+    from hypertrade.arc.store import reset_store
+
+    class Experiments:
+        def run(self, candidate, goal, *, purpose):
+            assert purpose == "development"
+            return SelfTestResult(
+                True,
+                "validation",
+                "123",
+                "new-receipt",
+                metrics={**record()["development"]["metrics"], "net_return": 0.2},
+            )
+
+    reset_store()
+    try:
+        memory = curate([record()])[0]
+        ctrl = ARCController(
+            goal=ARCGoalV1(
+                objective="improve",
+                research_mode="avo",
+                paper_review_required=True,
+                symbols=["SOL-USDT-SWAP"],
+                research_windows=WINDOWS,
+                evolution_context={"memory": memory},
+            )
+        )
+        ctrl.apply_event(
+            "avo_model_requested", {"provider": "test", "model": "test", "request_hash": "hash"}
+        )
+        proposal = _perform(
+            ctrl,
+            "propose",
+            {
+                "hypothesis": "reduce churn",
+                "family_key": "ma_crossover",
+                "direction": "long_only",
+                "parameter_bounds": {},
+                "evolution_hypothesis": {
+                    "evidence_refs": [memory[0]["memory_id"]],
+                    "expected_metric": "net_return",
+                    "expected_direction": "increase",
+                    "falsification": "No same-window gain",
+                },
+            },
+            None,
+        )
+        result = _perform(ctrl, "develop", {"attempt_id": proposal["attempt_id"]}, Experiments())
+        assert result["hypothesis_assessment"]["status"] == "observed"
+        restored = ARCMissionProjection.model_validate_json(ctrl.projection.model_dump_json())
+        candidate = restored.attempts[0]
+        receipt = restored.avo["development"][candidate.attempt_id]
+        assert receipt["hypothesis_assessment"] == result["hypothesis_assessment"]
+        recalled, _ = curate(
+            [
+                record(
+                    spec=candidate.strategy_spec,
+                    candidate_id=candidate.candidate_id,
+                    code_sha256=hashlib.sha256(candidate.strategy_code.encode()).hexdigest(),
+                    development=receipt,
+                )
+            ]
+        )
+        assert recalled[0]["hypothesis_assessment"]["status"] == "observed"
+        assert recalled[0]["hypothesis_assessment"]["causal_claim_verified"] is False
+        assert candidate.paper_instance_id is None
+        assert restored.goal.budget.backtests_used == 1
+        assert memory[0]["development"]["metrics"]["net_return"] == -0.1
+    finally:
+        reset_store()
+
+
+def test_assessment_normalizes_percentages_and_reports_conflicting_references():
+    from hypertrade.arc.evolution_memory import assess_hypothesis
+
+    entries = curate([record(), record(candidate_id="other")])[0]
+    other = deepcopy(entries[0])
+    other["memory_id"] = "other"
+    other["development"]["backtest_id"] = "other"
+    other["development"]["metrics"] = {"total_return_pct": 30}
+    spec = {
+        **entries[0]["spec"],
+        "evolution_hypothesis": {
+            "evidence_refs": [entries[0]["memory_id"], "other"],
+            "expected_metric": "net_return",
+            "expected_direction": "increase",
+        },
+    }
+    metrics = {
+        "total_return_pct": 20,
+        "evaluation_window": record()["development"]["metrics"]["evaluation_window"],
+    }
+    result = assess_hypothesis(spec, metrics, [*entries, other, other], WINDOWS, "100.0")
+    assert result["status"] == "mixed"
+    assert len(result["comparisons"]) == 2
+    assert [c["after"] for c in result["comparisons"]] == [0.2, 0.2]
+
+
+def test_assessment_rejects_overflowed_delta_and_malformed_hypothesis():
+    from hypertrade.arc.evolution_memory import assess_hypothesis
+
+    entry = curate([record()])[0][0]
+    entry["development"]["metrics"] = {"net_return": -1e308}
+    spec = {
+        **entry["spec"],
+        "evolution_hypothesis": {
+            "evidence_refs": [entry["memory_id"]],
+            "expected_metric": "net_return",
+            "expected_direction": "increase",
+        },
+    }
+    metrics = {**record()["development"]["metrics"], "net_return": 1e308}
+    assert assess_hypothesis(spec, metrics, [entry], WINDOWS, "100")["status"] == "unknown"
+    spec["evolution_hypothesis"]["expected_metric"] = []
+    assert assess_hypothesis(spec, metrics, [entry], WINDOWS, "100")["status"] == "unknown"
