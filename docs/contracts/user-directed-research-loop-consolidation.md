@@ -185,6 +185,18 @@ CLI在Agent待评审阶段继续流式跟进，BitPro显示Agent自动评审并�
 
 长期经验新增成本身份：开发回执只使用核验过的BitPro源配置research_costs.v1哈希，随后进入有界经验；同窗、资金、标的和周期一致但成本哈希不同或缺失时，hypothesis_assessment为unknown。混合引用不能掩盖成本不匹配；旧无成本身份的方向摘要召回时降级，不修改原历史、不从当前配置倒填旧证据。
 
+## 任务 C：统一短期上下文压缩（2026-09-13）
+
+AVO 和 agent/context 复用 compaction.v1；所有 evolution_context、memory/RAG、工具结果与工具定义注入后，以 UTF-8 字节加适配器 framing 的保守 token 上界检查最终逻辑请求。此为输入限制，非计费值，不改变输出/推理预算；通用输入上限沿用旧英文 24k×4 的字节容量设为明确保守 96k，AVO 为 64k。
+
+工具 call/results 严格匹配并整组处理；system、首个用户目标、最近有效组、未解决 pending/effect_unknown/审批/预算事实保留。只允许已识别 candles/ohlcv/equity_curve 的数值行或结构化对象序列变为哈希与条数；对象中的显式 source/ref/id/hash 全量进入摘要，自由文本数组不缩写。未知、无效、来源 ID 本身过多或不可安全容纳的内容明确阻断。
+
+每次派发前持久化版本化 manifest：脱敏后、压缩前的消息与工具组哈希、保留/压缩/排除原因、输入上界与最终逻辑请求字节数。不得持久化脱敏前内容的裸哈希，避免低熵秘密可被离线枚举。原始业务事件与完整工具结果不被压缩器删除；通用 planner 不再前置 water-cooling。公开 trace/AVO 活动只包含 manifest 和私有 record ID。
+
+通用旧 planner 缺少带 call IDs 的中间模型消息，重建所需的最终请求视图存放独立私有 provider_context_records：与实际模型视图使用同一秘密脱敏路径，保留 DeepSeek 必需的 reasoning_content 协议字段于私有快照而不进入公开 trace，最大 2MiB，按 run 归属读取并核对哈希。快照 30 天后不可读，后续写入每批清除最多 100 条过期快照正文；snapshot_available 变为 false，manifest、脱敏请求承诺哈希和独立 manifest 哈希永久保留。没有公开读取路由，运维数据库权限和备份保留策略适用。缺失/过期快照必须从原始业务事件重新编译并明确记录新请求，不能伪称精确重放或重复副作用。
+
+验收：长中文/英文、工具并发组、必要来源、未知副作用、超大注入/结果、污染/无效内容、崩溃后的哈希重建、私有访问/脱敏/过期、迁移及完整 check.sh；上线核对部署 SHA 与私有审计机制。工程证据不替代真实 14 天/7+7 或收益证据。
+
 ## 任务 B：统一长期研究记忆与配对评测（2026-09-13）
 
 ResearchMemory v1 是原 ARC 开发回执的版本化投影，MemoryService 与 AVO 使用同一投影器；不复制持久摘要作为第二套事实。保留 mission/backtest/candidate、symbol/timeframe/window/capital、code/config/cost hash、hypothesis assessment、正反例和排除清单。缺失历史身份保持 unknown，不从当前配置回填；未知记录不能支持身份比较、审批、晋级或修改政策。

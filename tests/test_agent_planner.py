@@ -374,7 +374,19 @@ class TestAgentPlannerMaxIterations:
             tool_calls=[ToolCallRequest(id="x", name="market_summary", arguments={})],
         )
         llm = MagicMock()
-        llm.chat.return_value = always_tool
+        llm.chat.side_effect = [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id=f"x-{i}",
+                        name=always_tool.tool_calls[0].name,
+                        arguments={},
+                    )
+                ],
+            )
+            for i in range(AgentPlanner.MAX_ITERATIONS)
+        ]
         planner = AgentPlanner(llm)
         result = planner.run("loop", _static_executor({"market_summary": {}}))
 

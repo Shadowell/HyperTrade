@@ -12,6 +12,7 @@ from typing import Any
 
 from jsonschema import ValidationError, validate
 
+from hypertrade.agent.compaction import ContextBlocked, compact_request
 from hypertrade.arc.adversarial import BlueTeamQuant
 from hypertrade.arc.contracts import ARCCandidateAttemptV1
 from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProjection
@@ -24,7 +25,7 @@ from hypertrade.arc.evolution_memory import (
 from hypertrade.arc.paper_review import request_paper_review
 from hypertrade.arc.provider_hypothesis import ProviderProposal, _bounded_spec
 from hypertrade.arc.self_test import ARCSelfTestService
-from hypertrade.arc.store import get_controller, list_mission_ids, research_lock
+from hypertrade.arc.store import get_controller, list_mission_ids, research_lock, save_avo_context
 from hypertrade.arc.universe import candidate_symbol
 from hypertrade.config import get_settings
 from hypertrade.providers.chat import ChatProvider
@@ -245,17 +246,6 @@ def reduce_avo_event(projection: ARCMissionProjection, event: ARCEventV1) -> Non
         projection.state = "exploring_candidates"
     elif kind == "avo_unknown_result":
         state["unknown_result"] = dict(payload)
-
-
-def _context(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    groups = [i for i, message in enumerate(messages) if message["role"] == "assistant"]
-    if not groups:
-        return messages
-    for start in groups[-6:]:
-        bounded = messages[:2] + messages[start:]
-        if len(_json(bounded)) <= 64_000:
-            return bounded
-    raise ResearchStopped("avo_context_budget_exhausted")
 
 
 def _check_budget(controller: ARCController, *, model: bool = False) -> None:
@@ -634,7 +624,7 @@ def _run(
         state = controller.projection.avo
         if not state.get("awaiting"):
             _check_budget(controller, model=True)
-            messages = [dict(message) for message in _context(state["messages"])]
+            messages = [dict(message) for message in state["messages"]]
             current_goal = controller.projection.goal
             assert current_goal is not None
             runtime_context = json.loads(messages[1]["content"])
@@ -683,6 +673,25 @@ def _run(
             # Refresh instructions too when resuming tasks initialized by an older worker.
             messages[0]["content"] = _SYSTEM
             messages[1]["content"] = _json(runtime_context)
+            try:
+                context = compact_request(messages, tools=TOOLS, model=provider.model)
+            except ContextBlocked as exc:
+                controller.apply_event(
+                    "avo_context_recorded",
+                    {
+                        "manifest": exc.record["manifest"],
+                        "record_id": save_avo_context(controller.projection.mission_id, exc.record),
+                    },
+                )
+                raise ResearchStopped("avo_context_budget_exhausted") from exc
+            controller.apply_event(
+                "avo_context_recorded",
+                {
+                    "manifest": context.manifest,
+                    "record_id": save_avo_context(controller.projection.mission_id, context.record),
+                },
+            )
+            messages = context.messages
             controller.apply_event(
                 "avo_model_requested",
                 {
@@ -762,8 +771,6 @@ def _run(
             if call["name"] not in _PARAMETERS or len(_json(call["arguments"])) > 16_000:
                 raise ValueError("tool or argument size denied")
             result = _perform(controller, call["name"], call["arguments"], experiments, check_owner)
-            if len(_json(result)) > 24_000:
-                result = {"status": "result_too_large", "hint": "inspect a single candidate"}
         except (ValueError, ValidationError, StrategyCodegenError) as exc:
             result = {"status": "rejected", "reason": str(exc)[:500]}
         controller.apply_event("avo_tool_finished", {"id": call["id"], "result": result})

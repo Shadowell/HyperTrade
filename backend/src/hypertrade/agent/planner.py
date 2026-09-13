@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from hypertrade.agent.context import compact_messages, estimate_messages_tokens
+from hypertrade.agent.compaction import ContextBlocked, compact_request, sanitize_context
 from hypertrade.agent.harness_v2 import (
     AsyncParallelToolDispatcher,
     SmartToolExecutionHealer,
@@ -247,7 +247,9 @@ class AgentPlanner:
     # promotion) need more turns than the old hard cap of 8, which existed only
     # because total history was unmanaged.
     MAX_ITERATIONS = 12
-    MAX_HISTORY_TOKENS = 24_000
+    # Preserve the old ~24k * 4 byte capacity while counting the entire request.
+    # This conservative input allowance does not alter provider reasoning/output settings.
+    MAX_HISTORY_TOKENS = 96_000
     KEEP_RECENT_GROUPS = 4
 
     def __init__(
@@ -257,8 +259,10 @@ class AgentPlanner:
         model_call_sink: Callable[[ModelCallRecord], None] | None = None,
         tool_call_sink: Callable[[ToolCallRecord], None] | None = None,
         max_history_tokens: int | None = None,
+        context_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._llm = llm
+        self._context_sink = context_sink
         self._model_call_sink = model_call_sink
         self._tool_call_sink = tool_call_sink
         self._max_history_tokens = (
@@ -295,32 +299,40 @@ class AgentPlanner:
         history_tokens_last = 0
         # One harness per planning run: telemetry aggregates across iterations
         # instead of being discarded with every per-iteration instantiation.
-        healer = SmartToolExecutionHealer(executor)
+        healer = SmartToolExecutionHealer(executor, preserve_results=True)
         dispatcher = AsyncParallelToolDispatcher(healer)
 
         for iteration in range(1, self.MAX_ITERATIONS + 1):
             # Context engineering: compact protocol-valid old tool groups before
             # the provider call when history exceeds the budget. Full originals
             # stay in the trace for audit; only the provider view is compacted.
-            compaction = compact_messages(
-                messages,
-                max_history_tokens=self._max_history_tokens,
-                keep_recent_groups=self.KEEP_RECENT_GROUPS,
-            )
+            try:
+                compaction = compact_request(
+                    messages,
+                    tools=list(candidates.schemas),
+                    model=_provider_label(self._llm, "model"),
+                    max_tokens=self._max_history_tokens,
+                )
+            except ContextBlocked as exc:
+                if self._context_sink is not None:
+                    self._context_sink(exc.record)
+                raise
+            if self._context_sink is not None:
+                self._context_sink(compaction.record)
+            request_messages = compaction.messages
             if compaction.compacted_groups:
-                messages = compaction.messages
                 context_compactions += 1
-            history_tokens_last = estimate_messages_tokens(messages)
+            history_tokens_last = compaction.manifest["final_tokens_upper_bound"]
             started_at = time.monotonic()
             stream_chat = getattr(self._llm, "stream_chat", None)
             if delta_sink is not None and callable(stream_chat):
                 response: ChatResponse = stream_chat(
-                    messages,
+                    request_messages,
                     list(candidates.schemas),
                     on_delta=delta_sink,
                 )
             else:
-                response = self._llm.chat(messages, tools=list(candidates.schemas))
+                response = self._llm.chat(request_messages, tools=list(candidates.schemas))
             model_call = ModelCallRecord(
                 iteration=iteration,
                 provider=_provider_label(self._llm, "name"),
@@ -410,7 +422,9 @@ class AgentPlanner:
             executed_results = dispatcher.dispatch_batch(tool_reqs)
 
             for tc, result in zip(response.tool_calls, executed_results, strict=False):
-                tool_call = ToolCallRecord(tc.name, tc.arguments, result)
+                tool_call = ToolCallRecord(
+                    tc.name, sanitize_context(tc.arguments), sanitize_context(result)
+                )
                 tool_calls.append(tool_call)
                 if self._tool_call_sink is not None:
                     self._tool_call_sink(tool_call)

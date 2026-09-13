@@ -156,8 +156,10 @@ class SmartToolExecutionHealer:
         executor_fn: Callable[[str, dict[str, Any]], dict[str, Any]],
         max_retries: int = 3,
         base_backoff_ms: float = 50.0,
+        preserve_results: bool = False,
     ) -> None:
         self.executor_fn = executor_fn
+        self.preserve_results = preserve_results
         self.max_retries = max_retries
         self.base_backoff_ms = base_backoff_ms
         self.lock_guard = ToolIdempotencyLockGuard()
@@ -193,7 +195,11 @@ class SmartToolExecutionHealer:
                     duration_ms = (time.monotonic() - started_at) * 1000.0
 
                     # Apply water-cooling
-                    cooled_res = self.water_cooler.water_cool_payload(tool_name, res)
+                    cooled_res = (
+                        res
+                        if self.preserve_results
+                        else self.water_cooler.water_cool_payload(tool_name, res)
+                    )
                     is_cooled = cooled_res.get("_water_cooler", {}).get("truncated", False)
 
                     self.telemetry.record_call(

@@ -244,3 +244,14 @@ def _load_persisted(mission_id: str) -> ARCController | None:
     controller.projection = ARCMissionProjection.model_validate(payload)
     controller.revision = revision
     return controller
+
+
+def save_avo_context(mission_id: str, record: dict[str, Any]) -> str:
+    """Private context snapshot; durable deployments must journal before dispatch."""
+    from hypertrade.agent.compaction import digest
+    from hypertrade.agent.context_journal import save_context_record
+
+    if _database is None:
+        # The in-memory store is used only by ephemeral/test controllers.
+        return "ephemeral:" + digest(record)
+    return save_context_record(_database, mission_id, record)

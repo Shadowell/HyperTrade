@@ -686,3 +686,81 @@ def test_replaying_legacy_resume_does_not_invent_a_model_message(mission):
         )
     )
     assert mission.projection.avo["messages"] == [{"role": "assistant", "content": "stopped"}]
+
+
+def test_context_budget_checks_full_evolution_injection_before_model_charge(mission):
+    mission.projection.goal.evolution_context = {"evidence": "长中文" * 12000}
+    provider = ScriptProvider()
+    run_avo_research(mission.projection.mission_id, provider=provider, experiments=Experiments())
+    assert provider.calls == 0
+    assert mission.projection.goal.budget.model_calls_used == 0
+    records = [e for e in mission.projection.events if e.event_type == "avo_context_recorded"]
+    assert records[-1].payload["manifest"]["status"] == "blocked"
+    assert "messages" not in records[-1].payload
+    assert "长中文" not in json.dumps(records[-1].payload, ensure_ascii=False)
+
+
+def test_oversized_avo_result_is_journalled_before_context_blocks(mission):
+    class HugeExperiments(Experiments):
+        def run(self, attempt, goal, *, purpose="final"):
+            result = super().run(attempt, goal, purpose=purpose)
+            return replace(result, metrics={"net_return": -0.1, "opaque": "x" * 100_000})
+
+    provider = ScriptProvider()
+    run_avo_research(
+        mission.projection.mission_id,
+        provider=provider,
+        experiments=HugeExperiments(),
+    )
+
+    assert provider.calls == 2
+    development = [
+        event for event in mission.projection.events if event.event_type == "avo_development_result"
+    ]
+    assert len(development[-1].payload["result"]["metrics"]["opaque"]) == 100_000
+    finished = [
+        event for event in mission.projection.events if event.event_type == "avo_tool_finished"
+    ]
+    assert len(finished[-1].payload["result"]["metrics"]["opaque"]) == 100_000
+    assert not any(
+        "result_too_large" in json.dumps(event.payload) for event in mission.projection.events
+    )
+    assert mission.projection.events[-1].payload["reason"] == "avo_context_budget_exhausted"
+
+
+def test_avo_context_rebuilds_after_database_reload_without_replaying_tools(mission):
+    from hypertrade.agent.compaction import rebuild_request
+    from hypertrade.agent.context_journal import load_context_record
+    from hypertrade.arc.store import configure_store, get_controller, reset_runtime
+    from hypertrade.db import Database, ProviderContextRecord
+    from sqlalchemy import select
+
+    db = Database("sqlite://")
+    db.create_all()
+    configure_store(db)
+    save_mission(mission)
+    provider, experiments = ScriptProvider(), Experiments()
+    mission_id = mission.projection.mission_id
+    run_avo_research(mission_id, provider=provider, experiments=experiments)
+    original_calls = len(experiments.calls)
+    with db.session() as session:
+        records = session.scalars(
+            select(ProviderContextRecord)
+            .where(ProviderContextRecord.run_id == mission_id)
+            .order_by(ProviderContextRecord.created_at)
+        ).all()
+        ids = [row.id for row in records]
+    assert len(ids) == len(provider.seen)
+    reset_runtime()
+    restored = get_controller(mission_id)
+    assert restored is not None
+    for record_id, sent in zip(ids, provider.seen, strict=True):
+        snapshot = load_context_record(db, mission_id, record_id)
+        rebuilt = rebuild_request(snapshot)
+        assert rebuilt.messages == sent
+        assert rebuilt.manifest["status"] == "ready"
+    assert len(experiments.calls) == original_calls
+    for event in restored.projection.events:
+        if event.event_type == "avo_context_recorded":
+            assert "messages" not in event.payload
+    assert len(restored.projection.avo["messages"]) > 2

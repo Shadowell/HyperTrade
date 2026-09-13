@@ -22,6 +22,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from hypertrade.agent.context_journal import save_context_record
 from hypertrade.agent.planner import (
     AgentPlanner,
     ModelCallRecord,
@@ -221,6 +222,7 @@ class AgentKernel:
                 event_sink=event_sink,
             ),
             tool_call_sink=lambda record: self._record_tool_call(run_id, record),
+            context_sink=lambda record: self._record_provider_context(run_id, record),
         )
         executor = self._build_executor(run_id, event_sink=event_sink)
         # Final-answer tokens stream out as answer_delta events the moment the
@@ -352,6 +354,15 @@ class AgentKernel:
                 selected_model=self.provider_model,
             )
         return runtime.get_chat_provider(selected=self.provider_name)
+
+    def _record_provider_context(self, run_id: str, record: dict[str, Any]) -> None:
+        # Commit before dispatch. Failure to journal blocks the provider request;
+        # full evidence is private and never copied into operator trace events.
+        record_id = save_context_record(self.db, run_id, record)
+        self._trace(
+            run_id, "graph.context_compaction", {},
+            {"record_id": record_id, "manifest": record["manifest"]},
+        )
 
     def _record_model_call(
         self,

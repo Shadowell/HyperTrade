@@ -63,6 +63,26 @@ class AgentRun(Base, TimestampMixin):
     error: Mapped[str] = mapped_column(Text, default="")
 
 
+class ProviderContextRecord(Base):
+    """Private bounded request snapshot plus persistent audit commitments.
+
+    Snapshot content expires after 30 days. Its redacted hash and manifest
+    remain available for audit; raw business events are owned by their source
+    journals and are never deleted by this table's retention process.
+    """
+
+    __tablename__ = "provider_context_records"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("pctx"))
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    snapshot_hash: Mapped[str] = mapped_column(String(64), index=True)
+    manifest_hash: Mapped[str] = mapped_column(String(64))
+    record_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    snapshot_available: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class TraceEvent(Base, TimestampMixin):
     __tablename__ = "trace_events"
 
@@ -332,9 +352,7 @@ class AgentMissionEvent(Base):
     __tablename__ = "agent_mission_events"
     __table_args__ = (
         UniqueConstraint("mission_id", "sequence", name="uq_agent_mission_event_sequence"),
-        UniqueConstraint(
-            "mission_id", "aggregate_version", name="uq_agent_mission_event_version"
-        ),
+        UniqueConstraint("mission_id", "aggregate_version", name="uq_agent_mission_event_version"),
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("mevt"))
