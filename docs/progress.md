@@ -5,6 +5,7 @@
 - 开发回执的cost_policy_hash来自BitPro创建/读取回执，核对策略ID、源码、交易所、research_costs.v1哈希及显式值；不信任回测metrics自行声称的成本身份，不复制BitPro费用选择规则。
 - 长期经验保留该哈希，跨成本或成本缺失的方向比较为unknown；引用中存在成本不匹配时，不能用另一条可比记录掩盖。旧经验保留，缺少成本身份的旧observed摘要在召回时降为unknown，不改写历史回执。
 - 95项专项回归及完整scripts/check.sh通过（1362 passed / 1 xfailed），覆盖真实调用链替身的创建→开发→持久经验→比较；这只证明证据边界，不证明策略效果。原501、509及Agent评审配置不修改。
+- 生产核验：c404f70经Actions34756624090成功部署，配置仍revision3/enabled/agent。501与509均running，原实例、起点、strategy_version及config_version与部署前一致。509当前源配置hash验证为ebf224edb2d7c9ef526295d72a8608d1e957fb45623cdc30d494c0cd5e5bb78c；旧开发回测499仍缺cost_policy_hash且完整保留，召回仍为unknown，不从当前配置回填。未创建研究、批准Paper或重建会话。
 
 ## Agent自动评审真实正向验收 — 2026-09-13
 
