@@ -1660,3 +1660,28 @@ def test_legacy_paper_reads_address_the_requested_strategy(tool, path):
     )
     client.call_tool(tool, {"strategy_id": 501})
     assert seen == [{"instance_id": "501"}]
+
+
+@pytest.mark.parametrize("frozen,expected", [(True, "BTC/USDT:USDT"), (False, "BTC/USDT")])
+def test_cost_frozen_strategy_creation_preserves_swap_identity(frozen, expected):
+    seen = []
+
+    def handler(request):
+        if request.url.path.endswith("/system/health"):
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"success": True, "data": {"id": 42}})
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+    adapter.strategy_create(
+        name="cost identity",
+        script_content="class X: pass",
+        symbols=["BTC-USDT-SWAP"],
+        config={"_freeze_research_costs": True} if frozen else {},
+    )
+    assert seen[0]["symbols"] == [expected]

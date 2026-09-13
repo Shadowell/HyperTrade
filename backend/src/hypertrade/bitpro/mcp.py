@@ -529,6 +529,16 @@ class BitProToolAdapter:
         idempotency_key: str = "",
     ) -> dict[str, Any]:
         self.last_tool_calls = []
+        frozen = (config or {}).get("_freeze_research_costs") is True
+        if frozen and (
+            not symbols
+            or any(
+                not symbol.strip().upper().endswith(("-USDT-SWAP", "/USDT:USDT"))
+                for symbol in symbols
+            )
+        ):
+            raise ValueError("cost-frozen research requires explicit USDT swap symbols")
+        normalize = _normalize_bitpro_symbol if frozen else _normalize_bitpro_spot_symbol
         capabilities, health = self._preflight()
         strategy = self._call(
             "strategy_create",
@@ -538,7 +548,7 @@ class BitProToolAdapter:
                 "description": description,
                 "config": config or {},
                 "exchange": exchange,
-                "symbols": [_normalize_bitpro_spot_symbol(symbol) for symbol in symbols or []],
+                "symbols": [normalize(symbol) for symbol in symbols or []],
                 "idempotency_key": idempotency_key,
             },
         )

@@ -317,7 +317,7 @@ class ARCSelfTestService:
                             "config": {
                                 **attempt.strategy_spec.get("baseline_config", {}),
                                 **(
-                                    {"_freeze_research_costs": True}
+                                    {"_freeze_research_costs": True, "market_type": "swap"}
                                     if goal.paper_review_required
                                     else {}
                                 ),
