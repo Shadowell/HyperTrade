@@ -1,3 +1,5 @@
+> Delivery workflow rules for all agents — worktrees, commit/landing, verification — live in [AGENTS.md](AGENTS.md). Read it before substantial work. This file only carries the generated GitNexus context block below.
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 

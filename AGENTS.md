@@ -22,8 +22,20 @@ Before substantial work, read:
 4. Never commit secrets, OKX credentials, provider keys, database files, or production `.env`.
 5. Update `docs/progress.md` after meaningful implementation steps.
 6. If requirements, architecture, or API contracts change, update `docs/spec.md` and the active contract in the same change.
-7. AUTOMATIC GIT COMMIT: every meaningful code, documentation, or configuration change MUST be committed and pushed to `origin/main` immediately after the change is made. Do not batch multiple unrelated changes into one commit. Each logical change gets its own commit with a descriptive message. After pushing, verify the deployment succeeds before reporting completion. Never push secrets or unfinished work.
-8. Before pushing, ensure `./scripts/check.sh` passes for implementation work. If check.sh fails, fix issues before committing.
+7. AUTOMATIC GIT COMMIT: every meaningful code, documentation, or configuration change MUST be committed immediately on the task branch — each logical change as its own commit with a descriptive message; never batch unrelated changes. Landing on `origin/main` follows the "Worktrees And Landing" procedure below. Never push secrets or unfinished work, and never force-push shared branches.
+8. Before landing, ensure `./scripts/check.sh` passes for implementation work. If check.sh fails, fix issues before committing.
+
+## Worktrees And Landing
+
+Parallel tasks run in per-task git worktrees (for example `~/.codex/worktrees/<id>/HyperTrade` on branch `codex/<topic>`), often with several sessions active at once. `origin/main` keeps moving, so never assume a task branch is current.
+
+- A fresh worktree has no GitNexus index — `.gitnexus/` is gitignored, one index per worktree. Run `gitnexus analyze` once (~10s) before using GitNexus tools; re-run it whenever the staleness hook reports the index is behind HEAD. `gitnexus list` shows the worktree's registered alias; with several indexes registered, CLI queries take `--repo <alias>`.
+- Land finished work onto `main` from its own worktree once `./scripts/check.sh` passes:
+  1. `git fetch origin`
+  2. `git rebase origin/main` — resolve conflicts, then re-run `./scripts/check.sh`
+  3. `git push origin HEAD:main` (fast-forward). If the push is rejected, another session landed first: fetch, rebase, verify, retry.
+- Keep worktree-local bookkeeping (GitNexus alias/count refreshes) on the task branch; it does not belong on `main`.
+- After main moves, verify the GitHub Actions deployment for the pushed commit succeeds (`gh run list`, `gh run watch`) before reporting completion.
 
 ## Production-Oriented Comments
 
@@ -37,7 +49,7 @@ When adding or changing core Agent code, prefer concise comments that explain pr
 4. Run verification.
 5. Record QA findings if needed.
 6. Update progress and next step.
-7. MANDATORY: commit and push to `origin/main` when verification passes.
+7. MANDATORY: commit on the task branch, then land on `origin/main` per "Worktrees And Landing" when verification passes.
 
 ## Verification
 
