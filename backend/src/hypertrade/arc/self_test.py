@@ -14,6 +14,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Protocol
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCGoalV1, ARCSuccessCriteriaV1
+from hypertrade.arc.strategy_names import format_bitpro_strategy_name, logic_summary
 from hypertrade.arc.universe import candidate_symbol
 from hypertrade.bitpro.cost_identity import source_cost_policy_hash
 from hypertrade.bitpro.mcp import BitProToolAdapter
@@ -252,13 +253,14 @@ class ARCSelfTestService:
         validate_key = f"arc-selftest-validate-{scope}"
         strategy_name = f"ARC self-test {attempt.candidate_id}"
         if goal.paper_review_required:
-            # BitPro replaces on its unique name key. The display name must carry
-            # the same immutable namespace as dispatch, or a new job can erase an old strategy.
-            asset_type = "合约" if symbol.endswith("-SWAP") else "现货"
-            base_symbol = symbol.split("-")[0]
-            strategy_name = (
-                f"[{asset_type}][{timeframe.upper()}][CTA] {base_symbol} · "
-                f"ARC-{scope} · {goal.paper_initial_equity}U"
+            # Full identity stays in dispatch keys. Frozen creation rejects name collisions;
+            # a compact revision distinguishes independent experiments without hiding the method.
+            strategy_name = format_bitpro_strategy_name(
+                symbol,
+                timeframe,
+                logic_summary=f"{logic_summary(attempt.strategy_spec)} V{scope[:12]}",
+                capital_u=goal.paper_initial_equity,
+                asset_type="合约" if symbol.endswith("-SWAP") or ":USDT" in symbol else "现货",
             )
 
         try:

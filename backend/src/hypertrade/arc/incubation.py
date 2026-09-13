@@ -15,6 +15,8 @@ from hypertrade.arc.contracts import (
     ARCCandidateAttemptV1,
     PaperPreauthorizationV1,
 )
+from hypertrade.arc.strategy_names import format_bitpro_strategy_name as format_bitpro_strategy_name
+from hypertrade.arc.strategy_names import logic_summary
 from hypertrade.arc.universe import candidate_symbol
 from hypertrade.bitpro.mcp import BitProToolAdapter
 
@@ -59,28 +61,8 @@ class PaperProvisionClient(Protocol):
         ...
 
 
-def format_bitpro_strategy_name(
-    symbol: str,
-    timeframe: str = "1H",
-    strategy_type: str = "CTA",
-    logic_summary: str = "unspecified",
-    capital_u: int = 100,
-) -> str:
-    """
-    Formats strategy name according to BitPro's official card naming specification:
-    Format: [合约][<周期>][<类型>] <标的代码> - <算法逻辑> - <初始资金>U
-    Example: [合约][1H][CTA] CL - EMA9/20趋势追踪迹速 - 100U
-    """
-    clean_symbol = symbol.replace("-SWAP", "").replace("-USDT", "").replace("-", "").upper()
-    symbol_code = "CL" if clean_symbol in ["CLUSDT", "OILUSDT", "OIL", "CRCL"] else clean_symbol
-    return f"[合约][{timeframe}][{strategy_type}] {symbol_code} - {logic_summary} - {capital_u}U"
-
-
 def _logic_summary(attempt: ARCCandidateAttemptV1) -> str:
-    family = str(attempt.strategy_spec.get("family") or "").strip()
-    direction = str(attempt.strategy_spec.get("direction") or "").replace("_", " ").strip()
-    parts = [part for part in (family, direction) if part]
-    return " ".join(parts)[:48] or "unspecified"
+    return logic_summary(attempt.strategy_spec)
 
 
 def _as_int(value: Any) -> int | None:
