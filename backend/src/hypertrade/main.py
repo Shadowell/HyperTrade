@@ -51,6 +51,7 @@ from hypertrade.bitpro.mcp import (
     BitProToolAdapter,
     bitpro_capabilities,
 )
+from hypertrade.bitpro.paced_reads import PacedReadClient
 from hypertrade.config import Settings, get_settings
 from hypertrade.connectors.registry import ConnectorRegistry
 from hypertrade.db import (
@@ -96,6 +97,8 @@ from hypertrade.portfolio.regime_shadow_schemas import (
     MarketRegimeCaptureV2,
     RegimeShadowBuildV2,
 )
+from hypertrade.portfolio.research import PortfolioResearchService
+from hypertrade.portfolio.research_api import build_portfolio_research_router
 from hypertrade.portfolio.shadow import ShadowPortfolioService
 from hypertrade.portfolio.shadow_schemas import (
     ShadowPortfolioBuildV1,
@@ -510,6 +513,7 @@ def create_app(
         mission_runtime,
         worker_enabled=app_settings.mission_runtime_worker_enabled,
     )
+    portfolio_read_client = PacedReadClient(settings=app_settings)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -519,6 +523,7 @@ def create_app(
         try:
             yield
         finally:
+            portfolio_read_client.http_client.close()
             for resource in (
                 mission_store,
                 thread_store,
@@ -584,6 +589,12 @@ def create_app(
 
     AdminUser = Annotated[str, Depends(require_admin)]
     app.include_router(build_thread_turn_router(thread_turn_service, require_admin))
+    app.include_router(
+        build_portfolio_research_router(
+            PortfolioResearchService(database, BitProToolAdapter(portfolio_read_client)),
+            require_admin,
+        )
+    )
     # Per-route scopes live on the ARC router. A blanket require_admin would block
     # the service-token surface; mounting bare would reopen live-approval to anyone.
     app.include_router(arc_router)

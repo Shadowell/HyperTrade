@@ -257,3 +257,13 @@ reconciliation_required，禁止盲重试。已有 paper_observing 缺分阶段�
 不启动新 Paper。真实验收由总控统一触发：读取 continuation 和 admission 的最新条件，等原会话
 真实完整窗口与成交/采样达标后由 worker 创建有预算子任务；追踪 ledger 直到真实 reviewed 新
 实例启动或完整缺口终态，再只读比较原/新实例身份、版本、起点及成交连续性。
+
+## 任务 F：不可变组合研究基线（2026-09-13）
+
+- 用户授权独立多资产研究切片：只读 `strategy_return_series.v1`，每个成员限单资产、同一 source layer / currency / UTC window / bucket / 成本政策，最多20成员、500点。不拼接 Paper/回测，不补缺点、不静默丢弃零权重成员。
+- `portfolio_manifest.v1` 冻结成员策略/配置/标的身份、来源及内容哈希、方向声明、归一权重、现金、起止时间、初始资金、再平衡时点和费用/滑点假设；同时冻结等权不再平衡基线。方向描述成员策略，不取反净收益。任何成员输出或版本漂移使旧 manifest 比较失效。
+- `sleeve_index.v1` 是假设按比例缩放已观察净权益的研究指数，不是以新资金重新执行策略。建仓及再平衡自筹成本，收盘后目标权重仅影响下一期间，无终点清仓；回撤为采样回撤。成员内部费用已包含在净权益中，不重复扣除。
+- 现有上游缺逐期间费用/换手时，总费用/总换手为 null，比较为 `needs_data`，仅返回净贡献和明确标注的外层再平衡假设。费用完整正向验收依赖统一 BitPro 证据合同，不能从费率反推交易额或宣称完成真实收益验证。
+- 管理员 API `/api/portfolio/research/freeze`、`/compare/{manifest_id}`、`/records/{id}` 使用同一服务。内容寻址记录解决并发/中断重放；每次比较重新读来源核对，持久层只保留 manifest、摘要和曲线 hash，完整组合曲线仅在当次响应返回。
+- 旧 backtest 时序的版本来自当前策略记录，manifest 明确为 observed_source_identity；原回测运行时版本未证实则保留 member_run_provenance_unverified，不能将当前版本倒填为历史事实。
+- 不接主动调度、Paper审批、资金分配或Live。现有单标的闭环保持兼容。完成标准为专项测试、完整 check、顺序迁移、部署后真实只读回执；真实会话时长不由工程测试替代。
