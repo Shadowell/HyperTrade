@@ -126,6 +126,75 @@ def test_no_executions_only_proves_sample_coverage():
     assert all(v["state"] == "unknown" for k, v in dims.items() if k != "sample_coverage")
 
 
+def attested_evidence():
+    raw = evidence()
+    for page in raw.values():
+        page["coverage"]["fields"].update(gross_net_pnl="observed", round_trip="observed")
+    raw["trades"]["items"] = [
+        {
+            "evidence_id": "trade:1",
+            "source_ref": "trade:1",
+            "timestamp": 1788220800000,
+            "recorded_at": "2026-08-30T00:00:01+00:00",
+            "side": "long",
+            "fee": 2,
+            "pnl": -1,
+        },
+        {
+            "evidence_id": "trade:2",
+            "source_ref": "trade:2",
+            "timestamp": 1788224400000,
+            "recorded_at": "2026-08-30T01:00:01+00:00",
+            "side": "short",
+            "fee": 1,
+            "pnl": 3,
+        },
+    ]
+    raw["trades"]["coverage"].update(record_count=2, returned_count=2)
+    return raw
+
+
+def test_attested_capabilities_light_up_costs_and_side_dimensions():
+    report = attribution_report(SNAPSHOT, NOW, attested_evidence())
+    dims = report["dimensions"]
+    assert dims["costs"]["state"] == "observed"
+    assert dims["costs"]["reason"] == "costs_attested_by_upstream_coverage"
+    assert dims["costs"]["metrics"]["net_pnl_total"] == 2.0
+    assert dims["costs"]["metrics"]["fee_total"] == 3.0
+    assert dims["costs"]["metrics"]["pnl_sample_count"] == 2
+    assert dims["costs"]["source_field_states"]["gross_net_pnl"] == "observed"
+    assert dims["long_short"]["state"] == "observed"
+    assert dims["long_short"]["metrics"] == {
+        "long_count": 1,
+        "short_count": 1,
+        "long_net_pnl": -1.0,
+        "short_net_pnl": 3.0,
+        "pnl_sample_count": 2,
+    }
+    assert dims["holding_duration"]["state"] == "unknown"
+    assert report["causal_conclusion"] == "not_established"
+    json.dumps(report, allow_nan=False)
+
+
+def test_attestation_without_item_values_never_fabricates_metrics():
+    raw = attested_evidence()
+    for item in raw["trades"]["items"]:
+        item.pop("pnl")
+        item.pop("fee")
+    dims = attribution_report(SNAPSHOT, NOW, raw)["dimensions"]
+    assert dims["costs"]["state"] == "unknown"
+    assert dims["long_short"]["state"] == "unknown"
+
+
+def test_unrecognized_side_vocabulary_never_becomes_long_short():
+    raw = attested_evidence()
+    for item in raw["trades"]["items"]:
+        item["side"] = "buy"
+    dims = attribution_report(SNAPSHOT, NOW, raw)["dimensions"]
+    assert dims["long_short"]["state"] == "unknown"
+    assert dims["costs"]["state"] == "observed"  # gross_net_pnl attestation is separate
+
+
 def test_drift_incomplete_pages_unknown_costs_and_invalid_values():
     for mutate in [
         lambda r: r["identity"].update(session_id="other"),

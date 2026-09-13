@@ -140,6 +140,7 @@ def _bind_coverage(report: dict[str, Any], evidence: Any) -> None:
     refs: dict[str, list[str]] = {}
     hashes = {}
     field_states: dict[str, list[Any]] = {}
+    trade_items: list[dict[str, Any]] = []
     cost_hash = None
     first_identity = None
     for kind in ("trades", "equity"):
@@ -220,6 +221,17 @@ def _bind_coverage(report: dict[str, Any], evidence: Any) -> None:
                     type(item[key]) not in (int, float) or not math.isfinite(item[key])
                 ):
                     raise ValueError("invalid_metric")
+            if kind == "trades":
+                # Sanitized projection: only validated numerics survive, and
+                # side is restricted to the recognized vocabulary.
+                projection: dict[str, Any] = {}
+                for key in ("pnl", "fee"):
+                    value = item.get(key)
+                    if type(value) in (int, float) and math.isfinite(value):
+                        projection[key] = float(value)
+                if item.get("side") in ("long", "short"):
+                    projection["side"] = str(item["side"])
+                trade_items.append(projection)
             current_refs.append(ref)
         if len(current_refs) != len(set(current_refs)):
             raise ValueError("duplicate_reference")
@@ -242,16 +254,73 @@ def _bind_coverage(report: dict[str, Any], evidence: Any) -> None:
             "equity_sample_count": len(refs["equity"]),
         },
     )
+    _bind_attested_dimensions(report, field_states, trade_items)
     for name, dimension in report["dimensions"].items():
-        if name != "sample_coverage":
+        if name != "sample_coverage" and dimension["state"] == "unknown":
             dimension["reason"] = "paper_evidence_v1_dimension_unsupported"
         if name in CAPABILITY_FIELDS:
             dimension["source_field_states"] = {
-                field: "unknown"
-                if field_states.get(field) == ["unknown", "unknown"]
-                else "unverified"
-                for field in CAPABILITY_FIELDS[name]
+                field: _field_state(field_states.get(field)) for field in CAPABILITY_FIELDS[name]
             }
+
+
+def _field_state(states: list[Any] | None) -> str:
+    if states == ["unknown", "unknown"]:
+        return "unknown"
+    if states == ["observed", "observed"]:
+        return "observed"
+    return "unverified"
+
+
+def _attested(field_states: dict[str, list[Any]], field: str) -> bool:
+    return field_states.get(field) == ["observed", "observed"]
+
+
+def _bind_attested_dimensions(
+    report: dict[str, Any],
+    field_states: dict[str, list[Any]],
+    trades: list[dict[str, Any]],
+) -> None:
+    """Light up dimensions only on explicit upstream attestation.
+
+    Nothing here infers a capability from bare numbers: the evidence pages must
+    mark the capability field ``observed`` on both kinds, and every value must
+    already sit on ledger items that passed the numeric validation above. The
+    semantics stay descriptive — aggregates of an audited execution ledger,
+    never a causal claim. An upstream that attests nothing leaves every
+    dimension unknown exactly as before.
+    """
+    if _attested(field_states, "gross_net_pnl"):
+        pnl = [item["pnl"] for item in trades if "pnl" in item]
+        if pnl:
+            fees = [item["fee"] for item in trades if "fee" in item]
+            report["dimensions"]["costs"].update(
+                state="observed",
+                reason="costs_attested_by_upstream_coverage",
+                metrics={
+                    "trade_sample_count": len(trades),
+                    "pnl_sample_count": len(pnl),
+                    "net_pnl_total": round(sum(pnl), 10),
+                    "fee_sample_count": len(fees),
+                    "fee_total": round(sum(fees), 10) if fees else None,
+                },
+            )
+    if _attested(field_states, "round_trip"):
+        sided = [item for item in trades if item.get("side") in {"long", "short"}]
+        long_pnl = [item["pnl"] for item in sided if item["side"] == "long" and "pnl" in item]
+        short_pnl = [item["pnl"] for item in sided if item["side"] == "short" and "pnl" in item]
+        if sided and (long_pnl or short_pnl):
+            report["dimensions"]["long_short"].update(
+                state="observed",
+                reason="side_attested_by_upstream_coverage",
+                metrics={
+                    "long_count": sum(1 for item in sided if item["side"] == "long"),
+                    "short_count": sum(1 for item in sided if item["side"] == "short"),
+                    "long_net_pnl": round(sum(long_pnl), 10) if long_pnl else None,
+                    "short_net_pnl": round(sum(short_pnl), 10) if short_pnl else None,
+                    "pnl_sample_count": len(long_pnl) + len(short_pnl),
+                },
+            )
 
 
 def collect_attribution(client: Any, snapshot: dict[str, Any], now: datetime) -> dict[str, Any]:
