@@ -1025,7 +1025,7 @@ research start/continue默认持续跟进服务端持久事件；--detach明确�
 
 ### 每小时自主进化
 
-BitPro自主进化开关对应HyperTrade持久配置与worker调度。每小时诊断模拟盘7+7退化、当前会话历史成交样本及可追溯开发回测记忆，自主生成改进假设；经过原版本同窗比较和人工审核后，独立运行新Paper。预算、范围、冷却和去重由确定性服务控制。数据不足和不支持复现的组合/策略应显示诊断缺口，不自动替换原策略。默认关闭，立即诊断不会创建研究。
+BitPro自主进化开关对应HyperTrade持久配置与worker调度。每小时诊断模拟盘7+7退化、当前会话历史成交样本及可追溯开发回测记忆，自主生成改进假设；经过原版本同窗比较和人工审核后，独立运行新Paper。预算、范围、冷却和去重由确定性服务控制。数据不足和不支持复现的组合/策略应显示诊断缺口，不自动替换原策略。默认关闭，立即诊断不会创建研究。（2026-09-14 起 `EvolutionConfig.enabled` 默认开启，仅影响新建配置；见文末「可插拔市场目标与自进化通用化」。）
 
 ### 自主进化的证据上下文与提案合同（2026-09-13）
 
@@ -1061,3 +1061,11 @@ agent模式受enabled、策略范围、候选资金上限约束；独立评审�
 组合研究通过受管理员保护的 `/api/portfolio/research` 冻结 `portfolio_manifest.v1` 并比较等权持有基线。成员为同层、同窗、同币种、同成本的单资产策略净权益；最多20成员/500点，权重、现金、方向声明、版本/来源哈希、资金与收盘后再平衡均冻结。回放采用自筹费用的 `sleeve_index.v1`，仅代表按比例缩放历史净权益的研究假设，不代表改变资金后策略执行可复现。
 
 成员版本或内容变化、缺样本、不同覆盖/成本均失败关闭。上游未提供逐期间费用和换手时，总值保持未知且状态为 `needs_data`，不能以外层再平衡成本替代内部交易成本。来源序列不落库，组合摘要内容寻址保存、组合曲线当次返回；只生成研究解释，不改变任何运行中Paper或Live。细则见统一研究闭环合同任务 F。
+
+### 可插拔市场目标与自进化通用化（2026-09-14）
+
+自进化核心与平台解耦：`hypertrade/targets` 定义 `market_target.v1` 目标档案（venue/日历/证据契约/成本政策来源/能力开关）与进程级注册表；活跃目标由 `MARKET_TARGET` 设置决定，`EvolutionConfig.target_id` 在配置时校验必须已注册（默认 bitpro，未注册拒绝）。BitPro 为首个内置目标；QuantLab 类平台经 `market-evolution.v1` 通用 MCP 契约（七个规范工具 + `McpContractClient` 按 `tools/list` preflight 校验缺项）注册即插。进化循环客户端经注册表解析，`readiness` 窗口天数与对齐时区由目标日历参数化（continuous/UTC/14 天与旧行为一致）。`EvolutionConfig.enabled` 默认开启，仅影响新建配置；既有持久配置与 revision 不变。
+
+离线元学习：`meta_tuning` 只回放已结算的 7+7 观测（周期账本冻结了当轮配置与窗口值），退化阈值建议定在观测 p90（下限 max(5pp, p50)、上限 20pp、样本 <12 条不调参），单步 ≤3pp、每日至多一次（`tune_YYYYMMDD` 回执幂等）。`meta_tuning_enabled` 默认只产出建议回执；`meta_tuning_auto_apply` 显式授权后经 `EvolutionService.configure` 修订审计应用，操作者记为 `hypertrade:meta-tuner`。`GET /evolution/tuning` 提供只读报告。`paper_criteria`/`min_trades`/冷却/预算上限不在自动调整范围。
+
+归因见证式升级：`costs`/`long_short` 维度仅在上游 `coverage.fields` 两页都标记 `observed` 且台账条目数值齐备时点亮（费用合计、净 PnL、long/short 计数与净 PnL），`side` 仅识别 long/short 词表；`source_field_states` 为 unknown/observed/unverified 三态。当前上游全部字段为 unknown，线上行为不变；语义仍为 `descriptive_execution_coverage_only`、`causal_conclusion=not_established`，不从裸 PnL 推断。细则见架构 62 与《用户指令合同——可插拔市场目标》。

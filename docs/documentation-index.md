@@ -57,6 +57,7 @@
 - [DAG Tool Dispatcher & MCP Batch Pipeline Architecture Specification](architecture/57-dag-tool-dispatcher-and-mcp-batch-pipeline.md) - DAG 依赖图分发与 MCP 同源 JSON-RPC 管道聚合架构
 - [Tool Result Cache & Prompt Cache Prefix Aligner Architecture Specification](architecture/58-tool-result-cache-and-prompt-cache-prefix-aligner.md) - 工具结果感知 LRU 缓存与 Prompt Caching KV 前缀对齐架构
 - [Agent Flight Recorder & Replay Telemetry Architecture Specification](architecture/59-agent-flight-recorder-and-replay-telemetry.md) - Agent 黑盒飞行记录仪与全轨迹单步重放架构
+- [Pluggable Market Targets](architecture/62-pluggable-market-targets.md) - 可插拔市场目标：自进化核心与平台解耦、market-evolution.v1 通用 MCP 契约、离线元学习调参与见证式归因
 - [Autonomous Quant Trader North Star](architecture/35-autonomous-quant-trader-north-star.md) - 最终产品目标：持续策略进化、市场状态感知、组合优化与授权内实盘生命周期
 - [Goal-Driven Autonomous Research Loop M0](architecture/36-goal-driven-autonomous-research-loop-m0.md) - 自然语言目标、候选生成、真实 BitPro 回测、证据迭代和预授权模拟盘闭环
 - [Next-Generation Agent Runtime Audit and Target Design](architecture/34-next-generation-agent-runtime-audit-and-target-design.md) - 真实执行审计、目标协议、完整状态机、Schema、权限、多 Agent、交易安全、评测与切换路线
