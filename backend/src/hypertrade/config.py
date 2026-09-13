@@ -86,6 +86,17 @@ class Settings(BaseSettings):
             "Empty disables the standard MCP agent surface."
         ),
     )
+    # Which registered market target the governed evolution loop runs against.
+    # Switching platforms (BitPro -> QuantLab-style MCP contract) is this
+    # setting plus the target's profile, never a code change.
+    market_target: str = Field(
+        default="bitpro",
+        alias="MARKET_TARGET",
+        description=(
+            "Registered market target id the evolution loop binds to; "
+            "must match a hypertrade.targets profile."
+        ),
+    )
     mission_runtime_canary_percent: int = Field(
         default=0,
         ge=0,
