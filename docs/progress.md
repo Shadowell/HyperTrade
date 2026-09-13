@@ -1,5 +1,11 @@
 # Progress Log
 
+## 长期经验的成本身份 — 2026-09-13
+
+- 开发回执的cost_policy_hash来自BitPro创建/读取回执，核对策略ID、源码、交易所、research_costs.v1哈希及显式值；不信任回测metrics自行声称的成本身份，不复制BitPro费用选择规则。
+- 长期经验保留该哈希，跨成本或成本缺失的方向比较为unknown；引用中存在成本不匹配时，不能用另一条可比记录掩盖。旧经验保留，缺少成本身份的旧observed摘要在召回时降为unknown，不改写历史回执。
+- 95项专项回归及完整scripts/check.sh通过（1362 passed / 1 xfailed），覆盖真实调用链替身的创建→开发→持久经验→比较；这只证明证据边界，不证明策略效果。原501、509及Agent评审配置不修改。
+
 ## Agent自动评审真实正向验收 — 2026-09-13
 
 - 产品配置revision3：enabled=true、paper_review_mode=agent、每60分钟，原10个百分点与研究预算保持不变。arc:policy仅授予现有BitPro政策管理主体；普通arc:start不能修改自动评审门槛。

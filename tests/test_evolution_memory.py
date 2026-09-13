@@ -24,6 +24,7 @@ def record(**changes):
             "passed": False,
             "reasons": ["net_return_too_low"],
             "metrics": {
+                "cost_policy_hash": "c" * 64,
                 "net_return": -0.1,
                 "max_drawdown": 0.2,
                 "evaluation_window": {
@@ -381,6 +382,7 @@ def test_assessment_normalizes_percentages_and_reports_conflicting_references():
         },
     }
     metrics = {
+        "cost_policy_hash": "c" * 64,
         "total_return_pct": 20,
         "evaluation_window": record()["development"]["metrics"]["evaluation_window"],
     }
@@ -407,3 +409,72 @@ def test_assessment_rejects_overflowed_delta_and_malformed_hypothesis():
     assert assess_hypothesis(spec, metrics, [entry], WINDOWS, "100")["status"] == "unknown"
     spec["evolution_hypothesis"]["expected_metric"] = []
     assert assess_hypothesis(spec, metrics, [entry], WINDOWS, "100")["status"] == "unknown"
+
+
+@pytest.mark.parametrize(
+    "old_hash,new_hash", [(None, "c" * 64), ("c" * 64, None), ("a" * 64, "c" * 64)]
+)
+def test_metric_improvement_is_unknown_without_matching_cost_evidence(old_hash, new_hash):
+    from hypertrade.arc.evolution_memory import assess_hypothesis
+
+    item = record()
+    item["development"]["metrics"]["cost_policy_hash"] = old_hash
+    entry = curate([item])[0][0]
+    spec = {
+        **entry["spec"],
+        "evolution_hypothesis": {
+            "evidence_refs": [entry["memory_id"]],
+            "expected_metric": "net_return",
+            "expected_direction": "increase",
+        },
+    }
+    metrics = {
+        **record()["development"]["metrics"],
+        "net_return": 0.4,
+        "cost_policy_hash": new_hash,
+    }
+    result = assess_hypothesis(spec, metrics, [entry], WINDOWS, "100")
+    assert result["status"] == "unknown"
+    assert result["causal_claim_verified"] is False
+
+
+def test_legacy_assessment_without_cost_identity_is_not_recalled_as_verified_direction():
+    item = record()
+    item["development"]["metrics"].pop("cost_policy_hash", None)
+    item["development"]["hypothesis_assessment"] = {
+        "status": "observed",
+        "metric": "net_return",
+        "direction": "increase",
+        "scope": "development_metric_direction_only",
+    }
+    entries, _ = curate([item])
+    assert len(entries) == 1
+    assert entries[0]["cost_policy_hash"] is None
+    assert entries[0]["hypothesis_assessment"]["status"] == "unknown"
+
+
+def test_one_matching_reference_cannot_hide_a_cited_cost_mismatch():
+    from hypertrade.arc.evolution_memory import assess_hypothesis
+
+    entries = curate([record()])[0]
+    other = deepcopy(entries[0])
+    other["memory_id"] = "different-cost"
+    other["cost_policy_hash"] = "d" * 64
+    spec = {
+        **entries[0]["spec"],
+        "evolution_hypothesis": {
+            "evidence_refs": [entries[0]["memory_id"], other["memory_id"]],
+            "expected_metric": "net_return",
+            "expected_direction": "increase",
+        },
+    }
+    result = assess_hypothesis(
+        spec,
+        {**record()["development"]["metrics"], "net_return": 0.3},
+        [*entries, other],
+        WINDOWS,
+        "100",
+    )
+    assert len(result["comparisons"]) == 1
+    assert result["status"] == "unknown"
+    assert result["incomparable_cost_references"] == 1

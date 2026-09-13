@@ -217,3 +217,112 @@ def test_paper_research_requests_cost_freeze_before_backtest():
         },
     )
     assert ARCSelfTestService(Client()).run(attempt, goal).passed
+
+
+@pytest.mark.parametrize("fault", [None, "hash", "code", "values"])
+def test_development_cost_identity_comes_from_validated_creation_receipt(fault):
+    import hashlib
+    import json
+    from dataclasses import asdict
+    from datetime import date
+
+    from hypertrade.arc.contracts import ResearchWindowsV1
+    from hypertrade.arc.evolution_memory import assess_hypothesis, curate_memory
+
+    windows = ResearchWindowsV1(as_of=date(2026, 9, 12))
+    code = "class X: pass"
+    values = {
+        "taker_fee_bps": 5.0,
+        "maker_fee_bps": 2.0,
+        "slippage_bps": 1.0,
+        "funding_mode": "strategy_defined_or_not_modeled",
+    }
+    policy = {
+        "version": "research_costs.v1",
+        "source": "bitpro_backtest_cost_resolver",
+        "exchange": "okx",
+        "market_type": "swap",
+        "values": values,
+    }
+    expected_hash = hashlib.sha256(
+        json.dumps(policy, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    ).hexdigest()
+    policy["hash"] = expected_hash if fault != "hash" else "0" * 64
+    config = {**values, "_freeze_research_costs": True, "_research_cost_policy": policy}
+    if fault == "values":
+        config["slippage_bps"] = 9
+
+    class Client:
+        def strategy_validate_code(self, **kwargs):
+            return {"status": "ok"}
+
+        def strategy_create(self, **kwargs):
+            return {
+                "strategy": {
+                    "id": 9,
+                    "exchange": "okx",
+                    "script_content": code if fault != "code" else "different",
+                    "config": config,
+                }
+            }
+
+        def backtest_start_job(self, **kwargs):
+            return {
+                "backtest_result": {
+                    "id": "proof",
+                    "metrics": {
+                        "sharpe": 2,
+                        "max_drawdown": 0.01,
+                        "trades": 100,
+                        "net_return": 0.1,
+                        "cost_policy_hash": "f" * 64,
+                    },
+                }
+            }
+
+    result = ARCSelfTestService(Client()).run(
+        ARCCandidateAttemptV1(
+            attempt_id="cost", candidate_id="cost", hypothesis="test", strategy_code=code
+        ),
+        ARCGoalV1(
+            objective="costs",
+            paper_review_required=True,
+            research_id="cost-provenance",
+            research_windows=windows,
+        ),
+        purpose="development",
+    )
+    assert result.backtest_id == "proof"
+    assert result.metrics.get("cost_policy_hash") == (expected_hash if fault is None else None)
+
+    spec = {"symbol": "BTC-USDT-SWAP", "timeframe": "1H"}
+    entries, _ = curate_memory(
+        [
+            {
+                "mission_id": "cost-provenance",
+                "candidate_id": "cost",
+                "hypothesis": "test",
+                "spec": spec,
+                "capital": "100",
+                "code_sha256": hashlib.sha256(code.encode()).hexdigest(),
+                "development": {
+                    **asdict(result),
+                    "purpose": "development",
+                    "code_sha256": hashlib.sha256(code.encode()).hexdigest(),
+                },
+            }
+        ],
+        symbol=spec["symbol"],
+        timeframe=spec["timeframe"],
+        windows=windows,
+    )
+    assert entries[0]["cost_policy_hash"] == (expected_hash if fault is None else None)
+    spec["evolution_hypothesis"] = {
+        "expected_metric": "net_return",
+        "expected_direction": "increase",
+        "evidence_refs": [entries[0]["memory_id"]],
+    }
+    assessment = assess_hypothesis(
+        spec, {**result.metrics, "net_return": 0.2}, entries, windows, "100"
+    )
+    assert assessment["status"] == ("observed" if fault is None else "unknown")

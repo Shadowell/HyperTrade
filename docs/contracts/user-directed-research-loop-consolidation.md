@@ -182,3 +182,5 @@ CLI在Agent待评审阶段继续流式跟进，BitPro显示Agent自动评审并�
 满足任务门槛与系统paper_criteria，并在approve前读取BitPro新候选成本冻结标识、research_costs.v1
 来源/数值/hash与代码身份。新Paper研究strategy_create显式请求_freeze_research_costs=true；
 费用解析由BitPro负责，HT不复制费率规则。旧未冻结候选自动否决并保留历史，读取故障暂缓，不盲重试写入。
+
+长期经验新增成本身份：开发回执只使用核验过的BitPro源配置research_costs.v1哈希，随后进入有界经验；同窗、资金、标的和周期一致但成本哈希不同或缺失时，hypothesis_assessment为unknown。混合引用不能掩盖成本不匹配；旧无成本身份的方向摘要召回时降级，不修改原历史、不从当前配置倒填旧证据。

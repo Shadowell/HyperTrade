@@ -112,6 +112,12 @@ def _entry(
         "capital": str(capital.normalize()),
         "development": [str(start), str(end)],
     }
+    cost_hash = metrics.get("cost_policy_hash")
+    cost_hash = (
+        cost_hash
+        if isinstance(cost_hash, str) and re.fullmatch("[0-9a-f]{64}", cost_hash)
+        else None
+    )
     entry = {
         "mission_id": str(record["mission_id"])[:128],
         "candidate_id": str(record["candidate_id"])[:128],
@@ -121,6 +127,7 @@ def _entry(
         "spec": clean_spec,
         "capital": str(capital),
         "evidence_status": "development_only",
+        "cost_policy_hash": cost_hash,
         "development": {
             "backtest_id": str(receipt["backtest_id"])[:128],
             "passed": receipt["passed"],
@@ -138,7 +145,10 @@ def _entry(
         and assessment.get("direction") in ("increase", "decrease")
     ):
         entry["hypothesis_assessment"] = {
-            "status": assessment.get("status"),
+            "status": assessment.get("status")
+            if cost_hash and assessment.get("cost_policy_hash") == cost_hash
+            else "unknown",
+            "cost_policy_hash": cost_hash,
             "metric": assessment.get("metric"),
             "direction": assessment.get("direction"),
             "scope": "development_metric_direction_only",
@@ -264,6 +274,13 @@ def assess_hypothesis(
             return abs(value) if value is not None else None
         return _number(values, "trade_count", "trades")
 
+    cost_hash = metrics.get("cost_policy_hash")
+    cost_hash = (
+        cost_hash
+        if isinstance(cost_hash, str) and re.fullmatch("[0-9a-f]{64}", cost_hash)
+        else None
+    )
+    cost_mismatches = 0
     current = number(metrics)
     comparisons = []
     expected_window = [str(d) for d in windows.window("development")]
@@ -286,6 +303,9 @@ def assess_hypothesis(
             if not isinstance(entry.get("spec"), dict) or any(
                 entry["spec"].get(k) != spec.get(k) for k in ("symbol", "timeframe")
             ):
+                continue
+            if not cost_hash or entry.get("cost_policy_hash") != cost_hash:
+                cost_mismatches += 1
                 continue
             receipt = entry["development"]
             prior_capital, current_capital = Decimal(str(entry["capital"])), Decimal(str(capital))
@@ -327,7 +347,7 @@ def assess_hypothesis(
     outcomes = {c["observed"] for c in comparisons}
     status = (
         "unknown"
-        if not outcomes
+        if not outcomes or cost_mismatches
         else "mixed"
         if len(outcomes) > 1
         else "observed"
@@ -341,7 +361,11 @@ def assess_hypothesis(
         "scope": "development_metric_direction_only",
         "causal_claim_verified": False,
         "comparisons": comparisons,
-        "reason": "no_comparable_referenced_development"
+        "cost_policy_hash": cost_hash,
+        "incomparable_cost_references": cost_mismatches,
+        "reason": "missing_or_incompatible_cost_policy"
+        if not cost_hash or cost_mismatches
+        else "no_comparable_referenced_development"
         if not comparisons
         else "metric_direction_checked; textual_falsifier_requires_review",
     }

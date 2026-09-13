@@ -14,6 +14,7 @@ from typing import Any, Literal, Protocol
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCGoalV1, ARCSuccessCriteriaV1
 from hypertrade.arc.universe import candidate_symbol
+from hypertrade.bitpro.cost_identity import source_cost_policy_hash
 from hypertrade.bitpro.mcp import BitProToolAdapter
 
 
@@ -346,6 +347,7 @@ class ARCSelfTestService:
                 reasons=["bitpro_strategy_create_rejected"],
             )
 
+        cost_policy_hash = source_cost_policy_hash(created, strategy_id, attempt.strategy_code)
         end = date.today()
         start = end - timedelta(days=90)
         if goal.research_windows is not None:
@@ -379,6 +381,10 @@ class ARCSelfTestService:
 
         backtest_id = _backtest_id(backtest)
         metrics = _result_metrics(backtest)
+        # Bind to the immutable creation/read receipt, not arbitrary backtest metric text.
+        metrics.pop("cost_policy_hash", None)
+        if cost_policy_hash is not None:
+            metrics["cost_policy_hash"] = cost_policy_hash
         if goal.research_windows is not None:
             metrics["evaluation_window"] = {
                 "purpose": purpose,
