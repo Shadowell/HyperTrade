@@ -13,6 +13,41 @@ An explicit target cost identity filters missing or mismatched receipts. The man
 records excluded sources/reasons, quotas, and scan truncation. Reads require an explicit
 symbol, timeframe and frozen research window; generic prompt recall cannot bypass them.
 
+### Paired AVO evaluation
+
+Run the evaluator in a dedicated process/container with a persistent experiment directory:
+
+```bash
+python -m hypertrade.evals.memory_ablation create /eval/pair-01 --goal /eval/goal.json --records /eval/records.json
+python -m hypertrade.evals.memory_ablation run /eval/pair-01
+python -m hypertrade.evals.memory_ablation status /eval/pair-01
+```
+
+The input is a clean `ARCGoalV1`: explicit Provider/model and research windows, unused
+budget, `research_mode=avo`, version-bound review enabled and `arc_windowed_v1` policy.
+The input human/agent review mode is preserved. Paper authorization, feedback/evolution
+context and existing research IDs are rejected. Records use the original development
+receipt shape consumed by `curate_memory`; they must be exported from authoritative
+sources after invalidation checks, not reconstructed from generated summaries.
+
+The records file may contain authoritative ARC receipt inputs or the exact bounded
+`ResearchMemoryV1` output from `MemoryService.research_context`; versioned entries are
+strictly revalidated for their content hash, scope, window, capital, cost target and
+contamination marker. `manifest.json` freezes controls, curated corpus, selection exclusions, runtime hash and
+counterbalanced arm order. ARC assigns each arm a separate operational research ID;
+these IDs isolate BitPro creation/backtest idempotency without changing model controls.
+`journal.db` holds authoritative budgets, events and receipts; `requests.jsonl` records
+the actual post-injection request hashes, and `result.json` is a rebuildable result view.
+Interrupted model calls remain charged and missing usage stays unknown. Unsettled tool
+effects are not retried. Restart with `run` to resume; runtime or manifest drift is rejected.
+
+The runner calls research/validation only; it does not run the worker or invoke Paper
+review/configure/start. Both arms share ordinary AVO validation and budget accounting.
+Differences cover calls, backtests, candidates, reported tokens, development passes and
+repeated experiments against the same frozen corpus. Missing cost/data-snapshot identity,
+unreported spending and uncontrolled provider sampling remain explicit unknowns. A single
+pair never establishes memory effectiveness, strategy profitability or causality.
+
 ## English
 
 Memory is automatic but audited. Every memory item stores kind, content, source run id, source tool, timestamps, and disabled status.

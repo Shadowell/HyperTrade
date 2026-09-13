@@ -40,6 +40,14 @@ def version_projection(entry: dict[str, Any], config_sha256: str | None) -> dict
         reasons.append("missing_config_identity")
     if not entry.get("cost_policy_hash"):
         reasons.append("missing_cost_identity")
+    if reasons and isinstance(entry.get("hypothesis_assessment"), dict):
+        entry = {
+            **entry,
+            "hypothesis_assessment": {
+                **entry["hypothesis_assessment"],
+                "status": "unknown",
+            },
+        }
     return ResearchMemoryV1(
         **entry,
         config_sha256=config_sha256,

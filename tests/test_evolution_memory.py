@@ -24,6 +24,7 @@ def record(**changes):
             "passed": False,
             "reasons": ["net_return_too_low"],
             "metrics": {
+                "config_sha256": "d" * 64,
                 "cost_policy_hash": "c" * 64,
                 "net_return": -0.1,
                 "max_drawdown": 0.2,
@@ -382,6 +383,7 @@ def test_assessment_normalizes_percentages_and_reports_conflicting_references():
         },
     }
     metrics = {
+        "config_sha256": "d" * 64,
         "cost_policy_hash": "c" * 64,
         "total_return_pct": 20,
         "evaluation_window": record()["development"]["metrics"]["evaluation_window"],

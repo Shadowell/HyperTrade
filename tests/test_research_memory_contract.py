@@ -8,6 +8,7 @@ from test_evolution_memory import WINDOWS, record
 
 def test_avo_projects_versioned_identity_without_backfilling_unknown_config():
     source = record()
+    source["development"]["metrics"].pop("config_sha256", None)
     before = deepcopy(source)
     entries, _ = curate_memory([source], symbol="SOL-USDT-SWAP", timeframe="1H", windows=WINDOWS)
     assert entries[0].get("schema_version") == "research_memory.v1"
@@ -54,6 +55,27 @@ def test_unknown_source_and_declared_contamination_are_not_recalled():
     )
     assert entries == []
     assert manifest["excluded"] == {"unknown_source": 1, "contaminated": 1}
+
+
+def test_unknown_config_identity_cannot_support_a_direction_assessment():
+    from hypertrade.arc.evolution_memory import assess_hypothesis
+
+    source = record()
+    source["development"]["metrics"].pop("config_sha256", None)
+    entries, _ = curate_memory([source], symbol="SOL-USDT-SWAP", timeframe="1H", windows=WINDOWS)
+    spec = {
+        **source["spec"],
+        "evolution_hypothesis": {
+            "evidence_refs": [entries[0]["memory_id"]],
+            "expected_metric": "net_return",
+            "expected_direction": "increase",
+        },
+    }
+    assessment = assess_hypothesis(
+        spec, {**source["development"]["metrics"], "net_return": 0.9}, entries, WINDOWS, "100"
+    )
+    assert assessment["status"] == "unknown"
+    assert assessment["comparisons"] == []
 
 
 def test_general_memory_reads_authoritative_arc_receipts_after_process_restart(tmp_path):

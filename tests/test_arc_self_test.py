@@ -317,6 +317,18 @@ def test_development_cost_identity_comes_from_validated_creation_receipt(fault):
         windows=windows,
     )
     assert entries[0]["cost_policy_hash"] == (expected_hash if fault is None else None)
+    assert entries[0]["config_sha256"] == (
+        hashlib.sha256(
+            json.dumps(
+                config,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
+        if fault != "code"
+        else None
+    )
     spec["evolution_hypothesis"] = {
         "expected_metric": "net_return",
         "expected_direction": "increase",

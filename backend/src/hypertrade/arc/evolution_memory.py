@@ -313,6 +313,9 @@ def assess_hypothesis(
         else None
     )
     cost_mismatches = 0
+    identity_mismatches = 0
+    config_hash = metrics.get("config_sha256")
+    config_known = isinstance(config_hash, str) and bool(re.fullmatch("[0-9a-f]{64}", config_hash))
     current = number(metrics)
     comparisons = []
     expected_window = [str(d) for d in windows.window("development")]
@@ -338,6 +341,14 @@ def assess_hypothesis(
                 continue
             if not cost_hash or entry.get("cost_policy_hash") != cost_hash:
                 cost_mismatches += 1
+                continue
+            prior_config = entry.get("config_sha256")
+            if (
+                not config_known
+                or not isinstance(prior_config, str)
+                or not re.fullmatch("[0-9a-f]{64}", prior_config)
+            ):
+                identity_mismatches += 1
                 continue
             receipt = entry["development"]
             prior_capital, current_capital = Decimal(str(entry["capital"])), Decimal(str(capital))
@@ -379,7 +390,7 @@ def assess_hypothesis(
     outcomes = {c["observed"] for c in comparisons}
     status = (
         "unknown"
-        if not outcomes or cost_mismatches
+        if not outcomes or cost_mismatches or identity_mismatches
         else "mixed"
         if len(outcomes) > 1
         else "observed"
@@ -395,8 +406,11 @@ def assess_hypothesis(
         "comparisons": comparisons,
         "cost_policy_hash": cost_hash,
         "incomparable_cost_references": cost_mismatches,
+        "incomparable_identity_references": identity_mismatches,
         "reason": "missing_or_incompatible_cost_policy"
         if not cost_hash or cost_mismatches
+        else "missing_config_identity"
+        if not config_known or identity_mismatches
         else "no_comparable_referenced_development"
         if not comparisons
         else "metric_direction_checked; textual_falsifier_requires_review",

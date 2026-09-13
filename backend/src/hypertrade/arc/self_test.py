@@ -7,6 +7,7 @@ until BitPro has a result reference and the operator-declared criteria pass.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -348,6 +349,27 @@ class ARCSelfTestService:
             )
 
         cost_policy_hash = source_cost_policy_hash(created, strategy_id, attempt.strategy_code)
+        config_hash = None
+        try:
+            source = created.get("strategy", created)
+            if (
+                isinstance(source, dict)
+                and _strategy_id(source) == strategy_id
+                and source.get("script_content") == attempt.strategy_code
+                and isinstance(source.get("config"), dict)
+            ):
+                config_hash = hashlib.sha256(
+                    json.dumps(
+                        source["config"],
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                        allow_nan=False,
+                    ).encode()
+                ).hexdigest()
+        except (TypeError, ValueError):
+            # Non-canonical config remains unknown; it is never reconstructed later.
+            config_hash = None
         end = date.today()
         start = end - timedelta(days=90)
         if goal.research_windows is not None:
@@ -383,8 +405,11 @@ class ARCSelfTestService:
         metrics = _result_metrics(backtest)
         # Bind to the immutable creation/read receipt, not arbitrary backtest metric text.
         metrics.pop("cost_policy_hash", None)
+        metrics.pop("config_sha256", None)
         if cost_policy_hash is not None:
             metrics["cost_policy_hash"] = cost_policy_hash
+        if config_hash is not None:
+            metrics["config_sha256"] = config_hash
         if goal.research_windows is not None:
             metrics["evaluation_window"] = {
                 "purpose": purpose,

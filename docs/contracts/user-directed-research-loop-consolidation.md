@@ -192,3 +192,5 @@ ResearchMemory v1 是原 ARC 开发回执的版本化投影，MemoryService 与 
 MemoryService.research_context 每次从数据库读取，最多200任务/200记录、20条上下文，标记扫描截断。失效墓碑按 mission/backtest 持久保存于 memory_items，默认不参与普通召回，不删除原实验。指定成本哈希不匹配时拒绝；跨最终留出时间、来源不明和显式污染记录拒绝。
 
 后续配对消融需在独立持久实验目录冻结目标、窗口、Provider/model、同额预算及验证政策；两臂仅长期记忆输入不同，保存原始运行 journal、manifest、差异和 unknown。它衡量研究过程，不从单次实验宣称策略盈利或因果，不进入生产调度或 Paper/Live 路径。
+
+配对执行器现在提供 create/run/status CLI，原样保留输入的 human/agent 评审模式。研究控制字段一致，操作来源 ID 则按 pair/arm 隔离，禁止复用既有 research_id 造成跨臂回测复用或改写既有策略。数据库 journal 决定恢复状态，result.json 仅为缓存；未知回测效果不重发，中断模型调用计预算且缺失用量为unknown。未开启 worker，不调用 Paper 评审、配置或启动。
