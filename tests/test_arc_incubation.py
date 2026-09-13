@@ -107,7 +107,7 @@ def test_incubation_fails_closed_when_bitpro_raises() -> None:
     assert ok is False
     assert paper_id is None
     assert msg is not None and msg.startswith("bitpro_strategy_create_failed:")
-    assert name is not None and "atr_breakout" in name
+    assert name is not None and "ATR多头突破" in name
     assert client.calls == ["strategy_create"]
 
 
@@ -189,7 +189,7 @@ def test_incubation_starts_paper_and_names_from_family() -> None:
     assert name == format_bitpro_strategy_name(
         "ETH-USDT-SWAP",
         timeframe="4H",
-        logic_summary="mean_reversion_zscore short only",
+        logic_summary="ZScore空头均值回归",
         capital_u=10000,
     )
     assert "20周期突破" not in (name or "")
@@ -357,6 +357,44 @@ def test_reviewed_provision_uses_guarded_endpoints_without_legacy_fallback():
     assert ok and instance == "paper_bound"
     assert client.calls == ["strategy_get", "configure_reviewed", "start_reviewed"]
     assert client.configure_binding["parameters"] == attempt.strategy_spec["tunable_parameters"]
+
+
+@pytest.mark.parametrize("start_version", [None, "sha256:drifted"])
+def test_reviewed_provision_rejects_missing_or_drifted_start_strategy_version(start_version):
+    class DriftedStart(_RecordingClient):
+        def paper_configure_reviewed(self, **kwargs):
+            receipt = self.paper_configure(**kwargs)
+            receipt["paper"].update(
+                guard_version="paper_review_binding.v1",
+                review_hash=kwargs["review_hash"],
+                code_sha256=kwargs["code_sha256"],
+                config_version="sha256:" + "c" * 64,
+            )
+            return receipt
+
+        def paper_start_reviewed(self, **kwargs):
+            self.calls.append("start_reviewed")
+            receipt = {
+                **kwargs,
+                "started": True,
+                "guard_version": "paper_review_binding.v1",
+            }
+            if start_version is None:
+                receipt.pop("strategy_version")
+            else:
+                receipt["strategy_version"] = start_version
+            return {"status": "ok", "paper": receipt}
+
+    client = DriftedStart()
+    attempt = _validated()
+    attempt.bitpro_strategy_id = "42"
+    ok, instance, _, reason = ARCPaperIncubationResolver(
+        client
+    ).resolve_and_provision_paper_trading(
+        attempt, PaperPreauthorizationV1(symbols=["BTC-USDT-SWAP"], policy_hash="a" * 64)
+    )
+    assert not ok and instance is None
+    assert reason == "bitpro_started_review_binding_unconfirmed"
 
 
 def test_reviewed_start_binding_fails_on_strategy_version_mismatch():
