@@ -480,3 +480,50 @@ def test_one_matching_reference_cannot_hide_a_cited_cost_mismatch():
     assert len(result["comparisons"]) == 1
     assert result["status"] == "unknown"
     assert result["incomparable_cost_references"] == 1
+
+
+def test_resumed_settlement_is_never_compared_against_itself():
+    from hypertrade.arc.evolution_memory import assess_hypothesis
+
+    entry = curate([record()])[0][0]
+    spec = {
+        **entry["spec"],
+        "evolution_hypothesis": {
+            "evidence_refs": [entry["memory_id"]],
+            "expected_metric": "net_return",
+            "expected_direction": "increase",
+        },
+    }
+    metrics = {**record()["development"]["metrics"], "net_return": 0.3}
+    # Without the guard a resumed receipt would be measured against its own numbers.
+    assert assess_hypothesis(spec, metrics, [entry], WINDOWS, "100")["status"] == "observed"
+    resumed = assess_hypothesis(
+        spec,
+        metrics,
+        [entry],
+        WINDOWS,
+        "100",
+        current_backtest_id=entry["development"]["backtest_id"],
+    )
+    assert resumed["status"] == "unknown"
+    assert resumed["comparisons"] == []
+
+
+def test_development_assessment_fails_closed_on_unusable_context():
+    from types import SimpleNamespace
+
+    from hypertrade.arc.evolution_memory import assess_development
+
+    goal = SimpleNamespace(
+        research_id="mission",
+        paper_initial_equity="100",
+        research_windows=WINDOWS,
+        evolution_context=None,
+    )
+    result = assess_development(
+        SimpleNamespace(strategy_spec={}), goal, [], {}, {"net_return": 0.3}, "backtest"
+    )
+    assert result["status"] == "unknown"
+    assert result["scope"] == "development_metric_direction_only"
+    assert result["causal_claim_verified"] is False
+    assert result["reason"] == "invalid_comparison_evidence"

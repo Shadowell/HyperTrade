@@ -764,3 +764,73 @@ def test_avo_context_rebuilds_after_database_reload_without_replaying_tools(miss
         if event.event_type == "avo_context_recorded":
             assert "messages" not in event.payload
     assert len(restored.projection.avo["messages"]) > 2
+
+
+def test_evolution_measures_revision_and_feeds_the_observation_to_next_turn(mission):
+    from datetime import date
+
+    from hypertrade.arc.contracts import ResearchWindowsV1
+
+    mission.projection.goal.research_windows = ResearchWindowsV1(as_of=date(2026, 9, 12))
+    mission.projection.goal.evolution_context = {
+        "paper_feedback": {"triggered": True},
+        "memory": [],
+    }
+
+    class Provider(ScriptProvider):
+        def chat(self, messages, tools=None):
+            if self.calls == 4:
+                self.seen.append(json.loads(json.dumps(messages)))
+                self.calls += 1
+                return ChatResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCallRequest(
+                            "5",
+                            "stop",
+                            {"reason": "Synthetic test complete; final window unused"},
+                        )
+                    ],
+                )
+            response = super().chat(messages, tools)
+            if self.calls in (1, 3):
+                args = response.tool_calls[0].arguments
+                args["evolution_hypothesis"] = {
+                    "evidence_refs": ["paper_feedback"]
+                    if self.calls == 1
+                    else [json.loads(messages[-1]["content"])["attempt_id"]],
+                    "expected_metric": "net_return",
+                    "expected_direction": "increase",
+                    "falsification": "No same-window development gain over the reference",
+                }
+            return response
+
+    class WindowedExperiments(Experiments):
+        def run(self, attempt, goal, *, purpose="final"):
+            result = super().run(attempt, goal, purpose=purpose)
+            start, end = goal.research_windows.window(purpose)
+            result.metrics.update(
+                {
+                    "cost_policy_hash": "c" * 64,
+                    "config_sha256": "d" * 64,
+                    "evaluation_window": {
+                        "purpose": purpose,
+                        "start_date": str(start),
+                        "end_date": str(end),
+                    },
+                }
+            )
+            return result
+
+    provider, experiments = Provider(), WindowedExperiments()
+    run_avo_research(mission.mission_id, provider=provider, experiments=experiments)
+    assert experiments.calls == ["development", "development"]
+    receipts = list(mission.projection.avo["development"].values())
+    assert receipts[0]["hypothesis_assessment"]["status"] == "unknown"
+    assessment = receipts[1]["hypothesis_assessment"]
+    assert assessment["status"] == "observed"
+    assert assessment["comparisons"][0]["delta"] == pytest.approx(0.3)
+    assert json.loads(provider.seen[-1][-1]["content"])["hypothesis_assessment"] == assessment
+    assert mission.projection.goal.budget.backtests_used == 2
+    assert not mission.projection.avo.get("final_window_consumed")
+    assert not mission.projection.paper_review

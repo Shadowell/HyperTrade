@@ -1033,6 +1033,11 @@ BitPro自主进化开关对应HyperTrade持久配置与worker调度。每小时�
 标的、周期、开发窗口、资金的重复实验需repeat_reason，仍正常计预算。模型不获改写裁判或审批权限。
 论文依据与阶段验收见架构61第11节。经验效用强化学习和生产代码自修改未启用。
 
+开发回测的hypothesis_assessment只核对被引用实验与当前候选的预期指标方向。同标的、周期、资金、
+开发窗口且不同回测引用才可比较；百分数与比例按现有指标解析器归一化。结果为observed、not_observed、
+mixed或unknown，标明development_metric_direction_only；不验证自然语言因果断言，不影响最终门槛或审批。
+缺字段的旧记录不得丢失已结算回测回执，评估摘要可随有界经验进入下一轮。
+
 ### 用户授权的全自动Paper评审（2026-09-13）
 
 本次用户明确撤销逐版本人审要求，允许Agent完成模拟盘闭环。EvolutionConfig.paper_review_mode的

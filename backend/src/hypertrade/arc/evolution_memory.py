@@ -11,7 +11,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from hypertrade.arc.contracts import ResearchWindowsV1
+from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCGoalV1, ResearchWindowsV1
 from hypertrade.memory.research import version_projection
 
 _METRICS = {
@@ -283,6 +283,7 @@ def assess_hypothesis(
     references: list[dict[str, Any]],
     windows: ResearchWindowsV1,
     capital: Any,
+    current_backtest_id: str | None = None,
 ) -> dict[str, Any]:
     """Measure a proposed direction without promoting it to a causal or OOS conclusion."""
     from hypertrade.arc.self_test import _fraction, _number
@@ -351,6 +352,9 @@ def assess_hypothesis(
                 identity_mismatches += 1
                 continue
             receipt = entry["development"]
+            if isinstance(receipt, dict) and receipt.get("backtest_id") == current_backtest_id:
+                # A resumed settlement must never be measured against itself.
+                continue
             prior_capital, current_capital = Decimal(str(entry["capital"])), Decimal(str(capital))
             if (
                 entry.get("evidence_status") != "development_only"
@@ -415,3 +419,59 @@ def assess_hypothesis(
         if not comparisons
         else "metric_direction_checked; textual_falsifier_requires_review",
     }
+
+
+def assess_development(
+    candidate: ARCCandidateAttemptV1,
+    goal: ARCGoalV1,
+    attempts: list[ARCCandidateAttemptV1],
+    development: dict[str, Any],
+    metrics: dict[str, Any],
+    backtest_id: str | None,
+) -> dict[str, Any]:
+    """Assess after a settled experiment; bad legacy context must not lose its receipt."""
+    try:
+        assert goal.research_windows is not None
+        raw = [
+            {
+                "mission_id": goal.research_id,
+                "candidate_id": old.candidate_id,
+                "hypothesis": old.hypothesis,
+                "spec": old.strategy_spec,
+                "code_sha256": hashlib.sha256(old.strategy_code.encode()).hexdigest(),
+                "capital": str(goal.paper_initial_equity),
+                "development": development[old.attempt_id],
+            }
+            for old in attempts
+            if old.attempt_id in development
+        ]
+        references, _ = curate_memory(
+            raw,
+            symbol=candidate.strategy_spec["symbol"],
+            timeframe=candidate.strategy_spec["timeframe"],
+            windows=goal.research_windows,
+        )
+        attempt_ids = {a.candidate_id: a.attempt_id for a in attempts}
+        for entry in references:
+            entry["memory_id"] = attempt_ids[entry["candidate_id"]]
+        references += [
+            e
+            for e in (goal.evolution_context or {}).get("memory", [])[:20]
+            if isinstance(e, dict) and e.get("memory_id")
+        ]
+        return assess_hypothesis(
+            candidate.strategy_spec,
+            metrics,
+            references,
+            goal.research_windows,
+            goal.paper_initial_equity,
+            backtest_id,
+        )
+    except (KeyError, TypeError, ValueError, ArithmeticError, AttributeError):
+        # A secondary interpretation is never grounds for redispatching a settled backtest.
+        return {
+            "status": "unknown",
+            "scope": "development_metric_direction_only",
+            "causal_claim_verified": False,
+            "reason": "invalid_comparison_evidence",
+        }
