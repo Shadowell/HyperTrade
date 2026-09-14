@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from hypertrade.arc.contracts import PaperPreauthorizationV1
 from hypertrade.arc.incubation import ARCPaperIncubationResolver
-from hypertrade.arc.universe import candidate_symbol
+from hypertrade.arc.universe import candidate_symbols
 
 if TYPE_CHECKING:
     from hypertrade.arc.controller import ARCController, ARCMissionProjection
@@ -36,7 +36,7 @@ def build_paper_review(
     selected_symbols = []
     if selected is not None and goal is not None:
         try:
-            selected_symbols = [candidate_symbol(selected.strategy_spec, goal.symbols)]
+            selected_symbols = candidate_symbols(selected.strategy_spec, goal.symbols)
         except ValueError as exc:
             unknowns.append(str(exc))
     binding: dict[str, Any] = {

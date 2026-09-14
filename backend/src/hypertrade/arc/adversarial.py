@@ -102,7 +102,12 @@ class BlueTeamQuant:
         if not isinstance(proposal, ProviderProposal):  # pragma: no cover - typing guard
             raise TypeError("propose_from_provider expects a ProviderProposal")
         generated = generate_strategy(proposal.spec)
-        symbol = (proposal.spec.get("symbols") or ["BTC-USDT-SWAP"])[0]
+        symbols = [
+            str(item).strip()
+            for item in (proposal.spec.get("symbols") or ["BTC-USDT-SWAP"])
+            if str(item).strip()
+        ] or ["BTC-USDT-SWAP"]
+        symbol = symbols[0]
         timeframe = (proposal.spec.get("timeframes") or ["1H"])[0]
         digest = hashlib.blake2s(
             f"provider|{proposal.request_hash}|{generated.family}|{generated.direction}".encode(),
@@ -119,7 +124,7 @@ class BlueTeamQuant:
             provider_request_hash=proposal.request_hash,
             strategy_spec={
                 "source": "provider_hypothesis",
-                "symbol": symbol,
+                **({"symbols": symbols} if len(symbols) > 1 else {"symbol": symbol}),
                 "timeframe": timeframe,
                 "family": generated.family,
                 "direction": generated.direction,

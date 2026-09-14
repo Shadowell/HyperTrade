@@ -25,7 +25,7 @@ from hypertrade.arc.paper_review import request_paper_review
 from hypertrade.arc.provider_hypothesis import ProviderProposal, _bounded_spec
 from hypertrade.arc.self_test import ARCSelfTestService
 from hypertrade.arc.store import get_controller, list_mission_ids, research_lock, save_avo_context
-from hypertrade.arc.universe import candidate_symbol
+from hypertrade.arc.universe import candidate_symbols, declared_symbols
 from hypertrade.config import get_settings
 from hypertrade.providers.chat import ChatProvider
 from hypertrade.providers.runtime import ProviderRuntime
@@ -54,6 +54,13 @@ _PARAMETERS = {
         "properties": {
             "hypothesis": {"type": "string", "minLength": 1, "maxLength": 400},
             "symbol": {"type": "string", "minLength": 1, "maxLength": 64},
+            "symbols": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1, "maxLength": 64},
+                "minItems": 2,
+                "maxItems": 20,
+                "uniqueItems": True,
+            },
             "repeat_reason": {"type": "string", "minLength": 12, "maxLength": 400},
             "evolution_hypothesis": {
                 "type": "object",
@@ -280,6 +287,21 @@ def _candidate(controller: ARCController, attempt_id: str) -> ARCCandidateAttemp
     raise ValueError("candidate is not in this research lineage")
 
 
+def enforce_source_scope(source_spec: dict[str, Any], candidate_scope: list[str]) -> None:
+    """A portfolio evolves as a whole; a single instrument cannot silently widen.
+
+    ``source_spec`` is the baseline spec the candidate must stay comparable to.
+    """
+    source_scope = declared_symbols(source_spec) if isinstance(source_spec, dict) else []
+    if len(source_scope) > 1 and set(candidate_scope) != set(source_scope):
+        raise ValueError(
+            "portfolio evolution must preserve the full source symbol set; "
+            "declare every source symbol in `symbols`"
+        )
+    if len(source_scope) == 1 and len(candidate_scope) > 1:
+        raise ValueError("single-symbol source cannot widen the symbol set")
+
+
 def _perform(
     controller: ARCController,
     name: str,
@@ -340,6 +362,15 @@ def _perform(
             or arguments["direction"] != baseline_spec.get("direction")
         ):
             raise ValueError("parameter optimization must preserve source family and direction")
+        source_spec = (
+            baseline_spec
+            if isinstance(baseline_spec, dict) and baseline_spec
+            else (goal.evolution_context or {}).get("baseline", {}).get("strategy_spec", {})
+        )
+        candidate_scope = candidate_symbols(arguments, goal.symbols)
+        # A portfolio is evolved as a whole: the candidate must keep the full
+        # source symbol set, and a single-instrument source cannot widen it here.
+        enforce_source_scope(source_spec, candidate_scope)
         family = next(f for f in FAMILIES if f.key == arguments["family_key"])
         parameters = {p.name: p for p in family.parameters}
         for key, pair in arguments["parameter_bounds"].items():
@@ -353,7 +384,8 @@ def _perform(
         spec = _bounded_spec(
             arguments,
             objective=goal.objective,
-            symbol=candidate_symbol(arguments, goal.symbols),
+            symbol=candidate_scope[0],
+            symbols=candidate_scope if len(candidate_scope) > 1 else None,
             timeframe=goal.timeframes[0],
         )
         if spec is None:

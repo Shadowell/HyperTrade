@@ -29,6 +29,7 @@ class MemoryService:
         timeframe: str,
         windows: ResearchWindowsV1,
         cost_policy_hash: str | None = None,
+        symbols: set[str] | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Read the common projection; invalidation never modifies source evidence."""
         from hypertrade.arc.evolution_memory import curate_memory
@@ -56,6 +57,7 @@ class MemoryService:
             windows=windows,
             cost_policy_hash=cost_policy_hash,
             invalidated=invalidated,
+            symbols=symbols,
         )
 
     def research_context(

@@ -31,6 +31,7 @@ from hypertrade.arc.findings import (
     AttackFinding,
     FindingSeverity,
 )
+from hypertrade.arc.universe import declared_symbols
 from hypertrade.backtest.candidate import (
     Bar,
     CandidateBacktestError,
@@ -393,7 +394,8 @@ class HistoricalEvidenceGate:
         self._replay = replay
 
     def evaluate(self, attempt: ARCCandidateAttemptV1) -> EvidenceVerdict:
-        symbol = str(attempt.strategy_spec.get("symbol") or "BTC-USDT-SWAP")
+        declared = declared_symbols(attempt.strategy_spec)
+        symbol = declared[0] if declared else "BTC-USDT-SWAP"
         timeframe = str(attempt.strategy_spec.get("timeframe") or "1H")
 
         if self.window is None:

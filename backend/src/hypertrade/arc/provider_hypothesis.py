@@ -178,6 +178,7 @@ def _bounded_spec(
     objective: str,
     symbol: str,
     timeframe: str,
+    symbols: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """Project a provider reply onto the spec shape the codegen consumes.
 
@@ -206,16 +207,28 @@ def _bounded_spec(
 
     entry_logic = str(parsed.get("entry_logic") or objective)[:400]
     exit_logic = str(parsed.get("exit_logic") or "stop loss and take profit exit")[:400]
+    scope = [str(item).strip() for item in (symbols or [symbol]) if str(item).strip()] or [symbol]
+    if len(scope) > 1:
+        bases = []
+        for item in scope:
+            base = item.split("/")[0].split(":")[0].removesuffix("-SWAP").removesuffix("-USDT")
+            if base and base not in bases:
+                bases.append(base)
+        scope_label = "/".join(bases[:3]) + (f"等{len(bases)}" if len(bases) > 3 else "")
+        key_suffix = f"{len(scope)}sym"
+    else:
+        scope_label = scope[0]
+        key_suffix = ""
     return {
         "schema_version": "research_strategy_spec.v1",
-        "strategy_key": f"prov_{symbol.replace('-', '_').casefold()}",
-        "title": f"Provider hypothesis for {symbol}",
+        "strategy_key": f"prov_{symbol.replace('-', '_').casefold()}{key_suffix}",
+        "title": f"Provider hypothesis for {scope_label}",
         "hypothesis": str(parsed.get("hypothesis") or objective)[:400],
         # The family/direction wording doubles as selection input, but both explicit
         # keys short-circuit inference, so the provider's choice is authoritative.
         "entry_logic": f"{entry_logic} ({family_key})",
         "exit_logic": exit_logic,
-        "symbols": [symbol],
+        "symbols": scope,
         "timeframes": [timeframe],
         "strategy_category": "ARC",
         "family_key": family_key,

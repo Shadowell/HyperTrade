@@ -1,7 +1,26 @@
 """Human-readable BitPro names; execution identities remain in separate request keys."""
 
+import re
 from decimal import Decimal
 from typing import Any
+
+
+def scope_label_from_symbols(symbols: list[str], *, max_items: int = 3) -> str:
+    """BitPro scope segment: first bases joined with '/', '等N' beyond the cap.
+
+    Mirrors BitPro's ``scope_label_from_symbols`` so portfolio names stay inside
+    the naming contract's scope grammar.
+    """
+    bases: list[str] = []
+    for symbol in symbols or ():
+        base = re.split(r"[/:\-]", str(symbol or "").strip())[0].upper()
+        if base and base not in bases:
+            bases.append(base)
+    if not bases:
+        return "多标的"
+    if len(bases) <= max_items:
+        return "/".join(bases)
+    return f"{'/'.join(bases[:max_items])}等{len(bases)}"
 
 
 def logic_summary(spec: dict[str, Any]) -> str:
@@ -39,8 +58,9 @@ def format_bitpro_strategy_name(
     capital_u: Any = 100,
     *,
     asset_type: str = "合约",
+    scope_label: str | None = None,
 ) -> str:
-    base = symbol.strip().upper()
+    base = (scope_label or symbol).strip().upper()
     if "/USDT" in base:
         base = base.split("/")[0]
     else:

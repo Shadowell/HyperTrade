@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCGoalV1, ResearchWindowsV1
+from hypertrade.arc.universe import declared_symbols
 from hypertrade.memory.research import version_projection
 
 _METRICS = {
@@ -28,7 +29,15 @@ _METRICS = {
     "win_rate",
     "profit_factor",
 }
-_SPEC = {"symbol", "timeframe", "family", "direction", "tunable_parameters", "risk_overlays"}
+_SPEC = {
+    "symbol",
+    "symbols",
+    "timeframe",
+    "family",
+    "direction",
+    "tunable_parameters",
+    "risk_overlays",
+}
 
 
 def _digest(value: Any) -> str:
@@ -54,7 +63,10 @@ def experiment_key(
 
 
 def _entry(
-    record: dict[str, Any], symbol: str, timeframe: str, windows: ResearchWindowsV1
+    record: dict[str, Any],
+    allowed_symbols: set[str],
+    timeframe: str,
+    windows: ResearchWindowsV1,
 ) -> dict[str, Any]:
     if any(
         not isinstance(record.get(key), str) or not record[key].strip()
@@ -66,7 +78,7 @@ def _entry(
     spec, receipt = record["spec"], record["development"]
     if not isinstance(spec, dict) or not isinstance(receipt, dict):
         raise ValueError("malformed_receipt")
-    if spec.get("symbol") != symbol or spec.get("timeframe") != timeframe:
+    if spec.get("symbol") not in allowed_symbols or spec.get("timeframe") != timeframe:
         raise ValueError("scope_mismatch")
     code = record["code_sha256"]
     if not re.fullmatch("[0-9a-f]{64}", code) or receipt.get("code_sha256") != code:
@@ -100,6 +112,14 @@ def _entry(
             not isinstance(clean_spec[key], str) or len(clean_spec[key]) > 100
         ):
             raise ValueError("invalid_spec")
+    if "symbols" in clean_spec:
+        declared = clean_spec["symbols"]
+        if (
+            not isinstance(declared, list)
+            or not 1 <= len(declared) <= 20
+            or any(not isinstance(item, str) or not item or len(item) > 100 for item in declared)
+        ):
+            raise ValueError("invalid_spec")
     for key in ("tunable_parameters", "risk_overlays"):
         # Numeric parameter maps only; source comments/config/runtime are never context.
         if key in clean_spec:
@@ -115,7 +135,7 @@ def _entry(
     # Use the actual receipt window, not a guessed reconstruction of its policy.
     identity = {
         "code": code,
-        "symbol": symbol,
+        "symbol": spec.get("symbol"),
         "timeframe": timeframe,
         "capital": str(capital.normalize()),
         "development": [str(start), str(end)],
@@ -183,15 +203,21 @@ def curate_memory(
     windows: ResearchWindowsV1,
     cost_policy_hash: str | None = None,
     invalidated: set[tuple[str, str]] | None = None,
+    symbols: set[str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Deterministic bounded context, keeping both supporting and opposing experiments."""
+    """Deterministic bounded context, keeping both supporting and opposing experiments.
+
+    ``symbols`` widens the scope to a portfolio's full member set; ``symbol``
+    alone keeps the historical single-instrument behavior.
+    """
+    allowed_symbols = set(symbols) if symbols else {symbol}
     excluded: Counter[str] = Counter()
     exclusions: list[dict[str, str]] = []
     accepted: list[dict[str, Any]] = []
     seen: set[str] = set()
     for record in records[:200]:
         try:
-            entry = _entry(record, symbol, timeframe, windows)
+            entry = _entry(record, allowed_symbols, timeframe, windows)
             ref = entry["development"]["backtest_id"]
             if (entry["mission_id"], ref) in (invalidated or set()):
                 raise ValueError("invalidated")
@@ -460,11 +486,13 @@ def assess_development(
             for old in attempts
             if old.attempt_id in development
         ]
+        entry_symbols = declared_symbols(candidate.strategy_spec)
         references, _ = curate_memory(
             raw,
-            symbol=candidate.strategy_spec["symbol"],
+            symbol=entry_symbols[0] if entry_symbols else "",
             timeframe=candidate.strategy_spec["timeframe"],
             windows=goal.research_windows,
+            symbols=set(entry_symbols) if len(entry_symbols) > 1 else None,
         )
         attempt_ids = {a.candidate_id: a.attempt_id for a in attempts}
         for entry in references:

@@ -17,7 +17,7 @@ from hypertrade.arc.contracts import (
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.observation import paper_attempt
 from hypertrade.arc.store import get_controller, research_lock
-from hypertrade.arc.universe import candidate_symbol
+from hypertrade.arc.universe import candidate_symbols, declared_symbols
 from hypertrade.bitpro.mcp import BitProToolAdapter
 from hypertrade.bitpro.paced_reads import PacedReadClient
 
@@ -154,49 +154,73 @@ def _timeframe_seconds(timeframe: str) -> int | None:
 
 
 def _benchmark_series(
-    client: Any, symbol: str, timeframe: str, start: datetime, end: datetime
+    client: Any, symbols: list[str], timeframe: str, start: datetime, end: datetime
 ) -> dict[str, Any]:
-    """Buy-and-hold closes for the strategy's own symbol over the same window."""
+    """Buy-and-hold benchmark over the same window.
+
+    One symbol uses its own closes; a portfolio benchmark is the equal-weight
+    composite of every member's normalized closes (base 100), aligned on the
+    shared bar grid. Any member that cannot be built fails the whole benchmark
+    (annotated fallback), never a silently partial basket.
+    """
+    if not symbols:
+        return {"status": "unsupported_symbols"}
     seconds = _timeframe_seconds(timeframe)
     if seconds is None:
-        return {"status": "unsupported_timeframe", "symbol": symbol, "timeframe": timeframe}
+        return {"status": "unsupported_timeframe", "symbols": list(symbols), "timeframe": timeframe}
     needed = int((end - start).total_seconds() // seconds) + 8
     if needed > _KLINE_PAGE_LIMIT:
-        return {"status": "insufficient_coverage", "symbol": symbol, "timeframe": timeframe}
-    try:
-        payload = client.market_klines(symbol=symbol, timeframe=timeframe, limit=needed)
-    except Exception:  # noqa: BLE001 - benchmark absence must not stall the strategy read
-        return {"status": "unavailable", "symbol": symbol, "timeframe": timeframe}
-    points = []
-    for row in payload.get("candles") or []:
-        if not isinstance(row, dict):
-            continue
-        stamp = row.get("timestamp") or row.get("ts") or row.get("time")
-        if stamp is None or "close" not in row:
-            continue
+        return {
+            "status": "insufficient_coverage",
+            "symbols": list(symbols),
+            "timeframe": timeframe,
+        }
+    normalized: list[dict[str, float]] = []
+    for symbol in symbols:
         try:
-            ms = int(float(stamp))
-            if ms < 10_000_000_000:
-                ms = ms * 1000
-            close = float(row["close"])
-        except (TypeError, ValueError, KeyError):
-            continue
-        if math.isfinite(close) and close > 0:
-            points.append(
-                {
-                    "timestamp": datetime.fromtimestamp(ms / 1000, UTC).isoformat(),
-                    "equity": close,
-                }
-            )
+            payload = client.market_klines(symbol=symbol, timeframe=timeframe, limit=needed)
+        except Exception:  # noqa: BLE001 - benchmark absence must not stall the strategy read
+            return {"status": "unavailable", "symbols": list(symbols), "timeframe": timeframe}
+        closes: dict[str, float] = {}
+        for row in payload.get("candles") or []:
+            if not isinstance(row, dict):
+                continue
+            stamp = row.get("timestamp") or row.get("ts") or row.get("time")
+            if stamp is None or "close" not in row:
+                continue
+            try:
+                ms = int(float(stamp))
+                if ms < 10_000_000_000:
+                    ms = ms * 1000
+                close = float(row["close"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if math.isfinite(close) and close > 0:
+                closes[datetime.fromtimestamp(ms / 1000, UTC).isoformat()] = close
+        if len(closes) < 3:
+            return {"status": "unavailable", "symbols": list(symbols), "timeframe": timeframe}
+        base = closes[min(closes)]
+        normalized.append({stamp: value / base * 100.0 for stamp, value in closes.items()})
+    merged: dict[str, list[float]] = {}
+    for series in normalized:
+        for stamp, value in series.items():
+            merged.setdefault(stamp, []).append(value)
+    points = [
+        {"timestamp": stamp, "equity": sum(values) / len(values)}
+        for stamp, values in sorted(merged.items())
+    ]
     if len(points) < 3:
-        return {"status": "unavailable", "symbol": symbol, "timeframe": timeframe}
-    return {
+        return {"status": "unavailable", "symbols": list(symbols), "timeframe": timeframe}
+    block: dict[str, Any] = {
         "status": "observed",
-        "symbol": symbol,
+        "symbols": list(symbols),
         "timeframe": timeframe,
         "tolerance_seconds": seconds,
         "points": points,
     }
+    if len(symbols) == 1:
+        block["symbol"] = symbols[0]
+    return block
 
 
 def _benchmark_halves(
@@ -249,7 +273,7 @@ def collect_windows(
     end: datetime,
     policy: PaperFeedbackPolicyV1,
     *,
-    benchmark_symbol: str | None = None,
+    benchmark_symbols: list[str] | None = None,
     timeframe: str | None = None,
 ) -> dict[str, Any]:
     raw = client.paper_snapshot(instance_id=instance_id, strategy_id=int(strategy_id))
@@ -327,8 +351,8 @@ def collect_windows(
     ):
         raise ValueError("paper_changed_during_collection")
     benchmark = None
-    if policy.benchmark_relative and benchmark_symbol and timeframe:
-        benchmark = _benchmark_series(client, benchmark_symbol, timeframe, start, end)
+    if policy.benchmark_relative and benchmark_symbols and timeframe:
+        benchmark = _benchmark_series(client, benchmark_symbols, timeframe, start, end)
     result = evaluate_windows(
         sorted(points.values(), key=lambda p: _time(p["timestamp"])),
         end,
@@ -445,7 +469,10 @@ def check_paper_feedback(
             return dict(state)
         try:
             spec = attempt.strategy_spec if isinstance(attempt.strategy_spec, dict) else {}
-            spec_symbol = spec.get("symbol")
+            try:
+                spec_symbols = candidate_symbols(spec, goal.symbols)
+            except ValueError:
+                spec_symbols = None
             spec_timeframe = spec.get("timeframe")
             evidence = collect_windows(
                 client or BitProToolAdapter(PacedReadClient()),
@@ -453,7 +480,7 @@ def check_paper_feedback(
                 str(attempt.bitpro_strategy_id),
                 end,
                 goal.feedback,
-                benchmark_symbol=spec_symbol if isinstance(spec_symbol, str) else None,
+                benchmark_symbols=spec_symbols,
                 timeframe=spec_timeframe if isinstance(spec_timeframe, str) else None,
             )
         except Exception as exc:
@@ -515,9 +542,9 @@ def check_paper_feedback(
                     return result
                 if context["source_code_sha256"] != hashlib.sha256(
                     attempt.strategy_code.encode()
-                ).hexdigest() or context["baseline"]["strategy_spec"]["symbol"] != candidate_symbol(
-                    attempt.strategy_spec, goal.symbols
-                ):
+                ).hexdigest() or set(
+                    declared_symbols(context["baseline"]["strategy_spec"])
+                ) != set(candidate_symbols(attempt.strategy_spec, goal.symbols)):
                     result.update(status="no_action", reason="approved_source_changed")
                     parent.apply_event("paper_feedback_checked", result)
                     return result
@@ -532,7 +559,7 @@ def check_paper_feedback(
                 baseline.candidate_id = f"baseline_{key}"
                 baseline.state = "proposed"
                 child_goal = goal.model_copy(deep=True)
-                child_goal.symbols = [candidate_symbol(baseline.strategy_spec, goal.symbols)]
+                child_goal.symbols = candidate_symbols(baseline.strategy_spec, goal.symbols)
                 child_goal.research_id = child_id
                 child_goal.research_mode = "avo"
                 child_goal.research_windows = ResearchWindowsV1(

@@ -29,7 +29,7 @@ from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import collect_windows
 from hypertrade.arc.observation import _snapshot_body
 from hypertrade.arc.store import get_controller, research_lock
-from hypertrade.arc.universe import normalize_symbols
+from hypertrade.arc.universe import declared_symbols, normalize_symbols
 from hypertrade.db import ArcMission, Database
 from hypertrade.memory.service import MemoryService
 from hypertrade.targets.registry import (
@@ -126,13 +126,12 @@ def baseline_config(source: dict[str, Any], capital: Decimal) -> dict[str, Any]:
     return result
 
 
-def _single_symbol(snapshot: dict[str, Any]) -> str | None:
-    """Benchmarking only makes sense for single-symbol strategies."""
+def strategy_symbols(snapshot: dict[str, Any]) -> list[str]:
+    """All normalized symbols of a running strategy (empty when unreadable)."""
     try:
-        symbols = normalize_symbols(snapshot.get("strategy", {}).get("symbols", []))
+        return normalize_symbols(snapshot.get("strategy", {}).get("symbols", []))
     except (ValueError, TypeError):
-        return None
-    return symbols[0] if len(symbols) == 1 else None
+        return []
 
 
 def cycle_view(row: EvolutionCycle) -> dict[str, Any]:
@@ -297,7 +296,7 @@ class EvolutionService:
                         "触发来源为" + context["trigger_source"] + "，稳定表现不得声称退化；"
                         "保留原策略，通过同窗比较和最终门槛后按配置评审独立Paper。"
                     ),
-                    symbols=[context["baseline"]["strategy_spec"]["symbol"]],
+                    symbols=declared_symbols(context["baseline"]["strategy_spec"]),
                     timeframes=[context["baseline"]["strategy_spec"]["timeframe"]],
                     research_mode="avo",
                     provider_name="codex",
@@ -443,7 +442,7 @@ class EvolutionService:
                 diagnostic["attribution_report"] = collect_attribution(client, snapshot, now)
                 if int(snapshot.get("trade_count") or 0) < config.min_trades:
                     raise ValueError("成交样本不足")
-                benchmark_symbol = _single_symbol(snapshot)
+                benchmark_symbols = strategy_symbols(snapshot) or None
                 feedback = collect_windows(
                     client,
                     str(snapshot["instance_id"]),
@@ -454,7 +453,7 @@ class EvolutionService:
                         threshold_pp=config.threshold_pp,
                         benchmark_relative=config.degradation_basis == "benchmark_relative",
                     ),
-                    benchmark_symbol=benchmark_symbol,
+                    benchmark_symbols=benchmark_symbols,
                     timeframe=str(row.get("timeframe") or "") or None,
                 )
                 diagnostic["window_receipt_hash"] = digest(feedback.get("receipts", []))
@@ -466,10 +465,8 @@ class EvolutionService:
                 trigger = "degradation" if feedback["triggered"] else "proactive"
                 diagnostic.update(status="opportunity", trigger_source=trigger)
                 symbols = normalize_symbols(snapshot.get("strategy", {}).get("symbols", []))
-                if len(symbols) != 1:
-                    raise ValueError(
-                        "组合策略已识别退化；当前同窗比较引擎仅支持单标的候选，不能冒充组合优化"
-                    )
+                if not symbols:
+                    raise ValueError("策略标的为空，无法建立同窗比较基线")
                 source = client.strategy_get(strategy_id=sid).get("strategy", {})
                 code = source.get("script_content")
                 if not isinstance(code, str) or not code.strip():
@@ -513,7 +510,11 @@ class EvolutionService:
                     hypothesis="不可变的原策略比较基线",
                     strategy_code=code,
                     strategy_spec={
-                        "symbol": symbols[0],
+                        **(
+                            {"symbols": symbols}
+                            if len(symbols) > 1
+                            else {"symbol": symbols[0]}
+                        ),
                         "timeframe": timeframe,
                         "baseline_config": baseline_config(source, config.paper_capital),
                     },
@@ -573,7 +574,7 @@ class EvolutionService:
 
     def _memory(self, context: dict[str, Any], now: datetime) -> list[dict[str, Any]]:
         memory: list[dict[str, Any]] = []
-        symbol = context["baseline"]["strategy_spec"]["symbol"]
+        scope_symbols = set(declared_symbols(context["baseline"]["strategy_spec"]))
         with self.db.session() as session:
             records = session.scalars(
                 select(ArcMission).order_by(ArcMission.updated_at.desc())
@@ -583,7 +584,7 @@ class EvolutionService:
                 goal = projection.goal
                 if goal is None:
                     continue
-                if symbol not in goal.symbols or len(memory) >= 200:
+                if not scope_symbols.intersection(goal.symbols) or len(memory) >= 200:
                     continue
                 # Only development receipts become cross-task memory. Hidden final metrics
                 # never enter another proposal context as if they were training data.
@@ -606,7 +607,8 @@ class EvolutionService:
         windows = ResearchWindowsV1(as_of=now.astimezone(UTC).date() - timedelta(days=1))
         memory, manifest = MemoryService(self.db).project_research(
             memory,
-            symbol=symbol,
+            symbol=sorted(scope_symbols)[0] if scope_symbols else "",
+            symbols=scope_symbols or None,
             timeframe=context["baseline"]["strategy_spec"]["timeframe"],
             windows=windows,
         )

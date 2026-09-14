@@ -54,3 +54,34 @@ def candidate_symbol(spec: dict[str, Any], scope: list[str]) -> str:
     if not symbol or symbol not in scope:
         raise ValueError("candidate_symbol_missing_or_outside_research_scope")
     return symbol
+
+
+def candidate_symbols(spec: dict[str, Any], scope: list[str]) -> list[str]:
+    """Resolve the candidate's full symbol set inside the research scope.
+
+    Portfolio candidates declare ``symbols`` explicitly; a single-symbol
+    candidate may inherit its sole scope (historical behavior). Index zero of a
+    multi-symbol scope is never taken silently — that corrupts Paper binding.
+    """
+    declared = spec.get("symbols")
+    if isinstance(declared, (list, tuple)) and declared:
+        symbols: list[str] = []
+        for value in declared:
+            symbol = str(value).strip()
+            if not symbol or symbol not in scope:
+                raise ValueError("candidate_symbols_outside_research_scope")
+            if symbol not in symbols:
+                symbols.append(symbol)
+        if not symbols:
+            raise ValueError("candidate_symbols_missing")
+        return symbols
+    return [candidate_symbol(spec, scope)]
+
+
+def declared_symbols(spec: dict[str, Any]) -> list[str]:
+    """Symbols a spec declares, without scope resolution ([] when absent)."""
+    declared = spec.get("symbols")
+    if isinstance(declared, (list, tuple)) and declared:
+        return [str(value).strip() for value in declared if str(value).strip()]
+    single = spec.get("symbol")
+    return [str(single).strip()] if single else []

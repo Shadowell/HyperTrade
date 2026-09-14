@@ -14,8 +14,12 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Protocol
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCGoalV1, ARCSuccessCriteriaV1
-from hypertrade.arc.strategy_names import format_bitpro_strategy_name, logic_summary
-from hypertrade.arc.universe import candidate_symbol
+from hypertrade.arc.strategy_names import (
+    format_bitpro_strategy_name,
+    logic_summary,
+    scope_label_from_symbols,
+)
+from hypertrade.arc.universe import candidate_symbols
 from hypertrade.bitpro.cost_identity import source_cost_policy_hash
 from hypertrade.bitpro.mcp import BitProToolAdapter
 
@@ -233,9 +237,10 @@ class ARCSelfTestService:
     ) -> SelfTestResult:
         client = self._client or BitProToolAdapter()
         try:
-            symbol = candidate_symbol(attempt.strategy_spec, goal.symbols)
+            symbols = candidate_symbols(attempt.strategy_spec, goal.symbols)
         except ValueError as exc:
             return SelfTestResult(False, None, None, None, reasons=[str(exc)])
+        symbol = symbols[0]  # naming/asset display only; execution uses the full set
         timeframe = str(attempt.strategy_spec.get("timeframe") or "") or (
             goal.timeframes[0] if goal.timeframes else "1H"
         )
@@ -246,7 +251,7 @@ class ARCSelfTestService:
                     False, None, None, None, reasons=["research_identity_missing"]
                 )
             scope = hashlib.sha256(
-                f"{goal.research_id}|{attempt.strategy_code}|{symbol}|{timeframe}".encode()
+                f"{goal.research_id}|{attempt.strategy_code}|{'|'.join(symbols)}|{timeframe}".encode()
             ).hexdigest()
         create_key = f"arc-selftest-create-{scope}"
         backtest_key = f"arc-selftest-backtest-{scope}"
@@ -261,13 +266,14 @@ class ARCSelfTestService:
                 logic_summary=f"{logic_summary(attempt.strategy_spec)} V{scope[:12]}",
                 capital_u=goal.paper_initial_equity,
                 asset_type="合约" if symbol.endswith("-SWAP") or ":USDT" in symbol else "现货",
+                scope_label=scope_label_from_symbols(symbols) if len(symbols) > 1 else None,
             )
 
         try:
             validated = client.strategy_validate_code(
                 script_content=attempt.strategy_code,
                 idempotency_key=validate_key,
-                symbols=[symbol],
+                symbols=symbols,
                 timeframe=timeframe,
             )
         except Exception as exc:
@@ -312,9 +318,12 @@ class ARCSelfTestService:
                 created = client.strategy_create(
                     name=strategy_name,
                     script_content=attempt.strategy_code,
-                    description=f"ARC self-test {attempt.candidate_id} for {symbol}",
+                    description=(
+                        f"ARC self-test {attempt.candidate_id} for "
+                        + (symbol if len(symbols) == 1 else scope_label_from_symbols(symbols))
+                    ),
                     exchange="okx",
-                    symbols=[symbol],
+                    symbols=symbols,
                     idempotency_key=create_key,
                     **(
                         {
@@ -388,7 +397,9 @@ class ARCSelfTestService:
                 initial_capital=float(goal.paper_initial_equity)
                 if goal.paper_review_required
                 else 10000.0,
-                symbol=symbol,
+                # Single symbol: explicit selector. Portfolio: None so BitPro
+                # derives the full basket from the strategy config's trade_symbols.
+                symbol=symbol if len(symbols) == 1 else None,
                 timeframe=timeframe,
                 wait_for_result=True,
                 idempotency_key=backtest_key,

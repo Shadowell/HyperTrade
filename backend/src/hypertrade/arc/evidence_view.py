@@ -9,6 +9,17 @@ from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCReflexionEventV1
 from hypertrade.arc.controller import ARCMissionProjection
 from hypertrade.arc.evidence import MIN_ADMISSIBLE_OOS_SHARPE
 from hypertrade.arc.findings import MAX_ADMISSIBLE_DRAWDOWN
+from hypertrade.arc.strategy_names import scope_label_from_symbols
+from hypertrade.arc.universe import declared_symbols
+
+
+def _scope_label(spec: dict[str, Any]) -> str:
+    declared = declared_symbols(spec)
+    if not declared:
+        return ""
+    if len(declared) == 1:
+        return declared[0]
+    return scope_label_from_symbols(declared)
 
 _SURVIVOR_STATES = {
     "validated",
@@ -201,7 +212,7 @@ def _candidate_row(attempt: ARCCandidateAttemptV1) -> dict[str, Any]:
         "origin": attempt.origin,
         "provider_model": attempt.provider_model,
         "provider_request_hash": attempt.provider_request_hash,
-        "symbol": str(attempt.strategy_spec.get("symbol") or ""),
+        "symbol": _scope_label(attempt.strategy_spec),
         "family": str(attempt.strategy_spec.get("family") or ""),
         "direction": str(attempt.strategy_spec.get("direction") or ""),
         "oos_sharpe": _as_float(metrics.get("out_of_sample_sharpe", metrics.get("ranking_sharpe"))),
