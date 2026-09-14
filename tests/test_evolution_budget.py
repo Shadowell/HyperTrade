@@ -275,7 +275,7 @@ def test_degradation_has_priority_over_stable_paper_independent_of_inventory_ord
     service.client = Multi()
     monkeypatch.setattr(
         "hypertrade.arc.evolution.collect_windows",
-        lambda client, instance, sid, *args: {
+        lambda client, instance, sid, *args, **kwargs: {
             "triggered": sid == "45",
             "reasons": ["return_drop"] if sid == "45" else [],
             "end_at": "2026-09-12T00:00:00Z",
