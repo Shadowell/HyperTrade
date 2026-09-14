@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -38,7 +39,11 @@ def _number(value: Any) -> Decimal:
 
 
 def evaluate_windows(
-    points: list[dict[str, Any]], end: datetime, policy: PaperFeedbackPolicyV1
+    points: list[dict[str, Any]],
+    end: datetime,
+    policy: PaperFeedbackPolicyV1,
+    *,
+    benchmark: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     start, middle = end - timedelta(days=14), end - timedelta(days=7)
     samples = [(_time(p["timestamp"]), _number(p["equity"])) for p in points]
@@ -80,26 +85,172 @@ def evaluate_windows(
     previous, recent = metrics(samples[: split + 1]), metrics(samples[split:])
     drop = (_number(previous["net_return"]) - _number(recent["net_return"])) * 100
     increase = (_number(recent["max_drawdown"]) - _number(previous["max_drawdown"])) * 100
+    basis, trig_drop, trig_inc = "absolute", drop, increase
+    reason_drop, reason_inc = "return_drop", "drawdown_increase"
+    benchmark_block = None
+    relative_drop = relative_increase = None
+    if benchmark is not None:
+        benchmark_block = {k: v for k, v in benchmark.items() if k != "points"}
+        if benchmark.get("status") == "observed" and policy.benchmark_relative:
+            try:
+                halves = _benchmark_halves(
+                    benchmark["points"],
+                    float(benchmark.get("tolerance_seconds") or 3600),
+                    start,
+                    middle,
+                    end,
+                )
+                benchmark_block.update(halves)
+                relative_drop = drop - _number(halves["return_drop_pp"])
+                relative_increase = increase - _number(halves["drawdown_increase_pp"])
+                basis = "benchmark_relative"
+                trig_drop, trig_inc = relative_drop, relative_increase
+                reason_drop, reason_inc = "relative_return_drop", "relative_drawdown_increase"
+            except (ValueError, KeyError, TypeError, ArithmeticError) as exc:
+                benchmark_block["status"] = str(exc) or "benchmark_misaligned"
     reasons = []
-    if drop >= policy.threshold_pp:
-        reasons.append("return_drop")
-    if increase >= policy.threshold_pp:
-        reasons.append("drawdown_increase")
-    return {
+    if trig_drop >= policy.threshold_pp:
+        reasons.append(reason_drop)
+    if trig_inc >= policy.threshold_pp:
+        reasons.append(reason_inc)
+    result: dict[str, Any] = {
         "previous": previous,
         "recent": recent,
         "return_drop_pp": str(drop),
         "drawdown_increase_pp": str(increase),
+        "degradation_basis": basis,
         "triggered": bool(reasons),
         "reasons": reasons,
         "threshold_pp": str(policy.threshold_pp),
         "end_at": end.isoformat(),
         "measurement": "hourly_sampled_paper_equity",
     }
+    if benchmark_block is not None:
+        result["benchmark"] = benchmark_block
+    if relative_drop is not None and relative_increase is not None:
+        result["relative_return_drop_pp"] = str(relative_drop)
+        result["relative_drawdown_increase_pp"] = str(relative_increase)
+    return result
+
+
+_TIMEFRAME_SECONDS = {
+    "15m": 900,
+    "30m": 1800,
+    "1h": 3600,
+    "2h": 7200,
+    "4h": 14400,
+    "6h": 21600,
+    "12h": 43200,
+    "1d": 86400,
+}
+
+# Upstream caps a single kline page at 1000 rows; finer granularities cannot
+# span the 14-day window in one read and fall back to the absolute basis.
+_KLINE_PAGE_LIMIT = 1000
+
+
+def _timeframe_seconds(timeframe: str) -> int | None:
+    return _TIMEFRAME_SECONDS.get(str(timeframe or "").strip().lower())
+
+
+def _benchmark_series(
+    client: Any, symbol: str, timeframe: str, start: datetime, end: datetime
+) -> dict[str, Any]:
+    """Buy-and-hold closes for the strategy's own symbol over the same window."""
+    seconds = _timeframe_seconds(timeframe)
+    if seconds is None:
+        return {"status": "unsupported_timeframe", "symbol": symbol, "timeframe": timeframe}
+    needed = int((end - start).total_seconds() // seconds) + 8
+    if needed > _KLINE_PAGE_LIMIT:
+        return {"status": "insufficient_coverage", "symbol": symbol, "timeframe": timeframe}
+    try:
+        payload = client.market_klines(symbol=symbol, timeframe=timeframe, limit=needed)
+    except Exception:  # noqa: BLE001 - benchmark absence must not stall the strategy read
+        return {"status": "unavailable", "symbol": symbol, "timeframe": timeframe}
+    points = []
+    for row in payload.get("candles") or []:
+        if not isinstance(row, dict):
+            continue
+        stamp = row.get("timestamp") or row.get("ts") or row.get("time")
+        if stamp is None or "close" not in row:
+            continue
+        try:
+            ms = int(float(stamp))
+            if ms < 10_000_000_000:
+                ms = ms * 1000
+            close = float(row["close"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if math.isfinite(close) and close > 0:
+            points.append(
+                {
+                    "timestamp": datetime.fromtimestamp(ms / 1000, UTC).isoformat(),
+                    "equity": close,
+                }
+            )
+    if len(points) < 3:
+        return {"status": "unavailable", "symbol": symbol, "timeframe": timeframe}
+    return {
+        "status": "observed",
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "tolerance_seconds": seconds,
+        "points": points,
+    }
+
+
+def _benchmark_halves(
+    points: list[dict[str, Any]],
+    tolerance_seconds: float,
+    start: datetime,
+    middle: datetime,
+    end: datetime,
+) -> dict[str, str]:
+    samples = sorted(
+        (_time(p["timestamp"]), _number(p["equity"])) for p in points
+    )
+    if len(samples) < 3:
+        raise ValueError("benchmark_insufficient")
+
+    def boundary(target: datetime) -> None:
+        nearest = min(samples, key=lambda s: abs((s[0] - target).total_seconds()))
+        if abs((nearest[0] - target).total_seconds()) > tolerance_seconds:
+            raise ValueError("benchmark_misaligned")
+
+    for target in (start, middle, end):
+        boundary(target)
+
+    def half(rows: list[tuple[datetime, Decimal]]) -> dict[str, Decimal]:
+        if not rows:
+            raise ValueError("benchmark_insufficient")
+        peak, drawdown = rows[0][1], Decimal(0)
+        for _, value in rows:
+            peak = max(peak, value)
+            drawdown = max(drawdown, (peak - value) / peak)
+        return {
+            "net_return": rows[-1][1] / rows[0][1] - 1,
+            "max_drawdown": drawdown,
+        }
+
+    previous = half([s for s in samples if start <= s[0] <= middle])
+    recent = half([s for s in samples if middle <= s[0] <= end])
+    return {
+        "previous_net_return": str(previous["net_return"]),
+        "recent_net_return": str(recent["net_return"]),
+        "return_drop_pp": str((previous["net_return"] - recent["net_return"]) * 100),
+        "drawdown_increase_pp": str((recent["max_drawdown"] - previous["max_drawdown"]) * 100),
+    }
 
 
 def collect_windows(
-    client: Any, instance_id: str, strategy_id: str, end: datetime, policy: PaperFeedbackPolicyV1
+    client: Any,
+    instance_id: str,
+    strategy_id: str,
+    end: datetime,
+    policy: PaperFeedbackPolicyV1,
+    *,
+    benchmark_symbol: str | None = None,
+    timeframe: str | None = None,
 ) -> dict[str, Any]:
     raw = client.paper_snapshot(instance_id=instance_id, strategy_id=int(strategy_id))
     snapshot = raw.get("snapshot", raw)
@@ -175,8 +326,14 @@ def collect_windows(
         for k in ("instance_id", "strategy_id", "status", "strategy_version", "config_version")
     ):
         raise ValueError("paper_changed_during_collection")
+    benchmark = None
+    if policy.benchmark_relative and benchmark_symbol and timeframe:
+        benchmark = _benchmark_series(client, benchmark_symbol, timeframe, start, end)
     result = evaluate_windows(
-        sorted(points.values(), key=lambda p: _time(p["timestamp"])), end, policy
+        sorted(points.values(), key=lambda p: _time(p["timestamp"])),
+        end,
+        policy,
+        benchmark=benchmark,
     )
     return {
         **result,
@@ -287,12 +444,17 @@ def check_paper_feedback(
         if state.get("checked_end_at") == end.isoformat():
             return dict(state)
         try:
+            spec = attempt.strategy_spec if isinstance(attempt.strategy_spec, dict) else {}
+            spec_symbol = spec.get("symbol")
+            spec_timeframe = spec.get("timeframe")
             evidence = collect_windows(
                 client or BitProToolAdapter(PacedReadClient()),
                 instance_id,
                 str(attempt.bitpro_strategy_id),
                 end,
                 goal.feedback,
+                benchmark_symbol=spec_symbol if isinstance(spec_symbol, str) else None,
+                timeframe=spec_timeframe if isinstance(spec_timeframe, str) else None,
             )
         except Exception as exc:
             result: dict[str, Any] = {

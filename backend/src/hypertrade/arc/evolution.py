@@ -62,6 +62,11 @@ class EvolutionConfig(BaseModel):
     interval_minutes: int = Field(default=60, ge=15, le=1440)
     strategy_ids: list[int] = Field(default_factory=list, max_length=50)
     threshold_pp: Decimal = Field(default=Decimal("10"), gt=0, le=100)
+    # benchmark_relative compares each strategy's 7+7 move against its own
+    # symbol's buy-and-hold over the same halves; absolute keeps the legacy
+    # raw comparison. Benchmark failures fall back to absolute and are
+    # annotated in the window payload.
+    degradation_basis: Literal["benchmark_relative", "absolute"] = "benchmark_relative"
     # Offline meta-tuning: advisory receipts by default (meta_tuning_enabled),
     # bounded auto-apply of the threshold step only when explicitly authorized.
     meta_tuning_enabled: bool = True
@@ -119,6 +124,15 @@ def baseline_config(source: dict[str, Any], capital: Decimal) -> dict[str, Any]:
         ai_generated=True,
     )
     return result
+
+
+def _single_symbol(snapshot: dict[str, Any]) -> str | None:
+    """Benchmarking only makes sense for single-symbol strategies."""
+    try:
+        symbols = normalize_symbols(snapshot.get("strategy", {}).get("symbols", []))
+    except (ValueError, TypeError):
+        return None
+    return symbols[0] if len(symbols) == 1 else None
 
 
 def cycle_view(row: EvolutionCycle) -> dict[str, Any]:
@@ -429,12 +443,19 @@ class EvolutionService:
                 diagnostic["attribution_report"] = collect_attribution(client, snapshot, now)
                 if int(snapshot.get("trade_count") or 0) < config.min_trades:
                     raise ValueError("成交样本不足")
+                benchmark_symbol = _single_symbol(snapshot)
                 feedback = collect_windows(
                     client,
                     str(snapshot["instance_id"]),
                     str(sid),
                     end,
-                    PaperFeedbackPolicyV1(enabled=True, threshold_pp=config.threshold_pp),
+                    PaperFeedbackPolicyV1(
+                        enabled=True,
+                        threshold_pp=config.threshold_pp,
+                        benchmark_relative=config.degradation_basis == "benchmark_relative",
+                    ),
+                    benchmark_symbol=benchmark_symbol,
+                    timeframe=str(row.get("timeframe") or "") or None,
                 )
                 diagnostic["window_receipt_hash"] = digest(feedback.get("receipts", []))
                 diagnostic.update(

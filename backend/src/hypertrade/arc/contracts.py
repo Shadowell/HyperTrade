@@ -63,6 +63,11 @@ class PaperFeedbackPolicyV1(BaseModel):
     enabled: bool = False
     threshold_pp: Decimal = Field(default=Decimal("10"), gt=0, le=100)
     max_gap_seconds: int = Field(default=7200, ge=3600, le=14400)
+    # Benchmark-relative degradation: compare the strategy's two weekly moves
+    # against its own symbol's buy-and-hold over the same halves, so a market
+    # drawdown alone does not masquerade as strategy decay. Falls back to the
+    # absolute comparison (annotated) when the benchmark cannot be built.
+    benchmark_relative: bool = True
     research_max_candidates: int = Field(default=3, ge=1, le=20)
     research_max_model_calls: int = Field(default=20, ge=1, le=50)
     research_max_backtests: int = Field(default=8, ge=3, le=50)
