@@ -57,6 +57,19 @@ async def evolution_tuning(request: Request) -> dict[str, Any]:
     return await run_in_threadpool(_report)
 
 
+@router.get("/evolution/effectiveness", dependencies=[Depends(require_scope(ARCScope.READ))])
+async def evolution_effectiveness(request: Request) -> dict[str, Any]:
+    """Deterministic accounting of what the evolution loop proposed and achieved."""
+    from hypertrade.arc.effectiveness import build_effectiveness_report
+
+    def _report() -> dict[str, Any]:
+        service = EvolutionService(request.app.state.db)
+        config = EvolutionConfig.model_validate(service.status()["config"])
+        return build_effectiveness_report(service.db, target_id=config.target_id).model_dump()
+
+    return await run_in_threadpool(_report)
+
+
 @router.get(
     "/evolution/attribution/{strategy_id}", dependencies=[Depends(require_scope(ARCScope.READ))]
 )
