@@ -86,6 +86,24 @@ def _continuation_stale(row: dict[str, Any], now: datetime) -> bool:
     return now - seen_at > timedelta(hours=STALE_CONTINUATION_HOURS)
 
 
+def _first_seen(payload: dict[str, Any], *, fallback: datetime) -> datetime:
+    """Episode anchor: when the loop first observed this condition.
+
+    Horizons are measured against the loop's own clock (payload first_seen_at),
+    never the DB insert clock: production writes both from the same clock, and
+    the anchor must survive clock skew and a resolve-then-reappear cycle
+    starting a fresh episode.
+    """
+    value = payload.get("first_seen_at")
+    if isinstance(value, str):
+        try:
+            seen_at = datetime.fromisoformat(value)
+        except ValueError:
+            return fallback
+        return seen_at if seen_at.tzinfo else seen_at.replace(tzinfo=UTC)
+    return fallback
+
+
 def _desired_alerts(
     continuations: list[dict[str, Any]], cycle_rows: list[dict[str, Any]], now: datetime
 ) -> dict[str, dict[str, Any]]:
@@ -233,6 +251,10 @@ def evolution_alerts_once(
                 payload["signature"] = block["signature"]
                 row.payload_json = payload
                 if row.status in {"resolved"}:
+                    # A reappearing condition is a new episode: reset the anchor
+                    # so horizons are not inherited from the old episode.
+                    payload["first_seen_at"] = now.isoformat()
+                    row.payload_json = dict(payload)
                     row.status = "open" if not block["tracking_only"] else "tracking"
                     row.delivered_at = None
                     row.delivery_result = ""
@@ -243,15 +265,13 @@ def evolution_alerts_once(
                 elif row.status == "tracking" and not block["tracking_only"]:
                     row.status = "open"
                     opened += 1
-                elif (
-                    row.status == "tracking"
-                    and block["tracking_only"]
-                    and now - _aware(row.created_at) >= timedelta(hours=STALL_AFTER_HOURS)
-                ):
-                    row.status = "open"
-                    hours = int((now - _aware(row.created_at)).total_seconds() // 3600)
-                    row.message = f"{block['message']}（已持续约 {hours} 小时）"
-                    opened += 1
+                elif row.status == "tracking" and block["tracking_only"]:
+                    since = _first_seen(payload, fallback=_aware(row.created_at))
+                    hours = int((now - since).total_seconds() // 3600)
+                    if hours >= STALL_AFTER_HOURS:
+                        row.status = "open"
+                        row.message = f"{block['message']}（已持续约 {hours} 小时）"
+                        opened += 1
         for key, row in existing.items():
             if key not in desired and row.status in {"open", "tracking", "acknowledged"}:
                 row.status = "resolved"
@@ -266,7 +286,9 @@ def evolution_alerts_once(
         ).all()
         for row in open_rows:
             payload = dict(row.payload_json or {})
-            if now - _aware(row.created_at) > timedelta(days=RETRY_WINDOW_DAYS):
+            if now - _first_seen(payload, fallback=_aware(row.created_at)) > timedelta(
+                days=RETRY_WINDOW_DAYS
+            ):
                 continue
             # "Webhook not configured" is a configuration state, not a failed
             # attempt: once the webhook appears, delivery must not wait out the

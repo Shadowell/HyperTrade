@@ -195,6 +195,37 @@ def test_stale_continuation_never_alerts(db, webhook) -> None:
     assert list_alerts(db) == []
 
 
+def test_reappearing_stall_starts_a_fresh_episode(db, webhook) -> None:
+    """Horizons are anchored to the loop clock, not the row insert clock.
+
+    A resolved condition that reappears must serve a fresh 72h tracking window
+    instead of inheriting the old episode's age (which would page instantly).
+    """
+    _, post = webhook
+    seed_continuation(
+        db, 342, blockers=[{"code": "evidence_recheck"}], next_eligible_at=None
+    )
+    evolution_alerts_once(db, now=NOW, post=post)
+
+    with db.session() as session:  # condition clears -> resolved
+        session.delete(session.get(EvolutionContinuation, "src_342"))
+    evolution_alerts_once(db, now=NOW + timedelta(hours=1), post=post)
+    assert list_alerts(db)[0]["status"] == "resolved"
+
+    later = NOW + timedelta(hours=100)
+    seed_continuation(
+        db, 342, blockers=[{"code": "evidence_recheck"}], next_eligible_at=None,
+        observed_at=later,
+    )
+    again = evolution_alerts_once(db, now=later, post=post)
+    assert again["tracking"] == 1 and again["opened"] == 0
+
+    touch_continuation(db, 342, later + timedelta(hours=73))
+    opened = evolution_alerts_once(db, now=later + timedelta(hours=73), post=post)
+    assert opened["opened"] == 1 and opened["delivered"] == 1
+    assert "已持续约 73 小时" in list_alerts(db)[0]["message"]
+
+
 def test_pausing_a_strategy_resolves_its_open_alert(db, webhook) -> None:
     _, post = webhook
     seed_continuation(db, 296, blockers=[{"code": "session_identity"}])
