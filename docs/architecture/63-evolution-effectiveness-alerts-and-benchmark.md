@@ -57,8 +57,9 @@ session_start、running_state，以及读取/成本类采样失败
 暂停时其未解决告警会自动 resolved，暂停中的策略不会被误报。确定性 ID 去重；
 条件消失自动 `resolved`；`GET /evolution/alerts` 查看、`POST
 /evolution/alerts/{id}/ack` 确认（确认后同一条件不再打扰，条件消失自动解决，
-再次出现视为新事件重新告警）。投递复用 `FEISHU_WEBHOOK_URL`（未配置只记台账；
-失败 6 小时节流重试、7 天放弃）；worker 每个 tick 评估，投递失败永不阻塞扫描。
+再次出现视为新事件重新告警）。投递复用 `FEISHU_WEBHOOK_URL`（未配置只记台账，
+且不计为一次投递尝试——webhook 配置后下个评估周期立即送达；失败 6 小时节流
+重试、7 天放弃）；worker 每个 tick 评估，投递失败永不阻塞扫描。
 
 ## 4. 基准相对退化
 

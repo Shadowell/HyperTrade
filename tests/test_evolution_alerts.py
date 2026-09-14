@@ -267,6 +267,25 @@ def test_without_webhook_the_ledger_still_records(db, monkeypatch) -> None:
         assert row is not None and row.delivered_at is None
 
 
+def test_webhook_configured_later_delivers_on_next_evaluation(db, monkeypatch) -> None:
+    """Not-configured is not a failed attempt: no retry-cadence penalty."""
+    monkeypatch.setattr(get_settings(), "feishu_webhook_url", "", raising=False)
+    seed_continuation(db, 333, blockers=[{"code": "session_identity"}])
+    assert evolution_alerts_once(db, now=NOW)["opened"] == 1
+    assert list_alerts(db)[0]["delivery_result"] == "skipped_no_webhook"
+
+    sent: list[dict] = []
+    monkeypatch.setattr(
+        get_settings(), "feishu_webhook_url", "https://feishu.example/hook", raising=False
+    )
+    second = evolution_alerts_once(
+        db, now=NOW + timedelta(minutes=2), post=lambda url, payload: sent.append(payload)
+    )
+    assert second["delivered"] == 1
+    assert len(sent) == 1
+    assert list_alerts(db)[0]["delivery_result"] == "sent"
+
+
 def test_alerts_migration_creates_and_removes_only_its_table() -> None:
     import importlib.util
     from pathlib import Path

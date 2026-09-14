@@ -268,23 +268,28 @@ def evolution_alerts_once(
             payload = dict(row.payload_json or {})
             if now - _aware(row.created_at) > timedelta(days=RETRY_WINDOW_DAYS):
                 continue
+            # "Webhook not configured" is a configuration state, not a failed
+            # attempt: once the webhook appears, delivery must not wait out the
+            # retry cadence. Applies to rows written before this distinction.
+            previously_skipped = str(row.delivery_result or "") == "skipped_no_webhook"
             last_attempt = payload.get("last_attempt_at")
-            if isinstance(last_attempt, str):
+            if isinstance(last_attempt, str) and not previously_skipped:
                 try:
                     attempt_at = datetime.fromisoformat(last_attempt)
                     if now - attempt_at < timedelta(hours=RETRY_AFTER_HOURS):
                         continue
                 except ValueError:
                     pass
-            payload["last_attempt_at"] = now.isoformat()
             ok, result = _deliver({"code": row.code, "message": row.message}, now, post=post)
-            row.payload_json = payload
             row.delivery_result = result
             if ok:
                 row.delivered_at = now
                 delivered += 1
+                payload["last_attempt_at"] = now.isoformat()
             elif result.startswith("failed"):
                 failed += 1
+                payload["last_attempt_at"] = now.isoformat()
+            row.payload_json = payload
     return {
         "status": "ok",
         "opened": opened,
