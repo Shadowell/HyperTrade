@@ -1069,3 +1069,11 @@ agent模式受enabled、策略范围、候选资金上限约束；独立评审�
 离线元学习：`meta_tuning` 只回放已结算的 7+7 观测（周期账本冻结了当轮配置与窗口值），退化阈值建议定在观测 p90（下限 max(5pp, p50)、上限 20pp、样本 <12 条不调参），单步 ≤3pp、每日至多一次（`tune_YYYYMMDD` 回执幂等）。`meta_tuning_enabled` 默认只产出建议回执；`meta_tuning_auto_apply` 显式授权后经 `EvolutionService.configure` 修订审计应用，操作者记为 `hypertrade:meta-tuner`。`GET /evolution/tuning` 提供只读报告。`paper_criteria`/`min_trades`/冷却/预算上限不在自动调整范围。
 
 归因见证式升级：`costs`/`long_short` 维度仅在上游 `coverage.fields` 两页都标记 `observed` 且台账条目数值齐备时点亮（费用合计、净 PnL、long/short 计数与净 PnL），`side` 仅识别 long/short 词表；`source_field_states` 为 unknown/observed/unverified 三态。当前上游全部字段为 unknown，线上行为不变；语义仍为 `descriptive_execution_coverage_only`、`causal_conclusion=not_established`，不从裸 PnL 推断。细则见架构 62 与《用户指令合同——可插拔市场目标》。
+
+### 自进化加固：实效、告警与基准相对退化（2026-09-14）
+
+效果账本：`GET /evolution/effectiveness`（`evolution_effectiveness.v1`）只统计进化循环发起的任务（evolution_context/feedback_parent），给出周期分布、任务进度、候选与基线对比（无效对比单列不充数）、Paper 决策、已结算 Outcome、候选/模型调用/回测成本与逐来源战果；`baseline_win_rate` 仅在存在有效对比时给出，`causal_conclusion=not_established`。
+
+数据缺口告警：`readiness` 每个 blocker 标注 `resolution`（time=等待自愈 / operator=需人工或上游修复），延续记录带 `attention_required`。`arc_evolution_alerts` 账本三规则——operator 阻塞立即告警；证据无法构建且无预计资格时间先跟踪、超 72 小时升级告警；连续 3 个扫描周期 error 告警（critical）。条件消失自动解决，`POST /evolution/alerts/{id}/ack` 确认后同条件不再打扰；投递复用 `FEISHU_WEBHOOK_URL`（未配置只记台账、失败节流重试、投递失败不阻塞扫描）。`GET /evolution/alerts` 可查。
+
+基准相对退化：默认口径改为基准相对——策略 7+7 变化对比其标的同窗买入持有（`market_klines` 构建，边界容差=周期长度），大盘下跌不再冒充策略退化；reasons 为 `relative_return_drop`/`relative_drawdown_increase`。15m 周期超出单页上限、拉取失败、错位、多标的策略均回退绝对口径并在 window 载荷标注 `benchmark.status`，绝不静默。`EvolutionConfig.degradation_basis`（默认 benchmark_relative）可一键回退 `absolute`，绝对口径 reasons 与行为不变。细则见架构 63 与《用户指令合同——自进化加固》。
