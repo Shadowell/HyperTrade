@@ -79,7 +79,7 @@ reasons 为 `relative_return_drop`/`relative_drawdown_increase`。
 | misaligned | 边界超出容差 | 同上 |
 | insufficient_coverage | 15m 等周期超出单页 1000 根，无法覆盖 14 天 | 同上 |
 | unsupported_timeframe | 未知周期粒度 | 同上 |
-| （多标的策略） | 无单一标的不取基准 | 绝对口径 |
+| （多标的组合） | 无单一标的：取成员等权买入持有合成（各自归一基 100 后按共享 K 线网格平均） | 相对口径（任一成员构建失败即整体回退并标注） |
 
 `PaperFeedbackPolicyV1.benchmark_relative`（默认 True）随 goal 冻结；
 `EvolutionConfig.degradation_basis`（默认 `benchmark_relative`）由操作员控制；

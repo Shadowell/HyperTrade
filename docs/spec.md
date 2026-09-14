@@ -1070,10 +1070,14 @@ agent模式受enabled、策略范围、候选资金上限约束；独立评审�
 
 归因见证式升级：`costs`/`long_short` 维度仅在上游 `coverage.fields` 两页都标记 `observed` 且台账条目数值齐备时点亮（费用合计、净 PnL、long/short 计数与净 PnL），`side` 仅识别 long/short 词表；`source_field_states` 为 unknown/observed/unverified 三态。当前上游全部字段为 unknown，线上行为不变；语义仍为 `descriptive_execution_coverage_only`、`causal_conclusion=not_established`，不从裸 PnL 推断。细则见架构 62 与《用户指令合同——可插拔市场目标》。
 
+### 组合策略自主进化（2026-09-14）
+
+组合策略（多标的，如 8 标的的 TradFi 半导体篮子）与单标的策略同为自主进化的合法对象：退化诊断与告警同口径（组合基准=成员等权买入持有合成，任一成员构建失败则整体回退并标注）；触发后按完整标的集合发起研究——`ARCGoalV1.symbols` 与基线 spec 均携带全量标的，AVO propose 强制候选保持完整集合（不得静默退化为单标的，单标的来源也不得扩大集合，违反即拒绝并给出明确原因）；候选经同一 self-test 链验证：`strategy_validate_code`/`strategy_create` 传全量标的，回测以 `symbol=None` 让 BitPro 从策略配置的 `trade_symbols` 推导整篮子并输出聚合指标，与基线（原策略模块+配置）同窗比较；Paper 评审包与 reviewed 配置绑定全量 symbols；研究记忆按"与任一成员同源"过滤。命名沿用 BitPro 组合标签约定（前 3 个成员 + 等N）。结构变异（增删标的、改周期）仍不在本阶段范围——组合进化目前只做参数邻域。
+
 ### 自进化加固：实效、告警与基准相对退化（2026-09-14）
 
 效果账本：`GET /evolution/effectiveness`（`evolution_effectiveness.v1`）只统计进化循环发起的任务（evolution_context/feedback_parent），给出周期分布、任务进度、候选与基线对比（无效对比单列不充数）、Paper 决策、已结算 Outcome、候选/模型调用/回测成本与逐来源战果；`baseline_win_rate` 仅在存在有效对比时给出，`causal_conclusion=not_established`。
 
 数据缺口告警：`readiness` 每个 blocker 标注 `resolution`（time=等待自愈 / operator=需人工或上游修复），延续记录带 `attention_required`。`arc_evolution_alerts` 账本三规则——operator 阻塞立即告警；证据无法构建且无预计资格时间先跟踪、超 72 小时升级告警；连续 3 个扫描周期 error 告警（critical）。条件消失自动解决，`POST /evolution/alerts/{id}/ack` 确认后同条件不再打扰；投递复用 `FEISHU_WEBHOOK_URL`（未配置只记台账、失败节流重试、投递失败不阻塞扫描）。`GET /evolution/alerts` 可查。
 
-基准相对退化：默认口径改为基准相对——策略 7+7 变化对比其标的同窗买入持有（`market_klines` 构建，边界容差=周期长度），大盘下跌不再冒充策略退化；reasons 为 `relative_return_drop`/`relative_drawdown_increase`。15m 周期超出单页上限、拉取失败、错位、多标的策略均回退绝对口径并在 window 载荷标注 `benchmark.status`，绝不静默。`EvolutionConfig.degradation_basis`（默认 benchmark_relative）可一键回退 `absolute`，绝对口径 reasons 与行为不变。细则见架构 63 与《用户指令合同——自进化加固》。
+基准相对退化：默认口径改为基准相对——策略 7+7 变化对比其标的同窗买入持有（`market_klines` 构建，边界容差=周期长度），大盘下跌不再冒充策略退化；组合策略取成员等权买入持有合成作为基准（任一成员构建失败则整体回退并标注）。reasons 为 `relative_return_drop`/`relative_drawdown_increase`。15m 周期超出单页上限、拉取失败、错位均回退绝对口径并在 window 载荷标注 `benchmark.status`，绝不静默。`EvolutionConfig.degradation_basis`（默认 benchmark_relative）可一键回退 `absolute`，绝对口径 reasons 与行为不变。细则见架构 63 与《用户指令合同——自进化加固》。
