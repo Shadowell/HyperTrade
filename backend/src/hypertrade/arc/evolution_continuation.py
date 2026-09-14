@@ -46,6 +46,25 @@ def window_days(profile: MarketTargetProfileV1 | None) -> int:
     return profile.calendar.evidence_window_days if profile is not None else 14
 
 
+# time = waiting clears it (window rolls, trades accumulate, budget resets);
+# operator = a human or upstream fix is required (identity, source down, costs).
+_OPERATOR_BLOCKERS = {"session_identity", "session_start", "running_state"}
+_OPERATOR_SAMPLING_REASONS = {
+    "recent_read_unavailable",
+    "cost_metadata_unavailable",
+    "session_identity_missing",
+}
+
+
+def blocker_resolution(code: str, *, sampling_reason: str | None = None) -> str:
+    """Classify whether a blocker self-heals with time or needs an operator."""
+    if code in _OPERATOR_BLOCKERS:
+        return "operator"
+    if code == "evidence_recheck":
+        return "operator" if sampling_reason in _OPERATOR_SAMPLING_REASONS else "time"
+    return "time"
+
+
 def complete_receipt_chain(receipts: list[Any], end_at: Any) -> bool:
     """Verify that the source receipts cover one exact, contiguous 7+7 window."""
     try:
@@ -170,6 +189,12 @@ def readiness(
             }
         )
     # Poll unknown/trade/data conditions; a date is only the known minimum time gate.
+    sampling_reason = (cursor.get("sampling") or {}).get("reason_code")
+    for blocker in blockers:
+        blocker.setdefault(
+            "resolution",
+            blocker_resolution(str(blocker.get("code")), sampling_reason=sampling_reason),
+        )
     return {
         "schema_version": "evolution_continuation.v1",
         "observed_at": now.isoformat(),
@@ -185,6 +210,7 @@ def readiness(
         "check_result": diagnostic.get("status", "unavailable"),
         "window": diagnostic.get("window"),
         "automatic_resume": True,
+        "attention_required": any(b.get("resolution") == "operator" for b in blockers),
     }
 
 
@@ -246,6 +272,7 @@ class ContinuationLedger:
                                     "code": reason,
                                     "eligible_at": eligible_at,
                                     "condition": "budget admission must recheck",
+                                    "resolution": "time",
                                 }
                             )
                     state["next_eligible_at"] = (

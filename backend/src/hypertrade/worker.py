@@ -530,6 +530,8 @@ async def arc_observation_loop(db: Database) -> None:
 
 async def arc_evolution_loop(db: Database) -> None:
     from hypertrade.arc.evolution import EvolutionService
+    from hypertrade.arc.evolution_alerts import evolution_alerts_once
+
     configure_store(db)
     service = EvolutionService(db)
     while True:
@@ -537,6 +539,10 @@ async def arc_evolution_loop(db: Database) -> None:
             await asyncio.to_thread(service.tick)
         except Exception:
             logger.exception("arc_evolution failed")
+        try:
+            await asyncio.to_thread(evolution_alerts_once, db)
+        except Exception:
+            logger.exception("arc_evolution_alerts failed")
         await asyncio.sleep(60)
 
 

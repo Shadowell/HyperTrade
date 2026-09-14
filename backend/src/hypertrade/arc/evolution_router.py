@@ -70,6 +70,29 @@ async def evolution_effectiveness(request: Request) -> dict[str, Any]:
     return await run_in_threadpool(_report)
 
 
+@router.get("/evolution/alerts", dependencies=[Depends(require_scope(ARCScope.READ))])
+async def evolution_alerts(request: Request) -> dict[str, Any]:
+    """Operator-visible evolution alerts; silent stalls are defects."""
+    from hypertrade.arc.evolution_alerts import list_alerts
+
+    return {"alerts": await run_in_threadpool(list_alerts, request.app.state.db)}
+
+
+@router.post(
+    "/evolution/alerts/{alert_id}/ack", dependencies=[Depends(require_scope(ARCScope.START))]
+)
+async def evolution_alert_ack(alert_id: str, request: Request) -> dict[str, Any]:
+    from hypertrade.arc.evolution_alerts import acknowledge_alert
+    from hypertrade.arc.router import _actor_label
+
+    try:
+        return await run_in_threadpool(
+            acknowledge_alert, request.app.state.db, alert_id, actor=_actor_label(request)
+        )
+    except KeyError as exc:
+        raise HTTPException(404, "告警不存在") from exc
+
+
 @router.get(
     "/evolution/attribution/{strategy_id}", dependencies=[Depends(require_scope(ARCScope.READ))]
 )
