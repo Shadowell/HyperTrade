@@ -52,7 +52,9 @@ session_start、running_state，以及读取/成本类采样失败
 | `evolution_evidence_stalled` | evidence_recheck 且 `next_eligible_at` 为空（无法预计何时恢复），先 tracking，持续 >72h 升级为告警 | warning |
 | `evolution_cycles_erroring` | 最近 3 个扫描周期全部 error | critical |
 
-同一策略已有 operator 告警时不再叠加 stalled 跟踪（去噪）。确定性 ID 去重；
+同一策略已有 operator 告警时不再叠加 stalled 跟踪（去噪）。**陈旧延续记录
+（>3 小时未刷新，说明策略已暂停/移除、扫描不再更新它）不参与告警**——策略被
+暂停时其未解决告警会自动 resolved，暂停中的策略不会被误报。确定性 ID 去重；
 条件消失自动 `resolved`；`GET /evolution/alerts` 查看、`POST
 /evolution/alerts/{id}/ack` 确认（确认后同一条件不再打扰，条件消失自动解决，
 再次出现视为新事件重新告警）。投递复用 `FEISHU_WEBHOOK_URL`（未配置只记台账；

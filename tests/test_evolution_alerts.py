@@ -81,6 +81,15 @@ def seed_cycles(db: Database, statuses: list[tuple[str, datetime]]) -> None:
             )
 
 
+def touch_continuation(db: Database, strategy_id: int, observed_at: datetime) -> None:
+    """Simulate the hourly scan refresh of a still-blocked strategy."""
+    with db.session() as session:
+        row = session.get(EvolutionContinuation, f"src_{strategy_id}")
+        payload = dict(row.payload_json)
+        payload["observed_at"] = observed_at.isoformat()
+        row.payload_json = payload
+
+
 def test_blocker_resolution_classification() -> None:
     assert blocker_resolution("session_identity") == "operator"
     assert blocker_resolution("session_start") == "operator"
@@ -159,15 +168,42 @@ def test_evidence_stall_tracks_then_opens_after_horizon(db, webhook) -> None:
     assert first["tracking"] == 1 and first["delivered"] == 0
     assert list_alerts(db)[0]["status"] == "tracking"
 
+    touch_continuation(db, 342, NOW + timedelta(hours=48))
     early = evolution_alerts_once(db, now=NOW + timedelta(hours=48), post=post)
     assert early["opened"] == 0 and early["delivered"] == 0
 
+    touch_continuation(db, 342, NOW + timedelta(hours=73))
     late = evolution_alerts_once(db, now=NOW + timedelta(hours=73), post=post)
     assert late["opened"] == 1 and late["delivered"] == 1
     alert = list_alerts(db)[0]
     assert alert["code"] == ALERT_STALLED
     assert alert["status"] == "open"
     assert "持续" in alert["message"]
+
+
+def test_stale_continuation_never_alerts(db, webhook) -> None:
+    """A paused/removed strategy's frozen blockers are not an alert condition."""
+    sent, post = webhook
+    seed_continuation(
+        db,
+        107,
+        blockers=[{"code": "session_identity"}],
+        observed_at=NOW - timedelta(hours=4),
+    )
+    result = evolution_alerts_once(db, now=NOW, post=post)
+    assert result["opened"] == 0 and result["tracking"] == 0
+    assert list_alerts(db) == []
+
+
+def test_pausing_a_strategy_resolves_its_open_alert(db, webhook) -> None:
+    _, post = webhook
+    seed_continuation(db, 296, blockers=[{"code": "session_identity"}])
+    evolution_alerts_once(db, now=NOW, post=post)
+    assert list_alerts(db)[0]["status"] == "open"
+    # Strategy paused: the scan stops refreshing the continuation.
+    result = evolution_alerts_once(db, now=NOW + timedelta(hours=4), post=post)
+    assert result["resolved"] == 1
+    assert list_alerts(db)[0]["status"] == "resolved"
 
 
 def test_condition_clearing_resolves_alert(db, webhook) -> None:

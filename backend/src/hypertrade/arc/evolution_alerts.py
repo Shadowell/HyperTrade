@@ -29,6 +29,9 @@ STALL_AFTER_HOURS = 72
 ERROR_STREAK = 3
 RETRY_AFTER_HOURS = 6
 RETRY_WINDOW_DAYS = 7
+# A continuation older than this belongs to a strategy the scan no longer
+# updates (paused/removed); its stale blockers are not an alert condition.
+STALE_CONTINUATION_HOURS = 3
 
 _LABELS = {
     ALERT_OPERATOR_BLOCKED: "存在需要人工处理的阻塞",
@@ -70,8 +73,21 @@ def _blocker_resolutions(payload: dict[str, Any]) -> list[tuple[dict[str, Any], 
     return result
 
 
+def _continuation_stale(row: dict[str, Any], now: datetime) -> bool:
+    observed = row.get("observed_at")
+    if not isinstance(observed, str):
+        return False
+    try:
+        seen_at = datetime.fromisoformat(observed)
+    except ValueError:
+        return False
+    if seen_at.tzinfo is None:
+        seen_at = seen_at.replace(tzinfo=UTC)
+    return now - seen_at > timedelta(hours=STALE_CONTINUATION_HOURS)
+
+
 def _desired_alerts(
-    continuations: list[dict[str, Any]], cycle_rows: list[dict[str, Any]]
+    continuations: list[dict[str, Any]], cycle_rows: list[dict[str, Any]], now: datetime
 ) -> dict[str, dict[str, Any]]:
     """Deterministic id -> condition snapshot for every alert that should exist."""
     desired: dict[str, dict[str, Any]] = {}
@@ -81,6 +97,8 @@ def _desired_alerts(
         if strategy_id is None or strategy_id in seen_strategies:
             continue
         seen_strategies.add(strategy_id)
+        if _continuation_stale(row, now):
+            continue
         pairs = _blocker_resolutions(row)
         operator_codes = sorted(
             {str(b.get("code")) for b, resolution in pairs if resolution == "operator"}
@@ -176,7 +194,7 @@ def evolution_alerts_once(
                 .limit(ERROR_STREAK)
             )
         ]
-    desired = _desired_alerts(continuations, cycle_rows)
+    desired = _desired_alerts(continuations, cycle_rows, now)
 
     opened = resolved = tracking = delivered = failed = 0
     with db.session() as session:
