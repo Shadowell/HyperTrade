@@ -6,9 +6,14 @@
   is the evidence-driven gap assessment and approved direction for the canonical Thread/Turn protocol,
   professional control loop, state machines, tool governance, multi-agent research, trading safety,
   evaluation gates and vertical cutover.
-- [33 System Architecture](33-system-architecture.md) is the current implementation snapshot. It explains
-  the delivered Mission Runtime and boundaries, including known protocol and replay limitations; it is not
+- [33 System Architecture](33-system-architecture.md) is the current implementation snapshot
+  (refreshed 2026-09-14). It explains the delivered Mission Runtime, the autonomous research loop (AVO),
+  the default-on evolution engine, pluggable market targets and the security boundaries; it is not
   the target-completion claim.
+- [62 Pluggable Market Targets](62-pluggable-market-targets.md) defines how the evolution core is
+  decoupled from any trading platform (`market_target.v1` profiles and the `market-evolution.v1`
+  MCP contract); [63 Evolution Hardening](63-evolution-effectiveness-alerts-and-benchmark.md) covers
+  the effectiveness ledger, data-gap alerts and benchmark-relative decay detection.
 - [19 Visual Architecture Map](19-hypertrade-architecture-diagram.md) is the concise layer diagram
   for product discussion.
 - [30 Professional Agent Runtime V2 Roadmap](30-professional-agent-runtime-v2-roadmap.md) explains

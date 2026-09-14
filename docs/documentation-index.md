@@ -57,12 +57,14 @@
 - [DAG Tool Dispatcher & MCP Batch Pipeline Architecture Specification](architecture/57-dag-tool-dispatcher-and-mcp-batch-pipeline.md) - DAG 依赖图分发与 MCP 同源 JSON-RPC 管道聚合架构
 - [Tool Result Cache & Prompt Cache Prefix Aligner Architecture Specification](architecture/58-tool-result-cache-and-prompt-cache-prefix-aligner.md) - 工具结果感知 LRU 缓存与 Prompt Caching KV 前缀对齐架构
 - [Agent Flight Recorder & Replay Telemetry Architecture Specification](architecture/59-agent-flight-recorder-and-replay-telemetry.md) - Agent 黑盒飞行记录仪与全轨迹单步重放架构
+- [ARC External Console Integration](architecture/60-arc-external-console-integration.md) - 外部控制台（BitPro）驱动 ARC 的跨仓库集成框架：拓扑、不变量与 Sprint 135 合同
+- [Research Loop Architecture Rationalization](architecture/61-research-loop-architecture-rationalization.md) - 策略研究闭环架构梳理与收敛决议：引入 AVO 自主研究与进化、退役无调用路径模块
 - [Pluggable Market Targets](architecture/62-pluggable-market-targets.md) - 可插拔市场目标：自进化核心与平台解耦、market-evolution.v1 通用 MCP 契约、离线元学习调参与见证式归因
 - [Evolution Hardening: Effectiveness, Alerts, Benchmark](architecture/63-evolution-effectiveness-alerts-and-benchmark.md) - 进化加固：效果账本、数据缺口告警与阻塞升级、基准相对退化判定
 - [Autonomous Quant Trader North Star](architecture/35-autonomous-quant-trader-north-star.md) - 最终产品目标：持续策略进化、市场状态感知、组合优化与授权内实盘生命周期
 - [Goal-Driven Autonomous Research Loop M0](architecture/36-goal-driven-autonomous-research-loop-m0.md) - 自然语言目标、候选生成、真实 BitPro 回测、证据迭代和预授权模拟盘闭环
 - [Next-Generation Agent Runtime Audit and Target Design](architecture/34-next-generation-agent-runtime-audit-and-target-design.md) - 真实执行审计、目标协议、完整状态机、Schema、权限、多 Agent、交易安全、评测与切换路线
-- [System Architecture](architecture/33-system-architecture.md) - 当前实现快照、Mission Runtime、控制/数据平面、信任边界、安全与部署
+- [System Architecture](architecture/33-system-architecture.md) - 当前实现快照（2026-09-14 刷新）：运行时分层、Mission 生命周期、AVO 研究循环、默认开启的自主进化引擎、可插拔市场目标、安全与部署
 - [System Architecture Diagram](architecture/19-hypertrade-architecture-diagram.md)
 - [Tool Calling Design](architecture/04-tool-calling.md)
 - [Agent Graph Runtime](architecture/12-agent-graph-langgraph-runtime.md)
