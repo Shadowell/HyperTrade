@@ -53,6 +53,8 @@ When adding or changing core Agent code, prefer concise comments that explain pr
 
 ## Verification
 
+Spec Kit 入口：`.specify/` 与 `.agents/skills/speckit-*`；规格保留在 `specs/`，按七阶段流程推进。
+
 Preferred entrypoint:
 
 ```bash
