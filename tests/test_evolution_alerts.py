@@ -242,6 +242,47 @@ def test_legacy_sent_is_unverified_until_next_real_delivery(db, webhook):
     assert list_alerts(db)[0]["delivery_verified"] is True
 
 
+@pytest.mark.parametrize("preview_revision,resolved", [(1, True), (0, False)])
+def test_fresh_preview_refreshes_alerts_without_rewriting_research_eligibility(
+    db, webhook, preview_revision, resolved
+):
+    from hypertrade.arc.evolution_models import EvolutionControl
+
+    _, post = webhook
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+    evolution_alerts_once(db, now=NOW, post=post)
+    with db.session() as session:
+        original = dict(session.get(EvolutionContinuation, "src_511").payload_json)
+        session.add(EvolutionControl(id="global", revision=1, config_json={"enabled": True}))
+        session.add(
+            EvolutionCycle(
+                id="preview_fresh",
+                status="preview_complete",
+                created_at=NOW,
+                payload_json={
+                    "revision": preview_revision,
+                    "preview": True,
+                    "diagnostics": [
+                        {
+                            "strategy_id": 511,
+                            "continuation": {
+                                "observed_at": (NOW + timedelta(minutes=1)).isoformat(),
+                                "blockers": [
+                                    {"code": "completed_utc_window", "resolution": "time"}
+                                ],
+                                "next_eligible_at": "2026-10-03T00:00:00+00:00",
+                            },
+                        }
+                    ],
+                },
+            )
+        )
+    evolution_alerts_once(db, now=NOW + timedelta(minutes=2), post=post)
+    assert (list_alerts(db)[0]["status"] == "resolved") == resolved
+    with db.session() as session:
+        assert session.get(EvolutionContinuation, "src_511").payload_json == original
+
+
 def test_readiness_marks_resolution_and_attention() -> None:
     diagnostic = {
         "status": "unavailable",

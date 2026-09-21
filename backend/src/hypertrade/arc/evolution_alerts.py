@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy import case, select
 
 from hypertrade.arc.evolution_continuation import blocker_resolution
-from hypertrade.arc.evolution_models import EvolutionAlert, EvolutionCycle
+from hypertrade.arc.evolution_models import EvolutionAlert, EvolutionControl, EvolutionCycle
 from hypertrade.db import Database
 
 ALERT_OPERATOR_BLOCKED = "evolution_blocked_needs_operator"
@@ -266,14 +266,63 @@ def _deliver(block: dict[str, Any], now: datetime, *, post: Poster | None) -> tu
     return True, "sent"
 
 
+def _alert_continuations(db: Database, now: datetime) -> list[dict[str, Any]]:
+    """A fresh preview may refresh alerts, never research admission or its ledger."""
+    from hypertrade.arc.evolution_continuation import ContinuationLedger
+
+    rows = ContinuationLedger(db).view()
+    with db.session() as session:
+        control = session.get(EvolutionControl, "global")
+        preview = session.scalar(
+            select(EvolutionCycle)
+            .where(EvolutionCycle.status == "preview_complete")
+            .order_by(EvolutionCycle.created_at.desc())
+            .limit(1)
+        )
+        if (
+            control is None
+            or preview is None
+            or not control.config_json.get("enabled", True)
+            or preview.payload_json.get("revision") != control.revision
+        ):
+            return rows
+        diagnostics = (preview.payload_json or {}).get("diagnostics") or []
+
+    latest: dict[int, datetime] = {}
+    for row in rows:
+        sid = _row_strategies(row)
+        try:
+            observed = _aware(datetime.fromisoformat(row["observed_at"]))
+        except (KeyError, ValueError, TypeError):
+            continue
+        if sid is not None and (sid not in latest or observed > latest[sid]):
+            latest[sid] = observed
+    overrides = []
+    for diagnostic in diagnostics:
+        sid = _row_strategies(diagnostic)
+        state = diagnostic.get("continuation")
+        if sid is None or not isinstance(state, dict):
+            continue
+        try:
+            observed = _aware(datetime.fromisoformat(state["observed_at"]))
+        except (KeyError, ValueError, TypeError):
+            continue
+        if not timedelta(0) <= now - observed <= timedelta(hours=STALE_CONTINUATION_HOURS) or (
+            sid in latest and observed <= latest[sid]
+        ):
+            continue
+        overrides.append({**state, "strategy_id": sid})
+        latest[sid] = observed
+    replaced = {_row_strategies(row) for row in overrides}
+    return overrides + [row for row in rows if _row_strategies(row) not in replaced]
+
+
 def evolution_alerts_once(
     db: Database, *, now: datetime | None = None, post: Poster | None = None
 ) -> dict[str, Any]:
     """Evaluate alert conditions, update the ledger, then deliver new alerts."""
     now = now or datetime.now(UTC)
-    from hypertrade.arc.evolution_continuation import ContinuationLedger
-
-    continuations = ContinuationLedger(db).view()
+    continuations = _alert_continuations(db, now)
     with db.session() as session:
         cycle_rows = [
             {"id": row.id, "status": row.status}
