@@ -50,6 +50,8 @@ def window_days(profile: MarketTargetProfileV1 | None) -> int:
 # operator = a human or upstream fix is required (identity, source down, costs).
 _OPERATOR_BLOCKERS = {"session_identity", "session_start", "running_state"}
 _OPERATOR_SAMPLING_REASONS = {
+    "source_point_limit_exceeded",
+    "recent_series_contract_mismatch",
     "recent_read_unavailable",
     "cost_metadata_unavailable",
     "session_identity_missing",

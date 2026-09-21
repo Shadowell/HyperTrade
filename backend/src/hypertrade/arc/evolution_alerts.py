@@ -15,7 +15,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 
 from hypertrade.arc.evolution_continuation import blocker_resolution
 from hypertrade.arc.evolution_models import EvolutionAlert, EvolutionCycle
@@ -28,7 +28,8 @@ ALERT_CYCLES_ERRORING = "evolution_cycles_erroring"
 STALL_AFTER_HOURS = 72
 ERROR_STREAK = 3
 RETRY_AFTER_HOURS = 6
-RETRY_WINDOW_DAYS = 7
+REMIND_AFTER_HOURS = 24
+DELIVERY_RECEIPT_VERSION = "feishu_webhook.v1"
 # A continuation older than this belongs to a strategy the scan no longer
 # updates (paused/removed); its stale blockers are not an alert condition.
 STALE_CONTINUATION_HOURS = 3
@@ -40,6 +41,52 @@ _LABELS = {
 }
 
 Poster = Callable[[str, dict[str, Any]], None]
+
+_BLOCKER_TEXT = {
+    "session_identity": "会话身份或版本无法核对",
+    "session_start": "缺少原会话起点",
+    "running_state": "原模拟盘运行状态待核对",
+    "evidence_recheck": "证据读取或校验未通过",
+}
+_SAMPLING_TEXT = {
+    "source_point_limit_exceeded": (
+        "高频采样点数超过上游读取上限",
+        "修复上游分桶读取，保留原始采样",
+    ),
+    "cost_metadata_unavailable": (
+        "历史费用或成本身份缺失",
+        "核对原会话成本证据，禁止用当前费率补造历史",
+    ),
+    "session_identity_missing": ("缺少可核验的原会话身份", "核对原实例和版本，禁止重建会话"),
+    "recent_series_contract_mismatch": (
+        "返回的证据身份或格式不符合契约",
+        "核对来源、版本、分页和数据覆盖",
+    ),
+    "recent_read_unavailable": (
+        "上游近期证据读取失败",
+        "检查只读接口、认证和数据契约；不代表采样器停机",
+    ),
+}
+
+
+class WebhookRejected(RuntimeError):
+    """Only a fixed reason/code, never a provider message or webhook URL."""
+
+
+def _operator_message(row: dict[str, Any], strategy_id: int, codes: list[str]) -> str:
+    sampling = (row.get("evidence_cursor") or {}).get("sampling") or {}
+    reason = str(sampling.get("reason_code") or "")
+    detail, action = _SAMPLING_TEXT.get(
+        reason,
+        (
+            "、".join(_BLOCKER_TEXT.get(code, "需要人工核对的证据阻塞") for code in codes),
+            "在自主研究页面核对原会话与数据来源，保留原模拟盘历史",
+        ),
+    )
+    message = f"策略 {strategy_id}：{detail}\n下一步：{action}"
+    if row.get("next_eligible_at"):
+        message += f"\n最早时间条件：{row['next_eligible_at']}（还需证据完整）"
+    return message
 
 
 def alert_id(code: str, strategy_id: int | None = None) -> str:
@@ -58,9 +105,9 @@ def _row_strategies(payload: dict[str, Any]) -> int | None:
 
 
 def _blocker_resolutions(payload: dict[str, Any]) -> list[tuple[dict[str, Any], str]]:
-    sampling_reason = (
-        (payload.get("evidence_cursor") or {}).get("sampling") or {}
-    ).get("reason_code")
+    sampling_reason = ((payload.get("evidence_cursor") or {}).get("sampling") or {}).get(
+        "reason_code"
+    )
     result = []
     for blocker in payload.get("blockers") or []:
         if not isinstance(blocker, dict):
@@ -127,11 +174,19 @@ def _desired_alerts(
                 "code": ALERT_OPERATOR_BLOCKED,
                 "severity": "warning",
                 "strategy_id": strategy_id,
-                "message": (
-                    f"策略 {strategy_id} 存在需要人工处理的阻塞：{', '.join(operator_codes)}"
-                ),
+                "message": _operator_message(row, strategy_id, operator_codes),
                 "tracking_only": False,
-                "signature": "|".join(operator_codes),
+                "signature": "|".join(
+                    [
+                        *operator_codes,
+                        str(
+                            ((row.get("evidence_cursor") or {}).get("sampling") or {}).get(
+                                "reason_code"
+                            )
+                            or ""
+                        ),
+                    ]
+                ),
             }
             # The operator page already explains why this strategy is stuck;
             # a second stall-tracking alert for the same source is pure noise.
@@ -165,7 +220,7 @@ def _desired_alerts(
             "strategy_id": None,
             "message": f"进化扫描最近 {ERROR_STREAK} 个周期全部以 error 结束，请检查 worker 与上游",
             "tracking_only": False,
-            "signature": ",".join(str(row.get("id")) for row in cycle_rows[:ERROR_STREAK]),
+            "signature": ALERT_CYCLES_ERRORING,
         }
     return desired
 
@@ -175,20 +230,37 @@ def _default_post(url: str, payload: dict[str, Any]) -> None:
 
     response = httpx.post(url, json=payload, timeout=10)
     response.raise_for_status()
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise WebhookRejected("invalid_receipt") from exc
+    if not isinstance(body, dict):
+        raise WebhookRejected("invalid_receipt")
+    codes = [body[key] for key in ("code", "StatusCode") if key in body]
+    if not codes or any(type(code) is not int for code in codes):
+        raise WebhookRejected("invalid_receipt")
+    rejected = next((code for code in codes if code != 0), None)
+    if rejected is not None:
+        raise WebhookRejected(f"business_code_{rejected}")
 
 
-def _deliver(
-    block: dict[str, Any], now: datetime, *, post: Poster | None
-) -> tuple[bool, str]:
+def _deliver(block: dict[str, Any], now: datetime, *, post: Poster | None) -> tuple[bool, str]:
     from hypertrade.config import get_settings
 
     webhook = str(getattr(get_settings(), "feishu_webhook_url", "") or "").strip()
     if not webhook:
         return False, "skipped_no_webhook"
     text = f"[HyperTrade 进化告警] {_LABELS.get(block['code'], block['code'])}\n{block['message']}"
+    text += (
+        f"\n首次发现：{block.get('first_seen_at', now.isoformat())}"
+        f"\n最近检查：{block.get('last_seen_at', now.isoformat())}"
+        "\n未解决且未确认将每天提醒；请在 BitPro 自主研究页面查看和确认。"
+    )
     sender = post or _default_post
     try:
         sender(webhook, {"msg_type": "text", "content": {"text": text[:3900]}})
+    except WebhookRejected as exc:
+        return False, f"failed:{exc}"
     except Exception as exc:  # noqa: BLE001 - delivery failure must never crash the loop
         return False, f"failed:{type(exc).__name__}"
     return True, "sent"
@@ -217,10 +289,7 @@ def evolution_alerts_once(
     opened = resolved = tracking = delivered = failed = 0
     with db.session() as session:
         existing = {
-            row.id: row
-            for row in session.scalars(
-                select(EvolutionAlert).with_for_update()
-            ).all()
+            row.id: row for row in session.scalars(select(EvolutionAlert).with_for_update()).all()
         }
         for key, block in desired.items():
             row = existing.get(key)
@@ -247,13 +316,25 @@ def evolution_alerts_once(
                     tracking += 1
             else:
                 payload = dict(row.payload_json or {})
+                changed = payload.get("signature") != block["signature"]
                 payload["last_seen_at"] = now.isoformat()
                 payload["signature"] = block["signature"]
                 row.payload_json = payload
-                if row.status in {"resolved"}:
+                if not block["tracking_only"]:
+                    row.message = block["message"]
+                if row.status == "resolved" or (row.status == "acknowledged" and changed):
                     # A reappearing condition is a new episode: reset the anchor
                     # so horizons are not inherited from the old episode.
                     payload["first_seen_at"] = now.isoformat()
+                    for field in (
+                        "last_attempt_at",
+                        "acknowledged_at",
+                        "acknowledged_by",
+                        "delivery_count",
+                        "delivery_receipt_version",
+                        "delivery_business_code",
+                    ):
+                        payload.pop(field, None)
                     row.payload_json = dict(payload)
                     row.status = "open" if not block["tracking_only"] else "tracking"
                     row.delivered_at = None
@@ -277,17 +358,15 @@ def evolution_alerts_once(
                 row.status = "resolved"
                 resolved += 1
         session.flush()
-        # Deliver any open, not-yet-delivered alert (new or retried), bounded by
-        # a retry cadence and a give-up window.
+        # A provider receipt proves acceptance, not that the operator saw it.
+        # Keep reminding until acknowledgement/recovery, including after restarts.
         open_rows = session.scalars(
-            select(EvolutionAlert)
-            .where(EvolutionAlert.status == "open", EvolutionAlert.delivered_at.is_(None))
-            .with_for_update()
+            select(EvolutionAlert).where(EvolutionAlert.status == "open").with_for_update()
         ).all()
         for row in open_rows:
             payload = dict(row.payload_json or {})
-            if now - _first_seen(payload, fallback=_aware(row.created_at)) > timedelta(
-                days=RETRY_WINDOW_DAYS
+            if row.delivered_at and now - _aware(row.delivered_at) < timedelta(
+                hours=REMIND_AFTER_HOURS
             ):
                 continue
             # "Webhook not configured" is a configuration state, not a failed
@@ -297,17 +376,31 @@ def evolution_alerts_once(
             last_attempt = payload.get("last_attempt_at")
             if isinstance(last_attempt, str) and not previously_skipped:
                 try:
-                    attempt_at = datetime.fromisoformat(last_attempt)
+                    attempt_at = _aware(datetime.fromisoformat(last_attempt))
                     if now - attempt_at < timedelta(hours=RETRY_AFTER_HOURS):
                         continue
                 except ValueError:
                     pass
-            ok, result = _deliver({"code": row.code, "message": row.message}, now, post=post)
+            ok, result = _deliver(
+                {
+                    "code": row.code,
+                    "message": row.message,
+                    "first_seen_at": _first_seen(
+                        payload, fallback=_aware(row.created_at)
+                    ).isoformat(),
+                    "last_seen_at": payload.get("last_seen_at"),
+                },
+                now,
+                post=post,
+            )
             row.delivery_result = result
             if ok:
                 row.delivered_at = now
                 delivered += 1
                 payload["last_attempt_at"] = now.isoformat()
+                payload["delivery_count"] = int(payload.get("delivery_count") or 0) + 1
+                payload["delivery_receipt_version"] = DELIVERY_RECEIPT_VERSION
+                payload["delivery_business_code"] = 0
             elif result.startswith("failed"):
                 failed += 1
                 payload["last_attempt_at"] = now.isoformat()
@@ -346,7 +439,15 @@ def list_alerts(db: Database, *, limit: int = 50) -> list[dict[str, Any]]:
     with db.session() as session:
         rows = session.scalars(
             select(EvolutionAlert)
-            .order_by(EvolutionAlert.created_at.desc())
+            .order_by(
+                case(
+                    (EvolutionAlert.status == "open", 0),
+                    (EvolutionAlert.status == "tracking", 1),
+                    (EvolutionAlert.status == "acknowledged", 2),
+                    else_=3,
+                ),
+                EvolutionAlert.created_at.desc(),
+            )
             .limit(max(1, min(limit, 200)))
         ).all()
         return [
@@ -361,6 +462,12 @@ def list_alerts(db: Database, *, limit: int = 50) -> list[dict[str, Any]]:
                 "delivered_at": row.delivered_at.isoformat() if row.delivered_at else None,
                 "created_at": _aware(row.created_at).isoformat(),
                 **(row.payload_json or {}),
+                "delivery_verified": (
+                    (row.payload_json or {}).get("delivery_receipt_version")
+                    == DELIVERY_RECEIPT_VERSION
+                    and row.delivery_result == "sent"
+                ),
+                "reminder_interval_hours": REMIND_AFTER_HOURS,
             }
             for row in rows
         ]

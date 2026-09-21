@@ -75,9 +75,20 @@ def sampling_status(client: Any, snapshot: dict[str, Any], now: datetime) -> dic
         }
     except Exception as exc:
         # Read failure is an observation, not evidence that the sampler itself failed.
-        reason = (
-            "cost_metadata_unavailable" if "cost model" in str(exc) else "recent_read_unavailable"
-        )
+        message = str(exc).lower()
+        if "exceeds bounded point contract" in message:
+            reason = "source_point_limit_exceeded"
+        elif "cost model" in message or "historical_cost_metadata_missing" in message:
+            reason = "cost_metadata_unavailable"
+        elif message == "recent_series_contract_mismatch":
+            reason = "recent_series_contract_mismatch"
+        else:
+            reason = "recent_read_unavailable"
+        # Preserve an actionable category, never exception text that may contain
+        # transport URLs, credentials or untrusted upstream content.
+        status = getattr(exc, "status_code", None)
+        if type(status) is int and 100 <= status <= 599:
+            result["http_status"] = status
         return {**result, "reason_code": reason}
 
 
@@ -92,9 +103,14 @@ def blocked_data_diagnostic(
         "unavailable": "近期采样状态尚无法确认",
     }
     action = "保留现有历史，继续积累满足条件的真实样本"
-    if sampling.get("reason_code") == "session_identity_missing":
+    description = descriptions[sampling["state"]]
+    if sampling.get("reason_code") == "source_point_limit_exceeded":
+        description = "高频采样点数超过上游读取上限"
+        action = "修复上游按时间分桶的有界读取，保留原始采样和成本校验"
+    elif sampling.get("reason_code") == "session_identity_missing":
         action = "核对旧Paper的真实会话和版本映射，不重建会话或重置历史"
     elif sampling.get("reason_code") == "cost_metadata_unavailable":
+        description = "原会话成本元数据缺失，无法核验证据"
         action = "核对原会话手续费、滑点与资金费元数据，不补造成本"
     elif sampling["state"] in {"stale", "gaps"}:
         action = "检查权益采样与持久化链路，保留原会话及全部历史"
@@ -107,6 +123,6 @@ def blocked_data_diagnostic(
         "missing_week_boundary": "缺少两周之间的权益边界样本",
     }.get(reason, reason)
     return {
-        "reason": f"{label}；{descriptions[sampling['state']]}",
+        "reason": f"{label}；{description}",
         "data_readiness": {"blocking_reason": reason, "sampling": sampling, "next_action": action},
     }

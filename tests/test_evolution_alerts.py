@@ -107,6 +107,141 @@ def test_blocker_resolution_classification() -> None:
     )
 
 
+@pytest.mark.parametrize("body", [{"code": 19024}, {}, {"StatusCode": 1}, {"code": False}])
+def test_http_success_with_business_failure_is_not_delivered(db, monkeypatch, webhook, body):
+    import httpx
+
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda *args, **kwargs: httpx.Response(
+            200, json=body, request=httpx.Request("POST", "https://example.test")
+        ),
+    )
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+    result = evolution_alerts_once(db, now=NOW)
+    assert result["delivered"] == 0
+    assert result["failed"] == 1
+    assert list_alerts(db)[0]["delivered_at"] is None
+
+
+def test_daily_reminder_until_acknowledged(db, webhook):
+    sent, post = webhook
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+    evolution_alerts_once(db, now=NOW, post=post)
+    touch_continuation(db, 511, NOW + timedelta(hours=23))
+    evolution_alerts_once(db, now=NOW + timedelta(hours=23), post=post)
+    assert len(sent) == 1
+    touch_continuation(db, 511, NOW + timedelta(hours=24))
+    evolution_alerts_once(db, now=NOW + timedelta(hours=24), post=post)
+    assert len(sent) == 2
+    alert = list_alerts(db)[0]
+    assert alert["delivery_count"] == 2
+    assert alert["delivery_verified"] is True
+    acknowledge_alert(db, alert["id"], actor="operator")
+    touch_continuation(db, 511, NOW + timedelta(hours=49))
+    evolution_alerts_once(db, now=NOW + timedelta(hours=49), post=post)
+    assert len(sent) == 2
+
+
+def test_unresolved_delivery_retries_after_seven_days(db, webhook):
+    sent, post = webhook
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+
+    def fail(url, payload):
+        raise TimeoutError()
+
+    evolution_alerts_once(db, now=NOW, post=fail)
+    later = NOW + timedelta(days=8)
+    touch_continuation(db, 511, later)
+    result = evolution_alerts_once(db, now=later, post=post)
+    assert result["delivered"] == 1 and len(sent) == 1
+
+
+def test_reappearing_alert_does_not_inherit_failed_attempt_cooldown(db, webhook):
+    _, post = webhook
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+
+    def fail(url, payload):
+        raise TimeoutError()
+
+    evolution_alerts_once(db, now=NOW, post=fail)
+    with db.session() as session:
+        session.delete(session.get(EvolutionContinuation, "src_511"))
+    evolution_alerts_once(db, now=NOW + timedelta(hours=1), post=post)
+    seed_continuation(
+        db, 511, blockers=[{"code": "session_identity"}], observed_at=NOW + timedelta(hours=2)
+    )
+    result = evolution_alerts_once(db, now=NOW + timedelta(hours=2), post=post)
+    assert result["delivered"] == 1
+
+
+def test_operator_alert_explains_evidence_failure_and_next_action(db, webhook):
+    sent, post = webhook
+    seed_continuation(
+        db,
+        511,
+        blockers=[{"code": "evidence_recheck"}],
+        sampling_reason="source_point_limit_exceeded",
+    )
+    evolution_alerts_once(db, now=NOW, post=post)
+    assert len(sent) == 1
+    message = sent[0]["payload"]["content"]["text"]
+    assert "采样点数" in message and "下一步" in message
+    assert "evidence_recheck" not in message
+
+
+def test_unresolved_alerts_are_not_hidden_by_recent_resolved_rows(db):
+    with db.session() as session:
+        for i in range(60):
+            session.add(
+                EvolutionAlert(
+                    id=f"a{i}",
+                    code=ALERT_OPERATOR_BLOCKED,
+                    severity="warning",
+                    strategy_id=i,
+                    message="test",
+                    status="open" if i == 0 else "resolved",
+                    created_at=NOW + timedelta(minutes=i),
+                    payload_json={},
+                )
+            )
+    assert list_alerts(db, limit=10)[0]["id"] == "a0"
+
+
+@pytest.mark.parametrize("body", [{"code": 0}, {"StatusCode": 0}, {"code": 0, "StatusCode": 0}])
+def test_business_success_receipt_is_verified(db, monkeypatch, webhook, body):
+    import httpx
+
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda *a, **kw: httpx.Response(
+            200, json=body, request=httpx.Request("POST", "https://example.test")
+        ),
+    )
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+    evolution_alerts_once(db, now=NOW)
+    assert list_alerts(db)[0]["delivery_verified"] is True
+    assert list_alerts(db)[0]["delivery_business_code"] == 0
+
+
+def test_legacy_sent_is_unverified_until_next_real_delivery(db, webhook):
+    _, post = webhook
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+    evolution_alerts_once(db, now=NOW, post=post)
+    with db.session() as session:
+        row = session.get(EvolutionAlert, alert_id(ALERT_OPERATOR_BLOCKED, 511))
+        row.payload_json = {
+            k: v for k, v in row.payload_json.items() if not k.startswith("delivery_")
+        }
+    assert list_alerts(db)[0]["delivery_verified"] is False
+    later = NOW + timedelta(days=1)
+    touch_continuation(db, 511, later)
+    evolution_alerts_once(db, now=later, post=post)
+    assert list_alerts(db)[0]["delivery_verified"] is True
+
+
 def test_readiness_marks_resolution_and_attention() -> None:
     diagnostic = {
         "status": "unavailable",
@@ -143,7 +278,7 @@ def test_operator_blocker_opens_and_delivers_once(db, webhook) -> None:
     assert first["opened"] == 1 and first["delivered"] == 1
     assert len(sent) == 1
     assert "333" in sent[0]["payload"]["content"]["text"]
-    assert "session_identity" in sent[0]["payload"]["content"]["text"]
+    assert "会话身份" in sent[0]["payload"]["content"]["text"]
 
     second = evolution_alerts_once(db, now=NOW + timedelta(hours=1), post=post)
     assert second["opened"] == 0 and second["delivered"] == 0
@@ -202,9 +337,7 @@ def test_reappearing_stall_starts_a_fresh_episode(db, webhook) -> None:
     instead of inheriting the old episode's age (which would page instantly).
     """
     _, post = webhook
-    seed_continuation(
-        db, 342, blockers=[{"code": "evidence_recheck"}], next_eligible_at=None
-    )
+    seed_continuation(db, 342, blockers=[{"code": "evidence_recheck"}], next_eligible_at=None)
     evolution_alerts_once(db, now=NOW, post=post)
 
     with db.session() as session:  # condition clears -> resolved
@@ -214,7 +347,10 @@ def test_reappearing_stall_starts_a_fresh_episode(db, webhook) -> None:
 
     later = NOW + timedelta(hours=100)
     seed_continuation(
-        db, 342, blockers=[{"code": "evidence_recheck"}], next_eligible_at=None,
+        db,
+        342,
+        blockers=[{"code": "evidence_recheck"}],
+        next_eligible_at=None,
         observed_at=later,
     )
     again = evolution_alerts_once(db, now=later, post=post)

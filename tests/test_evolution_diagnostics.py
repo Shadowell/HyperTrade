@@ -106,6 +106,27 @@ def test_legacy_session_gap_never_creates_or_guesses_a_session():
     assert client.calls == []
 
 
+def test_bounded_point_error_is_actionable_and_does_not_expose_raw_error():
+    from hypertrade.arc.evolution_diagnostics import blocked_data_diagnostic
+    from hypertrade.bitpro.mcp import BitProMcpError
+
+    class TooMany(Client):
+        def strategy_return_series(self, **kwargs):
+            raise BitProMcpError(
+                "paper source exceeds bounded point contract secret=do-not-copy", status_code=422
+            )
+
+    report = blocked_data_diagnostic(
+        TooMany(), SNAPSHOT, NOW, "paper_session_younger_than_fourteen_days"
+    )
+    sampling = report["data_readiness"]["sampling"]
+    assert sampling["reason_code"] == "source_point_limit_exceeded"
+    assert sampling["http_status"] == 422
+    assert "采样点数" in report["reason"]
+    assert "do-not-copy" not in str(report)
+    assert "14天" in report["reason"]
+
+
 def test_scan_reports_sampling_even_when_trades_block_research():
     from hypertrade.arc.evolution import EvolutionConfig, EvolutionService
 

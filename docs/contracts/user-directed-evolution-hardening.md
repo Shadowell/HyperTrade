@@ -80,3 +80,7 @@ uv run pytest tests/test_evolution_effectiveness.py tests/test_evolution_alerts.
 - BitPro 侧小切片：代理 + 面板展示 effectiveness 与 alerts。
 - 首个真实自主闭环完成后：用效果账本做首轮复盘（胜率/成本/战果），
   结果入 progress。
+
+## 2026-09-21 修订：告警可靠性
+
+用户要求阻塞必须可见。本节取代七天后放弃及同条件只发送一次：未解决未确认每日提醒，失败六小时节流持续重试，确认后不再提醒同原因。飞书HTTP成功必须同时有明确业务成功码；旧记录保留但标为历史回执未验证。列表优先未解决，通知包含中文原因/下一步/时间条件，恢复重现清除旧尝试。BitPro告警入口与高频读取按 specs/001-evolution-alert-reliability 跟踪。
