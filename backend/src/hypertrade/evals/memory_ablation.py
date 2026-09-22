@@ -20,12 +20,19 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from hypertrade.agent.compaction import ContextBlocked, compact_request, digest
 from hypertrade.arc.avo import needs_research, run_avo_research
 from hypertrade.arc.contracts import ARCGoalV1
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.evolution_memory import curate_memory, experiment_key
 from hypertrade.arc.self_test import ARCSelfTestService
-from hypertrade.arc.store import configure_store, get_controller, reset_runtime, save_mission
+from hypertrade.arc.store import (
+    configure_store,
+    get_controller,
+    reset_runtime,
+    save_avo_context,
+    save_mission,
+)
 from hypertrade.db import Database
 from hypertrade.memory.research import ResearchMemoryV1
 from hypertrade.providers.chat import ChatProvider, ChatResponse
@@ -190,10 +197,16 @@ def create_pair(
 
 class _MemoryProvider:
     def __init__(
-        self, provider: ChatProvider, memory: list[dict[str, Any]], directory: Path, arm: str
+        self,
+        provider: ChatProvider,
+        memory: list[dict[str, Any]],
+        directory: Path,
+        arm: str,
+        controller: ARCController | None = None,
     ) -> None:
         self.provider, self.memory, self.directory, self.arm = provider, memory, directory, arm
         self.name, self.model = provider.name, provider.model
+        self.controller = controller
 
     def chat(
         self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None
@@ -207,7 +220,29 @@ class _MemoryProvider:
             "or causal proof."
         )
         request[1]["content"] = json.dumps(context, sort_keys=True)
-        # AVO hashes its pre-injection request. Record the actual sent request independently.
+        # AVO's first check predates memory injection. Re-compact the exact final
+        # view with the same 64k allowance and redaction policy before dispatch.
+        tool_list = tools or []
+        try:
+            final = compact_request(request, tools=tool_list, model=self.model)
+            manifest = final.manifest
+            record = final.record
+        except ContextBlocked as exc:
+            manifest = exc.record["manifest"]
+            record = exc.record
+            final = None
+        memory_digest = (
+            digest(json.loads(final.messages[1]["content"])["research_memory"])
+            if final is not None
+            else None
+        )
+        if self.controller is not None:
+            record_id = save_avo_context(self.controller.mission_id, record)
+            self.controller.apply_event(
+                "avo_context_recorded", {"manifest": manifest, "record_id": record_id}
+            )
+        # Persist only commitments from the redacted compaction view, never a
+        # pre-redaction hash that could expose low-entropy source content.
         with (self.directory / "requests.jsonl").open("a") as handle:
             handle.write(
                 json.dumps(
@@ -215,15 +250,19 @@ class _MemoryProvider:
                         "arm": self.arm,
                         "provider": self.name,
                         "model": self.model,
-                        "request_hash": _digest({"messages": request, "tools": tools}),
-                        "memory_digest": _digest(self.memory),
+                        "status": manifest["status"],
+                        "request_hash": manifest.get("final_hash"),
+                        "memory_digest": memory_digest,
+                        "manifest": manifest,
                     }
                 )
                 + "\n"
             )
             handle.flush()
             os.fsync(handle.fileno())
-        return self.provider.chat(request, tools=tools)
+        if final is None:
+            raise ContextBlocked(str(manifest.get("reason", "invalid_context_content")), record)
+        return self.provider.chat(final.messages, tools=tool_list)
 
 
 def _summary(controller: ARCController, memory: list[dict[str, Any]]) -> dict[str, Any]:
@@ -336,6 +375,7 @@ def run_pair(
                     manifest["memory"] if arm == "on" else [],
                     directory,
                     arm,
+                    controller,
                 )
                 run_avo_research(mission_id, provider=wrapped, experiments=experiments)
                 result["arms"][arm] = _summary(controller, manifest["memory"])

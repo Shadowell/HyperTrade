@@ -33,6 +33,7 @@
 - **FR-005**: 结果 MUST 保持 `conclusion=unknown`、`profitability_claim=false`、`causal_claim=false`，不以模型文字作为裁判。
 - **FR-006**: 本切片只用隔离测试替身，不启动真实模型、研究、Paper 或 Live；真实样本和预算由总控另行确定。
 - **FR-007**: 未指定批次 scope 的既有单 pair 创建接口与 manifest 形状保持兼容；旧运行时哈希不匹配仍按既有规则拒绝静默续跑。
+- **FR-008**: AVO 先压缩、后由配对 Provider 注入记忆时，最终实际发送的消息与工具定义 MUST 再经相同 64k `compaction.v1` 上界和脱敏路径；持久化最终请求 manifest/hash 与私有快照。若必要目标、来源或未决事实无法安全容纳，MUST 以 `avo_context_budget_exhausted` 停止且不得调用模型或工具，不扩大额度或仅靠减少记忆条数规避。
 
 ## Success Criteria
 
@@ -40,6 +41,7 @@
 - **SC-002**: 跨进程恢复不重放已结算臂，批量汇总可以在删除缓存后从 pair journal 重建。
 - **SC-003**: 汇总给出分子/分母与未知项，未完成批次不出现伪成功率。
 - **SC-004**: 两个同目标、同记忆但不同 task ID 的重复任务，以及不同批次，均产生四个独立 arm mission ID；同一批次重开不改变这些 ID。
+- **SC-005**: 构造原请求低于 64k、注入后超过 64k 的隔离反例，验证 0 次实际模型/工具调用、脱敏阻断清单和诚实终态；小上下文的最终发送 hash 可从 journal 回执核对。
 
 ## Assumptions
 

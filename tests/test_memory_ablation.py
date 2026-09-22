@@ -376,3 +376,99 @@ def test_unknown_backtest_effect_is_never_replayed(tmp_path):
     result = module.run_pair(tmp_path, provider=ResearchProvider(), experiments=experiments)
     assert experiments.calls == ["development", "final"]
     assert any("pending_effect_or_model" in a["unknown"] for a in result["arms"].values())
+
+
+def test_final_memory_injection_cannot_exceed_avo_input_budget(tmp_path):
+    from hypertrade.agent.compaction import ContextBlocked, compact_request, request_size
+
+    module = ablation()
+    memory = [{"mission_id": "source-1", "hypothesis": "h" * 1800}]
+    messages = [
+        {"role": "system", "content": "research"},
+        {"role": "user", "content": json.dumps({"objective": "SOL", "padding": ""})},
+    ]
+    remaining = 64000 - request_size(messages, [], "test-model") - 250
+    messages[1]["content"] = json.dumps({"objective": "SOL", "padding": "x" * remaining})
+    assert compact_request(messages, tools=[], model="test-model").manifest["status"] == "ready"
+    provider = StopProvider()
+    with pytest.raises(ContextBlocked, match="required_context_exceeds_budget"):
+        module._MemoryProvider(provider, memory, tmp_path, "on").chat(messages, tools=[])
+    assert provider.seen == []
+    audit = json.loads((tmp_path / "requests.jsonl").read_text().splitlines()[0])
+    assert audit["status"] == "blocked"
+    assert audit["manifest"]["reason"] == "required_context_exceeds_budget"
+
+
+def test_final_memory_request_uses_compaction_redaction_and_actual_manifest(tmp_path):
+    from hypertrade.agent.compaction import digest, request_size
+
+    module = ablation()
+    provider = StopProvider()
+    messages = [
+        {"role": "system", "content": "research"},
+        {"role": "user", "content": json.dumps({"objective": "SOL", "source": "source-1"})},
+    ]
+    module._MemoryProvider(
+        provider, [{"mission_id": "source-1", "api_key": "low-entropy-secret"}], tmp_path, "on"
+    ).chat(messages, tools=[])
+    assert len(provider.seen) == 1
+    sent = provider.seen[0]
+    context = json.loads(sent[1]["content"])
+    assert context["objective"] == "SOL"
+    assert context["source"] == "source-1"
+    assert context["research_memory"][0]["api_key"] == "[REDACTED]"
+    assert request_size(sent, [], provider.model) <= 64000
+    audit = json.loads((tmp_path / "requests.jsonl").read_text().splitlines()[0])
+    assert audit["status"] == "ready"
+    assert audit["request_hash"] == audit["manifest"]["final_hash"]
+    assert audit["request_hash"] == digest({"messages": sent, "tools": [], "model": provider.model})
+
+
+def test_final_memory_context_block_is_honest_terminal_state(tmp_path, monkeypatch):
+    from hypertrade.agent.compaction import ContextBlocked
+
+    module = ablation()
+    reset_store()
+    module.create_pair(tmp_path, goal(), [])
+    provider = StopProvider()
+
+    def blocked(*args, **kwargs):
+        raise ContextBlocked(
+            "required_context_exceeds_budget",
+            {"manifest": {"status": "blocked", "reason": "required_context_exceeds_budget"}},
+        )
+
+    monkeypatch.setattr(module, "compact_request", blocked, raising=False)
+    result = module.run_pair(tmp_path, provider=provider, max_arms=1)
+    assert provider.seen == []
+    assert any(
+        "avo_context_budget_exhausted" in arm["failure_reasons"]
+        for arm in result["arms"].values()
+    )
+    assert all(arm["model_calls_used"] == 1 for arm in result["arms"].values())
+    assert all(arm["tool_calls_used"] == 0 for arm in result["arms"].values())
+
+
+def test_pair_journals_the_final_request_manifest_after_memory_injection(tmp_path):
+    from hypertrade.db import ArcMission, Database
+    from sqlalchemy import select
+
+    module = ablation()
+    reset_store()
+    module.create_pair(tmp_path, goal(), [record()])
+    module.run_pair(tmp_path, provider=StopProvider())
+    requests = [json.loads(line) for line in (tmp_path / "requests.jsonl").read_text().splitlines()]
+    assert len(requests) == 2
+    with Database(f"sqlite:///{tmp_path / 'journal.db'}").session() as session:
+        missions = session.scalars(select(ArcMission)).all()
+        assert len(missions) == 2
+        for mission in missions:
+            arm = mission.mission_id.rsplit("_", 1)[-1]
+            audit = next(item for item in requests if item["arm"] == arm)
+            final_events = [
+                event for event in mission.projection_json["events"]
+                if event["event_type"] == "avo_context_recorded"
+                and event["payload"]["manifest"].get("final_hash") == audit["request_hash"]
+            ]
+            assert len(final_events) == 1
+            assert final_events[0]["payload"]["record_id"]

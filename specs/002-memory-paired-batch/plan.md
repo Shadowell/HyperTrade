@@ -20,6 +20,8 @@ Python 3.12、Pydantic/SQLAlchemy、pytest；本地目录 manifest + 每任务 S
 ## Project Structure
 
 - `backend/src/hypertrade/evals/memory_ablation.py`: 开发实验分母和可选、冻结的 pair scope。
+- `backend/src/hypertrade/evals/memory_ablation.py`: 最终记忆注入后的 `compaction.v1`、脱敏 manifest/hash 与私有快照。
+- `backend/src/hypertrade/arc/avo.py`: 仅将最终请求的 `ContextBlocked` 归类为上下文预算不足；正常 AVO 路径不变。
 - `backend/src/hypertrade/evals/memory_ablation_batch.py`: 矩阵、恢复、汇总、CLI。
 - `tests/test_memory_ablation_batch.py`: 纯替身/临时目录/子进程回归。
 - `specs/002-memory-paired-batch/`: 本切片规格与任务。

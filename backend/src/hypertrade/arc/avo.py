@@ -721,6 +721,8 @@ def _run(
             )
             try:
                 response = provider.chat(messages, tools=TOOLS)
+            except ContextBlocked as exc:
+                raise ResearchStopped("avo_context_budget_exhausted") from exc
             except Exception as exc:
                 raise ResearchStopped("avo_provider_unavailable") from exc
             calls = [asdict(call) for call in response.tool_calls]
