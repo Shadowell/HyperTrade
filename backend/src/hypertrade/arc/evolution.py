@@ -25,7 +25,7 @@ from hypertrade.arc.contracts import (
 )
 from hypertrade.arc.controller import ARCController, ARCMissionProjection
 from hypertrade.arc.evolution_continuation import ContinuationLedger, readiness
-from hypertrade.arc.evolution_diagnostics import blocked_data_diagnostic
+from hypertrade.arc.evolution_diagnostics import blocked_data_diagnostic, upstream_read_unavailable
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import collect_windows
 from hypertrade.arc.store import get_controller, research_lock
@@ -439,15 +439,21 @@ class EvolutionService:
         ports = read_ports(client)
         rows = ports.list_running_strategies(50)
         total, unavailable = ports.inventory_coverage()
-        diagnostics = [
-            {
-                "target_id": config.target_id,
-                "strategy_id": r.strategy_id,
-                "status": "unavailable",
-                "reason": r.unavailable_reason,
-            }
-            for r in unavailable
-        ]
+        diagnostics = []
+        for row in unavailable:
+            sid = (
+                int(row.strategy_id) if profile.strategy_id_format == "integer" else row.strategy_id
+            )
+            if config.strategy_ids and sid not in config.strategy_ids:
+                continue
+            diagnostics.append(
+                {
+                    "target_id": config.target_id,
+                    "strategy_id": sid,
+                    "status": "unavailable",
+                    **upstream_read_unavailable(now),
+                }
+            )
         if total > 50:
             diagnostics.append(
                 {
@@ -510,8 +516,10 @@ class EvolutionService:
             }
             diagnostics.append(diagnostic)
             snapshot: dict[str, Any] = {}
+            snapshot_read = False
             try:
                 session = ports.get_session_snapshot(strategy_id=str(sid))
+                snapshot_read = True
                 snapshot = {
                     **(session.source or {}),
                     "strategy_id": session.strategy_id,
@@ -666,20 +674,29 @@ class EvolutionService:
                     and snapshot.get("status") == "running"
                     else {}
                 )
-                if profile.transport == "bitpro_mcp_v1":
+                if not snapshot_read:
+                    diagnostic.update(upstream_read_unavailable(now))
+                elif profile.transport == "bitpro_mcp_v1":
                     diagnostic.update(
                         blocked_data_diagnostic(client, identified, now, str(exc)[:240])
                     )
             finally:
                 bound_snapshot = snapshot if str(snapshot.get("strategy_id")) == str(sid) else {}
                 diagnostic["continuation"] = readiness(
-                    bound_snapshot, diagnostic, config, now, profile=profile
+                    bound_snapshot,
+                    diagnostic,
+                    config,
+                    now,
+                    profile=profile,
+                    snapshot_read=snapshot_read,
                 )
                 if on_progress is not None:
                     on_progress(diagnostics)
         for diagnostic in diagnostics:
             if "continuation" not in diagnostic and diagnostic.get("strategy_id"):
-                diagnostic["continuation"] = readiness({}, diagnostic, config, now, profile=profile)
+                diagnostic["continuation"] = readiness(
+                    {}, diagnostic, config, now, profile=profile, snapshot_read=False
+                )
         return diagnostics, chosen
 
     def _memory(self, context: dict[str, Any], now: datetime) -> list[dict[str, Any]]:

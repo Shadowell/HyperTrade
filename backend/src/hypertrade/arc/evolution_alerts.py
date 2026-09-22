@@ -292,6 +292,15 @@ def _alert_continuations(db: Database, now: datetime) -> list[dict[str, Any]]:
     rows = ContinuationLedger(db).view()
     with db.session() as session:
         control = session.get(EvolutionControl, "global")
+        scope = (
+            {
+                str(strategy_id)
+                for strategy_id in ((control.config_json or {}).get("strategy_ids") or [])
+            }
+            if control is not None
+            else set()
+        )
+        rows = [row for row in rows if not scope or str(_row_strategies(row)) in scope]
         preview = session.scalar(
             select(EvolutionCycle)
             .where(EvolutionCycle.status == "preview_complete")
@@ -319,6 +328,8 @@ def _alert_continuations(db: Database, now: datetime) -> list[dict[str, Any]]:
     overrides = []
     for diagnostic in diagnostics:
         sid = _row_strategies(diagnostic)
+        if scope and str(sid) not in scope:
+            continue
         state = diagnostic.get("continuation")
         if sid is None or not isinstance(state, dict):
             continue

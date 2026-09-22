@@ -150,6 +150,8 @@ def readiness(
     config: EvolutionConfig,
     now: datetime,
     profile: MarketTargetProfileV1 | None = None,
+    *,
+    snapshot_read: bool = True,
 ) -> dict[str, Any]:
     """Known lower bounds are not promises: all evidence is re-read when due."""
     now = utc(now)
@@ -193,7 +195,9 @@ def readiness(
             "status": provenance.get("status") if isinstance(provenance, dict) else "unavailable",
             "blocking_reasons": source_alerts,
         }
-    if not all(cursor.get(k) for k in ("instance_id", "strategy_version", "config_version")):
+    if snapshot_read and not all(
+        cursor.get(k) for k in ("instance_id", "strategy_version", "config_version")
+    ):
         blockers.append(
             {"code": "session_identity", "condition": "verify original session and versions"}
         )
@@ -220,42 +224,43 @@ def readiness(
                     "condition": "same-session trade_count >= required",
                 }
             )
-    try:
-        if not start:
-            raise ValueError("missing start")
-        if sessions:
-            if not complete_session_receipt_chain(receipts, window):
-                blockers.append(
-                    {
-                        "code": "trading_calendar_evidence",
-                        "condition": "14 complete sessions with timezone and source receipts",
-                        "resolution": "operator",
-                    }
-                )
-        else:
-            minimum = utc(start) + timedelta(days=days)
-            eligible = minimum.astimezone(tz).replace(hour=0, minute=0, second=0, microsecond=0)
-            if eligible < minimum:
-                eligible += timedelta(days=1)
-            if end < minimum:
-                next_eligible = eligible.isoformat()
-                calendar_name = tz.tzname(None) or "UTC"
-                blockers.append(
-                    {
-                        "code": "completed_utc_window",
-                        "eligible_at": next_eligible,
-                        "condition": (
-                            f"{days} complete {calendar_name} days within original session"
-                        ),
-                    }
-                )
-    except (ValueError, TypeError, OverflowError):
-        blockers.append(
-            {
-                "code": "session_start",
-                "condition": "verify original session started_at; never recreate",
-            }
-        )
+    if snapshot_read:
+        try:
+            if not start:
+                raise ValueError("missing start")
+            if sessions:
+                if not complete_session_receipt_chain(receipts, window):
+                    blockers.append(
+                        {
+                            "code": "trading_calendar_evidence",
+                            "condition": "14 complete sessions with timezone and source receipts",
+                            "resolution": "operator",
+                        }
+                    )
+            else:
+                minimum = utc(start) + timedelta(days=days)
+                eligible = minimum.astimezone(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+                if eligible < minimum:
+                    eligible += timedelta(days=1)
+                if end < minimum:
+                    next_eligible = eligible.isoformat()
+                    calendar_name = tz.tzname(None) or "UTC"
+                    blockers.append(
+                        {
+                            "code": "completed_utc_window",
+                            "eligible_at": next_eligible,
+                            "condition": (
+                                f"{days} complete {calendar_name} days within original session"
+                            ),
+                        }
+                    )
+        except (ValueError, TypeError, OverflowError):
+            blockers.append(
+                {
+                    "code": "session_start",
+                    "condition": "verify original session started_at; never recreate",
+                }
+            )
     data = diagnostic.get("data_readiness") or {}
     sampling = data.get("sampling") or {}
     cursor["sampling"] = {

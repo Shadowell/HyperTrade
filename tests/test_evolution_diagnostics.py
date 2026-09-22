@@ -162,6 +162,7 @@ def test_scan_preserves_legacy_session_and_makes_no_sampling_request():
     client = Legacy()
     diagnostics, chosen = EvolutionService(None, client)._scan(EvolutionConfig(), NOW)
     assert chosen is None
-    assert diagnostics[0]["data_readiness"]["sampling"]["reason_code"] == "session_identity_missing"
-    assert "不重建" in diagnostics[0]["data_readiness"]["next_action"]
+    assert diagnostics[0]["data_readiness"]["sampling"]["reason_code"] == "recent_read_unavailable"
+    assert "保留原模拟盘历史" in diagnostics[0]["data_readiness"]["next_action"]
+    assert {b["code"] for b in diagnostics[0]["continuation"]["blockers"]} == {"evidence_recheck"}
     assert client.calls == []

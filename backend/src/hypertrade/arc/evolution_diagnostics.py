@@ -7,6 +7,23 @@ from hypertrade.arc.feedback import _number, _time
 from hypertrade.bitpro.strategy_evidence import _cost_model
 
 
+def upstream_read_unavailable(now: datetime) -> dict[str, Any]:
+    """An unread snapshot says nothing about the original Paper session."""
+    return {
+        "reason": "上游只读快照暂不可用；尚未核验原模拟盘会话",
+        "data_readiness": {
+            "blocking_reason": "upstream_read_unavailable",
+            "sampling": {
+                "state": "unavailable",
+                "checked_at": now.isoformat(),
+                "historical_window_verified": False,
+                "reason_code": "recent_read_unavailable",
+            },
+            "next_action": "检查上游只读接口与认证，稍后重试诊断；保留原模拟盘历史",
+        },
+    }
+
+
 def sampling_status(client: Any, snapshot: dict[str, Any], now: datetime) -> dict[str, Any]:
     """One bounded recent read distinguishes sampling health from 14-day eligibility."""
     result: dict[str, Any] = {

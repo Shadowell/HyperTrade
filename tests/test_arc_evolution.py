@@ -189,6 +189,67 @@ def test_missing_paper_identity_does_not_launch_research(service, monkeypatch):
     assert list_mission_ids() == []
 
 
+def test_inventory_unavailable_respects_configured_strategy_scope(service):
+    from datetime import UTC, datetime
+
+    paper = Paper()
+    paper.paper_strategy_performance = lambda **kwargs: {
+        "strategies": [],
+        "unavailable_strategies": [
+            {"strategy_id": sid, "reason": "dashboard unavailable"} for sid in (480, 511)
+        ],
+    }
+    service.client = paper
+    diagnostics, chosen = service._scan(
+        EvolutionConfig(strategy_ids=[511]), datetime(2026, 9, 22, tzinfo=UTC)
+    )
+    assert chosen is None
+    assert [row["strategy_id"] for row in diagnostics] == [511]
+    row = diagnostics[0]
+    assert row["data_readiness"]["sampling"]["reason_code"] == "recent_read_unavailable"
+    assert "稍后重试" in row["data_readiness"]["next_action"]
+    assert {b["code"] for b in row["continuation"]["blockers"]} == {"evidence_recheck"}
+
+
+def test_snapshot_read_failure_does_not_claim_session_fields_missing(service):
+    from datetime import UTC, datetime
+
+    paper = Paper()
+
+    def unavailable(**kwargs):
+        raise RuntimeError("temporary upstream failure")
+
+    paper.paper_snapshot = unavailable
+    service.client = paper
+    diagnostics, chosen = service._scan(
+        EvolutionConfig(strategy_ids=[44]), datetime(2026, 9, 22, tzinfo=UTC)
+    )
+    assert chosen is None
+    row = diagnostics[0]
+    assert row["data_readiness"]["sampling"]["reason_code"] == "recent_read_unavailable"
+    assert {b["code"] for b in row["continuation"]["blockers"]} == {"evidence_recheck"}
+
+
+def test_returned_snapshot_with_missing_fields_keeps_identity_blockers(service):
+    from datetime import UTC, datetime
+
+    paper = Paper()
+    original = paper.paper_snapshot
+
+    def incomplete(**kwargs):
+        return {**original(**kwargs), "instance_id": "", "session": {"started_at": None}}
+
+    paper.paper_snapshot = incomplete
+    service.client = paper
+    diagnostics, _ = service._scan(
+        EvolutionConfig(strategy_ids=[44]), datetime(2026, 9, 22, tzinfo=UTC)
+    )
+    assert {b["code"] for b in diagnostics[0]["continuation"]["blockers"]} >= {
+        "session_identity",
+        "session_start",
+    }
+
+
 def test_crash_after_creation_recovers_same_task(service, monkeypatch):
     from hypertrade.arc.store import list_mission_ids
 

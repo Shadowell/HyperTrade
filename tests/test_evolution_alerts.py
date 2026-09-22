@@ -143,13 +143,12 @@ def test_source_provenance_alert_is_not_hidden_by_waiting_window(db, webhook):
     assert "历史成本" in message and "历史源码" in message and "执行版本" in message
     assert "禁止" in message and "最早时间条件" in message
 
-    diagnostic["attribution_report"]["provenance"] = {
-        "status": "verified", "blocking_reasons": []
-    }
+    diagnostic["attribution_report"]["provenance"] = {"status": "verified", "blocking_reasons": []}
     recovered = readiness(snapshot, diagnostic, EvolutionConfig(), NOW + timedelta(minutes=1))
     with db.session() as session:
         session.get(EvolutionContinuation, "src_511").payload_json = {
-            **recovered, "strategy_id": 511
+            **recovered,
+            "strategy_id": 511,
         }
     evolution_alerts_once(db, now=NOW + timedelta(minutes=1), post=post)
     assert list_alerts(db)[0]["status"] == "resolved"
@@ -158,7 +157,9 @@ def test_source_provenance_alert_is_not_hidden_by_waiting_window(db, webhook):
 def test_source_alert_does_not_hide_sampling_failure_or_echo_unknown_reason(db, webhook):
     _, post = webhook
     seed_continuation(
-        db, 511, blockers=[{"code": "evidence_recheck"}],
+        db,
+        511,
+        blockers=[{"code": "evidence_recheck"}],
         sampling_reason="recent_read_unavailable",
     )
     with db.session() as session:
@@ -183,7 +184,8 @@ def test_source_alert_does_not_hide_sampling_failure_or_echo_unknown_reason(db, 
             "blockers": [],
             "evidence_cursor": {
                 "source_provenance": {
-                    "status": "unknown", "blocking_reasons": ["secret-token-do-not-copy"]
+                    "status": "unknown",
+                    "blocking_reasons": ["secret-token-do-not-copy"],
                 }
             },
         }
@@ -380,7 +382,6 @@ def test_readiness_marks_resolution_and_attention() -> None:
     assert by_code["session_identity"]["resolution"] == "operator"
     assert by_code["evidence_recheck"]["resolution"] == "time"
     assert state["attention_required"] is True
-
     running = {
         "instance_id": "paper-1",
         "strategy_id": 1,
@@ -394,6 +395,47 @@ def test_readiness_marks_resolution_and_attention() -> None:
     assert [b["code"] for b in stable["blockers"]] == ["degradation_threshold"]
     assert stable["blockers"][0]["resolution"] == "time"
     assert stable["attention_required"] is False
+
+
+def test_alerts_resolve_old_out_of_scope_strategy(db, webhook):
+    from hypertrade.arc.evolution_models import EvolutionControl
+
+    _, post = webhook
+    seed_continuation(db, 480, blockers=[{"code": "session_identity"}])
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+    assert evolution_alerts_once(db, now=NOW, post=post)["opened"] == 2
+    with db.session() as session:
+        session.add(
+            EvolutionControl(
+                id="global", revision=5, config_json={"enabled": True, "strategy_ids": [511]}
+            )
+        )
+        session.add(
+            EvolutionCycle(
+                id="preview_out_of_scope",
+                status="preview_complete",
+                created_at=NOW,
+                payload_json={
+                    "revision": 5,
+                    "diagnostics": [
+                        {
+                            "strategy_id": 480,
+                            "continuation": {
+                                "observed_at": (NOW + timedelta(seconds=30)).isoformat(),
+                                "blockers": [
+                                    {"code": "session_identity", "resolution": "operator"}
+                                ],
+                            },
+                        }
+                    ],
+                },
+            )
+        )
+    result = evolution_alerts_once(db, now=NOW + timedelta(minutes=1), post=post)
+    assert result["resolved"] == 1
+    by_strategy = {row["strategy_id"]: row for row in list_alerts(db)}
+    assert by_strategy[480]["status"] == "resolved"
+    assert by_strategy[511]["status"] == "open"
 
 
 def test_operator_blocker_opens_and_delivers_once(db, webhook) -> None:
