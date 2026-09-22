@@ -9,6 +9,7 @@ An operator must see whether the currently displayed evolution alert was actuall
 - FR-003: Legacy receipts without both bindings remain unverified; no historical signature or message is inferred.
 - FR-004: Unchanged conditions keep the 24-hour reminder and six-hour failed-attempt cadence. Acknowledgement suppresses the same condition; changed conditions and resolved-then-reappearing conditions retain existing reopen semantics.
 - FR-005: This slice does not change Paper, alert transport, approval, research admission, or production policy.
+- FR-006: An open alert whose prior `sent` receipt lacks binding must attempt one fresh delivery promptly, even within the old 24-hour window. Preserve the old receipt as an unbound observation; failed revalidation follows the ordinary six-hour retry, acknowledgement stays quiet, and fully bound message-only changes keep the ordinary reminder cadence.
 
 ## Acceptance
 Tests first reproduce open-condition drift and stale-receipt misattribution, then cover message-only drift, legacy receipts, unchanged cadence, acknowledgement, and new-condition delivery.

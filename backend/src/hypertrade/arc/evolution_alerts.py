@@ -450,8 +450,27 @@ def evolution_alerts_once(
         ).all()
         for row in open_rows:
             payload = dict(row.payload_json or {})
-            if row.delivered_at and now - _aware(row.delivered_at) < timedelta(
-                hours=REMIND_AFTER_HOURS
+            unbound_receipt = bool(row.delivered_at) and not all(
+                payload.get(field) for field in ("delivery_signature", "delivery_message_hash")
+            )
+            legacy_sent = unbound_receipt and row.delivery_result == "sent"
+            if (
+                legacy_sent
+                and row.delivered_at is not None
+                and "legacy_unbound_delivery_observation" not in payload
+            ):
+                # Preserve what the old receipt proved without assigning it to
+                # the current signature or claiming today's text was delivered.
+                payload["legacy_unbound_delivery_observation"] = {
+                    "delivered_at": _aware(row.delivered_at).isoformat(),
+                    "delivery_result": row.delivery_result,
+                    "delivery_receipt_version": payload.get("delivery_receipt_version"),
+                    "delivery_business_code": payload.get("delivery_business_code"),
+                }
+            if (
+                row.delivered_at
+                and not unbound_receipt
+                and now - _aware(row.delivered_at) < timedelta(hours=REMIND_AFTER_HOURS)
             ):
                 continue
             # "Webhook not configured" is a configuration state, not a failed
@@ -459,7 +478,7 @@ def evolution_alerts_once(
             # retry cadence. Applies to rows written before this distinction.
             previously_skipped = str(row.delivery_result or "") == "skipped_no_webhook"
             last_attempt = payload.get("last_attempt_at")
-            if isinstance(last_attempt, str) and not previously_skipped:
+            if isinstance(last_attempt, str) and not previously_skipped and not legacy_sent:
                 try:
                     attempt_at = _aware(datetime.fromisoformat(last_attempt))
                     if now - attempt_at < timedelta(hours=RETRY_AFTER_HOURS):

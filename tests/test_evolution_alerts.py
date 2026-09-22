@@ -90,6 +90,35 @@ def touch_continuation(db: Database, strategy_id: int, observed_at: datetime) ->
         row.payload_json = payload
 
 
+def seed_unbound_open_source_alert(db: Database, post) -> None:
+    """Model an old open row after its text changed but before a bound resend."""
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+    assert evolution_alerts_once(db, now=NOW, post=post)["delivered"] == 1
+    with db.session() as session:
+        continuation = session.get(EvolutionContinuation, "src_511")
+        continuation.payload_json = {
+            **continuation.payload_json,
+            "observed_at": (NOW + timedelta(minutes=1)).isoformat(),
+            "blockers": [],
+            "evidence_cursor": {
+                "source_provenance": {
+                    "status": "unknown",
+                    "blocking_reasons": [
+                        "historical_cost_metadata_missing",
+                        "historical_code_version_missing",
+                    ],
+                }
+            },
+        }
+        alert = session.get(EvolutionAlert, alert_id(ALERT_OPERATOR_BLOCKED, 511))
+        payload = dict(alert.payload_json)
+        payload["signature"] = "historical_code_version_missing|historical_cost_metadata_missing|"
+        payload.pop("delivery_signature", None)
+        payload.pop("delivery_message_hash", None)
+        alert.payload_json = payload
+        alert.message = "策略 511：历史成本与历史源码需要核对"
+
+
 def test_blocker_resolution_classification() -> None:
     assert blocker_resolution("session_identity") == "operator"
     assert blocker_resolution("session_start") == "operator"
@@ -314,6 +343,63 @@ def test_same_condition_new_message_waits_for_reminder_and_marks_receipt_stale(d
     result = evolution_alerts_once(db, now=NOW + timedelta(hours=24), post=post)
     assert result["delivered"] == 1 and len(sent) == 2
     assert list_alerts(db)[0]["delivery_verified"] is True
+
+
+def test_old_unbound_sent_receipt_revalidates_current_open_alert_once(db, webhook):
+    sent, post = webhook
+    seed_unbound_open_source_alert(db, post)
+    old = list_alerts(db)[0]
+    assert old["status"] == "open" and old["delivery_verified"] is False
+    assert datetime.fromisoformat(old["delivered_at"]).replace(tzinfo=UTC) == NOW
+    result = evolution_alerts_once(db, now=NOW + timedelta(hours=1), post=post)
+    current = list_alerts(db)[0]
+    assert result["delivered"] == 1 and len(sent) == 2
+    assert "历史成本" in sent[-1]["payload"]["content"]["text"]
+    assert current["delivery_verified"] is True
+    assert current["delivery_signature"] == current["signature"]
+    assert current["delivery_count"] == 2
+    legacy = current["legacy_unbound_delivery_observation"]
+    assert legacy["delivery_result"] == "sent"
+    assert legacy["delivery_business_code"] == 0
+    assert "signature" not in legacy and "message" not in legacy
+    touch_continuation(db, 511, NOW + timedelta(hours=1, minutes=1))
+    assert (
+        evolution_alerts_once(db, now=NOW + timedelta(hours=1, minutes=1), post=post)["delivered"]
+        == 0
+    )
+    assert len(sent) == 2
+
+
+def test_old_unbound_resend_failure_uses_six_hour_retry(db, webhook):
+    sent, post = webhook
+    seed_unbound_open_source_alert(db, post)
+    attempts = []
+
+    def fail(url, payload):
+        attempts.append(payload)
+        raise TimeoutError()
+
+    assert evolution_alerts_once(db, now=NOW + timedelta(hours=1), post=fail)["failed"] == 1
+    failed = list_alerts(db)[0]
+    assert datetime.fromisoformat(failed["delivered_at"]).replace(tzinfo=UTC) == NOW
+    assert failed["delivery_verified"] is False
+    touch_continuation(db, 511, NOW + timedelta(hours=6))
+    assert evolution_alerts_once(db, now=NOW + timedelta(hours=6), post=post)["delivered"] == 0
+    assert len(attempts) == 1 and len(sent) == 1
+    touch_continuation(db, 511, NOW + timedelta(hours=7))
+    assert evolution_alerts_once(db, now=NOW + timedelta(hours=7), post=post)["delivered"] == 1
+    assert len(sent) == 2
+    assert list_alerts(db)[0]["delivery_verified"] is True
+
+
+def test_acknowledged_old_unbound_receipt_is_not_resent(db, webhook):
+    sent, post = webhook
+    seed_unbound_open_source_alert(db, post)
+    acknowledge_alert(db, alert_id(ALERT_OPERATOR_BLOCKED, 511), actor="operator")
+    touch_continuation(db, 511, NOW + timedelta(hours=1))
+    assert evolution_alerts_once(db, now=NOW + timedelta(hours=1), post=post)["delivered"] == 0
+    assert len(sent) == 1
+    assert list_alerts(db)[0]["status"] == "acknowledged"
 
 
 def test_acknowledged_same_condition_stays_quiet_but_new_condition_reopens(db, webhook):
