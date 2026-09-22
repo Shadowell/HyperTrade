@@ -1,7 +1,8 @@
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
 from decimal import Decimal
+from threading import RLock
 from typing import Any
 from uuid import uuid4
 
@@ -2074,6 +2075,9 @@ class Database:
             connect_args["check_same_thread"] = False
             if url == "sqlite:///:memory:":
                 engine_kwargs["poolclass"] = StaticPool
+        # StaticPool gives every thread the same in-memory sqlite3 connection.
+        # Hold this per-instance lock until commit/rollback and close finish.
+        self._session_lock = RLock() if engine_kwargs.get("poolclass") is StaticPool else None
         self.engine = create_engine(
             url, echo=echo, future=True, connect_args=connect_args, **engine_kwargs
         )
@@ -2084,12 +2088,13 @@ class Database:
 
     @contextmanager
     def session(self) -> Iterator[Session]:
-        session = self.session_factory()
-        try:
-            yield session
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
+        with self._session_lock or nullcontext():
+            session = self.session_factory()
+            try:
+                yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
