@@ -112,6 +112,10 @@ def alert_id(code: str, strategy_id: int | None = None) -> str:
     return "evoalert_" + hashlib.sha256(seed.encode()).hexdigest()[:24]
 
 
+def _message_hash(message: str) -> str:
+    return hashlib.sha256(message.encode("utf-8")).hexdigest()
+
+
 def _row_strategies(payload: dict[str, Any]) -> int | None:
     value = payload.get("strategy_id")
     if value is None:
@@ -401,9 +405,9 @@ def evolution_alerts_once(
                 row.payload_json = payload
                 if not block["tracking_only"]:
                     row.message = block["message"]
-                if row.status == "resolved" or (row.status == "acknowledged" and changed):
-                    # A reappearing condition is a new episode: reset the anchor
-                    # so horizons are not inherited from the old episode.
+                if row.status == "resolved" or changed:
+                    # A changed condition is a new episode even while open; its
+                    # prior receipt and reminder delay do not describe this alert.
                     payload["first_seen_at"] = now.isoformat()
                     for field in (
                         "last_attempt_at",
@@ -412,6 +416,8 @@ def evolution_alerts_once(
                         "delivery_count",
                         "delivery_receipt_version",
                         "delivery_business_code",
+                        "delivery_signature",
+                        "delivery_message_hash",
                     ):
                         payload.pop(field, None)
                     row.payload_json = dict(payload)
@@ -480,6 +486,8 @@ def evolution_alerts_once(
                 payload["delivery_count"] = int(payload.get("delivery_count") or 0) + 1
                 payload["delivery_receipt_version"] = DELIVERY_RECEIPT_VERSION
                 payload["delivery_business_code"] = 0
+                payload["delivery_signature"] = payload.get("signature")
+                payload["delivery_message_hash"] = _message_hash(row.message)
             elif result.startswith("failed"):
                 failed += 1
                 payload["last_attempt_at"] = now.isoformat()
@@ -544,6 +552,13 @@ def list_alerts(db: Database, *, limit: int = 50) -> list[dict[str, Any]]:
                 "delivery_verified": (
                     (row.payload_json or {}).get("delivery_receipt_version")
                     == DELIVERY_RECEIPT_VERSION
+                    and type((row.payload_json or {}).get("delivery_business_code")) is int
+                    and (row.payload_json or {}).get("delivery_business_code") == 0
+                    and (row.payload_json or {}).get("delivery_signature")
+                    == (row.payload_json or {}).get("signature")
+                    and (row.payload_json or {}).get("delivery_message_hash")
+                    == _message_hash(row.message)
+                    and row.delivered_at is not None
                     and row.delivery_result == "sent"
                 ),
                 "reminder_interval_hours": REMIND_AFTER_HOURS,

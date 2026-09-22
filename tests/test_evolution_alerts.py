@@ -232,6 +232,111 @@ def test_daily_reminder_until_acknowledged(db, webhook):
     assert len(sent) == 2
 
 
+def test_open_condition_change_delivers_new_episode_immediately(db, webhook):
+    sent, post = webhook
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+    assert evolution_alerts_once(db, now=NOW, post=post)["delivered"] == 1
+    original = list_alerts(db)[0]
+    assert original["delivery_verified"] is True
+
+    changed_at = NOW + timedelta(minutes=1)
+    with db.session() as session:
+        row = session.get(EvolutionContinuation, "src_511")
+        row.payload_json = {
+            **row.payload_json,
+            "observed_at": changed_at.isoformat(),
+            "blockers": [],
+            "evidence_cursor": {
+                "source_provenance": {
+                    "status": "unknown",
+                    "blocking_reasons": [
+                        "historical_cost_metadata_missing",
+                        "historical_code_version_missing",
+                    ],
+                }
+            },
+        }
+    result = evolution_alerts_once(db, now=changed_at, post=post)
+    current = list_alerts(db)[0]
+    assert result["delivered"] == 1
+    assert len(sent) == 2
+    assert "历史成本" in sent[-1]["payload"]["content"]["text"]
+    assert "历史源码" in current["message"]
+    assert current["first_seen_at"] == changed_at.isoformat()
+    assert current["delivery_count"] == 1
+    assert current["delivery_verified"] is True
+
+
+def test_delivery_verified_requires_current_message_and_bound_receipt(db, webhook):
+    _, post = webhook
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+    evolution_alerts_once(db, now=NOW, post=post)
+    original = list_alerts(db)[0]
+    assert original["delivery_verified"] is True
+    with db.session() as session:
+        row = session.get(EvolutionAlert, alert_id(ALERT_OPERATOR_BLOCKED, 511))
+        row.payload_json = {**row.payload_json, "signature": "new-condition"}
+    assert list_alerts(db)[0]["delivery_verified"] is False
+    with db.session() as session:
+        row = session.get(EvolutionAlert, alert_id(ALERT_OPERATOR_BLOCKED, 511))
+        row.payload_json = {**row.payload_json, "signature": original["signature"]}
+        row.message = "同条件下更新的当前说明"
+    assert list_alerts(db)[0]["delivery_verified"] is False
+    with db.session() as session:
+        row = session.get(EvolutionAlert, alert_id(ALERT_OPERATOR_BLOCKED, 511))
+        row.message = original["message"]
+        payload = dict(row.payload_json)
+        payload.pop("delivery_signature", None)
+        payload.pop("delivery_message_hash", None)
+        row.payload_json = payload
+    assert list_alerts(db)[0]["delivery_verified"] is False
+
+
+def test_same_condition_new_message_waits_for_reminder_and_marks_receipt_stale(db, webhook):
+    sent, post = webhook
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+    evolution_alerts_once(db, now=NOW, post=post)
+    original = list_alerts(db)[0]
+    with db.session() as session:
+        row = session.get(EvolutionContinuation, "src_511")
+        row.payload_json = {
+            **row.payload_json,
+            "observed_at": (NOW + timedelta(minutes=1)).isoformat(),
+            "next_eligible_at": "2026-10-03T00:00:00+00:00",
+        }
+    result = evolution_alerts_once(db, now=NOW + timedelta(minutes=1), post=post)
+    current = list_alerts(db)[0]
+    assert result["delivered"] == 0 and len(sent) == 1
+    assert current["signature"] == original["signature"]
+    assert "最早时间条件" in current["message"]
+    assert current["delivery_verified"] is False
+    touch_continuation(db, 511, NOW + timedelta(hours=24))
+    result = evolution_alerts_once(db, now=NOW + timedelta(hours=24), post=post)
+    assert result["delivered"] == 1 and len(sent) == 2
+    assert list_alerts(db)[0]["delivery_verified"] is True
+
+
+def test_acknowledged_same_condition_stays_quiet_but_new_condition_reopens(db, webhook):
+    sent, post = webhook
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+    evolution_alerts_once(db, now=NOW, post=post)
+    alert = list_alerts(db)[0]
+    acknowledge_alert(db, alert["id"], actor="operator")
+    touch_continuation(db, 511, NOW + timedelta(minutes=1))
+    assert evolution_alerts_once(db, now=NOW + timedelta(minutes=1), post=post)["delivered"] == 0
+    assert len(sent) == 1
+    with db.session() as session:
+        row = session.get(EvolutionContinuation, "src_511")
+        row.payload_json = {
+            **row.payload_json,
+            "observed_at": (NOW + timedelta(minutes=2)).isoformat(),
+            "blockers": [{"code": "session_start"}],
+        }
+    assert evolution_alerts_once(db, now=NOW + timedelta(minutes=2), post=post)["delivered"] == 1
+    assert list_alerts(db)[0]["status"] == "open"
+    assert len(sent) == 2
+
+
 def test_unresolved_delivery_retries_after_seven_days(db, webhook):
     sent, post = webhook
     seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
@@ -244,6 +349,25 @@ def test_unresolved_delivery_retries_after_seven_days(db, webhook):
     touch_continuation(db, 511, later)
     result = evolution_alerts_once(db, now=later, post=post)
     assert result["delivered"] == 1 and len(sent) == 1
+
+
+def test_failed_same_condition_keeps_six_hour_retry_cadence(db, webhook):
+    sent, post = webhook
+    seed_continuation(db, 511, blockers=[{"code": "session_identity"}])
+    attempts = []
+
+    def fail(url, payload):
+        attempts.append(payload)
+        raise TimeoutError()
+
+    assert evolution_alerts_once(db, now=NOW, post=fail)["failed"] == 1
+    touch_continuation(db, 511, NOW + timedelta(hours=5))
+    assert evolution_alerts_once(db, now=NOW + timedelta(hours=5), post=post)["delivered"] == 0
+    assert len(attempts) == 1 and sent == []
+    touch_continuation(db, 511, NOW + timedelta(hours=6))
+    assert evolution_alerts_once(db, now=NOW + timedelta(hours=6), post=post)["delivered"] == 1
+    assert len(sent) == 1
+    assert list_alerts(db)[0]["delivery_verified"] is True
 
 
 def test_reappearing_alert_does_not_inherit_failed_attempt_cooldown(db, webhook):
