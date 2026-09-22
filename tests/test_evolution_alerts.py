@@ -107,6 +107,92 @@ def test_blocker_resolution_classification() -> None:
     )
 
 
+def test_source_provenance_alert_is_not_hidden_by_waiting_window(db, webhook):
+    sent, post = webhook
+    snapshot = {
+        "strategy_id": 511,
+        "instance_id": "paper_original",
+        "strategy_version": "v1",
+        "config_version": "c1",
+        "status": "running",
+        "trade_count": 80,
+        "session": {"started_at": (NOW - timedelta(days=2)).isoformat()},
+    }
+    diagnostic = {"status": "unavailable", "reason": "window incomplete"}
+    original = readiness(snapshot, diagnostic, EvolutionConfig(), NOW)
+    diagnostic["attribution_report"] = {
+        "provenance": {
+            "status": "unknown",
+            "blocking_reasons": [
+                "historical_cost_metadata_missing",
+                "historical_code_version_missing",
+                "execution_version_unverified",
+            ],
+        }
+    }
+    state = readiness(snapshot, diagnostic, EvolutionConfig(), NOW)
+    # Alert visibility must not rewrite the eligibility conditions or time lower bound.
+    assert state["blockers"] == original["blockers"]
+    assert state["next_eligible_at"] == original["next_eligible_at"]
+    assert state["attention_required"] is True
+    with db.session() as session:
+        session.add(EvolutionContinuation(id="src_511", payload_json={**state, "strategy_id": 511}))
+    evolution_alerts_once(db, now=NOW, post=post)
+    message = list_alerts(db)[0]["message"]
+    assert len(sent) == 1
+    assert "历史成本" in message and "历史源码" in message and "执行版本" in message
+    assert "禁止" in message and "最早时间条件" in message
+
+    diagnostic["attribution_report"]["provenance"] = {
+        "status": "verified", "blocking_reasons": []
+    }
+    recovered = readiness(snapshot, diagnostic, EvolutionConfig(), NOW + timedelta(minutes=1))
+    with db.session() as session:
+        session.get(EvolutionContinuation, "src_511").payload_json = {
+            **recovered, "strategy_id": 511
+        }
+    evolution_alerts_once(db, now=NOW + timedelta(minutes=1), post=post)
+    assert list_alerts(db)[0]["status"] == "resolved"
+
+
+def test_source_alert_does_not_hide_sampling_failure_or_echo_unknown_reason(db, webhook):
+    _, post = webhook
+    seed_continuation(
+        db, 511, blockers=[{"code": "evidence_recheck"}],
+        sampling_reason="recent_read_unavailable",
+    )
+    with db.session() as session:
+        row = session.get(EvolutionContinuation, "src_511")
+        row.payload_json = {
+            **row.payload_json,
+            "evidence_cursor": {
+                **row.payload_json["evidence_cursor"],
+                "source_provenance": {
+                    "status": "unknown",
+                    "blocking_reasons": ["historical_cost_metadata_missing"],
+                },
+            },
+        }
+    evolution_alerts_once(db, now=NOW, post=post)
+    assert "近期证据读取失败" in list_alerts(db)[0]["message"]
+    assert "历史成本" in list_alerts(db)[0]["message"]
+    with db.session() as session:
+        row = session.get(EvolutionContinuation, "src_511")
+        row.payload_json = {
+            **row.payload_json,
+            "blockers": [],
+            "evidence_cursor": {
+                "source_provenance": {
+                    "status": "unknown", "blocking_reasons": ["secret-token-do-not-copy"]
+                }
+            },
+        }
+    evolution_alerts_once(db, now=NOW + timedelta(minutes=1), post=post)
+    message = list_alerts(db)[0]["message"]
+    assert "来源核验" in message
+    assert "secret-token" not in message
+
+
 @pytest.mark.parametrize("body", [{"code": 19024}, {}, {"StatusCode": 1}, {"code": False}])
 def test_http_success_with_business_failure_is_not_delivered(db, monkeypatch, webhook, body):
     import httpx

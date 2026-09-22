@@ -17,6 +17,24 @@ REASONS = {
 }
 
 
+def alert_codes(value: Any) -> list[str]:
+    """Project only fixed source failures; old reports without provenance stay compatible."""
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        status, reasons = value.get("status"), value.get("blocking_reasons")
+        if status == "verified" and reasons == []:
+            return []
+        if (
+            status == "unknown"
+            and isinstance(reasons, list)
+            and 0 < len(reasons) <= len(REASONS)
+            and all(isinstance(reason, str) and reason in REASONS for reason in reasons)
+        ):
+            return sorted(set(reasons))
+    return ["source_provenance_unavailable"]
+
+
 def unavailable() -> dict[str, Any]:
     return {
         "status": "unavailable",

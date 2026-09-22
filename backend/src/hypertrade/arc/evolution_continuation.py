@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from hypertrade.arc.controller import ARCMissionProjection
 from hypertrade.arc.evolution_models import EvolutionAcceptance, EvolutionContinuation
+from hypertrade.arc.provenance import alert_codes
 from hypertrade.db import Database
 
 if TYPE_CHECKING:
@@ -183,6 +184,15 @@ def readiness(
         else None
     )
     cursor["window_receipt_hash"] = diagnostic.get("window_receipt_hash")
+    provenance = (diagnostic.get("attribution_report") or {}).get("provenance")
+    source_alerts = alert_codes(provenance)
+    if provenance is not None:
+        # These metadata gaps need operator visibility even while the time gate is pending.
+        # This projection does not change research admission or reconstruct historical evidence.
+        cursor["source_provenance"] = {
+            "status": provenance.get("status") if isinstance(provenance, dict) else "unavailable",
+            "blocking_reasons": source_alerts,
+        }
     if not all(cursor.get(k) for k in ("instance_id", "strategy_version", "config_version")):
         blockers.append(
             {"code": "session_identity", "condition": "verify original session and versions"}
@@ -294,7 +304,8 @@ def readiness(
         "check_result": diagnostic.get("status", "unavailable"),
         "window": diagnostic.get("window"),
         "automatic_resume": True,
-        "attention_required": any(b.get("resolution") == "operator" for b in blockers),
+        "attention_required": bool(source_alerts)
+        or any(b.get("resolution") == "operator" for b in blockers),
     }
 
 

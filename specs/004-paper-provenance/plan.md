@@ -1,2 +1,4 @@
 # 方案
 新增独立arc/provenance.py做严格规范化；BitPro适配器增加只读paper_provenance。collect_attribution先有界获取元数据，再读原两页窗口，attribution_report哈希包含来源投影。旧适配器无该方法继续旧形状，错误不泄露原文。与R7/evolution预算文件不交叉。
+
+将来源状态的固定告警投影随readiness证据游标保存，现有告警收集器合并来源原因与操作阻塞；研究blockers、时间下界、预算准入保持原语义。正例覆盖时间未满且来源缺失、混合采样故障、来源恢复；反例覆盖不可信原因不泄露与旧报告兼容。

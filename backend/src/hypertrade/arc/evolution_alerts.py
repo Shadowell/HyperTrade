@@ -19,6 +19,7 @@ from sqlalchemy import case, select
 
 from hypertrade.arc.evolution_continuation import blocker_resolution
 from hypertrade.arc.evolution_models import EvolutionAlert, EvolutionControl, EvolutionCycle
+from hypertrade.arc.provenance import alert_codes
 from hypertrade.db import Database
 
 ALERT_OPERATOR_BLOCKED = "evolution_blocked_needs_operator"
@@ -47,6 +48,15 @@ _BLOCKER_TEXT = {
     "session_start": "缺少原会话起点",
     "running_state": "原模拟盘运行状态待核对",
     "evidence_recheck": "证据读取或校验未通过",
+}
+_SOURCE_TEXT = {
+    "historical_cost_metadata_missing": "历史成本绑定缺失",
+    "invalid_research_costs": "历史成本记录无效",
+    "historical_code_version_missing": "历史源码版本缺失",
+    "execution_version_unverified": "执行版本未核验",
+    "review_binding_invalid": "原会话审核绑定无效",
+    "started_at_missing": "原会话起点缺失",
+    "source_provenance_unavailable": "来源核验暂不可用",
 }
 _SAMPLING_TEXT = {
     "source_point_limit_exceeded": (
@@ -79,10 +89,18 @@ def _operator_message(row: dict[str, Any], strategy_id: int, codes: list[str]) -
     detail, action = _SAMPLING_TEXT.get(
         reason,
         (
-            "、".join(_BLOCKER_TEXT.get(code, "需要人工核对的证据阻塞") for code in codes),
+            "、".join(
+                _SOURCE_TEXT.get(code, _BLOCKER_TEXT.get(code, "需要人工核对的证据阻塞"))
+                for code in codes
+            ),
             "在自主研究页面核对原会话与数据来源，保留原模拟盘历史",
         ),
     )
+    source_details = [_SOURCE_TEXT[code] for code in codes if code in _SOURCE_TEXT]
+    if source_details:
+        if reason in _SAMPLING_TEXT:
+            detail += "；" + "、".join(source_details)
+        action += "；核对原会话冻结成本、源码及审核绑定，缺失历史保持未知，禁止补造或重置"
     message = f"策略 {strategy_id}：{detail}\n下一步：{action}"
     if row.get("next_eligible_at"):
         message += f"\n最早时间条件：{row['next_eligible_at']}（还需证据完整）"
@@ -167,6 +185,7 @@ def _desired_alerts(
         pairs = _blocker_resolutions(row)
         operator_codes = sorted(
             {str(b.get("code")) for b, resolution in pairs if resolution == "operator"}
+            | set(alert_codes((row.get("evidence_cursor") or {}).get("source_provenance")))
         )
         if operator_codes:
             key = alert_id(ALERT_OPERATOR_BLOCKED, strategy_id)
