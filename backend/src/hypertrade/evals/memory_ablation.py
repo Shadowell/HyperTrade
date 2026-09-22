@@ -254,6 +254,7 @@ def _summary(controller: ARCController, memory: list[dict[str, Any]]) -> dict[st
         "state": projection.state,
         **{k: v for k, v in projection.goal.budget.model_dump().items() if k.endswith("_used")},
         "total_tokens": sum(c["usage"]["total_tokens"] for c in calls) if usage_known else None,
+        "development_experiments": len(development),
         "development_passes": sum(r.get("passed") is True for r in development),
         "repeated_experiments": repeated,
         "failure_reasons": [
@@ -359,6 +360,7 @@ def run_pair(
                 "backtests_used",
                 "candidates_used",
                 "total_tokens",
+                "development_experiments",
                 "development_passes",
                 "repeated_experiments",
             ):
