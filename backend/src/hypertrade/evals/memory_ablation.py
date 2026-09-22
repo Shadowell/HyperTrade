@@ -48,6 +48,8 @@ def _runtime_digest() -> str:
         {
             name: hashlib.sha256((root / name).read_bytes()).hexdigest()
             for name in (
+                "agent/compaction.py",
+                "agent/context_journal.py",
                 "arc/avo.py",
                 "arc/contracts.py",
                 "arc/self_test.py",
@@ -262,7 +264,7 @@ class _MemoryProvider:
             os.fsync(handle.fileno())
         if final is None:
             raise ContextBlocked(str(manifest.get("reason", "invalid_context_content")), record)
-        return self.provider.chat(final.messages, tools=tool_list)
+        return self.provider.chat(final.messages, tools=final.record["tools"])
 
 
 def _summary(controller: ARCController, memory: list[dict[str, Any]]) -> dict[str, Any]:

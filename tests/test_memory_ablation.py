@@ -424,6 +424,49 @@ def test_final_memory_request_uses_compaction_redaction_and_actual_manifest(tmp_
     assert audit["request_hash"] == digest({"messages": sent, "tools": [], "model": provider.model})
 
 
+def test_final_request_sends_redacted_tool_schema_matching_manifest(tmp_path):
+    from hypertrade.agent.compaction import digest
+
+    module = ablation()
+
+    class CaptureTools(StopProvider):
+        def chat(self, messages, tools=None):
+            self.sent_tools = tools
+            return super().chat(messages, tools)
+
+    provider = CaptureTools()
+    messages = [
+        {"role": "system", "content": "research"},
+        {"role": "user", "content": json.dumps({"objective": "SOL"})},
+    ]
+    tools = [{"name": "inspect", "api_key": "low-entropy-tool-secret"}]
+    module._MemoryProvider(provider, [], tmp_path, "off").chat(messages, tools=tools)
+    audit = json.loads((tmp_path / "requests.jsonl").read_text().splitlines()[0])
+    assert provider.sent_tools[0]["api_key"] == "[REDACTED]"
+    assert "low-entropy-tool-secret" not in json.dumps(provider.sent_tools)
+    assert audit["request_hash"] == digest(
+        {"messages": provider.seen[0], "tools": provider.sent_tools, "model": provider.model}
+    )
+    assert audit["manifest"]["tools_hash"] == digest(provider.sent_tools)
+
+
+def test_pair_runtime_identity_covers_final_view_and_private_journal(monkeypatch):
+    from pathlib import Path
+
+    module = ablation()
+    baseline = module._runtime_digest()
+    original = Path.read_bytes
+    for target in ("compaction.py", "context_journal.py"):
+        with monkeypatch.context() as scope:
+            scope.setattr(
+                Path,
+                "read_bytes",
+                lambda path, target=target: original(path)
+                + (b"drift" if path.name == target else b""),
+            )
+            assert module._runtime_digest() != baseline
+
+
 def test_final_memory_context_block_is_honest_terminal_state(tmp_path, monkeypatch):
     from hypertrade.agent.compaction import ContextBlocked
 
