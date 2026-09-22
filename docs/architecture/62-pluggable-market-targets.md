@@ -1,7 +1,6 @@
 # 62 可插拔市场目标：自进化核心与平台解耦
 
-> 状态：Phase 1 已交付（2026-09-14）。本文冻结目标模型与通用 MCP 契约；
-> Phase 2 端口化清单见第 5 节，未完成项不在此文宣称已接线。
+> 状态：Phase 1 已交付（2026-09-14）；Phase 2 的进化读取与 sessions 日历在任务分支实现，待集成验证。Paper 写端口及 QuantLab 实机仍未完成。
 
 ## 1. 背景与问题
 
@@ -61,6 +60,15 @@ MCP**——BitPro 是首个目标，QuantLab（A 股/美股，将提供 MCP）�
 工具报哪个，发现失败报错误原因）。`build_mcp_contract_profile()` 生成
 `mcp_contract_v1` 目标档案。
 
+Phase 2 读取扩展另外要求 `evolution_get_strategy_source(strategy_id)` 与
+`evolution_list_trading_sessions(start_date, end_date)`（后者只在 sessions 日历必需）。
+`McpContractClient.preflight_read()` 单独校验读取所需的规范工具，不放宽原七工具
+`preflight()`；`McpReadPorts` 通过 `McpClientRegistry` 调用规范工具、校验目标身份与
+版本化响应、映射类型化读取证据。登记目标时使用
+`register_market_target(profile, lambda: McpReadPorts(McpContractClient(registry, server, profile)))`。
+离线 MCP transport 夹具已验证从 `tools/list` 到同一扫描入口的资格/退化决策；
+这不代表 QuantLab 或 BitPro 服务端已经暴露这些工具。
+
 ## 5. 已接线点与 Phase 2 端口
 
 **Phase 1 已接线**（行为与旧版逐字节一致，测试钉死）：
@@ -71,12 +79,16 @@ MCP**——BitPro 是首个目标，QuantLab（A 股/美股，将提供 MCP）�
 - `EvolutionConfig.configure()` 拒绝未注册目标。
 - 归因/成本身份/供给写路径等仍走既有窄协议，按目标能力开关门控。
 
-**Phase 2（未交付，勿宣称已接线）**：把 `_scan` 的五个读取面、`collect_windows`
-的 `strategy_return_series.v1` 强断言、`cost_identity` 词表、Paper 供给三段写
-路径迁到 `hypertrade/targets/ports.py` 的类型化端口
-（`StrategySourcePort`/`PaperSessionPort`/`EvidencePort`/`PaperProvisionPort`），
-并为 `sessions` 日历实现按交易日计数的 14 天窗口、BitPro 服务端暴露规范工具名、
-QuantLab 实机接入（新增 `MCP_SERVERS_JSON` 条目 + 注册档案 + preflight 冒烟）。
+**Phase 2 读取切片（任务分支，待集成验证）**：`EvolutionService._scan` 的运行清单、
+原策略、会话快照、成交和权益序列从 `targets` 读取端口取得；BitPro 通过只读适配器
+维持旧证据契约。`sessions` 日历从目标读取完整交易日清单，在目标时区按 14 个已收盘
+交易日组成 7+7 窗口；每点必须携带匹配的交易日，缺日历、边界、版本、成本身份或
+分页完整性时拒绝判定。非 BitPro 目标可读取并判定，但因 Paper 写端口尚未迁移，
+研究创建明确停在 `deferred_target_write_port`。
+
+**Phase 2 未交付**：成本身份词表与 Paper 供给三段写路径迁移、非 BitPro 的
+告警/效果账本适配、BitPro 服务端规范工具名、QuantLab 实机接入及真实市场
+数据/费用证据。`MCP` 工具声明或离线夹具不能作为这些能力已接通的证明。
 
 ## 6. 离线元学习调参（`evolution_tuning.v1`）
 

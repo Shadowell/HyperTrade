@@ -34,6 +34,20 @@ CANONICAL_TOOLS: dict[str, str] = {
     "start_paper": "evolution_start_paper",
 }
 
+# Phase 2 read extension. These are required to consume the typed read ports;
+# the original seven-tool contract remains unchanged for older preflight callers.
+READ_EXTENSION_TOOLS: dict[str, str] = {
+    "get_strategy_source": "evolution_get_strategy_source",
+    "list_trading_sessions": "evolution_list_trading_sessions",
+}
+READ_REQUIRED_CAPABILITIES = (
+    "list_running_strategies",
+    "get_strategy_source",
+    "get_session_snapshot",
+    "read_equity_series",
+    "list_session_trades",
+)
+
 # Argument names the canonical tools are expected to accept. The remote tool's
 # advertised input schema stays authoritative; these are the names HyperTrade
 # will send, so a conforming server should accept exactly them.
@@ -61,6 +75,10 @@ CANONICAL_ARGUMENTS: dict[str, tuple[str, ...]] = {
         "config_version",
         "idempotency_key",
     ),
+}
+READ_EXTENSION_ARGUMENTS: dict[str, tuple[str, ...]] = {
+    "get_strategy_source": ("strategy_id",),
+    "list_trading_sessions": ("start_date", "end_date"),
 }
 
 
@@ -115,9 +133,7 @@ class McpContractClient:
 
     def __init__(self, registry: Any, server: str, profile: MarketTargetProfileV1) -> None:
         if profile.transport != "mcp_contract_v1":
-            raise ValueError(
-                f"target {profile.target_id!r} is not an mcp_contract_v1 target"
-            )
+            raise ValueError(f"target {profile.target_id!r} is not an mcp_contract_v1 target")
         self._registry = registry
         self._server = server
         self._profile = profile
@@ -127,22 +143,31 @@ class McpContractClient:
         return self._profile
 
     def canonical_tool(self, capability: str) -> str:
-        tool = CANONICAL_TOOLS.get(capability)
+        tool = CANONICAL_TOOLS.get(capability) or READ_EXTENSION_TOOLS.get(capability)
         if tool is None:
             raise MarketTargetUnavailable(f"unknown canonical capability {capability!r}")
         return tool
 
     async def preflight(self, *, force_refresh: bool = False) -> McpContractPreflight:
+        return await self._preflight(set(CANONICAL_TOOLS.values()), force_refresh=force_refresh)
+
+    async def preflight_read(self, *, force_refresh: bool = False) -> McpContractPreflight:
+        required = {
+            CANONICAL_TOOLS[key] if key in CANONICAL_TOOLS else READ_EXTENSION_TOOLS[key]
+            for key in READ_REQUIRED_CAPABILITIES
+        }
+        if self._profile.calendar.mode == "sessions":
+            required.add(READ_EXTENSION_TOOLS["list_trading_sessions"])
+        return await self._preflight(required, force_refresh=force_refresh)
+
+    async def _preflight(self, required: set[str], *, force_refresh: bool) -> McpContractPreflight:
         errors: list[str] = []
         names: set[str] = set()
         try:
-            descriptors = await self._registry.list_tools(
-                self._server, force_refresh=force_refresh
-            )
+            descriptors = await self._registry.list_tools(self._server, force_refresh=force_refresh)
             names = {str(item.name) for item in descriptors}
         except Exception as exc:  # noqa: BLE001 - preflight reports, never raises
             errors.append(f"{type(exc).__name__}: {exc}")
-        required = set(CANONICAL_TOOLS.values())
         missing = sorted(required - names)
         present = sorted(required & names)
         return McpContractPreflight(

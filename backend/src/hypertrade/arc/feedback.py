@@ -7,6 +7,7 @@ import math
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from hypertrade.arc.contracts import (
     ARCBudgetV1,
@@ -20,6 +21,10 @@ from hypertrade.arc.store import get_controller, research_lock
 from hypertrade.arc.universe import candidate_symbols, declared_symbols
 from hypertrade.bitpro.mcp import BitProToolAdapter
 from hypertrade.bitpro.paced_reads import PacedReadClient
+from hypertrade.targets.calendar import completed_session_window
+from hypertrade.targets.ports import SessionCalendarEvidence
+from hypertrade.targets.read_ports import BitProReadPorts, read_ports
+from hypertrade.targets.schemas import TargetCalendarV1
 
 
 def _time(value: str) -> datetime:
@@ -230,9 +235,7 @@ def _benchmark_halves(
     middle: datetime,
     end: datetime,
 ) -> dict[str, str]:
-    samples = sorted(
-        (_time(p["timestamp"]), _number(p["equity"])) for p in points
-    )
+    samples = sorted((_time(p["timestamp"]), _number(p["equity"])) for p in points)
     if len(samples) < 3:
         raise ValueError("benchmark_insufficient")
 
@@ -275,9 +278,16 @@ def collect_windows(
     *,
     benchmark_symbols: list[str] | None = None,
     timeframe: str | None = None,
+    calendar: TargetCalendarV1 | None = None,
 ) -> dict[str, Any]:
-    raw = client.paper_snapshot(instance_id=instance_id, strategy_id=int(strategy_id))
-    snapshot = raw.get("snapshot", raw)
+    if calendar is not None and calendar.mode == "sessions":
+        return _collect_session_windows(
+            read_ports(client), instance_id, strategy_id, end, policy, calendar
+        )
+    ports = read_ports(client)
+    snapshot = (
+        ports.get_session_snapshot(instance_id=instance_id, strategy_id=strategy_id).source or {}
+    )
     if (
         snapshot.get("instance_id") != instance_id
         or str(snapshot.get("strategy_id")) != strategy_id
@@ -295,14 +305,14 @@ def collect_windows(
     for chunk in range(56):
         left = start + timedelta(hours=chunk * 6)
         right = left + timedelta(hours=6)
-        page = client.strategy_return_series(
-            source_layer="paper",
-            source_id=instance_id,
-            start_at=left.isoformat(),
-            end_at=right.isoformat(),
+        page_record = ports.read_equity_series(
+            instance_id,
+            start_ms=int(left.timestamp() * 1000),
+            end_ms=int(right.timestamp() * 1000),
             bucket_seconds=3600,
             limit=500,
         )
+        page = page_record.raw or {}
         if (
             page.get("schema_version") != "strategy_return_series.v1"
             or page.get("source_layer") != "paper"
@@ -343,8 +353,9 @@ def collect_windows(
             if old is not None and old != point:
                 raise ValueError("conflicting_boundary_sample")
             points[point["timestamp"]] = point
-    latest_raw = client.paper_snapshot(instance_id=instance_id, strategy_id=int(strategy_id))
-    latest = latest_raw.get("snapshot", latest_raw)
+    latest = (
+        ports.get_session_snapshot(instance_id=instance_id, strategy_id=strategy_id).source or {}
+    )
     if any(
         latest.get(k) != snapshot.get(k)
         for k in ("instance_id", "strategy_id", "status", "strategy_version", "config_version")
@@ -352,7 +363,8 @@ def collect_windows(
         raise ValueError("paper_changed_during_collection")
     benchmark = None
     if policy.benchmark_relative and benchmark_symbols and timeframe:
-        benchmark = _benchmark_series(client, benchmark_symbols, timeframe, start, end)
+        benchmark_client = ports.client if isinstance(ports, BitProReadPorts) else client
+        benchmark = _benchmark_series(benchmark_client, benchmark_symbols, timeframe, start, end)
     result = evaluate_windows(
         sorted(points.values(), key=lambda p: _time(p["timestamp"])),
         end,
@@ -364,6 +376,169 @@ def collect_windows(
         "source_id": instance_id,
         "strategy_id": strategy_id,
         "identity": identity,
+        "receipts": receipts,
+    }
+
+
+def _collect_session_windows(
+    ports: Any,
+    instance_id: str,
+    strategy_id: str,
+    now: datetime,
+    policy: PaperFeedbackPolicyV1,
+    calendar: TargetCalendarV1,
+) -> dict[str, Any]:
+    """Require a complete exchange calendar and per-point trading-day evidence."""
+    if not callable(getattr(ports, "list_trading_sessions", None)):
+        raise ValueError("session_calendar_evidence_missing")
+    tz = ZoneInfo(calendar.timezone)
+    local_end = now.astimezone(tz).date()
+    requested_start = local_end - timedelta(days=90)
+    calendar_evidence: SessionCalendarEvidence = ports.list_trading_sessions(
+        start_date=requested_start.isoformat(), end_date=local_end.isoformat()
+    )
+    if (
+        calendar_evidence.start_date != requested_start.isoformat()
+        or calendar_evidence.end_date != local_end.isoformat()
+    ):
+        raise ValueError("session_calendar_coverage_missing")
+    window = completed_session_window(calendar, calendar_evidence, now)
+    first_open, _ = window.bounds(window.dates[0])
+    initial = ports.get_session_snapshot(strategy_id=strategy_id, instance_id=instance_id)
+    if (
+        initial.strategy_id != strategy_id
+        or initial.instance_id != instance_id
+        or initial.status != "running"
+        or not initial.strategy_version
+        or not initial.config_version
+        or initial.session_started_at is None
+        or initial.session_started_at.tzinfo is None
+        or initial.session_started_at.astimezone(UTC) > first_open
+    ):
+        raise ValueError("paper_identity_or_session_window_mismatch")
+    receipts: list[dict[str, Any]] = []
+    day_points: list[list[tuple[datetime, Decimal]]] = []
+    currency = cost_model = None
+    for day in window.dates:
+        opening, closing = window.bounds(day)
+        page = ports.read_equity_series(
+            instance_id,
+            start_ms=int(opening.timestamp() * 1000),
+            end_ms=int(closing.timestamp() * 1000),
+            bucket_seconds=calendar.evidence_bucket_seconds,
+            limit=500,
+        )
+        if (
+            not page.complete
+            or page.next_cursor
+            or not page.source_hash
+            or not page.content_hash
+            or page.data_gaps
+            or page.strategy_id != strategy_id
+            or page.strategy_version != initial.strategy_version
+            or page.config_version != initial.config_version
+            or page.timezone != calendar.timezone
+            or not page.currency
+            or not page.cost_model
+        ):
+            raise ValueError("incomplete_or_mismatched_series_contract")
+        if currency is None:
+            currency, cost_model = page.currency, page.cost_model
+        elif (page.currency, page.cost_model) != (currency, cost_model):
+            raise ValueError("paper_version_or_cost_changed")
+        samples: list[tuple[datetime, Decimal]] = []
+        for point in page.points:
+            stamp = datetime.fromtimestamp(point.ts_ms / 1000, UTC)
+            if (
+                point.trading_day != day.isoformat()
+                or stamp.astimezone(tz).date() != day
+                or not opening <= stamp <= closing
+            ):
+                raise ValueError("trading_day_evidence_mismatch")
+            samples.append((stamp, _number(point.equity)))
+        if (
+            len(samples) < 2
+            or samples != sorted(samples)
+            or len({stamp for stamp, _ in samples}) != len(samples)
+            or samples[0][0] != opening
+            or samples[-1][0] != closing
+            or any(value <= 0 for _, value in samples)
+        ):
+            raise ValueError("incomplete_session_boundaries")
+        if any(
+            not 0 < (right[0] - left[0]).total_seconds() <= policy.max_gap_seconds
+            for left, right in zip(samples, samples[1:], strict=False)
+        ):
+            raise ValueError("duplicate_or_missing_samples")
+        day_points.append(samples)
+        receipts.append(
+            {
+                "trading_day": day.isoformat(),
+                "start_at": opening.isoformat(),
+                "end_at": closing.isoformat(),
+                "source_hash": page.source_hash,
+                "content_hash": page.content_hash,
+            }
+        )
+    latest = ports.get_session_snapshot(strategy_id=strategy_id, instance_id=instance_id)
+    if any(
+        getattr(latest, field) != getattr(initial, field)
+        for field in ("instance_id", "strategy_id", "status", "strategy_version", "config_version")
+    ):
+        raise ValueError("paper_changed_during_collection")
+
+    def metrics(days: list[list[tuple[datetime, Decimal]]]) -> dict[str, Any]:
+        samples = [point for points in days for point in points]
+        peak, drawdown = samples[0][1], Decimal(0)
+        for _, value in samples:
+            peak = max(peak, value)
+            drawdown = max(drawdown, (peak - value) / peak)
+        return {
+            "start_at": samples[0][0].isoformat(),
+            "end_at": samples[-1][0].isoformat(),
+            "net_return": str(samples[-1][1] / samples[0][1] - 1),
+            "max_drawdown": str(drawdown),
+            "sample_count": len(samples),
+        }
+
+    half = len(day_points) // 2
+    previous, recent = metrics(day_points[:half]), metrics(day_points[half:])
+    drop = (_number(previous["net_return"]) - _number(recent["net_return"])) * 100
+    increase = (_number(recent["max_drawdown"]) - _number(previous["max_drawdown"])) * 100
+    reasons = [
+        name
+        for name, value in (("return_drop", drop), ("drawdown_increase", increase))
+        if value >= policy.threshold_pp
+    ]
+    return {
+        "previous": previous,
+        "recent": recent,
+        "return_drop_pp": str(drop),
+        "drawdown_increase_pp": str(increase),
+        "degradation_basis": "absolute",
+        "triggered": bool(reasons),
+        "reasons": reasons,
+        "threshold_pp": str(policy.threshold_pp),
+        "end_at": receipts[-1]["end_at"],
+        "measurement": "session_paper_equity",
+        "source_id": instance_id,
+        "strategy_id": strategy_id,
+        "identity": {
+            "strategy_version": initial.strategy_version,
+            "config_version": initial.config_version,
+            "currency": currency,
+            "cost_model": cost_model,
+        },
+        "calendar": {
+            "timezone": calendar.timezone,
+            "source_hash": window.source_hash,
+            "trading_dates": [day.isoformat() for day in window.dates],
+        },
+        **(
+            {"benchmark": {"status": "unsupported_sessions_market_data"}}
+            if policy.benchmark_relative
+            else {}
+        ),
         "receipts": receipts,
     }
 
@@ -542,9 +717,9 @@ def check_paper_feedback(
                     return result
                 if context["source_code_sha256"] != hashlib.sha256(
                     attempt.strategy_code.encode()
-                ).hexdigest() or set(
-                    declared_symbols(context["baseline"]["strategy_spec"])
-                ) != set(candidate_symbols(attempt.strategy_spec, goal.symbols)):
+                ).hexdigest() or set(declared_symbols(context["baseline"]["strategy_spec"])) != set(
+                    candidate_symbols(attempt.strategy_spec, goal.symbols)
+                ):
                     result.update(status="no_action", reason="approved_source_changed")
                     parent.apply_event("paper_feedback_checked", result)
                     return result

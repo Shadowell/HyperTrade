@@ -47,12 +47,20 @@
 - **清理与文档（Slice 5，Delivered）**：`_memory` 死返回值与重复活跃/阻塞计算
   删除；架构 62、本合同、spec 同步。
 
+### Phase 2 读取切片（2026-09-22，任务分支待集成）
+
+- 进化扫描通过 `targets` 读取端口获取运行清单、来源、会话、成交和权益序列。
+- `McpReadPorts` 从标准 `McpClientRegistry` 的规范只读工具映射到类型化端口；
+  读取扩展要求原策略与交易日清单两个新工具，离线 MCP transport 夹具验证真实路由。
+- `sessions` 证据以目标时区、完整交易日清单及逐点交易日组成 7+7 已收盘交易日窗口；
+  缺失或含糊证据阻断判定。
+- 非 BitPro 合同夹具验证从扫描入口到资格/退化判定。Paper 写端口未迁移前，
+  非 BitPro 机会停在 `deferred_target_write_port`，不创建可能误入 BitPro 的研究任务。
+- 本切片的可验收标准与剩余边界见 `specs/003-market-target-read-ports/`。
+
 ## Out of Scope
 
-- Phase 2 端口化：`_scan` 五个读取面、`strategy_return_series.v1` 强断言、
-  成本身份词表、Paper 供给三段写路径迁移到 `targets/ports.py` 类型化端口。
-- `sessions` 日历的按交易日计数窗口（当前 continuous 日历完整支持；sessions
-  档案可注册但窗口仍按自然日取整，Phase 2 修正）。
+- Phase 2 端口化的剩余部分：成本身份词表、Paper 供给三段写路径迁移。
 - BitPro 服务端暴露规范工具名（HyperTrade 侧契约已就绪，BitPro 侧另行立项）。
 - QuantLab 实机接入与 A 股/美股数据、成本、交易规则适配（需要 QuantLab 提供
   MCP 后才开始）。

@@ -10,9 +10,11 @@ is declared here by the target instead of being assumed by the core.
 
 from __future__ import annotations
 
+from datetime import time
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 TargetTransport = Literal["bitpro_mcp_v1", "mcp_contract_v1"]
 TargetIdFormat = Literal["integer", "string"]
@@ -37,6 +39,26 @@ class TargetCalendarV1(BaseModel):
     session_close: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
     # 0 = Monday .. 6 = Sunday; empty means every day trades.
     trading_days: tuple[int, ...] = Field(default=())
+
+    @model_validator(mode="after")
+    def validate_session_calendar(self) -> TargetCalendarV1:
+        if self.mode == "sessions":
+            try:
+                ZoneInfo(self.timezone)
+            except ZoneInfoNotFoundError as exc:
+                raise ValueError("session timezone must be an IANA zone") from exc
+            if not self.session_open or not self.session_close:
+                raise ValueError("session open and close are required")
+            try:
+                if time.fromisoformat(self.session_open) >= time.fromisoformat(self.session_close):
+                    raise ValueError("session open must precede close")
+            except ValueError as exc:
+                raise ValueError("invalid session hours") from exc
+            if self.evidence_window_days != 14:
+                raise ValueError("sessions evidence requires exactly 14 trading days")
+            if any(day < 0 or day > 6 for day in self.trading_days):
+                raise ValueError("trading_days must use weekday numbers 0..6")
+        return self
 
 
 class TargetCapabilitiesV1(BaseModel):

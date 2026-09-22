@@ -454,6 +454,7 @@ def test_acceptance_cannot_mix_sources_versions_or_candidates(accepted_chain, fa
 
 def test_budget_denial_and_cooldown_conditions_are_preserved_without_admission(service):
     from hypertrade.arc.evolution_continuation import ContinuationLedger, readiness
+    from hypertrade.arc.research_budget import source_key
 
     ledger = ContinuationLedger(service.db)
     now = datetime(2026, 9, 12, 12, tzinfo=UTC)
@@ -466,7 +467,7 @@ def test_budget_denial_and_cooldown_conditions_are_preserved_without_admission(s
         "reason": "period_limit",
         "next_run_at": "2026-09-13T00:00:00+00:00",
         "sources": {
-            "paper-session": {
+            source_key("bitpro", 44, "paper-session"): {
                 "reason": "source_cooldown",
                 "next_run_at": "2026-09-14T12:00:00+00:00",
             }
@@ -478,7 +479,10 @@ def test_budget_denial_and_cooldown_conditions_are_preserved_without_admission(s
     assert item["dispatch_condition"]["source_reason"] == "source_cooldown"
     assert item["dispatch_condition"]["source_next_run_at"] == "2026-09-14T12:00:00+00:00"
     assert {"period_limit", "source_cooldown"} <= {b["code"] for b in item["blockers"]}
-    budget["sources"]["paper-session"] = {"reason": "source_active", "next_run_at": None}
+    budget["sources"][source_key("bitpro", 44, "paper-session")] = {
+        "reason": "source_active",
+        "next_run_at": None,
+    }
     ledger.record_check("held", [diagnostic], budget)
     assert ledger.view()[0]["dispatch_condition"]["source_next_run_at"] is None
     assert list_mission_ids() == []

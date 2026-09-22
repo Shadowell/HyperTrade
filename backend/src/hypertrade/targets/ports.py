@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -25,6 +26,7 @@ class StrategyHandle:
     timeframe: str
     mode: str
     symbols: tuple[str, ...] = ()
+    unavailable_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,7 @@ class SessionSnapshot:
     symbols: tuple[str, ...] = ()
     timeframe: str | None = None
     equity: float | None = None
+    source: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -60,16 +63,19 @@ class Fill:
     ts_ms: int
     symbol: str
     side: str
-    price: float
-    qty: float
+    price: float | None
+    qty: float | None
     fee: float | None = None
     pnl: float | None = None
+    order_type: str | None = None
+    strategy_id: str | None = None
 
 
 @dataclass(frozen=True)
 class EquityPoint:
     ts_ms: int
-    equity: float
+    equity: Decimal | float | str
+    trading_day: str | None = None
 
 
 @dataclass(frozen=True)
@@ -80,11 +86,31 @@ class SeriesPage:
     complete: bool
     data_gaps: tuple[str, ...] = ()
     next_cursor: str | None = None
+    strategy_id: str | None = None
+    strategy_version: str | None = None
+    config_version: str | None = None
+    currency: str | None = None
+    cost_model: dict[str, Any] | None = None
+    timezone: str | None = None
+    trading_days: tuple[str, ...] = ()
+    raw: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class SessionCalendarEvidence:
+    timezone: str
+    start_date: str
+    end_date: str
+    trading_dates: tuple[str, ...]
+    source_hash: str
+    complete: bool
 
 
 @runtime_checkable
 class StrategySourcePort(Protocol):
     def list_running_strategies(self, limit: int) -> list[StrategyHandle]: ...
+
+    def inventory_coverage(self) -> tuple[int, tuple[StrategyHandle, ...]]: ...
 
     def get_strategy_source(self, strategy_id: str) -> StrategySource: ...
 
@@ -111,6 +137,10 @@ class EvidencePort(Protocol):
         bucket_seconds: int,
         limit: int,
     ) -> SeriesPage: ...
+
+    def list_trading_sessions(
+        self, *, start_date: str, end_date: str
+    ) -> SessionCalendarEvidence: ...
 
 
 @runtime_checkable

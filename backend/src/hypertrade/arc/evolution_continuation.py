@@ -6,6 +6,7 @@ import hashlib
 import json
 from datetime import UTC, datetime, timedelta, tzinfo
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
@@ -20,6 +21,13 @@ if TYPE_CHECKING:
 
 def key(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def continuation_source_id(target_id: str, strategy_id: int | str, instance_id: str) -> str:
+    """Retain BitPro's historic key while isolating other market targets."""
+    if target_id == "bitpro":
+        return key([int(strategy_id), instance_id])
+    return key([target_id, str(strategy_id), instance_id])
 
 
 def utc(value: str | datetime) -> datetime:
@@ -89,6 +97,35 @@ def complete_receipt_chain(receipts: list[Any], end_at: Any) -> bool:
         return False
 
 
+def complete_session_receipt_chain(receipts: list[Any], feedback: dict[str, Any]) -> bool:
+    calendar = feedback.get("calendar") or {}
+    dates = calendar.get("trading_dates") or []
+    try:
+        if (
+            feedback.get("measurement") != "session_paper_equity"
+            or not calendar.get("source_hash")
+            or not calendar.get("timezone")
+            or len(dates) != 14
+            or len(receipts) != 14
+            or dates != sorted(set(dates))
+        ):
+            return False
+        tz = ZoneInfo(calendar["timezone"])
+        for day, receipt in zip(dates, receipts, strict=True):
+            if (
+                receipt.get("trading_day") != day
+                or not receipt.get("source_hash")
+                or not receipt.get("content_hash")
+                or utc(receipt["start_at"]) >= utc(receipt["end_at"])
+                or utc(receipt["start_at"]).astimezone(tz).date().isoformat() != day
+                or utc(receipt["end_at"]).astimezone(tz).date().isoformat() != day
+            ):
+                return False
+        return utc(receipts[-1]["end_at"]) == utc(feedback["end_at"])
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return False
+
+
 def readiness(
     snapshot: dict[str, Any],
     diagnostic: dict[str, Any],
@@ -110,8 +147,23 @@ def readiness(
     session = snapshot.get("session")
     start = session.get("started_at") if isinstance(session, dict) else None
     cursor["session_started_at"] = start
-    cursor["requested_window_start"] = (end - timedelta(days=days)).isoformat()
-    cursor["requested_window_end"] = end.isoformat()
+    sessions = profile is not None and profile.calendar.mode == "sessions"
+    window = diagnostic.get("window") or {}
+    receipts = window.get("receipts") or []
+    cursor["requested_window_start"] = (
+        receipts[0].get("start_at")
+        if sessions and receipts
+        else (end - timedelta(days=days)).isoformat()
+        if not sessions
+        else None
+    )
+    cursor["requested_window_end"] = (
+        receipts[-1].get("end_at")
+        if sessions and receipts
+        else end.isoformat()
+        if not sessions
+        else None
+    )
     cursor["window_receipt_hash"] = diagnostic.get("window_receipt_hash")
     if not all(cursor.get(k) for k in ("instance_id", "strategy_version", "config_version")):
         blockers.append(
@@ -143,20 +195,32 @@ def readiness(
     try:
         if not start:
             raise ValueError("missing start")
-        minimum = utc(start) + timedelta(days=days)
-        eligible = minimum.astimezone(tz).replace(hour=0, minute=0, second=0, microsecond=0)
-        if eligible < minimum:
-            eligible += timedelta(days=1)
-        if end < minimum:
-            next_eligible = eligible.isoformat()
-            calendar_name = tz.tzname(None) or "UTC"
-            blockers.append(
-                {
-                    "code": "completed_utc_window",
-                    "eligible_at": next_eligible,
-                    "condition": f"{days} complete {calendar_name} days within original session",
-                }
-            )
+        if sessions:
+            if not complete_session_receipt_chain(receipts, window):
+                blockers.append(
+                    {
+                        "code": "trading_calendar_evidence",
+                        "condition": "14 complete sessions with timezone and source receipts",
+                        "resolution": "operator",
+                    }
+                )
+        else:
+            minimum = utc(start) + timedelta(days=days)
+            eligible = minimum.astimezone(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+            if eligible < minimum:
+                eligible += timedelta(days=1)
+            if end < minimum:
+                next_eligible = eligible.isoformat()
+                calendar_name = tz.tzname(None) or "UTC"
+                blockers.append(
+                    {
+                        "code": "completed_utc_window",
+                        "eligible_at": next_eligible,
+                        "condition": (
+                            f"{days} complete {calendar_name} days within original session"
+                        ),
+                    }
+                )
     except (ValueError, TypeError, OverflowError):
         blockers.append(
             {
@@ -223,7 +287,7 @@ class ContinuationLedger:
     def view(self) -> list[dict[str, Any]]:
         with self.db.session() as session:
             return [
-                {"id": row.id, **row.payload_json}
+                {"id": row.id, "target_id": "bitpro", **row.payload_json}
                 for row in session.scalars(
                     select(EvolutionContinuation)
                     .order_by(EvolutionContinuation.updated_at.desc())
@@ -237,6 +301,8 @@ class ContinuationLedger:
         diagnostics: list[dict[str, Any]],
         budget: dict[str, Any] | None = None,
     ) -> None:
+        from hypertrade.arc.research_budget import source_key
+
         # The caller holds the distributed evolution scanner lock. Each checkpoint and
         # immutable receipt commit together; replay uses deterministic receipt IDs.
         with self.db.session() as session:
@@ -246,8 +312,12 @@ class ContinuationLedger:
                     continue
                 state = dict(state)
                 instance = state["evidence_cursor"].get("instance_id")
+                target_id = str(diagnostic.get("target_id") or "bitpro")
+                strategy_id = diagnostic["strategy_id"]
                 if budget:
-                    source_budget = budget.get("sources", {}).get(instance, {})
+                    source_budget = budget.get("sources", {}).get(
+                        source_key(target_id, strategy_id, instance), {}
+                    )
                     state["dispatch_condition"] = {
                         "schema_version": budget.get("schema_version"),
                         "source_reason": source_budget.get("reason"),
@@ -284,7 +354,7 @@ class ContinuationLedger:
                         if eligibility_times
                         else None
                     )
-                source_id = key([diagnostic["strategy_id"], instance])
+                source_id = continuation_source_id(target_id, strategy_id, instance)
                 row = session.get(EvolutionContinuation, source_id, with_for_update=True)
                 if row is None:
                     row = EvolutionContinuation(id=source_id, payload_json={})
@@ -294,7 +364,8 @@ class ContinuationLedger:
                 row.payload_json = {
                     **row.payload_json,
                     **state,
-                    "strategy_id": diagnostic["strategy_id"],
+                    "strategy_id": strategy_id,
+                    "target_id": target_id,
                     "cycle_id": cycle_id,
                 }
                 entry_id = key([cycle_id, source_id, state])
@@ -306,6 +377,7 @@ class ContinuationLedger:
                             payload_json={
                                 "stage": "eligibility_checked",
                                 "cycle_id": cycle_id,
+                                "target_id": target_id,
                                 **state,
                             },
                         )
@@ -336,17 +408,26 @@ class ContinuationLedger:
                     )
                     if not instance or not sid:
                         continue
-                    try:
-                        sid = int(sid)
-                    except (ValueError, TypeError, OverflowError):
+                    target_id = str(
+                        context.get("target_id")
+                        or (goal.evolution_context or {}).get("target_id")
+                        or "bitpro"
+                    )
+                    if target_id == "bitpro":
+                        try:
+                            sid = int(sid)
+                        except (ValueError, TypeError, OverflowError):
+                            continue
+                    elif not isinstance(sid, str) or not sid.strip():
                         continue
-                    source_id = key([sid, instance])
+                    source_id = continuation_source_id(target_id, sid, instance)
                     checkpoint = session.get(EvolutionContinuation, source_id, with_for_update=True)
                     if checkpoint is None:
                         checkpoint = EvolutionContinuation(
                             id=source_id,
                             payload_json={
-                                "strategy_id": int(sid),
+                                "strategy_id": sid,
+                                "target_id": target_id,
                                 "evidence_cursor": {"instance_id": instance},
                             },
                         )
@@ -521,7 +602,11 @@ def acceptance_entries(projection: ARCMissionProjection, now: datetime) -> list[
             "observed_at": utc(now).isoformat(),
             "result": "passed"
             if feedback.get("triggered") is True
-            and complete_receipt_chain(receipts, feedback.get("end_at"))
+            and (
+                complete_session_receipt_chain(receipts, feedback)
+                if feedback.get("measurement") == "session_paper_equity"
+                else complete_receipt_chain(receipts, feedback.get("end_at"))
+            )
             and feedback.get("source_id")
             == (context.get("source_instance_id") or context.get("instance_id"))
             else "missing",

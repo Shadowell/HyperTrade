@@ -10,10 +10,12 @@ from hypertrade.targets.mcp_contract import (
     CANONICAL_ARGUMENTS,
     CANONICAL_TOOLS,
     MARKET_EVOLUTION_CONTRACT_V1,
+    READ_EXTENSION_TOOLS,
     McpContractClient,
     McpContractPreflight,
     build_mcp_contract_profile,
 )
+from hypertrade.targets.mcp_read_ports import McpReadPorts
 from hypertrade.targets.registry import (
     MarketTargetBinding,
     MarketTargetUnavailable,
@@ -39,6 +41,8 @@ __all__ = [
     "MarketTargetUnavailable",
     "McpContractClient",
     "McpContractPreflight",
+    "McpReadPorts",
+    "READ_EXTENSION_TOOLS",
     "TargetCalendarV1",
     "TargetCapabilitiesV1",
     "active_market_target_id",

@@ -49,9 +49,7 @@ def test_tick_builds_client_from_configured_market_target(service, monkeypatch):
     register_market_target(build_mcp_contract_profile("fake", "Fake Target"), lambda: fake)
     try:
         service.client = None
-        service.configure(
-            EvolutionConfig(enabled=True, target_id="fake"), revision=0, actor="test"
-        )
+        service.configure(EvolutionConfig(enabled=True, target_id="fake"), revision=0, actor="test")
         monkeypatch.setattr(
             "hypertrade.arc.evolution.collect_windows",
             lambda *a, **k: {
@@ -61,7 +59,8 @@ def test_tick_builds_client_from_configured_market_target(service, monkeypatch):
             },
         )
         result = service.tick(datetime(2026, 9, 12, 12, tzinfo=UTC))
-        assert result["status"] == "research_created"
+        assert result["status"] == "deferred_target_write_port"
+        assert result["payload"]["skip_reason"] == "target_paper_write_port_not_migrated"
         assert service.client is fake
     finally:
         reset_market_targets()
@@ -96,7 +95,13 @@ class Paper:
         }
 
     def strategy_get(self, **kwargs):
-        return {"strategy": {"script_content": "class Source: pass", "config": {"timeframe": "1H"}}}
+        return {
+            "strategy": {
+                "id": kwargs["strategy_id"],
+                "script_content": "class Source: pass",
+                "config": {"timeframe": "1H"},
+            }
+        }
 
     def strategy_trades(self, **kwargs):
         return [

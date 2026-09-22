@@ -86,7 +86,13 @@ class PaperClient:
         return {"strategies": [{"strategy_id": 44, "mode": "paper", "timeframe": "1H"}]}
 
     def strategy_get(self, **kwargs):
-        return {"strategy": {"script_content": self.code, "config": {"timeframe": "1H"}}}
+        return {
+            "strategy": {
+                "id": kwargs["strategy_id"],
+                "script_content": self.code,
+                "config": {"timeframe": "1H"},
+            }
+        }
 
     def strategy_trades(self, **kwargs):
         return [

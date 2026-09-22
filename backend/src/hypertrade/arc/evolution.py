@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 
 from hypertrade.arc.attribution import attribution_report, collect_attribution
@@ -27,11 +28,11 @@ from hypertrade.arc.evolution_continuation import ContinuationLedger, readiness
 from hypertrade.arc.evolution_diagnostics import blocked_data_diagnostic
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import collect_windows
-from hypertrade.arc.observation import _snapshot_body
 from hypertrade.arc.store import get_controller, research_lock
 from hypertrade.arc.universe import declared_symbols, normalize_symbols
 from hypertrade.db import ArcMission, Database
 from hypertrade.memory.service import MemoryService
+from hypertrade.targets.read_ports import read_ports
 from hypertrade.targets.registry import (
     MarketTargetUnavailable,
     active_market_target_id,
@@ -60,7 +61,18 @@ class EvolutionConfig(BaseModel):
         )
     )
     interval_minutes: int = Field(default=60, ge=15, le=1440)
-    strategy_ids: list[int] = Field(default_factory=list, max_length=50)
+    strategy_ids: list[int | str] = Field(default_factory=list, max_length=50)
+
+    @field_validator("strategy_ids", mode="before")
+    @classmethod
+    def reject_boolean_strategy_ids(cls, value: Any) -> Any:
+        if isinstance(value, (list, tuple)):
+            if any(isinstance(item, bool) for item in value):
+                raise ValueError("strategy_ids must not contain booleans")
+            if any(type(item) not in (int, str) for item in value):
+                raise ValueError("strategy_ids must contain integers or strings")
+        return value
+
     threshold_pp: Decimal = Field(default=Decimal("10"), gt=0, le=100)
     # benchmark_relative compares each strategy's 7+7 move against its own
     # symbol's buy-and-hold over the same halves; absolute keeps the legacy
@@ -134,6 +146,18 @@ def strategy_symbols(snapshot: dict[str, Any]) -> list[str]:
         return []
 
 
+def target_symbols(snapshot: dict[str, Any], *, bitpro: bool) -> list[str]:
+    if bitpro:
+        return strategy_symbols(snapshot)
+    values = (snapshot.get("strategy") or {}).get("symbols") or []
+    if not isinstance(values, (list, tuple)):
+        raise ValueError("目标标的证据格式无效")
+    symbols = [str(value).strip() for value in values]
+    if not symbols or any(not value or len(value) > 128 for value in symbols):
+        raise ValueError("目标标的证据缺失")
+    return list(dict.fromkeys(symbols))
+
+
 def cycle_view(row: EvolutionCycle) -> dict[str, Any]:
     return {
         "id": row.id,
@@ -147,6 +171,7 @@ class EvolutionService:
     def __init__(self, db: Database, client: Any = None):
         self.db = db
         self.client = client
+        self._client_target_id: str | None = None
 
     def status(self) -> dict[str, Any]:
         from hypertrade.arc.research_budget import budget_status
@@ -174,12 +199,24 @@ class EvolutionService:
             }
 
     def configure(self, config: EvolutionConfig, *, revision: int, actor: str) -> dict[str, Any]:
-        if any(x <= 0 for x in config.strategy_ids):
-            raise ValueError("策略ID必须为正整数")
         try:
-            get_market_target(config.target_id)
+            profile = get_market_target(config.target_id).profile
         except MarketTargetUnavailable as exc:
             raise ValueError(str(exc)) from exc
+        if profile.strategy_id_format == "integer":
+            normalized_ids: list[int | str] = []
+            for value in config.strategy_ids:
+                if type(value) is int and value > 0:
+                    normalized_ids.append(value)
+                elif isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*", value):
+                    normalized_ids.append(int(value))
+                else:
+                    raise ValueError("策略ID必须为正整数")
+            config.strategy_ids = normalized_ids
+        elif any(
+            not isinstance(x, str) or not x.strip() or len(x) > 128 for x in config.strategy_ids
+        ):
+            raise ValueError("目标策略ID必须为非空字符串")
         with research_lock("evolution-control") as owner:
             if owner is None:
                 raise ValueError("配置正在更新，请刷新后重试")
@@ -285,6 +322,12 @@ class EvolutionService:
                 if chosen is None:
                     return self._save_cycle(cycle_id, "no_action", payload)
                 context = chosen
+                if config.target_id != "bitpro":
+                    payload["source_strategy_id"] = context["source_strategy_id"]
+                    payload["source_instance_id"] = context["source_instance_id"]
+                    payload["target_id"] = config.target_id
+                    payload["skip_reason"] = "target_paper_write_port_not_migrated"
+                    return self._save_cycle(cycle_id, "deferred_target_write_port", payload)
                 memory = self._memory(context, now)
                 payload["memory_count"] = len(memory)
                 payload["memory_manifest"] = context["memory_manifest"]
@@ -320,30 +363,29 @@ class EvolutionService:
                 current = self.status()
                 if current["revision"] != payload["revision"] or not current["config"]["enabled"]:
                     return self._save_cycle(cycle_id, "cancelled_by_config", payload)
-                fresh = _snapshot_body(
-                    self._client(config).paper_snapshot(
-                        strategy_id=context["source_strategy_id"],
-                        instance_id=context["source_instance_id"],
-                    )
+                fresh_session = read_ports(self._client(config)).get_session_snapshot(
+                    strategy_id=str(context["source_strategy_id"]),
+                    instance_id=context["source_instance_id"],
                 )
+                fresh = {
+                    "instance_id": fresh_session.instance_id,
+                    "strategy_version": fresh_session.strategy_version,
+                    "config_version": fresh_session.config_version,
+                    "status": fresh_session.status,
+                }
                 if any(
                     fresh.get(k) != context["source_snapshot"].get(k)
                     for k in ["instance_id", "strategy_version", "config_version", "status"]
                 ):
                     payload["skip_reason"] = "原模拟盘身份或版本在诊断期间发生变化"
                     return self._save_cycle(cycle_id, "source_changed", payload)
-                source_now = (
-                    self._client(config)
-                    .strategy_get(strategy_id=context["source_strategy_id"])
-                    .get("strategy", {})
+                source_now = read_ports(self._client(config)).get_strategy_source(
+                    str(context["source_strategy_id"])
                 )
-                if (
-                    hashlib.sha256(str(source_now.get("script_content") or "").encode()).hexdigest()
-                    != context["source_code_sha256"]
-                ):
+                if source_now.code_sha256 != context["source_code_sha256"]:
                     return self._save_cycle(cycle_id, "source_changed", payload)
                 if (
-                    baseline_config(source_now, config.paper_capital)
+                    baseline_config({"config": source_now.config}, config.paper_capital)
                     != context["baseline"]["strategy_spec"]["baseline_config"]
                 ):
                     return self._save_cycle(cycle_id, "source_changed", payload)
@@ -366,9 +408,12 @@ class EvolutionService:
                 return self._save_cycle(cycle_id, "error", payload)
 
     def _client(self, config: EvolutionConfig | None = None) -> Any:
-        if self.client is None:
-            target_id = config.target_id if config is not None else active_market_target_id()
+        target_id = config.target_id if config is not None else active_market_target_id()
+        if self.client is None or (
+            self._client_target_id is not None and self._client_target_id != target_id
+        ):
             self.client = adapter_for_target(target_id)
+            self._client_target_id = target_id
         return self.client
 
     def _scan(
@@ -379,17 +424,30 @@ class EvolutionService:
     ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
         client = self._client(config)
         profile = get_market_target(config.target_id).profile
-        inventory = client.paper_strategy_performance(limit=50)
-        rows = inventory.get("strategies", [])
+        required = ("running_inventory", "session_snapshot", "return_series", "session_trades")
+        missing = [name for name in required if not getattr(profile.capabilities, name)]
+        if missing:
+            return (
+                [
+                    {
+                        "status": "unavailable",
+                        "reason": "target_read_capabilities_missing:" + ",".join(missing),
+                    }
+                ],
+                None,
+            )
+        ports = read_ports(client)
+        rows = ports.list_running_strategies(50)
+        total, unavailable = ports.inventory_coverage()
         diagnostics = [
             {
-                "strategy_id": r.get("strategy_id"),
+                "target_id": config.target_id,
+                "strategy_id": r.strategy_id,
                 "status": "unavailable",
-                "reason": r.get("reason"),
+                "reason": r.unavailable_reason,
             }
-            for r in inventory.get("unavailable_strategies", [])
+            for r in unavailable
         ]
-        total = inventory.get("performance_summary", {}).get("reported_total", len(rows))
         if total > 50:
             diagnostics.append(
                 {
@@ -398,7 +456,7 @@ class EvolutionService:
                 }
             )
         chosen = None
-        from hypertrade.arc.research_budget import budget_status
+        from hypertrade.arc.research_budget import budget_status, source_key
 
         budget: dict[str, Any] | None = None
 
@@ -406,7 +464,14 @@ class EvolutionService:
             nonlocal budget
             if budget is None:
                 budget = budget_status(self.db, config, now)
-            source = budget["sources"].get(context["source_instance_id"], {})
+            source = budget["sources"].get(
+                source_key(
+                    context["target_id"],
+                    context["source_strategy_id"],
+                    context["source_instance_id"],
+                ),
+                {},
+            )
             until = datetime.fromisoformat(
                 source.get("cooldown_at", "1970-01-01T00:00:00+00:00")
             ) + timedelta(hours=config.cooldown_hours)
@@ -419,32 +484,67 @@ class EvolutionService:
                 context["source_strategy_id"],
             )
 
-        end = now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-        for row in sorted(rows, key=lambda item: int(item["strategy_id"])):
-            sid = int(row["strategy_id"])
+        end = (
+            now
+            if profile.calendar.mode == "sessions"
+            else now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        )
+        for row in sorted(
+            rows,
+            key=lambda item: (
+                int(item.strategy_id)
+                if profile.strategy_id_format == "integer"
+                else item.strategy_id
+            ),
+        ):
+            sid = (
+                int(row.strategy_id) if profile.strategy_id_format == "integer" else row.strategy_id
+            )
             if config.strategy_ids and sid not in config.strategy_ids:
                 continue
             diagnostic: dict[str, Any] = {
+                "target_id": config.target_id,
                 "strategy_id": sid,
-                "name": row.get("strategy_name"),
+                "name": row.name,
                 "attribution_report": attribution_report({"strategy_id": sid}, now),
             }
             diagnostics.append(diagnostic)
             snapshot: dict[str, Any] = {}
             try:
-                snapshot = _snapshot_body(client.paper_snapshot(strategy_id=sid))
+                session = ports.get_session_snapshot(strategy_id=str(sid))
+                snapshot = {
+                    **(session.source or {}),
+                    "strategy_id": session.strategy_id,
+                    "instance_id": session.instance_id,
+                    "strategy_version": session.strategy_version,
+                    "config_version": session.config_version,
+                    "status": session.status,
+                    "trade_count": session.trade_count,
+                    "strategy": {
+                        **((session.source or {}).get("strategy") or {}),
+                        "symbols": list(session.symbols),
+                    },
+                    "session": {
+                        "started_at": session.session_started_at.isoformat()
+                        if session.session_started_at
+                        else None
+                    },
+                }
                 if (
-                    row.get("mode") != "paper"
+                    row.mode != "paper"
                     or snapshot.get("status") != "running"
                     or str(snapshot.get("strategy_id")) != str(sid)
                 ):
                     raise ValueError("模拟盘身份或运行状态不满足诊断条件")
-                diagnostic["attribution_report"] = collect_attribution(client, snapshot, now)
+                if profile.transport == "bitpro_mcp_v1":
+                    diagnostic["attribution_report"] = collect_attribution(client, snapshot, now)
                 if int(snapshot.get("trade_count") or 0) < config.min_trades:
                     raise ValueError("成交样本不足")
-                benchmark_symbols = strategy_symbols(snapshot) or None
+                benchmark_symbols = (
+                    target_symbols(snapshot, bitpro=profile.transport == "bitpro_mcp_v1") or None
+                )
                 feedback = collect_windows(
-                    client,
+                    ports,
                     str(snapshot["instance_id"]),
                     str(sid),
                     end,
@@ -454,54 +554,56 @@ class EvolutionService:
                         benchmark_relative=config.degradation_basis == "benchmark_relative",
                     ),
                     benchmark_symbols=benchmark_symbols,
-                    timeframe=str(row.get("timeframe") or "") or None,
+                    timeframe=row.timeframe or None,
+                    calendar=profile.calendar,
                 )
                 diagnostic["window_receipt_hash"] = digest(feedback.get("receipts", []))
                 diagnostic.update(
-                    status="stable", window={k: v for k, v in feedback.items() if k != "receipts"}
+                    status="stable",
+                    window=(
+                        feedback
+                        if profile.calendar.mode == "sessions"
+                        else {k: v for k, v in feedback.items() if k != "receipts"}
+                    ),
                 )
                 if not feedback["triggered"] and not config.proactive_enabled:
                     continue
                 trigger = "degradation" if feedback["triggered"] else "proactive"
                 diagnostic.update(status="opportunity", trigger_source=trigger)
-                symbols = normalize_symbols(snapshot.get("strategy", {}).get("symbols", []))
+                symbols = target_symbols(snapshot, bitpro=profile.transport == "bitpro_mcp_v1")
                 if not symbols:
                     raise ValueError("策略标的为空，无法建立同窗比较基线")
-                source = client.strategy_get(strategy_id=sid).get("strategy", {})
-                code = source.get("script_content")
+                source_record = ports.get_strategy_source(str(sid))
+                source = {"config": source_record.config}
+                code = source_record.code
                 if not isinstance(code, str) or not code.strip():
                     raise ValueError("无法读取原策略源码，不能建立可复现的比较基线")
-                orders = client.strategy_trades(strategy_id=sid, limit=200)
+                orders = ports.list_fills(str(sid), limit=200)
                 start = datetime.fromisoformat(
                     snapshot["session"]["started_at"].replace("Z", "+00:00")
                 )
                 fills = []
                 for trade in orders:
-                    if str(trade.get("strategy_id")) != str(sid):
+                    if trade.strategy_id != str(sid):
                         raise ValueError("成交记录策略身份不一致")
-                    stamp = datetime.fromtimestamp(float(trade["timestamp"]) / 1000, UTC)
+                    stamp = datetime.fromtimestamp(trade.ts_ms / 1000, UTC)
                     if start <= stamp <= now:
                         fills.append(
                             {
-                                k: trade.get(k)
-                                for k in [
-                                    "id",
-                                    "timestamp",
-                                    "symbol",
-                                    "side",
-                                    "type",
-                                    "price",
-                                    "quantity",
-                                    "fee",
-                                    "pnl",
-                                ]
+                                "id": trade.fill_id,
+                                "timestamp": trade.ts_ms,
+                                "symbol": trade.symbol,
+                                "side": trade.side,
+                                "type": trade.order_type,
+                                "price": trade.price,
+                                "quantity": trade.qty,
+                                "fee": trade.fee,
+                                "pnl": trade.pnl,
                             }
                         )
                 if not fills:
                     raise ValueError("当前模拟会话没有可读取的历史成交样本")
-                timeframe = str(
-                    (source.get("config") or {}).get("timeframe") or row.get("timeframe") or ""
-                )
+                timeframe = str(source_record.timeframe or row.timeframe or "")
                 if not timeframe:
                     raise ValueError("原策略周期未明确")
                 baseline = ARCCandidateAttemptV1(
@@ -510,16 +612,13 @@ class EvolutionService:
                     hypothesis="不可变的原策略比较基线",
                     strategy_code=code,
                     strategy_spec={
-                        **(
-                            {"symbols": symbols}
-                            if len(symbols) > 1
-                            else {"symbol": symbols[0]}
-                        ),
+                        **({"symbols": symbols} if len(symbols) > 1 else {"symbol": symbols[0]}),
                         "timeframe": timeframe,
                         "baseline_config": baseline_config(source, config.paper_capital),
                     },
                 )
                 context = {
+                    "target_id": config.target_id,
                     "trigger_source": trigger,
                     "source_strategy_id": sid,
                     "source_instance_id": snapshot["instance_id"],
@@ -559,7 +658,10 @@ class EvolutionService:
                     and snapshot.get("status") == "running"
                     else {}
                 )
-                diagnostic.update(blocked_data_diagnostic(client, identified, now, str(exc)[:240]))
+                if profile.transport == "bitpro_mcp_v1":
+                    diagnostic.update(
+                        blocked_data_diagnostic(client, identified, now, str(exc)[:240])
+                    )
             finally:
                 bound_snapshot = snapshot if str(snapshot.get("strategy_id")) == str(sid) else {}
                 diagnostic["continuation"] = readiness(
