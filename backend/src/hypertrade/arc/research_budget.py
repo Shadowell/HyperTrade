@@ -8,6 +8,8 @@ locking protects admission across worker processes; SQLite remains local-only.
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -33,10 +35,20 @@ def _stored_time(value: str) -> datetime:
     return _utc(datetime.fromisoformat(value))
 
 
-def _source_identity(goal: Any) -> tuple[str | None, int | None, str | None]:
+_TARGET_ID = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
+
+
+def source_key(target_id: str, strategy_id: int | str, instance_id: str) -> str:
+    """A collision-free source index shared with the evolution status reader."""
+    return json.dumps([target_id, str(strategy_id), instance_id], separators=(",", ":"))
+
+
+def _source_identity(goal: Any) -> tuple[str | None, str | None, int | str | None, str | None]:
     context, parent = goal.evolution_context or {}, goal.feedback_parent or {}
     if parent:
         evidence = parent.get("evidence") or {}
+        if not isinstance(evidence, dict):
+            evidence = {}
         source_value: Any
         strategy_value: Any
         trigger_value: Any
@@ -49,17 +61,39 @@ def _source_identity(goal: Any) -> tuple[str | None, int | None, str | None]:
         source_value = context.get("source_instance_id")
         strategy_value = context.get("source_strategy_id")
         trigger_value = context.get("trigger_source", "degradation")
+    target_value = parent.get("target_id", context.get("target_id", "bitpro"))
+    target_id = (
+        target_value
+        if isinstance(target_value, str) and _TARGET_ID.fullmatch(target_value)
+        else None
+    )
     source = source_value.strip() if isinstance(source_value, str) else None
     if not source or len(source) > 128:
         source = None
-    try:
-        strategy_id = None if isinstance(strategy_value, bool) else int(strategy_value)
-    except (TypeError, ValueError, OverflowError):
-        strategy_id = None
-    if strategy_id is not None and strategy_id <= 0:
-        strategy_id = None
+    strategy_id: int | str | None = None
+    if target_id == "bitpro":
+        if isinstance(strategy_value, int) and not isinstance(strategy_value, bool):
+            strategy_id = strategy_value if strategy_value > 0 else None
+        elif (
+            isinstance(strategy_value, str)
+            and strategy_value.isascii()
+            and strategy_value.isdecimal()
+        ):
+            try:
+                parsed = int(strategy_value)
+            except ValueError:
+                parsed = 0
+            strategy_id = parsed if parsed > 0 else None
+    elif (
+        target_id is not None
+        and isinstance(strategy_value, str)
+        and strategy_value
+        and strategy_value == strategy_value.strip()
+        and len(strategy_value) <= 128
+    ):
+        strategy_id = strategy_value
     trigger = trigger_value if trigger_value in {"degradation", "proactive"} else None
-    return source, strategy_id, trigger
+    return target_id, source, strategy_id, trigger
 
 
 def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str, Any]:
@@ -77,20 +111,27 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
         goal = projection.goal
         if goal is None:
             continue
-        source, _, trigger = _source_identity(goal)
-        if not source:
+        target_id, source, strategy_id, trigger = _source_identity(goal)
+        if not source or strategy_id is None:
             continue
         # Pre-ledger missions count too: deployment/revision must never reset usage.
         entry = entries.setdefault(
             row.mission_id,
             {
                 "mission_id": row.mission_id,
+                "target_id": target_id,
+                "source_strategy_id": strategy_id,
                 "source_instance_id": source,
                 "admitted_at": _utc(row.created_at).isoformat(),
                 "trigger_source": trigger or "invalid",
                 "legacy": True,
             },
         )
+        # Old receipts never carried target identity and are BitPro history.
+        entry_target = entry.get("target_id", "bitpro")
+        entry_strategy = entry.get("source_strategy_id", strategy_id)
+        entry_source = entry.get("source_instance_id", source)
+        key = source_key(entry_target, entry_strategy, entry_source)
         when = _stored_time(entry["admitted_at"])
         ctrl = ARCController(mission_id=row.mission_id)
         ctrl.rebase(projection, row.revision)
@@ -99,8 +140,11 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
             active += 1
         cooldown_at = max(when, _utc(row.updated_at)) if not busy else when
         prior = sources.get(
-            source,
+            key,
             {
+                "target_id": entry_target,
+                "source_strategy_id": entry_strategy,
+                "source_instance_id": entry_source,
                 "last_admitted_at": when.isoformat(),
                 "busy": False,
                 "cooldown_at": cooldown_at.isoformat(),
@@ -109,7 +153,7 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
         prior["cooldown_at"] = max(prior["cooldown_at"], cooldown_at.isoformat())
         prior["last_admitted_at"] = max(prior["last_admitted_at"], when.isoformat())
         prior["busy"] = prior["busy"] or busy
-        sources[source] = prior
+        sources[key] = prior
     ordered = sorted(entries.values(), key=lambda r: (r["admitted_at"], r["mission_id"]))
     return {
         "schema_version": "research_budget.v1",
@@ -181,7 +225,12 @@ def admit(
         return {"accepted": False, "reason": "durable_budget_unavailable", "next_run_at": None}
     assert ctrl.projection.goal is not None
     goal = ctrl.projection.goal
-    source, source_strategy_id, trigger = _source_identity(goal)
+    target_id, source, source_strategy_id, trigger = _source_identity(goal)
+    identity_key = (
+        source_key(target_id, source_strategy_id, source)
+        if target_id and source_strategy_id is not None and source
+        else None
+    )
     with store.research_lock("automatic-research-budget") as owner:
         if owner is None:
             return {"accepted": False, "reason": "budget_busy", "next_run_at": now.isoformat()}
@@ -191,17 +240,38 @@ def admit(
             config = EvolutionConfig.model_validate(control.config_json if control else {})
             state = usage(session, config, now)
             receipt = session.get(EvolutionCycle, "budget_" + ctrl.mission_id)
+            identity_conflict = False
             if receipt and receipt.status == "budget_admitted":
-                return {**state, **receipt.payload_json, "accepted": True, "replayed": True}
+                original_key = receipt.payload_json.get("source_key")
+                if original_key is None:
+                    original_mission = session.get(ArcMission, ctrl.mission_id)
+                    original_goal = (
+                        ARCMissionProjection.model_validate(original_mission.projection_json).goal
+                        if original_mission is not None
+                        else None
+                    )
+                    if original_goal is not None:
+                        _, old_source, old_strategy, _ = _source_identity(original_goal)
+                        if old_source and old_strategy is not None:
+                            original_key = source_key("bitpro", old_strategy, old_source)
+                if original_key == identity_key:
+                    return {**state, **receipt.payload_json, "accepted": True, "replayed": True}
+                identity_conflict = True
             reason, next_run = None, None
-            if not config.enabled:
+            if identity_conflict:
+                reason = "mission_identity_conflict"
+            elif not config.enabled:
                 reason = "disabled"
             elif revision is not None and (control is None or revision != control.revision):
                 reason = "config_changed"
             elif source is None:
                 reason = "invalid_source_identity"
+            elif target_id is None:
+                reason = "invalid_target_id"
             elif source_strategy_id is None:
                 reason = "invalid_strategy_id"
+            elif target_id != config.target_id:
+                reason = "target_mismatch"
             elif trigger is None:
                 reason = "invalid_trigger_source"
             elif trigger == "proactive" and not config.proactive_enabled:
@@ -217,8 +287,8 @@ def admit(
                 reason, next_run = "period_budget_exhausted", state["period_end"]
             elif state["active"] >= config.max_active_research:
                 reason = "concurrency_limit"
-            elif source in state["sources"]:
-                previous = state["sources"][source]
+            elif identity_key in state["sources"]:
+                previous = state["sources"][identity_key]
                 until = datetime.fromisoformat(previous["cooldown_at"]) + timedelta(
                     hours=config.cooldown_hours
                 )
@@ -232,7 +302,10 @@ def admit(
                 "reason": reason,
                 "next_run_at": next_run,
                 "mission_id": ctrl.mission_id,
+                "target_id": target_id,
+                "source_strategy_id": source_strategy_id,
                 "source_instance_id": source,
+                "source_key": identity_key,
                 "trigger_source": trigger,
                 "revision": control.revision if control else 0,
                 "checked_at": now.isoformat(),

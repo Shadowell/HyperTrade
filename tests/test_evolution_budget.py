@@ -333,7 +333,7 @@ def test_feedback_parent_overrides_inherited_ancestor_context(service):
 
     from hypertrade.arc.contracts import ARCGoalV1
     from hypertrade.arc.controller import ARCController
-    from hypertrade.arc.research_budget import admit
+    from hypertrade.arc.research_budget import admit, source_key
 
     service.configure(EvolutionConfig(enabled=True, strategy_ids=[44]), revision=0, actor="test")
     goal = ARCGoalV1(
@@ -354,8 +354,353 @@ def test_feedback_parent_overrides_inherited_ancestor_context(service):
     assert receipt["source_instance_id"] == "current-paper"
     assert receipt["trigger_source"] == "degradation"
     sources = service.status()["budget"]["sources"]
-    assert "current-paper" in sources
-    assert "ancestor" not in sources
+    assert source_key("bitpro", 44, "current-paper") in sources
+    assert source_key("bitpro", 1, "ancestor") not in sources
+
+
+def test_same_instance_on_two_targets_has_distinct_source_and_shared_usage(service):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.research_budget import admit, source_key
+    from hypertrade.targets import build_mcp_contract_profile, register_market_target
+
+    register_market_target(build_mcp_contract_profile("quantlab", "QuantLab"), replace=True)
+    now = datetime(2026, 9, 22, 8, tzinfo=UTC)
+    service.configure(
+        EvolutionConfig(enabled=True, max_active_research=3), revision=0, actor="test"
+    )
+    bitpro = ARCController(
+        goal=ARCGoalV1(
+            objective="bitpro",
+            evolution_context={
+                "source_strategy_id": 44,
+                "source_instance_id": "paper-same",
+                "trigger_source": "degradation",
+            },
+        )
+    )
+    assert admit(bitpro, now=now, db=service.db)["accepted"]
+    service.configure(
+        EvolutionConfig(enabled=True, target_id="quantlab", max_active_research=3),
+        revision=1,
+        actor="test",
+    )
+    quantlab = ARCController(
+        goal=ARCGoalV1(
+            objective="quantlab",
+            evolution_context={
+                "target_id": "quantlab",
+                "source_strategy_id": "44",
+                "source_instance_id": "paper-same",
+                "trigger_source": "degradation",
+            },
+        )
+    )
+    second = admit(quantlab, now=now, db=service.db)
+    assert second["accepted"] is True
+    assert second["target_id"] == "quantlab"
+    assert second["source_strategy_id"] == "44"
+    budget = service.status()["budget"]
+    assert budget["period_used"] == budget["total_used"] == 2
+    assert budget["active"] == 2
+    assert source_key("bitpro", 44, "paper-same") in budget["sources"]
+    assert source_key("quantlab", "44", "paper-same") in budget["sources"]
+
+
+def test_same_instance_with_different_strategy_does_not_share_cooldown(service):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.research_budget import admit, source_key
+
+    now = datetime(2026, 9, 22, 8, tzinfo=UTC)
+    service.configure(
+        EvolutionConfig(enabled=True, max_active_research=3), revision=0, actor="test"
+    )
+    for strategy_id in (44, 45):
+        ctrl = ARCController(
+            goal=ARCGoalV1(
+                objective="distinct strategy",
+                evolution_context={
+                    "source_strategy_id": strategy_id,
+                    "source_instance_id": "paper-same",
+                    "trigger_source": "degradation",
+                },
+            )
+        )
+        assert admit(ctrl, now=now, db=service.db)["accepted"] is True
+    sources = service.status()["budget"]["sources"]
+    assert source_key("bitpro", 44, "paper-same") in sources
+    assert source_key("bitpro", 45, "paper-same") in sources
+
+
+@pytest.mark.parametrize("explicit_parent_target", [False, True])
+def test_feedback_parent_uses_current_target_over_inherited_ancestor(
+    service, explicit_parent_target
+):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.research_budget import admit, source_key
+    from hypertrade.targets import build_mcp_contract_profile, register_market_target
+
+    register_market_target(build_mcp_contract_profile("quantlab", "QuantLab"), replace=True)
+    service.configure(EvolutionConfig(enabled=True, target_id="quantlab"), revision=0, actor="test")
+    parent = {"instance_id": "current-paper", "evidence": {"strategy_id": "AAPL:US"}}
+    if explicit_parent_target:
+        parent["target_id"] = "quantlab"
+        context_target = "bitpro"
+    else:
+        context_target = "quantlab"
+    ctrl = ARCController(
+        goal=ARCGoalV1(
+            objective="child",
+            evolution_context={
+                "target_id": context_target,
+                "source_instance_id": "ancestor-paper",
+                "source_strategy_id": 44,
+                "trigger_source": "proactive",
+            },
+            feedback_parent=parent,
+        )
+    )
+    result = admit(ctrl, now=datetime(2026, 9, 22, 8, tzinfo=UTC), db=service.db)
+    assert result["accepted"] is True
+    assert result["target_id"] == "quantlab"
+    assert result["source_strategy_id"] == "AAPL:US"
+    assert (
+        source_key("quantlab", "AAPL:US", "current-paper") in service.status()["budget"]["sources"]
+    )
+
+
+def test_target_switch_cannot_reset_global_day_limit(service):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.research_budget import admit
+    from hypertrade.targets import build_mcp_contract_profile, register_market_target
+
+    register_market_target(build_mcp_contract_profile("quantlab", "QuantLab"), replace=True)
+    now = datetime(2026, 9, 22, 8, tzinfo=UTC)
+    service.configure(
+        EvolutionConfig(enabled=True, max_research_per_day=1), revision=0, actor="test"
+    )
+    first = ARCController(
+        goal=ARCGoalV1(
+            objective="first",
+            evolution_context={
+                "source_strategy_id": 44,
+                "source_instance_id": "same",
+                "trigger_source": "degradation",
+            },
+        )
+    )
+    assert admit(first, now=now, db=service.db)["accepted"]
+    service.configure(
+        EvolutionConfig(enabled=True, target_id="quantlab", max_research_per_day=1),
+        revision=1,
+        actor="test",
+    )
+    second = ARCController(
+        goal=ARCGoalV1(
+            objective="second",
+            evolution_context={
+                "target_id": "quantlab",
+                "source_strategy_id": "AAPL:US",
+                "source_instance_id": "same",
+                "trigger_source": "degradation",
+            },
+        )
+    )
+    denied = admit(second, now=now, db=service.db)
+    assert denied["accepted"] is False
+    assert denied["reason"] == "period_budget_exhausted"
+    assert denied["period_used"] == 1
+    assert get_controller(second.mission_id) is None
+
+
+def test_same_mission_cannot_replay_for_another_target(service):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.research_budget import admit
+    from hypertrade.targets import build_mcp_contract_profile, register_market_target
+
+    register_market_target(build_mcp_contract_profile("quantlab", "QuantLab"), replace=True)
+    now = datetime(2026, 9, 22, 8, tzinfo=UTC)
+    service.configure(EvolutionConfig(enabled=True), revision=0, actor="test")
+    ctrl = ARCController(
+        goal=ARCGoalV1(
+            objective="first",
+            evolution_context={
+                "source_strategy_id": 44,
+                "source_instance_id": "same",
+                "trigger_source": "degradation",
+            },
+        )
+    )
+    assert admit(ctrl, now=now, db=service.db)["accepted"]
+    service.configure(EvolutionConfig(enabled=True, target_id="quantlab"), revision=1, actor="test")
+    ctrl.projection.goal.evolution_context.update(target_id="quantlab", source_strategy_id="44")
+    replay = admit(ctrl, now=now, db=service.db)
+    assert replay["accepted"] is False
+    assert replay["reason"] == "mission_identity_conflict"
+    assert service.status()["budget"]["total_used"] == 1
+
+
+def test_legacy_receipt_without_target_remains_bitpro_after_switch(service):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.evolution_models import EvolutionCycle
+    from hypertrade.arc.research_budget import admit, source_key
+    from hypertrade.targets import build_mcp_contract_profile, register_market_target
+
+    register_market_target(build_mcp_contract_profile("quantlab", "QuantLab"), replace=True)
+    now = datetime(2026, 9, 22, 8, tzinfo=UTC)
+    service.configure(EvolutionConfig(enabled=True), revision=0, actor="test")
+    ctrl = ARCController(
+        goal=ARCGoalV1(
+            objective="legacy",
+            evolution_context={
+                "source_strategy_id": 44,
+                "source_instance_id": "paper-old",
+                "trigger_source": "degradation",
+            },
+        )
+    )
+    assert admit(ctrl, now=now, db=service.db)["accepted"]
+    with service.db.session() as session:
+        receipt = session.get(EvolutionCycle, "budget_" + ctrl.mission_id)
+        receipt.payload_json = {
+            key: value
+            for key, value in receipt.payload_json.items()
+            if key not in {"target_id", "source_strategy_id", "source_key"}
+        }
+    service.configure(EvolutionConfig(enabled=True, target_id="quantlab"), revision=1, actor="test")
+    state = service.status()["budget"]
+    assert state["total_used"] == state["period_used"] == state["active"] == 1
+    assert source_key("bitpro", 44, "paper-old") in state["sources"]
+    assert admit(ctrl, now=now, db=service.db)["accepted"] is True
+
+
+def test_active_limit_is_shared_across_targets(service):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.research_budget import admit
+    from hypertrade.targets import build_mcp_contract_profile, register_market_target
+
+    register_market_target(build_mcp_contract_profile("quantlab", "QuantLab"), replace=True)
+    now = datetime(2026, 9, 22, 8, tzinfo=UTC)
+    service.configure(
+        EvolutionConfig(enabled=True, max_active_research=1), revision=0, actor="test"
+    )
+    first = ARCController(
+        goal=ARCGoalV1(
+            objective="bitpro",
+            evolution_context={
+                "source_strategy_id": 44,
+                "source_instance_id": "paper-same",
+                "trigger_source": "degradation",
+            },
+        )
+    )
+    assert admit(first, now=now, db=service.db)["accepted"]
+    service.configure(
+        EvolutionConfig(enabled=True, target_id="quantlab", max_active_research=1),
+        revision=1,
+        actor="test",
+    )
+    second = ARCController(
+        goal=ARCGoalV1(
+            objective="quantlab",
+            evolution_context={
+                "target_id": "quantlab",
+                "source_strategy_id": "AAPL:US",
+                "source_instance_id": "paper-same",
+                "trigger_source": "degradation",
+            },
+        )
+    )
+    denied = admit(second, now=now, db=service.db)
+    assert denied["reason"] == "concurrency_limit"
+    assert denied["active"] == 1
+    assert get_controller(second.mission_id) is None
+
+
+@pytest.mark.parametrize(
+    ("target", "strategy", "reason"),
+    [
+        ("bitpro", 44.5, "invalid_strategy_id"),
+        ("bitpro", True, "invalid_strategy_id"),
+        ("bitpro", "-44", "invalid_strategy_id"),
+        ("quantlab", 44, "invalid_strategy_id"),
+        ("quantlab", " ", "invalid_strategy_id"),
+        ("bad target", "AAPL", "invalid_target_id"),
+    ],
+)
+def test_target_strategy_identity_validation_fails_closed(service, target, strategy, reason):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.research_budget import admit
+    from hypertrade.targets import build_mcp_contract_profile, register_market_target
+
+    register_market_target(build_mcp_contract_profile("quantlab", "QuantLab"), replace=True)
+    service.configure(
+        EvolutionConfig(enabled=True, target_id="quantlab" if target != "bitpro" else "bitpro"),
+        revision=0,
+        actor="test",
+    )
+    ctrl = ARCController(
+        goal=ARCGoalV1(
+            objective="invalid",
+            evolution_context={
+                "target_id": target,
+                "source_strategy_id": strategy,
+                "source_instance_id": "paper",
+                "trigger_source": "degradation",
+            },
+        )
+    )
+    result = admit(ctrl, now=datetime(2026, 9, 22, 8, tzinfo=UTC), db=service.db)
+    assert result["accepted"] is False
+    assert result["reason"] == reason
+    assert get_controller(ctrl.mission_id) is None
+
+
+def test_valid_source_from_other_target_is_rejected(service):
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.contracts import ARCGoalV1
+    from hypertrade.arc.controller import ARCController
+    from hypertrade.arc.research_budget import admit
+
+    service.configure(EvolutionConfig(enabled=True), revision=0, actor="test")
+    ctrl = ARCController(
+        goal=ARCGoalV1(
+            objective="wrong target",
+            evolution_context={
+                "target_id": "quantlab",
+                "source_strategy_id": "AAPL",
+                "source_instance_id": "paper",
+                "trigger_source": "degradation",
+            },
+        )
+    )
+    result = admit(ctrl, now=datetime(2026, 9, 22, 8, tzinfo=UTC), db=service.db)
+    assert result["reason"] == "target_mismatch"
+    assert get_controller(ctrl.mission_id) is None
 
 
 @pytest.mark.parametrize(
