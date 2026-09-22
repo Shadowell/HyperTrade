@@ -149,9 +149,12 @@ def test_collects_bounded_days_and_rejects_changed_session():
 
     client = PaperClient()
     result = collect_windows(
-        client, "paper-session", "44", datetime(2026, 8, 15, tzinfo=UTC), PaperFeedbackPolicyV1()
+        client, "paper-session", "44", datetime(2026, 8, 15, tzinfo=UTC), PaperFeedbackPolicyV1(),
+        benchmark_symbols=["BTC-USDT-SWAP"],
     )
     assert result["triggered"] and len(result["receipts"]) == 56
+    assert result["degradation_basis"] == "absolute"
+    assert result["benchmark"]["status"] == "unknown_timeframe"
     assert client.calls == 56
     with pytest.raises(ValueError):
         collect_windows(

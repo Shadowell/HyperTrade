@@ -67,7 +67,7 @@ session_start、running_state，以及读取/成本类采样失败
 ### 4.1 口径
 
 策略两周变化 − 其标的买入持有两周变化 = 相对退化（pp）。买入持有序列用
-`market_klines` 在相同 [start, end] 窗口构建（边界容差 = 周期长度）；触发条件
+`market_klines` 在相同 [start, end] 窗口构建。1m/5m/15m/30m/1h 策略以完整 1h 已闭合 K 线采样市场基准，原策略周期另行记录；OHLCV 时间戳为开盘时刻，边界价格取恰好在该时刻结束的上一根 K 线 close。请求从 start-1h 到 end-1ms，完整小时网格、三处边界和组合成员均须对齐；触发条件
 `max(relative_return_drop_pp, relative_drawdown_increase_pp) ≥ threshold_pp`，
 reasons 为 `relative_return_drop`/`relative_drawdown_increase`。
 
@@ -78,8 +78,9 @@ reasons 为 `relative_return_drop`/`relative_drawdown_increase`。
 | observed | 序列可用 | 相对口径触发判定 |
 | unavailable | 拉取失败/点数不足 | 回退绝对口径，window 载荷标注 |
 | misaligned | 边界超出容差 | 同上 |
-| insufficient_coverage | 15m 等周期超出单页 1000 根，无法覆盖 14 天 | 同上 |
+| insufficient_coverage | 选定基准采样周期仍超出单页 1000 根 | 同上 |
 | unsupported_timeframe | 未知周期粒度 | 同上 |
+| unknown_timeframe / incomplete_grid / invalid_candle | 原周期缺失，或基准缺口、重复、越窗、非法K线 | 同上 |
 | （多标的组合） | 无单一标的：取成员等权买入持有合成（各自归一基 100 后按共享 K 线网格平均） | 相对口径（任一成员构建失败即整体回退并标注） |
 
 `PaperFeedbackPolicyV1.benchmark_relative`（默认 True）随 goal 冻结；

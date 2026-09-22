@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 import httpx
 import pytest
+from hypertrade.arc.feedback import _benchmark_series
 from hypertrade.backtest.service import BacktestService
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProMcpError, BitProToolAdapter
 from hypertrade.config import Settings
@@ -1081,6 +1083,126 @@ def test_paper_strategy_performance_rejects_mismatched_dashboard_identity() -> N
         "paper_dashboard",
         "paper_dashboard",
     ]
+
+
+@pytest.mark.parametrize("strategy_timeframe", ["1m", "5m", "15m", "1h"])
+def test_paper_performance_timeframe_reaches_bounded_hourly_market_request(
+    strategy_timeframe: str,
+) -> None:
+    end = datetime(2026, 9, 14, tzinfo=UTC)
+    start = end - timedelta(days=14)
+    start_bar = start - timedelta(hours=1)
+    seen: list[tuple[str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        query = dict(request.url.params)
+        seen.append((request.url.path, query))
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/strategies":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "items": [
+                            {
+                                "id": 511,
+                                "name": "opaque source",
+                                "status": "running",
+                                "symbols": ["BTC/USDT:USDT"],
+                                "config": {"timeframe": strategy_timeframe},
+                            }
+                        ],
+                        "total": 1,
+                    },
+                },
+            )
+        if request.url.path == "/api/v2/live/dashboard":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "system": {
+                            "strategy_id": 511,
+                            "mode": "paper",
+                            "state": "running",
+                            "timeframe": strategy_timeframe,
+                        },
+                        "performance": {"total_pnl_pct": 1.5},
+                    },
+                },
+            )
+        if request.url.path == "/api/v2/market/klines":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": [
+                        {
+                            "timestamp": int((start_bar + timedelta(hours=i)).timestamp() * 1000),
+                            "close": 100 + i,
+                        }
+                        for i in range(337)
+                    ],
+                },
+            )
+        raise AssertionError(f"unexpected read {request.url}")
+
+    adapter = BitProToolAdapter(
+        BitProMcpClient(
+            settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    )
+    performance = adapter.paper_strategy_performance(limit=50)
+    row = performance["strategies"][0]
+    assert row["timeframe"] == strategy_timeframe
+    assert row["timeframe_status"] == "observed"
+    block = _benchmark_series(adapter, row["symbols"], row["timeframe"], start, end)
+    assert block["status"] == "observed"
+    assert block["timeframe"] == strategy_timeframe
+    assert block["benchmark_timeframe"] == "1h"
+    market_calls = [query for path, query in seen if path == "/api/v2/market/klines"]
+    assert len(market_calls) == 1
+    assert market_calls[0]["timeframe"] == "1h"
+    assert market_calls[0]["limit"] == "337"
+    assert market_calls[0]["start"] == str(int(start_bar.timestamp() * 1000))
+    assert market_calls[0]["end"] == str(int(end.timestamp() * 1000) - 1)
+    assert all(path != "/api/v2/strategies/511" for path, _ in seen)
+
+
+@pytest.mark.parametrize(
+    "inventory_timeframe,config_timeframe,dashboard_timeframe,status,expected",
+    [
+        (None, None, None, "unknown", None),
+        (None, "1m", "5m", "conflict", None),
+        ("15M", "15m", "15m", "observed", "15m"),
+        (None, "invalid text", "1h", "invalid", None),
+    ],
+)
+def test_paper_timeframe_conflict_or_absence_is_explicit(
+    inventory_timeframe, config_timeframe, dashboard_timeframe, status, expected
+) -> None:
+    from hypertrade.bitpro.mcp import _paper_strategy_performance_row, _strategy_item
+
+    raw = {
+        "id": 443,
+        "name": "[1H] untrusted title",
+        "timeframe": inventory_timeframe,
+        "config": {"timeframe": config_timeframe},
+        "status": "running",
+    }
+    inventory = _strategy_item(raw)
+    dashboard = {
+        "system": {"strategy_id": 443, "mode": "paper", "timeframe": dashboard_timeframe},
+        "performance": {"total_pnl_pct": 2},
+    }
+    row, reason = _paper_strategy_performance_row(inventory, dashboard)
+    assert reason is None
+    assert row.get("timeframe") == expected
+    assert row["timeframe_status"] == status
 
 
 def test_bitpro_paper_events_reads_bounded_event_stream() -> None:

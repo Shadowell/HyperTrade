@@ -191,9 +191,7 @@ def test_bounded_spec_carries_portfolio_scope() -> None:
         "parameter_bounds": {},
         "hypothesis": "basket-wide entry filter",
     }
-    spec = _bounded_spec(
-        parsed, objective="o", symbol=BASKET[0], symbols=BASKET, timeframe="1H"
-    )
+    spec = _bounded_spec(parsed, objective="o", symbol=BASKET[0], symbols=BASKET, timeframe="1H")
     assert spec is not None
     assert spec["symbols"] == BASKET
     assert "4sym" in spec["strategy_key"]
@@ -216,15 +214,11 @@ def build_series(prev_week_return: float, recent_week_return: float) -> list[dic
     points = []
     equity = 100.0
     for hour in range(0, 169):
-        points.append(
-            {"timestamp": (START + timedelta(hours=hour)).isoformat(), "equity": equity}
-        )
+        points.append({"timestamp": (START + timedelta(hours=hour)).isoformat(), "equity": equity})
         equity *= 1 + prev_week_return / 168
     for hour in range(1, 169):
         equity *= 1 + recent_week_return / 168
-        points.append(
-            {"timestamp": (MIDDLE + timedelta(hours=hour)).isoformat(), "equity": equity}
-        )
+        points.append({"timestamp": (MIDDLE + timedelta(hours=hour)).isoformat(), "equity": equity})
     return points
 
 
@@ -240,7 +234,10 @@ class MultiKlineClient:
             raise RuntimeError("symbol unavailable")
         rows = [
             {
-                "timestamp": int(datetime.fromisoformat(point["timestamp"]).timestamp() * 1000),
+                "timestamp": int(
+                    (datetime.fromisoformat(point["timestamp"]) - timedelta(hours=1)).timestamp()
+                    * 1000
+                ),
                 "close": point["equity"],
             }
             for point in self.series[symbol]
@@ -269,6 +266,20 @@ def test_benchmark_series_fails_closed_when_a_member_is_missing() -> None:
     block = _benchmark_series(client, ["NVDA-USDT-SWAP", "AMD-USDT-SWAP"], "1H", START, END)
     assert block["status"] == "unavailable"
     assert block["symbols"] == ["NVDA-USDT-SWAP", "AMD-USDT-SWAP"]
+
+
+def test_benchmark_series_fails_closed_on_member_hour_gap() -> None:
+    full = build_series(0.0, 0.0)
+    client = MultiKlineClient(
+        {
+            "NVDA-USDT-SWAP": full,
+            "AMD-USDT-SWAP": full[:100] + full[101:],
+        }
+    )
+    block = _benchmark_series(client, ["NVDA-USDT-SWAP", "AMD-USDT-SWAP"], "1m", START, END)
+    assert block["status"] == "incomplete_grid"
+    result = evaluate_windows(full, END, policy(), benchmark=block)
+    assert result["degradation_basis"] == "absolute"
 
 
 def policy() -> PaperFeedbackPolicyV1:

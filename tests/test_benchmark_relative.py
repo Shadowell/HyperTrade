@@ -122,7 +122,7 @@ def test_absolute_policy_ignores_benchmark_entirely() -> None:
 
 
 class FakeKlineClient:
-    def __init__(self, *, fail: bool = False, rows: int = 400) -> None:
+    def __init__(self, *, fail: bool = False, rows: int = 337) -> None:
         self.fail = fail
         self.rows = rows
         self.calls: list[dict] = []
@@ -134,9 +134,7 @@ class FakeKlineClient:
         candles = []
         stamp = int((END - timedelta(hours=self.rows)).timestamp() * 1000)
         for index in range(self.rows):
-            candles.append(
-                {"timestamp": stamp + index * 3600 * 1000, "close": 100.0 + index * 0.1}
-            )
+            candles.append({"timestamp": stamp + index * 3600 * 1000, "close": 100.0 + index * 0.1})
         return {"candles": candles}
 
 
@@ -145,8 +143,14 @@ def test_benchmark_series_builds_observed_points_in_iso_utc() -> None:
     series = _benchmark_series(client, "SOL/USDT:USDT", "1H", START, END)
     assert series["status"] == "observed"
     assert series["tolerance_seconds"] == 3600
-    assert client.calls[0]["timeframe"] == "1H"
-    assert len(series["points"]) == 400
+    assert series["benchmark_timeframe"] == "1h"
+    assert series["price_time_semantics"] == "close_of_bar_ending_at_boundary"
+    assert client.calls[0]["timeframe"] == "1h"
+    assert client.calls[0]["start_ms"] == int((START - timedelta(hours=1)).timestamp() * 1000)
+    assert client.calls[0]["end_ms"] == int(END.timestamp() * 1000) - 1
+    assert len(series["points"]) == 337
+    assert series["points"][0]["timestamp"] == START.isoformat()
+    assert series["points"][-1]["timestamp"] == END.isoformat()
     parsed = datetime.fromisoformat(series["points"][0]["timestamp"])
     assert parsed.tzinfo is not None
 
@@ -156,12 +160,81 @@ def test_benchmark_series_reports_unavailable_and_coverage_limits() -> None:
         _benchmark_series(FakeKlineClient(fail=True), "X", "1H", START, END)["status"]
         == "unavailable"
     )
-    # A 15m series cannot span 14 days within the 1000-row page cap.
-    assert (
-        _benchmark_series(FakeKlineClient(), "X", "15m", START, END)["status"]
-        == "insufficient_coverage"
-    )
+    assert _benchmark_series(FakeKlineClient(), "X", "15m", START, END)["status"] == "observed"
     assert (
         _benchmark_series(FakeKlineClient(), "X", "3h", START, END)["status"]
         == "unsupported_timeframe"
     )
+
+
+@pytest.mark.parametrize("strategy_timeframe", ["1m", "5m", "15m", "1h"])
+def test_short_period_uses_declared_hourly_benchmark(strategy_timeframe: str) -> None:
+    client = FakeKlineClient()
+    series = _benchmark_series(client, ["X"], strategy_timeframe, START, END)
+    assert series["status"] == "observed"
+    assert series["timeframe"] == strategy_timeframe
+    assert series["benchmark_timeframe"] == "1h"
+    assert client.calls == [
+        {
+            "symbol": "X",
+            "timeframe": "1h",
+            "limit": 337,
+            "start_ms": int((START - timedelta(hours=1)).timestamp() * 1000),
+            "end_ms": int(END.timestamp() * 1000) - 1,
+        }
+    ]
+
+
+def test_after_boundary_jump_cannot_change_prior_boundary_price() -> None:
+    client = FakeKlineClient()
+    normal = _benchmark_series(client, ["X"], "1m", START, END)
+
+    class JumpAfterBoundary(FakeKlineClient):
+        def market_klines(self, **kwargs):
+            result = super().market_klines(**kwargs)
+            # Bar OPENING at the seven-day split closes one hour later. It cannot
+            # be the price known at the split itself.
+            split_open = int(MIDDLE.timestamp() * 1000)
+            next(row for row in result["candles"] if row["timestamp"] == split_open)["close"] *= 100
+            return result
+
+    jumped = _benchmark_series(JumpAfterBoundary(), ["X"], "1m", START, END)
+    index = 168
+    assert normal["points"][index]["timestamp"] == MIDDLE.isoformat()
+    assert jumped["points"][index] == normal["points"][index]
+    assert jumped["points"][index + 1]["equity"] != normal["points"][index + 1]["equity"]
+
+
+def test_missing_or_future_bar_falls_back_with_explicit_grid_status() -> None:
+    class MissingBar(FakeKlineClient):
+        def market_klines(self, **kwargs):
+            result = super().market_klines(**kwargs)
+            result["candles"].pop(168)
+            return result
+
+    class FutureBar(FakeKlineClient):
+        def market_klines(self, **kwargs):
+            result = super().market_klines(**kwargs)
+            result["candles"][-1]["timestamp"] = int(END.timestamp() * 1000)
+            return result
+
+    class DuplicateBar(FakeKlineClient):
+        def market_klines(self, **kwargs):
+            result = super().market_klines(**kwargs)
+            result["candles"][100]["timestamp"] = result["candles"][99]["timestamp"]
+            return result
+
+    class ShuffledBar(FakeKlineClient):
+        def market_klines(self, **kwargs):
+            result = super().market_klines(**kwargs)
+            result["candles"][100], result["candles"][101] = (
+                result["candles"][101], result["candles"][100]
+            )
+            return result
+
+    for client in (MissingBar(), FutureBar(), DuplicateBar(), ShuffledBar()):
+        block = _benchmark_series(client, ["X"], "1m", START, END)
+        assert block["status"] in {"incomplete_grid", "invalid_candle"}
+        result = evaluate_windows(build_points(0.10, -0.20), END, policy(), benchmark=block)
+        assert result["degradation_basis"] == "absolute"
+        assert result["benchmark"]["status"] == block["status"]

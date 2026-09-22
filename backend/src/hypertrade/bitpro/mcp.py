@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from collections.abc import Callable, Coroutine
 from concurrent.futures import ThreadPoolExecutor
@@ -430,21 +431,25 @@ class BitProToolAdapter:
         timeframe: str = "1h",
         limit: int = 500,
         exchange: str = "okx",
+        start_ms: int | None = None,
+        end_ms: int | None = None,
     ) -> dict[str, Any]:
         self.last_tool_calls = []
         capabilities, health = self._preflight()
         normalized_symbol = _normalize_bitpro_symbol(symbol)
         normalized_timeframe = _normalize_bitpro_timeframe(timeframe)
         safe_limit = max(1, min(int(limit), 1000))
-        raw = self._call(
-            "market_klines",
-            {
-                "exchange": exchange,
-                "symbol": normalized_symbol,
-                "timeframe": normalized_timeframe,
-                "limit": safe_limit,
-            },
-        )
+        params = {
+            "exchange": exchange,
+            "symbol": normalized_symbol,
+            "timeframe": normalized_timeframe,
+            "limit": safe_limit,
+        }
+        if start_ms is not None:
+            params["start"] = int(start_ms)
+        if end_ms is not None:
+            params["end"] = int(end_ms)
+        raw = self._call("market_klines", params)
         candles = _extract_kline_rows(raw)
         return {
             "status": "ok",
@@ -1615,6 +1620,8 @@ def _extract_strategy_items(raw: Any) -> list[dict[str, Any]]:
 
 
 def _strategy_item(row: dict[str, Any]) -> dict[str, Any]:
+    config = row.get("config")
+    config = config if isinstance(config, dict) else {}
     return _compact(
         {
             "id": row.get("id") or row.get("strategy_id"),
@@ -1623,6 +1630,7 @@ def _strategy_item(row: dict[str, Any]) -> dict[str, Any]:
             "exchange": row.get("exchange"),
             "symbols": row.get("symbols"),
             "timeframe": row.get("timeframe"),
+            "configured_timeframe": config.get("timeframe"),
             "strategy_source": row.get("strategy_source"),
             "initial_equity": _first_present(row.get("initial_equity"), row.get("initial_capital")),
             "equity": _first_present(row.get("equity"), row.get("current_equity")),
@@ -2108,6 +2116,29 @@ def _paper_strategy_performance_row(
     )
     if _decimal_or_none(return_pct) is None:
         return {}, "paper_return_metric_unavailable"
+    # Dashboard data is only consulted after its strategy ID matched the inventory ID.
+    # A title is never a timeframe source; conflicting explicit fields stay unknown.
+    declared = (
+        strategy.get("timeframe"),
+        strategy.get("configured_timeframe"),
+        system.get("timeframe"),
+    )
+    present = [value for value in declared if value is not None and value != ""]
+    valid = [
+        value.strip().lower()
+        for value in present
+        if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*[mhd]", value.strip().lower())
+    ]
+    timeframe_status = (
+        "unknown"
+        if not present
+        else "invalid"
+        if len(valid) != len(present)
+        else "conflict"
+        if len(set(valid)) != 1
+        else "observed"
+    )
+    timeframe = valid[0] if timeframe_status == "observed" else None
     symbols = strategy.get("symbols")
     if isinstance(symbols, str):
         symbols = [symbols]
@@ -2120,7 +2151,8 @@ def _paper_strategy_performance_row(
                 "mode": system.get("mode"),
                 "exchange": strategy.get("exchange"),
                 "symbols": symbols,
-                "timeframe": strategy.get("timeframe"),
+                "timeframe": timeframe,
+                "timeframe_status": timeframe_status,
                 "initial_equity": _decimal_text(
                     _first_present(
                         equity.get("initial"),

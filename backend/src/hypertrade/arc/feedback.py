@@ -139,6 +139,8 @@ def evaluate_windows(
 
 
 _TIMEFRAME_SECONDS = {
+    "1m": 60,
+    "5m": 300,
     "15m": 900,
     "30m": 1800,
     "1h": 3600,
@@ -149,8 +151,8 @@ _TIMEFRAME_SECONDS = {
     "1d": 86400,
 }
 
-# Upstream caps a single kline page at 1000 rows; finer granularities cannot
-# span the 14-day window in one read and fall back to the absolute basis.
+# Upstream caps a single kline page at 1000 rows. Short strategy periods use
+# closed hourly bars for the market benchmark; their own research period stays intact.
 _KLINE_PAGE_LIMIT = 1000
 
 
@@ -161,7 +163,7 @@ def _timeframe_seconds(timeframe: str) -> int | None:
 def _benchmark_series(
     client: Any, symbols: list[str], timeframe: str, start: datetime, end: datetime
 ) -> dict[str, Any]:
-    """Buy-and-hold benchmark over the same window.
+    """Buy-and-hold benchmark from closes known at each hourly boundary.
 
     One symbol uses its own closes; a portfolio benchmark is the equal-weight
     composite of every member's normalized closes (base 100), aligned on the
@@ -170,42 +172,112 @@ def _benchmark_series(
     """
     if not symbols:
         return {"status": "unsupported_symbols"}
-    seconds = _timeframe_seconds(timeframe)
-    if seconds is None:
+    strategy_seconds = _timeframe_seconds(timeframe)
+    if strategy_seconds is None:
         return {"status": "unsupported_timeframe", "symbols": list(symbols), "timeframe": timeframe}
-    needed = int((end - start).total_seconds() // seconds) + 8
+    benchmark_timeframe = "1h" if strategy_seconds <= 3600 else timeframe.strip().lower()
+    seconds = _timeframe_seconds(benchmark_timeframe)
+    assert seconds is not None
+    span = (end - start).total_seconds()
+    if span <= 0 or span % seconds:
+        return {
+            "status": "window_misaligned",
+            "symbols": list(symbols),
+            "timeframe": timeframe,
+            "benchmark_timeframe": benchmark_timeframe,
+        }
+    needed = int(span // seconds) + 1
     if needed > _KLINE_PAGE_LIMIT:
         return {
             "status": "insufficient_coverage",
             "symbols": list(symbols),
             "timeframe": timeframe,
+            "benchmark_timeframe": benchmark_timeframe,
         }
+    start_ms = int(start.timestamp() * 1000)
+    end_ms = int(end.timestamp() * 1000)
+    step_ms = seconds * 1000
+    # OHLCV timestamps mark bar OPEN. The value at boundary B is the close of
+    # [B-period, B), never the close of a bar opening at B.
+    expected_opens = list(range(start_ms - step_ms, end_ms, step_ms))
     normalized: list[dict[str, float]] = []
     for symbol in symbols:
         try:
-            payload = client.market_klines(symbol=symbol, timeframe=timeframe, limit=needed)
+            payload = client.market_klines(
+                symbol=symbol,
+                timeframe=benchmark_timeframe,
+                limit=needed,
+                start_ms=start_ms - step_ms,
+                end_ms=end_ms - 1,
+            )
         except Exception:  # noqa: BLE001 - benchmark absence must not stall the strategy read
-            return {"status": "unavailable", "symbols": list(symbols), "timeframe": timeframe}
-        closes: dict[str, float] = {}
-        for row in payload.get("candles") or []:
+            return {
+                "status": "unavailable",
+                "symbols": list(symbols),
+                "timeframe": timeframe,
+                "benchmark_timeframe": benchmark_timeframe,
+            }
+        candles = payload.get("candles") if isinstance(payload, dict) else None
+        if not isinstance(candles, list) or len(candles) != needed:
+            return {
+                "status": "incomplete_grid",
+                "symbols": list(symbols),
+                "timeframe": timeframe,
+                "benchmark_timeframe": benchmark_timeframe,
+            }
+        closes: dict[int, float] = {}
+        for row in candles:
             if not isinstance(row, dict):
-                continue
+                return {
+                    "status": "invalid_candle",
+                    "symbols": list(symbols),
+                    "timeframe": timeframe,
+                    "benchmark_timeframe": benchmark_timeframe,
+                }
             stamp = row.get("timestamp") or row.get("ts") or row.get("time")
-            if stamp is None or "close" not in row:
-                continue
             try:
-                ms = int(float(stamp))
+                if stamp is None or isinstance(stamp, bool):
+                    raise ValueError("missing or boolean timestamp")
+                stamp_number = float(stamp)
+                if not math.isfinite(stamp_number) or not stamp_number.is_integer():
+                    raise ValueError("nonintegral timestamp")
+                ms = int(stamp_number)
                 if ms < 10_000_000_000:
                     ms = ms * 1000
+                if isinstance(row["close"], bool):
+                    raise ValueError("boolean close")
                 close = float(row["close"])
-            except (TypeError, ValueError, KeyError):
-                continue
-            if math.isfinite(close) and close > 0:
-                closes[datetime.fromtimestamp(ms / 1000, UTC).isoformat()] = close
-        if len(closes) < 3:
-            return {"status": "unavailable", "symbols": list(symbols), "timeframe": timeframe}
-        base = closes[min(closes)]
-        normalized.append({stamp: value / base * 100.0 for stamp, value in closes.items()})
+            except (TypeError, ValueError, KeyError, OverflowError):
+                return {
+                    "status": "invalid_candle",
+                    "symbols": list(symbols),
+                    "timeframe": timeframe,
+                    "benchmark_timeframe": benchmark_timeframe,
+                }
+            if not math.isfinite(close) or close <= 0 or ms in closes:
+                return {
+                    "status": "invalid_candle",
+                    "symbols": list(symbols),
+                    "timeframe": timeframe,
+                    "benchmark_timeframe": benchmark_timeframe,
+                }
+            closes[ms] = close
+        if list(closes) != expected_opens:
+            return {
+                "status": "incomplete_grid",
+                "symbols": list(symbols),
+                "timeframe": timeframe,
+                "benchmark_timeframe": benchmark_timeframe,
+            }
+        base = closes[expected_opens[0]]
+        normalized.append(
+            {
+                datetime.fromtimestamp((ms + step_ms) / 1000, UTC).isoformat(): closes[ms]
+                / base
+                * 100.0
+                for ms in expected_opens
+            }
+        )
     merged: dict[str, list[float]] = {}
     for series in normalized:
         for stamp, value in series.items():
@@ -220,6 +292,8 @@ def _benchmark_series(
         "status": "observed",
         "symbols": list(symbols),
         "timeframe": timeframe,
+        "benchmark_timeframe": benchmark_timeframe,
+        "price_time_semantics": "close_of_bar_ending_at_boundary",
         "tolerance_seconds": seconds,
         "points": points,
     }
@@ -362,9 +436,14 @@ def collect_windows(
     ):
         raise ValueError("paper_changed_during_collection")
     benchmark = None
-    if policy.benchmark_relative and benchmark_symbols and timeframe:
-        benchmark_client = ports.client if isinstance(ports, BitProReadPorts) else client
-        benchmark = _benchmark_series(benchmark_client, benchmark_symbols, timeframe, start, end)
+    if policy.benchmark_relative and benchmark_symbols:
+        if timeframe:
+            benchmark_client = ports.client if isinstance(ports, BitProReadPorts) else client
+            benchmark = _benchmark_series(
+                benchmark_client, benchmark_symbols, timeframe, start, end
+            )
+        else:
+            benchmark = {"status": "unknown_timeframe", "symbols": list(benchmark_symbols)}
     result = evaluate_windows(
         sorted(points.values(), key=lambda p: _time(p["timestamp"])),
         end,
