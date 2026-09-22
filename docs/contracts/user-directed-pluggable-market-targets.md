@@ -53,7 +53,8 @@
 - `McpReadPorts` 从标准 `McpClientRegistry` 的规范只读工具映射到类型化端口；
   读取扩展要求原策略与交易日清单两个新工具，离线 MCP transport 夹具验证真实路由。
 - `sessions` 证据以目标时区、完整交易日清单及逐点交易日组成 7+7 已收盘交易日窗口；
-  缺失或含糊证据阻断判定。
+  另须有前一交易日收盘基准，第 7 日收盘是两窗共享边界，隔夜跳空计入最近窗。
+  缺失或含糊的基准收盘、交易日及其他边界证据阻断判定。
 - 非 BitPro 合同夹具验证从扫描入口到资格/退化判定。Paper 写端口未迁移前，
   非 BitPro 机会停在 `deferred_target_write_port`，不创建可能误入 BitPro 的研究任务。
 - 本切片的可验收标准与剩余边界见 `specs/003-market-target-read-ports/`。

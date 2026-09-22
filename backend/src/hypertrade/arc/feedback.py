@@ -403,7 +403,7 @@ def _collect_session_windows(
     ):
         raise ValueError("session_calendar_coverage_missing")
     window = completed_session_window(calendar, calendar_evidence, now)
-    first_open, _ = window.bounds(window.dates[0])
+    baseline_open, _ = window.bounds(window.baseline_day)
     initial = ports.get_session_snapshot(strategy_id=strategy_id, instance_id=instance_id)
     if (
         initial.strategy_id != strategy_id
@@ -413,13 +413,15 @@ def _collect_session_windows(
         or not initial.config_version
         or initial.session_started_at is None
         or initial.session_started_at.tzinfo is None
-        or initial.session_started_at.astimezone(UTC) > first_open
+        or initial.session_started_at.astimezone(UTC) > baseline_open
     ):
         raise ValueError("paper_identity_or_session_window_mismatch")
     receipts: list[dict[str, Any]] = []
     day_points: list[list[tuple[datetime, Decimal]]] = []
+    baseline_points: list[tuple[datetime, Decimal]] | None = None
+    baseline_receipt: dict[str, Any] | None = None
     currency = cost_model = None
-    for day in window.dates:
+    for day in (window.baseline_day, *window.dates):
         opening, closing = window.bounds(day)
         page = ports.read_equity_series(
             instance_id,
@@ -470,16 +472,18 @@ def _collect_session_windows(
             for left, right in zip(samples, samples[1:], strict=False)
         ):
             raise ValueError("duplicate_or_missing_samples")
-        day_points.append(samples)
-        receipts.append(
-            {
-                "trading_day": day.isoformat(),
-                "start_at": opening.isoformat(),
-                "end_at": closing.isoformat(),
-                "source_hash": page.source_hash,
-                "content_hash": page.content_hash,
-            }
-        )
+        receipt = {
+            "trading_day": day.isoformat(),
+            "start_at": opening.isoformat(),
+            "end_at": closing.isoformat(),
+            "source_hash": page.source_hash,
+            "content_hash": page.content_hash,
+        }
+        if day == window.baseline_day:
+            baseline_points, baseline_receipt = samples, receipt
+        else:
+            day_points.append(samples)
+            receipts.append(receipt)
     latest = ports.get_session_snapshot(strategy_id=strategy_id, instance_id=instance_id)
     if any(
         getattr(latest, field) != getattr(initial, field)
@@ -487,8 +491,7 @@ def _collect_session_windows(
     ):
         raise ValueError("paper_changed_during_collection")
 
-    def metrics(days: list[list[tuple[datetime, Decimal]]]) -> dict[str, Any]:
-        samples = [point for points in days for point in points]
+    def metrics(samples: list[tuple[datetime, Decimal]]) -> dict[str, Any]:
         peak, drawdown = samples[0][1], Decimal(0)
         for _, value in samples:
             peak = max(peak, value)
@@ -501,8 +504,16 @@ def _collect_session_windows(
             "sample_count": len(samples),
         }
 
+    if not baseline_points or not baseline_receipt:
+        raise ValueError("session_baseline_close_missing")
     half = len(day_points) // 2
-    previous, recent = metrics(day_points[:half]), metrics(day_points[half:])
+    previous_points = [baseline_points[-1]] + [
+        point for points in day_points[:half] for point in points
+    ]
+    recent_points = [day_points[half - 1][-1]] + [
+        point for points in day_points[half:] for point in points
+    ]
+    previous, recent = metrics(previous_points), metrics(recent_points)
     drop = (_number(previous["net_return"]) - _number(recent["net_return"])) * 100
     increase = (_number(recent["max_drawdown"]) - _number(previous["max_drawdown"])) * 100
     reasons = [
@@ -532,6 +543,7 @@ def _collect_session_windows(
         "calendar": {
             "timezone": calendar.timezone,
             "source_hash": window.source_hash,
+            "baseline_trading_day": window.baseline_day.isoformat(),
             "trading_dates": [day.isoformat() for day in window.dates],
         },
         **(
@@ -540,6 +552,7 @@ def _collect_session_windows(
             else {}
         ),
         "receipts": receipts,
+        "baseline_receipt": baseline_receipt,
     }
 
 

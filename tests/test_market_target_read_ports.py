@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
 from hypertrade.arc.contracts import PaperFeedbackPolicyV1
 from hypertrade.arc.evolution import EvolutionConfig, EvolutionService
-from hypertrade.arc.evolution_continuation import ContinuationLedger, continuation_source_id
+from hypertrade.arc.evolution_continuation import (
+    ContinuationLedger,
+    complete_session_receipt_chain,
+    continuation_source_id,
+)
 from hypertrade.arc.feedback import collect_windows
 from hypertrade.connectors.mcp_client import (
     McpClientRegistry,
@@ -319,6 +325,12 @@ def test_string_target_scan_reaches_session_degradation_and_write_boundary(tmp_p
     assert chosen["paper_feedback"]["triggered"] is True
     assert chosen["paper_feedback"]["measurement"] == "session_paper_equity"
     assert len(chosen["paper_feedback"]["receipts"]) == 14
+    assert (
+        chosen["paper_feedback"]["baseline_receipt"]["trading_day"] == client.dates[0].isoformat()
+    )
+    assert complete_session_receipt_chain(
+        chosen["paper_feedback"]["receipts"], chosen["paper_feedback"]
+    )
     assert diagnostics[-1]["status"] == "opportunity"
     assert "trading_calendar_evidence" not in {
         row["code"] for row in diagnostics[-1]["continuation"]["blockers"]
@@ -361,7 +373,98 @@ def test_stable_session_series_does_not_trigger():
     assert result["triggered"] is False
     assert result["calendar"]["timezone"] == "Asia/Shanghai"
     assert len(result["calendar"]["trading_dates"]) == 14
-    assert result["previous"]["end_at"] < result["recent"]["start_at"]
+    assert result["previous"]["end_at"] == result["recent"]["start_at"]
+
+
+def test_session_overnight_gap_is_charged_to_recent_half():
+    class OvernightGapReads(ContractReads):
+        def read_equity_series(self, instance_id: str, **kwargs) -> SeriesPage:
+            page = super().read_equity_series(instance_id, **kwargs)
+            day = datetime.fromtimestamp(kwargs["start_ms"] / 1000, TZ).date()
+            equity = 100 if self.dates.index(day) <= 7 else 80
+            return replace(
+                page,
+                points=tuple(replace(point, equity=equity) for point in page.points),
+            )
+
+    result = collect_windows(
+        OvernightGapReads(),
+        "cn-paper:1",
+        "cn-strategy:alpha",
+        NOW,
+        PaperFeedbackPolicyV1(enabled=True, threshold_pp=Decimal("10")),
+        calendar=CALENDAR,
+    )
+    assert Decimal(result["previous"]["net_return"]) == 0
+    assert Decimal(result["recent"]["net_return"]) == Decimal("-0.2")
+    assert Decimal(result["recent"]["max_drawdown"]) == Decimal("0.2")
+    assert result["triggered"] is True
+
+
+def test_session_window_requires_prior_close_baseline():
+    reads = ContractReads()
+    reads.dates = reads.dates[1:]
+    with pytest.raises(ValueError, match="baseline|completed_sessions"):
+        collect_windows(
+            reads,
+            "cn-paper:1",
+            "cn-strategy:alpha",
+            NOW,
+            PaperFeedbackPolicyV1(enabled=True),
+            calendar=CALENDAR,
+        )
+
+
+def test_session_window_rejects_missing_prior_close_point():
+    class MissingPriorClose(ContractReads):
+        def read_equity_series(self, instance_id: str, **kwargs) -> SeriesPage:
+            page = super().read_equity_series(instance_id, **kwargs)
+            day = datetime.fromtimestamp(kwargs["start_ms"] / 1000, TZ).date()
+            return replace(page, points=page.points[:-1]) if day == self.dates[0] else page
+
+    with pytest.raises(ValueError, match="incomplete_session_boundaries"):
+        collect_windows(
+            MissingPriorClose(),
+            "cn-paper:1",
+            "cn-strategy:alpha",
+            NOW,
+            PaperFeedbackPolicyV1(enabled=True),
+            calendar=CALENDAR,
+        )
+
+
+def test_session_baseline_must_belong_to_original_session():
+    class LateSession(ContractReads):
+        def get_session_snapshot(self, **kwargs) -> SessionSnapshot:
+            snapshot = super().get_session_snapshot(**kwargs)
+            return replace(
+                snapshot,
+                session_started_at=datetime(2026, 8, 31, 12, tzinfo=TZ),
+            )
+
+    with pytest.raises(ValueError, match="paper_identity_or_session_window_mismatch"):
+        collect_windows(
+            LateSession(),
+            "cn-paper:1",
+            "cn-strategy:alpha",
+            NOW,
+            PaperFeedbackPolicyV1(enabled=True),
+            calendar=CALENDAR,
+        )
+
+
+def test_session_baseline_receipt_is_required_for_acceptance():
+    result = collect_windows(
+        ContractReads(),
+        "cn-paper:1",
+        "cn-strategy:alpha",
+        NOW,
+        PaperFeedbackPolicyV1(enabled=True),
+        calendar=CALENDAR,
+    )
+    assert complete_session_receipt_chain(result["receipts"], result)
+    without_baseline = {key: value for key, value in result.items() if key != "baseline_receipt"}
+    assert complete_session_receipt_chain(result["receipts"], without_baseline) is False
 
 
 def test_scan_does_not_infer_eligibility_from_calendar_days(tmp_path):

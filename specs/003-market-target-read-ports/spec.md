@@ -8,7 +8,7 @@ An evolution scan can read a registered non BitPro market target through stable 
 
 - FR-001: Inventory, source, session snapshot, fills, and return series used by an evolution scan come from the selected target read ports. BitPro's current read and decision behavior remains compatible.
 - FR-002: A sessions target requires explicit exchange trading dates and timezone on every evidence point. Missing, duplicate, inconsistent, or ambiguous trading date evidence blocks the decision.
-- FR-003: Session windows select 14 complete trading dates, split into two seven-session halves, and require comparable coverage at all boundaries. Non trading gaps are permitted only when the calendar declares them.
+- FR-003: Session windows select 14 complete trading dates, split into two seven-session halves, and require the preceding session's closing equity as a 15th evidence date. The seventh session close is shared by both halves so overnight changes enter the recent return and drawdown. Missing boundary evidence blocks the decision. Non trading gaps are permitted only when the calendar declares them.
 - FR-004: A non BitPro contract fixture reaches the scan's eligibility and degradation decision without writing to an external system.
 - FR-005: API and Paper write port migration, platform server tools, and QuantLab live evidence remain separate unfinished work.
 - FR-006: A registered standard MCP client routes canonical read tools through the typed read ports, validates source and target identity, and fails preflight when required source or calendar tools are absent.

@@ -1068,6 +1068,8 @@ agent模式受enabled、策略范围、候选资金上限约束；独立评审�
 
 自进化核心与平台解耦：`hypertrade/targets` 定义 `market_target.v1` 目标档案（venue/日历/证据契约/成本政策来源/能力开关）与进程级注册表；活跃目标由 `MARKET_TARGET` 设置决定，`EvolutionConfig.target_id` 在配置时校验必须已注册（默认 bitpro，未注册拒绝）。BitPro 为首个内置目标；QuantLab 类平台经 `market-evolution.v1` 通用 MCP 契约（七个规范工具 + `McpContractClient` 按 `tools/list` preflight 校验缺项）注册即插。进化循环客户端经注册表解析，`readiness` 窗口天数与对齐时区由目标日历参数化（continuous/UTC/14 天与旧行为一致）。`EvolutionConfig.enabled` 默认开启，仅影响新建配置；既有持久配置与 revision 不变。
 
+Phase 2 读取切片要求 sessions 日历提供前一交易日收盘基准与之后 14 个已收盘交易日的完整权益证据。第 7 日的收盘权益同时是后 7 日的起点，隔夜跳空进入最近窗收益与回撤；缺基准收盘、明确交易日或时区证据则拒绝退化结论。非 BitPro Paper 写端口、真实市场服务端接入和效果/告警适配仍待后续。
+
 离线元学习：`meta_tuning` 只回放已结算的 7+7 观测（周期账本冻结了当轮配置与窗口值），退化阈值建议定在观测 p90（下限 max(5pp, p50)、上限 20pp、样本 <12 条不调参），单步 ≤3pp、每日至多一次（`tune_YYYYMMDD` 回执幂等）。`meta_tuning_enabled` 默认只产出建议回执；`meta_tuning_auto_apply` 显式授权后经 `EvolutionService.configure` 修订审计应用，操作者记为 `hypertrade:meta-tuner`。`GET /evolution/tuning` 提供只读报告。`paper_criteria`/`min_trades`/冷却/预算上限不在自动调整范围。
 
 归因见证式升级：`costs`/`long_short` 维度仅在上游 `coverage.fields` 两页都标记 `observed` 且台账条目数值齐备时点亮（费用合计、净 PnL、long/short 计数与净 PnL），`side` 仅识别 long/short 词表；`source_field_states` 为 unknown/observed/unverified 三态。当前上游全部字段为 unknown，线上行为不变；语义仍为 `descriptive_execution_coverage_only`、`causal_conclusion=not_established`，不从裸 PnL 推断。细则见架构 62 与《用户指令合同——可插拔市场目标》。

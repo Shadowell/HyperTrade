@@ -12,6 +12,7 @@ from hypertrade.targets.schemas import TargetCalendarV1
 
 @dataclass(frozen=True)
 class SessionWindow:
+    baseline_day: date
     dates: tuple[date, ...]
     timezone: ZoneInfo
     open_time: time
@@ -66,9 +67,16 @@ def completed_session_window(
     if end < local_now.date() - timedelta(days=1) or start > local_now.date() - timedelta(days=90):
         raise ValueError("session_calendar_coverage_missing")
     completed = tuple(day for day in dates if datetime.combine(day, closing, tz) <= local_now)
-    if len(completed) < calendar.evidence_window_days:
-        raise ValueError("insufficient_completed_sessions")
+    if len(completed) < calendar.evidence_window_days + 1:
+        raise ValueError("session_baseline_close_missing")
     selected = completed[-calendar.evidence_window_days :]
     if len(selected) % 2:
         raise ValueError("session_window_not_even")
-    return SessionWindow(selected, tz, opening, closing, evidence.source_hash)
+    return SessionWindow(
+        completed[-calendar.evidence_window_days - 1],
+        selected,
+        tz,
+        opening,
+        closing,
+        evidence.source_hash,
+    )

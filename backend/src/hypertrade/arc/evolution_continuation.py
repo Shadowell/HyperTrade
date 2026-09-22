@@ -100,6 +100,7 @@ def complete_receipt_chain(receipts: list[Any], end_at: Any) -> bool:
 def complete_session_receipt_chain(receipts: list[Any], feedback: dict[str, Any]) -> bool:
     calendar = feedback.get("calendar") or {}
     dates = calendar.get("trading_dates") or []
+    baseline = feedback.get("baseline_receipt") or {}
     try:
         if (
             feedback.get("measurement") != "session_paper_equity"
@@ -108,9 +109,25 @@ def complete_session_receipt_chain(receipts: list[Any], feedback: dict[str, Any]
             or len(dates) != 14
             or len(receipts) != 14
             or dates != sorted(set(dates))
+            or not isinstance(baseline, dict)
+            or baseline.get("trading_day") != calendar.get("baseline_trading_day")
+            or not baseline.get("source_hash")
+            or not baseline.get("content_hash")
+            or calendar["baseline_trading_day"] >= dates[0]
         ):
             return False
         tz = ZoneInfo(calendar["timezone"])
+        if (
+            utc(baseline["start_at"]) >= utc(baseline["end_at"])
+            or utc(baseline["end_at"]) >= utc(receipts[0]["start_at"])
+            or utc(baseline["start_at"]).astimezone(tz).date().isoformat()
+            != calendar["baseline_trading_day"]
+            or utc(baseline["end_at"]).astimezone(tz).date().isoformat()
+            != calendar["baseline_trading_day"]
+            or utc(baseline["end_at"]) != utc(feedback["previous"]["start_at"])
+            or utc(receipts[6]["end_at"]) != utc(feedback["recent"]["start_at"])
+        ):
+            return False
         for day, receipt in zip(dates, receipts, strict=True):
             if (
                 receipt.get("trading_day") != day
@@ -150,9 +167,10 @@ def readiness(
     sessions = profile is not None and profile.calendar.mode == "sessions"
     window = diagnostic.get("window") or {}
     receipts = window.get("receipts") or []
+    baseline_receipt = window.get("baseline_receipt") or {}
     cursor["requested_window_start"] = (
-        receipts[0].get("start_at")
-        if sessions and receipts
+        baseline_receipt.get("end_at")
+        if sessions and baseline_receipt
         else (end - timedelta(days=days)).isoformat()
         if not sessions
         else None
@@ -612,6 +630,7 @@ def acceptance_entries(projection: ARCMissionProjection, now: datetime) -> list[
             else "missing",
             "payload": {
                 "window_end": feedback.get("end_at"),
+                "baseline_receipt": feedback.get("baseline_receipt"),
                 "receipts": [
                     {k: r.get(k) for k in ("start_at", "end_at", "source_hash", "content_hash")}
                     for r in receipts

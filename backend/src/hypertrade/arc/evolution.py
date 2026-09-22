@@ -557,7 +557,15 @@ class EvolutionService:
                     timeframe=row.timeframe or None,
                     calendar=profile.calendar,
                 )
-                diagnostic["window_receipt_hash"] = digest(feedback.get("receipts", []))
+                diagnostic["window_receipt_hash"] = digest(
+                    {
+                        "baseline": feedback.get("baseline_receipt"),
+                        "calendar_source_hash": (feedback.get("calendar") or {}).get("source_hash"),
+                        "receipts": feedback.get("receipts", []),
+                    }
+                    if profile.calendar.mode == "sessions"
+                    else feedback.get("receipts", [])
+                )
                 diagnostic.update(
                     status="stable",
                     window=(
