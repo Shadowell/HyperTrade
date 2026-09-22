@@ -46,6 +46,7 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "paper_equity_curve": {"method": "GET", "path": "/live/equity_curve"},
     "paper_snapshot": {"method": "GET", "path": "/live/paper_snapshot"},
     "paper_evidence": {"method": "GET", "path": "/strategy-evidence/paper"},
+    "paper_provenance": {"method": "GET", "path": "/strategy-evidence/paper-provenance"},
     "strategy_return_series": {
         "method": "GET",
         "path": "/strategy-evidence/return-series",
@@ -393,6 +394,12 @@ class BitProToolAdapter:
         self.last_tool_calls = []
         self._preflight()
         return _ensure_dict(self._call("paper_evidence", dict(parameters)))
+
+    def paper_provenance(self, **parameters: Any) -> dict[str, Any]:
+        """Read only frozen source identity; it never authorizes a Paper action."""
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(self._call("paper_provenance", dict(parameters)))
 
     def strategy_return_series(self, **parameters: Any) -> dict[str, Any]:
         """Read one bounded BitPro-owned return-series page without recalculating PnL."""

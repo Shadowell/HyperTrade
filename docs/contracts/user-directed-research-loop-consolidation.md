@@ -6,6 +6,8 @@
 
 以同一个策略研究生命周期服务支撑独立 CLI 和 BitPro 控制台，保留逐版本 Paper 人审、原策略连续运行、AVO 研究与运行反馈。
 
+2026-09-22目标扩展：覆盖BitPro全部运行中Paper策略。逐来源核验源码/可调参数、周期、原资金边界和可比较证据，并接入同一有预算研究、回测、审核及新旧并行路径；仅列出阻塞不算具备调优能力，真实闭环回执单独验收。缺历史绑定保留unknown，不以当前配置回填、不重置原实例。非BitPro市场扩展不优先于本目标。
+
 ## 切片 1：删除孤立实验实现（已验证并部署）
 
 - 删除 ARC portfolio、canary_vault、microstructure、vector_screening 四个无运行调用的实验模块和专属测试。
@@ -267,3 +269,7 @@ reconciliation_required，禁止盲重试。已有 paper_observing 缺分阶段�
 - 管理员 API `/api/portfolio/research/freeze`、`/compare/{manifest_id}`、`/records/{id}` 使用同一服务。内容寻址记录解决并发/中断重放；每次比较重新读来源核对，持久层只保留 manifest、摘要和曲线 hash，完整组合曲线仅在当次响应返回。
 - 旧 backtest 时序的版本来自当前策略记录，manifest 明确为 observed_source_identity；原回测运行时版本未证实则保留 member_run_provenance_unverified，不能将当前版本倒填为历史事实。
 - 不接主动调度、Paper审批、资金分配或Live。现有单标的闭环保持兼容。完成标准为专项测试、完整 check、顺序迁移、部署后真实只读回执；真实会话时长不由工程测试替代。
+
+## 2026-09-22 来源核验与批量评测
+
+来源读取采用paper_provenance.v1固定白名单与完整来源哈希，独立于窗口明细；校验同会话、策略、版本，缺失保持unknown，不从当前配置补历史。新老模型输入的来源核验不改变研究、预算或Paper门槛。多任务配对在独立执行ID/任务作用域下冻结模型、预算、窗口和每臂journal，重复目标仍需不同外部研究namespace，汇总过程指标保持收益/因果未证实。

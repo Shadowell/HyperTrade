@@ -1,0 +1,2 @@
+# 方案
+新增独立arc/provenance.py做严格规范化；BitPro适配器增加只读paper_provenance。collect_attribution先有界获取元数据，再读原两页窗口，attribution_report哈希包含来源投影。旧适配器无该方法继续旧形状，错误不泄露原文。与R7/evolution预算文件不交叉。

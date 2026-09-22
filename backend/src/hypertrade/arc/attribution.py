@@ -50,7 +50,7 @@ def _aware_time(value: Any) -> datetime | None:
 
 
 def attribution_report(
-    snapshot: dict[str, Any], now: datetime, evidence: Any = None
+    snapshot: dict[str, Any], now: datetime, evidence: Any = None, *, provenance: Any = None
 ) -> dict[str, Any]:
     """No metrics are inferred from legacy trade lists or current fee settings."""
     end = now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -126,6 +126,10 @@ def attribution_report(
             reason = str(exc) if str(exc) in allowed else "malformed_evidence"
             for dimension in report["dimensions"].values():
                 dimension["reason"] = reason
+    if provenance is not None:
+        from hypertrade.arc.provenance import project_provenance
+
+        report["provenance"] = project_provenance(provenance, snapshot)
     digest = hashlib.sha256(json.dumps(report, sort_keys=True).encode()).hexdigest()
     return {**report, "report_id": digest}
 
@@ -329,6 +333,18 @@ def collect_attribution(client: Any, snapshot: dict[str, Any], now: datetime) ->
     scope = empty["scope"]
     if not all(scope[k] for k in ("session_id", "strategy_version", "config_version")):
         return empty
+    provenance = None
+    read_provenance = getattr(client, "paper_provenance", None)
+    if callable(read_provenance):
+        try:
+            provenance = read_provenance(
+                session_id=scope["session_id"], expected_config_version=scope["config_version"]
+            )
+            if provenance is None:
+                provenance = {}
+        except Exception:
+            provenance = {}  # Public diagnostics never expose raw transport/credential errors.
+        empty = attribution_report(snapshot, now, provenance=provenance)
     try:
         pages = {
             kind: client.paper_evidence(
@@ -341,7 +357,7 @@ def collect_attribution(client: Any, snapshot: dict[str, Any], now: datetime) ->
             )
             for kind in ("trades", "equity")
         }
-        return attribution_report(snapshot, now, pages)
+        return attribution_report(snapshot, now, pages, provenance=provenance)
     except Exception:
         return empty
 
