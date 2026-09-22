@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -76,15 +77,42 @@ def create_batch(directory: Path, tasks: list[dict[str, Any]]) -> dict[str, Any]
         parsed.append((task_id, goal, records, task.get("cost_policy_hash")))
     assert common is not None
     with _lock(directory):
+        identity_path = directory / "batch_identity.json"
+        if identity_path.exists():
+            identity = json.loads(identity_path.read_text())
+            execution_id = identity.get("execution_id")
+            if (
+                identity.get("schema_version") != "research_memory_batch_identity.v1"
+                or not isinstance(execution_id, str)
+                or not re.fullmatch(r"[0-9a-f]{32}", execution_id)
+            ):
+                raise ValueError("invalid_batch_execution_identity")
+        else:
+            if (directory / "batch_manifest.json").exists():
+                raise ValueError("batch_execution_identity_missing")
+            execution_id = uuid.uuid4().hex
+            _write(
+                identity_path,
+                {
+                    "schema_version": "research_memory_batch_identity.v1",
+                    "execution_id": execution_id,
+                },
+            )
         pair_entries = []
         for task_id, goal, records, cost_hash in parsed:
             pair_dir = directory / "pairs" / task_id
             if pair_dir.is_symlink():
                 raise ValueError("pair_directory_symlink")
-            pair = create_pair(pair_dir, goal, records, cost_policy_hash=cost_hash)
-            pair_entries.append({"task_id": task_id, "pair_id": pair["pair_id"]})
+            scope = f"batch:{execution_id}:{task_id}"
+            pair = create_pair(
+                pair_dir, goal, records, cost_policy_hash=cost_hash, scope=scope
+            )
+            pair_entries.append(
+                {"task_id": task_id, "pair_id": pair["pair_id"], "scope": scope}
+            )
         frozen = {
             "schema_version": "research_memory_batch.v1",
+            "execution_id": execution_id,
             "common_controls": common,
             "runtime_digest": _batch_runtime_digest(),
             "tasks": pair_entries,
@@ -200,6 +228,9 @@ def run_batch(
             raise ValueError("batch_manifest_identity_mismatch")
         if manifest["runtime_digest"] != _batch_runtime_digest():
             raise ValueError("batch_runtime_identity_mismatch")
+        identity = json.loads((directory / "batch_identity.json").read_text())
+        if identity.get("execution_id") != manifest["execution_id"]:
+            raise ValueError("batch_execution_identity_mismatch")
         if max_pairs == 0 and provider is None:
             controls = manifest["common_controls"]
             provider = _StatusProvider(controls["provider_name"], controls["model_name"])
@@ -214,6 +245,9 @@ def run_batch(
             pair_manifest = json.loads((pair_dir / "manifest.json").read_text())
             if (
                 pair_manifest["pair_id"] != entry["pair_id"]
+                or pair_manifest.get("scope") != entry["scope"]
+                or entry["scope"]
+                != f"batch:{manifest['execution_id']}:{task_id}"
                 or _common_controls(ARCGoalV1.model_validate(pair_manifest["controls"]))
                 != manifest["common_controls"]
             ):

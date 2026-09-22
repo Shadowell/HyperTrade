@@ -26,18 +26,20 @@
 
 ## Requirements
 
-- **FR-001**: 批量 manifest MUST 内容寻址并绑定有序且唯一的任务 ID、pair ID、控制与运行时代码身份；任务数为 2 至 50。
+- **FR-001**: 批量 manifest MUST 内容寻址并绑定有序且唯一的任务 ID、pair ID、控制与运行时代码身份；任务数为 2 至 50。批次执行 ID 必须先持久化，同一目录恢复稳定；它与任务 ID 必须进入 pair ID 及外部研究命名空间，使完全相同 goal/memory 的重复任务和不同批次互不碰撞。
 - **FR-002**: 各任务 MUST 固定同一 Provider/model、预算上限、研究窗口和验证策略；各臂仅长期记忆输入不同，Paper/Live 保持禁用。
 - **FR-003**: 每个 pair MUST 复用原有目录和 SQLite journal；批量状态文件仅是可重建投影，不能代替 journal 判定完成。
 - **FR-004**: 批量汇总 MUST 区分完成、待运行、成功验证、失败原因、缺失计费/成本/数据快照及开发实验重复分母；零分母率为 null。
 - **FR-005**: 结果 MUST 保持 `conclusion=unknown`、`profitability_claim=false`、`causal_claim=false`，不以模型文字作为裁判。
 - **FR-006**: 本切片只用隔离测试替身，不启动真实模型、研究、Paper 或 Live；真实样本和预算由总控另行确定。
+- **FR-007**: 未指定批次 scope 的既有单 pair 创建接口与 manifest 形状保持兼容；旧运行时哈希不匹配仍按既有规则拒绝静默续跑。
 
 ## Success Criteria
 
 - **SC-001**: 两个及以上任务在一次创建中得到可核验冻结矩阵，控制漂移和篡改被拒绝。
 - **SC-002**: 跨进程恢复不重放已结算臂，批量汇总可以在删除缓存后从 pair journal 重建。
 - **SC-003**: 汇总给出分子/分母与未知项，未完成批次不出现伪成功率。
+- **SC-004**: 两个同目标、同记忆但不同 task ID 的重复任务，以及不同批次，均产生四个独立 arm mission ID；同一批次重开不改变这些 ID。
 
 ## Assumptions
 

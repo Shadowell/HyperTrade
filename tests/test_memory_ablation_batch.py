@@ -46,6 +46,56 @@ def test_batch_freezes_controls_and_rejects_drift_before_dispatch(tmp_path):
         run_batch(tmp_path, provider=StopProvider())
 
 
+def test_identical_replicates_have_distinct_pair_and_research_namespaces(tmp_path):
+    from hypertrade.evals.memory_ablation import create_pair
+    from hypertrade.evals.memory_ablation_batch import create_batch, run_batch
+
+    identical = tasks()
+    identical[1]["goal"] = identical[0]["goal"].model_copy(deep=True)
+    first = create_batch(tmp_path / "run-a", identical)
+    second = create_batch(tmp_path / "run-b", identical)
+    assert first == create_batch(tmp_path / "run-a", identical)
+    assert first["execution_id"] != second["execution_id"]
+    assert len({item["pair_id"] for item in first["tasks"]}) == 2
+    assert not ({item["pair_id"] for item in first["tasks"]} &
+                {item["pair_id"] for item in second["tasks"]})
+    reset_store()
+    result = run_batch(tmp_path / "run-a", provider=StopProvider())
+    mission_ids = {
+        arm["mission_id"]
+        for pair in result["pairs"].values()
+        for arm in pair["arms"].values()
+    }
+    assert len(mission_ids) == 4
+    single = create_pair(tmp_path / "single", goal(), [])
+    assert "scope" not in single
+    assert single == create_pair(tmp_path / "single", goal(), [])
+
+
+def test_batch_creation_restart_keeps_execution_identity(tmp_path, monkeypatch):
+    from hypertrade.evals import memory_ablation_batch as batch
+
+    original = batch.create_pair
+    calls = 0
+
+    def interrupt_second(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise KeyboardInterrupt()
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(batch, "create_pair", interrupt_second)
+    with pytest.raises(KeyboardInterrupt):
+        batch.create_batch(tmp_path, tasks())
+    first_pair = json.loads((tmp_path / "pairs" / "sol-breakout" / "manifest.json").read_text())
+    execution_id = json.loads((tmp_path / "batch_identity.json").read_text())["execution_id"]
+    monkeypatch.setattr(batch, "create_pair", original)
+    manifest = batch.create_batch(tmp_path, tasks())
+    assert manifest["execution_id"] == execution_id
+    assert manifest["tasks"][0]["pair_id"] == first_pair["pair_id"]
+
+
 def test_batch_resumes_across_process_and_rebuilds_aggregate_from_journals(tmp_path):
     from hypertrade.evals.memory_ablation_batch import create_batch, run_batch
 

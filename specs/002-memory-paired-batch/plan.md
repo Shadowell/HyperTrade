@@ -4,7 +4,7 @@
 
 ## Summary
 
-在 `evals` 中增加薄批量层，复用已有 `create_pair`/`run_pair` 与每任务独立 journal；冻结矩阵，逐 pair 恢复，聚合确定性过程指标。只给原 pair 摘要补充开发实验分母。
+在 `evals` 中增加薄批量层，复用已有 `create_pair`/`run_pair` 与每任务独立 journal；冻结矩阵，逐 pair 恢复，聚合确定性过程指标。批次先持久化独立执行 ID，再将执行 ID 与任务 ID 作为显式 scope 纳入 pair 内容哈希；旧单 pair 无 scope 的 manifest 形状不变。原 pair 摘要补充开发实验分母。
 
 ## Technical Context
 
@@ -19,7 +19,7 @@ Python 3.12、Pydantic/SQLAlchemy、pytest；本地目录 manifest + 每任务 S
 
 ## Project Structure
 
-- `backend/src/hypertrade/evals/memory_ablation.py`: 开发实验分母。
+- `backend/src/hypertrade/evals/memory_ablation.py`: 开发实验分母和可选、冻结的 pair scope。
 - `backend/src/hypertrade/evals/memory_ablation_batch.py`: 矩阵、恢复、汇总、CLI。
 - `tests/test_memory_ablation_batch.py`: 纯替身/临时目录/子进程回归。
 - `specs/002-memory-paired-batch/`: 本切片规格与任务。

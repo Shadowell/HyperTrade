@@ -73,10 +73,15 @@ def create_pair(
     records: list[dict[str, Any]],
     *,
     cost_policy_hash: str | None = None,
+    scope: str | None = None,
 ) -> dict[str, Any]:
     """Freeze a clean AVO goal. This operation does not call a provider or external tool."""
     if cost_policy_hash is not None and not re.fullmatch(r"[0-9a-f]{64}", cost_policy_hash):
         raise ValueError("invalid_cost_policy_hash")
+    if scope is not None and (
+        not isinstance(scope, str) or not re.fullmatch(r"[a-z0-9][a-z0-9:._-]{0,127}", scope)
+    ):
+        raise ValueError("invalid_pair_scope")
     if (
         goal.research_mode != "avo"
         or goal.research_windows is None
@@ -165,6 +170,10 @@ def create_pair(
         "runtime_digest": _runtime_digest(),
         "cost_policy_hash": cost_policy_hash,
     }
+    # An explicit batch scope changes the pair and external mission namespace;
+    # omitted scope preserves the existing single-pair manifest contract.
+    if scope is not None:
+        frozen["scope"] = scope
     manifest: dict[str, Any] = {**frozen, "pair_id": _digest(frozen)}
     # Deterministic counterbalancing across distinct frozen tasks; persisted before dispatch.
     manifest["order"] = ["on", "off"] if int(manifest["pair_id"][-1], 16) % 2 else ["off", "on"]
