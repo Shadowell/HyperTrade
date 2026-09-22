@@ -211,6 +211,31 @@ def test_inventory_unavailable_respects_configured_strategy_scope(service):
     assert {b["code"] for b in row["continuation"]["blockers"]} == {"evidence_recheck"}
 
 
+@pytest.mark.parametrize("bad_id", ["", "not-an-id", "0", "-1"])
+@pytest.mark.parametrize("strategy_ids", [[], [511]])
+def test_invalid_inventory_id_is_unattributed_coverage_gap(service, bad_id, strategy_ids):
+    from datetime import UTC, datetime
+
+    paper = Paper()
+    paper.paper_strategy_performance = lambda **kwargs: {
+        "strategies": [],
+        "unavailable_strategies": [
+            {"strategy_id": bad_id, "reason": "inventory_missing_strategy_id"},
+            {"strategy_id": 511, "reason": "dashboard unavailable"},
+        ],
+    }
+    service.client = paper
+    diagnostics, chosen = service._scan(
+        EvolutionConfig(strategy_ids=strategy_ids), datetime(2026, 9, 22, tzinfo=UTC)
+    )
+    assert chosen is None
+    assert [row["strategy_id"] for row in diagnostics if row.get("strategy_id")] == [511]
+    gaps = [row for row in diagnostics if row["status"] == "partial_coverage"]
+    assert len(gaps) == 1
+    assert "strategy_id" not in gaps[0]
+    assert "身份" in gaps[0]["reason"]
+
+
 def test_snapshot_read_failure_does_not_claim_session_fields_missing(service):
     from datetime import UTC, datetime
 
@@ -247,6 +272,63 @@ def test_returned_snapshot_with_missing_fields_keeps_identity_blockers(service):
     assert {b["code"] for b in diagnostics[0]["continuation"]["blockers"]} >= {
         "session_identity",
         "session_start",
+    }
+
+
+def test_bitpro_snapshot_identity_mismatch_is_contract_alert(service):
+    from datetime import UTC, datetime
+
+    paper = Paper()
+    original = paper.paper_snapshot
+    paper.paper_snapshot = lambda **kwargs: {**original(**kwargs), "strategy_id": 999}
+    service.client = paper
+    diagnostics, chosen = service._scan(
+        EvolutionConfig(strategy_ids=[44]), datetime(2026, 9, 22, tzinfo=UTC)
+    )
+    assert chosen is None
+    row = diagnostics[0]
+    assert row["data_readiness"]["sampling"]["reason_code"] == "recent_series_contract_mismatch"
+    assert "核对" in row["data_readiness"]["next_action"]
+    assert "稍后重试" not in row["data_readiness"]["next_action"]
+    assert {b["code"]: b["resolution"] for b in row["continuation"]["blockers"]} == {
+        "evidence_recheck": "operator"
+    }
+
+
+def test_bitpro_returned_snapshot_missing_version_keeps_identity_blocker(service):
+    from datetime import UTC, datetime
+
+    paper = Paper()
+    original = paper.paper_snapshot
+    paper.paper_snapshot = lambda **kwargs: {**original(**kwargs), "strategy_version": None}
+    service.client = paper
+    diagnostics, chosen = service._scan(
+        EvolutionConfig(strategy_ids=[44]), datetime(2026, 9, 22, tzinfo=UTC)
+    )
+    assert chosen is None
+    assert "session_identity" in {
+        blocker["code"] for blocker in diagnostics[0]["continuation"]["blockers"]
+    }
+
+
+def test_bitpro_snapshot_invalid_timestamp_is_contract_alert(service):
+    from datetime import UTC, datetime
+
+    paper = Paper()
+    original = paper.paper_snapshot
+    paper.paper_snapshot = lambda **kwargs: {
+        **original(**kwargs),
+        "session": {"started_at": "invalid"},
+    }
+    service.client = paper
+    diagnostics, chosen = service._scan(
+        EvolutionConfig(strategy_ids=[44]), datetime(2026, 9, 22, tzinfo=UTC)
+    )
+    assert chosen is None
+    row = diagnostics[0]
+    assert row["data_readiness"]["sampling"]["reason_code"] == "recent_series_contract_mismatch"
+    assert {b["code"]: b["resolution"] for b in row["continuation"]["blockers"]} == {
+        "evidence_recheck": "operator"
     }
 
 

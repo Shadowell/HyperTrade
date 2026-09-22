@@ -24,6 +24,23 @@ def upstream_read_unavailable(now: datetime) -> dict[str, Any]:
     }
 
 
+def snapshot_contract_unverified(now: datetime) -> dict[str, Any]:
+    """The upstream response cannot bind to the requested Paper identity."""
+    return {
+        "reason": "上游会话快照身份或格式不符合只读契约",
+        "data_readiness": {
+            "blocking_reason": "recent_series_contract_mismatch",
+            "sampling": {
+                "state": "unavailable",
+                "checked_at": now.isoformat(),
+                "historical_window_verified": False,
+                "reason_code": "recent_series_contract_mismatch",
+            },
+            "next_action": "核对上游快照的策略、会话、版本和字段契约；保留原模拟盘历史",
+        },
+    }
+
+
 def sampling_status(client: Any, snapshot: dict[str, Any], now: datetime) -> dict[str, Any]:
     """One bounded recent read distinguishes sampling health from 14-day eligibility."""
     result: dict[str, Any] = {

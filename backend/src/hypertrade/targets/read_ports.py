@@ -34,6 +34,10 @@ def read_ports(client: Any) -> Any:
     return BitProReadPorts(client)
 
 
+class SnapshotContractError(ValueError):
+    """A snapshot response arrived but failed the read-port contract."""
+
+
 class BitProReadPorts:
     def __init__(self, client: Any) -> None:
         self.client = client
@@ -88,30 +92,32 @@ class BitProReadPorts:
     def get_session_snapshot(
         self, *, strategy_id: str | None = None, instance_id: str | None = None
     ) -> SessionSnapshot:
-        raw = _snapshot_body(
-            self.client.paper_snapshot(
-                strategy_id=int(strategy_id) if strategy_id is not None else None,
-                instance_id=instance_id,
-            )
+        payload = self.client.paper_snapshot(
+            strategy_id=int(strategy_id) if strategy_id is not None else None,
+            instance_id=instance_id,
         )
+        raw = _snapshot_body(payload)
         if (strategy_id is not None and str(raw.get("strategy_id")) != strategy_id) or (
             instance_id is not None and str(raw.get("instance_id")) != instance_id
         ):
-            raise ValueError("session_snapshot_identity_mismatch")
-        started = (raw.get("session") or {}).get("started_at")
-        return SessionSnapshot(
-            instance_id=str(raw.get("instance_id") or ""),
-            strategy_id=str(raw.get("strategy_id") or ""),
-            strategy_version=raw.get("strategy_version"),
-            config_version=raw.get("config_version"),
-            status=str(raw.get("status") or ""),
-            trade_count=int(raw.get("trade_count") or 0),
-            session_started_at=(
-                datetime.fromisoformat(started.replace("Z", "+00:00")) if started else None
-            ),
-            symbols=tuple((raw.get("strategy") or {}).get("symbols") or ()),
-            source=raw,
-        )
+            raise SnapshotContractError("session_snapshot_identity_mismatch")
+        try:
+            started = (raw.get("session") or {}).get("started_at")
+            return SessionSnapshot(
+                instance_id=str(raw.get("instance_id") or ""),
+                strategy_id=str(raw.get("strategy_id") or ""),
+                strategy_version=raw.get("strategy_version"),
+                config_version=raw.get("config_version"),
+                status=str(raw.get("status") or ""),
+                trade_count=int(raw.get("trade_count") or 0),
+                session_started_at=(
+                    datetime.fromisoformat(started.replace("Z", "+00:00")) if started else None
+                ),
+                symbols=tuple((raw.get("strategy") or {}).get("symbols") or ()),
+                source=raw,
+            )
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise SnapshotContractError("session_snapshot_contract_mismatch") from exc
 
     def list_fills(
         self, strategy_id: str, *, limit: int, since_ms: int | None = None

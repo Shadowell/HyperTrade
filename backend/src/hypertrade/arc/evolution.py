@@ -25,14 +25,18 @@ from hypertrade.arc.contracts import (
 )
 from hypertrade.arc.controller import ARCController, ARCMissionProjection
 from hypertrade.arc.evolution_continuation import ContinuationLedger, readiness
-from hypertrade.arc.evolution_diagnostics import blocked_data_diagnostic, upstream_read_unavailable
+from hypertrade.arc.evolution_diagnostics import (
+    blocked_data_diagnostic,
+    snapshot_contract_unverified,
+    upstream_read_unavailable,
+)
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import collect_windows
 from hypertrade.arc.store import get_controller, research_lock
 from hypertrade.arc.universe import declared_symbols, normalize_symbols
 from hypertrade.db import ArcMission, Database
 from hypertrade.memory.service import MemoryService
-from hypertrade.targets.read_ports import read_ports
+from hypertrade.targets.read_ports import SnapshotContractError, read_ports
 from hypertrade.targets.registry import (
     MarketTargetUnavailable,
     active_market_target_id,
@@ -440,10 +444,20 @@ class EvolutionService:
         rows = ports.list_running_strategies(50)
         total, unavailable = ports.inventory_coverage()
         diagnostics = []
+        invalid_inventory_rows = 0
         for row in unavailable:
-            sid = (
-                int(row.strategy_id) if profile.strategy_id_format == "integer" else row.strategy_id
-            )
+            try:
+                sid = (
+                    int(row.strategy_id)
+                    if profile.strategy_id_format == "integer"
+                    else row.strategy_id
+                )
+            except (TypeError, ValueError):
+                invalid_inventory_rows += 1
+                continue
+            if (isinstance(sid, int) and sid <= 0) or (isinstance(sid, str) and not sid.strip()):
+                invalid_inventory_rows += 1
+                continue
             if config.strategy_ids and sid not in config.strategy_ids:
                 continue
             diagnostics.append(
@@ -452,6 +466,15 @@ class EvolutionService:
                     "strategy_id": sid,
                     "status": "unavailable",
                     **upstream_read_unavailable(now),
+                }
+            )
+        if invalid_inventory_rows:
+            diagnostics.append(
+                {
+                    "target_id": config.target_id,
+                    "status": "partial_coverage",
+                    "reason": "上游运行策略清单存在无效身份的行，本轮无法归属策略；请核对只读清单",
+                    "unattributed_count": invalid_inventory_rows,
                 }
             )
         if total > 50:
@@ -674,7 +697,9 @@ class EvolutionService:
                     and snapshot.get("status") == "running"
                     else {}
                 )
-                if not snapshot_read:
+                if isinstance(exc, SnapshotContractError):
+                    diagnostic.update(snapshot_contract_unverified(now))
+                elif not snapshot_read:
                     diagnostic.update(upstream_read_unavailable(now))
                 elif profile.transport == "bitpro_mcp_v1":
                     diagnostic.update(
