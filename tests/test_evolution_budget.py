@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from hypertrade.arc.evolution import EvolutionConfig, EvolutionService
@@ -29,6 +30,12 @@ def finish(service, child, when):
     with service.db.session() as session:
         row = session.get(ArcMission, child.mission_id)
         row.updated_at = when
+
+
+def budget_at(service, when):
+    with patch("hypertrade.arc.evolution.datetime") as clock:
+        clock.now.return_value = when
+        return service.status()["budget"]
 
 
 def test_period_budget_survives_restart_and_resumes_next_utc_day(service, monkeypatch):
@@ -402,7 +409,7 @@ def test_same_instance_on_two_targets_has_distinct_source_and_shared_usage(servi
     assert second["accepted"] is True
     assert second["target_id"] == "quantlab"
     assert second["source_strategy_id"] == "44"
-    budget = service.status()["budget"]
+    budget = budget_at(service, now)
     assert budget["period_used"] == budget["total_used"] == 2
     assert budget["active"] == 2
     assert source_key("bitpro", 44, "paper-same") in budget["sources"]
@@ -585,7 +592,7 @@ def test_legacy_receipt_without_target_remains_bitpro_after_switch(service):
             if key not in {"target_id", "source_strategy_id", "source_key"}
         }
     service.configure(EvolutionConfig(enabled=True, target_id="quantlab"), revision=1, actor="test")
-    state = service.status()["budget"]
+    state = budget_at(service, now)
     assert state["total_used"] == state["period_used"] == state["active"] == 1
     assert source_key("bitpro", 44, "paper-old") in state["sources"]
     assert admit(ctrl, now=now, db=service.db)["accepted"] is True
