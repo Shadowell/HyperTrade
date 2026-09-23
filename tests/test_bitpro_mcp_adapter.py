@@ -94,6 +94,125 @@ def test_bitpro_mcp_client_rejects_live_write_tools_before_http() -> None:
         client.call_tool("live_promote", {"strategy_id": 1})
 
 
+def test_source_preserving_research_tools_keep_manifest_and_idempotency_identity() -> None:
+    seen: list[tuple[str, str, dict[str, Any]]] = []
+    manifest = "a" * 64
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content) if request.content else {}
+        seen.append((request.method, request.url.path, body))
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/strategies/513/research-source":
+            return httpx.Response(200, json={"success": True, "data": {
+                "contract_version": "strategy_research_source.v1", "strategy_id": 513,
+                "status": "selected_unverified", "identity": {"manifest_sha256": manifest},
+            }})
+        if request.url.path == "/api/v2/strategies/513/research-variant-policy":
+            return httpx.Response(200, json={"success": True, "data": {
+                "contract_version": "strategy_research_variant_policy.v1",
+                "parent_strategy_id": 513, "parent_manifest_sha256": manifest,
+                "authorized_parameters": [
+                    {"key": "channel_bars", "type": "integer", "min": 12, "max": 96}
+                ],
+            }})
+        if request.url.path == "/api/v2/strategies/513/research-variants":
+            return httpx.Response(200, json={"success": True, "data": {
+                "contract_version": "strategy_research_variant.v1", "parent_strategy_id": 513,
+                "candidate_strategy_id": 900, "variant_id": "srv_abc",
+                "purpose": "candidate", "status": "stopped",
+                "parent_manifest_sha256": manifest,
+                "candidate_manifest_sha256": "b" * 64,
+                "source_binding": {"version": "strategy_research_source_binding.v1",
+                                   "variant_id": "srv_abc", "parent_manifest_sha256": manifest},
+                "cost_receipt": {"policy_hash": "c" * 64},
+            }})
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    client = BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    adapter = BitProToolAdapter(client)
+    source = adapter.strategy_research_source(strategy_id=513)
+    policy = adapter.strategy_research_variant_policy(strategy_id=513)
+    created = adapter.strategy_research_variant_create(
+        strategy_id=513, expected_parent_manifest_sha256=manifest,
+        idempotency_key="source-513-candidate-01",
+        parameter_changes={"channel_bars": 32}, purpose="candidate",
+    )
+
+    assert source["status"] == "selected_unverified"
+    assert policy["authorized_parameters"][0]["key"] == "channel_bars"
+    assert created["candidate_strategy_id"] == 900
+    with pytest.raises(ValueError, match="parameter changes"):
+        adapter.strategy_research_variant_create(
+            strategy_id=513, expected_parent_manifest_sha256=manifest,
+            idempotency_key="source-513-baseline-01",
+            parameter_changes={"channel_bars": 32}, purpose="baseline",
+        )
+    assert seen[-1] == (
+        "POST", "/api/v2/strategies/513/research-variants",
+        {"expected_parent_manifest_sha256": manifest,
+         "idempotency_key": "source-513-candidate-01",
+         "parameter_changes": {"channel_bars": 32}, "purpose": "candidate"},
+    )
+    assert "strategy_research_source" in adapter.capabilities()["tool_groups"]["read"]
+    assert "strategy_research_variant_policy" in adapter.capabilities()["tool_groups"]["read"]
+    assert "strategy_research_variant_create" in adapter.capabilities()["tool_groups"][
+        "research_backtest_paper_mutation"
+    ]
+
+
+def test_backtest_bridge_passes_and_reads_sealed_data_identity_without_source_code() -> None:
+    seen: list[dict[str, Any]] = []
+    digest = "b" * 64
+    snapshot_id = "vbs_" + digest
+    binding = {"version": "verified_backtest_data.v2", "entries": [{
+        "timeframe": "1h", "symbols": ["BTC/USDT:USDT"],
+        "start_ms": 1767225600000, "end_ms": 1767312000000,
+        "verified_snapshot_id": snapshot_id, "manifest_sha256": digest,
+        "source": "OKX public history-candles", "data_quality": "verified_primary",
+    }]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path == "/api/v2/backtest/run_job":
+            seen.append(json.loads(request.content))
+            return httpx.Response(200, json={"success": True, "data": {"job_id": "job-513"}})
+        if request.url.path == "/api/v2/backtest/job/job-513":
+            return httpx.Response(200, json={"success": True, "data": {
+                "job_id": "job-513", "status": "failed",
+                "verified_data_binding": binding,
+                "input_snapshot_json": '{"script_content":"secret source"}',
+                "strategy_input_snapshot": {
+                    "schema_version": "backtest_input.v1", "hash": "sha256:" + "d" * 64,
+                    "market_data_status": "unverified", "comparison_eligible": False,
+                    "script_content": "secret source",
+                },
+                "error_message": "bound_variant_warmup_unverified",
+            }})
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    adapter = BitProToolAdapter(BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    ))
+    adapter.backtest_start_job(
+        strategy_id=900, start_date="2026-01-01", end_date="2026-01-02",
+        initial_capital=100, verified_data_snapshot_id=snapshot_id,
+        verified_data_manifest_sha256=digest,
+    )
+    job = adapter.backtest_get_job(job_id="job-513")["job"]
+    assert seen[0]["verified_data_snapshot_id"] == snapshot_id
+    assert seen[0]["verified_data_manifest_sha256"] == digest
+    assert job["verified_data_binding"] == binding
+    assert job["strategy_input_snapshot"]["hash"] == "sha256:" + "d" * 64
+    assert job["error_message"] == "bound_variant_warmup_unverified"
+    assert "script_content" not in json.dumps(job)
+
+
 def test_authorized_live_promote_requires_package_hash_and_uses_direct_request() -> None:
     seen: list[str] = []
 

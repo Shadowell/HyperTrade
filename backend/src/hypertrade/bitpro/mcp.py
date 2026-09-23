@@ -38,6 +38,12 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "sync_table_stats": {"method": "GET", "path": "/sync/table-stats"},
     "strategy_search": {"method": "GET", "path": "/strategies"},
     "strategy_get": {"method": "GET", "path": "/strategies/{strategy_id}"},
+    "strategy_research_source": {
+        "method": "GET", "path": "/strategies/{strategy_id}/research-source",
+    },
+    "strategy_research_variant_policy": {
+        "method": "GET", "path": "/strategies/{strategy_id}/research-variant-policy",
+    },
     "strategy_trades": {"method": "GET", "path": "/strategies/{strategy_id}/trades"},
     "backtest_get_job": {"method": "GET", "path": "/backtest/job/{job_id}"},
     "backtest_list_results": {"method": "GET", "path": "/backtest/results"},
@@ -72,6 +78,9 @@ RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "sync_start_history": {"method": "POST", "path": "/sync/start"},
     "sync_one": {"method": "POST", "path": "/sync/sync-one"},
     "strategy_create": {"method": "POST", "path": "/strategies"},
+    "strategy_research_variant_create": {
+        "method": "POST", "path": "/strategies/{strategy_id}/research-variants",
+    },
     "strategy_update": {"method": "PUT", "path": "/strategies/{strategy_id}"},
     "strategy_generate": {"method": "POST", "path": "/agent/generate_strategy"},
     "agent_create_task": {"method": "POST", "path": "/agent/tasks"},
@@ -96,6 +105,7 @@ RESEARCH_MUTATION_TOOLS = {
     "sync_start_history",
     "sync_one",
     "strategy_create",
+    "strategy_research_variant_create",
     "strategy_update",
     "strategy_generate",
     "strategy_validate_code",
@@ -515,6 +525,95 @@ class BitProToolAdapter:
         raw = _ensure_dict(self._call("strategy_get", {"strategy_id": strategy_id}))
         return {"status": "ok", "strategy": raw}
 
+    def strategy_research_source(self, *, strategy_id: int) -> dict[str, Any]:
+        """Read the current source descriptor without treating it as execution proof."""
+        self.last_tool_calls = []
+        self._preflight()
+        source = _ensure_dict(self._call("strategy_research_source", {"strategy_id": strategy_id}))
+        if (
+            source.get("contract_version") != "strategy_research_source.v1"
+            or source.get("strategy_id") != strategy_id
+            or source.get("status") not in {"resolved", "selected_unverified", "unsupported"}
+            or (
+                source.get("status") in {"resolved", "selected_unverified"}
+                and not re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str((source.get("identity") or {}).get("manifest_sha256") or ""),
+                )
+            )
+        ):
+            raise ValueError("BitPro research source contract mismatch")
+        return source
+
+    def strategy_research_variant_policy(self, *, strategy_id: int) -> dict[str, Any]:
+        """Read the explicit mutation policy; static source read points are not permission."""
+        self.last_tool_calls = []
+        self._preflight()
+        policy = _ensure_dict(
+            self._call("strategy_research_variant_policy", {"strategy_id": strategy_id})
+        )
+        if (
+            policy.get("contract_version") != "strategy_research_variant_policy.v1"
+            or policy.get("parent_strategy_id") != strategy_id
+            or not isinstance(policy.get("authorized_parameters"), list)
+            or not re.fullmatch(r"[0-9a-f]{64}", str(policy.get("parent_manifest_sha256") or ""))
+        ):
+            raise ValueError("BitPro research variant policy contract mismatch")
+        return policy
+
+    def strategy_research_variant_create(
+        self, *, strategy_id: int, expected_parent_manifest_sha256: str,
+        idempotency_key: str, parameter_changes: dict[str, int | float],
+        purpose: str = "candidate",
+    ) -> dict[str, Any]:
+        """Create one stopped research row through BitPro's idempotent write boundary."""
+        if not isinstance(expected_parent_manifest_sha256, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", expected_parent_manifest_sha256
+        ):
+            raise ValueError("invalid parent source manifest")
+        if (
+            not isinstance(idempotency_key, str)
+            or not re.fullmatch(r"[A-Za-z0-9:_-]{8,160}", idempotency_key)
+            or purpose not in {"candidate", "baseline"}
+        ):
+            raise ValueError("invalid research variant request")
+        if not isinstance(parameter_changes, dict) or (
+            (purpose == "baseline") != (parameter_changes == {})
+        ):
+            raise ValueError("invalid research variant parameter changes")
+        self.last_tool_calls = []
+        self._preflight()
+        created = _ensure_dict(self._call("strategy_research_variant_create", {
+            "strategy_id": strategy_id,
+            "expected_parent_manifest_sha256": expected_parent_manifest_sha256,
+            "idempotency_key": idempotency_key,
+            "parameter_changes": parameter_changes,
+            "purpose": purpose,
+        }))
+        if (
+            created.get("contract_version") != "strategy_research_variant.v1"
+            or created.get("parent_strategy_id") != strategy_id
+            or created.get("parent_manifest_sha256") != expected_parent_manifest_sha256
+            or created.get("purpose") != purpose
+            or created.get("status") != "stopped"
+            or type(created.get("candidate_strategy_id")) is not int
+            or created["candidate_strategy_id"] <= 0
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str(created.get("candidate_manifest_sha256") or "")
+            )
+            or (created.get("source_binding") or {}).get("parent_manifest_sha256")
+            != expected_parent_manifest_sha256
+            or (created.get("source_binding") or {}).get("variant_id")
+            != created.get("variant_id")
+            or (created.get("source_binding") or {}).get("version")
+            != "strategy_research_source_binding.v1"
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str((created.get("cost_receipt") or {}).get("policy_hash") or "")
+            )
+        ):
+            raise ValueError("BitPro research variant receipt mismatch")
+        return created
+
     def strategy_generate(self, *, prompt: str, symbol: str, timeframe: str) -> dict[str, Any]:
         self.last_tool_calls = []
         capabilities, health = self._preflight()
@@ -635,8 +734,17 @@ class BitProToolAdapter:
         maker_fee_bps: float | None = None,
         taker_fee_bps: float | None = None,
         slippage_bps: float | None = None,
+        verified_data_snapshot_id: str | None = None,
+        verified_data_manifest_sha256: str | None = None,
         idempotency_key: str = "",
     ) -> dict[str, Any]:
+        if bool(verified_data_snapshot_id) != bool(verified_data_manifest_sha256):
+            raise ValueError("incomplete verified data reference")
+        if verified_data_snapshot_id and (
+            not re.fullmatch(r"vbs_[0-9a-f]{64}", verified_data_snapshot_id)
+            or verified_data_snapshot_id != "vbs_" + str(verified_data_manifest_sha256)
+        ):
+            raise ValueError("invalid verified data reference")
         self.last_tool_calls = []
         capabilities, health = self._preflight()
         raw_job = _ensure_dict(
@@ -653,6 +761,8 @@ class BitProToolAdapter:
                     "maker_fee_bps": maker_fee_bps,
                     "taker_fee_bps": taker_fee_bps,
                     "slippage_bps": slippage_bps,
+                    "verified_data_snapshot_id": verified_data_snapshot_id,
+                    "verified_data_manifest_sha256": verified_data_manifest_sha256,
                     "idempotency_key": idempotency_key,
                 },
             )
@@ -1495,6 +1605,8 @@ def _post_payload(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
                 "maker_fee_bps": params.get("maker_fee_bps"),
                 "taker_fee_bps": params.get("taker_fee_bps"),
                 "slippage_bps": params.get("slippage_bps"),
+                "verified_data_snapshot_id": params.get("verified_data_snapshot_id"),
+                "verified_data_manifest_sha256": params.get("verified_data_manifest_sha256"),
                 "idempotency_key": params.get("idempotency_key"),
             }
         )
@@ -1729,6 +1841,33 @@ def _backtest_result_item(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _backtest_job_item(raw: dict[str, Any]) -> dict[str, Any]:
+    input_snapshot = raw.get("strategy_input_snapshot")
+    safe_input = None
+    if isinstance(input_snapshot, dict):
+        safe_input = {key: input_snapshot[key] for key in (
+            "schema_version", "hash", "strategy_id", "source_kind", "source_sha256",
+            "bundle_sha256", "manifest_sha256", "symbols", "timeframes",
+            "start_date", "end_date", "initial_capital", "cost_policy_hash",
+            "market_data_status", "comparison_eligible",
+        ) if key in input_snapshot}
+    data_binding = raw.get("verified_data_binding")
+    safe_binding = None
+    if (
+        isinstance(data_binding, dict)
+        and data_binding.get("version") == "verified_backtest_data.v2"
+    ):
+        entries = data_binding.get("entries")
+        if isinstance(entries, list) and all(isinstance(item, dict) for item in entries):
+            safe_binding = {
+                "version": "verified_backtest_data.v2",
+                "entries": [
+                    {key: item[key] for key in (
+                        "timeframe", "symbols", "start_ms", "end_ms",
+                        "verified_snapshot_id", "manifest_sha256", "source", "data_quality",
+                    ) if key in item}
+                    for item in entries
+                ],
+            }
     return _compact(
         {
             "job_id": _first_present(raw.get("job_id"), raw.get("id")),
@@ -1742,6 +1881,8 @@ def _backtest_job_item(raw: dict[str, Any]) -> dict[str, Any]:
             "error_message": raw.get("error_message") or raw.get("error"),
             "updated_at": raw.get("updated_at"),
             "resumable": raw.get("resumable"),
+            "verified_data_binding": safe_binding,
+            "strategy_input_snapshot": safe_input,
         }
     )
 
