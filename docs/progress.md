@@ -1,5 +1,11 @@
 # Progress Log
 
+## 原来源参数政策与可信行情首个真实回执 — 2026-09-23
+
+- BitPro PR #934/f8c83c84 的私有封存OHLCV组件经Actions35818928294上线；生产用固定OKX历史入口封存BTC永续2026-09-20 00:00–03:00 UTC的4根已收盘1H bar，内容ID`vbs_c191d8bc6d231715a4914757fbfe22faee1b31dd4cfe59223ff3c1af72c12917`，独立进程按相同manifest哈希复读4根成功。此为小范围真实行情输入证明，尚未接入可比回测。
+- BitPro PR #937/b912f372 经Actions35820589495上线；生产最新SHA为其后续主线提交，当前12项运行策略逐一回读`variant_creation_supported=true`且各有显式参数，#513按新1H DB脚本获得3项信号参数。发布前后12个原Paper实例ID、起点、running状态相同，成交数无回退；未创建生产研究候选。
+- 回测任务接线仍在开发：已在测试中复现已封存UTC行情与本地日期相差8小时及零预热误判可比，修复尚待整合验证。#511仍需真实tick/orderflow历史执行能力，不能用bar零交易替代调优结果。
+
 ## 全部运行策略来源清单刷新与受控加载器发布 — 2026-09-23
 
 - BitPro PR #932合并为ce885530，Actions35817508140成功，服务器部署SHA一致；生产Python3.10独立进程受控加载截面动量、动量追击和中期反转三份完整脚本，#446来源从`paper_fallback_unverified`转为`db_execution_unverified`。这是当前解析能力，不是历史执行证明。
