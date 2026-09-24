@@ -470,7 +470,7 @@ class AgentClientFactory(Protocol):
 
 
 THINKING_FRAMES: tuple[str, ...] = ("|", "/", "-", "\\")
-DEFAULT_REMOTE_API_URL = "http://47.79.36.92:3333"
+DEFAULT_REMOTE_API_URL = "http://64.83.43.61:3333"
 
 
 SLASH_COMMAND_HELP: tuple[tuple[str, str], ...] = (

@@ -17,6 +17,7 @@ from hypertrade.cli import (
     _slash_command_completion_matches,
     _strip_report_icons,
     configure_interactive_history,
+    configure_remote_login,
     handle_slash_command,
     main,
     render_backtest_result,
@@ -3405,7 +3406,7 @@ def test_welcome_banner_labels_local_vs_remote_runtime() -> None:
 
     class RemoteLikeClient(LocalLikeClient):
         class _Config:
-            api_url = "http://47.79.36.92:3333"
+            api_url = "http://64.83.43.61:3333"
 
         config = _Config()
 
@@ -3416,6 +3417,25 @@ def test_welcome_banner_labels_local_vs_remote_runtime() -> None:
     remote_out = StringIO()
     render_welcome_banner(client=RemoteLikeClient(), output=remote_out)
     rendered = remote_out.getvalue()
-    assert "REMOTE http://47.79.36.92:3333" in rendered
+    assert "REMOTE http://64.83.43.61:3333" in rendered
     assert "/research <目标>" in rendered
     assert "/paper best" in rendered
+
+
+def test_remote_login_defaults_to_tokyo2_without_overwriting_a_custom_url(
+    monkeypatch, tmp_path
+) -> None:
+    import hypertrade.cli as cli
+
+    monkeypatch.setattr(cli, "write_client_env", lambda _config: tmp_path / "client.env")
+    default_answers = iter(["", "", "test-password"])
+    default_config = configure_remote_login(
+        input_fn=lambda _prompt: next(default_answers), output=StringIO()
+    )
+    assert default_config.api_url == "http://64.83.43.61:3333"
+
+    custom_answers = iter(["https://custom.example/api", "", "test-password"])
+    custom_config = configure_remote_login(
+        input_fn=lambda _prompt: next(custom_answers), output=StringIO()
+    )
+    assert custom_config.api_url == "https://custom.example/api"

@@ -268,6 +268,12 @@
 - 演化扫描与诊断接入变体能力：`EvolutionService._scan` 读取并核验 `strategy_research_variant_policy`，解除多标的策略误判，并在诊断输出中透传 `variant_creation_supported` 与 `variant_policy_summary`；`tick` 准入前复核 `parent_manifest_sha256` 变动。
 - 专项测试 `tests/test_source_variant_avo.py` 覆盖政策暴露、越界拒绝、同源码异参不去重、同源码同参去重、变体回测与记忆键隔离；全量 `./scripts/check.sh`（前端 15 项、后端 1717 项 pytest、Ruff、mypy、build）全量验证通过。
 
+## 东京服务器迁移客户端默认地址 — 2026-09-24
+
+- CLI 与桌面端默认 API 地址改为东京服务器 2；桌面端历史旧默认地址会在读取时映射到新机，自定义地址保留。
+- 定向 CLI 测试 2 项、桌面端测试 9 项及构建通过；完整 `./scripts/check.sh` 的后端 1715 项、前端、Ruff 与 mypy 均通过。生产切换验收仍待新机服务启动后执行。原工作区已有未提交修改，本切片在独立 worktree 实施。
+- 目标服务完成数据同步和健康检查前不落地到 `main`，避免自动部署打断旧机正在承担的流量。
+
 ## 来源参数研究工具接入 — 2026-09-23
 
 - HyperTrade的BitPro连接器增加当前来源、授权参数政策及幂等停止态变体工具映射，并把封存行情ID/哈希传给回测任务；任务摘要只白名单输出来源/数据身份，不转发完整源码配置。身份不匹配与无效基线参数在外部写请求前拒绝。

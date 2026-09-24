@@ -15,7 +15,7 @@ import {
 import { KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   checkConnection,
-  DEFAULT_API_BASE,
+  resolveSavedApiBase,
   hideWindow,
   runAgent,
   setPanelOpen,
@@ -39,7 +39,7 @@ function App() {
   const [panelOpen, setPanelOpenState] = useState(browserPreview);
   const [status, setStatus] = useState<RuntimeStatus>("connecting");
   const [apiBase, setApiBase] = useState(
-    () => window.localStorage?.getItem("hypertrade.bot.apiBase") || DEFAULT_API_BASE
+    () => resolveSavedApiBase(window.localStorage?.getItem("hypertrade.bot.apiBase"))
   );
   const [draftBase, setDraftBase] = useState(apiBase);
   const [settingsOpen, setSettingsOpen] = useState(false);

@@ -677,6 +677,7 @@ live-order-intent counts.
 - Audited memory writes with disable/delete support.
 - React `/harness` and market summary UI.
 - Docker Compose and host Nginx deployment on ports `3333/3334`.
+- 东京服务器迁移后，CLI 与桌面端默认连接 `http://64.83.43.61:3333`；桌面端只将历史保存的旧默认地址映射到新地址，保留用户自定义 API 地址。
 - Sprint 03 strategy research and Backtrader backtest workflow with persisted Markdown/JSON reports.
 - Sprint 05 standalone hybrid CLI runtime with local AgentKernel mode and remote API mode.
 - Sprint 06 CLI slash commands for status, tools, runs, memory, strategy research, and backtests.
