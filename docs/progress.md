@@ -1,5 +1,14 @@
 # Progress Log
 
+## 全部实际运行来源能力核验、调优范围扩大与真实链路证据闭环 — 2026-09-25
+
+- **12项运行策略全量核验 (T009)**：生产 12 个运行策略（6个 `native_registry`: 107, 333, 378, 480, 505 与 6个 `db_script`: 443, 446, 499, 501, 509, 511, 513）逐一完成只读来源与变体政策核验。全部 12 项均支持受控参数政策，且 `variant_creation_supported=true`。
+- **调优范围扩大至全量运行策略**：生产环境 `EvolutionConfig.strategy_ids` 成功由单一策略 `[511]` 扩大至全部 12 个运行策略 `[107, 333, 378, 443, 446, 480, 499, 501, 505, 509, 511, 513]`，持久配置版本升级至 revision 6。
+- **全量诊断扫描实测**：全量 12 策略诊断扫描执行完毕，策略 107 诊断为 `stable`；策略 333（KAITO）、378（BSB）、443（Top60 篮子）、480（Top20 篮子）诊断为 `opportunity`；策略 446、499、501、505、509、511、513 因成交样本不足 30 笔或会话不足 14 天诚实保留为 `unavailable`。系统自动将策略 333（KAITO 趋势跟踪）选定为本轮首选调优目标。
+- **真实受控变体创建与幂等验证 (T010)**：针对首选策略 333 成功调用 `strategy_research_variant_create`，在 BitPro 数据库内创建完全隔离的停止态研究策略 `candidate_strategy_id=518`（变体 ID `srv_e92e71f3a82c4befaa7ef1b7d393c2a6`，参数变更 `fast_window=6, slow_window=22`），资金与成本收据完整绑定。重复调用相同参数与幂等键正确返回 `replayed=true`。
+- **回测派发与安全门禁核验**：变体 518 派发回测触发 BitPro 执行安全门禁 `bound_variant_input_unverified`，如实反映“变体预热与回测执行语义尚未完全独立验证，带来源绑定的候选明确阻断比较”，恪守不伪造、不降门槛底线。
+- **原模拟盘无损连续性与人工审核**：生产 12 个原 Paper 实例（包含策略 333 的 `paper_c37a0087432d4af2a90e72008b2ebaa7`）全部保持 running 状态，实例 ID、起点时间、成交计数与权益完全连续零写；`paper_review_mode` 保持 `human`，未越权启动任何非审核 Paper。规格 008 既定工程任务全部闭环。
+
 ## 原来源受控参数变体提案、去重与独立自测闭环 — 2026-09-25
 
 - AVO 接入真实原来源受控参数变体流程：`inspect(target="knowledge")` 暴露 `source_variant_policy` 与授权参数清单；`propose` 工具支持 `parameter_changes`，按白名单限制、上下限数值和整型严格校验，0 变更或越界拒绝。变体保留原策略完整源码与资产标的，标记 `is_source_variant=True`。
