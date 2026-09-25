@@ -1,5 +1,14 @@
 # Progress Log
 
+## 原来源受控参数变体提案、去重与独立自测闭环 — 2026-09-25
+
+- AVO 接入真实原来源受控参数变体流程：`inspect(target="knowledge")` 暴露 `source_variant_policy` 与授权参数清单；`propose` 工具支持 `parameter_changes`，按白名单限制、上下限数值和整型严格校验，0 变更或越界拒绝。变体保留原策略完整源码与资产标的，标记 `is_source_variant=True`。
+- 修复同源码不同参数变体去重缺陷：去重键与 attempt_id 绑定 `parent_manifest_sha256` 及规范化参数变更字典，相同源码不同参数变体生成独立候选，相同参数变体返回 `duplicate: True` 并复用既有候选。
+- 自测与回测执行对接受控变体接口：`ARCSelfTestService.run` 对变体跳过单币 smoke 校验，调用 `strategy_research_variant_create` 建立停止态研究变体（`purpose="candidate"` / `"baseline"`），零写原策略与原模拟盘；通过新 `candidate_strategy_id` 派发回测，正确绑定成本收据与同窗回测窗口。
+- 演化记忆深度绑定变体身份：`evolution_memory` 的 `experiment_key` 与 `_entry` clean_spec 纳入 `parent_manifest_sha256`、`parameter_changes` 与多标的 `symbols`，彻底隔离同源码异参实验，保留历史 unknown 成本与版本边界。
+- 演化扫描与诊断接入变体能力：`EvolutionService._scan` 读取并核验 `strategy_research_variant_policy`，解除多标的策略误判，并在诊断输出中透传 `variant_creation_supported` 与 `variant_policy_summary`；`tick` 准入前复核 `parent_manifest_sha256` 变动。
+- 专项测试 `tests/test_source_variant_avo.py` 覆盖政策暴露、越界拒绝、同源码异参不去重、同源码同参去重、变体回测与记忆键隔离；全量 `./scripts/check.sh`（前端 15 项、后端 1717 项 pytest、Ruff、mypy、build）全量验证通过。
+
 ## 来源参数研究工具接入 — 2026-09-23
 
 - HyperTrade的BitPro连接器增加当前来源、授权参数政策及幂等停止态变体工具映射，并把封存行情ID/哈希传给回测任务；任务摘要只白名单输出来源/数据身份，不转发完整源码配置。身份不匹配与无效基线参数在外部写请求前拒绝。
