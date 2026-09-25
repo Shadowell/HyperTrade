@@ -37,6 +37,10 @@ _SPEC = {
     "direction",
     "tunable_parameters",
     "risk_overlays",
+    "is_source_variant",
+    "parent_strategy_id",
+    "parent_manifest_sha256",
+    "parameter_changes",
 }
 
 
@@ -51,15 +55,19 @@ def experiment_key(
     windows: ResearchWindowsV1,
 ) -> str:
     # Same code on a different instrument/window/capital is a different experiment.
-    return _digest(
-        {
-            "code": code_sha256,
-            "symbol": spec.get("symbol"),
-            "timeframe": spec.get("timeframe"),
-            "capital": str(Decimal(str(capital)).normalize()),
-            "development": [str(d) for d in windows.window("development")],
-        }
-    )
+    identity: dict[str, Any] = {
+        "code": code_sha256,
+        "symbol": spec.get("symbol"),
+        "symbols": sorted(spec["symbols"]) if isinstance(spec.get("symbols"), list) else None,
+        "timeframe": spec.get("timeframe"),
+        "capital": str(Decimal(str(capital)).normalize()),
+        "development": [str(d) for d in windows.window("development")],
+    }
+    if spec.get("parent_manifest_sha256"):
+        identity["parent_manifest_sha256"] = str(spec["parent_manifest_sha256"])
+    if spec.get("parameter_changes") is not None:
+        identity["parameter_changes"] = spec["parameter_changes"]
+    return _digest(identity)
 
 
 def _entry(
@@ -120,7 +128,7 @@ def _entry(
             or any(not isinstance(item, str) or not item or len(item) > 100 for item in declared)
         ):
             raise ValueError("invalid_spec")
-    for key in ("tunable_parameters", "risk_overlays"):
+    for key in ("tunable_parameters", "risk_overlays", "parameter_changes"):
         # Numeric parameter maps only; source comments/config/runtime are never context.
         if key in clean_spec:
             values = clean_spec[key]
@@ -133,13 +141,18 @@ def _entry(
     if not capital.is_finite() or capital <= 0:
         raise ValueError("invalid_capital")
     # Use the actual receipt window, not a guessed reconstruction of its policy.
-    identity = {
+    identity: dict[str, Any] = {
         "code": code,
         "symbol": spec.get("symbol"),
+        "symbols": sorted(spec["symbols"]) if isinstance(spec.get("symbols"), list) else None,
         "timeframe": timeframe,
         "capital": str(capital.normalize()),
         "development": [str(start), str(end)],
     }
+    if spec.get("parent_manifest_sha256"):
+        identity["parent_manifest_sha256"] = str(spec["parent_manifest_sha256"])
+    if spec.get("parameter_changes") is not None:
+        identity["parameter_changes"] = spec["parameter_changes"]
     cost_hash = metrics.get("cost_policy_hash")
     cost_hash = (
         cost_hash

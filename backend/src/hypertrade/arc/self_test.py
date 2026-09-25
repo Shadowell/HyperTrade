@@ -50,6 +50,16 @@ class SelfTestClient(Protocol):
         idempotency_key: str = "",
     ) -> dict[str, Any]: ...
 
+    def strategy_research_variant_create(
+        self,
+        *,
+        strategy_id: int,
+        expected_parent_manifest_sha256: str,
+        idempotency_key: str,
+        parameter_changes: dict[str, int | float],
+        purpose: str = "candidate",
+    ) -> dict[str, Any]: ...
+
     def backtest_start_job(
         self,
         *,
@@ -269,34 +279,60 @@ class ARCSelfTestService:
                 scope_label=scope_label_from_symbols(symbols) if len(symbols) > 1 else None,
             )
 
-        try:
-            validated = client.strategy_validate_code(
-                script_content=attempt.strategy_code,
-                idempotency_key=validate_key,
-                symbols=symbols,
-                timeframe=timeframe,
-            )
-        except Exception as exc:
-            return SelfTestResult(
-                passed=False,
-                validation_id=None,
-                bitpro_strategy_id=None,
-                backtest_id=None,
-                reasons=[f"bitpro_strategy_validate_failed:{type(exc).__name__}"],
-                message=str(exc)[:200],
-            )
-        if isinstance(validated, dict) and validated.get("status") not in {None, "ok"}:
-            return SelfTestResult(
-                passed=False,
-                validation_id=None,
-                bitpro_strategy_id=None,
-                backtest_id=None,
-                reasons=["bitpro_strategy_validate_rejected"],
-                message=str(validated)[:200],
-            )
+        is_source_variant = attempt.strategy_spec.get("is_source_variant") is True
+        if not is_source_variant:
+            try:
+                validated = client.strategy_validate_code(
+                    script_content=attempt.strategy_code,
+                    idempotency_key=validate_key,
+                    symbols=symbols,
+                    timeframe=timeframe,
+                )
+            except Exception as exc:
+                return SelfTestResult(
+                    passed=False,
+                    validation_id=None,
+                    bitpro_strategy_id=None,
+                    backtest_id=None,
+                    reasons=[f"bitpro_strategy_validate_failed:{type(exc).__name__}"],
+                    message=str(exc)[:200],
+                )
+            if isinstance(validated, dict) and validated.get("status") not in {None, "ok"}:
+                return SelfTestResult(
+                    passed=False,
+                    validation_id=None,
+                    bitpro_strategy_id=None,
+                    backtest_id=None,
+                    reasons=["bitpro_strategy_validate_rejected"],
+                    message=str(validated)[:200],
+                )
 
+        strategy_id: int | None = None
         try:
-            if attempt.bitpro_strategy_id is not None:
+            if is_source_variant:
+                if attempt.bitpro_strategy_id is not None:
+                    existing_id = _as_int(attempt.bitpro_strategy_id)
+                    if existing_id is None or existing_id <= 0:
+                        raise ValueError("invalid existing strategy identity")
+                    existing = client.strategy_get(strategy_id=existing_id)
+                    created = existing
+                    strategy_id = existing_id
+                else:
+                    parent_id = int(attempt.strategy_spec["parent_strategy_id"])
+                    parent_sha = str(attempt.strategy_spec["parent_manifest_sha256"])
+                    param_changes = dict(attempt.strategy_spec.get("parameter_changes") or {})
+                    is_baseline_attempt = attempt.attempt_id.startswith("baseline_")
+                    created = client.strategy_research_variant_create(
+                        strategy_id=parent_id,
+                        expected_parent_manifest_sha256=parent_sha,
+                        idempotency_key=create_key,
+                        parameter_changes=param_changes,
+                        purpose="baseline" if is_baseline_attempt else "candidate",
+                    )
+                    strategy_id = _strategy_id(created)
+                    if strategy_id is None:
+                        strategy_id = _as_int(created.get("candidate_strategy_id"))
+            elif attempt.bitpro_strategy_id is not None:
                 existing_id = _as_int(attempt.bitpro_strategy_id)
                 if existing_id is None or existing_id <= 0:
                     raise ValueError("invalid existing strategy identity")
@@ -314,6 +350,7 @@ class ARCSelfTestService:
                         reasons=["bitpro_existing_strategy_mismatch"],
                     )
                 created = existing
+                strategy_id = existing_id
             else:
                 created = client.strategy_create(
                     name=strategy_name,
@@ -333,13 +370,14 @@ class ARCSelfTestService:
                                     {"_freeze_research_costs": True, "market_type": "swap"}
                                     if goal.paper_review_required
                                     else {}
-                                ),
+                                 ),
                             }
                         }
                         if "baseline_config" in attempt.strategy_spec or goal.paper_review_required
                         else {}
                     ),
                 )
+                strategy_id = _strategy_id(created)
         except Exception as exc:
             return SelfTestResult(
                 passed=False,
@@ -349,7 +387,6 @@ class ARCSelfTestService:
                 reasons=[f"bitpro_strategy_create_failed:{type(exc).__name__}"],
                 message=str(exc)[:200],
             )
-        strategy_id = _strategy_id(created)
         if strategy_id is None:
             return SelfTestResult(
                 passed=False,

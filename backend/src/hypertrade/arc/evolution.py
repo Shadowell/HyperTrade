@@ -393,6 +393,21 @@ class EvolutionService:
                     != context["baseline"]["strategy_spec"]["baseline_config"]
                 ):
                     return self._save_cycle(cycle_id, "source_changed", payload)
+                client_obj = self._client(config)
+                if context.get("variant_policy") and hasattr(
+                    client_obj, "strategy_research_variant_policy"
+                ):
+                    try:
+                        curr_policy = client_obj.strategy_research_variant_policy(
+                            strategy_id=int(context["source_strategy_id"])
+                        )
+                        expected_sha = context["variant_policy"].get("parent_manifest_sha256")
+                        if curr_policy.get("parent_manifest_sha256") != expected_sha:
+                            payload["skip_reason"] = "原策略参数政策或清单在诊断期间发生变化"
+                            return self._save_cycle(cycle_id, "source_changed", payload)
+                    except Exception:
+                        payload["skip_reason"] = "无法再次核验原策略参数政策"
+                        return self._save_cycle(cycle_id, "source_changed", payload)
                 from hypertrade.arc.research_budget import admit
 
                 payload["budget"] = admit(
@@ -645,6 +660,17 @@ class EvolutionService:
                 timeframe = str(source_record.timeframe or row.timeframe or "")
                 if not timeframe:
                     raise ValueError("原策略周期未明确")
+                variant_policy = None
+                if hasattr(client, "strategy_research_variant_policy"):
+                    try:
+                        variant_policy = client.strategy_research_variant_policy(
+                            strategy_id=int(sid)
+                        )
+                    except Exception:
+                        variant_policy = None
+                is_source_variant = bool(
+                    variant_policy and variant_policy.get("variant_creation_supported")
+                )
                 baseline = ARCCandidateAttemptV1(
                     attempt_id="baseline_" + str(sid),
                     candidate_id="baseline_" + str(sid),
@@ -654,6 +680,15 @@ class EvolutionService:
                         **({"symbols": symbols} if len(symbols) > 1 else {"symbol": symbols[0]}),
                         "timeframe": timeframe,
                         "baseline_config": baseline_config(source, config.paper_capital),
+                        **(
+                            {
+                                "is_source_variant": True,
+                                "parent_strategy_id": variant_policy["parent_strategy_id"],
+                                "parent_manifest_sha256": variant_policy["parent_manifest_sha256"],
+                            }
+                            if is_source_variant and variant_policy
+                            else {}
+                        ),
                     },
                 )
                 context = {
@@ -684,8 +719,20 @@ class EvolutionService:
                         + "用成交与研究记忆判断信号、退出和成本方面的改进方向。"
                     ),
                 }
+                if is_source_variant and variant_policy:
+                    context["variant_policy"] = variant_policy
                 diagnostic["order_sample_count"] = len(fills)
                 diagnostic["source_code_sha256"] = context["source_code_sha256"]
+                diagnostic["variant_creation_supported"] = is_source_variant
+                if variant_policy:
+                    diagnostic["variant_policy_summary"] = {
+                        "supported": is_source_variant,
+                        "authorized_parameters_count": len(
+                            variant_policy.get("authorized_parameters", [])
+                        ),
+                        "parent_strategy_id": variant_policy.get("parent_strategy_id"),
+                        "parent_manifest_sha256": variant_policy.get("parent_manifest_sha256"),
+                    }
                 if chosen is None or rank(context) < rank(chosen):
                     chosen = context
             except Exception as exc:

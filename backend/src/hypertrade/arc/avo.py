@@ -95,8 +95,12 @@ _PARAMETERS = {
                     "additionalProperties": False,
                 },
             },
+            "parameter_changes": {
+                "type": "object",
+                "additionalProperties": {"type": "number"},
+            },
         },
-        "required": ["hypothesis", "family_key", "direction", "parameter_bounds"],
+        "required": ["hypothesis"],
         "additionalProperties": False,
     },
     "develop": {
@@ -320,7 +324,7 @@ def _perform(
         return {"research_finished": True, "reason": arguments["reason"]}
     if name == "inspect":
         if arguments["target"] == "knowledge":
-            return {
+            res: dict[str, Any] = {
                 "families": [
                     {
                         "key": f.key,
@@ -330,6 +334,9 @@ def _perform(
                     for f in FAMILIES
                 ]
             }
+            if goal.evolution_context and goal.evolution_context.get("variant_policy"):
+                res["source_variant_policy"] = goal.evolution_context["variant_policy"]
+            return res
         if arguments["target"] == "candidate":
             candidate = _candidate(controller, arguments.get("attempt_id", ""))
             return {
@@ -350,11 +357,126 @@ def _perform(
             raise ValueError(
                 "candidate budget exhausted; inspect/develop/finish an existing candidate"
             )
+        variant_policy = (goal.evolution_context or {}).get("variant_policy")
+        is_source_variant_proposal = "parameter_changes" in arguments or (
+            bool(variant_policy and variant_policy.get("variant_creation_supported"))
+            and "family_key" not in arguments
+        )
         bound_hypothesis = None
-        if goal.evolution_context:
+        if goal.evolution_context and (
+            arguments.get("evolution_hypothesis") or not is_source_variant_proposal
+        ):
             bound_hypothesis = bind_hypothesis(
                 arguments, goal.evolution_context, controller.projection.avo.get("development", {})
             )
+        if is_source_variant_proposal:
+            if not variant_policy or not variant_policy.get("variant_creation_supported"):
+                raise ValueError("source variant policy unavailable or not supported")
+            param_changes = arguments.get("parameter_changes")
+            if not isinstance(param_changes, dict) or not param_changes:
+                raise ValueError("parameter_changes must be a non-empty mapping")
+            auth_params = {p["name"]: p for p in variant_policy.get("authorized_parameters", [])}
+            for p_name, p_val in param_changes.items():
+                if p_name not in auth_params:
+                    raise ValueError(f"parameter '{p_name}' is not authorized for variation")
+                p_info = auth_params[p_name]
+                if not math.isfinite(p_val):
+                    raise ValueError(f"parameter '{p_name}' value must be finite")
+                p_min = p_info.get("minimum", p_info.get("min", -float("inf")))
+                p_max = p_info.get("maximum", p_info.get("max", float("inf")))
+                if not (p_min <= p_val <= p_max):
+                    raise ValueError(
+                        f"parameter '{p_name}' value {p_val} out of bounds [{p_min}, {p_max}]"
+                    )
+                if p_info.get("type") == "int" and int(p_val) != p_val:
+                    raise ValueError(f"parameter '{p_name}' requires integer value")
+            parent_baseline = (goal.evolution_context or {}).get("baseline") or {}
+            baseline_spec = parent_baseline.get("strategy_spec", {})
+            current_params = (
+                baseline_spec.get("tunable_parameters")
+                or baseline_spec.get("baseline_config")
+                or {}
+            )
+            diff_found = False
+            for p_name, p_val in param_changes.items():
+                curr = current_params.get(p_name)
+                if curr is None or curr != p_val:
+                    diff_found = True
+                    break
+            if not diff_found:
+                raise ValueError("parameter optimization must change at least one source parameter")
+            parent_manifest_sha256 = variant_policy["parent_manifest_sha256"]
+            variant_fingerprint = hashlib.sha256(
+                f"{parent_manifest_sha256}:{json.dumps(param_changes, sort_keys=True)}".encode()
+            ).hexdigest()
+            for old in controller.projection.attempts:
+                if (
+                    old.strategy_spec.get("is_source_variant")
+                    and old.strategy_spec.get("parent_manifest_sha256") == parent_manifest_sha256
+                    and old.strategy_spec.get("parameter_changes") == param_changes
+                ):
+                    return {
+                        "attempt_id": old.attempt_id,
+                        "duplicate": True,
+                        "variant_fingerprint": variant_fingerprint,
+                    }
+            merged_config = dict(baseline_spec.get("baseline_config") or {})
+            merged_config.update(param_changes)
+            merged_tunable = dict(baseline_spec.get("tunable_parameters") or {})
+            merged_tunable.update(param_changes)
+            candidate = ARCCandidateAttemptV1(
+                attempt_id=f"att_avo_{variant_fingerprint[:24]}",
+                candidate_id=f"cand_avo_{variant_fingerprint[:24]}",
+                hypothesis=arguments["hypothesis"],
+                strategy_code=parent_baseline.get("strategy_code", ""),
+                strategy_spec={
+                    **baseline_spec,
+                    "is_source_variant": True,
+                    "parent_strategy_id": variant_policy["parent_strategy_id"],
+                    "parent_manifest_sha256": parent_manifest_sha256,
+                    "parameter_changes": param_changes,
+                    "tunable_parameters": merged_tunable,
+                    "baseline_config": merged_config,
+                    "variation_operator": "avo",
+                },
+            )
+            code_hash = hashlib.sha256(candidate.strategy_code.encode()).hexdigest()
+            repeated = []
+            if goal.evolution_context and goal.research_windows:
+                key = experiment_key(
+                    code_hash,
+                    candidate.strategy_spec,
+                    goal.paper_initial_equity,
+                    goal.research_windows,
+                )
+                repeated = [
+                    entry["memory_id"]
+                    for entry in goal.evolution_context.get("memory", [])
+                    if entry.get("experiment_key") == key
+                ]
+                reason = arguments.get("repeat_reason", "").strip()
+                if repeated and len(reason) < 12:
+                    raise ValueError(
+                        "identical archived experiment; change the hypothesis/parameters or "
+                        "provide repeat_reason for an intentional, budgeted replication"
+                    )
+                if repeated:
+                    candidate.strategy_spec["repeat_reason"] = reason
+                    candidate.strategy_spec["repeated_memory_ids"] = repeated
+            if bound_hypothesis:
+                candidate.strategy_spec["evolution_hypothesis"] = bound_hypothesis
+            controller.apply_event(
+                "candidate_proposed", {"attempt": candidate.model_dump(mode="json")}
+            )
+            return {
+                "attempt_id": candidate.attempt_id,
+                "code_sha256": code_hash,
+                "variant_fingerprint": variant_fingerprint,
+                "repeated_memory_ids": repeated,
+            }
+        for req_field in ("family_key", "direction", "parameter_bounds"):
+            if req_field not in arguments:
+                raise ValueError(f"missing required property: {req_field}")
         parent = goal.feedback_parent
         baseline_spec = (parent or {}).get("baseline", {}).get("strategy_spec", {})
         if parent and (
