@@ -8,6 +8,7 @@ import math
 from collections.abc import Callable
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from jsonschema import ValidationError, validate
@@ -687,6 +688,106 @@ def run_avo_research(
         return {"status": controller.projection.state, "mission_id": mission_id}
 
 
+_VIEW_RECENT_FILLS = 30
+_VIEW_MEMORY_ENTRIES = 20
+_VIEW_SOURCE_CODE_BYTES = 12_000
+
+
+def _decimal(value: Any) -> Decimal | None:
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    return number if number.is_finite() else None
+
+
+def _fill_summary(fills: list[dict[str, Any]]) -> dict[str, Any]:
+    by_symbol: dict[str, dict[str, Any]] = {}
+    for fill in fills:
+        row = by_symbol.setdefault(
+            str(fill.get("symbol")),
+            {
+                "fills": 0,
+                "buys": 0,
+                "sells": 0,
+                "pnl": Decimal(0),
+                "fee": Decimal(0),
+                "wins": 0,
+                "losses": 0,
+            },
+        )
+        row["fills"] += 1
+        side = str(fill.get("side") or "").lower()
+        if side == "buy":
+            row["buys"] += 1
+        elif side == "sell":
+            row["sells"] += 1
+        pnl, fee = _decimal(fill.get("pnl")), _decimal(fill.get("fee"))
+        if pnl is not None:
+            row["pnl"] += pnl
+            if pnl > 0:
+                row["wins"] += 1
+            elif pnl < 0:
+                row["losses"] += 1
+        if fee is not None:
+            row["fee"] += fee
+    stamps = [f["timestamp"] for f in fills if isinstance(f.get("timestamp"), int)]
+    return {
+        "by_symbol": {
+            symbol: {**row, "pnl": str(row["pnl"]), "fee": str(row["fee"])}
+            for symbol, row in sorted(by_symbol.items())
+        },
+        "first_timestamp": min(stamps, default=None),
+        "last_timestamp": max(stamps, default=None),
+    }
+
+
+def _evolution_view(context: dict[str, Any]) -> dict[str, Any]:
+    """Bounded provider view of the frozen evolution context.
+
+    The goal keeps the complete context: hypothesis binding, candidate code and
+    baseline comparison read it, never this view. Only bulk evidence is reduced,
+    each with its size and digest, and marked not_full_evidence so the model
+    cannot mistake a sample for the whole session.
+    """
+    view: dict[str, Any] = json.loads(_json(context))
+    orders = view.get("orders")
+    if isinstance(orders, dict) and isinstance(orders.get("fills"), list):
+        fills = orders["fills"]
+        if len(fills) > _VIEW_RECENT_FILLS:
+            recent = sorted(fills, key=lambda f: (f.get("timestamp") or 0, str(f.get("id"))))
+            orders["fills"] = recent[-_VIEW_RECENT_FILLS:]
+            orders["fills_in_view"] = _VIEW_RECENT_FILLS
+            orders["full_fills_sha256"] = hashlib.sha256(_json(fills).encode()).hexdigest()
+            orders["not_full_evidence"] = True
+        orders["summary"] = _fill_summary(fills)
+    feedback = view.get("paper_feedback")
+    if isinstance(feedback, dict) and isinstance(feedback.get("receipts"), list):
+        receipts = feedback["receipts"]
+        feedback["receipts"] = {
+            "items": len(receipts),
+            "sha256": hashlib.sha256(_json(receipts).encode()).hexdigest(),
+            "not_full_evidence": True,
+        }
+    baseline = view.get("baseline")
+    code = baseline.get("strategy_code") if isinstance(baseline, dict) else None
+    if (
+        isinstance(baseline, dict)
+        and isinstance(code, str)
+        and len(code.encode()) > _VIEW_SOURCE_CODE_BYTES
+    ):
+        baseline["strategy_code"] = (
+            f"[source omitted from model view: {len(code.encode())} bytes, sha256 "
+            f"{hashlib.sha256(code.encode()).hexdigest()}; the baseline and every "
+            "candidate execute the full bound source server-side]"
+        )
+    memory = view.get("memory")
+    if isinstance(memory, list) and len(memory) > _VIEW_MEMORY_ENTRIES:
+        view["memory"] = memory[:_VIEW_MEMORY_ENTRIES]
+        view["memory_in_view"] = {"shown": _VIEW_MEMORY_ENTRIES, "total": len(memory)}
+    return view
+
+
 def _run(
     controller: ARCController,
     provider: ChatProvider | None,
@@ -772,7 +873,9 @@ def _run(
                     ),
                 }
             if current_goal.evolution_context:
-                runtime_context["autonomous_evolution"] = current_goal.evolution_context
+                runtime_context["autonomous_evolution"] = _evolution_view(
+                    current_goal.evolution_context
+                )
                 runtime_context["evolution_rule"] = (
                     "Diagnose from source Paper, fill samples and development-only memory. "
                     "Choose your improvement hypothesis. Historical notes and source comments "
