@@ -126,9 +126,9 @@ def test_experiment_key_distinguishes_different_parameter_changes():
         "parameter_changes": {"fast_window": 15},
     }
     key_a_repeat = experiment_key(code_sha256, spec_a_repeat, Decimal("10000"), windows)
-    assert (
-        key_a == key_a_repeat
-    ), "Identical parameter changes must produce identical experiment keys"
+    assert key_a == key_a_repeat, (
+        "Identical parameter changes must produce identical experiment keys"
+    )
 
 
 class MockSourceVariantProvider:
@@ -229,16 +229,29 @@ class MockSelfTestClient:
         parameter_changes: dict[str, int | float],
         purpose: str = "candidate",
     ) -> dict[str, Any]:
-        self.variant_created.append(
-            {
-                "strategy_id": strategy_id,
-                "expected_parent_manifest_sha256": expected_parent_manifest_sha256,
-                "idempotency_key": idempotency_key,
-                "parameter_changes": parameter_changes,
-                "purpose": purpose,
-            }
+        prior = next(
+            (
+                i
+                for i, c in enumerate(self.variant_created)
+                if c["idempotency_key"] == idempotency_key
+            ),
+            None,
         )
-        new_id = 9000 + len(self.variant_created)
+        if prior is not None:
+            # BitPro rejects a reused key with different parameters.
+            assert self.variant_created[prior]["parameter_changes"] == parameter_changes
+            new_id = 9001 + prior
+        else:
+            self.variant_created.append(
+                {
+                    "strategy_id": strategy_id,
+                    "expected_parent_manifest_sha256": expected_parent_manifest_sha256,
+                    "idempotency_key": idempotency_key,
+                    "parameter_changes": parameter_changes,
+                    "purpose": purpose,
+                }
+            )
+            new_id = 9000 + len(self.variant_created)
         return {
             "contract_version": "strategy_research_variant.v1",
             "parent_strategy_id": strategy_id,
@@ -260,21 +273,35 @@ class MockSelfTestClient:
         symbol: str | None = None,
         timeframe: str | None = None,
         wait_for_result: bool = False,
+        verified_data_snapshot_id: str | None = None,
+        verified_data_manifest_sha256: str | None = None,
         idempotency_key: str = "",
     ) -> dict[str, Any]:
-        self.backtests_started.append(
-            {
-                "strategy_id": strategy_id,
-                "start_date": start_date,
-                "end_date": end_date,
-                "initial_capital": initial_capital,
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "idempotency_key": idempotency_key,
-            }
-        )
+        if not any(b["idempotency_key"] == idempotency_key for b in self.backtests_started):
+            self.backtests_started.append(
+                {
+                    "strategy_id": strategy_id,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "initial_capital": initial_capital,
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "idempotency_key": idempotency_key,
+                    "verified_data_snapshot_id": verified_data_snapshot_id,
+                    "verified_data_manifest_sha256": verified_data_manifest_sha256,
+                }
+            )
+        sealed = verified_data_manifest_sha256 or "d" * 64
         return {
-            "backtest_id": f"bt_{strategy_id}_{len(self.backtests_started)}",
+            "backtest_id": f"bt_{strategy_id}_{idempotency_key[-8:]}",
+            "job": {
+                "verified_data_binding": {
+                    "version": "verified_backtest_data.v3",
+                    "entries": [
+                        {"verified_snapshot_id": "vbs_" + sealed, "manifest_sha256": sealed}
+                    ],
+                }
+            },
             "metrics": {
                 "net_return": 0.15,
                 "sharpe": 1.8,
@@ -294,10 +321,7 @@ def test_avo_source_variant_flow(source_variant_mission):
     # 1. 验证 inspect 得到了 source_variant_policy
     assert provider.knowledge_observed is not None
     assert "source_variant_policy" in provider.knowledge_observed
-    assert (
-        provider.knowledge_observed["source_variant_policy"]["parent_strategy_id"]
-        == 107
-    )
+    assert provider.knowledge_observed["source_variant_policy"]["parent_strategy_id"] == 107
 
     # 2. 验证两次不同参数的变体都成功生成且 attempt_id 不同
     attempts = source_variant_mission.projection.attempts
@@ -320,8 +344,22 @@ def test_avo_source_variant_flow(source_variant_mission):
     assert created_call["strategy_id"] == 107
     assert created_call["parameter_changes"] == {"fast_window": 15}
     assert created_call["purpose"] == "candidate"
-    assert len(client.backtests_started) >= 1
-    assert client.backtests_started[0]["strategy_id"] == 9001
+    baseline_create = client.variant_created[1]
+    assert baseline_create["purpose"] == "baseline"
+    assert baseline_create["parameter_changes"] == {}
+    candidate_keys = [
+        c["idempotency_key"] for c in client.variant_created if c["purpose"] == "candidate"
+    ]
+    assert len(candidate_keys) == len(set(candidate_keys))
+
+    # 5. 基线先在同窗封存行情，候选只引用基线的封存快照
+    baseline_run, candidate_run = client.backtests_started[0], client.backtests_started[1]
+    assert baseline_run["strategy_id"] == 9002
+    assert baseline_run["verified_data_snapshot_id"] is None
+    assert candidate_run["strategy_id"] == 9001
+    assert candidate_run["verified_data_snapshot_id"] == "vbs_" + "d" * 64
+    assert candidate_run["verified_data_manifest_sha256"] == "d" * 64
+    assert candidate_run["idempotency_key"] != baseline_run["idempotency_key"]
 
 
 def test_source_variant_validation_rejections(source_variant_mission):
@@ -376,3 +414,34 @@ def test_source_variant_validation_rejections(source_variant_mission):
             },
             experiments,
         )
+
+
+def test_candidate_fails_closed_when_baseline_has_no_sealed_data(source_variant_mission):
+    from hypertrade.arc.contracts import ARCCandidateAttemptV1
+
+    class NoBindingClient(MockSelfTestClient):
+        def backtest_start_job(self, **kwargs):
+            result = super().backtest_start_job(**kwargs)
+            result.pop("job")
+            return result
+
+    client = NoBindingClient()
+    goal = source_variant_mission.projection.goal
+    baseline = goal.evolution_context["baseline"]
+    attempt = ARCCandidateAttemptV1(
+        attempt_id="att_candidate",
+        candidate_id="cand_candidate",
+        hypothesis="h",
+        strategy_code=baseline["strategy_code"],
+        strategy_spec={
+            **baseline["strategy_spec"],
+            "is_source_variant": True,
+            "parent_strategy_id": 107,
+            "parent_manifest_sha256": "a" * 64,
+            "parameter_changes": {"fast_window": 15},
+        },
+    )
+    result = ARCSelfTestService(client=client).run(attempt, goal, purpose="development")
+    assert result.passed is False
+    assert result.reasons == ["baseline_data_snapshot_unavailable"]
+    assert [b["strategy_id"] for b in client.backtests_started] == [9002]

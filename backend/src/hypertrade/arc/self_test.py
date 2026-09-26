@@ -71,6 +71,8 @@ class SelfTestClient(Protocol):
         symbol: str | None = None,
         timeframe: str | None = None,
         wait_for_result: bool = False,
+        verified_data_snapshot_id: str | None = None,
+        verified_data_manifest_sha256: str | None = None,
         idempotency_key: str = "",
     ) -> dict[str, Any]: ...
 
@@ -166,6 +168,84 @@ def _number(metrics: dict[str, Any], *keys: str) -> float | None:
     return None
 
 
+def _experiment_scope(
+    goal: ARCGoalV1,
+    code: str,
+    symbols: list[str],
+    timeframe: str,
+    spec: dict[str, Any],
+    parameter_changes: dict[str, Any],
+) -> str:
+    identity = f"{goal.research_id}|{code}|{'|'.join(symbols)}|{timeframe}"
+    if spec.get("is_source_variant") is True:
+        # Variants share the parent's source; parameters are what distinguish them.
+        identity += "|variant|{}|{}".format(
+            spec.get("parent_manifest_sha256"),
+            json.dumps(parameter_changes, sort_keys=True, separators=(",", ":")),
+        )
+    return hashlib.sha256(identity.encode()).hexdigest()
+
+
+def _window_backtest_key(scope: str, purpose: str, start: date, end: date, goal: ARCGoalV1) -> str:
+    window_digest = hashlib.sha256(
+        f"{scope}|{purpose}|{start}|{end}|{goal.paper_initial_equity}".encode()
+    ).hexdigest()
+    return f"arc-window-{window_digest}"
+
+
+def _baseline_data_reference(
+    client: Any,
+    attempt: ARCCandidateAttemptV1,
+    goal: ARCGoalV1,
+    symbols: list[str],
+    timeframe: str,
+    purpose: str,
+    start: date,
+    end: date,
+) -> dict[str, str] | SelfTestResult:
+    spec = attempt.strategy_spec
+    scope = _experiment_scope(goal, attempt.strategy_code, symbols, timeframe, spec, {})
+    try:
+        created = client.strategy_research_variant_create(
+            strategy_id=int(spec["parent_strategy_id"]),
+            expected_parent_manifest_sha256=str(spec["parent_manifest_sha256"]),
+            idempotency_key=f"arc-selftest-create-{scope}",
+            parameter_changes={},
+            purpose="baseline",
+        )
+        baseline_id = _strategy_id(created) or _as_int(created.get("candidate_strategy_id"))
+        if baseline_id is None:
+            raise ValueError("baseline variant identity missing")
+        backtest = client.backtest_start_job(
+            strategy_id=baseline_id,
+            start_date=start.isoformat(),
+            end_date=end.isoformat(),
+            initial_capital=float(goal.paper_initial_equity),
+            symbol=symbols[0] if len(symbols) == 1 else None,
+            timeframe=timeframe,
+            wait_for_result=True,
+            idempotency_key=_window_backtest_key(scope, purpose, start, end, goal),
+        )
+        entries = ((backtest.get("job") or {}).get("verified_data_binding") or {}).get(
+            "entries"
+        ) or []
+        if len(entries) != 1:
+            raise ValueError("baseline sealed data binding missing")
+        return {
+            "verified_data_snapshot_id": str(entries[0]["verified_snapshot_id"]),
+            "verified_data_manifest_sha256": str(entries[0]["manifest_sha256"]),
+        }
+    except Exception as exc:
+        return SelfTestResult(
+            passed=False,
+            validation_id=None,
+            bitpro_strategy_id=None,
+            backtest_id=None,
+            reasons=["baseline_data_snapshot_unavailable"],
+            message=f"{type(exc).__name__}: {str(exc)[:180]}",
+        )
+
+
 def _as_int(value: Any) -> int | None:
     try:
         if value is None or isinstance(value, bool):
@@ -255,14 +335,21 @@ class ARCSelfTestService:
             goal.timeframes[0] if goal.timeframes else "1H"
         )
         scope = attempt.candidate_id
+        is_source_variant = attempt.strategy_spec.get("is_source_variant") is True
+        is_baseline_attempt = attempt.attempt_id.startswith("baseline_")
         if goal.paper_review_required:
             if not goal.research_id:
                 return SelfTestResult(
                     False, None, None, None, reasons=["research_identity_missing"]
                 )
-            scope = hashlib.sha256(
-                f"{goal.research_id}|{attempt.strategy_code}|{'|'.join(symbols)}|{timeframe}".encode()
-            ).hexdigest()
+            scope = _experiment_scope(
+                goal,
+                attempt.strategy_code,
+                symbols,
+                timeframe,
+                attempt.strategy_spec,
+                dict(attempt.strategy_spec.get("parameter_changes") or {}),
+            )
         create_key = f"arc-selftest-create-{scope}"
         backtest_key = f"arc-selftest-backtest-{scope}"
         validate_key = f"arc-selftest-validate-{scope}"
@@ -279,7 +366,6 @@ class ARCSelfTestService:
                 scope_label=scope_label_from_symbols(symbols) if len(symbols) > 1 else None,
             )
 
-        is_source_variant = attempt.strategy_spec.get("is_source_variant") is True
         if not is_source_variant:
             try:
                 validated = client.strategy_validate_code(
@@ -321,7 +407,6 @@ class ARCSelfTestService:
                     parent_id = int(attempt.strategy_spec["parent_strategy_id"])
                     parent_sha = str(attempt.strategy_spec["parent_manifest_sha256"])
                     param_changes = dict(attempt.strategy_spec.get("parameter_changes") or {})
-                    is_baseline_attempt = attempt.attempt_id.startswith("baseline_")
                     created = client.strategy_research_variant_create(
                         strategy_id=parent_id,
                         expected_parent_manifest_sha256=parent_sha,
@@ -370,7 +455,7 @@ class ARCSelfTestService:
                                     {"_freeze_research_costs": True, "market_type": "swap"}
                                     if goal.paper_review_required
                                     else {}
-                                 ),
+                                ),
                             }
                         }
                         if "baseline_config" in attempt.strategy_spec or goal.paper_review_required
@@ -422,10 +507,19 @@ class ARCSelfTestService:
         start = end - timedelta(days=90)
         if goal.research_windows is not None:
             start, end = goal.research_windows.window(purpose)
-            window_digest = hashlib.sha256(
-                f"{scope}|{purpose}|{start}|{end}|{goal.paper_initial_equity}".encode()
-            ).hexdigest()
-            backtest_key = f"arc-window-{window_digest}"
+            backtest_key = _window_backtest_key(scope, purpose, start, end, goal)
+        data_ref: dict[str, str] = {}
+        if is_source_variant and not is_baseline_attempt and goal.paper_review_required:
+            # BitPro compares a candidate only on its baseline's sealed data. The baseline
+            # uses the exact create/backtest keys its own attempt would, so the later
+            # baseline self-test replays this job instead of running a second one.
+            baseline_ref = _baseline_data_reference(
+                client, attempt, goal, symbols, timeframe, purpose, start, end
+            )
+            if isinstance(baseline_ref, SelfTestResult):
+                baseline_ref.bitpro_strategy_id = str(strategy_id)
+                return baseline_ref
+            data_ref = baseline_ref
         try:
             backtest = client.backtest_start_job(
                 strategy_id=strategy_id,
@@ -440,6 +534,7 @@ class ARCSelfTestService:
                 timeframe=timeframe,
                 wait_for_result=True,
                 idempotency_key=backtest_key,
+                **data_ref,
             )
         except Exception as exc:
             return SelfTestResult(

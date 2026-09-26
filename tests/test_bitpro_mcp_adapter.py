@@ -164,16 +164,24 @@ def test_source_preserving_research_tools_keep_manifest_and_idempotency_identity
     ]
 
 
-def test_backtest_bridge_passes_and_reads_sealed_data_identity_without_source_code() -> None:
+@pytest.mark.parametrize("version", ["verified_backtest_data.v2", "verified_backtest_data.v3"])
+def test_backtest_bridge_passes_and_reads_sealed_data_identity_without_source_code(
+    version: str,
+) -> None:
     seen: list[dict[str, Any]] = []
     digest = "b" * 64
     snapshot_id = "vbs_" + digest
-    binding = {"version": "verified_backtest_data.v2", "entries": [{
+    entry = {
         "timeframe": "1h", "symbols": ["BTC/USDT:USDT"],
         "start_ms": 1767225600000, "end_ms": 1767312000000,
         "verified_snapshot_id": snapshot_id, "manifest_sha256": digest,
         "source": "OKX public history-candles", "data_quality": "verified_primary",
-    }]}
+    }
+    binding: dict[str, Any] = {"version": version, "entries": [entry]}
+    if version.endswith("v3"):
+        entry["start_ms"] = 1767225600000 - 500 * 3_600_000
+        entry["trade_start_ms"] = 1767225600000
+        binding["warmup"] = {"bars": 500, "policy": "fixed_bars_v1"}
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v2/system/health":
