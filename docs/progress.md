@@ -1,5 +1,10 @@
 # Progress Log
 
+## 自进化研究模型与终态名额（规格014） — 2026-09-26
+
+- 规格013部署后回读：名额释放、#443首轮上下文46,982通过；但`codex/gpt-6-astra`返回HTTP 400（ChatGPT账号不支持），`gpt-5.6-sol`同样400，`gpt-5.5`为free套餐额度耗尽至2026-10-15。生产容器验证`deepseek-v4-flash`可正确发起`inspect`工具调用。
+- 新增`EvolutionConfig.research_provider`（默认codex），研究创建时冻结；模型失败消息附带脱敏后的HTTP状态与摘要；`avo_provider_unavailable`/`avo_no_candidate`在human模式也释放名额（冷却不变，未决动作等仍阻断）。
+
 ## Git 落地流程改为 PR — 2026-09-26
 
 - 按用户要求与 BitPro 对齐：`AGENTS.md` 不再允许直推 `main`，改为 `codex/<task>` 分支 → PR → 可合并后合并并删分支 → 以合并后的 `main` 触发部署 → 同步本地 `main`；仅用户明确要求紧急直推时例外。部署 workflow 本身未改动。
