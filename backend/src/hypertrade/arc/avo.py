@@ -13,7 +13,7 @@ from typing import Any
 
 from jsonschema import ValidationError, validate
 
-from hypertrade.agent.compaction import ContextBlocked, compact_request
+from hypertrade.agent.compaction import ContextBlocked, compact_request, sanitize_context
 from hypertrade.arc.adversarial import BlueTeamQuant
 from hypertrade.arc.contracts import ARCCandidateAttemptV1
 from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProjection
@@ -193,7 +193,19 @@ _STOP_MESSAGES = {
 
 
 class ResearchStopped(Exception):
-    pass
+    def __init__(self, reason: str, detail: str | None = None) -> None:
+        super().__init__(reason)
+        self.detail = detail
+
+
+def _provider_error(exc: Exception) -> str:
+    # Operator-visible cause; redacted with the same policy as provider input.
+    import httpx
+
+    if isinstance(exc, httpx.HTTPStatusError):
+        body = str(sanitize_context(exc.response.text))
+        return f"HTTP {exc.response.status_code} {body[:200]}"
+    return f"{type(exc).__name__}: {str(sanitize_context(str(exc)))[:200]}"
 
 
 def _json(value: Any) -> str:
@@ -679,10 +691,10 @@ def run_avo_research(
         try:
             _run(controller, provider, experiments or ARCSelfTestService(), check_owner)
         except ResearchStopped as exc:
-            controller.apply_event(
-                "operator_needed",
-                {"reason": str(exc), "message": _STOP_MESSAGES.get(str(exc), "研究需要人工检查")},
-            )
+            message = _STOP_MESSAGES.get(str(exc), "研究需要人工检查")
+            if exc.detail:
+                message += "：" + exc.detail
+            controller.apply_event("operator_needed", {"reason": str(exc), "message": message})
         except Exception:
             controller.apply_event("operator_needed", {"reason": "avo_runtime_interrupted"})
         return {"status": controller.projection.state, "mission_id": mission_id}
@@ -825,9 +837,11 @@ def _run(
                 selected=goal.provider_name, selected_model=goal.model_name
             )
         except Exception as exc:
-            raise ResearchStopped("avo_provider_unavailable") from exc
+            raise ResearchStopped("avo_provider_unavailable", _provider_error(exc)) from exc
     if provider is None:
-        raise ResearchStopped("avo_provider_unavailable")
+        raise ResearchStopped(
+            "avo_provider_unavailable", f"provider {goal.provider_name} is not configured"
+        )
     if not state.get("messages"):
         controller.apply_event("goal_compiled", {"goal": goal.model_dump(mode="json")})
         controller.apply_event(
@@ -949,7 +963,7 @@ def _run(
             except ContextBlocked as exc:
                 raise ResearchStopped("avo_context_budget_exhausted") from exc
             except Exception as exc:
-                raise ResearchStopped("avo_provider_unavailable") from exc
+                raise ResearchStopped("avo_provider_unavailable", _provider_error(exc)) from exc
             calls = [asdict(call) for call in response.tool_calls]
             seen_ids = {
                 event.payload.get("id")

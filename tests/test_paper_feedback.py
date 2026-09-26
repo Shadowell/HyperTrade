@@ -314,7 +314,7 @@ def test_settled_child_releases_next_day_but_unknown_child_keeps_blocking(outcom
     save_mission(parent)
     now = datetime(2026, 8, 15, tzinfo=UTC)
     result = check_paper_feedback(parent.mission_id, PaperClient(attempt), now)
-    if outcome in {"final_rejected", "development_exhausted"}:
+    if outcome in {"final_rejected", "development_exhausted", "early_stop"}:
         assert result["child_mission_id"] != child.mission_id
         assert len(list_mission_ids()) == 3
         assert (
