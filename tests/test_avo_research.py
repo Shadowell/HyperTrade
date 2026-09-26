@@ -834,3 +834,29 @@ def test_evolution_measures_revision_and_feeds_the_observation_to_next_turn(miss
     assert mission.projection.goal.budget.backtests_used == 2
     assert not mission.projection.avo.get("final_window_consumed")
     assert not mission.projection.paper_review
+
+
+def test_provider_http_error_is_recorded_for_operator_with_secrets_redacted(mission):
+    import httpx
+
+    class RejectingProvider:
+        name = "codex"
+        model = "gpt-6-astra"
+
+        def chat(self, messages, tools=None):
+            request = httpx.Request("POST", "https://provider.example/responses")
+            response = httpx.Response(
+                400,
+                request=request,
+                text='{"detail":"model not supported","api_key":"sk-live-secret"}',
+            )
+            raise httpx.HTTPStatusError("bad request", request=request, response=response)
+
+    run_avo_research(
+        mission.projection.mission_id, provider=RejectingProvider(), experiments=Experiments()
+    )
+    stop = mission.projection.events[-1]
+    assert stop.payload["reason"] == "avo_provider_unavailable"
+    assert "HTTP 400" in stop.payload["message"]
+    assert "model not supported" in stop.payload["message"]
+    assert "sk-live-secret" not in stop.payload["message"]
