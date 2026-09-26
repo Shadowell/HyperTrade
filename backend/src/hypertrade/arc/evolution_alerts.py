@@ -25,9 +25,14 @@ from hypertrade.db import Database
 ALERT_OPERATOR_BLOCKED = "evolution_blocked_needs_operator"
 ALERT_STALLED = "evolution_evidence_stalled"
 ALERT_CYCLES_ERRORING = "evolution_cycles_erroring"
+ALERT_SLOTS_BLOCKED = "evolution_research_slots_blocked"
 
 STALL_AFTER_HOURS = 72
 ERROR_STREAK = 3
+# Hourly cycles: six straight concurrency deferrals means the active slots are
+# held by research nobody is advancing, and no new research can start.
+SLOTS_BLOCKED_STREAK = 6
+_NON_SCAN_CYCLE_STATUSES = ("budget_admitted", "budget_denied", "meta_tuning")
 RETRY_AFTER_HOURS = 6
 REMIND_AFTER_HOURS = 24
 DELIVERY_RECEIPT_VERSION = "feishu_webhook.v1"
@@ -39,6 +44,7 @@ _LABELS = {
     ALERT_OPERATOR_BLOCKED: "存在需要人工处理的阻塞",
     ALERT_STALLED: "证据无法构建且已持续超过 72 小时",
     ALERT_CYCLES_ERRORING: "进化扫描周期连续报错",
+    ALERT_SLOTS_BLOCKED: "研究并发名额长期占满，新研究无法启动",
 }
 
 Poster = Callable[[str, dict[str, Any]], None]
@@ -245,6 +251,22 @@ def _desired_alerts(
             "tracking_only": False,
             "signature": ALERT_CYCLES_ERRORING,
         }
+    if len(cycle_rows) >= SLOTS_BLOCKED_STREAK and all(
+        str(row.get("status")) == "deferred" and row.get("budget_reason") == "concurrency_limit"
+        for row in cycle_rows[:SLOTS_BLOCKED_STREAK]
+    ):
+        desired[alert_id(ALERT_SLOTS_BLOCKED)] = {
+            "code": ALERT_SLOTS_BLOCKED,
+            "severity": "warning",
+            "strategy_id": None,
+            "message": (
+                f"进化调度最近 {SLOTS_BLOCKED_STREAK} 轮都因研究并发名额已满而推迟，"
+                "新研究无法启动\n下一步：在自主研究页面检查停在「需要人工介入」的进化任务，"
+                "处理或取消后名额才会释放；原模拟盘不受影响"
+            ),
+            "tracking_only": False,
+            "signature": ALERT_SLOTS_BLOCKED,
+        }
     return desired
 
 
@@ -359,12 +381,16 @@ def evolution_alerts_once(
     continuations = _alert_continuations(db, now)
     with db.session() as session:
         cycle_rows = [
-            {"id": row.id, "status": row.status}
+            {
+                "id": row.id,
+                "status": row.status,
+                "budget_reason": ((row.payload_json or {}).get("budget") or {}).get("reason"),
+            }
             for row in session.scalars(
                 select(EvolutionCycle)
-                .where(EvolutionCycle.status.not_in(["budget_admitted", "budget_denied"]))
+                .where(EvolutionCycle.status.not_in(_NON_SCAN_CYCLE_STATUSES))
                 .order_by(EvolutionCycle.created_at.desc())
-                .limit(ERROR_STREAK)
+                .limit(max(ERROR_STREAK, SLOTS_BLOCKED_STREAK))
             )
         ]
     desired = _desired_alerts(continuations, cycle_rows, now)

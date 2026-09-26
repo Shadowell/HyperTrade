@@ -7,7 +7,9 @@ from hypertrade.arc.evolution import EvolutionConfig
 from hypertrade.arc.evolution_alerts import (
     ALERT_CYCLES_ERRORING,
     ALERT_OPERATOR_BLOCKED,
+    ALERT_SLOTS_BLOCKED,
     ALERT_STALLED,
+    SLOTS_BLOCKED_STREAK,
     acknowledge_alert,
     alert_id,
     evolution_alerts_once,
@@ -68,14 +70,16 @@ def seed_continuation(
         )
 
 
-def seed_cycles(db: Database, statuses: list[tuple[str, datetime]]) -> None:
+def seed_cycles(
+    db: Database, statuses: list[tuple[str, datetime]], *, budget_reason: str | None = None
+) -> None:
     with db.session() as session:
         for index, (status, created) in enumerate(statuses):
             session.add(
                 EvolutionCycle(
                     id=f"cycle_{int(created.timestamp() * 1000)}_{index}",
                     status=status,
-                    payload_json={},
+                    payload_json={"budget": {"reason": budget_reason}} if budget_reason else {},
                     created_at=created,
                 )
             )
@@ -784,6 +788,37 @@ def test_cycle_error_streak_opens_critical_and_clears(db, webhook) -> None:
     seed_cycles(db, [("no_action", NOW)])
     cleared = evolution_alerts_once(db, now=NOW + timedelta(hours=1), post=post)
     assert cleared["resolved"] == 1
+
+
+def hourly(count: int, status: str = "deferred") -> list[tuple[str, datetime]]:
+    return [(status, NOW - timedelta(hours=count - index)) for index in range(count)]
+
+
+def test_concurrency_deferral_streak_opens_slots_alert_and_clears(db, webhook) -> None:
+    sent, post = webhook
+    seed_cycles(db, hourly(SLOTS_BLOCKED_STREAK - 1), budget_reason="concurrency_limit")
+    assert evolution_alerts_once(db, now=NOW, post=post)["opened"] == 0
+
+    seed_cycles(db, [("deferred", NOW)], budget_reason="concurrency_limit")
+    # A daily meta-tuning row is not a scan cycle and must not break the streak.
+    seed_cycles(db, [("meta_tuning", NOW + timedelta(minutes=5))])
+    opened = evolution_alerts_once(db, now=NOW + timedelta(minutes=10), post=post)
+    assert opened["opened"] == 1
+    alert = list_alerts(db)[0]
+    assert alert["code"] == ALERT_SLOTS_BLOCKED
+    assert alert["strategy_id"] is None
+    assert "需要人工介入" in alert["message"]
+    assert len(sent) == 1
+
+    seed_cycles(db, [("research_created", NOW + timedelta(hours=1))])
+    cleared = evolution_alerts_once(db, now=NOW + timedelta(hours=1, minutes=1), post=post)
+    assert cleared["resolved"] == 1
+
+
+def test_other_deferral_reasons_do_not_open_slots_alert(db, webhook) -> None:
+    _, post = webhook
+    seed_cycles(db, hourly(SLOTS_BLOCKED_STREAK), budget_reason="period_budget_exhausted")
+    assert evolution_alerts_once(db, now=NOW, post=post)["opened"] == 0
 
 
 def test_acknowledged_alerts_do_not_repage(db, webhook) -> None:
