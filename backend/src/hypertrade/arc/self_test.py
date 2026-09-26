@@ -71,6 +71,7 @@ class SelfTestClient(Protocol):
         symbol: str | None = None,
         timeframe: str | None = None,
         wait_for_result: bool = False,
+        timeout_sec: float = 90.0,
         verified_data_snapshot_id: str | None = None,
         verified_data_manifest_sha256: str | None = None,
         idempotency_key: str = "",
@@ -168,6 +169,19 @@ def _number(metrics: dict[str, Any], *keys: str) -> float | None:
     return None
 
 
+# Sealed research backtests add a fixed warmup and may cover whole baskets; the
+# connector's 90s interactive default abandoned completed jobs as empty results.
+BACKTEST_WAIT_SECONDS = 1800.0
+_PENDING_JOB_STATES = {"queued", "pending", "preparing_data", "running", "cancelling"}
+
+
+def _backtest_still_running(payload: Any) -> bool:
+    if not isinstance(payload, dict) or payload.get("backtest_result"):
+        return False
+    job = payload.get("job")
+    return isinstance(job, dict) and str(job.get("status") or "").lower() in _PENDING_JOB_STATES
+
+
 def _experiment_scope(
     goal: ARCGoalV1,
     code: str,
@@ -224,6 +238,7 @@ def _baseline_data_reference(
             symbol=symbols[0] if len(symbols) == 1 else None,
             timeframe=timeframe,
             wait_for_result=True,
+            timeout_sec=BACKTEST_WAIT_SECONDS,
             idempotency_key=_window_backtest_key(scope, purpose, start, end, goal),
         )
         entries = ((backtest.get("job") or {}).get("verified_data_binding") or {}).get(
@@ -533,6 +548,7 @@ class ARCSelfTestService:
                 symbol=symbol if len(symbols) == 1 else None,
                 timeframe=timeframe,
                 wait_for_result=True,
+                timeout_sec=BACKTEST_WAIT_SECONDS,
                 idempotency_key=backtest_key,
                 **data_ref,
             )
@@ -546,6 +562,15 @@ class ARCSelfTestService:
                 message=str(exc)[:200],
             )
 
+        if _backtest_still_running(backtest):
+            return SelfTestResult(
+                passed=False,
+                validation_id=None,
+                bitpro_strategy_id=str(strategy_id),
+                backtest_id=None,
+                reasons=["bitpro_backtest_timeout"],
+                message="backtest still running after the wait window; retry replays the same job",
+            )
         backtest_id = _backtest_id(backtest)
         metrics = _result_metrics(backtest)
         # Bind to the immutable creation/read receipt, not arbitrary backtest metric text.

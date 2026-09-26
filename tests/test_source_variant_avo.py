@@ -273,6 +273,7 @@ class MockSelfTestClient:
         symbol: str | None = None,
         timeframe: str | None = None,
         wait_for_result: bool = False,
+        timeout_sec: float = 90.0,
         verified_data_snapshot_id: str | None = None,
         verified_data_manifest_sha256: str | None = None,
         idempotency_key: str = "",
@@ -445,3 +446,57 @@ def test_candidate_fails_closed_when_baseline_has_no_sealed_data(source_variant_
     assert result.passed is False
     assert result.reasons == ["baseline_data_snapshot_unavailable"]
     assert [b["strategy_id"] for b in client.backtests_started] == [9002]
+
+
+def test_evolution_rejects_template_family_when_source_variants_are_supported(
+    source_variant_mission,
+):
+    from hypertrade.arc.avo import _perform
+
+    with pytest.raises(ValueError, match="instead of a template family"):
+        _perform(
+            source_variant_mission,
+            "propose",
+            {
+                "hypothesis": "Replace the source with a 40-bar Donchian breakout template",
+                "family_key": "donchian_breakout",
+                "direction": "long_short",
+            },
+            ARCSelfTestService(client=MockSelfTestClient()),
+        )
+    assert source_variant_mission.projection.attempts == []
+
+
+def test_backtest_still_running_after_wait_is_reported_as_timeout(source_variant_mission):
+    from hypertrade.arc.contracts import ARCCandidateAttemptV1
+    from hypertrade.arc.self_test import BACKTEST_WAIT_SECONDS
+
+    waits: list[float] = []
+
+    class SlowClient(MockSelfTestClient):
+        def backtest_start_job(self, **kwargs):
+            waits.append(kwargs["timeout_sec"])
+            result = super().backtest_start_job(**kwargs)
+            if kwargs.get("verified_data_snapshot_id"):
+                result = {"job": {"job_id": "job-slow", "status": "running"}}
+            return result
+
+    goal = source_variant_mission.projection.goal
+    baseline = goal.evolution_context["baseline"]
+    attempt = ARCCandidateAttemptV1(
+        attempt_id="att_slow",
+        candidate_id="cand_slow",
+        hypothesis="h",
+        strategy_code=baseline["strategy_code"],
+        strategy_spec={
+            **baseline["strategy_spec"],
+            "is_source_variant": True,
+            "parent_strategy_id": 107,
+            "parent_manifest_sha256": "a" * 64,
+            "parameter_changes": {"fast_window": 15},
+        },
+    )
+    result = ARCSelfTestService(client=SlowClient()).run(attempt, goal, purpose="development")
+    assert result.passed is False
+    assert result.reasons == ["bitpro_backtest_timeout"]
+    assert waits == [BACKTEST_WAIT_SECONDS, BACKTEST_WAIT_SECONDS]
