@@ -18,7 +18,7 @@ from sqlalchemy import select
 from hypertrade.arc import store
 from hypertrade.arc.controller import ARCController, ARCMissionProjection
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
-from hypertrade.arc.feedback import _feedback_child_active
+from hypertrade.arc.feedback import _feedback_child_active, _pending_effect
 from hypertrade.db import ArcMission, Database
 
 if TYPE_CHECKING:
@@ -135,8 +135,8 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
         when = _stored_time(entry["admitted_at"])
         ctrl = ARCController(mission_id=row.mission_id)
         ctrl.rebase(projection, row.revision)
-        busy = bool(projection.avo.get("pending")) or _feedback_child_active(ctrl)
-        if busy and (projection.state != "paper_observing" or projection.avo.get("pending")):
+        busy = _pending_effect(projection) or _feedback_child_active(ctrl)
+        if busy and (projection.state != "paper_observing" or _pending_effect(projection)):
             active += 1
         cooldown_at = max(when, _utc(row.updated_at)) if not busy else when
         prior = sources.get(

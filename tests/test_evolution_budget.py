@@ -159,6 +159,22 @@ def test_human_mode_budget_end_with_pending_effect_keeps_slot(service, monkeypat
     assert result["payload"]["budget"]["active"] == 1
 
 
+@pytest.mark.parametrize("kind,blocks", [("model", False), ("tool", True), ("unknown", True)])
+def test_stopped_mission_pending_model_call_does_not_hold_slot(service, monkeypatch, kind, blocks):
+    # Production 2026-09-26: the provider raised after avo_model_requested, leaving a
+    # pending model call that kept the stopped #443 research counted as active.
+    now = prepare(service, monkeypatch)
+    first = service.tick(now)
+    child = get_controller(first["payload"]["mission_id"])
+    child.projection.avo["pending"] = {"kind": kind, "id": "unsettled"}
+    stop_on_budget(service, child, "avo_provider_unavailable", now)
+    result = service.tick(now + timedelta(days=3))
+    if blocks:
+        assert result["payload"]["budget"]["reason"] == "source_active"
+    else:
+        assert result["status"] == "research_created"
+
+
 def test_unresolved_operator_reason_keeps_slot(service, monkeypatch):
     now = prepare(service, monkeypatch)
     first = service.tick(now)
