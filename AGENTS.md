@@ -22,7 +22,7 @@ Before substantial work, read:
 4. Never commit secrets, OKX credentials, provider keys, database files, or production `.env`.
 5. Update `docs/progress.md` after meaningful implementation steps.
 6. If requirements, architecture, or API contracts change, update `docs/spec.md` and the active contract in the same change.
-7. AUTOMATIC GIT COMMIT: every meaningful code, documentation, or configuration change MUST be committed immediately on the task branch — each logical change as its own commit with a descriptive message; never batch unrelated changes. Landing on `origin/main` follows the "Worktrees And Landing" procedure below. Never push secrets or unfinished work, and never force-push shared branches.
+7. AUTOMATIC GIT COMMIT: every meaningful code, documentation, or configuration change MUST be committed immediately on the task branch — each logical change as its own commit with a descriptive message; never batch unrelated changes. Landing on `origin/main` always goes through a GitHub Pull Request per the "Worktrees And Landing" procedure below; never push feature work directly to `main` unless the user explicitly asks for an emergency direct push. Never push secrets or unfinished work, and never force-push shared branches.
 8. Before landing, ensure `./scripts/check.sh` passes for implementation work. If check.sh fails, fix issues before committing.
 
 ## Worktrees And Landing
@@ -30,12 +30,15 @@ Before substantial work, read:
 Parallel tasks run in per-task git worktrees (for example `~/.codex/worktrees/<id>/HyperTrade` on branch `codex/<topic>`), often with several sessions active at once. `origin/main` keeps moving, so never assume a task branch is current.
 
 - A fresh worktree has no GitNexus index — `.gitnexus/` is gitignored, one index per worktree. Run `gitnexus analyze` once (~10s) before using GitNexus tools; re-run it whenever the staleness hook reports the index is behind HEAD. `gitnexus list` shows the worktree's registered alias; with several indexes registered, CLI queries take `--repo <alias>`.
-- Land finished work onto `main` from its own worktree once `./scripts/check.sh` passes:
-  1. `git fetch origin`
-  2. `git rebase origin/main` — resolve conflicts, then re-run `./scripts/check.sh`
-  3. `git push origin HEAD:main` (fast-forward). If the push is rejected, another session landed first: fetch, rebase, verify, retry.
+- Default delivery always includes a GitHub Pull Request node, even when Codex may merge it itself. Once `./scripts/check.sh` passes:
+  1. Work on a `codex/<task-name>` branch created from the latest `origin/main`; before opening the PR run `git fetch origin` and `git rebase origin/main`, resolve conflicts, then re-run `./scripts/check.sh`.
+  2. `git push -u origin HEAD` and open a PR targeting `main` (`gh pr create --base main`).
+  3. Merge the PR once required checks and mergeability allow it (`gh pr merge --merge --delete-branch`), then delete the feature branch. If the PR is not mergeable because `main` moved, fetch, rebase, verify, force-push only that feature branch, and retry.
+  4. The merged `main` is the only deployment source.
+- When the user says "push to GitHub", "publish to GitHub" or similar, interpret it as the full PR → merge → deploy-trigger flow unless the user explicitly says PR-only, do not merge, or do not deploy.
+- Production deploys only from merged `main`: `Deploy HyperTrade` runs on `push` to `main`. After merging, confirm the `main` push happened and report that deployment was triggered from `main`; waiting for it to finish is only required when the user asks for runtime verification. If the `push` event fails or is delayed, re-run the deployment for `main` from GitHub Actions; never treat a feature-branch run as a production deploy.
+- After Codex causes remote `main` to update, sync local `main` before finishing: `git fetch origin`, `git switch main`, `git pull --ff-only origin main`. If a stale worktree blocks `main`, clean up or remove that worktree first so local `main` matches `origin/main`.
 - Keep worktree-local bookkeeping (GitNexus alias/count refreshes) on the task branch; it does not belong on `main`.
-- After main moves, verify the GitHub Actions deployment for the pushed commit succeeds (`gh run list`, `gh run watch`) before reporting completion.
 
 ## Production-Oriented Comments
 
@@ -49,7 +52,7 @@ When adding or changing core Agent code, prefer concise comments that explain pr
 4. Run verification.
 5. Record QA findings if needed.
 6. Update progress and next step.
-7. MANDATORY: commit on the task branch, then land on `origin/main` per "Worktrees And Landing" when verification passes.
+7. MANDATORY: commit on the task branch, then land on `origin/main` through a Pull Request per "Worktrees And Landing" when verification passes.
 
 ## Verification
 
