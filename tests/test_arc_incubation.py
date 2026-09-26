@@ -468,3 +468,72 @@ def test_reviewed_provision_never_downgrades_when_server_lacks_guarded_api():
     )
     assert not ok and instance is None
     assert client.calls == ["strategy_get", "configure_reviewed"]
+
+
+BASKET = ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"]
+
+
+def _strategy_version() -> str:
+    return "sha256:" + hashlib.sha256(
+        json.dumps(
+            {"script_content": _validated().strategy_code},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+
+
+class _GuardedPortfolio(_RecordingClient):
+    def paper_configure_reviewed(self, **kwargs: Any) -> Any:
+        self.calls.append("configure_reviewed")
+        self.kwargs["configure_reviewed"] = kwargs
+        return {
+            "status": "ok",
+            "paper": {
+                "configured": True,
+                "strategy_id": kwargs["strategy_id"],
+                "instance_id": "paper_basket",
+                "guard_version": "paper_review_binding.v1",
+                "review_hash": kwargs["review_hash"],
+                "code_sha256": kwargs["code_sha256"],
+                "config_version": "sha256:" + "c" * 64,
+                "strategy_version": _strategy_version(),
+            },
+        }
+
+    def paper_start_reviewed(self, **kwargs: Any) -> Any:
+        self.calls.append("start_reviewed")
+        return {
+            "status": "ok",
+            "paper": {**kwargs, "started": True, "guard_version": "paper_review_binding.v1"},
+        }
+
+
+def test_portfolio_candidate_provisions_its_whole_basket() -> None:
+    client = _GuardedPortfolio()
+    attempt = _validated(symbols=list(BASKET), timeframe="1H")
+    attempt.bitpro_strategy_id = "42"
+    ok, paper_id, name, _msg = ARCPaperIncubationResolver(
+        client
+    ).resolve_and_provision_paper_trading(
+        attempt, PaperPreauthorizationV1(symbols=list(BASKET), policy_hash="a" * 64)
+    )
+    assert ok is True
+    assert paper_id == "paper_basket"
+    assert client.calls == ["strategy_get", "configure_reviewed", "start_reviewed"]
+    assert client.kwargs["configure_reviewed"]["symbols"] == BASKET
+    assert name and "BTC" in name
+
+
+@pytest.mark.parametrize("review_scope", [BASKET[:2], BASKET + ["XRP-USDT-SWAP"]])
+def test_portfolio_review_scope_must_equal_candidate_basket(review_scope) -> None:
+    client = _RecordingClient()
+    attempt = _validated(symbols=list(BASKET), timeframe="1H")
+    attempt.bitpro_strategy_id = "42"
+    ok, _paper, _name, msg = ARCPaperIncubationResolver(
+        client
+    ).resolve_and_provision_paper_trading(attempt, PaperPreauthorizationV1(symbols=review_scope))
+    assert ok is False
+    assert msg in {"paper_scope_must_match_candidate", "candidate_symbols_outside_research_scope"}
+    assert client.calls == []

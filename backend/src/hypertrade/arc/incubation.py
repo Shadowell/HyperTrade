@@ -16,8 +16,8 @@ from hypertrade.arc.contracts import (
     PaperPreauthorizationV1,
 )
 from hypertrade.arc.strategy_names import format_bitpro_strategy_name as format_bitpro_strategy_name
-from hypertrade.arc.strategy_names import logic_summary
-from hypertrade.arc.universe import candidate_symbol
+from hypertrade.arc.strategy_names import logic_summary, scope_label_from_symbols
+from hypertrade.arc.universe import candidate_symbols
 from hypertrade.bitpro.mcp import BitProToolAdapter
 
 
@@ -133,11 +133,14 @@ class ARCPaperIncubationResolver:
         if not capital.is_finite() or not Decimal("0") < capital <= Decimal("10000"):
             return False, None, None, "paper_capital_outside_supported_range"
         try:
-            symbol = candidate_symbol(attempt.strategy_spec, preauth.symbols)
+            symbols = candidate_symbols(attempt.strategy_spec, preauth.symbols)
         except ValueError as exc:
             return False, None, None, str(exc)
-        if preauth.symbols != [symbol]:
+        # A portfolio is reviewed and run as its whole basket; any narrower or wider
+        # review scope would bind the Paper to a different strategy than was tested.
+        if sorted(preauth.symbols) != sorted(symbols):
             return False, None, None, "paper_scope_must_match_candidate"
+        symbol = symbols[0]
         timeframe = str(attempt.strategy_spec.get("timeframe") or "1H")
         bitpro_strategy_name = format_bitpro_strategy_name(
             symbol=symbol,
@@ -145,6 +148,7 @@ class ARCPaperIncubationResolver:
             strategy_type="CTA",
             logic_summary=_logic_summary(attempt),
             capital_u=int(capital),
+            scope_label=scope_label_from_symbols(symbols) if len(symbols) > 1 else None,
         )
         client = self._client or BitProToolAdapter()
         create_key = f"arc-create-{attempt.candidate_id}"
@@ -168,10 +172,11 @@ class ARCPaperIncubationResolver:
                     name=bitpro_strategy_name,
                     script_content=attempt.strategy_code,
                     description=(
-                        f"ARC Autonomous Research Candidate {attempt.candidate_id} for {symbol}"
+                        f"ARC Autonomous Research Candidate {attempt.candidate_id} for "
+                        + (symbol if len(symbols) == 1 else scope_label_from_symbols(symbols))
                     ),
                     exchange="okx",
-                    symbols=[symbol],
+                    symbols=symbols,
                     idempotency_key=create_key,
                 )
             except Exception as exc:
