@@ -665,6 +665,13 @@ _EPOCH_END_REASONS = frozenset(
 )
 
 
+def _pending_effect(projection: Any) -> bool:
+    # An unanswered model request has no platform side effect; a tool call may have
+    # dispatched a backtest or Paper action, and unknown kinds fail closed.
+    pending = projection.avo.get("pending")
+    return bool(pending) and not (isinstance(pending, dict) and pending.get("kind") == "model")
+
+
 def _feedback_child_active(child: ARCController) -> bool:
     projection = child.projection
     if (
@@ -675,7 +682,7 @@ def _feedback_child_active(child: ARCController) -> bool:
     if (
         projection.state != "needs_operator"
         or projection.goal is None
-        or projection.avo.get("pending")
+        or _pending_effect(projection)
     ):
         return True
     reason = next(

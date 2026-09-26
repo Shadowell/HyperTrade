@@ -1,5 +1,9 @@
 # Progress Log
 
+## 已停止研究的未决模型调用不再占用名额 — 2026-09-26
+
+- 生产回读：#443 研究 `arc_evo_249089e5a7e49ae5` 在 `avo_model_requested` 后 provider 抛错，`avo.pending={kind: model}` 未清除；名额判定先看未决动作，导致规格014对 `avo_provider_unavailable` 的释放未生效，仍占1个名额。未决模型调用无平台副作用，现仅未决工具调用或未知类型继续阻断；运行中研究不受影响。另：12:36/13:00 两轮扫描因 BitPro 连续部署重启返回 `Connection refused`，属暂时性。
+
 ## 组合候选审批后启动完整篮子Paper — 2026-09-26
 
 - 核实审批链路：人工批准后 `incubation` 依次调用 BitPro `reviewed/configure` 与 `reviewed/start`，自动启动新 Paper；来源变体行复制父策略 `script_content`，与候选源码逐字节一致。唯一断点是 `incubation` 只接受单标的，组合候选（本轮 #443 Top60、#480 Top20）在批准时必然失败。改为使用候选完整标的集合，并要求审核范围与之完全一致；单标的行为不变。BitPro 受审核配置的10标的上限同步放宽（BitPro 独立 PR）。
