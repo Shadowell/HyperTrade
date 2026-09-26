@@ -129,11 +129,13 @@ def stop_on_budget(service, child, reason, when):
         "avo_model_budget_exhausted",
         "avo_tool_budget_exhausted",
         "avo_wall_budget_exhausted",
+        "avo_provider_unavailable",
+        "avo_no_candidate",
     ],
 )
-def test_human_mode_budget_end_releases_slot_after_cooldown(service, monkeypatch, reason):
-    # Production 2026-09-25: two human-mode missions stopped on context budget
-    # held both active slots and deferred every later cycle for days.
+def test_human_mode_epoch_end_releases_slot_after_cooldown(service, monkeypatch, reason):
+    # Production 2026-09-25/26: human-mode missions stopped on context budget and
+    # on an unsupported provider model held the active slots and deferred every later cycle.
     now = prepare(service, monkeypatch)
     first = service.tick(now)
     child = get_controller(first["payload"]["mission_id"])
@@ -157,13 +159,26 @@ def test_human_mode_budget_end_with_pending_effect_keeps_slot(service, monkeypat
     assert result["payload"]["budget"]["active"] == 1
 
 
-def test_human_mode_no_candidate_keeps_existing_operator_hold(service, monkeypatch):
+def test_unresolved_operator_reason_keeps_slot(service, monkeypatch):
     now = prepare(service, monkeypatch)
     first = service.tick(now)
     child = get_controller(first["payload"]["mission_id"])
-    stop_on_budget(service, child, "avo_no_candidate", now)
+    stop_on_budget(service, child, "avo_invalid_tool_batch", now)
     result = service.tick(now + timedelta(days=3))
     assert result["payload"]["budget"]["reason"] == "source_active"
+
+
+def test_research_provider_is_frozen_into_created_research(service, monkeypatch):
+    now = prepare(service, monkeypatch)
+    assert EvolutionConfig().research_provider == "codex"
+    state = service.status()
+    config = EvolutionConfig.model_validate(
+        {**state["config"], "research_provider": "deepseek"}
+    )
+    service.configure(config, revision=state["revision"], actor="test")
+    first = service.tick(now)
+    goal = get_controller(first["payload"]["mission_id"]).projection.goal
+    assert goal.provider_name == "deepseek"
 
 
 def test_shared_admission_is_atomic_and_idempotent(service, monkeypatch):

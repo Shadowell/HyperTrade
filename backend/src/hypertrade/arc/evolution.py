@@ -20,6 +20,7 @@ from hypertrade.arc.contracts import (
     ARCCandidateAttemptV1,
     ARCGoalV1,
     ARCSuccessCriteriaV1,
+    ChatProviderName,
     PaperFeedbackPolicyV1,
     ResearchWindowsV1,
 )
@@ -55,6 +56,8 @@ class EvolutionConfig(BaseModel):
     max_research_per_day: int = Field(default=4, ge=1, le=100)
     max_research_total: int | None = Field(default=None, ge=1)
     paper_review_mode: Literal["human", "agent"] = "human"
+    # Provider for loop-created research; tasks freeze it at creation.
+    research_provider: ChatProviderName = "codex"
     paper_criteria: ARCSuccessCriteriaV1 = Field(
         default_factory=lambda: ARCSuccessCriteriaV1(
             min_oos_net_return=Decimal("1E-8"),
@@ -346,7 +349,7 @@ class EvolutionService:
                     symbols=declared_symbols(context["baseline"]["strategy_spec"]),
                     timeframes=[context["baseline"]["strategy_spec"]["timeframe"]],
                     research_mode="avo",
-                    provider_name="codex",
+                    provider_name=config.research_provider,
                     paper_review_required=True,
                     paper_review_mode=config.paper_review_mode,
                     paper_initial_equity=config.paper_capital,

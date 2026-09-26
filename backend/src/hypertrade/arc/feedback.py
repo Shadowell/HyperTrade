@@ -653,12 +653,14 @@ def _negative_experiment_finished(record: dict[str, Any], goal: ARCGoalV1) -> bo
     )
 
 
-_EPOCH_BUDGET_REASONS = frozenset(
+_EPOCH_END_REASONS = frozenset(
     {
         "avo_model_budget_exhausted",
         "avo_tool_budget_exhausted",
         "avo_wall_budget_exhausted",
         "avo_context_budget_exhausted",
+        "avo_provider_unavailable",
+        "avo_no_candidate",
     }
 )
 
@@ -684,11 +686,9 @@ def _feedback_child_active(child: ARCController) -> bool:
         ),
         None,
     )
-    if reason in _EPOCH_BUDGET_REASONS or (
-        projection.goal.paper_review_mode == "agent" and reason == "avo_no_candidate"
-    ):
+    if reason in _EPOCH_END_REASONS:
         # A bounded automatic epoch ends normally; the next eligible window/cooldown may retry.
-        # Human review gates Paper approval, not budget ends that precede any review package;
+        # Human review gates Paper approval, not endings that precede any review package;
         # holding the slot for them froze all evolution. The pending-effect check above still
         # prevents unsafe recovery by duplication.
         return False
@@ -696,16 +696,6 @@ def _feedback_child_active(child: ARCController) -> bool:
         return not any(
             _negative_experiment_finished(record, projection.goal)
             for record in projection.self_test_records[-1:]
-        )
-    if (
-        reason == "avo_no_candidate"
-        and projection.attempts
-        and projection.goal.budget.candidates_used >= projection.goal.budget.max_candidates
-    ):
-        development = projection.avo.get("development", {})
-        return not all(
-            _negative_experiment_finished(development.get(attempt.attempt_id, {}), projection.goal)
-            for attempt in projection.attempts
         )
     return True
 
