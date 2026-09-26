@@ -1852,22 +1852,27 @@ def _backtest_job_item(raw: dict[str, Any]) -> dict[str, Any]:
         ) if key in input_snapshot}
     data_binding = raw.get("verified_data_binding")
     safe_binding = None
-    if (
-        isinstance(data_binding, dict)
-        and data_binding.get("version") == "verified_backtest_data.v2"
-    ):
+    if isinstance(data_binding, dict) and data_binding.get("version") in {
+        "verified_backtest_data.v2",
+        "verified_backtest_data.v3",
+    }:
         entries = data_binding.get("entries")
         if isinstance(entries, list) and all(isinstance(item, dict) for item in entries):
             safe_binding = {
-                "version": "verified_backtest_data.v2",
+                "version": data_binding["version"],
                 "entries": [
                     {key: item[key] for key in (
-                        "timeframe", "symbols", "start_ms", "end_ms",
+                        "timeframe", "symbols", "start_ms", "trade_start_ms", "end_ms",
                         "verified_snapshot_id", "manifest_sha256", "source", "data_quality",
                     ) if key in item}
                     for item in entries
                 ],
             }
+            warmup = data_binding.get("warmup")
+            if isinstance(warmup, dict):
+                safe_binding["warmup"] = {
+                    key: warmup[key] for key in ("bars", "policy") if key in warmup
+                }
     return _compact(
         {
             "job_id": _first_present(raw.get("job_id"), raw.get("id")),
