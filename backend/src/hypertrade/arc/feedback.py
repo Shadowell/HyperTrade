@@ -653,6 +653,16 @@ def _negative_experiment_finished(record: dict[str, Any], goal: ARCGoalV1) -> bo
     )
 
 
+_EPOCH_BUDGET_REASONS = frozenset(
+    {
+        "avo_model_budget_exhausted",
+        "avo_tool_budget_exhausted",
+        "avo_wall_budget_exhausted",
+        "avo_context_budget_exhausted",
+    }
+)
+
+
 def _feedback_child_active(child: ARCController) -> bool:
     projection = child.projection
     if (
@@ -674,15 +684,13 @@ def _feedback_child_active(child: ARCController) -> bool:
         ),
         None,
     )
-    if projection.goal.paper_review_mode == "agent" and reason in {
-        "avo_model_budget_exhausted",
-        "avo_tool_budget_exhausted",
-        "avo_wall_budget_exhausted",
-        "avo_context_budget_exhausted",
-        "avo_no_candidate",
-    }:
+    if reason in _EPOCH_BUDGET_REASONS or (
+        projection.goal.paper_review_mode == "agent" and reason == "avo_no_candidate"
+    ):
         # A bounded automatic epoch ends normally; the next eligible window/cooldown may retry.
-        # The pending-effect check above still prevents unsafe recovery by duplication.
+        # Human review gates Paper approval, not budget ends that precede any review package;
+        # holding the slot for them froze all evolution. The pending-effect check above still
+        # prevents unsafe recovery by duplication.
         return False
     if reason == "avo_final_validation_failed" and projection.avo.get("final_window_consumed"):
         return not any(

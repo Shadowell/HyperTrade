@@ -115,6 +115,57 @@ def test_pending_effect_blocks_even_if_task_is_terminal(service, monkeypatch):
     assert len(list_mission_ids()) == 1
 
 
+def stop_on_budget(service, child, reason, when):
+    child.apply_event("operator_needed", {"reason": reason})
+    save_mission(child)
+    with service.db.session() as session:
+        session.get(ArcMission, child.mission_id).updated_at = when
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "avo_context_budget_exhausted",
+        "avo_model_budget_exhausted",
+        "avo_tool_budget_exhausted",
+        "avo_wall_budget_exhausted",
+    ],
+)
+def test_human_mode_budget_end_releases_slot_after_cooldown(service, monkeypatch, reason):
+    # Production 2026-09-25: two human-mode missions stopped on context budget
+    # held both active slots and deferred every later cycle for days.
+    now = prepare(service, monkeypatch)
+    first = service.tick(now)
+    child = get_controller(first["payload"]["mission_id"])
+    assert child.projection.goal.paper_review_mode == "human"
+    stop_on_budget(service, child, reason, now)
+    assert child.projection.state == "needs_operator"
+    blocked = service.tick(now + timedelta(hours=1))
+    assert blocked["payload"]["budget"]["active"] == 0
+    assert blocked["payload"]["budget"]["reason"] == "source_cooldown"
+    assert service.tick(now + timedelta(days=1, hours=1))["status"] == "research_created"
+
+
+def test_human_mode_budget_end_with_pending_effect_keeps_slot(service, monkeypatch):
+    now = prepare(service, monkeypatch)
+    first = service.tick(now)
+    child = get_controller(first["payload"]["mission_id"])
+    child.projection.avo["pending"] = {"kind": "tool", "effect": "unknown"}
+    stop_on_budget(service, child, "avo_context_budget_exhausted", now)
+    result = service.tick(now + timedelta(days=3))
+    assert result["payload"]["budget"]["reason"] == "source_active"
+    assert result["payload"]["budget"]["active"] == 1
+
+
+def test_human_mode_no_candidate_keeps_existing_operator_hold(service, monkeypatch):
+    now = prepare(service, monkeypatch)
+    first = service.tick(now)
+    child = get_controller(first["payload"]["mission_id"])
+    stop_on_budget(service, child, "avo_no_candidate", now)
+    result = service.tick(now + timedelta(days=3))
+    assert result["payload"]["budget"]["reason"] == "source_active"
+
+
 def test_shared_admission_is_atomic_and_idempotent(service, monkeypatch):
     from hypertrade.arc.controller import ARCController
     from hypertrade.arc.evolution_models import EvolutionCycle
