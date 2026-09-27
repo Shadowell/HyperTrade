@@ -204,7 +204,18 @@ def decide_paper_review(
             authorization,
         )
     except Exception as exc:
+        from hypertrade.arc.runtime_journal import record_runtime_error
+
+        described = record_runtime_error(
+            "paper_review.provision",
+            exc,
+            mission_id=controller.mission_id,
+            context={"package_hash": package_hash, "attempt_id": attempt.attempt_id},
+        )
         ok, instance, name, message = False, None, None, type(exc).__name__
+        error = {"error_id": described["error_id"]}
+    else:
+        error = {}
     controller.apply_event(
         "paper_review_effect",
         {
@@ -213,6 +224,7 @@ def decide_paper_review(
             "paper_instance_id": instance if ok else None,
             "strategy_name": name,
             "message": message,
+            **error,
         },
     )
     return dict(controller.projection.paper_review)

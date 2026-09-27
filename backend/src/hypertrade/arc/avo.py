@@ -25,6 +25,7 @@ from hypertrade.arc.evolution_memory import (
 )
 from hypertrade.arc.paper_review import request_paper_review
 from hypertrade.arc.provider_hypothesis import ProviderProposal, _bounded_spec
+from hypertrade.arc.runtime_journal import record_model_exchange, record_runtime_error
 from hypertrade.arc.self_test import ARCSelfTestService
 from hypertrade.arc.store import get_controller, list_mission_ids, research_lock, save_avo_context
 from hypertrade.arc.universe import candidate_symbols, declared_symbols
@@ -711,14 +712,30 @@ def run_avo_research(
             message = _STOP_MESSAGES.get(str(exc), "研究需要人工检查")
             if exc.detail:
                 message += "：" + exc.detail
-            controller.apply_event("operator_needed", {"reason": str(exc), "message": message})
+            payload: dict[str, Any] = {"reason": str(exc), "message": message}
+            if exc.__cause__ is not None:
+                payload["error_id"] = record_runtime_error(
+                    "avo.research", exc.__cause__, mission_id=mission_id, context=payload
+                )["error_id"]
+            controller.apply_event("operator_needed", payload)
         except Exception as exc:
             logger.exception("avo research %s interrupted", mission_id)
+            described = record_runtime_error(
+                "avo.research",
+                exc,
+                mission_id=mission_id,
+                context={"state": controller.projection.state},
+            )
             controller.apply_event(
                 "operator_needed",
                 {
                     "reason": "avo_runtime_interrupted",
-                    "message": f"研究运行时异常：{type(exc).__name__}",
+                    "message": f"研究运行时异常：{type(exc).__name__}: "
+                    + described["message"][:200],
+                    "error_id": described["error_id"],
+                    "error_type": described["exception_type"],
+                    "error_message": described["message"][:500],
+                    "error_frames": described["frames"][-5:],
                 },
             )
         return {"status": controller.projection.state, "mission_id": mission_id}
@@ -983,29 +1000,28 @@ def _run(
                     },
                 )
                 raise ResearchStopped("avo_context_budget_exhausted") from exc
+            context_record_id = save_avo_context(controller.projection.mission_id, context.record)
             controller.apply_event(
                 "avo_context_recorded",
-                {
-                    "manifest": context.manifest,
-                    "record_id": save_avo_context(controller.projection.mission_id, context.record),
-                },
+                {"manifest": context.manifest, "record_id": context_record_id},
             )
             messages = context.messages
+            request_hash = hashlib.sha256(
+                _json(
+                    {
+                        "messages": messages,
+                        "tools": TOOLS,
+                        "provider": provider.name,
+                        "model": provider.model,
+                    }
+                ).encode()
+            ).hexdigest()
             controller.apply_event(
                 "avo_model_requested",
                 {
                     "provider": provider.name,
                     "model": provider.model,
-                    "request_hash": hashlib.sha256(
-                        _json(
-                            {
-                                "messages": messages,
-                                "tools": TOOLS,
-                                "provider": provider.name,
-                                "model": provider.model,
-                            }
-                        ).encode()
-                    ).hexdigest(),
+                    "request_hash": request_hash,
                     "budget_snapshot": runtime_context["budget"],
                 },
             )
@@ -1016,6 +1032,17 @@ def _run(
             except Exception as exc:
                 raise ResearchStopped("avo_provider_unavailable", _provider_error(exc)) from exc
             calls = [asdict(call) for call in response.tool_calls]
+            exchange_id = record_model_exchange(
+                controller.projection.mission_id,
+                provider=provider.name,
+                model=provider.model,
+                request_hash=request_hash,
+                context_record_id=context_record_id,
+                content=response.content or "",
+                reasoning_content=getattr(response, "reasoning_content", "") or "",
+                tool_calls=calls,
+                usage=response.usage.to_dict(),
+            )
             seen_ids = {
                 event.payload.get("id")
                 for event in controller.projection.events
@@ -1046,6 +1073,7 @@ def _run(
                     "calls": calls,
                     "usage": response.usage.to_dict(),
                     "message": message,
+                    "exchange_id": exchange_id,
                 },
             )
             if not calls:
@@ -1078,6 +1106,12 @@ def _run(
             if call["name"] not in SIDE_EFFECT_FREE_TOOLS:
                 raise
             logger.exception("avo tool %s failed without side effects", call["name"])
+            record_runtime_error(
+                "avo.tool",
+                exc,
+                mission_id=controller.projection.mission_id,
+                context={"tool": call["name"], "tool_call_id": call["id"]},
+            )
             result = {"status": "rejected", "reason": f"tool_error:{type(exc).__name__}"}
         controller.apply_event("avo_tool_finished", {"id": call["id"], "result": result})
 

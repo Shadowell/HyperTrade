@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import socket
+from collections.abc import Callable
 from contextlib import suppress
 from threading import Event, Thread
 from typing import Any, cast
@@ -14,6 +15,7 @@ from hypertrade.agent.task_executor import (
 )
 from hypertrade.agent.tasks import AgentTaskService
 from hypertrade.arc.observation import observe_arc_missions_once
+from hypertrade.arc.runtime_journal import record_runtime_error
 from hypertrade.arc.store import configure_store
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.config import Settings, get_settings
@@ -497,6 +499,16 @@ async def main() -> None:
     await asyncio.gather(*tasks)
 
 
+async def _guarded(db: Database, component: str, step: Callable[[], Any]) -> Any:
+    """Run one loop step; a failure is journalled in the database, not only stdout."""
+    try:
+        return await asyncio.to_thread(step)
+    except Exception as exc:
+        logger.exception("%s failed", component)
+        await asyncio.to_thread(record_runtime_error, component, exc, db=db)
+        return None
+
+
 async def arc_meta_tuning_loop(db: Database) -> None:
     """Daily offline meta-tuning of evolution parameters (advisory by default)."""
     from hypertrade.arc.evolution import EvolutionService
@@ -505,13 +517,10 @@ async def arc_meta_tuning_loop(db: Database) -> None:
     configure_store(db)
     service = EvolutionService(db)
     while True:
-        try:
-            result = await asyncio.to_thread(tune_once, service)
-            if result.get("status") == "applied":
-                revision = result.get("report", {}).get("applied_revision")
-                logger.info("arc_meta_tuning applied=%s", revision)
-        except Exception:
-            logger.exception("arc_meta_tuning failed")
+        result = await _guarded(db, "worker.arc_meta_tuning", lambda: tune_once(service))
+        if result and result.get("status") == "applied":
+            revision = result.get("report", {}).get("applied_revision")
+            logger.info("arc_meta_tuning applied=%s", revision)
         await asyncio.sleep(3600)
 
 
@@ -519,12 +528,9 @@ async def arc_observation_loop(db: Database) -> None:
     """Poll paper_observing ARC missions and record BitPro snapshots."""
     configure_store(db)
     while True:
-        try:
-            result = await asyncio.to_thread(observe_arc_missions_once)
-            if result.get("observed"):
-                logger.info("arc_observation observed=%s", result.get("observed"))
-        except Exception:
-            logger.exception("arc_observation failed")
+        result = await _guarded(db, "worker.arc_observation", observe_arc_missions_once)
+        if result and result.get("observed"):
+            logger.info("arc_observation observed=%s", result.get("observed"))
         await asyncio.sleep(60)
 
 
@@ -535,14 +541,8 @@ async def arc_evolution_loop(db: Database) -> None:
     configure_store(db)
     service = EvolutionService(db)
     while True:
-        try:
-            await asyncio.to_thread(service.tick)
-        except Exception:
-            logger.exception("arc_evolution failed")
-        try:
-            await asyncio.to_thread(evolution_alerts_once, db)
-        except Exception:
-            logger.exception("arc_evolution_alerts failed")
+        await _guarded(db, "worker.arc_evolution", service.tick)
+        await _guarded(db, "worker.arc_evolution_alerts", lambda: evolution_alerts_once(db))
         await asyncio.sleep(60)
 
 
@@ -550,10 +550,7 @@ async def arc_auto_review_loop(db: Database) -> None:
     from hypertrade.arc.auto_review import auto_review_once
     configure_store(db)
     while True:
-        try:
-            await asyncio.to_thread(auto_review_once, db)
-        except Exception:
-            logger.exception("autonomous Paper review failed")
+        await _guarded(db, "worker.arc_auto_review", lambda: auto_review_once(db))
         await asyncio.sleep(15)
 
 
@@ -563,10 +560,7 @@ async def avo_research_loop(db: Database) -> None:
 
     configure_store(db)
     while True:
-        try:
-            await asyncio.to_thread(run_pending_avo_once)
-        except Exception:
-            logger.exception("avo_research worker failed")
+        await _guarded(db, "worker.avo_research", run_pending_avo_once)
         await asyncio.sleep(5)
 
 

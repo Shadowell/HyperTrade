@@ -443,7 +443,14 @@ class EvolutionService:
                 payload["source_strategy_id"] = context["source_strategy_id"]
                 return self._save_cycle(cycle_id, "research_created", payload)
             except Exception as exc:
+                from hypertrade.arc.runtime_journal import record_runtime_error
+
+                described = record_runtime_error(
+                    "evolution.tick", exc, context={"cycle_id": cycle_id}, db=self.db
+                )
                 payload["error"] = type(exc).__name__
+                payload["error_message"] = described["message"][:500]
+                payload["error_id"] = described["error_id"]
                 return self._save_cycle(cycle_id, "error", payload)
 
     def _client(self, config: EvolutionConfig | None = None) -> Any:

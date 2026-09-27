@@ -16,7 +16,7 @@ Paper清单周期仅取显式配置和身份匹配的仪表盘字段，缺失/�
 
 # HyperTrade Product Spec
 
-AVO 与通用 Agent 使用 compaction.v1 对注入完成的消息、工具定义及模型身份执行统一输入预算检查。原始业务事件保留，模型视图只压缩已识别数值序列；首目标、system、最近工具组、来源与未决事实保留。私有脱敏恢复快照限制 2MiB、30 天读取期限，公开活动只提供哈希清单；证据无法安全容纳时阻断，不改变模型推理预算。
+AVO 与通用 Agent 使用 compaction.v1 对注入完成的消息、工具定义及模型身份执行统一输入预算检查。原始业务事件保留，模型视图只压缩已识别数值序列；首目标、system、最近工具组、来源与未决事实保留。私有脱敏恢复快照限制 2MiB、365 天读取期限（过期后仍保留清单与哈希），公开活动只提供哈希清单；证据无法安全容纳时阻断，不改变模型推理预算。
 
 ResearchMemory v1 统一 AVO 与 MemoryService 的 ARC 开发回执投影，保留来源、标的/周期/窗口/资金、代码/配置/成本身份、假设方向及正反例。历史未知身份不回填，只能作为带 unknown 的观察，不能支持可比性、审批或晋级；成本目标不匹配、最终窗口污染和持久失效记录阻止召回。
 
@@ -1101,6 +1101,8 @@ Phase 2 读取切片要求 sessions 日历提供前一交易日收盘基准与�
 效果账本：`GET /evolution/effectiveness`（`evolution_effectiveness.v1`）只统计进化循环发起的任务（evolution_context/feedback_parent），给出周期分布、任务进度、候选与基线对比（无效对比单列不充数）、Paper 决策、已结算 Outcome、候选/模型调用/回测成本与逐来源战果；`baseline_win_rate` 仅在存在有效对比时给出，`causal_conclusion=not_established`。
 
 数据缺口告警：`readiness` 每个 blocker 标注 `resolution`（time=等待自愈 / operator=需人工或上游修复），延续记录带 `attention_required`。`arc_evolution_alerts` 账本三规则——operator 阻塞立即告警；证据无法构建且无预计资格时间先跟踪、超 72 小时升级告警；连续 3 个扫描周期 error 告警（critical）。条件消失自动解决，`POST /evolution/alerts/{id}/ack` 确认后同条件不再打扰；投递复用 `FEISHU_WEBHOOK_URL`（未配置只记台账、失败节流重试、投递失败不阻塞扫描）。`GET /evolution/alerts` 可查。
+
+运行时持久化账本：自进化链路的失败与模型原始回复写入数据库，不依赖进程日志（worker 容器每次部署重建）。`arc_runtime_errors` 记录 worker 各 ARC 循环（`worker.arc_evolution`、`worker.arc_evolution_alerts`、`worker.arc_observation`、`worker.arc_auto_review`、`worker.arc_meta_tuning`、`worker.avo_research`）、AVO 研究中断与无副作用工具异常（`avo.research`、`avo.tool`）、进化扫描错误周期（`evolution.tick`）、审核后 Paper 开通异常（`paper_review.provision`、`incubation.*`）；每行含异常类型、脱敏消息、尾部保留的脱敏堆栈（≤64K 字符）、调用帧与上下文。相同组件/研究/异常类型/调用帧的重复失败折叠为一行（累计次数、首末时间、最近 20 条不同消息），避免每分钟失败的循环无界增长；日志写入失败不掩盖原异常。`avo_runtime_interrupted`、错误扫描周期与开通失败事件携带 `error_id` 和脱敏消息。`arc_model_exchanges` 追加保存每次模型回复的完整正文、推理内容、工具调用参数与用量（脱敏、单字段 ≤512K 字符），绑定 `request_hash` 与上下文快照 `record_id`，`avo_model_replied` 事件携带 `exchange_id`；被拒绝的工具批次也保留原始回复。迁移 `0047_arc_runtime_journal`，部署时 `alembic upgrade head` 生效。
 
 并发名额卡死告警与预算终态（2026-09-26）：最近 6 个扫描周期全部因 `concurrency_limit` 推迟时，开启全局 `evolution_research_slots_blocked` 告警（meta_tuning 行不计入），条件消失自动解决。模型/工具/时间/上下文预算耗尽且无未决动作的研究，在 human 与 agent 模式下都视为本轮结束并释放并发名额，仍受同源冷却约束；`avo_no_candidate` 维持原判定。human 审核只约束候选进入 Paper，不约束发生在审核包之前的预算终态。AVO 首轮只把有界视图交给模型：成交保留最近 30 条并附全量摘要与哈希，窗口回执与超过 12KB 的原策略源码以大小和哈希代替，记忆最多 20 条，均标 `not_full_evidence`；任务目标里的完整上下文仍是假设绑定、候选源码和基线比较的唯一来源。细则见规格 013。规格 014 起 `EvolutionConfig.research_provider`（默认 codex）决定循环研究所用 provider 并在创建时冻结；`avo_provider_unavailable` 与 `avo_no_candidate` 同样视为本轮结束释放名额；模型失败消息附带脱敏后的 HTTP 状态与摘要。规格 015 起来源变体实验身份含父 manifest 与参数，候选回测前以相同幂等键回测同窗基线并引用其封存快照（BitPro v3 固定预热绑定），基线无封存绑定时失败关闭。组合候选审批后以完整标的集合经受审核接口配置并启动 Paper，审核范围必须与候选篮子完全一致。原策略支持来源变体时，进化研究只接受 `parameter_changes` 提案，模板族被拒绝；研究回测最长等待1800秒，超时明确标 `bitpro_backtest_timeout`。AVO 请求上下文上限按 provider 设定：deepseek 900,000（字节估算，对应 1M token 窗口并保留输出余量），其它 64,000。支持来源变体时研究资金继承原策略 `initial_capital`，不以全局 `paper_capital` 覆盖。
 
