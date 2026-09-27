@@ -1,5 +1,10 @@
 # Progress Log
 
+## 非 ARC worker 循环与完整失败原因入库 — 2026-09-27
+
+- 按用户决定补齐：Paper 交易、监控调度、OKX 补数、Agent 任务、研究触发器与 mission worker（循环与执行失败）异常写入 `arc_runtime_errors`（组件 `worker.paper_trading`、`worker.monitor_scheduler`、`worker.okx_rest_supplement`、`worker.agent_task`、`worker.research_trigger`、`worker.mission`、`worker.mission_execution`）。
+- 自测失败消息（此前截断 180/200 字）、扫描诊断原因（240 字）、Paper 反馈数据不可用原因（200 字）改为脱敏后完整保存（仅对超过 64K 字符的病态文本保留尾部）；自测异常同时记入 `self_test.*` 堆栈。参数政策复核失败此前不记录原因，现写入周期 `skip_error`/`skip_error_id` 与 `evolution.variant_policy_recheck`；参数政策读取失败此前静默置空，现写入诊断 `variant_policy_error` 与 `evolution.variant_policy_read`。保留策略维持：快照 365 天后留清单与哈希，模型回复与错误永久保存。回归测试 `tests/test_evolution_journal_coverage.py`。
+
 ## 进化告警飞书消息附 BitPro 链接 — 2026-09-27
 
 - 用户要求飞书「进化告警」带可点击链接。新增配置 `BITPRO_CONSOLE_URL`（默认 `https://bitpro.notenap.com`）；推送文本末尾附自主进化页 `{base}/ai-lab?tab=evolution`，BitPro 目标的策略告警另附已存在的前端路由 `{base}/live?mode=paper&strategyId={id}`（非 BitPro 目标不附策略链接，告警 payload 记录 `target_id`）。3900 字符上限改为只截正文、保留时间与链接尾部。

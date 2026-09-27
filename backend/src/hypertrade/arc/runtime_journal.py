@@ -47,6 +47,11 @@ def _redacted_text(value: Any) -> str:
     return str(sanitize_context(str(value)))
 
 
+def failure_text(value: Any) -> str:
+    """Full redacted failure reason for durable receipts; bounded only against pathology."""
+    return _bounded(_redacted_text(value), _TRACEBACK_CHARS)[0]
+
+
 def describe_exception(exc: BaseException) -> dict[str, Any]:
     """Redacted, bounded description; the traceback keeps its tail, where the cause is."""
     frames = traceback.extract_tb(exc.__traceback__)

@@ -150,8 +150,9 @@ async def mission_worker_once(
             "mission_id": completed.mission_id,
             "plan_version": completed.active_plan_version,
         }
-    except Exception:
+    except Exception as exc:
         logger.exception("mission_worker execution failed mission_id=%s", mission.mission_id)
+        await _journal(db, "worker.mission_execution", exc, mission_id=mission.mission_id)
         current = await store.get(mission.mission_id)
         if current.status not in TERMINAL_STATUSES:
             await store.append_event(
@@ -213,8 +214,9 @@ async def mission_worker_loop(db: Database) -> None:
                         result.get("status"),
                         result.get("mission_id"),
                     )
-            except Exception:
+            except Exception as exc:
                 logger.exception("mission_worker loop failed")
+                await _journal(db, "worker.mission", exc)
             await asyncio.sleep(settings.mission_runtime_poll_interval_seconds)
     finally:
         await _dispose_resources(resources)
@@ -242,8 +244,9 @@ async def market_rest_supplement_loop(db: Database) -> None:
         try:
             count = await ingestor.ingest_rest_once()
             logger.info("okx_rest_supplement tickers=%s", count)
-        except Exception:
+        except Exception as exc:
             logger.exception("okx_rest_supplement failed")
+            await _journal(db, "worker.okx_rest_supplement", exc)
         await asyncio.sleep(settings.okx_rest_supplement_interval_seconds)
 
 
@@ -254,8 +257,9 @@ async def paper_trading_loop(db: Database) -> None:
         try:
             result = service.run_once()
             logger.info("paper_trading tick status=%s fills=%s", result.status, result.fill_count)
-        except Exception:
+        except Exception as exc:
             logger.exception("paper_trading failed")
+            await _journal(db, "worker.paper_trading", exc)
         await asyncio.sleep(settings.paper_loop_interval_seconds)
 
 
@@ -288,8 +292,9 @@ async def monitor_scheduler_loop(db: Database) -> None:
                 len(result.get("skipped", [])),
                 len(result.get("failed", [])),
             )
-        except Exception:
+        except Exception as exc:
             logger.exception("monitor_scheduler failed")
+            await _journal(db, "worker.monitor_scheduler", exc)
         await asyncio.sleep(settings.monitor_loop_interval_seconds)
 
 
@@ -414,8 +419,9 @@ async def agent_task_worker_loop(db: Database) -> None:
                     result.get("status"),
                     result.get("task_id"),
                 )
-        except Exception:
+        except Exception as exc:
             logger.exception("agent_task_worker failed")
+            await _journal(db, "worker.agent_task", exc)
         await asyncio.sleep(max(0.25, settings.agent_task_poll_interval_seconds))
 
 
@@ -459,8 +465,9 @@ async def research_trigger_loop(db: Database) -> None:
                     result.get("trigger_id"),
                     result.get("task_id"),
                 )
-        except Exception:
+        except Exception as exc:
             logger.exception("research_trigger failed")
+            await _journal(db, "worker.research_trigger", exc)
         await asyncio.sleep(max(1.0, settings.research_trigger_poll_interval_seconds))
 
 
@@ -505,8 +512,14 @@ async def _guarded(db: Database, component: str, step: Callable[[], Any]) -> Any
         return await asyncio.to_thread(step)
     except Exception as exc:
         logger.exception("%s failed", component)
-        await asyncio.to_thread(record_runtime_error, component, exc, db=db)
+        await _journal(db, component, exc)
         return None
+
+
+async def _journal(
+    db: Database, component: str, exc: Exception, *, mission_id: str | None = None
+) -> None:
+    await asyncio.to_thread(record_runtime_error, component, exc, mission_id=mission_id, db=db)
 
 
 async def arc_meta_tuning_loop(db: Database) -> None:
