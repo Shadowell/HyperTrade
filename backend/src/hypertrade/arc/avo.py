@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 from collections.abc import Callable
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
@@ -437,6 +438,13 @@ def _perform(
             if not diff_found:
                 raise ValueError("parameter optimization must change at least one source parameter")
             parent_manifest_sha256 = variant_policy["parent_manifest_sha256"]
+            parent_execution_identity_sha256 = variant_policy.get(
+                "parent_execution_identity_sha256"
+            )
+            if not isinstance(parent_execution_identity_sha256, str) or not re.fullmatch(
+                r"[0-9a-f]{64}", parent_execution_identity_sha256
+            ):
+                raise ValueError("parent execution identity missing")
             variant_fingerprint = hashlib.sha256(
                 f"{parent_manifest_sha256}:{json.dumps(param_changes, sort_keys=True)}".encode()
             ).hexdigest()
@@ -465,6 +473,7 @@ def _perform(
                     "is_source_variant": True,
                     "parent_strategy_id": variant_policy["parent_strategy_id"],
                     "parent_manifest_sha256": parent_manifest_sha256,
+                    "parent_execution_identity_sha256": parent_execution_identity_sha256,
                     "parameter_changes": param_changes,
                     "tunable_parameters": merged_tunable,
                     "baseline_config": merged_config,

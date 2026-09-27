@@ -97,6 +97,7 @@ def test_bitpro_mcp_client_rejects_live_write_tools_before_http() -> None:
 def test_source_preserving_research_tools_keep_manifest_and_idempotency_identity() -> None:
     seen: list[tuple[str, str, dict[str, Any]]] = []
     manifest = "a" * 64
+    identity = "e" * 64
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content) if request.content else {}
@@ -112,6 +113,7 @@ def test_source_preserving_research_tools_keep_manifest_and_idempotency_identity
             return httpx.Response(200, json={"success": True, "data": {
                 "contract_version": "strategy_research_variant_policy.v1",
                 "parent_strategy_id": 513, "parent_manifest_sha256": manifest,
+                "parent_execution_identity_sha256": identity,
                 "authorized_parameters": [
                     {"key": "channel_bars", "type": "integer", "min": 12, "max": 96}
                 ],
@@ -124,7 +126,8 @@ def test_source_preserving_research_tools_keep_manifest_and_idempotency_identity
                 "parent_manifest_sha256": manifest,
                 "candidate_manifest_sha256": "b" * 64,
                 "source_binding": {"version": "strategy_research_source_binding.v1",
-                                   "variant_id": "srv_abc", "parent_manifest_sha256": manifest},
+                                   "variant_id": "srv_abc", "parent_manifest_sha256": manifest,
+                                   "parent_execution_identity_sha256": identity},
                 "cost_receipt": {"policy_hash": "c" * 64},
             }})
         raise AssertionError(f"unexpected request: {request.method} {request.url}")
@@ -138,22 +141,26 @@ def test_source_preserving_research_tools_keep_manifest_and_idempotency_identity
     policy = adapter.strategy_research_variant_policy(strategy_id=513)
     created = adapter.strategy_research_variant_create(
         strategy_id=513, expected_parent_manifest_sha256=manifest,
+        expected_parent_execution_identity_sha256=identity,
         idempotency_key="source-513-candidate-01",
         parameter_changes={"channel_bars": 32}, purpose="candidate",
     )
 
     assert source["status"] == "selected_unverified"
     assert policy["authorized_parameters"][0]["key"] == "channel_bars"
+    assert policy["parent_execution_identity_sha256"] == identity
     assert created["candidate_strategy_id"] == 900
     with pytest.raises(ValueError, match="parameter changes"):
         adapter.strategy_research_variant_create(
             strategy_id=513, expected_parent_manifest_sha256=manifest,
+            expected_parent_execution_identity_sha256=identity,
             idempotency_key="source-513-baseline-01",
             parameter_changes={"channel_bars": 32}, purpose="baseline",
         )
     assert seen[-1] == (
         "POST", "/api/v2/strategies/513/research-variants",
         {"expected_parent_manifest_sha256": manifest,
+         "expected_parent_execution_identity_sha256": identity,
          "idempotency_key": "source-513-candidate-01",
          "parameter_changes": {"channel_bars": 32}, "purpose": "candidate"},
     )
@@ -162,6 +169,76 @@ def test_source_preserving_research_tools_keep_manifest_and_idempotency_identity
     assert "strategy_research_variant_create" in adapter.capabilities()["tool_groups"][
         "research_backtest_paper_mutation"
     ]
+
+
+def test_variant_policy_and_create_fail_closed_without_execution_identity() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path.endswith("/research-variant-policy"):
+            return httpx.Response(200, json={"success": True, "data": {
+                "contract_version": "strategy_research_variant_policy.v1",
+                "parent_strategy_id": 513, "parent_manifest_sha256": "a" * 64,
+                "authorized_parameters": [],
+            }})
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    client = BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    adapter = BitProToolAdapter(client)
+    with pytest.raises(ValueError, match="parent execution identity missing"):
+        adapter.strategy_research_variant_policy(strategy_id=513)
+    with pytest.raises(ValueError, match="parent execution identity missing"):
+        adapter.strategy_research_variant_create(
+            strategy_id=513, expected_parent_manifest_sha256="a" * 64,
+            expected_parent_execution_identity_sha256="",
+            idempotency_key="source-513-candidate-02",
+            parameter_changes={"channel_bars": 32},
+        )
+    assert not any(path.endswith("/research-variants") for path in calls)
+
+
+def test_variant_create_rejects_execution_identity_mismatch() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/system/health":
+            return httpx.Response(200, json={"success": True, "data": {"status": "healthy"}})
+        if request.url.path.endswith("/research-variants"):
+            body = json.loads(request.content)
+            assert body["expected_parent_manifest_sha256"] == "a" * 64
+            assert body["expected_parent_execution_identity_sha256"] == "e" * 64
+            return httpx.Response(200, json={"success": True, "data": {
+                "contract_version": "strategy_research_variant.v1", "parent_strategy_id": 513,
+                "candidate_strategy_id": 900, "variant_id": "srv_abc",
+                "purpose": "candidate", "status": "stopped",
+                "parent_manifest_sha256": "a" * 64,
+                "candidate_manifest_sha256": "b" * 64,
+                "source_binding": {
+                    "version": "strategy_research_source_binding.v1",
+                    "variant_id": "srv_abc",
+                    "parent_manifest_sha256": "a" * 64,
+                    "parent_execution_identity_sha256": "f" * 64,
+                },
+                "cost_receipt": {"policy_hash": "c" * 64},
+            }})
+        raise AssertionError(request.url.path)
+
+    client = BitProMcpClient(
+        settings=Settings(BITPRO_MCP_API_BASE="http://bitpro.local/api/v2"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    adapter = BitProToolAdapter(client)
+    with pytest.raises(ValueError, match="parent execution identity mismatch"):
+        adapter.strategy_research_variant_create(
+            strategy_id=513, expected_parent_manifest_sha256="a" * 64,
+            expected_parent_execution_identity_sha256="e" * 64,
+            idempotency_key="source-513-candidate-03",
+            parameter_changes={"channel_bars": 32},
+        )
 
 
 @pytest.mark.parametrize("version", ["verified_backtest_data.v2", "verified_backtest_data.v3"])

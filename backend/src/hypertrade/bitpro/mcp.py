@@ -559,10 +559,17 @@ class BitProToolAdapter:
             or not re.fullmatch(r"[0-9a-f]{64}", str(policy.get("parent_manifest_sha256") or ""))
         ):
             raise ValueError("BitPro research variant policy contract mismatch")
+        # Missing execution identity must fail here. Omitting it would let create
+        # fall back to a full-manifest check and reject unrelated deploys.
+        if not re.fullmatch(
+            r"[0-9a-f]{64}", str(policy.get("parent_execution_identity_sha256") or "")
+        ):
+            raise ValueError("parent execution identity missing")
         return policy
 
     def strategy_research_variant_create(
         self, *, strategy_id: int, expected_parent_manifest_sha256: str,
+        expected_parent_execution_identity_sha256: str,
         idempotency_key: str, parameter_changes: dict[str, int | float],
         purpose: str = "candidate",
     ) -> dict[str, Any]:
@@ -571,6 +578,10 @@ class BitProToolAdapter:
             r"[0-9a-f]{64}", expected_parent_manifest_sha256
         ):
             raise ValueError("invalid parent source manifest")
+        if not isinstance(expected_parent_execution_identity_sha256, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", expected_parent_execution_identity_sha256
+        ):
+            raise ValueError("parent execution identity missing")
         if (
             not isinstance(idempotency_key, str)
             or not re.fullmatch(r"[A-Za-z0-9:_-]{8,160}", idempotency_key)
@@ -586,10 +597,18 @@ class BitProToolAdapter:
         created = _ensure_dict(self._call("strategy_research_variant_create", {
             "strategy_id": strategy_id,
             "expected_parent_manifest_sha256": expected_parent_manifest_sha256,
+            "expected_parent_execution_identity_sha256": (
+                expected_parent_execution_identity_sha256
+            ),
             "idempotency_key": idempotency_key,
             "parameter_changes": parameter_changes,
             "purpose": purpose,
         }))
+        binding = created.get("source_binding") or {}
+        if binding.get("parent_execution_identity_sha256") != (
+            expected_parent_execution_identity_sha256
+        ):
+            raise ValueError("parent execution identity mismatch")
         if (
             created.get("contract_version") != "strategy_research_variant.v1"
             or created.get("parent_strategy_id") != strategy_id
@@ -601,12 +620,9 @@ class BitProToolAdapter:
             or not re.fullmatch(
                 r"[0-9a-f]{64}", str(created.get("candidate_manifest_sha256") or "")
             )
-            or (created.get("source_binding") or {}).get("parent_manifest_sha256")
-            != expected_parent_manifest_sha256
-            or (created.get("source_binding") or {}).get("variant_id")
-            != created.get("variant_id")
-            or (created.get("source_binding") or {}).get("version")
-            != "strategy_research_source_binding.v1"
+            or binding.get("parent_manifest_sha256") != expected_parent_manifest_sha256
+            or binding.get("variant_id") != created.get("variant_id")
+            or binding.get("version") != "strategy_research_source_binding.v1"
             or not re.fullmatch(
                 r"[0-9a-f]{64}", str((created.get("cost_receipt") or {}).get("policy_hash") or "")
             )
