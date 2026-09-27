@@ -1,5 +1,10 @@
 # Progress Log
 
+## 自进化运行时失败与模型回复持久化 — 2026-09-27
+
+- 用户要求“所有自进化的过程、状态、数据都要持久化到数据库”。生产只读审计：研究事件全量存于 `arc_missions.projection_json.events`（无上限，进度接口只展示最近 100 条），扫描/预算/延续/告警/元调参均有表；缺口是 3 个 `error` 扫描周期只存 `BitProMcpError` 类型名、2 次 `avo_runtime_interrupted` 只存类型名、worker 循环异常只写 stdout（部署后丢失）、模型回复正文在有工具调用时丢弃（无调用时截 1000 字）、推理内容从未保存、上下文恢复快照 30 天过期。
+- 修复：新增 `arc_runtime_errors`（折叠重复、脱敏堆栈）与 `arc_model_exchanges`（追加原始回复）两表及迁移 0047；AVO 中断/工具异常、扫描错误周期、worker 六个 ARC 循环、Paper 开通异常写入账本并在事件中携带 `error_id`；上下文快照读取期延至 365 天。回归测试 `tests/test_evolution_persistence.py`。
+
 ## 来源变体研究资金继承原策略 — 2026-09-27
 
 - 连通性审计：BitPro 变体绑定原策略资金（#333/#480 为 100U），AVO 研究却使用全局 `paper_capital`（生产 10000），入队时 `bound_variant_capital_mismatch`→`bound_variant_input_unverified`，所有来源变体回测必然被拒（09-25 候选518的失败即此原因，而非预热）。规格008早已要求资金继承原策略。

@@ -67,7 +67,7 @@ class AgentRun(Base, TimestampMixin):
 class ProviderContextRecord(Base):
     """Private bounded request snapshot plus persistent audit commitments.
 
-    Snapshot content expires after 30 days. Its redacted hash and manifest
+    Snapshot content expires after 365 days. Its redacted hash and manifest
     remain available for audit; raw business events are owned by their source
     journals and are never deleted by this table's retention process.
     """

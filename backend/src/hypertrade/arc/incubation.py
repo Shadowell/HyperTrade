@@ -21,6 +21,19 @@ from hypertrade.arc.universe import candidate_symbols
 from hypertrade.bitpro.mcp import BitProToolAdapter
 
 
+def _journal_failure(stage: str, exc: Exception, attempt: ARCCandidateAttemptV1) -> None:
+    from hypertrade.arc.runtime_journal import record_runtime_error
+
+    record_runtime_error(
+        f"incubation.{stage}",
+        exc,
+        context={
+            "attempt_id": attempt.attempt_id,
+            "bitpro_strategy_id": attempt.bitpro_strategy_id,
+        },
+    )
+
+
 class PaperProvisionClient(Protocol):
     """The BitPro surface this resolver may touch. No live-order methods."""
 
@@ -180,6 +193,7 @@ class ARCPaperIncubationResolver:
                     idempotency_key=create_key,
                 )
             except Exception as exc:
+                _journal_failure("create", exc, attempt)
                 return (
                     False,
                     None,
@@ -196,6 +210,7 @@ class ARCPaperIncubationResolver:
         try:
             remote = client.strategy_get(strategy_id=strategy_id)
         except Exception as exc:
+            _journal_failure("source_read", exc, attempt)
             return (
                 False,
                 None,
@@ -247,6 +262,7 @@ class ARCPaperIncubationResolver:
                     idempotency_key=configure_key,
                 )
         except Exception as exc:
+            _journal_failure("configure", exc, attempt)
             return (
                 False,
                 None,
@@ -309,6 +325,7 @@ class ARCPaperIncubationResolver:
             else:
                 started = client.paper_start(strategy_id=strategy_id, idempotency_key=start_key)
         except Exception as exc:
+            _journal_failure("start", exc, attempt)
             return (
                 False,
                 None,

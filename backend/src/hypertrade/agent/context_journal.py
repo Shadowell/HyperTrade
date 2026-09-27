@@ -10,7 +10,7 @@ from sqlalchemy import select
 from hypertrade.agent.compaction import canonical, digest, sanitize_context
 from hypertrade.db import Database, ProviderContextRecord
 
-SNAPSHOT_TTL = timedelta(days=30)
+SNAPSHOT_TTL = timedelta(days=365)
 
 
 def save_context_record(db: Database, run_id: str, record: dict[str, Any]) -> str:
