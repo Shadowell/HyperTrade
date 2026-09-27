@@ -709,6 +709,20 @@ def run_avo_research(
         return {"status": controller.projection.state, "mission_id": mission_id}
 
 
+# Request bound in the compactor's UTF-8 byte estimate. A token is at least one
+# byte, so the bound caps real input tokens: deepseek-v4 has a 1M-token window
+# shared with output, leaving >=100K output headroom and keeping the recovery
+# snapshot under its 2MB limit. Other providers keep the conservative default.
+_DEFAULT_CONTEXT_BUDGET = 64_000
+_PROVIDER_CONTEXT_BUDGET = {"deepseek": 900_000}
+
+
+def _context_budget(provider: Any) -> int:
+    return _PROVIDER_CONTEXT_BUDGET.get(
+        str(getattr(provider, "name", "")), _DEFAULT_CONTEXT_BUDGET
+    )
+
+
 _VIEW_RECENT_FILLS = 30
 _VIEW_MEMORY_ENTRIES = 20
 _VIEW_SOURCE_CODE_BYTES = 12_000
@@ -939,7 +953,12 @@ def _run(
             messages[0]["content"] = _SYSTEM
             messages[1]["content"] = _json(runtime_context)
             try:
-                context = compact_request(messages, tools=TOOLS, model=provider.model)
+                context = compact_request(
+                    messages,
+                    tools=TOOLS,
+                    model=provider.model,
+                    max_tokens=_context_budget(provider),
+                )
             except ContextBlocked as exc:
                 controller.apply_event(
                     "avo_context_recorded",
