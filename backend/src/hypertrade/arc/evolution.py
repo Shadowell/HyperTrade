@@ -33,6 +33,7 @@ from hypertrade.arc.evolution_diagnostics import (
 )
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import collect_windows
+from hypertrade.arc.runtime_journal import failure_text, record_runtime_error
 from hypertrade.arc.store import get_controller, research_lock
 from hypertrade.arc.universe import declared_symbols, normalize_symbols
 from hypertrade.db import ArcMission, Database
@@ -425,8 +426,15 @@ class EvolutionService:
                         if curr_policy.get("parent_manifest_sha256") != expected_sha:
                             payload["skip_reason"] = "原策略参数政策或清单在诊断期间发生变化"
                             return self._save_cycle(cycle_id, "source_changed", payload)
-                    except Exception:
+                    except Exception as exc:
                         payload["skip_reason"] = "无法再次核验原策略参数政策"
+                        payload["skip_error"] = failure_text(exc)
+                        payload["skip_error_id"] = record_runtime_error(
+                            "evolution.variant_policy_recheck",
+                            exc,
+                            context={"cycle_id": cycle_id},
+                            db=self.db,
+                        )["error_id"]
                         return self._save_cycle(cycle_id, "source_changed", payload)
                 from hypertrade.arc.research_budget import admit
 
@@ -443,8 +451,6 @@ class EvolutionService:
                 payload["source_strategy_id"] = context["source_strategy_id"]
                 return self._save_cycle(cycle_id, "research_created", payload)
             except Exception as exc:
-                from hypertrade.arc.runtime_journal import record_runtime_error
-
                 described = record_runtime_error(
                     "evolution.tick", exc, context={"cycle_id": cycle_id}, db=self.db
                 )
@@ -693,8 +699,15 @@ class EvolutionService:
                         variant_policy = client.strategy_research_variant_policy(
                             strategy_id=int(sid)
                         )
-                    except Exception:
+                    except Exception as exc:
                         variant_policy = None
+                        diagnostic["variant_policy_error"] = failure_text(exc)
+                        diagnostic["variant_policy_error_id"] = record_runtime_error(
+                            "evolution.variant_policy_read",
+                            exc,
+                            context={"strategy_id": str(sid)},
+                            db=self.db,
+                        )["error_id"]
                 is_source_variant = bool(
                     variant_policy and variant_policy.get("variant_creation_supported")
                 )
@@ -769,7 +782,7 @@ class EvolutionService:
                 if chosen is None or rank(context) < rank(chosen):
                     chosen = context
             except Exception as exc:
-                diagnostic.update(status="unavailable", reason=str(exc)[:240])
+                diagnostic.update(status="unavailable", reason=failure_text(exc))
                 # Explain current sampling separately; never fill the missing historical window.
                 identified = (
                     snapshot
@@ -783,7 +796,7 @@ class EvolutionService:
                     diagnostic.update(upstream_read_unavailable(now))
                 elif profile.transport == "bitpro_mcp_v1":
                     diagnostic.update(
-                        blocked_data_diagnostic(client, identified, now, str(exc)[:240])
+                        blocked_data_diagnostic(client, identified, now, failure_text(exc))
                     )
             finally:
                 bound_snapshot = snapshot if str(snapshot.get("strategy_id")) == str(sid) else {}

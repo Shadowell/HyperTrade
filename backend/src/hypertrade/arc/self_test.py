@@ -14,6 +14,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Protocol
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCGoalV1, ARCSuccessCriteriaV1
+from hypertrade.arc.runtime_journal import failure_text, record_runtime_error
 from hypertrade.arc.strategy_names import (
     format_bitpro_strategy_name,
     logic_summary,
@@ -77,6 +78,11 @@ class SelfTestClient(Protocol):
         idempotency_key: str = "",
     ) -> dict[str, Any]: ...
 
+
+
+def _failure(stage: str, exc: Exception) -> str:
+    record_runtime_error(f"self_test.{stage}", exc)
+    return f"{type(exc).__name__}: {failure_text(exc)}"
 
 @dataclass
 class SelfTestResult:
@@ -257,7 +263,7 @@ def _baseline_data_reference(
             bitpro_strategy_id=None,
             backtest_id=None,
             reasons=["baseline_data_snapshot_unavailable"],
-            message=f"{type(exc).__name__}: {str(exc)[:180]}",
+            message=_failure("baseline_snapshot", exc),
         )
 
 
@@ -396,7 +402,7 @@ class ARCSelfTestService:
                     bitpro_strategy_id=None,
                     backtest_id=None,
                     reasons=[f"bitpro_strategy_validate_failed:{type(exc).__name__}"],
-                    message=str(exc)[:200],
+                    message=_failure("validate", exc),
                 )
             if isinstance(validated, dict) and validated.get("status") not in {None, "ok"}:
                 return SelfTestResult(
@@ -405,7 +411,7 @@ class ARCSelfTestService:
                     bitpro_strategy_id=None,
                     backtest_id=None,
                     reasons=["bitpro_strategy_validate_rejected"],
-                    message=str(validated)[:200],
+                    message=failure_text(validated),
                 )
 
         strategy_id: int | None = None
@@ -485,7 +491,7 @@ class ARCSelfTestService:
                 bitpro_strategy_id=None,
                 backtest_id=None,
                 reasons=[f"bitpro_strategy_create_failed:{type(exc).__name__}"],
-                message=str(exc)[:200],
+                message=_failure("create", exc),
             )
         if strategy_id is None:
             return SelfTestResult(
@@ -559,7 +565,7 @@ class ARCSelfTestService:
                 bitpro_strategy_id=str(strategy_id),
                 backtest_id=None,
                 reasons=[f"bitpro_backtest_failed:{type(exc).__name__}"],
-                message=str(exc)[:200],
+                message=_failure("backtest", exc),
             )
 
         if _backtest_still_running(backtest):

@@ -18,6 +18,7 @@ from hypertrade.arc.contracts import (
 )
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.observation import paper_attempt
+from hypertrade.arc.runtime_journal import failure_text
 from hypertrade.arc.store import get_controller, research_lock
 from hypertrade.arc.universe import candidate_symbols, declared_symbols
 from hypertrade.bitpro.mcp import BitProToolAdapter
@@ -768,7 +769,7 @@ def check_paper_feedback(
         except Exception as exc:
             result: dict[str, Any] = {
                 "status": "data_unavailable",
-                "reason": str(exc)[:200],
+                "reason": failure_text(exc),
                 "checked_end_at": end.isoformat(),
             }
             parent.apply_event("paper_feedback_checked", result)
