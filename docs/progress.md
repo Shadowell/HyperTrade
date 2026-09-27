@@ -1,5 +1,14 @@
 # Progress Log
 
+## 研究事件批量迁入 arc_mission_events（生产已完成） — 2026-09-27
+
+- 基线：接受 `/var/backups/hypertrade/arc_post_0048_state_20260927T080018Z.dump` 与同名 `.verify.json`。此前 `/opt/hypertrade/backups/` 已被部署 `rsync --delete` 删掉，不再当作逐事件哈希来源。迁移时生产 Alembic 为 `0048_arc_mission_events`，已部署 SHA `d59ceadeeb3394ad8cd7d179b2ee5dac0cafdfc2`，无 Deploy 在跑。未重置任何 Paper，未启停策略。
+- 迁移前只读核对：38 个任务。36 个 `needs_operator` 仍内联共 2554 条事件，逻辑投影 SHA-256 与 `.verify.json` 全部一致。`arc_31d05530923d` 在备份里就是 `revision=0`、22 条事件，哈希仍一致。2 个 `paper_observing` 备份时已在账本：`arc_2b4bedeb9175` 20689 条 / revision 20690，`arc_f6e91935e24c` 19132 条 / revision 19133；迁移前已增到 20743/20744 与 19186/19187，`revision == event_count + 1`，`seq` 从 1 连续到行数。
+- dry-run（08:56:13Z–08:56:27Z，`hypertrade-worker` 内 `python -m hypertrade.arc.event_migration migrate --dry-run`）：`verified=true`，将移动 2554 条后回滚。36 个非活跃任务迁移前后哈希与备份一致。两个观察任务本步 `changed=0`。
+- migrate（08:56:40Z–08:56:55Z）：`verified=true`，实际移动 2554 条，0 错误。随后 verify：38 个任务、42485 条事件、`journal_rows=42485`、内联 0。36 个非活跃任务的哈希、事件数和 revision 与备份一致，内联已清空。观察任务 `changed=0`，且 `revision == event_count + 1`。全部 38 个任务的 `arc_mission_events.seq` 从 1 连续到行数，无缺口。
+- `VACUUM FULL arc_missions`：2026-09-27T08:57:31Z，独占锁墙钟 0.228 秒。会话开始时该表总大小 166MB（堆 40kB）；VACUUM 前约 12MB（TOAST 约 10MB）；VACUUM 后 3048kB（堆 16kB，TOAST 2944kB）。`arc_mission_events` 约 62MB。
+- 回读：`GET /api/v1/arc/missions` HTTP 200，38 个任务（36 个 `needs_operator`，2 个 `paper_observing`）。进度接口：`arc_2b4bedeb9175` 处于模拟盘、未阻塞、`event_count` 20747；`arc_f6e91935e24c` 处于模拟盘、未阻塞、`event_count` 19190。当时 `arc_mission_events` 42491 行（非活跃任务 `event_count` 合计 2554，观察任务 39937），内联事件 0，Alembic 仍为 0048。观察任务在迁移后继续追加，所以行数高于迁移瞬间的 42485。
+
 ## 研究事件拆表（实现完成，生产迁移待确认） — 2026-09-27
 
 - 背景：生产 `arc_missions` 总大小 166MB、有效投影约 8MB，每追加一条事件都整份重写投影（观察中任务 2 万余条事件、每分钟重写）。新增只追加表 `arc_mission_events` 与迁移 0048（只建表加列），读取合并表内与旧内联事件（按 `event_id` 去重），提交在行锁内追加事件并写回不含事件的投影；历史搬迁脚本 `hypertrade.arc.event_migration`（幂等、逐任务哈希核对、dry-run、回滚）。
