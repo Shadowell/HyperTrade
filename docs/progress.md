@@ -1,5 +1,10 @@
 # Progress Log
 
+## 研究事件拆表（实现完成，生产迁移待确认） — 2026-09-27
+
+- 背景：生产 `arc_missions` 总大小 166MB、有效投影约 8MB，每追加一条事件都整份重写投影（观察中任务 2 万余条事件、每分钟重写）。新增只追加表 `arc_mission_events` 与迁移 0048（只建表加列），读取合并表内与旧内联事件（按 `event_id` 去重），提交在行锁内追加事件并写回不含事件的投影；历史搬迁脚本 `hypertrade.arc.event_migration`（幂等、逐任务哈希核对、dry-run、回滚）。
+- 验证：`tests/test_arc_event_journal.py`（7 项，旧代码全部失败）与真实 PostgreSQL 双进程并发测试 `tests/test_arc_event_journal_postgres.py`（旧格式行升级、两进程各写 15 条、批量迁移、降级回折、再升级哈希一致）。生产迁移按用户要求在演练汇报并确认后执行，执行记录（备份位置、数量、核对结果）届时追加。
+
 ## 非 ARC worker 循环与完整失败原因入库 — 2026-09-27
 
 - 按用户决定补齐：Paper 交易、监控调度、OKX 补数、Agent 任务、研究触发器与 mission worker（循环与执行失败）异常写入 `arc_runtime_errors`（组件 `worker.paper_trading`、`worker.monitor_scheduler`、`worker.okx_rest_supplement`、`worker.agent_task`、`worker.research_trigger`、`worker.mission`、`worker.mission_execution`）。

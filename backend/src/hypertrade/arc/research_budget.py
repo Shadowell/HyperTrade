@@ -16,9 +16,10 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 
 from hypertrade.arc import store
-from hypertrade.arc.controller import ARCController, ARCMissionProjection
+from hypertrade.arc.controller import ARCController
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import _feedback_child_active, _pending_effect
+from hypertrade.arc.store import insert_mission, load_projection
 from hypertrade.db import ArcMission, Database
 
 if TYPE_CHECKING:
@@ -107,7 +108,7 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
     active = 0
     sources: dict[str, Any] = {}
     for row in session.scalars(select(ArcMission)):
-        projection = ARCMissionProjection.model_validate(row.projection_json)
+        projection = load_projection(session, row)
         goal = projection.goal
         if goal is None:
             continue
@@ -246,7 +247,7 @@ def admit(
                 if original_key is None:
                     original_mission = session.get(ArcMission, ctrl.mission_id)
                     original_goal = (
-                        ARCMissionProjection.model_validate(original_mission.projection_json).goal
+                        load_projection(session, original_mission).goal
                         if original_mission is not None
                         else None
                     )
@@ -316,14 +317,7 @@ def admit(
                 owner()
                 # No network effects occur here. Rollback removes both the task and debit.
                 if session.get(ArcMission, ctrl.mission_id) is None:
-                    session.add(
-                        ArcMission(
-                            mission_id=ctrl.mission_id,
-                            state=ctrl.projection.state,
-                            projection_json=ctrl.projection.model_dump(mode="json"),
-                            revision=1,
-                        )
-                    )
+                    insert_mission(session, ctrl, 1)
                 result.update(
                     admitted_at=now.isoformat(),
                     period_used=state["period_used"] + 1,

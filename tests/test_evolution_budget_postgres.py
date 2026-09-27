@@ -47,7 +47,7 @@ def test_two_postgres_workers_share_one_atomic_credit(tmp_path):
         EvolutionCycle,
     )
     from hypertrade.arc.store import configure_store, reset_store
-    from hypertrade.db import ArcMission, Database
+    from hypertrade.db import ArcMission, ArcMissionEvent, Database
     from sqlalchemy import select
 
     cluster = tmp_path / "pg"
@@ -93,6 +93,7 @@ def test_two_postgres_workers_share_one_atomic_credit(tmp_path):
             EvolutionContinuation,
             EvolutionAcceptance,
             ArcMission,
+            ArcMissionEvent,
         ):
             model.__table__.create(db.engine)
         configure_store(db)

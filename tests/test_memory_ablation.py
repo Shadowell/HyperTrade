@@ -3,7 +3,7 @@ import json
 
 import pytest
 from hypertrade.arc.contracts import ARCBudgetV1, ARCGoalV1, ARCSuccessCriteriaV1
-from hypertrade.arc.store import reset_store
+from hypertrade.arc.store import load_projection, reset_store
 from hypertrade.providers.chat import ChatResponse, TokenUsage, ToolCallRequest
 from test_evolution_memory import WINDOWS, record
 
@@ -354,7 +354,8 @@ def test_both_arms_reach_validation_without_paper_effects(tmp_path):
             assert all(
                 a.get("paper_instance_id") is None for a in mission.projection_json["attempts"]
             )
-            assert not any("approved" in e["event_type"] for e in mission.projection_json["events"])
+            events = load_projection(session, mission).events
+            assert events and not any("approved" in e.event_type for e in events)
 
 
 def test_unknown_backtest_effect_is_never_replayed(tmp_path):
@@ -509,9 +510,9 @@ def test_pair_journals_the_final_request_manifest_after_memory_injection(tmp_pat
             arm = mission.mission_id.rsplit("_", 1)[-1]
             audit = next(item for item in requests if item["arm"] == arm)
             final_events = [
-                event for event in mission.projection_json["events"]
-                if event["event_type"] == "avo_context_recorded"
-                and event["payload"]["manifest"].get("final_hash") == audit["request_hash"]
+                event for event in load_projection(session, mission).events
+                if event.event_type == "avo_context_recorded"
+                and event.payload["manifest"].get("final_hash") == audit["request_hash"]
             ]
             assert len(final_events) == 1
-            assert final_events[0]["payload"]["record_id"]
+            assert final_events[0].payload["record_id"]

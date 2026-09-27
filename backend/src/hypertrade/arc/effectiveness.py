@@ -18,8 +18,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
-from hypertrade.arc.controller import ARCMissionProjection
 from hypertrade.arc.evolution_models import EvolutionCycle
+from hypertrade.arc.store import load_projection
 from hypertrade.db import ArcMission, Database, StrategyOutcome
 
 CYCLE_STATUSES = (
@@ -116,7 +116,7 @@ def build_effectiveness_report(
 
         per_source: dict[int, PerSourceEffectivenessV1] = {}
         for mission_row in session.scalars(select(ArcMission)).yield_per(50):
-            projection = ARCMissionProjection.model_validate(mission_row.projection_json)
+            projection = load_projection(session, mission_row)
             goal = projection.goal
             if goal is None:
                 continue
