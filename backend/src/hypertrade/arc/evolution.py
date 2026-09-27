@@ -7,7 +7,7 @@ import json
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -101,6 +101,20 @@ class EvolutionConfig(BaseModel):
 
 def digest(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def source_capital(config: Any) -> Decimal:
+    """The running strategy's own capital; research never substitutes a global value."""
+    raw = config.get("initial_capital") if isinstance(config, dict) else None
+    try:
+        capital = Decimal(str(raw))
+    except (InvalidOperation, ValueError):
+        capital = Decimal("NaN")
+    if raw is None or isinstance(raw, bool) or not capital.is_finite():
+        raise ValueError("原策略资金缺失或无效，不能建立同资金比较基线")
+    if not Decimal(0) < capital <= Decimal(10000):
+        raise ValueError("原策略资金超出研究支持范围")
+    return capital
 
 
 def baseline_config(source: dict[str, Any], capital: Decimal) -> dict[str, Any]:
@@ -340,6 +354,9 @@ class EvolutionService:
                 payload["memory_manifest"] = context["memory_manifest"]
                 context["memory"] = memory
                 context["cycle_id"] = cycle_id
+                research_capital = Decimal(
+                    str(context.get("research_capital") or config.paper_capital)
+                )
                 goal = ARCGoalV1(
                     objective=(
                         "依据有来源的原Paper观察、历史成交样本和开发实验提出可证伪优化方向；"
@@ -352,7 +369,7 @@ class EvolutionService:
                     provider_name=config.research_provider,
                     paper_review_required=True,
                     paper_review_mode=config.paper_review_mode,
-                    paper_initial_equity=config.paper_capital,
+                    paper_initial_equity=research_capital,
                     evolution_context=context,
                     research_windows=ResearchWindowsV1.model_validate(context["research_windows"]),
                     feedback=PaperFeedbackPolicyV1(enabled=True, threshold_pp=config.threshold_pp),
@@ -392,7 +409,7 @@ class EvolutionService:
                 if source_now.code_sha256 != context["source_code_sha256"]:
                     return self._save_cycle(cycle_id, "source_changed", payload)
                 if (
-                    baseline_config({"config": source_now.config}, config.paper_capital)
+                    baseline_config({"config": source_now.config}, research_capital)
                     != context["baseline"]["strategy_spec"]["baseline_config"]
                 ):
                     return self._save_cycle(cycle_id, "source_changed", payload)
@@ -674,6 +691,11 @@ class EvolutionService:
                 is_source_variant = bool(
                     variant_policy and variant_policy.get("variant_creation_supported")
                 )
+                # BitPro binds a variant to its parent's capital; any other research
+                # capital makes every bound backtest fail its capital receipt.
+                research_capital = (
+                    source_capital(source["config"]) if is_source_variant else config.paper_capital
+                )
                 baseline = ARCCandidateAttemptV1(
                     attempt_id="baseline_" + str(sid),
                     candidate_id="baseline_" + str(sid),
@@ -682,7 +704,7 @@ class EvolutionService:
                     strategy_spec={
                         **({"symbols": symbols} if len(symbols) > 1 else {"symbol": symbols[0]}),
                         "timeframe": timeframe,
-                        "baseline_config": baseline_config(source, config.paper_capital),
+                        "baseline_config": baseline_config(source, research_capital),
                         **(
                             {
                                 "is_source_variant": True,
@@ -696,6 +718,7 @@ class EvolutionService:
                 )
                 context = {
                     "target_id": config.target_id,
+                    "research_capital": str(research_capital),
                     "trigger_source": trigger,
                     "source_strategy_id": sid,
                     "source_instance_id": snapshot["instance_id"],
