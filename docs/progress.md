@@ -1,5 +1,11 @@
 # Progress Log
 
+## 来源变体研究资金继承原策略 — 2026-09-27
+
+- 连通性审计：BitPro 变体绑定原策略资金（#333/#480 为 100U），AVO 研究却使用全局 `paper_capital`（生产 10000），入队时 `bound_variant_capital_mismatch`→`bound_variant_input_unverified`，所有来源变体回测必然被拒（09-25 候选518的失败即此原因，而非预热）。规格008早已要求资金继承原策略。
+- 修复：支持来源变体时研究资金取原策略 `initial_capital`（缺失/非正/超10000 则诊断不可用），基线配置、研究目标、创建前漂移复核一致；非变体旧路径不变。
+- 审计同时确认：真实回测结果经连接器/门槛/同窗比较可正确判定；变体创建回执与连接器校验吻合；#333、#480 数据可完整封存（KAITO 3357根无缺口）；#378（BSB 于04-02上市，晚于预热起点）与 #443（120标的15m≈143万根超100万上限且33标的晚上市）无法进入可比回测。受审核 Paper 仅加载审核脚本且配置只保留 `research_parameters`，原生类变体无法加载、脚本类变体丢失变体参数，需 BitPro 设计变更，待用户决定。
+
 ## 来源变体提案崩溃与运行时中断占名额 — 2026-09-27
 
 - 生产回读：#333（`arc_evo_3afac83c6debbe84`）与 #378（`arc_evo_f97e74f5f3beed8e`）均在首个来源变体 `propose` 后以 `avo_runtime_interrupted` 停止，残留未决 `propose` 工具调用占满名额，此后每轮 `concurrency_limit`。从生产只读导出研究状态本地重放定位：BitPro `strategy_research_variant_policy.v1` 的授权参数使用 `key`/`type=integer`/`min`/`max`，AVO 读取 `p["name"]` 触发 `KeyError`（整型校验也只认 `int`）；该异常不在工具拒绝类型内，且异常处理不记日志。
