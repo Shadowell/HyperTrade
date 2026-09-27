@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Protocol
@@ -56,6 +57,7 @@ class SelfTestClient(Protocol):
         *,
         strategy_id: int,
         expected_parent_manifest_sha256: str,
+        expected_parent_execution_identity_sha256: str,
         idempotency_key: str,
         parameter_changes: dict[str, int | float],
         purpose: str = "candidate",
@@ -206,6 +208,14 @@ def _experiment_scope(
     return hashlib.sha256(identity.encode()).hexdigest()
 
 
+def _parent_execution_identity_sha256(spec: dict[str, Any]) -> str:
+    """Pin the scan-time execution identity. Never omit it and fall back to the manifest."""
+    value = spec.get("parent_execution_identity_sha256")
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise ValueError("parent execution identity missing")
+    return value
+
+
 def _window_backtest_key(scope: str, purpose: str, start: date, end: date, goal: ARCGoalV1) -> str:
     window_digest = hashlib.sha256(
         f"{scope}|{purpose}|{start}|{end}|{goal.paper_initial_equity}".encode()
@@ -229,6 +239,7 @@ def _baseline_data_reference(
         created = client.strategy_research_variant_create(
             strategy_id=int(spec["parent_strategy_id"]),
             expected_parent_manifest_sha256=str(spec["parent_manifest_sha256"]),
+            expected_parent_execution_identity_sha256=_parent_execution_identity_sha256(spec),
             idempotency_key=f"arc-selftest-create-{scope}",
             parameter_changes={},
             purpose="baseline",
@@ -427,10 +438,12 @@ class ARCSelfTestService:
                 else:
                     parent_id = int(attempt.strategy_spec["parent_strategy_id"])
                     parent_sha = str(attempt.strategy_spec["parent_manifest_sha256"])
+                    parent_identity = _parent_execution_identity_sha256(attempt.strategy_spec)
                     param_changes = dict(attempt.strategy_spec.get("parameter_changes") or {})
                     created = client.strategy_research_variant_create(
                         strategy_id=parent_id,
                         expected_parent_manifest_sha256=parent_sha,
+                        expected_parent_execution_identity_sha256=parent_identity,
                         idempotency_key=create_key,
                         parameter_changes=param_changes,
                         purpose="baseline" if is_baseline_attempt else "candidate",

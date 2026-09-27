@@ -474,6 +474,7 @@ class VariantPaper(Paper):
         return {
             "parent_strategy_id": 44,
             "parent_manifest_sha256": "a" * 64,
+            "parent_execution_identity_sha256": "e" * 64,
             "variant_creation_supported": True,
             "authorized_parameters": [
                 {"key": "fast_window", "type": "integer", "min": 2, "max": 50}
@@ -518,4 +519,93 @@ def test_variant_research_without_source_capital_is_unavailable(service, monkeyp
     diagnostic = result["payload"]["diagnostics"][0]
     assert diagnostic["status"] == "unavailable"
     assert "原策略资金" in diagnostic["reason"]
+    assert list_mission_ids() == []
+
+
+def test_unrelated_deploy_keeps_execution_identity_and_still_creates_research(
+    service, monkeypatch
+):
+    from hypertrade.arc.store import get_controller
+
+    class DeployedManifest(VariantPaper):
+        reads = 0
+
+        def strategy_research_variant_policy(self, **kwargs):
+            self.reads += 1
+            policy = super().strategy_research_variant_policy(**kwargs)
+            if self.reads > 1:
+                policy["parent_manifest_sha256"] = "b" * 64
+            return policy
+
+    now = _variant_service(service, monkeypatch, 100)
+    service.client = DeployedManifest()
+    service.client.capital = 100
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    spec = get_controller(result["payload"]["mission_id"]).projection.goal.evolution_context[
+        "baseline"
+    ]["strategy_spec"]
+    assert spec["parent_manifest_sha256"] == "a" * 64
+    assert spec["parent_execution_identity_sha256"] == "e" * 64
+
+
+@pytest.mark.parametrize(
+    "identity",
+    ["1" * 64, "2" * 64, "3" * 64, "4" * 64, "5" * 64],
+    ids=["source", "stub", "dependency", "class", "config"],
+)
+def test_execution_identity_drift_blocks_research(service, monkeypatch, identity):
+    class Drifted(VariantPaper):
+        reads = 0
+
+        def strategy_research_variant_policy(self, **kwargs):
+            self.reads += 1
+            policy = super().strategy_research_variant_policy(**kwargs)
+            if self.reads > 1:
+                policy["parent_execution_identity_sha256"] = identity
+            return policy
+
+    now = _variant_service(service, monkeypatch, 100)
+    service.client = Drifted()
+    service.client.capital = 100
+    result = service.tick(now)
+    assert result["status"] == "source_changed"
+    assert result["payload"]["skip_reason"] == "原策略执行身份在诊断期间发生变化"
+
+
+def test_missing_execution_identity_does_not_fall_back_to_manifest(service, monkeypatch):
+    class Missing(VariantPaper):
+        reads = 0
+
+        def strategy_research_variant_policy(self, **kwargs):
+            self.reads += 1
+            policy = super().strategy_research_variant_policy(**kwargs)
+            if self.reads > 1:
+                policy.pop("parent_execution_identity_sha256")
+            return policy
+
+    now = _variant_service(service, monkeypatch, 100)
+    service.client = Missing()
+    service.client.capital = 100
+    result = service.tick(now)
+    assert result["status"] == "source_changed"
+    assert result["payload"]["skip_reason"] == "当前父策略执行身份缺失，不能只按清单校验"
+
+
+def test_scan_without_execution_identity_does_not_start_variant_research(service, monkeypatch):
+    from hypertrade.arc.store import list_mission_ids
+
+    class NoIdentity(VariantPaper):
+        def strategy_research_variant_policy(self, **kwargs):
+            policy = super().strategy_research_variant_policy(**kwargs)
+            policy.pop("parent_execution_identity_sha256")
+            return policy
+
+    now = _variant_service(service, monkeypatch, 100)
+    service.client = NoIdentity()
+    service.client.capital = 100
+    result = service.tick(now)
+    diagnostic = result["payload"]["diagnostics"][0]
+    assert diagnostic["status"] == "unavailable"
+    assert "parent execution identity missing" in diagnostic["reason"]
     assert list_mission_ids() == []

@@ -422,9 +422,24 @@ class EvolutionService:
                         curr_policy = client_obj.strategy_research_variant_policy(
                             strategy_id=int(context["source_strategy_id"])
                         )
-                        expected_sha = context["variant_policy"].get("parent_manifest_sha256")
-                        if curr_policy.get("parent_manifest_sha256") != expected_sha:
-                            payload["skip_reason"] = "原策略参数政策或清单在诊断期间发生变化"
+                        expected_identity = context["variant_policy"].get(
+                            "parent_execution_identity_sha256"
+                        )
+                        current_identity = curr_policy.get("parent_execution_identity_sha256")
+                        # Manifest drift from an unrelated deploy is not a parent change.
+                        # A missing hash must not fall back to that manifest check.
+                        if not isinstance(expected_identity, str) or not re.fullmatch(
+                            r"[0-9a-f]{64}", expected_identity
+                        ):
+                            payload["skip_reason"] = "巡检时的父策略执行身份缺失，不能只按清单校验"
+                            return self._save_cycle(cycle_id, "source_changed", payload)
+                        if not isinstance(current_identity, str) or not re.fullmatch(
+                            r"[0-9a-f]{64}", current_identity
+                        ):
+                            payload["skip_reason"] = "当前父策略执行身份缺失，不能只按清单校验"
+                            return self._save_cycle(cycle_id, "source_changed", payload)
+                        if current_identity != expected_identity:
+                            payload["skip_reason"] = "原策略执行身份在诊断期间发生变化"
                             return self._save_cycle(cycle_id, "source_changed", payload)
                     except Exception as exc:
                         payload["skip_reason"] = "无法再次核验原策略参数政策"
@@ -700,17 +715,33 @@ class EvolutionService:
                             strategy_id=int(sid)
                         )
                     except Exception as exc:
-                        variant_policy = None
-                        diagnostic["variant_policy_error"] = failure_text(exc)
+                        text = failure_text(exc)
+                        diagnostic["variant_policy_error"] = text
                         diagnostic["variant_policy_error_id"] = record_runtime_error(
                             "evolution.variant_policy_read",
                             exc,
                             context={"strategy_id": str(sid)},
                             db=self.db,
                         )["error_id"]
-                is_source_variant = bool(
-                    variant_policy and variant_policy.get("variant_creation_supported")
-                )
+                        # A missing execution identity is not a transient read failure.
+                        # Continuing would create a template or a manifest-only variant.
+                        if "parent execution identity" in text:
+                            raise
+                        variant_policy = None
+                is_source_variant = False
+                parent_execution_identity_sha256 = None
+                if (
+                    variant_policy is not None
+                    and variant_policy.get("variant_creation_supported")
+                ):
+                    is_source_variant = True
+                    parent_execution_identity_sha256 = variant_policy.get(
+                        "parent_execution_identity_sha256"
+                    )
+                    if not isinstance(parent_execution_identity_sha256, str) or not re.fullmatch(
+                        r"[0-9a-f]{64}", parent_execution_identity_sha256
+                    ):
+                        raise ValueError("parent execution identity missing")
                 # BitPro binds a variant to its parent's capital; any other research
                 # capital makes every bound backtest fail its capital receipt.
                 research_capital = (
@@ -730,6 +761,9 @@ class EvolutionService:
                                 "is_source_variant": True,
                                 "parent_strategy_id": variant_policy["parent_strategy_id"],
                                 "parent_manifest_sha256": variant_policy["parent_manifest_sha256"],
+                                "parent_execution_identity_sha256": (
+                                    parent_execution_identity_sha256
+                                ),
                             }
                             if is_source_variant and variant_policy
                             else {}
@@ -778,6 +812,9 @@ class EvolutionService:
                         ),
                         "parent_strategy_id": variant_policy.get("parent_strategy_id"),
                         "parent_manifest_sha256": variant_policy.get("parent_manifest_sha256"),
+                        "parent_execution_identity_sha256": variant_policy.get(
+                            "parent_execution_identity_sha256"
+                        ),
                     }
                 if chosen is None or rank(context) < rank(chosen):
                     chosen = context

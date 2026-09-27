@@ -1,5 +1,9 @@
 # Progress Log
 
+## 变体创建对齐父策略执行身份 — 2026-09-27
+
+- 校验口径与 BitPro #991 对齐：巡检拿到 `parent_execution_identity_sha256` 后，创建变体同时回显 `expected_parent_manifest_sha256` 并传入 `expected_parent_execution_identity_sha256`。只强制源码、存根、直接依赖、类身份与配置；无关部署引起的清单变化不再阻止创建。字段缺失或哈希不一致时明确失败，不退回只校完整 manifest。
+
 ## 研究事件批量迁入 arc_mission_events（生产已完成） — 2026-09-27
 
 - 基线：接受 `/var/backups/hypertrade/arc_post_0048_state_20260927T080018Z.dump` 与同名 `.verify.json`。此前 `/opt/hypertrade/backups/` 已被部署 `rsync --delete` 删掉，不再当作逐事件哈希来源。迁移时生产 Alembic 为 `0048_arc_mission_events`，已部署 SHA `d59ceadeeb3394ad8cd7d179b2ee5dac0cafdfc2`，无 Deploy 在跑。未重置任何 Paper，未启停策略。

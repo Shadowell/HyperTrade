@@ -27,6 +27,7 @@ def source_variant_mission():
         "contract_version": "strategy_research_variant_policy.v1",
         "parent_strategy_id": 107,
         "parent_manifest_sha256": "a" * 64,
+        "parent_execution_identity_sha256": "e" * 64,
         "variant_creation_supported": True,
         "authorized_parameters": [
             {
@@ -63,6 +64,7 @@ def source_variant_mission():
             "is_source_variant": True,
             "parent_strategy_id": 107,
             "parent_manifest_sha256": "a" * 64,
+            "parent_execution_identity_sha256": "e" * 64,
             "tunable_parameters": {
                 "fast_window": 10,
                 "slow_window": 30,
@@ -216,6 +218,9 @@ class MockSelfTestClient:
     def __init__(self):
         self.variant_created = []
         self.backtests_started = []
+        # None accepts the caller's hash. A set value is the parent after the scan.
+        self.current_manifest: str | None = None
+        self.current_identity: str | None = None
 
     def strategy_get(self, *, strategy_id: int) -> dict[str, Any]:
         return {"strategy_id": strategy_id, "script_content": "class NativeStrategy107: pass\n"}
@@ -225,10 +230,22 @@ class MockSelfTestClient:
         *,
         strategy_id: int,
         expected_parent_manifest_sha256: str,
+        expected_parent_execution_identity_sha256: str,
         idempotency_key: str,
         parameter_changes: dict[str, int | float],
         purpose: str = "candidate",
     ) -> dict[str, Any]:
+        # BitPro #991: an execution-identity pin ignores manifest drift. Omitting the
+        # pin would compare the full manifest and reject an unrelated deploy.
+        if self.current_identity is not None and (
+            expected_parent_execution_identity_sha256 != self.current_identity
+        ):
+            raise ValueError("parent strategy execution identity changed")
+        if self.current_identity is None and self.current_manifest not in (
+            None,
+            expected_parent_manifest_sha256,
+        ):
+            raise ValueError("parent strategy source manifest changed")
         prior = next(
             (
                 i
@@ -246,6 +263,9 @@ class MockSelfTestClient:
                 {
                     "strategy_id": strategy_id,
                     "expected_parent_manifest_sha256": expected_parent_manifest_sha256,
+                    "expected_parent_execution_identity_sha256": (
+                        expected_parent_execution_identity_sha256
+                    ),
                     "idempotency_key": idempotency_key,
                     "parameter_changes": parameter_changes,
                     "purpose": purpose,
@@ -345,8 +365,12 @@ def test_avo_source_variant_flow(source_variant_mission):
     assert created_call["strategy_id"] == 107
     assert created_call["parameter_changes"] == {"fast_window": 15}
     assert created_call["purpose"] == "candidate"
+    assert created_call["expected_parent_manifest_sha256"] == "a" * 64
+    assert created_call["expected_parent_execution_identity_sha256"] == "e" * 64
     baseline_create = client.variant_created[1]
     assert baseline_create["purpose"] == "baseline"
+    assert baseline_create["expected_parent_manifest_sha256"] == "a" * 64
+    assert baseline_create["expected_parent_execution_identity_sha256"] == "e" * 64
     assert baseline_create["parameter_changes"] == {}
     candidate_keys = [
         c["idempotency_key"] for c in client.variant_created if c["purpose"] == "candidate"
@@ -539,3 +563,87 @@ def test_propose_accepts_bitpro_policy_schema_and_enforces_integers(source_varia
     attempt = source_variant_mission.projection.attempts[-1]
     assert result["attempt_id"] == attempt.attempt_id
     assert attempt.strategy_spec["parameter_changes"] == {"fast_window": 12}
+    assert attempt.strategy_spec["parent_execution_identity_sha256"] == "e" * 64
+    assert attempt.strategy_spec["parent_manifest_sha256"] == "a" * 64
+
+
+def _direct_variant_goal() -> ARCGoalV1:
+    return ARCGoalV1(objective="创建变体", symbols=["BTC-USDT"], timeframes=["1H"])
+
+
+def _direct_attempt(**overrides: Any) -> ARCCandidateAttemptV1:
+    spec = {
+        "symbol": "BTC-USDT",
+        "timeframe": "1H",
+        "is_source_variant": True,
+        "parent_strategy_id": 107,
+        "parent_manifest_sha256": "a" * 64,
+        "parent_execution_identity_sha256": "e" * 64,
+        "parameter_changes": {"fast_window": 15},
+    }
+    spec.update(overrides)
+    return ARCCandidateAttemptV1(
+        attempt_id="att_direct",
+        candidate_id="cand_direct",
+        hypothesis="h",
+        strategy_code="class NativeStrategy107: pass\n",
+        strategy_spec=spec,
+    )
+
+
+def test_unrelated_deploy_still_creates_variant_with_scanned_manifest():
+    client = MockSelfTestClient()
+    client.current_manifest = "b" * 64
+    client.current_identity = "e" * 64
+    result = ARCSelfTestService(client=client).run(_direct_attempt(), _direct_variant_goal())
+    assert result.passed is True
+    created = client.variant_created[0]
+    assert created["expected_parent_manifest_sha256"] == "a" * 64
+    assert created["expected_parent_execution_identity_sha256"] == "e" * 64
+    assert created["purpose"] == "candidate"
+
+
+@pytest.mark.parametrize(
+    "identity",
+    ["1" * 64, "2" * 64, "3" * 64, "4" * 64, "5" * 64],
+    ids=["source", "stub", "dependency", "class", "config"],
+)
+def test_execution_identity_change_rejects_variant_create(identity: str):
+    client = MockSelfTestClient()
+    client.current_manifest = "a" * 64
+    client.current_identity = identity
+    result = ARCSelfTestService(client=client).run(_direct_attempt(), _direct_variant_goal())
+    assert result.passed is False
+    assert result.reasons == ["bitpro_strategy_create_failed:ValueError"]
+    assert "parent strategy execution identity changed" in result.message
+    assert client.variant_created == []
+    assert client.backtests_started == []
+
+
+def test_missing_execution_identity_does_not_create_with_manifest_only():
+    client = MockSelfTestClient()
+    client.current_manifest = "b" * 64
+    result = ARCSelfTestService(client=client).run(
+        _direct_attempt(parent_execution_identity_sha256=None),
+        _direct_variant_goal(),
+    )
+    assert result.passed is False
+    assert "parent execution identity missing" in result.message
+    assert client.variant_created == []
+    assert client.backtests_started == []
+
+
+def test_propose_rejects_policy_without_execution_identity(source_variant_mission):
+    from hypertrade.arc.avo import _perform
+
+    source_variant_mission.projection.goal.evolution_context["variant_policy"].pop(
+        "parent_execution_identity_sha256"
+    )
+    with pytest.raises(ValueError, match="parent execution identity missing"):
+        _perform(
+            source_variant_mission,
+            "propose",
+            {"hypothesis": "wider source windows", "parameter_changes": {"fast_window": 12}},
+            ARCSelfTestService(client=MockSelfTestClient()),
+        )
+    assert source_variant_mission.projection.attempts == []
