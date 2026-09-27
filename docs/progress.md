@@ -1,5 +1,10 @@
 # Progress Log
 
+## 来源变体提案崩溃与运行时中断占名额 — 2026-09-27
+
+- 生产回读：#333（`arc_evo_3afac83c6debbe84`）与 #378（`arc_evo_f97e74f5f3beed8e`）均在首个来源变体 `propose` 后以 `avo_runtime_interrupted` 停止，残留未决 `propose` 工具调用占满名额，此后每轮 `concurrency_limit`。从生产只读导出研究状态本地重放定位：BitPro `strategy_research_variant_policy.v1` 的授权参数使用 `key`/`type=integer`/`min`/`max`，AVO 读取 `p["name"]` 触发 `KeyError`（整型校验也只认 `int`）；该异常不在工具拒绝类型内，且异常处理不记日志。
+- 修复：兼容 `key`/`name` 与 `integer`/`int`；`inspect`/`propose`/`stop` 等无平台副作用工具的意外异常改为拒绝反馈给模型；运行时中断记录日志与异常类型；无副作用工具残留的未决调用及无未决副作用的运行时中断不再占名额，`develop`/`finish` 未决仍阻断。修复后以同一生产状态重放，成功生成来源变体候选。
+
 ## AVO 上下文上限按 provider 放大（DeepSeek 900K） — 2026-09-27
 
 - 生产 #480 研究在多轮工具结果累积后以 `avo_context_budget_exhausted` 停止：AVO 一直使用压缩器默认 64,000（UTF-8 字节加帧开销的保守估算，远小于真实 token 窗口）。按用户要求放到最大：`deepseek` 为 900,000（`deepseek-v4-flash` 窗口 1M token 且与输出共用；token 不少于 1 字节，故输入真实 token ≤ 900K，保留 ≥100K 输出余量；恢复快照仍低于 2MB 上限），其它 provider 保持 64,000。更长上下文会增加每次模型调用的成本与耗时。

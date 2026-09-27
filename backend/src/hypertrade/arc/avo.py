@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 from collections.abc import Callable
 from dataclasses import asdict, replace
@@ -15,7 +16,7 @@ from jsonschema import ValidationError, validate
 
 from hypertrade.agent.compaction import ContextBlocked, compact_request, sanitize_context
 from hypertrade.arc.adversarial import BlueTeamQuant
-from hypertrade.arc.contracts import ARCCandidateAttemptV1
+from hypertrade.arc.contracts import SIDE_EFFECT_FREE_TOOLS, ARCCandidateAttemptV1
 from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProjection
 from hypertrade.arc.evolution_memory import (
     assess_development,
@@ -31,6 +32,8 @@ from hypertrade.config import get_settings
 from hypertrade.providers.chat import ChatProvider
 from hypertrade.providers.runtime import ProviderRuntime
 from hypertrade.research.codegen import FAMILIES, StrategyCodegenError
+
+logger = logging.getLogger(__name__)
 
 RESEARCH_STATES = {"created", "exploring_candidates", "mutating", "red_team_testing", "validating"}
 _ID = {"type": "string", "minLength": 1, "maxLength": 128}
@@ -397,7 +400,12 @@ def _perform(
             param_changes = arguments.get("parameter_changes")
             if not isinstance(param_changes, dict) or not param_changes:
                 raise ValueError("parameter_changes must be a non-empty mapping")
-            auth_params = {p["name"]: p for p in variant_policy.get("authorized_parameters", [])}
+            # BitPro's strategy_research_variant_policy.v1 names parameters by `key`.
+            auth_params = {
+                str(p.get("key") or p.get("name")): p
+                for p in variant_policy.get("authorized_parameters", [])
+                if isinstance(p, dict) and (p.get("key") or p.get("name"))
+            }
             for p_name, p_val in param_changes.items():
                 if p_name not in auth_params:
                     raise ValueError(f"parameter '{p_name}' is not authorized for variation")
@@ -410,7 +418,7 @@ def _perform(
                     raise ValueError(
                         f"parameter '{p_name}' value {p_val} out of bounds [{p_min}, {p_max}]"
                     )
-                if p_info.get("type") == "int" and int(p_val) != p_val:
+                if p_info.get("type") in {"int", "integer"} and int(p_val) != p_val:
                     raise ValueError(f"parameter '{p_name}' requires integer value")
             parent_baseline = (goal.evolution_context or {}).get("baseline") or {}
             baseline_spec = parent_baseline.get("strategy_spec", {})
@@ -704,8 +712,15 @@ def run_avo_research(
             if exc.detail:
                 message += "：" + exc.detail
             controller.apply_event("operator_needed", {"reason": str(exc), "message": message})
-        except Exception:
-            controller.apply_event("operator_needed", {"reason": "avo_runtime_interrupted"})
+        except Exception as exc:
+            logger.exception("avo research %s interrupted", mission_id)
+            controller.apply_event(
+                "operator_needed",
+                {
+                    "reason": "avo_runtime_interrupted",
+                    "message": f"研究运行时异常：{type(exc).__name__}",
+                },
+            )
         return {"status": controller.projection.state, "mission_id": mission_id}
 
 
@@ -1059,6 +1074,11 @@ def _run(
             result = _perform(controller, call["name"], call["arguments"], experiments, check_owner)
         except (ValueError, ValidationError, StrategyCodegenError) as exc:
             result = {"status": "rejected", "reason": str(exc)[:500]}
+        except Exception as exc:
+            if call["name"] not in SIDE_EFFECT_FREE_TOOLS:
+                raise
+            logger.exception("avo tool %s failed without side effects", call["name"])
+            result = {"status": "rejected", "reason": f"tool_error:{type(exc).__name__}"}
         controller.apply_event("avo_tool_finished", {"id": call["id"], "result": result})
 
 

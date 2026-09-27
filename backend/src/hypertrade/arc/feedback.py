@@ -10,6 +10,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from hypertrade.arc.contracts import (
+    SIDE_EFFECT_FREE_TOOLS,
     ARCBudgetV1,
     ARCGoalV1,
     PaperFeedbackPolicyV1,
@@ -661,6 +662,8 @@ _EPOCH_END_REASONS = frozenset(
         "avo_context_budget_exhausted",
         "avo_provider_unavailable",
         "avo_no_candidate",
+        # Only reached without a pending side effect; see _pending_effect.
+        "avo_runtime_interrupted",
     }
 )
 
@@ -669,7 +672,14 @@ def _pending_effect(projection: Any) -> bool:
     # An unanswered model request has no platform side effect; a tool call may have
     # dispatched a backtest or Paper action, and unknown kinds fail closed.
     pending = projection.avo.get("pending")
-    return bool(pending) and not (isinstance(pending, dict) and pending.get("kind") == "model")
+    if not pending:
+        return False
+    if not isinstance(pending, dict):
+        return True
+    return not (
+        pending.get("kind") == "model"
+        or (pending.get("kind") == "tool" and pending.get("name") in SIDE_EFFECT_FREE_TOOLS)
+    )
 
 
 def _feedback_child_active(child: ARCController) -> bool:
