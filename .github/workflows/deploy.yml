@@ -91,6 +91,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p /opt/hypertrade/frontend/dist /opt/hypertrade/deploy
+          # 持久备份只放 /var/backups/hypertrade。排除发布根下的 backups，
+          # 否则 --delete 会清掉 /opt/hypertrade/backups 里的迁移 dump。
           rsync -a --delete \
             --exclude '.git' \
             --exclude '.venv' \
@@ -102,6 +104,7 @@ jobs:
             --exclude 'logs' \
             --exclude 'workspace' \
             --exclude 'deploy/last_deployed_sha' \
+            --exclude '/backups/' \
             ./ /opt/hypertrade/
           rsync -a --delete frontend/dist/ /opt/hypertrade/frontend/dist/
 
