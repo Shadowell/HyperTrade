@@ -457,3 +457,65 @@ def test_evolution_migration_creates_and_removes_only_its_tables():
         }
         module.downgrade()
         assert inspect(connection).get_table_names() == []
+
+
+class VariantPaper(Paper):
+    """Source whose parameter variants BitPro supports, bound to its own 100U capital."""
+
+    capital: object = 100
+
+    def strategy_get(self, **kwargs):
+        body = super().strategy_get(**kwargs)
+        if self.capital is not None:
+            body["strategy"]["config"]["initial_capital"] = self.capital
+        return body
+
+    def strategy_research_variant_policy(self, **kwargs):
+        return {
+            "parent_strategy_id": 44,
+            "parent_manifest_sha256": "a" * 64,
+            "variant_creation_supported": True,
+            "authorized_parameters": [
+                {"key": "fast_window", "type": "integer", "min": 2, "max": 50}
+            ],
+        }
+
+
+def _variant_service(service, monkeypatch, capital):
+    now = prepare(service, monkeypatch)
+    service.client = VariantPaper()
+    service.client.capital = capital
+    state = service.status()
+    service.configure(
+        EvolutionConfig.model_validate({**state["config"], "paper_capital": "10000"}),
+        revision=state["revision"],
+        actor="test",
+    )
+    return now
+
+
+def test_variant_research_uses_source_capital_not_global_paper_capital(service, monkeypatch):
+    from decimal import Decimal
+
+    from hypertrade.arc.store import get_controller
+
+    now = _variant_service(service, monkeypatch, 100)
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    goal = get_controller(result["payload"]["mission_id"]).projection.goal
+    assert goal.paper_initial_equity == Decimal(100)
+    assert goal.evolution_context["research_capital"] == "100"
+    assert goal.evolution_context["baseline"]["strategy_spec"]["baseline_config"][
+        "initial_capital"
+    ] == 100
+
+
+def test_variant_research_without_source_capital_is_unavailable(service, monkeypatch):
+    from hypertrade.arc.store import list_mission_ids
+
+    now = _variant_service(service, monkeypatch, None)
+    result = service.tick(now)
+    diagnostic = result["payload"]["diagnostics"][0]
+    assert diagnostic["status"] == "unavailable"
+    assert "原策略资金" in diagnostic["reason"]
+    assert list_mission_ids() == []
