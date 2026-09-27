@@ -867,6 +867,78 @@ def test_webhook_configured_later_delivers_on_next_evaluation(db, monkeypatch) -
     assert list_alerts(db)[0]["delivery_result"] == "sent"
 
 
+def test_alert_text_links_bitpro_evolution_page_and_strategy_instance(db, webhook) -> None:
+    sent, post = webhook
+    seed_continuation(db, 333, blockers=[{"code": "session_identity"}])
+    assert evolution_alerts_once(db, now=NOW, post=post)["delivered"] == 1
+    text = sent[0]["payload"]["content"]["text"]
+    assert "https://bitpro.notenap.com/ai-lab?tab=evolution" in text
+    assert "https://bitpro.notenap.com/live?mode=paper&strategyId=333" in text
+    # Links live only in the delivered text: the stored message and its bound
+    # receipt hash stay unchanged, so existing open alerts are not re-paged.
+    alert = list_alerts(db)[0]
+    assert "http" not in alert["message"]
+    assert alert["delivery_verified"] is True
+
+
+def test_alert_links_follow_configured_console_url(db, monkeypatch, webhook) -> None:
+    sent, post = webhook
+    monkeypatch.setattr(
+        get_settings(), "bitpro_console_url", "https://console.example/", raising=False
+    )
+    seed_cycles(db, [("error", NOW - timedelta(hours=index)) for index in range(3)])
+    assert evolution_alerts_once(db, now=NOW, post=post)["delivered"] == 1
+    text = sent[0]["payload"]["content"]["text"]
+    assert "https://console.example/ai-lab?tab=evolution" in text
+    assert "console.example//" not in text
+    assert "strategyId" not in text  # global alert: no strategy page
+
+
+def test_non_bitpro_target_alert_has_no_bitpro_strategy_link(db, webhook) -> None:
+    sent, post = webhook
+    with db.session() as session:
+        session.add(
+            EvolutionContinuation(
+                id="src_other_77",
+                payload_json={
+                    "target_id": "other_market",
+                    "strategy_id": 77,
+                    "observed_at": NOW.isoformat(),
+                    "next_eligible_at": None,
+                    "blockers": [{"code": "session_identity"}],
+                    "evidence_cursor": {"sampling": {"reason_code": None}},
+                },
+            )
+        )
+    assert evolution_alerts_once(db, now=NOW, post=post)["delivered"] == 1
+    text = sent[0]["payload"]["content"]["text"]
+    assert "/ai-lab?tab=evolution" in text
+    assert "strategyId" not in text
+
+
+def test_truncated_alert_text_keeps_links(monkeypatch, webhook) -> None:
+    from hypertrade.arc.evolution_alerts import _deliver
+
+    sent, post = webhook
+    ok, result = _deliver(
+        {
+            "code": ALERT_OPERATOR_BLOCKED,
+            "message": "证据阻塞" * 2000,
+            "strategy_id": 333,
+            "target_id": "bitpro",
+            "first_seen_at": NOW.isoformat(),
+            "last_seen_at": NOW.isoformat(),
+        },
+        NOW,
+        post=post,
+    )
+    assert ok and result == "sent"
+    text = sent[0]["payload"]["content"]["text"]
+    assert len(text) <= 3900
+    assert text.endswith("https://bitpro.notenap.com/live?mode=paper&strategyId=333")
+    assert "https://bitpro.notenap.com/ai-lab?tab=evolution" in text
+
+
 def test_alerts_migration_creates_and_removes_only_its_table() -> None:
     import importlib.util
     from pathlib import Path

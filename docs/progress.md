@@ -1,5 +1,10 @@
 # Progress Log
 
+## 进化告警飞书消息附 BitPro 链接 — 2026-09-27
+
+- 用户要求飞书「进化告警」带可点击链接。新增配置 `BITPRO_CONSOLE_URL`（默认 `https://bitpro.notenap.com`）；推送文本末尾附自主进化页 `{base}/ai-lab?tab=evolution`，BitPro 目标的策略告警另附已存在的前端路由 `{base}/live?mode=paper&strategyId={id}`（非 BitPro 目标不附策略链接，告警 payload 记录 `target_id`）。3900 字符上限改为只截正文、保留时间与链接尾部。
+- 链接只在 `_deliver` 拼接，不写入 `row.message`；回执绑定的 `delivery_message_hash` 与 `signature` 均不变，已 open 的告警不会因本次改动重发，按原每日提醒节奏在下一次提醒时带上链接。回归测试见 `tests/test_evolution_alerts.py`（链接、自定义地址、非 BitPro 目标、超长截断 4 项），`./scripts/check.sh` 全量通过（1763 passed）。
+
 ## 自进化运行时失败与模型回复持久化 — 2026-09-27
 
 - 用户要求“所有自进化的过程、状态、数据都要持久化到数据库”。生产只读审计：研究事件全量存于 `arc_missions.projection_json.events`（无上限，进度接口只展示最近 100 条），扫描/预算/延续/告警/元调参均有表；缺口是 3 个 `error` 扫描周期只存 `BitProMcpError` 类型名、2 次 `avo_runtime_interrupted` 只存类型名、worker 循环异常只写 stdout（部署后丢失）、模型回复正文在有工具调用时丢弃（无调用时截 1000 字）、推理内容从未保存、上下文恢复快照 30 天过期。

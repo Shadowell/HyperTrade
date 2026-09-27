@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     paper_slippage_bps: str = Field(default="2", alias="PAPER_SLIPPAGE_BPS")
 
     feishu_webhook_url: str = Field(default="", alias="FEISHU_WEBHOOK_URL")
+    bitpro_console_url: str = Field(
+        default="https://bitpro.notenap.com", alias="BITPRO_CONSOLE_URL"
+    )
     monitor_scheduler_enabled: bool = Field(default=True, alias="MONITOR_SCHEDULER_ENABLED")
     monitor_loop_interval_seconds: int = Field(default=60, alias="MONITOR_LOOP_INTERVAL_SECONDS")
     agent_task_worker_enabled: bool = Field(default=True, alias="AGENT_TASK_WORKER_ENABLED")

@@ -36,6 +36,7 @@ _NON_SCAN_CYCLE_STATUSES = ("budget_admitted", "budget_denied", "meta_tuning")
 RETRY_AFTER_HOURS = 6
 REMIND_AFTER_HOURS = 24
 DELIVERY_RECEIPT_VERSION = "feishu_webhook.v1"
+TEXT_LIMIT = 3900
 # A continuation older than this belongs to a strategy the scan no longer
 # updates (paused/removed); its stale blockers are not an alert condition.
 STALE_CONTINUATION_HOURS = 3
@@ -197,12 +198,14 @@ def _desired_alerts(
             {str(b.get("code")) for b, resolution in pairs if resolution == "operator"}
             | set(alert_codes((row.get("evidence_cursor") or {}).get("source_provenance")))
         )
+        target_id = str(row.get("target_id") or "bitpro")
         if operator_codes:
             key = alert_id(ALERT_OPERATOR_BLOCKED, strategy_id)
             desired[key] = {
                 "code": ALERT_OPERATOR_BLOCKED,
                 "severity": "warning",
                 "strategy_id": strategy_id,
+                "target_id": target_id,
                 "message": _operator_message(row, strategy_id, operator_codes),
                 "tracking_only": False,
                 "signature": "|".join(
@@ -233,6 +236,7 @@ def _desired_alerts(
                 "code": ALERT_STALLED,
                 "severity": "warning",
                 "strategy_id": strategy_id,
+                "target_id": target_id,
                 "message": (
                     f"策略 {strategy_id} 的证据窗口无法构建且没有可预计的资格时间"
                     "（数据缺口或上游读取失败），超过 72 小时仍未恢复"
@@ -289,21 +293,37 @@ def _default_post(url: str, payload: dict[str, Any]) -> None:
         raise WebhookRejected(f"business_code_{rejected}")
 
 
+def _console_links(block: dict[str, Any], console_url: str) -> str:
+    base = console_url.strip().rstrip("/")
+    if not base:
+        return ""
+    links = f"\n查看和确认：{base}/ai-lab?tab=evolution"
+    strategy_id = block.get("strategy_id")
+    # Strategy ids of other market targets do not exist in BitPro's console.
+    if strategy_id is not None and block.get("target_id") == "bitpro":
+        links += f"\n策略模拟盘：{base}/live?mode=paper&strategyId={int(strategy_id)}"
+    return links
+
+
 def _deliver(block: dict[str, Any], now: datetime, *, post: Poster | None) -> tuple[bool, str]:
     from hypertrade.config import get_settings
 
-    webhook = str(getattr(get_settings(), "feishu_webhook_url", "") or "").strip()
+    settings = get_settings()
+    webhook = str(getattr(settings, "feishu_webhook_url", "") or "").strip()
     if not webhook:
         return False, "skipped_no_webhook"
-    text = f"[HyperTrade 进化告警] {_LABELS.get(block['code'], block['code'])}\n{block['message']}"
-    text += (
+    body = f"[HyperTrade 进化告警] {_LABELS.get(block['code'], block['code'])}\n{block['message']}"
+    footer = (
         f"\n首次发现：{block.get('first_seen_at', now.isoformat())}"
         f"\n最近检查：{block.get('last_seen_at', now.isoformat())}"
         "\n未解决且未确认将每天提醒；请在 BitPro 自主研究页面查看和确认。"
+        + _console_links(block, str(getattr(settings, "bitpro_console_url", "") or ""))
     )
+    # Truncate the body, never the footer: the links must survive long messages.
+    text = body[: max(0, TEXT_LIMIT - len(footer))] + footer
     sender = post or _default_post
     try:
-        sender(webhook, {"msg_type": "text", "content": {"text": text[:3900]}})
+        sender(webhook, {"msg_type": "text", "content": {"text": text[:TEXT_LIMIT]}})
     except WebhookRejected as exc:
         return False, f"failed:{exc}"
     except Exception as exc:  # noqa: BLE001 - delivery failure must never crash the loop
@@ -367,7 +387,8 @@ def _alert_continuations(db: Database, now: datetime) -> list[dict[str, Any]]:
             sid in latest and observed <= latest[sid]
         ):
             continue
-        overrides.append({**state, "strategy_id": sid})
+        target_id = diagnostic.get("target_id") or state.get("target_id") or "bitpro"
+        overrides.append({**state, "strategy_id": sid, "target_id": str(target_id)})
         latest[sid] = observed
     replaced = {_row_strategies(row) for row in overrides}
     return overrides + [row for row in rows if _row_strategies(row) not in replaced]
@@ -416,6 +437,7 @@ def evolution_alerts_once(
                             "first_seen_at": now.isoformat(),
                             "last_seen_at": now.isoformat(),
                             "signature": block["signature"],
+                            **({"target_id": block["target_id"]} if "target_id" in block else {}),
                         },
                     )
                 )
@@ -428,6 +450,8 @@ def evolution_alerts_once(
                 changed = payload.get("signature") != block["signature"]
                 payload["last_seen_at"] = now.isoformat()
                 payload["signature"] = block["signature"]
+                if "target_id" in block:
+                    payload["target_id"] = block["target_id"]
                 row.payload_json = payload
                 if not block["tracking_only"]:
                     row.message = block["message"]
@@ -515,6 +539,8 @@ def evolution_alerts_once(
                 {
                     "code": row.code,
                     "message": row.message,
+                    "strategy_id": row.strategy_id,
+                    "target_id": payload.get("target_id"),
                     "first_seen_at": _first_seen(
                         payload, fallback=_aware(row.created_at)
                     ).isoformat(),
