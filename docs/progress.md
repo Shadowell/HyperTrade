@@ -3,7 +3,7 @@
 ## 研究事件拆表（实现完成，生产迁移待确认） — 2026-09-27
 
 - 背景：生产 `arc_missions` 总大小 166MB、有效投影约 8MB，每追加一条事件都整份重写投影（观察中任务 2 万余条事件、每分钟重写）。新增只追加表 `arc_mission_events` 与迁移 0048（只建表加列），读取合并表内与旧内联事件（按 `event_id` 去重），提交在行锁内追加事件并写回不含事件的投影；历史搬迁脚本 `hypertrade.arc.event_migration`（幂等、逐任务哈希核对、dry-run、回滚）。
-- 验证：`tests/test_arc_event_journal.py`（7 项，旧代码全部失败）与真实 PostgreSQL 双进程并发测试 `tests/test_arc_event_journal_postgres.py`（旧格式行升级、两进程各写 15 条、批量迁移、降级回折、再升级哈希一致）。生产迁移按用户要求在演练汇报并确认后执行，执行记录（备份位置、数量、核对结果）届时追加。
+- 验证：`tests/test_arc_event_journal.py`（7 项，旧代码全部失败）与真实 PostgreSQL 双进程并发测试 `tests/test_arc_event_journal_postgres.py`（旧格式行升级、两进程各写 15 条、批量迁移、降级回折、再升级哈希一致）。服务器演练（2026-09-27）：生产库 `pg_dump` 恢复到临时库 `hypertrade_rehearsal`，以本分支代码挂载进 worker 镜像执行：38 个任务、42143 条事件；升级 0048 → dry-run → 迁移（约 22 秒）→ 重跑（移动 0）→ 降级回折 → 再升级迁移，旧代码与新代码计算的逐任务逻辑投影哈希在各阶段完全一致、`revision` 不变、逐任务事件数一致；观察中任务每次提交写入的投影由约 1MB 降到 11–24KB；`VACUUM FULL` 后 `arc_missions` 3MB、`arc_mission_events` 57MB。演练库与 dump 已删除。生产迁移待用户确认后执行，执行记录（备份位置、数量、核对结果）届时追加。
 
 ## 非 ARC worker 循环与完整失败原因入库 — 2026-09-27
 
