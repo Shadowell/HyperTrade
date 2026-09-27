@@ -2064,6 +2064,27 @@ class ArcMission(Base, TimestampMixin):
     # api and worker are separate processes that both advance a mission. This counter
     # tells a cached projection from the committed one, so neither erases the other.
     revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Events stored in arc_mission_events. projection_json keeps ``events`` empty except
+    # on rows written by pre-table code, whose inline events readers merge by event_id.
+    event_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class ArcMissionEvent(Base):
+    """Append-only mission event; ``event_json`` is the exact serialized ARCEventV1."""
+
+    __tablename__ = "arc_mission_events"
+    __table_args__ = (
+        UniqueConstraint("mission_id", "seq", name="uq_arc_mission_events_seq"),
+        UniqueConstraint("mission_id", "event_id", name="uq_arc_mission_events_event_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mission_id: Mapped[str] = mapped_column(String(64), index=True)
+    seq: Mapped[int] = mapped_column(Integer)
+    event_id: Mapped[str] = mapped_column(String(64))
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    event_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class Database:

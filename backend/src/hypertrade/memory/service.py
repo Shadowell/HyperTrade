@@ -69,7 +69,7 @@ class MemoryService:
         cost_policy_hash: str | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Resolve authoritative ARC receipts on every read, bounded to 200 missions/records."""
-        from hypertrade.arc.controller import ARCMissionProjection
+        from hypertrade.arc.store import load_projection
         from hypertrade.db import ArcMission
 
         records: list[dict[str, Any]] = []
@@ -78,7 +78,7 @@ class MemoryService:
                 select(ArcMission).order_by(ArcMission.updated_at.desc()).limit(201)
             ).all()
             for row in rows[:200]:
-                projection = ARCMissionProjection.model_validate(row.projection_json)
+                projection = load_projection(session, row)
                 goal = projection.goal
                 if goal is None or symbol not in goal.symbols:
                     continue

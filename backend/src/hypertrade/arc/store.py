@@ -17,9 +17,10 @@ from threading import Lock
 from typing import Any
 
 from sqlalchemy import select, text
+from sqlalchemy.orm import Session
 
 from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProjection
-from hypertrade.db import ArcMission, Database
+from hypertrade.db import ArcMission, ArcMissionEvent, Database
 
 MISSIONS: dict[str, ARCController] = {}
 _MEMORY: dict[str, dict[str, Any]] = {}
@@ -104,26 +105,13 @@ def commit_event(controller: ARCController, event: ARCEventV1) -> None:
     with _database.session() as session:
         row = session.get(ArcMission, controller.mission_id, with_for_update=True)
         if row is not None and int(row.revision or 0) != controller.revision:
-            controller.rebase(
-                ARCMissionProjection.model_validate(dict(row.projection_json)),
-                int(row.revision or 0),
-            )
+            controller.rebase(load_projection(session, row), int(row.revision or 0))
         controller.absorb(event)
-        payload = controller.projection.model_dump(mode="json")
         revision = controller.revision + 1
         if row is None:
-            session.add(
-                ArcMission(
-                    mission_id=controller.mission_id,
-                    state=controller.projection.state,
-                    projection_json=payload,
-                    revision=revision,
-                )
-            )
+            payload = insert_mission(session, controller, revision)
         else:
-            row.state = controller.projection.state
-            row.projection_json = payload
-            row.revision = revision
+            payload = _write(session, row, controller, revision)
         controller.revision = revision
     _cache(controller, payload)
 
@@ -141,32 +129,95 @@ def save_mission(controller: ARCController) -> None:
     with _database.session() as session:
         row = session.get(ArcMission, controller.mission_id, with_for_update=True)
         if row is None:
-            payload = controller.projection.model_dump(mode="json")
             controller.revision = 1
-            session.add(
-                ArcMission(
-                    mission_id=controller.mission_id,
-                    state=controller.projection.state,
-                    projection_json=payload,
-                    revision=1,
-                )
-            )
-            _cache(controller, payload)
+            _cache(controller, insert_mission(session, controller, 1))
             return
         if int(row.revision or 0) != controller.revision:
-            controller.rebase(
-                ARCMissionProjection.model_validate(dict(row.projection_json)),
-                int(row.revision or 0),
-            )
-            _cache(controller, dict(row.projection_json))
+            controller.rebase(load_projection(session, row), int(row.revision or 0))
+            _cache(controller, controller.projection.model_dump(mode="json"))
             return
-        payload = controller.projection.model_dump(mode="json")
         revision = controller.revision + 1
-        row.state = controller.projection.state
-        row.projection_json = payload
-        row.revision = revision
+        payload = _write(session, row, controller, revision)
         controller.revision = revision
     _cache(controller, payload)
+
+
+def load_projection(session: Session, row: ArcMission) -> ARCMissionProjection:
+    """The committed projection: journalled events plus any inline legacy events.
+
+    Rows written by pre-journal code keep events inline in ``projection_json``; a process
+    still running that code during a deploy appends there too. Both layouts are merged
+    by ``event_id`` so neither loses nor duplicates an event.
+    """
+    payload = dict(row.projection_json or {})
+    inline = list(payload.get("events") or [])
+    stored = _stored_events(session, row.mission_id)
+    known = {event["event_id"] for event in stored}
+    payload["events"] = stored + [event for event in inline if event.get("event_id") not in known]
+    return ARCMissionProjection.model_validate(payload)
+
+
+def _stored_events(session: Session, mission_id: str) -> list[dict[str, Any]]:
+    return [
+        dict(value)
+        for value in session.scalars(
+            select(ArcMissionEvent.event_json)
+            .where(ArcMissionEvent.mission_id == mission_id)
+            .order_by(ArcMissionEvent.seq)
+        )
+    ]
+
+
+def insert_mission(session: Session, controller: ARCController, revision: int) -> dict[str, Any]:
+    row = ArcMission(
+        mission_id=controller.mission_id,
+        state=controller.projection.state,
+        projection_json={},
+        revision=revision,
+        event_count=0,
+    )
+    session.add(row)
+    session.flush()
+    return _write(session, row, controller, revision)
+
+
+def _write(
+    session: Session, row: ArcMission, controller: ARCController, revision: int
+) -> dict[str, Any]:
+    """Append the controller's unjournalled events, then store the projection without them.
+
+    The controller was read at this row's revision, so its first ``event_count`` events
+    are exactly the journalled ones; the check on the last one guards that invariant.
+    """
+    payload = controller.projection.model_dump(mode="json")
+    events = payload["events"]
+    stored = int(row.event_count or 0)
+    if stored > len(events):
+        raise RuntimeError("arc_event_journal_ahead_of_projection")
+    if stored:
+        last = session.scalars(
+            select(ArcMissionEvent.event_id).where(
+                ArcMissionEvent.mission_id == row.mission_id, ArcMissionEvent.seq == stored
+            )
+        ).one_or_none()
+        if last != events[stored - 1]["event_id"]:
+            raise RuntimeError("arc_event_journal_diverged")
+    for seq, event in enumerate(events[stored:], start=stored + 1):
+        session.add(
+            ArcMissionEvent(
+                mission_id=row.mission_id,
+                seq=seq,
+                event_id=event["event_id"],
+                event_type=event["event_type"],
+                event_json=event,
+            )
+        )
+    row.event_count = len(events)
+    row.state = controller.projection.state
+    row.projection_json = {**payload, "events": []}
+    row.revision = revision
+    session.flush()
+    return payload
 
 
 def get_controller(mission_id: str) -> ARCController | None:
@@ -232,8 +283,11 @@ def _load_persisted(mission_id: str) -> ARCController | None:
         with _database.session() as session:
             row = session.get(ArcMission, mission_id)
             if row is not None and isinstance(row.projection_json, dict):
-                payload = dict(row.projection_json)
-                revision = int(row.revision or 0)
+                projection = load_projection(session, row)
+                controller = ARCController(mission_id=mission_id)
+                controller.projection = projection
+                controller.revision = int(row.revision or 0)
+                return controller
     if payload is None:
         stored = _MEMORY.get(mission_id)
         payload = dict(stored) if stored is not None else None

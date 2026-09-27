@@ -418,7 +418,7 @@ class ContinuationLedger:
                     )
 
     def refresh(self, now: datetime) -> None:
-        from hypertrade.arc.store import research_lock
+        from hypertrade.arc.store import load_projection, research_lock
         from hypertrade.db import ArcMission
 
         with research_lock("evolution-acceptance") as owner:
@@ -429,7 +429,7 @@ class ContinuationLedger:
                     select(ArcMission).order_by(ArcMission.created_at)
                 ).yield_per(20)
                 for mission in missions:
-                    projection = ARCMissionProjection.model_validate(mission.projection_json)
+                    projection = load_projection(session, mission)
                     goal = projection.goal
                     context = (goal.feedback_parent or goal.evolution_context) if goal else None
                     if not goal or not context:

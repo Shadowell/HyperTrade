@@ -24,7 +24,7 @@ from hypertrade.arc.contracts import (
     PaperFeedbackPolicyV1,
     ResearchWindowsV1,
 )
-from hypertrade.arc.controller import ARCController, ARCMissionProjection
+from hypertrade.arc.controller import ARCController
 from hypertrade.arc.evolution_continuation import ContinuationLedger, readiness
 from hypertrade.arc.evolution_diagnostics import (
     blocked_data_diagnostic,
@@ -34,7 +34,7 @@ from hypertrade.arc.evolution_diagnostics import (
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import collect_windows
 from hypertrade.arc.runtime_journal import failure_text, record_runtime_error
-from hypertrade.arc.store import get_controller, research_lock
+from hypertrade.arc.store import get_controller, load_projection, research_lock
 from hypertrade.arc.universe import declared_symbols, normalize_symbols
 from hypertrade.db import ArcMission, Database
 from hypertrade.memory.service import MemoryService
@@ -825,7 +825,7 @@ class EvolutionService:
                 select(ArcMission).order_by(ArcMission.updated_at.desc())
             ).yield_per(20)
             for row in records:
-                projection = ARCMissionProjection.model_validate(row.projection_json)
+                projection = load_projection(session, row)
                 goal = projection.goal
                 if goal is None:
                     continue
