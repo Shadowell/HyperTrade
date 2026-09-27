@@ -8,6 +8,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# AVO tools that never write to the platform: an unexpected error is fed back to
+# the model, and a pending call left by a crash is not an unresolved side effect.
+SIDE_EFFECT_FREE_TOOLS = frozenset({"inspect", "propose", "stop"})
 ChatProviderName = Literal["deepseek", "openai", "codex", "qwen", "openrouter", "vide_coding"]
 
 

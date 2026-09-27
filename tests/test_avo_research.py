@@ -878,3 +878,39 @@ def test_deepseek_context_budget_admits_research_that_default_budget_blocks(miss
     records = [e for e in mission.projection.events if e.event_type == "avo_context_recorded"]
     assert records[0].payload["manifest"]["status"] == "ready"
     assert records[0].payload["manifest"]["max_tokens"] == 900_000
+
+
+def test_unexpected_error_in_side_effect_free_tool_is_fed_back(mission, monkeypatch):
+    from hypertrade.arc import avo
+
+    real_perform = avo._perform
+
+    def flaky(controller, name, arguments, experiments, check_owner=None):
+        if name == "propose":
+            raise KeyError("name")
+        return real_perform(controller, name, arguments, experiments, check_owner)
+
+    class ProposeThenStop(ScriptProvider):
+        def chat(self, messages, tools=None):
+            self.calls += 1
+            name, args = (
+                ("propose", {"hypothesis": "trend"})
+                if self.calls == 1
+                else ("stop", {"reason": "tool failed, stopping honestly"})
+            )
+            call = ToolCallRequest(id=f"call-{self.calls}", name=name, arguments=args)
+            return ChatResponse(content="", tool_calls=[call])
+
+    monkeypatch.setattr(avo, "_perform", flaky)
+    run_avo_research(
+        mission.projection.mission_id, provider=ProposeThenStop(), experiments=Experiments()
+    )
+    finished = [e.payload for e in mission.projection.events if e.event_type == "avo_tool_finished"]
+    assert finished[0]["result"] == {"status": "rejected", "reason": "tool_error:KeyError"}
+    reasons = [
+        e.payload.get("reason")
+        for e in mission.projection.events
+        if e.event_type == "operator_needed"
+    ]
+    assert "avo_runtime_interrupted" not in reasons
+    assert mission.projection.avo.get("pending") is None

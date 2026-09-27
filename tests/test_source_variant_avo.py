@@ -500,3 +500,42 @@ def test_backtest_still_running_after_wait_is_reported_as_timeout(source_variant
     assert result.passed is False
     assert result.reasons == ["bitpro_backtest_timeout"]
     assert waits == [BACKTEST_WAIT_SECONDS, BACKTEST_WAIT_SECONDS]
+
+
+def _bitpro_policy_schema(mission):
+    # Shape returned by BitPro strategy_research_variant_policy.v1 in production.
+    policy = mission.projection.goal.evolution_context["variant_policy"]
+    policy["authorized_parameters"] = [
+        {"key": "fast_window", "type": "integer", "min": 5, "max": 50},
+        {"key": "slow_window", "type": "integer", "min": 20, "max": 200},
+    ]
+
+
+def test_propose_accepts_bitpro_policy_schema_and_enforces_integers(source_variant_mission):
+    from hypertrade.arc.avo import _perform
+
+    _bitpro_policy_schema(source_variant_mission)
+    experiments = ARCSelfTestService(client=MockSelfTestClient())
+    with pytest.raises(ValueError, match="requires integer value"):
+        _perform(
+            source_variant_mission,
+            "propose",
+            {"hypothesis": "fractional window", "parameter_changes": {"fast_window": 10.5}},
+            experiments,
+        )
+    with pytest.raises(ValueError, match="out of bounds"):
+        _perform(
+            source_variant_mission,
+            "propose",
+            {"hypothesis": "too slow", "parameter_changes": {"slow_window": 500}},
+            experiments,
+        )
+    result = _perform(
+        source_variant_mission,
+        "propose",
+        {"hypothesis": "wider source windows", "parameter_changes": {"fast_window": 12}},
+        experiments,
+    )
+    attempt = source_variant_mission.projection.attempts[-1]
+    assert result["attempt_id"] == attempt.attempt_id
+    assert attempt.strategy_spec["parameter_changes"] == {"fast_window": 12}
