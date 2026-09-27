@@ -1,5 +1,9 @@
 # Progress Log
 
+## AVO 上下文上限按 provider 放大（DeepSeek 900K） — 2026-09-27
+
+- 生产 #480 研究在多轮工具结果累积后以 `avo_context_budget_exhausted` 停止：AVO 一直使用压缩器默认 64,000（UTF-8 字节加帧开销的保守估算，远小于真实 token 窗口）。按用户要求放到最大：`deepseek` 为 900,000（`deepseek-v4-flash` 窗口 1M token 且与输出共用；token 不少于 1 字节，故输入真实 token ≤ 900K，保留 ≥100K 输出余量；恢复快照仍低于 2MB 上限），其它 provider 保持 64,000。更长上下文会增加每次模型调用的成本与耗时。
+
 ## 研究回测等待与来源变体专用提案 — 2026-09-26
 
 - 生产回读（切换 DeepSeek 后首个研究 `arc_evo_cc27ed0cb39d404b`，#480）：DeepSeek 正常调用工具并提出候选，但提交的是 `donchian_breakout` 模板族，绕过了 #480 的来源参数政策，违背规格008“不以模板替换原策略”；开发回测在 BitPro 94 秒完成，而连接器默认只等90秒，自测拿到空指标并误报“未报告 sharpe”，模型随后重复发起回测。

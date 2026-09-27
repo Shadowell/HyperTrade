@@ -860,3 +860,21 @@ def test_provider_http_error_is_recorded_for_operator_with_secrets_redacted(miss
     assert "HTTP 400" in stop.payload["message"]
     assert "model not supported" in stop.payload["message"]
     assert "sk-live-secret" not in stop.payload["message"]
+
+
+def test_deepseek_context_budget_admits_research_that_default_budget_blocks(mission):
+    from hypertrade.arc.avo import _context_budget
+
+    class DeepSeekScript(ScriptProvider):
+        name = "deepseek"
+        model = "deepseek-v4-flash"
+
+    assert _context_budget(DeepSeekScript()) == 900_000
+    assert _context_budget(ScriptProvider()) == 64_000
+    mission.projection.goal.evolution_context = {"evidence": "长中文" * 12000}
+    provider = DeepSeekScript()
+    run_avo_research(mission.projection.mission_id, provider=provider, experiments=Experiments())
+    assert provider.calls > 0
+    records = [e for e in mission.projection.events if e.event_type == "avo_context_recorded"]
+    assert records[0].payload["manifest"]["status"] == "ready"
+    assert records[0].payload["manifest"]["max_tokens"] == 900_000
