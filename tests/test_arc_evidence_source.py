@@ -224,7 +224,7 @@ def test_build_default_window_reads_declared_origin_setting(monkeypatch):
     class _Settings:
         arc_evidence_live_fallback_enabled = True
         arc_evidence_archive_origin = "okx_swap"
-        bitpro_sqlite_path = "/tmp/some-archive.sqlite"
+        bitpro_mcp_api_base = "http://bitpro/api/v2"
 
     window = build_default_window(_Settings())
     members = window.members()

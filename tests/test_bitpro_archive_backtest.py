@@ -36,7 +36,7 @@ def test_backtest_service_can_use_bitpro_archive_candles(tmp_path) -> None:
         settings=Settings(BITPRO_SQLITE_PATH=bitpro_db),
     ).run(
         strategy_key="momentum_breakout_v1",
-        candle_source="bitpro",
+        candle_source="bitpro_archive",
         symbol="ETH",
         bar="1H",
         candle_limit=24,
@@ -186,3 +186,19 @@ def _seed_bitpro_kline_table(db_path, *, table: str, symbol: str) -> None:
             """,
             rows,
         )
+
+
+def test_bitpro_source_uses_remote_provider_without_host_path():
+    from hypertrade.strategy.sdk import sample_candles
+
+    calls = []
+    class Adapter:
+        last_tool_calls = []
+        def fetch_candles(self, **kwargs):
+            calls.append(kwargs)
+            return sample_candles()
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    result = BacktestService(db, bitpro_adapter=Adapter()).run(candle_source="bitpro", symbol="ETH")
+    assert result["report_json"]["data_source"] == "bitpro_mcp_market_history"
+    assert calls == [{"symbol": "ETH", "timeframe": "1H", "limit": 100}]

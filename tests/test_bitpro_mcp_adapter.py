@@ -1863,7 +1863,7 @@ def test_backtest_service_can_use_bitpro_mcp_market_klines() -> None:
     )
 
     assert result["status"] == "completed"
-    assert result["report_json"]["data_source"] == "bitpro_mcp_market_klines"
+    assert result["report_json"]["data_source"] == "bitpro_mcp_market_history"
     assert result["report_json"]["inst_id"] == "ETH-USDT-SWAP"
     assert result["report_json"]["bar"] == "1H"
     assert result["report_json"]["candle_count"] == 24

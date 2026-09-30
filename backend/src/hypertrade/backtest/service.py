@@ -64,7 +64,7 @@ class BacktestService:
             okx_candles = self._fetch_okx_candles(inst_id, normalized_bar, candle_limit)
             candles = _okx_candles_to_strategy_candles(okx_candles)
             data_source = "okx_rest_candles"
-        elif selected_source == "bitpro":
+        elif selected_source == "bitpro_archive":
             inst_id = _normalize_swap_inst_id(symbol)
             candles = self._fetch_bitpro_candles(
                 symbol=symbol,
@@ -72,14 +72,14 @@ class BacktestService:
                 limit=candle_limit,
             )
             data_source = "bitpro_sqlite_candles"
-        elif selected_source == "bitpro_mcp":
+        elif selected_source in {"bitpro", "bitpro_mcp"}:
             inst_id = _normalize_swap_inst_id(symbol)
             candles = self._fetch_bitpro_mcp_candles(
                 symbol=symbol,
                 bar=normalized_bar,
                 limit=candle_limit,
             )
-            data_source = "bitpro_mcp_market_klines"
+            data_source = "bitpro_mcp_market_history"
         result = self.engine.run(
             strategy_key=strategy_key,
             candles=candles or sample_candles(),
@@ -91,7 +91,7 @@ class BacktestService:
             {
                 "data_source": data_source,
                 "inst_id": inst_id,
-                "bar": normalized_bar if selected_source in {"okx", "bitpro"} else "",
+                "bar": normalized_bar if inst_id else "",
                 "candle_count": len(candles or sample_candles()),
             }
         )
@@ -105,7 +105,7 @@ class BacktestService:
             result.report_markdown,
             data_source=data_source,
             inst_id=inst_id,
-            bar=normalized_bar if selected_source in {"okx", "bitpro", "bitpro_mcp"} else "",
+            bar=normalized_bar if inst_id else "",
             candle_count=len(candles or sample_candles()),
         )
         with self.db.session() as session:

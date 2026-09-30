@@ -160,20 +160,29 @@ class OkxLiveWindow:
         return _okx_candles_to_strategy_candles(okx_candles)
 
 
-def build_default_window(settings: Any = None) -> ArchiveThenLiveWindow:
-    """Archive first, live only when an operator opted in.
+@dataclass(frozen=True)
+class RemoteWindow:
+    """Read the closed history over the platform contract, without host mounts."""
 
-    Returns a window with no sources when nothing is configured, so the gate raises an
-    advisory instead of the caller having to special-case an unconfigured deployment.
-    The live fallback stays behind a flag: an autonomous loop reaching an exchange on its
-    own initiative is a side effect no research verdict should require.
-    """
+    settings: Any = None
+
+    def read(self, *, symbol: str, timeframe: str, limit: int) -> Sequence[Any]:
+        from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
+
+        return BitProToolAdapter(BitProMcpClient(settings=self.settings)).fetch_candles(
+            symbol=symbol, timeframe=timeframe, limit=limit
+        )
+
+
+def build_default_window(settings: Any = None) -> ArchiveThenLiveWindow:
+    """Remote history first; exchange fallback remains explicitly opt-in."""
     from hypertrade.config import get_settings
 
     resolved = settings or get_settings()
+    remote_enabled = bool(str(getattr(resolved, "bitpro_mcp_api_base", "")).strip())
     live_enabled = bool(getattr(resolved, "arc_evidence_live_fallback_enabled", False))
     return ArchiveThenLiveWindow(
-        archive=_configured_archive(getattr(resolved, "bitpro_sqlite_path", "")),
+        archive=RemoteWindow(resolved) if remote_enabled else None,
         live=OkxLiveWindow(resolved) if live_enabled else None,
     )
 

@@ -35,7 +35,6 @@ services:
     ports:
       - "127.0.0.1:3334:3334"
     volumes:
-      - ${BITPRO_HOST_DATA_DIR:-/opt/bitpro/data}:/bitpro-data:ro
       # This is an IPC directory containing only the sandbox UDS. It is not a
       # Docker socket and the API mount is read-only.
       - ${AGENT_STRATEGY_SANDBOX_SOCKET_DIR:-/opt/hypertrade/workspace/sandbox-ipc}:/run/hypertrade-sandbox:ro
@@ -68,7 +67,6 @@ services:
       # the API, never a copied OAuth token in the environment file.
       CODEX_AUTH_JSON: /run/secrets/hypertrade_codex_auth
     volumes:
-      - ${BITPRO_HOST_DATA_DIR:-/opt/bitpro/data}:/bitpro-data:ro
     secrets:
       - source: codex_auth
         target: hypertrade_codex_auth

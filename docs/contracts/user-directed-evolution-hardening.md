@@ -98,3 +98,7 @@ uv run pytest tests/test_evolution_effectiveness.py tests/test_evolution_alerts.
 ## 2026-09-30 BitPro 名称准入补充
 
 研究自测与模拟孵化在外部创建前校验 BitPro 名称协议：资产、周期、类型、标的范围、可读方法和有限正数资金。机器代号/长哈希仅保留在描述与操作身份，非法名称返回 `bitpro_strategy_name_invalid`，不执行远端校验、创建、配置或启动。无审核研究也使用规范名称；孵化的名称与配置共用原始小数资金，不向下取整。BitPro 为最终准入事实源，客户端协议校验不提供交易退出、重启恢复或审核证明；#1168 的退出执行/生成器完整对齐仍待独立验证。
+
+## 2026-09-30 远程历史窗口
+
+ARC 默认使用 RemoteWindow，经 KlineDataProvider 获取 BitPro 的 market_history_page.v1。固定闭合边界，每页最多5000根，总计最多20000根；先验证服务/标的/周期身份、SHA256、完整时间网格、价格和新鲜度，再作为研究输入。60秒缓存绑定服务和凭据摘要，不跨目标或边界复用；缓存损坏/过期必须读远端。默认不读宿主机目录或旧 SQLite；明确离线 bitpro_archive 路径继续可用，容器不再挂载 /bitpro-data。

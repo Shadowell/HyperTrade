@@ -30,6 +30,7 @@ DEFAULT_AUTH_HEADER = "X-BitPro-MCP-Token"
 READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "bitpro_health": {"method": "GET", "path": "/system/health"},
     "market_symbols": {"method": "GET", "path": "/market/symbols"},
+    "market_history_page": {"method": "GET", "path": "/market/history-page"},
     "market_klines": {"method": "GET", "path": "/market/klines"},
     "market_indicators": {"method": "GET", "path": "/market/indicators"},
     "sync_config": {"method": "GET", "path": "/sync/config"},
@@ -476,12 +477,24 @@ class BitProToolAdapter:
             "tool_calls": self.last_tool_calls,
         }
 
+    def market_history_page(self, **parameters: Any) -> dict[str, Any]:
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(self._call("market_history_page", parameters))
+
     def fetch_candles(self, *, symbol: str, timeframe: str, limit: int) -> list[Candle]:
-        payload = self.market_klines(symbol=symbol, timeframe=timeframe, limit=limit)
-        candles = [_row_to_candle(row) for row in payload["candles"]]
-        if not candles:
-            raise ValueError(f"No BitPro MCP candles found for {symbol} {timeframe}")
-        return sorted(candles, key=lambda candle: candle.timestamp)
+        import hashlib
+        from pathlib import Path
+
+        from hypertrade.backtest.remote import RemoteKlineProvider
+
+        namespace = hashlib.sha256(
+            f"{self.client.base_url}|{self.client.auth_header}|{self.client.auth_token}".encode()
+        ).hexdigest()
+        provider = RemoteKlineProvider(
+            self, cache_dir=Path.home() / ".cache/hypertrade/klines", cache_namespace=namespace
+        )
+        return provider.read_candles(symbol=symbol, bar=timeframe, limit=limit)
 
     def strategy_search(
         self,

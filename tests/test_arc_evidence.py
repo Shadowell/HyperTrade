@@ -351,15 +351,12 @@ def test_gate_reads_a_real_bitpro_archive_end_to_end(tmp_path):
     symbol spelled `BTC/USDT:USDT`, while ARC asks for `BTC-USDT-SWAP`. Everything
     between those two facts has to hold before a real mission can produce evidence.
     """
-    from hypertrade.arc.evidence import build_default_window
-    from hypertrade.config import Settings
+    from hypertrade.arc.evidence import ArchiveThenLiveWindow, ArchiveWindow
 
     db_path = tmp_path / "crypto_data.db"
     _seed_bitpro_archive(db_path, table="kline_1h", symbol="BTC/USDT:USDT", rows=1_200)
 
-    window = build_default_window(
-        Settings(BITPRO_SQLITE_PATH=db_path, ARC_EVIDENCE_LIVE_FALLBACK_ENABLED=False)
-    )
+    window = ArchiveThenLiveWindow(archive=ArchiveWindow(str(db_path)))
     assert window.archive is not None
     assert window.live is None  # no exchange call is made on the archive route
 
@@ -374,12 +371,15 @@ def test_a_sharpe_computed_from_a_handful_of_trades_is_not_accepted_as_evidence(
     """A probe on real archive data passed candidates whose out-of-sample Sharpe of 8
     came from five trades. One trade moved it by more than the admissible threshold, so
     the number was noise with a decimal point on it."""
-    from hypertrade.arc.evidence import MIN_OUT_OF_SAMPLE_TRADES, build_default_window
-    from hypertrade.config import Settings
+    from hypertrade.arc.evidence import (
+        MIN_OUT_OF_SAMPLE_TRADES,
+        ArchiveThenLiveWindow,
+        ArchiveWindow,
+    )
 
     db_path = tmp_path / "crypto_data.db"
     _seed_bitpro_archive(db_path, table="kline_1h", symbol="BTC/USDT:USDT", rows=1_200)
-    window = build_default_window(Settings(BITPRO_SQLITE_PATH=db_path))
+    window = ArchiveThenLiveWindow(archive=ArchiveWindow(str(db_path)))
 
     # A span long relative to the window fires rarely without being inert. Widened once
     # proposals started carrying a take profit: banking a gain frees the position to
@@ -395,12 +395,11 @@ def test_a_sharpe_computed_from_a_handful_of_trades_is_not_accepted_as_evidence(
 
 def test_preflight_tells_an_operator_what_a_mission_could_prove(tmp_path):
     """Operators must see whether a symbol has a window before the budget is spent."""
-    from hypertrade.arc.evidence import build_default_window, preflight_window
-    from hypertrade.config import Settings
+    from hypertrade.arc.evidence import ArchiveThenLiveWindow, ArchiveWindow, preflight_window
 
     db_path = tmp_path / "crypto_data.db"
     _seed_bitpro_archive(db_path, table="kline_1h", symbol="BTC/USDT:USDT", rows=1_200)
-    window = build_default_window(Settings(BITPRO_SQLITE_PATH=db_path))
+    window = ArchiveThenLiveWindow(archive=ArchiveWindow(str(db_path)))
 
     stocked = preflight_window(symbol="BTC-USDT-SWAP", timeframe="1H", window=window)
     assert stocked["evidence_possible"] is True
@@ -515,8 +514,7 @@ def test_an_unset_archive_path_is_not_treated_as_a_configured_archive():
     configured = _Settings()
     configured.bitpro_sqlite_path = Path("/bitpro-data/crypto_data.db")
     archive = build_default_window(configured).archive
-    assert archive is not None
-    assert archive.db_path == "/bitpro-data/crypto_data.db"
+    assert archive is None  # Host paths no longer implicitly enable the research source.
 
 
 def test_every_blocking_evidence_code_has_remediation_advice():
@@ -531,3 +529,12 @@ def test_every_blocking_evidence_code_has_remediation_advice():
         ARCReasonCode.EVIDENCE_REPLAY_FAILED,
     }
     assert blocking_codes <= set(_CONSTRAINT_BY_REASON_CODE)
+
+
+def test_default_research_window_uses_remote_without_host_archive():
+    from hypertrade.arc.evidence import build_default_window
+    from hypertrade.config import Settings
+
+    window = build_default_window(Settings(BITPRO_MCP_API_BASE="http://bitpro/api/v2"))
+    assert window.archive is not None
+    assert type(window.archive).__name__ == "RemoteWindow"
