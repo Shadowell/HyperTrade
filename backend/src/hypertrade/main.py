@@ -390,6 +390,22 @@ class LiveOrderIntentPayload(BaseModel):
     reason: str = ""
 
 
+class OptimizationStartPayload(BaseModel):
+    strategy_identifier: str = Field(min_length=1, max_length=128)
+    strategy_code: str | None = None
+    parameter_space: dict[str, Any] | None = None
+    symbols: list[str] = Field(default_factory=lambda: ["BTC-USDT-SWAP"])
+    timeframes: list[str] = Field(default_factory=lambda: ["1H"])
+    search_method: Literal["grid", "random", "llm"] = "grid"
+    max_trials: int = Field(default=20, ge=1, le=200)
+    is_ratio: float = Field(default=0.70, ge=0.30, le=0.90)
+    objective: str = "composite_score"
+
+
+class OptimizationExportPayload(BaseModel):
+    target_format: Literal["quantlab", "bitpro"] = "quantlab"
+
+
 class LiveOrderDecisionPayload(BaseModel):
     reason: str = ""
 
@@ -2153,6 +2169,68 @@ def create_app(
             symbols=symbols,
             autonomous_override=autonomous_override,
         )
+
+    @app.post("/api/research/optimization/start")
+    def start_optimization_study(payload: OptimizationStartPayload) -> dict[str, Any]:
+        from hypertrade.research.optimization.service import OptimizationService
+
+        service = OptimizationService(database)
+        try:
+            return service.start_study(
+                strategy_identifier=payload.strategy_identifier,
+                strategy_code=payload.strategy_code,
+                parameter_space=payload.parameter_space,
+                symbols=payload.symbols,
+                timeframes=payload.timeframes,
+                search_method=payload.search_method,
+                max_trials=payload.max_trials,
+                is_ratio=payload.is_ratio,
+                objective=payload.objective,
+                execute_sync=True,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/research/optimization/studies")
+    def list_optimization_studies(limit: int = 50) -> dict[str, Any]:
+        from hypertrade.research.optimization.service import OptimizationService
+
+        service = OptimizationService(database)
+        return {"items": service.list_studies(limit=limit)}
+
+    @app.get("/api/research/optimization/studies/{study_id}")
+    def get_optimization_study(study_id: str) -> dict[str, Any]:
+        from hypertrade.research.optimization.service import OptimizationService
+
+        service = OptimizationService(database)
+        study = service.get_study(study_id)
+        if study is None:
+            raise HTTPException(status_code=404, detail="Optimization study not found")
+        return study
+
+    @app.get("/api/research/optimization/studies/{study_id}/trials")
+    def get_optimization_study_trials(study_id: str) -> dict[str, Any]:
+        from hypertrade.research.optimization.service import OptimizationService
+
+        service = OptimizationService(database)
+        trials = service.get_study_trials(study_id)
+        return {"study_id": study_id, "trials": trials}
+
+    @app.post("/api/research/optimization/studies/{study_id}/export")
+    def export_optimization_study(
+        study_id: str,
+        payload: OptimizationExportPayload | None = None,
+    ) -> dict[str, Any]:
+        from hypertrade.research.optimization.service import OptimizationService
+
+        service = OptimizationService(database)
+        target_format = (payload.target_format if payload else "quantlab").lower()
+        try:
+            return service.export_study(study_id, target_format=target_format)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Optimization study not found") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/market/news/latest")
     def get_latest_news(limit: int = 20, symbol: str | None = None) -> dict[str, Any]:

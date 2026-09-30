@@ -1,3 +1,11 @@
+# 018 全自动回测矩阵与参数自动寻优沙盒规范 (Spec 018)
+
+1. **参数搜索空间与智能变异生成器**：支持从策略源码 AST 自动提取超参数空间，也支持显式定义（`IntParam`, `FloatParam`, `CategoricalParam`）与约束规则（`ConstraintRule`）。提供网格穷举（Grid）、随机超立方采样（Random）以及 LLM 指导的启发式变异（LLM-Guided Mutation）三种采样策略。
+2. **多周期/多品种/多市态回测矩阵执行器**：构建 `Symbols x Timeframes x ParameterVariants` 多维回测矩阵，利用毫秒级极速回放器并行回放，输出全套专业量化指标（年化夏普、索提诺、卡玛比率、最大回撤、胜率、盈亏比、换手率、持仓周期）。
+3. **Walk-Forward 滚动验证与参数敏感度抗过拟合沙盒**：样本内外（IS/OOS）切分验证 OOS 衰减率；结合参数敏感度与峭壁检验（Ridge Test）识别刀锋过拟合尖刺，综合评定 Robustness Score（0-100分）。
+4. **QuantLab / BitPro 双兼容策略导出**：一键导出为标准的 QuantLab 工作台配置文件（`quantlab_strategy_config.v1`）与 BitPro 策略清单（`bitpro_strategy_manifest.v3`）。
+5. **持久化与端点**：数据库表 `opt_studies` 与 `opt_trials`；REST API 端点（`/api/research/optimization/*`）与 CLI 命令（`hypertrade optimize`）。
+
 # 013 全自主量化交易 Agent 核心规范 (Spec 013)
 
 1. **统一市场感知总线 (Perception Bus)**：系统集成 `hypertrade.market.news` 与 `hypertrade.market.sentiment`，实现实时新闻摄入与多维情绪分析（[-1.0, 1.0] 打分、紧急度分级与标的聚合）。结合行情、资金费率、未平仓合约构建全景感知，向智能体暴露 `market.perception_snapshot` 与 `market.news_stream` 工具。
