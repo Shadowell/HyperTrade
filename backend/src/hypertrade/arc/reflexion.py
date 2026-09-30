@@ -181,6 +181,8 @@ class ARCReflexionLedger:
         failure_class: str,
         observed_metrics: dict[str, Any],
         findings: Sequence[AttackFinding],
+        *,
+        dispatch_alert: bool = False,
     ) -> ARCReflexionEventV1:
         """
         Diagnose a failed attempt, extract actionable negative constraints,
@@ -239,6 +241,39 @@ class ARCReflexionLedger:
         )
 
         self._records.append(event)
+
+        if dispatch_alert:
+            from hypertrade.arc.reflexion_alert import (
+                ReflexionAlertPayload,
+                dispatch_reflexion_alert,
+            )
+
+            spec = attempt.strategy_spec or {}
+            family = str(spec.get("family") or "custom_strategy")
+            symbol = str(spec.get("symbol") or "BTC-USDT-SWAP")
+            timeframe = str(spec.get("timeframe") or "1H")
+            alert = ReflexionAlertPayload(
+                candidate_id=attempt.candidate_id,
+                strategy_name=f"{family} ({symbol})",
+                strategy_family=family,
+                symbol=symbol,
+                timeframe=timeframe,
+                failure_class=failure_class.upper(),
+                severity="critical" if "drawdown" in failure_class.lower() else "warning",
+                trigger_source="adversarial_attack",
+                observed_metrics=observed_metrics,
+                regime_attribution=[
+                    {
+                        "regime_name": res.regime_name,
+                        "passed": res.passed,
+                        "attribution_notes": res.attribution_notes,
+                    }
+                    for res in regime_results
+                ],
+                negative_constraints=event.negative_constraints,
+            )
+            dispatch_reflexion_alert(alert)
+
         return event
 
     def get_all_negative_constraints(self) -> list[str]:

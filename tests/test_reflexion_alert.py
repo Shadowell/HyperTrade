@@ -144,3 +144,71 @@ def test_dispatch_reflexion_alert_network_failure() -> None:
     )
     assert not delivered
     assert "failed:ConnectionResetError" in status
+
+
+def test_arc_reflexion_ledger_dispatches_alert(monkeypatch: Any) -> None:
+    from hypertrade.arc.contracts import ARCCandidateAttemptV1
+    from hypertrade.arc.reflexion import ARCReflexionLedger
+
+    sent_alerts: list[dict[str, Any]] = []
+
+    def mock_dispatch(alert: Any, **kwargs: Any) -> tuple[bool, str]:
+        sent_alerts.append(alert.model_dump())
+        return True, "sent_interactive_card"
+
+    monkeypatch.setattr(
+        "hypertrade.arc.reflexion_alert.dispatch_reflexion_alert", mock_dispatch
+    )
+
+    ledger = ARCReflexionLedger()
+    cand = ARCCandidateAttemptV1(
+        attempt_id="att_test_1",
+        candidate_id="cand_test_1",
+        hypothesis="RSI oversold reversal on ETH-USDT-SWAP",
+        strategy_code="class Strategy: pass",
+        strategy_spec={"family": "rsi_reversal", "symbol": "ETH-USDT-SWAP", "timeframe": "1H"},
+    )
+
+    ledger.diagnose_and_record_failure(
+        attempt=cand,
+        failure_class="drawdown_exceeded",
+        observed_metrics={"max_drawdown": 0.25},
+        findings=[],
+        dispatch_alert=True,
+    )
+
+    assert len(sent_alerts) == 1
+    assert sent_alerts[0]["strategy_family"] == "rsi_reversal"
+    assert sent_alerts[0]["symbol"] == "ETH-USDT-SWAP"
+    assert "drawdown" in sent_alerts[0]["failure_class"].lower()
+
+
+def test_incremental_evolution_trigger_dispatches_alert(monkeypatch: Any) -> None:
+    from hypertrade.bitpro.paper_monitor import IncrementalEvolutionTrigger, PaperAnomalyEvent
+
+    sent_alerts: list[dict[str, Any]] = []
+
+    def mock_dispatch(alert: Any, **kwargs: Any) -> tuple[bool, str]:
+        sent_alerts.append(alert.model_dump())
+        return True, "sent_interactive_card"
+
+    monkeypatch.setattr(
+        "hypertrade.arc.reflexion_alert.dispatch_reflexion_alert", mock_dispatch
+    )
+
+    trigger = IncrementalEvolutionTrigger()
+    anomaly = PaperAnomalyEvent(
+        instance_id="inst_101",
+        symbol="BTC-USDT-SWAP",
+        anomaly_type="MAX_DRAWDOWN_BREACH",
+        observed_value=0.14,
+        threshold_value=0.10,
+        message="Paper drawdown 14% exceeded threshold 10%",
+    )
+
+    ctrl = trigger.trigger_re_training(anomaly, dispatch_alert=True)
+    assert ctrl is not None
+    assert len(sent_alerts) == 1
+    assert sent_alerts[0]["symbol"] == "BTC-USDT-SWAP"
+    assert sent_alerts[0]["failure_class"] == "MAX_DRAWDOWN_BREACH"
+
