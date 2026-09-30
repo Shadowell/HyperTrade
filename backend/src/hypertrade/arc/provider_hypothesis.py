@@ -47,6 +47,12 @@ Reply with STRICT JSON only (no prose, no markdown fences) using exactly this sh
 
 Rules:
 - family_key MUST come from the list. Direction must be expressible for that family.
+- Both hard stop loss and take profit are mandatory with finite positive parameters;
+  neither may be disabled or replaced solely by an opposite signal or holding timeout.
+- Generated strategies use confirmed candle high/low, stop-first ordering and persistent
+  session-bound exit state. Do not propose constraints that disable these protections.
+- Platform names use [asset][timeframe][type] scope · readable method · capitalU;
+  hashes and research IDs belong to descriptions and audit keys, never the method name.
 - Do NOT invent budgets, approval rules, or risk limits; you have no authority there.
 - If prior failure reasons are given, propose a hypothesis that addresses them rather
   than repeating the rejected idea.

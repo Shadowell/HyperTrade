@@ -19,6 +19,7 @@ from hypertrade.arc.strategy_names import format_bitpro_strategy_name as format_
 from hypertrade.arc.strategy_names import logic_summary, scope_label_from_symbols
 from hypertrade.arc.universe import candidate_symbols
 from hypertrade.bitpro.mcp import BitProToolAdapter
+from hypertrade.research.codegen import StrategyCodegenError, generated_candidate_config
 
 
 def _journal_failure(stage: str, exc: Exception, attempt: ARCCandidateAttemptV1) -> None:
@@ -48,6 +49,7 @@ class PaperProvisionClient(Protocol):
         *,
         name: str,
         script_content: str,
+        config: dict[str, Any] | None = None,
         description: str | None = None,
         exchange: str = "okx",
         symbols: list[str] | None = None,
@@ -166,6 +168,19 @@ class ARCPaperIncubationResolver:
             )
         except ValueError as exc:
             return False, None, None, str(exc)
+        try:
+            candidate_config = generated_candidate_config(
+                attempt.strategy_spec, attempt.strategy_code
+            )
+            if "risk_overlays" in attempt.strategy_spec:
+                candidate_config.update(
+                    timeframe=timeframe,
+                    initial_capital=float(capital),
+                    paper_initial_equity=float(capital),
+                    market_type="swap",
+                )
+        except (StrategyCodegenError, ValueError, TypeError) as exc:
+            return False, None, bitpro_strategy_name, f"local_strategy_preflight_failed:{exc}"
         client = self._client or BitProToolAdapter()
         create_key = f"arc-create-{attempt.candidate_id}"
         # New review packages bind the operation to mission, code and capital;
@@ -187,6 +202,7 @@ class ARCPaperIncubationResolver:
                 created = client.strategy_create(
                     name=bitpro_strategy_name,
                     script_content=attempt.strategy_code,
+                    **({"config": candidate_config} if candidate_config else {}),
                     description=(
                         f"ARC Autonomous Research Candidate {attempt.candidate_id} for "
                         + (symbol if len(symbols) == 1 else scope_label_from_symbols(symbols))

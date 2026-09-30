@@ -370,6 +370,7 @@ def test_generated_strategy_sizes_from_equity_and_does_not_invent_rejected_posit
         def __init__(self, status):
             self.config = {}
             self.broker = SimpleNamespace(equity=100)
+            self.state = SimpleNamespace(positions={})
             self.status, self.orders = status, []
 
         def symbols(self):
@@ -401,8 +402,8 @@ def test_generated_strategy_sizes_from_equity_and_does_not_invent_rejected_posit
         assert rejected._state["BTC"] == 0
         submitted = namespace[generated.class_name]("submitted")
         await submitted.on_init()
-        await submitted._enter("BTC", "long", 100)
-        await submitted.on_bar(SimpleNamespace(symbol="BTC", close=100, high=100, low=100))
+        with pytest.raises(ValueError, match="pending_order"):
+            await submitted._enter("BTC", "long", 100)
         assert submitted._state["BTC"] == 0
 
     asyncio.run(run())

@@ -24,6 +24,7 @@ from hypertrade.arc.strategy_names import (
 from hypertrade.arc.universe import candidate_symbols
 from hypertrade.bitpro.cost_identity import source_cost_policy_hash
 from hypertrade.bitpro.mcp import BitProToolAdapter
+from hypertrade.research.codegen import StrategyCodegenError, generated_candidate_config
 
 
 class SelfTestClient(Protocol):
@@ -81,10 +82,10 @@ class SelfTestClient(Protocol):
     ) -> dict[str, Any]: ...
 
 
-
 def _failure(stage: str, exc: Exception) -> str:
     record_runtime_error(f"self_test.{stage}", exc)
     return f"{type(exc).__name__}: {failure_text(exc)}"
+
 
 @dataclass
 class SelfTestResult:
@@ -399,6 +400,30 @@ class ARCSelfTestService:
         except ValueError as exc:
             return SelfTestResult(False, None, None, None, reasons=[str(exc)])
 
+        try:
+            candidate_config = generated_candidate_config(
+                attempt.strategy_spec, attempt.strategy_code
+            )
+            if "risk_overlays" in attempt.strategy_spec:
+                capital = (
+                    float(goal.paper_initial_equity) if goal.paper_review_required else 10000.0
+                )
+                candidate_config.update(
+                    timeframe=timeframe,
+                    initial_capital=capital,
+                    paper_initial_equity=capital,
+                    market_type="swap",
+                )
+        except (StrategyCodegenError, ValueError, TypeError) as exc:
+            return SelfTestResult(
+                False,
+                None,
+                None,
+                None,
+                reasons=["local_strategy_preflight_failed"],
+                message=str(exc),
+            )
+
         if not is_source_variant:
             try:
                 validated = client.strategy_validate_code(
@@ -406,6 +431,7 @@ class ARCSelfTestService:
                     idempotency_key=validate_key,
                     symbols=symbols,
                     timeframe=timeframe,
+                    market_type="swap" if symbol.endswith("-SWAP") or ":USDT" in symbol else "spot",
                 )
             except Exception as exc:
                 return SelfTestResult(
@@ -485,7 +511,7 @@ class ARCSelfTestService:
                     **(
                         {
                             "config": {
-                                **attempt.strategy_spec.get("baseline_config", {}),
+                                **candidate_config,
                                 **(
                                     {"_freeze_research_costs": True, "market_type": "swap"}
                                     if goal.paper_review_required
@@ -493,7 +519,7 @@ class ARCSelfTestService:
                                 ),
                             }
                         }
-                        if "baseline_config" in attempt.strategy_spec or goal.paper_review_required
+                        if candidate_config or goal.paper_review_required
                         else {}
                     ),
                 )

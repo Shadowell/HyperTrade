@@ -7,7 +7,8 @@ incubation decision — was therefore judging candidates by their declared param
 rather than by what they did on a price series.
 
 This module closes that gap for the code the research codegen emits. It is a research
-simulator, not an execution venue: fills are at the bar close plus a fixed slippage
+simulator, not an execution venue: market fills use the bar close, protective exits
+use the trigger or worse gap open, plus a fixed slippage
 allowance, one position per symbol, and no partial fills or funding. Its purpose is to
 produce comparable evidence across candidates, and its assumptions are recorded on the
 result so a report can state what the numbers do and do not account for.
@@ -26,7 +27,9 @@ import math
 from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 from hypertrade.research.codegen import static_code_rejections
@@ -192,13 +195,17 @@ class _SimulatedVenue:
         self.positions[symbol] = _Position(side, mark, notional, leverage, self.timestamp)
         return True
 
-    def close_position(self, symbol: str, side: str | None = None) -> None:
+    def close_position(
+        self, symbol: str, side: str | None = None, price: float | None = None
+    ) -> None:
         position = self.positions.get(symbol)
         if position is None:
             return
         if side is not None and side != position.side:
             return
-        mark = self.marks.get(symbol, position.entry_price)
+        mark = float(price) if price is not None else self.marks.get(symbol, position.entry_price)
+        if not math.isfinite(mark) or mark <= 0:
+            raise CandidateBacktestError("invalid_exit_price")
         pnl = position.unrealized(mark)
         self._charge(position.notional * mark / position.entry_price, position.leverage)
         self.cash += pnl
@@ -225,6 +232,19 @@ class _SimulatedVenue:
         return self.cash + open_pnl
 
 
+@dataclass(frozen=True)
+class RuntimeBar:
+    """BitPro-compatible execution bar with millisecond time."""
+
+    symbol: str
+    timestamp: int
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
 class SimulatedStrategyRuntime:
     """The surface a compiled candidate is written against, backed by the simulator.
 
@@ -234,6 +254,7 @@ class SimulatedStrategyRuntime:
 
     def __init__(self, config: Mapping[str, Any], symbols: Sequence[str], venue: _SimulatedVenue):
         self.config = dict(config)
+        self.state = SimpleNamespace(positions={})
         self._symbols = tuple(symbols)
         self._venue = venue
 
@@ -261,7 +282,7 @@ class SimulatedStrategyRuntime:
     async def on_init(self) -> None:  # pragma: no cover - overridden by generated code
         return None
 
-    async def on_bar(self, bar: Bar) -> None:  # pragma: no cover - overridden
+    async def on_bar(self, bar: RuntimeBar) -> None:  # pragma: no cover - overridden
         return None
 
     async def open_contract(
@@ -270,8 +291,10 @@ class SimulatedStrategyRuntime:
         opened = self._venue.open_position(symbol, side, float(notional), float(leverage))
         return {"status": "filled" if opened else "rejected"}
 
-    async def close_contract(self, symbol: str, side: str | None = None) -> dict[str, Any]:
-        self._venue.close_position(symbol, side)
+    async def close_contract(
+        self, symbol: str, side: str | None = None, price: float | None = None
+    ) -> dict[str, Any]:
+        self._venue.close_position(symbol, side, price=price)
         return {"status": "closed"}
 
 
@@ -344,6 +367,7 @@ def replay_candidate(
     strategy = strategy_class(
         {
             "research_parameters": dict(parameters or {}),
+            "timeframe": timeframe,
             "trade_notional_usdt": trade_notional_usdt,
             "leverage": leverage,
         },
@@ -360,7 +384,23 @@ def replay_candidate(
             venue.marks[bar.symbol] = bar.close
             if not math.isfinite(venue.equity()) or venue.equity() <= 0:
                 raise CandidateBacktestError("candidate_equity_exhausted")
-            await strategy.on_bar(bar)
+            try:
+                stamp = datetime.fromisoformat(bar.timestamp.replace("Z", "+00:00"))
+                stamp = stamp.replace(tzinfo=UTC) if stamp.tzinfo is None else stamp
+                timestamp_ms = int(stamp.timestamp() * 1000)
+            except (ValueError, AttributeError) as exc:
+                raise CandidateBacktestError("invalid_bar_timestamp") from exc
+            await strategy.on_bar(
+                RuntimeBar(
+                    symbol=bar.symbol,
+                    timestamp=timestamp_ms,
+                    open=bar.open,
+                    high=bar.high,
+                    low=bar.low,
+                    close=bar.close,
+                    volume=bar.volume,
+                )
+            )
             equity_curve.append(venue.equity())
         # Mark the book flat at the final bar so an open position's paper gain is
         # realised under the same friction as any other exit. Leaving it open would
@@ -387,7 +427,7 @@ def replay_candidate(
         fees_paid=venue.fees_paid,
         equity_curve=tuple(equity_curve),
         assumptions={
-            "fill": "bar_close_plus_slippage",
+            "fill": "market_close_or_protective_trigger_with_gap_and_slippage",
             "fee_rate": costs.fee_rate,
             "slippage_rate": costs.slippage_rate,
             "funding_modelled": False,

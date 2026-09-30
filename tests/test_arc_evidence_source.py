@@ -6,6 +6,7 @@ candidate budget on a non-OKX window the operator never confirmed, and every att
 carries the provenance of the exact window it was judged on.
 """
 
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from hypertrade.arc.contracts import ARCGoalV1
@@ -46,7 +47,7 @@ def _candles(count: int = 800) -> list[Candle]:
     price = Decimal("100")
     return [
         Candle(
-            timestamp=f"2026-01-01T{index:05d}",
+            timestamp=(datetime(2026, 1, 1, tzinfo=UTC) + timedelta(hours=index)).isoformat(),
             open=price,
             high=price,
             low=price,
@@ -65,7 +66,7 @@ def test_preflight_injected_bare_window_has_no_provable_origin():
     assert report["source_origin"] is None
     assert report["alternative_source_confirmation_required"] is False
     assert report["evidence_possible"] is True
-    assert report["window_as_of"] == "2026-01-01T00799"
+    assert report["window_as_of"] == "2026-02-03T07:00:00+00:00"
     assert len(report["window_source_hash"]) == 64
 
 

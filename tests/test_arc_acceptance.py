@@ -6,6 +6,7 @@ BitPro actually created the paper instance. Missing data, projected Sharpe, and 
 swallowed BitPro error are all `needs_operator`.
 """
 
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -57,7 +58,7 @@ def _flat_window(rows: int = 800) -> object:
     flat = Decimal("100")
     candles = [
         Candle(
-            timestamp=f"2026-01-01T{index:05d}",
+            timestamp=(datetime(2026, 1, 1, tzinfo=UTC) + timedelta(hours=index)).isoformat(),
             open=flat,
             high=flat,
             low=flat,

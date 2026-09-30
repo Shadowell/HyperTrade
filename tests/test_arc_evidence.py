@@ -7,6 +7,7 @@ gate is the first one whose verdict is not a restatement of the candidate's own 
 
 
 import random
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -54,7 +55,7 @@ def _candles(
         price *= 1.0 + rnd.gauss(drift, 0.012)
         candles.append(
             Candle(
-                timestamp=f"2026-01-01T{index:05d}",
+                timestamp=(datetime(2026, 1, 1, tzinfo=UTC) + timedelta(hours=index)).isoformat(),
                 open=Decimal(str(round(price, 4))),
                 high=Decimal(str(round(price * 1.004, 4))),
                 low=Decimal(str(round(price * 0.996, 4))),

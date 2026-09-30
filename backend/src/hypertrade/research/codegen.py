@@ -13,10 +13,13 @@ class rather than imported from `hypertrade.strategy.operators`.
 from __future__ import annotations
 
 import ast
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
+
+from hypertrade.research.generated_runtime import RUNTIME_INIT, RUNTIME_METHODS
 
 # Substring guards applied to generated and operator-supplied strategy code alike.
 # Matched case-insensitively against the whole source; kept as substrings rather
@@ -61,6 +64,7 @@ _CONTRACT_METHODS = frozenset(
         "open_contract",
         "close_contract",
         "get_contract_position",
+        "runtime_checkpoint",  # Required, engine-injected persistence callback.
         "symbols",
         "on_init",
         "on_bar",
@@ -678,8 +682,8 @@ _FAMILY_BY_KEY = {family.key: family for family in FAMILIES}
 # it, so a 0 default would silently produce a guard that never fires. The matrix can
 # still disable one by tuning it to the 0 lower bound.
 _RISK_OVERLAYS: tuple[TunableParameter, ...] = (
-    TunableParameter("stop_loss", 0.05, 0.0, 0.5, integral=False),
-    TunableParameter("take_profit", 0.10, 0.0, 2.0, integral=False),
+    TunableParameter("stop_loss", 0.05, 0.000001, 0.5, integral=False),
+    TunableParameter("take_profit", 0.10, 0.000001, 0.95, integral=False),
     TunableParameter("max_holding_bars", 48, 0, 10_000),
 )
 
@@ -905,7 +909,7 @@ def _resolve_parameters(
         if requested:
             overlays.append(overlay.name)
             active.append(overlay)
-        elif overlay.name == "stop_loss":
+        elif overlay.name in {"stop_loss", "take_profit"}:
             # A candidate with no loss guard at all is not admissible for research.
             overlays.append(overlay.name)
             active.append(overlay)
@@ -919,6 +923,20 @@ def _resolve_parameters(
         # a sensitivity probe.
         low, high = param.neighbourhood()
         raw = declared_bounds.get(param.name)
+        if param.name in {"stop_loss", "take_profit"} and isinstance(raw, Mapping):
+            try:
+                numbers = [
+                    float(raw.get(key, default))
+                    for key, default in (("min", param.minimum), ("max", param.maximum))
+                ]
+            except (ValueError, TypeError) as exc:
+                raise StrategyCodegenError("exit_protection_bounds_invalid") from exc
+            if (
+                any(isinstance(raw.get(key), bool) for key in ("min", "max"))
+                or any(not math.isfinite(value) or value <= 0 for value in numbers)
+                or numbers[0] > numbers[1]
+            ):
+                raise StrategyCodegenError("exit_protection_bounds_invalid")
         if isinstance(raw, Mapping):
             try:
                 declared_low = float(raw.get("min", param.minimum))
@@ -979,10 +997,20 @@ def _on_init_lines(
 ) -> list[str]:
     lines = [
         "    async def on_init(self):",
-        '        params = self.config.get("research_parameters", {})',
+        '        params = dict(self.config.get("research_parameters", {}))',
     ]
     for param in list(family.parameters) + [o for o in _RISK_OVERLAYS if o.name in overlays]:
         default = defaults[param.name]
+        if param.name in {"stop_loss", "take_profit"}:
+            lines += [
+                (
+                    f'        value = params.get("{param.name}", '
+                    f'self.config.get("{param.name}", {default}))'
+                ),
+                '        if isinstance(value, bool) or not 0.0 < float(value) < float("inf"):',
+                '            raise ValueError("exit_protection_must_be_finite_positive")',
+                f'        params["{param.name}"] = value',
+            ]
         if param.integral:
             lines.append(
                 f"        self.p_{param.name} = int(max({int(param.minimum)}, "
@@ -1034,87 +1062,50 @@ def _on_init_lines(
         "        self._entry_price = {symbol: 0.0 for symbol in self.symbols()}",
         "        self._bars_held = {symbol: 0 for symbol in self.symbols()}",
     ]
+    parameters = [param.name for param in family.parameters] + list(overlays)
+    values = ", ".join(f'"{name}": self.p_{name}' for name in parameters)
+    lines.append("        self._runtime_parameters = {" + values + "}")
+    lines += [
+        '        timeframe = str(self.config.get("timeframe") or "1h").lower()',
+        (
+            "        self._bar_ms = int(timeframe[:-1]) * "
+            '{"m": 60000, "h": 3600000, "d": 86400000}[timeframe[-1]]'
+        ),
+        "        if self._bar_ms <= 0:",
+        '            raise ValueError("arc_runtime_invalid_timeframe")',
+        '        self._runtime_parameters["bar_ms"] = self._bar_ms',
+    ]
+    lines += RUNTIME_INIT
     return lines
 
 
 def _lifecycle_lines() -> list[str]:
-    # The same compiled sizing and receipt rules run in backtest and Paper.
-    return [
-        "    async def _enter(self, symbol, side, close):",
-        "        equity = float(self.broker.equity)",
-        '        if not 0.0 < equity < float("inf") or self.trade_notional_usdt < 0.0:',
-        "            return None",
-        "        cap = equity * self.margin_fraction * self.leverage",
-        (
-            "        notional = min(cap, self.trade_notional_usdt) if sel"
-            "f.trade_notional_usdt > 0 else cap"
-        ),
-        "        if notional <= 0.0:",
-        "            return None",
-        (
-            "        receipt = await self.open_contract(symbol, side, not"
-            "ional, leverage=self.leverage)"
-        ),
-        (
-            '        if receipt.get("status") not in ("filled", "closed",'
-            ' "submitted", "partially_filled"):'
-        ),
-        "            return None",
-        '        self._state[symbol] = 1 if side == "long" else -1',
-        "        self._entry_price[symbol] = close",
-        "        self._bars_held[symbol] = 0",
-        "",
-        "    async def _exit(self, symbol, side):",
-        "        receipt = await self.close_contract(symbol, side)",
-        (
-            '        if receipt.get("status") not in ("filled", "closed",'
-            ' "submitted", "partially_filled", "no_position"):'
-        ),
-        "            return None",
-        "        self._state[symbol] = 0",
-        "        self._entry_price[symbol] = 0.0",
-        "        self._bars_held[symbol] = 0",
-        "",
-        "    async def _sync_position(self, symbol):",
-        '        position = await self.get_contract_position(symbol, "long")',
-        "        direction = 1",
-        "        if not position:",
-        '            position = await self.get_contract_position(symbol, "short")',
-        "            direction = -1",
-        "        self._state[symbol] = direction if position else 0",
-        '        self._entry_price[symbol] = float(position["entry_price"]) if position else 0.0',
-    ]
+    return list(RUNTIME_METHODS)
 
 
 def _risk_lines(overlays: tuple[str, ...]) -> list[str]:
-    if not overlays:
-        return []
+    # Stop first, including gaps; profit is filled at its conservative target.
     lines = [
         "        if state != 0:",
         "            entry_price = self._entry_price[symbol]",
         '            side = "long" if state > 0 else "short"',
-        "            edge = (close - entry_price) / entry_price if entry_price > 0 else 0.0",
-        "            if state < 0:",
-        "                edge = -edge",
+        "            high, low, opening = float(bar.high), float(bar.low), float(bar.open)",
+        "            stop = entry_price * (1.0 - self.p_stop_loss * state)",
+        "            target = entry_price * (1.0 + self.p_take_profit * state)",
+        "            if (state > 0 and low <= stop) or (state < 0 and high >= stop):",
+        "                price = min(stop, opening) if state > 0 else max(stop, opening)",
+        "                await self._exit(symbol, side, price=price)",
+        "                return None",
+        "            if (state > 0 and high >= target) or (state < 0 and low <= target):",
+        "                await self._exit(symbol, side, price=target)",
+        "                return None",
     ]
-    if "stop_loss" in overlays:
-        lines += [
-            "            if self.p_stop_loss > 0.0 and edge <= -self.p_stop_loss:",
-            "                await self._exit(symbol, side)",
-            "                return None",
-        ]
-    if "take_profit" in overlays:
-        lines += [
-            "            if self.p_take_profit > 0.0 and edge >= self.p_take_profit:",
-            "                await self._exit(symbol, side)",
-            "                return None",
-        ]
     if "max_holding_bars" in overlays:
         lines += [
-            "            if (",
-            "                self.p_max_holding_bars > 0",
-            "                and self._bars_held[symbol] >= self.p_max_holding_bars",
-            "            ):",
+            (
+                "            if self.p_max_holding_bars > 0 "
+                "and self._bars_held[symbol] >= self.p_max_holding_bars:"
+            ),
             "                await self._exit(symbol, side)",
             "                return None",
         ]
@@ -1127,12 +1118,11 @@ def _on_bar_lines(
     overlays: tuple[str, ...],
 ) -> list[str]:
     lines = [
-        "    async def on_bar(self, bar: BarData):",
+        "    def _observe_bar(self, bar):",
         "        symbol = bar.symbol",
         "        close = float(bar.close)",
         "        if symbol not in self._closes or close <= 0.0:",
         "            return None",
-        "        await self._sync_position(symbol)",
         "        self._closes[symbol].append(close)",
     ]
     if family.needs_high_low:
@@ -1152,13 +1142,29 @@ def _on_bar_lines(
         # Update recursive indicators on every historical bar before the entry warmup gate.
         lines.append("        self._update_confluence(symbol, close)")
     lines += [
+        "",
+        "    async def on_warmup_bar(self, bar):",
+        "        self._observe_bar(bar)",
+        "",
+        "    async def on_bar(self, bar: BarData):",
+        "        symbol = bar.symbol",
+        "        close = float(bar.close)",
+        "        if symbol not in self._closes or close <= 0.0:",
+        "            return None",
+        "        if not self._ready:",
+        "            await self._reconcile_existing_positions(bar.timestamp)",
+        "        if bar.timestamp <= self._last_bar[symbol]:",
+        "            return None",
+        "        await self._sync_position(symbol)",
+        "        self._last_bar[symbol] = int(bar.timestamp)",
+        "        self._observe_bar(bar)",
         "        state = self._state[symbol]",
         "        if state != 0:",
-        "            self._bars_held[symbol] += 1",
-        "        if len(self._closes[symbol]) < self._span:",
-        "            return None",
+        "            elapsed = max(0, (bar.timestamp - self._entry_time[symbol]) // self._bar_ms)",
+        "            self._bars_held[symbol] = max(self._bars_held[symbol] + 1, elapsed)",
     ]
     lines += _risk_lines(overlays)
+    lines += ["        if len(self._closes[symbol]) < self._span:", "            return None"]
     lines += family.signal_lines(direction)
     lines.append("        return None")
     return lines
@@ -1193,6 +1199,8 @@ def generate_strategy(spec: Mapping[str, Any]) -> GeneratedStrategy:
         "",
         f"class {class_name}(BaseStrategy):",
         *_docstring_lines(spec, family, direction, overlays),
+        '    runtime_state_contract = "arc_generated.v1"',
+        "    REQUIRES_RUNTIME_CHECKPOINT = True",
         "",
         *_on_init_lines(family, defaults, overlays),
         "",
@@ -1228,3 +1236,44 @@ def generate_strategy(spec: Mapping[str, Any]) -> GeneratedStrategy:
 def compile_strategy_code(spec: Mapping[str, Any]) -> str:
     """Convenience wrapper returning only the generated source."""
     return generate_strategy(spec).code
+
+
+def generated_candidate_config(spec: Mapping[str, Any], code: str) -> dict[str, Any]:
+    """Validate controlled templates before external validation or creation.
+
+    Source variants and operator source baselines retain their own platform contract.
+    """
+    config = dict(spec.get("baseline_config") or {})
+    if "risk_overlays" not in spec:
+        return config
+    if not {"stop_loss", "take_profit"} <= set(spec["risk_overlays"]):
+        raise StrategyCodegenError("generated_dual_exit_protection_missing")
+    params = dict(spec.get("tunable_parameters") or {})
+    for key, maximum in (("stop_loss", 0.5), ("take_profit", 0.95)):
+        value = params.get(key)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or not 0 < value <= maximum
+        ):
+            raise StrategyCodegenError("generated_exit_parameter_invalid")
+        config[key] = float(value)
+    if static_code_rejections(code):
+        raise StrategyCodegenError("generated_source_contract_invalid")
+    tree = ast.parse(code)
+    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef))
+    constants = {
+        target.id: node.value.value
+        for node in cls.body
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    if (
+        constants.get("runtime_state_contract") != "arc_generated.v1"
+        or constants.get("REQUIRES_RUNTIME_CHECKPOINT") is not True
+    ):
+        raise StrategyCodegenError("generated_runtime_contract_missing")
+    config["research_parameters"] = params
+    return config
