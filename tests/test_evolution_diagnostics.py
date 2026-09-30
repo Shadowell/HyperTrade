@@ -146,7 +146,16 @@ def test_scan_reports_sampling_even_when_trades_block_research():
     assert diagnostics[0]["data_readiness"]["blocking_reason"] == "成交样本不足"
     assert diagnostics[0]["data_readiness"]["sampling"]["state"] == "current"
     assert "采样正常" in diagnostics[0]["reason"]
-    assert len(client.calls) == 1
+    assert diagnostics[0]["short_horizon"]["status"] == "unknown"
+    windows = [
+        (
+            datetime.fromisoformat(call["end_at"]) - datetime.fromisoformat(call["start_at"])
+        ).total_seconds()
+        / 3600
+        for call in client.calls
+    ]
+    assert windows == [72, 6]
+    assert all(call["source_id"] == SNAPSHOT["instance_id"] for call in client.calls)
 
 
 def test_scan_preserves_legacy_session_and_makes_no_sampling_request():

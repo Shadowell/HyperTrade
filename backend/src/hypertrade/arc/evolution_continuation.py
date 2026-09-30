@@ -289,7 +289,15 @@ def readiness(
         for k in ("latest_sample_at", "sample_count", "source_hash", "content_hash", "reason_code")
     }
     reason = data.get("blocking_reason") or diagnostic.get("reason")
-    if diagnostic.get("status") == "unavailable":
+    if short_ready and "short_emergency_requires_bound_variant_policy" in str(reason):
+        blockers.append(
+            {
+                "code": "source_variant_policy",
+                "resolution": "operator",
+                "condition": "verify bound source variant policy; preserve the original session",
+            }
+        )
+    elif diagnostic.get("status") == "unavailable":
         blockers.append(
             {
                 "code": "evidence_recheck",

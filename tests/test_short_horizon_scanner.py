@@ -139,3 +139,20 @@ def test_bounded_long_gap_does_not_hold_the_entire_research_queue(service, monke
         if e["stage"] == "trigger_observed_7_plus_7"
     )
     assert stage["result"] == "passed"
+
+
+def test_emergency_never_bypasses_source_variant_risk_envelope(service):
+    class Unsupported(ShortPaper):
+        def strategy_research_variant_policy(self, **kwargs):
+            return {"variant_creation_supported": False}
+
+    service.client = Unsupported()
+    service.configure(EvolutionConfig(), revision=0, actor="test")
+    result = service.tick(END)
+    assert result["status"] == "no_action"
+    diagnostic = result["payload"]["diagnostics"][0]
+    assert diagnostic["short_horizon"]["triggered"]
+    blocker = next(
+        b for b in diagnostic["continuation"]["blockers"] if b["code"] == "source_variant_policy"
+    )
+    assert blocker["resolution"] == "operator"
