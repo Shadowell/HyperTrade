@@ -18,7 +18,7 @@
 - [x] T005: 质量门禁通关 (`./scripts/check.sh`)
   - 前端 vitest / lint / build
   - 后端 ruff format / ruff check / mypy / pytest 全量 100% 绿灯
-- [ ] T006: PR 创建、合并与测试机验证 (Landing per AGENTS.md)
+- [x] T006: PR 创建、合并与测试机验证 (Landing per AGENTS.md)
   - 提交代码到特性分支，rebase origin/main
   - 提交 PR 并合并至 main
   - 同步部署至测试服务器 `tokyo` (64.83.43.61) 并触发真实飞书告警验证
