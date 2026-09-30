@@ -132,7 +132,12 @@ class LiveOrderIntentService:
     def reject(self, intent_id: str, *, reason: str = "") -> dict[str, Any]:
         return self._decide(intent_id, status="rejected", reason=reason)
 
-    def execute(self, intent_id: str) -> dict[str, Any]:
+    def execute(
+        self,
+        intent_id: str,
+        *,
+        autonomous_override: bool = False,
+    ) -> dict[str, Any]:
         with self.db.session() as session:
             intent = session.get(LiveOrderIntent, intent_id)
             if intent is None:
@@ -152,6 +157,7 @@ class LiveOrderIntentService:
                 price=intent.price,
                 current_intent_id=intent.id,
                 execution_mode="autonomous" if is_autonomous else "supervised",
+                autonomous_override=autonomous_override,
             )
             intent.risk_status = str(risk["status"])
             intent.risk_json = risk
@@ -350,7 +356,10 @@ class AutonomousExecutionManager:
                     }
 
         service = LiveOrderIntentService(self.db, settings=self.settings)
-        exec_result = service.execute(intent_id)
+        exec_result = service.execute(
+            intent_id,
+            autonomous_override=autonomous_override,
+        )
         return {
             **exec_result,
             "executed": exec_result.get("status") in {"executed_testnet", "executed_live"},
