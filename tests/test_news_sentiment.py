@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from hypertrade.market.news import InMemoryNewsFeed, NewsArticle, NewsIngestionService
 from hypertrade.market.sentiment import NewsSentimentAnalyzer

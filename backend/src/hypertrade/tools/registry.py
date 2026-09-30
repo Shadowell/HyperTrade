@@ -108,6 +108,16 @@ class ToolRegistry:
                     "market",
                 ),
                 ToolDefinition(
+                    "market.news_stream",
+                    "Read real-time crypto news stream and parsed sentiment tags.",
+                    "market",
+                ),
+                ToolDefinition(
+                    "market.perception_snapshot",
+                    "Capture holistic perception across funding, OI, news sentiment, and state.",
+                    "market",
+                ),
+                ToolDefinition(
                     "world_model.snapshot",
                     (
                         "Read global operator WorldState across market, strategy, "
@@ -358,26 +368,16 @@ class ToolRegistry:
                     "world_model",
                 ),
                 ToolDefinition(
-                    "live.order_intent",
-                    "Create a live/testnet order intent for human approval.",
-                    "live",
-                    requires_approval=True,
-                ),
-                ToolDefinition(
-                    "market.news_stream",
-                    "Read real-time crypto news stream and parsed sentiment tags.",
-                    "market",
-                ),
-                ToolDefinition(
-                    "market.perception_snapshot",
-                    "Capture holistic perception across funding, OI, news sentiment, and state.",
-                    "market",
-                ),
-                ToolDefinition(
                     "live.autonomous_order",
                     "Execute a bounded autonomous trading order within pre-authorized risk gates.",
                     "live",
                     requires_approval=False,
+                ),
+                ToolDefinition(
+                    "live.order_intent",
+                    "Create a live/testnet order intent for human approval.",
+                    "live",
+                    requires_approval=True,
                 ),
             ]
         )
