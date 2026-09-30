@@ -1,3 +1,11 @@
+# 013 全自主量化交易 Agent 核心规范 (Spec 013)
+
+1. **统一市场感知总线 (Perception Bus)**：系统集成 `hypertrade.market.news` 与 `hypertrade.market.sentiment`，实现实时新闻摄入与多维情绪分析（[-1.0, 1.0] 打分、紧急度分级与标的聚合）。结合行情、资金费率、未平仓合约构建全景感知，向智能体暴露 `market.perception_snapshot` 与 `market.news_stream` 工具。
+2. **免人工审批自主执行器 (Autonomous Execution)**：在账户完成授权配置的前提下，`AutonomousExecutionManager` 支持自主下发订单并与交易所/撮合系统交互，打破原本必须人工逐单在界面点击审批的束缚。暴露 `live.autonomous_order` 工具。
+3. **硬件级日内亏损熔断器 (Daily Loss Circuit Breaker)**：自主交易全程处于硬件级风控护栏监控之下，一旦单日亏损超过预设阈值（默认 3.0%）或单笔名义价值超标，熔断器立即被击发（is_tripped=True），阻断任何后续订单下发，确保本金安全。
+4. **自由策略代码合成器 (Freeform Strategy Synthesis)**：突破原本 7 个固定指标模版的限制，`FreeformStrategySynthesizer` 赋能 LLM 自由编写复合型、多因子、带新闻情绪驱动的完整 `BaseStrategy` 策略类。同时构建 AST 语法树安全沙盒校验与内存隔离 mock dry-run 机制，拦截一切非法网络、文件系统与进程调用。
+5. **通用多市场写端口与双轨自进化**：扩展 `MarketWritePort` 协议，解除 `evolution.py` 对非 BitPro 目标的硬编码阻断，支持 StockPro/QuantLab 等外部多市场平台接入。同时 100% 保留原有 12 项运行策略原参数调优进化体系（Spec 008/011），双轨并行无任何回退。
+
 结构化研究在保留原策略源码与风险范围的前提下，组合有界过滤和退出算子；模型必须引用冻结开发窗口的真实市场状态证据，未知成本维度不得补造。
 
 自主进化新增短期应急与长期观测：3–5日或至少10笔交易的真实权益回撤可在预算内触发受控原来源研究，原资金/风险与最终审核保持独立；冷启动也展示实际观察。14日窗口小缺口可基于真实起中终边界做净收益诊断，完整回撤保持未知；补点只作展示。

@@ -1,5 +1,13 @@
 # Progress Log
 
+## 全自主量化交易 Agent 架构设计与闭环落地 (Spec 013) — 2026-09-30
+
+- **全自主交易 Agent 架构设计与多维感知升级**：完成 `docs/architecture/64-autonomous-trading-agent-system-architecture.md` 与 Spec 013 规格套件（`spec.md`, `plan.md`, `tasks.md`）。实现 `hypertrade.market.news` 实时新闻流采集与 `hypertrade.market.sentiment` 多维情绪打分引擎，结合行情、资金费、未平仓合约与舆情情绪构建统一感知总线（Perception Bus），暴露 `market.perception_snapshot` 与 `market.news_stream` 工具。
+- **免人工审批自主执行器与硬件级熔断风控**：构建 `AutonomousExecutionManager` 与 `AutonomousCircuitBreaker`，突破必须人工逐单点击审批的局限，在账户授权范围内自主下发交易；底层硬件级风控护栏实时监控单笔名义价值与日内累计亏损，超标立即熔断阻断，暴露 `live.autonomous_order` 工具。
+- **自由策略代码合成器与 AST 安全执行沙盒**：新增 `FreeformStrategySynthesizer`，打破原本 7 类固定模版限制，支持 LLM 自由合成任意复杂策略代码；通过 AST 白名单过滤与内存隔离 mock dry-run，确保策略在无需外部平台介入的前提下完成语法验证、动态参数发现与试跑校验。
+- **通用市场写端口与双轨自主进化**：扩展 `MarketWritePort` 协议，解除 `evolution.py` 中对非 BitPro 目标的硬编码阻断；保留 100% 现有 12 个运行策略参数调优（Spec 008/011）能力，实现双轨并行的自进化闭环。
+- **质量门禁与端到端回归**：编写 `tests/test_autonomous_trading_agent_e2e.py` 覆盖全链路；执行 `./scripts/check.sh`，前端 15 项 vitest、TypeScript 构建、ESLint 全绿，后端 1735 项 pytest、Ruff、mypy (280 模块) 0 报错全量通过。
+
 - **#1171 结构化变体（2026-09-30，验证中）**：受控算子接入来源策略创建、幂等绑定、真实回测和 Paper 恢复；开发窗口行情归因接入模型提案并强制证据引用。相关回归已覆盖原代码不变、过滤/退出、SQLite恢复、回测末根成交和原策略双退出。完整检查与上游交付完成后补充回执。
 
 ## #1172 双窗口与受控缺口诊断 — 2026-09-30（实施中）
@@ -113,6 +121,7 @@
 - **生产根因（只读）**：09-25 自动创建的 #333 `arc_evo_112ba99871a9db1f` 与 #378 `arc_evo_3f3a959355fd676b` 首轮请求上界约 83.6KB/83.2KB，超过 64000 预算，0.1 秒内以 `avo_context_budget_exhausted` 停止，未产生候选。human 模式下该终态被计为活跃，两个名额被占满，之后每轮扫描都以 `concurrency_limit` 推迟（#443 也被挡）；没有任何告警指出这一点。生产容器只读测量上下文：#333/#378/#480 约 61–62KB、#443 约 122KB，其中 200 条成交约 36KB、窗口回执约 14KB、#443 源码约 51KB。
 - **修复**：预算类终态在 human 模式同样释放名额（保留未决动作阻断和同源冷却，`avo_no_candidate` 不变）；AVO 首轮改用有界视图（最近 30 条成交+全量摘要与哈希、回执与大源码以哈希代替、记忆 20 条），完整上下文仍留在任务目标里；新增 `evolution_research_slots_blocked` 全局告警（连续 6 轮并发推迟）。
 - **验证**：新测试先复现生产场景（4 个预算终态用例在旧代码失败、生产体积上下文首轮被拦截），修复后通过；相关定向测试和完整 `./scripts/check.sh` 结果见规格 013。卡住的两个生产任务需在部署后处理，原 Paper 不改动。
+
 ## 模拟盘策略变体 A/B 对决与分叉接力系统规格与任务敲定 — 2026-09-25
 
 - **业务场景对齐与入口迁移**：根据真实交易员高频盯盘习惯，摒弃低频的策略详情页入口，将 AI 自主进化、变体洞察与 A/B 对决能力全面迁移至**「模拟详情页 (`InstanceMonitor`)」**与**「模拟概览页 (`InstanceDashboard`)」**。
