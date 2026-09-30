@@ -10,6 +10,8 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
+    Float,
+    ForeignKey,
     Integer,
     Numeric,
     String,
@@ -1420,6 +1422,45 @@ class AutonomousPulseCycle(Base, TimestampMixin):
     orders_executed: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     error_message: Mapped[str] = mapped_column(Text, default="")
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class OptimizationStudy(Base, TimestampMixin):
+    """A parameter optimization and backtest matrix research study."""
+
+    __tablename__ = "opt_studies"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ostudy"))
+    strategy_identifier: Mapped[str] = mapped_column(String(128), index=True)
+    strategy_code: Mapped[str] = mapped_column(Text, default="")
+    objective: Mapped[str] = mapped_column(String(64), default="composite_score")
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    search_method: Mapped[str] = mapped_column(String(32), default="grid", index=True)
+    parameter_space_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    matrix_config_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    best_trial_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    best_parameters_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    best_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_trials: Mapped[int] = mapped_column(Integer, default=0)
+    completed_trials: Mapped[int] = mapped_column(Integer, default=0)
+    error_message: Mapped[str] = mapped_column(Text, default="")
+
+
+class OptimizationTrial(Base, TimestampMixin):
+    """An individual parameter variant evaluation within an OptimizationStudy."""
+
+    __tablename__ = "opt_trials"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("otrial"))
+    study_id: Mapped[str] = mapped_column(String(32), ForeignKey("opt_studies.id"), index=True)
+    trial_index: Mapped[int] = mapped_column(Integer, default=0)
+    parameters_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="completed", index=True)
+    is_metrics_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    oos_metrics_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    scorecard_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    composite_score: Mapped[float] = mapped_column(Float, default=0.0)
+    is_promotable: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    error_message: Mapped[str] = mapped_column(Text, default="")
 
 
 class StrategyExperiment(Base, TimestampMixin):
