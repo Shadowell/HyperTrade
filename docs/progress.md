@@ -1,3 +1,7 @@
+## #1167 多标的与动态池进化验收 — 2026-09-30
+
+显式非法symbols不再回退单标的（6类失败回归已复现）；完整symbols、trade_symbols、selection_logic贯穿研究基线及候选。组合、自测、来源变体和孵化79项通过；BitPro临时SQLite两臂配置与冻结输入/执行身份37项通过（1项旧权限断言单独记录）；HyperTrade全检1835项通过。保留单标的未声明scope的兼容行为，不变更原Paper。
+
 ## 远程数据部署配置修正 — 2026-09-30
 
 移除worker空volumes字段；Docker Compose真实配置校验先复现同一错误，修复后通过。新增Compose volumes结构回归，完整scripts/check.sh后端1835项及前端/Ruff/mypy通过。此前失败发生在镜像构建前，未重建运行容器；本次提交触发新部署。

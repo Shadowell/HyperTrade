@@ -102,3 +102,7 @@ uv run pytest tests/test_evolution_effectiveness.py tests/test_evolution_alerts.
 ## 2026-09-30 远程历史窗口
 
 ARC 默认使用 RemoteWindow，经 KlineDataProvider 获取 BitPro 的 market_history_page.v1。固定闭合边界，每页最多5000根，总计最多20000根；先验证服务/标的/周期身份、SHA256、完整时间网格、价格和新鲜度，再作为研究输入。60秒缓存绑定服务和凭据摘要，不跨目标或边界复用；缓存损坏/过期必须读远端。默认不读宿主机目录或旧 SQLite；明确离线 bitpro_archive 路径继续可用，容器不再挂载 /bitpro-data。
+
+## 2026-09-30 组合范围声明
+
+显式symbols需为非空字符串列表；空数组、字符串冒充数组或空成员均拒绝，不用单一scope替代。未声明symbols时保留历史单标的继承。原策略动态selection_logic、trade_symbols及全量行情feed必须随基线保留，并由BitPro冻结执行身份与同窗行情校验。

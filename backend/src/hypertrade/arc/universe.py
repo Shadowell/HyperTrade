@@ -64,10 +64,14 @@ def candidate_symbols(spec: dict[str, Any], scope: list[str]) -> list[str]:
     multi-symbol scope is never taken silently — that corrupts Paper binding.
     """
     declared = spec.get("symbols")
-    if isinstance(declared, (list, tuple)) and declared:
+    if declared is not None:
+        if not isinstance(declared, (list, tuple)) or not declared:
+            raise ValueError("candidate_symbols_invalid_declaration")
         symbols: list[str] = []
         for value in declared:
-            symbol = str(value).strip()
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError("candidate_symbols_invalid_declaration")
+            symbol = value.strip()
             if not symbol or symbol not in scope:
                 raise ValueError("candidate_symbols_outside_research_scope")
             if symbol not in symbols:
@@ -81,7 +85,13 @@ def candidate_symbols(spec: dict[str, Any], scope: list[str]) -> list[str]:
 def declared_symbols(spec: dict[str, Any]) -> list[str]:
     """Symbols a spec declares, without scope resolution ([] when absent)."""
     declared = spec.get("symbols")
-    if isinstance(declared, (list, tuple)) and declared:
-        return [str(value).strip() for value in declared if str(value).strip()]
+    if declared is not None:
+        if (
+            not isinstance(declared, (list, tuple))
+            or not declared
+            or any(not isinstance(value, str) or not value.strip() for value in declared)
+        ):
+            raise ValueError("candidate_symbols_invalid_declaration")
+        return list(dict.fromkeys(value.strip() for value in declared))
     single = spec.get("symbol")
     return [str(single).strip()] if single else []

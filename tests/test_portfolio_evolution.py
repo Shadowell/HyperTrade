@@ -327,3 +327,30 @@ def test_curate_memory_accepts_portfolio_member_scope() -> None:
     )
     assert rejected == []
     assert manifest["excluded"]["scope_mismatch"] == 1
+
+
+@pytest.mark.parametrize("declared", [[], "BTC-USDT-SWAP", 7, False, [None], [""]])
+def test_explicit_invalid_portfolio_never_falls_back_to_single_scope(declared):
+    with pytest.raises(ValueError):
+        candidate_symbols({"symbols": declared}, ["BTC-USDT-SWAP"])
+    with pytest.raises(ValueError):
+        declared_symbols({"symbols": declared, "symbol": "BTC-USDT-SWAP"})
+
+
+def test_dynamic_pool_baseline_preserves_selection_and_complete_universe():
+    from decimal import Decimal
+
+    from hypertrade.arc.evolution import baseline_config
+
+    config = {
+        "symbols": BASKET,
+        "trade_symbols": BASKET,
+        "selection_logic": {"rank_by": "momentum", "top_n": 2, "rebalance_bars": 24},
+        "timeframe": "1H",
+        "paper_instance_id": "existing-paper",
+    }
+    baseline = baseline_config({"config": config}, Decimal("100"))
+    assert baseline["symbols"] == baseline["trade_symbols"] == BASKET
+    assert baseline["selection_logic"] == config["selection_logic"]
+    assert "paper_instance_id" not in baseline
+    assert config["paper_instance_id"] == "existing-paper"
