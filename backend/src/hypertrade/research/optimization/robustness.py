@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -11,7 +10,6 @@ from hypertrade.research.optimization.matrix import (
     BacktestMatrixEngine,
     MatrixTrialResult,
 )
-from hypertrade.research.optimization.metrics import QuantitativeMetrics
 from hypertrade.research.optimization.space import ParameterSpace
 
 
@@ -158,7 +156,9 @@ class RobustnessEvaluator:
             reasons.append(f"total_trades_{total_trades}_below_{self.min_trades}")
         elif dd > self.max_drawdown_limit_pct:
             verdict = "HIGH_RISK_REJECTED"
-        elif "severe_oos_decay_overfit" in "".join(reasons) or "knife_edge_overfit" in "".join(reasons):
+        elif any(
+            flag in "".join(reasons) for flag in ("severe_oos_decay_overfit", "knife_edge_overfit")
+        ):
             verdict = "OVERFIT_REJECTED"
         elif composite >= self.promotion_threshold:
             verdict = "OPTIMIZED_PROMOTABLE"

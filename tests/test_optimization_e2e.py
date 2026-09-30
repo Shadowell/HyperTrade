@@ -4,9 +4,7 @@ import io
 import json
 from typing import Any
 
-import pytest
 from fastapi.testclient import TestClient
-
 from hypertrade.cli import main as cli_main
 from hypertrade.db import Database
 from hypertrade.main import create_app

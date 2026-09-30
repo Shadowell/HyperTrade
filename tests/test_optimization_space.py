@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import random
-from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-
 from hypertrade.research.optimization.space import (
     CategoricalParam,
     ConstraintRule,
@@ -132,16 +130,18 @@ def test_parameter_space_validation_and_sampling() -> None:
 
 
 def test_extract_parameter_space_from_code() -> None:
-    code = '''
+    code = """
 class TrendFollowStrategy:
-    def __init__(self, fast_period: int = 10, slow_period: int = 30, stop_loss: float = 0.02) -> None:
+    def __init__(
+        self, fast_period: int = 10, slow_period: int = 30, stop_loss: float = 0.02
+    ) -> None:
         self.fast_period = fast_period
         self.slow_period = slow_period
         self.stop_loss = stop_loss
 
     def on_bar(self, bar):
         threshold = config.get("vol_filter", 1.5)
-'''
+"""
     space = extract_parameter_space_from_code(code)
     assert "fast_period" in space.parameters
     assert "slow_period" in space.parameters

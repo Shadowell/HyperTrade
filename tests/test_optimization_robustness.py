@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-import pytest
-
 from hypertrade.research.optimization.matrix import (
-    BacktestMatrixEngine,
-    DimensionResult,
     MatrixTrialResult,
-    generate_synthetic_bars,
 )
 from hypertrade.research.optimization.metrics import QuantitativeMetrics
 from hypertrade.research.optimization.robustness import (

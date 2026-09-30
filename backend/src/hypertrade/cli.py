@@ -172,9 +172,7 @@ class AgentClient(Protocol):
 
     def get_agent_task(self, task_id: str) -> dict[str, Any]: ...
 
-    def list_agent_task_events(
-        self, task_id: str, *, after: int = 0
-    ) -> list[dict[str, Any]]: ...
+    def list_agent_task_events(self, task_id: str, *, after: int = 0) -> list[dict[str, Any]]: ...
 
     def stream_agent_task_events(
         self, task_id: str, *, after: int = 0
@@ -206,9 +204,7 @@ class AgentClient(Protocol):
         self, trigger_id: str, *, enabled: bool, reason: str
     ) -> dict[str, Any]: ...
 
-    def set_research_trigger_control(
-        self, *, kill_switch: bool, reason: str
-    ) -> dict[str, Any]: ...
+    def set_research_trigger_control(self, *, kill_switch: bool, reason: str) -> dict[str, Any]: ...
 
     def fire_research_trigger(
         self, trigger_id: str, *, reason: str = "operator_run_now"
@@ -290,9 +286,7 @@ class AgentClient(Protocol):
 
     def list_regime_shadow_targets(self) -> list[dict[str, Any]]: ...
 
-    def build_regime_shadow_target(
-        self, regime_id: str, cohort_id: str
-    ) -> dict[str, Any]: ...
+    def build_regime_shadow_target(self, regime_id: str, cohort_id: str) -> dict[str, Any]: ...
 
     def get_regime_shadow_target(self, target_id: str) -> dict[str, Any]: ...
 
@@ -302,17 +296,13 @@ class AgentClient(Protocol):
 
     def get_portfolio_observation_window(self, window_id: str) -> dict[str, Any]: ...
 
-    def diff_portfolio_observation_windows(
-        self, left_id: str, right_id: str
-    ) -> dict[str, Any]: ...
+    def diff_portfolio_observation_windows(self, left_id: str, right_id: str) -> dict[str, Any]: ...
 
     def create_portfolio_assessment(self) -> dict[str, Any]: ...
 
     def get_portfolio_assessment(self, assessment_id: str) -> dict[str, Any]: ...
 
-    def diff_portfolio_assessments(
-        self, left_id: str, right_id: str
-    ) -> dict[str, Any]: ...
+    def diff_portfolio_assessments(self, left_id: str, right_id: str) -> dict[str, Any]: ...
 
     def review_portfolio_recommendation(
         self,
@@ -1001,8 +991,7 @@ class AgentApiClient:
 
     def get_thread_turn(self, thread_id: str, turn_id: str) -> dict[str, Any]:
         return self._get_object(
-            f"/api/agent/v1/threads/{quote(thread_id, safe='')}/turns/"
-            f"{quote(turn_id, safe='')}"
+            f"/api/agent/v1/threads/{quote(thread_id, safe='')}/turns/{quote(turn_id, safe='')}"
         )
 
     def stream_thread_events(
@@ -1174,9 +1163,7 @@ class AgentApiClient:
         )
 
     def get_paper_cohort(self, cohort_id: str) -> dict[str, Any]:
-        return self._get_object(
-            f"/api/portfolio/paper-cohorts/{quote(cohort_id, safe='')}"
-        )
+        return self._get_object(f"/api/portfolio/paper-cohorts/{quote(cohort_id, safe='')}")
 
     def diff_paper_cohorts(self, left_id: str, right_id: str) -> dict[str, Any]:
         return self._get_object(
@@ -1212,9 +1199,7 @@ class AgentApiClient:
         )
 
     def get_shadow_portfolio(self, proposal_id: str) -> dict[str, Any]:
-        return self._get_object(
-            f"/api/portfolio/shadow-portfolios/{quote(proposal_id, safe='')}"
-        )
+        return self._get_object(f"/api/portfolio/shadow-portfolios/{quote(proposal_id, safe='')}")
 
     def diff_shadow_portfolios(self, left_id: str, right_id: str) -> dict[str, Any]:
         return self._get_object(
@@ -1241,36 +1226,28 @@ class AgentApiClient:
         )
 
     def list_regime_shadow_targets(self) -> list[dict[str, Any]]:
-        return self._get_list(
-            "/api/portfolio/regime-shadow-targets-v2", "items"
-        )
+        return self._get_list("/api/portfolio/regime-shadow-targets-v2", "items")
 
-    def build_regime_shadow_target(
-        self, regime_id: str, cohort_id: str
-    ) -> dict[str, Any]:
+    def build_regime_shadow_target(self, regime_id: str, cohort_id: str) -> dict[str, Any]:
         return self._post_object(
             "/api/portfolio/regime-shadow-targets-v2",
             {
                 "decision_at": datetime.now(UTC).isoformat(),
                 "regime_snapshot_id": regime_id,
                 "cohort_snapshot_id": cohort_id,
-                "policy": _default_regime_shadow_policy().model_dump(
-                    mode="json"
-                ),
+                "policy": _default_regime_shadow_policy().model_dump(mode="json"),
                 "idempotency_key": new_id("cli_regime_shadow"),
             },
         )
 
     def get_regime_shadow_target(self, target_id: str) -> dict[str, Any]:
         return self._get_object(
-            f"/api/portfolio/regime-shadow-targets-v2/"
-            f"{quote(target_id, safe='')}"
+            f"/api/portfolio/regime-shadow-targets-v2/{quote(target_id, safe='')}"
         )
 
     def replay_regime_shadow_target(self, target_id: str) -> dict[str, Any]:
         return self._get_object(
-            f"/api/portfolio/regime-shadow-targets-v2/"
-            f"{quote(target_id, safe='')}/replay"
+            f"/api/portfolio/regime-shadow-targets-v2/{quote(target_id, safe='')}/replay"
         )
 
     def capture_portfolio_observation_window(self) -> dict[str, Any]:
@@ -1280,13 +1257,9 @@ class AgentApiClient:
         )
 
     def get_portfolio_observation_window(self, window_id: str) -> dict[str, Any]:
-        return self._get_object(
-            f"/api/portfolio/observation-windows/{quote(window_id, safe='')}"
-        )
+        return self._get_object(f"/api/portfolio/observation-windows/{quote(window_id, safe='')}")
 
-    def diff_portfolio_observation_windows(
-        self, left_id: str, right_id: str
-    ) -> dict[str, Any]:
+    def diff_portfolio_observation_windows(self, left_id: str, right_id: str) -> dict[str, Any]:
         return self._get_object(
             f"/api/portfolio/observation-windows/{quote(left_id, safe='')}"
             f"/diff/{quote(right_id, safe='')}"
@@ -1299,16 +1272,11 @@ class AgentApiClient:
         )
 
     def get_portfolio_assessment(self, assessment_id: str) -> dict[str, Any]:
-        return self._get_object(
-            f"/api/portfolio/assessments/{quote(assessment_id, safe='')}"
-        )
+        return self._get_object(f"/api/portfolio/assessments/{quote(assessment_id, safe='')}")
 
-    def diff_portfolio_assessments(
-        self, left_id: str, right_id: str
-    ) -> dict[str, Any]:
+    def diff_portfolio_assessments(self, left_id: str, right_id: str) -> dict[str, Any]:
         return self._get_object(
-            f"/api/portfolio/assessments/{quote(left_id, safe='')}"
-            f"/diff/{quote(right_id, safe='')}"
+            f"/api/portfolio/assessments/{quote(left_id, safe='')}/diff/{quote(right_id, safe='')}"
         )
 
     def review_portfolio_recommendation(
@@ -1351,23 +1319,17 @@ class AgentApiClient:
     def get_agent_task(self, task_id: str) -> dict[str, Any]:
         return self._get_object(f"/api/agent/tasks/{quote(task_id, safe='')}")
 
-    def list_agent_task_events(
-        self, task_id: str, *, after: int = 0
-    ) -> list[dict[str, Any]]:
+    def list_agent_task_events(self, task_id: str, *, after: int = 0) -> list[dict[str, Any]]:
         return self._get_list(
             f"/api/agent/tasks/{quote(task_id, safe='')}/events?after={max(after, 0)}",
             "events",
         )
 
-    def stream_agent_task_events(
-        self, task_id: str, *, after: int = 0
-    ) -> Iterator[dict[str, Any]]:
+    def stream_agent_task_events(self, task_id: str, *, after: int = 0) -> Iterator[dict[str, Any]]:
         cursor = max(after, 0)
         with self.client.stream(
             "GET",
-            self._url(
-                f"/api/agent/tasks/{quote(task_id, safe='')}/stream?after={cursor}"
-            ),
+            self._url(f"/api/agent/tasks/{quote(task_id, safe='')}/stream?after={cursor}"),
             headers={"Last-Event-ID": str(cursor)},
             timeout=_stream_timeout(config=self.config),
         ) as response:
@@ -1432,9 +1394,7 @@ class AgentApiClient:
             {"enabled": enabled, "reason": reason},
         )
 
-    def set_research_trigger_control(
-        self, *, kill_switch: bool, reason: str
-    ) -> dict[str, Any]:
+    def set_research_trigger_control(self, *, kill_switch: bool, reason: str) -> dict[str, Any]:
         return self._put_object(
             "/api/research/triggers/control",
             {"kill_switch": kill_switch, "reason": reason},
@@ -1554,9 +1514,7 @@ class AgentApiClient:
         return self._get_list("/api/research/evolution-runs", "items")
 
     def get_strategy_evolution_run(self, run_id: str) -> dict[str, Any]:
-        return self._get_object(
-            f"/api/research/evolution-runs/{quote(run_id, safe='')}"
-        )
+        return self._get_object(f"/api/research/evolution-runs/{quote(run_id, safe='')}")
 
     def list_monitors(self) -> list[dict[str, Any]]:
         return self._get_list("/api/monitors", "items")
@@ -1830,9 +1788,7 @@ def _stream_timeout(*, config: CliConfig) -> httpx.Timeout:
     return httpx.Timeout(timeout=config.timeout_seconds, read=None)
 
 
-_DEFAULT_DOCKER_DATABASE_URL = (
-    "postgresql+psycopg://hypertrade:hypertrade@postgres:5432/hypertrade"
-)
+_DEFAULT_DOCKER_DATABASE_URL = "postgresql+psycopg://hypertrade:hypertrade@postgres:5432/hypertrade"
 _LOCAL_SQLITE_PATH = Path.home() / ".hypertrade" / "local.db"
 # backend/src/hypertrade/cli.py -> repository root.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -1985,9 +1941,7 @@ class LocalAgentClient:
         catalog = InMemoryCapabilityCatalog() if in_memory else SqlCapabilityCatalog(self.db.url)
         observations = InMemoryObservationStore() if in_memory else SqlObservationStore(self.db.url)
         context_store = (
-            InMemoryContextArtifactStore()
-            if in_memory
-            else SqlContextArtifactStore(self.db.url)
+            InMemoryContextArtifactStore() if in_memory else SqlContextArtifactStore(self.db.url)
         )
         await catalog.bootstrap(builtin_capabilities())
         runtime = MissionRuntime(
@@ -2174,17 +2128,13 @@ class LocalAgentClient:
     def get_agent_task(self, task_id: str) -> dict[str, Any]:
         return task_to_dict(AgentTaskService(self.db).get(task_id))
 
-    def list_agent_task_events(
-        self, task_id: str, *, after: int = 0
-    ) -> list[dict[str, Any]]:
+    def list_agent_task_events(self, task_id: str, *, after: int = 0) -> list[dict[str, Any]]:
         return [
             task_event_to_dict(row)
             for row in TaskEventService(self.db).list(task_id, after=max(after, 0), limit=500)
         ]
 
-    def stream_agent_task_events(
-        self, task_id: str, *, after: int = 0
-    ) -> Iterator[dict[str, Any]]:
+    def stream_agent_task_events(self, task_id: str, *, after: int = 0) -> Iterator[dict[str, Any]]:
         for event in self.list_agent_task_events(task_id, after=after):
             yield {"event": event["event"], **event}
 
@@ -2244,9 +2194,7 @@ class LocalAgentClient:
             actor="cli_operator",
         )
 
-    def set_research_trigger_control(
-        self, *, kill_switch: bool, reason: str
-    ) -> dict[str, Any]:
+    def set_research_trigger_control(self, *, kill_switch: bool, reason: str) -> dict[str, Any]:
         return ResearchTriggerService(self.db, settings=self.settings).set_control(
             TriggerControlUpdate(kill_switch=kill_switch, reason=reason),
             actor="cli_operator",
@@ -2484,9 +2432,7 @@ class LocalAgentClient:
     def list_regime_shadow_targets(self) -> list[dict[str, Any]]:
         return RegimeShadowAllocatorServiceV2(self.db).list_targets()
 
-    def build_regime_shadow_target(
-        self, regime_id: str, cohort_id: str
-    ) -> dict[str, Any]:
+    def build_regime_shadow_target(self, regime_id: str, cohort_id: str) -> dict[str, Any]:
         return RegimeShadowAllocatorServiceV2(self.db).build(
             RegimeShadowBuildV2(
                 decision_at=datetime.now(UTC),
@@ -2513,9 +2459,7 @@ class LocalAgentClient:
     def get_portfolio_observation_window(self, window_id: str) -> dict[str, Any]:
         return self._portfolio_evidence_service().get(window_id)
 
-    def diff_portfolio_observation_windows(
-        self, left_id: str, right_id: str
-    ) -> dict[str, Any]:
+    def diff_portfolio_observation_windows(self, left_id: str, right_id: str) -> dict[str, Any]:
         return self._portfolio_evidence_service().diff(left_id, right_id)
 
     def create_portfolio_assessment(self) -> dict[str, Any]:
@@ -2527,9 +2471,7 @@ class LocalAgentClient:
     def get_portfolio_assessment(self, assessment_id: str) -> dict[str, Any]:
         return PortfolioAssessmentService(self.db).get(assessment_id)
 
-    def diff_portfolio_assessments(
-        self, left_id: str, right_id: str
-    ) -> dict[str, Any]:
+    def diff_portfolio_assessments(self, left_id: str, right_id: str) -> dict[str, Any]:
         return PortfolioAssessmentService(self.db).diff(left_id, right_id)
 
     def review_portfolio_recommendation(
@@ -2945,12 +2887,13 @@ def main(
 
     if args.command == "optimize":
         from pathlib import Path
+
         from hypertrade.db import Database
         from hypertrade.research.optimization.service import OptimizationService
 
         settings = _local_runtime_settings()
         db = Database(settings.database_url)
-        svc = OptimizationService(db)
+        opt_svc = OptimizationService(db)
 
         action = getattr(args, "optimize_action", None)
         if action == "run":
@@ -2960,7 +2903,7 @@ def main(
             symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
             timeframes = [t.strip() for t in args.timeframes.split(",") if t.strip()]
 
-            res = svc.start_study(
+            res = opt_svc.start_study(
                 strategy_identifier=args.strategy,
                 strategy_code=code,
                 symbols=symbols,
@@ -2972,21 +2915,21 @@ def main(
             output.write(json.dumps(res, indent=2) + "\n")
             return 0
         elif action == "list":
-            items = svc.list_studies(limit=int(getattr(args, "limit", 20)))
+            items = opt_svc.list_studies(limit=int(getattr(args, "limit", 20)))
             output.write(json.dumps(items, indent=2) + "\n")
             return 0
         elif action == "status":
-            res = svc.get_study(args.study_id)
-            if res is None:
+            study_res = opt_svc.get_study(args.study_id)
+            if study_res is None:
                 output.write(f"Study not found: {args.study_id}\n")
                 return 1
-            trials = svc.get_study_trials(args.study_id)
-            res["trials_count"] = len(trials)
-            output.write(json.dumps(res, indent=2) + "\n")
+            trials = opt_svc.get_study_trials(args.study_id)
+            study_res["trials_count"] = len(trials)
+            output.write(json.dumps(study_res, indent=2) + "\n")
             return 0
         elif action == "export":
             try:
-                exported = svc.export_study(args.study_id, target_format=args.format)
+                exported = opt_svc.export_study(args.study_id, target_format=args.format)
                 output.write(json.dumps(exported, indent=2) + "\n")
                 return 0
             except KeyError:
@@ -3238,9 +3181,7 @@ def _display_width(text: str) -> int:
     """Terminal display width: East Asian Wide/Fullwidth chars count as 2."""
     import unicodedata
 
-    return sum(
-        2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1 for char in text
-    )
+    return sum(2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1 for char in text)
 
 
 def _pad_display(text: str, width: int) -> str:
@@ -3491,19 +3432,22 @@ _HELP_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("任务与运行", ("/runs", "/run", "/sessions", "/tasks", "/task")),
     ("记忆与技能", ("/memory", "/assertions", "/skills")),
     ("模拟盘与实盘", ("/live", "/monitor", "/monitors", "/alerts")),
-    ("配置与诊断", (
-        "/status",
-        "/model",
-        "/providers",
-        "/tools",
-        "/connectors",
-        "/triggers",
-        "/validations",
-        "/ledger",
-        "/strategy",
-        "/evals",
-        "/help",
-    )),
+    (
+        "配置与诊断",
+        (
+            "/status",
+            "/model",
+            "/providers",
+            "/tools",
+            "/connectors",
+            "/triggers",
+            "/validations",
+            "/ledger",
+            "/strategy",
+            "/evals",
+            "/help",
+        ),
+    ),
 )
 
 
@@ -5075,8 +5019,7 @@ def handle_research_trigger_command(
             reason=reason,
         )
         print(
-            f"Trigger {row.get('id')} "
-            f"[{'enabled' if row.get('enabled') else 'disabled'}]",
+            f"Trigger {row.get('id')} [{'enabled' if row.get('enabled') else 'disabled'}]",
             file=output,
         )
         return
@@ -5218,8 +5161,7 @@ def handle_skill_command(
             reason=reason,
         )
         print(
-            f"Skill release restored {row.get('id')} v{row.get('version')} "
-            f"[{row.get('status')}]",
+            f"Skill release restored {row.get('id')} v{row.get('version')} [{row.get('status')}]",
             file=output,
         )
         return
@@ -5352,9 +5294,7 @@ def handle_paper_cohort_command(
     )
 
 
-def render_paper_incubation_mandates(
-    rows: list[dict[str, Any]], *, output: TextIO
-) -> None:
+def render_paper_incubation_mandates(rows: list[dict[str, Any]], *, output: TextIO) -> None:
     print("Paper incubation mandates:", file=output)
     if not rows:
         print("- none", file=output)
@@ -8487,10 +8427,7 @@ def _stream_terminal_error_message(
             f"本次运行未生成最终报告（{error['code']}），跟踪编号：{reference}。"
             "请执行 /runs 查看状态后重试。"
         )
-    return (
-        f"流式连接在最终报告前结束，跟踪编号：{reference}。"
-        "请执行 /runs 查看状态后重试。"
-    )
+    return f"流式连接在最终报告前结束，跟踪编号：{reference}。请执行 /runs 查看状态后重试。"
 
 
 def _status_line(text: str, style: str, *, output: TextIO) -> str:
@@ -8645,9 +8582,7 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("login", help="Save remote HyperTrade API login for this machine.")
     subparsers.add_parser("/login", help="Save remote HyperTrade API login for this machine.")
 
-    pulse = subparsers.add_parser(
-        "pulse", help="Autonomous Market Pulse inspection and triggers."
-    )
+    pulse = subparsers.add_parser("pulse", help="Autonomous Market Pulse inspection and triggers.")
     pulse_sub = pulse.add_subparsers(dest="pulse_action")
     pulse_once = pulse_sub.add_parser(
         "once", help="Trigger one autonomous pulse cycle immediately."
@@ -8672,11 +8607,17 @@ def _build_parser() -> argparse.ArgumentParser:
     opt_sub = opt.add_subparsers(dest="optimize_action")
 
     opt_run = opt_sub.add_parser("run", help="Run a parameter optimization study.")
-    opt_run.add_argument("--strategy", default="trend_breakout_v1", help="Strategy identifier/key.")
-    opt_run.add_argument("--code-path", default="", help="Optional path to strategy Python source file.")
+    opt_run.add_argument("--strategy", default="trend_breakout_v1", help="Strategy identifier.")
+    opt_run.add_argument(
+        "--code-path", default="", help="Optional path to strategy Python source file."
+    )
     opt_run.add_argument("--symbols", default="BTC-USDT-SWAP", help="Comma-separated symbols.")
-    opt_run.add_argument("--timeframes", default="1H", help="Comma-separated timeframes (e.g. 15M,1H).")
-    opt_run.add_argument("--method", default="grid", choices=["grid", "random", "llm"], help="Search method.")
+    opt_run.add_argument(
+        "--timeframes", default="1H", help="Comma-separated timeframes (e.g. 15M,1H)."
+    )
+    opt_run.add_argument(
+        "--method", default="grid", choices=["grid", "random", "llm"], help="Search method."
+    )
     opt_run.add_argument("--trials", type=int, default=20, help="Max trials to evaluate.")
     opt_run.add_argument("--is-ratio", type=float, default=0.70, help="In-sample data ratio.")
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import random
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -13,7 +13,6 @@ from hypertrade.backtest.candidate import (
     BacktestCosts,
     Bar,
     CandidateBacktestError,
-    CandidateBacktestResult,
     replay_candidate,
 )
 from hypertrade.research.optimization.metrics import (

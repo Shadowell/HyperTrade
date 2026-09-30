@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import inspect
 import itertools
 import json
 import math
 import random
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -50,7 +49,7 @@ class IntParam(ParameterSpec):
 
     def __post_init__(self) -> None:
         if self.min_val > self.max_val:
-            raise ValueError(f"IntParam {self.name}: min_val {self.min_val} > max_val {self.max_val}")
+            raise ValueError(f"IntParam {self.name}: min {self.min_val} > max {self.max_val}")
         if self.step < 1:
             raise ValueError(f"IntParam {self.name}: step must be >= 1, got {self.step}")
 
@@ -115,9 +114,11 @@ class FloatParam(ParameterSpec):
 
     def __post_init__(self) -> None:
         if self.min_val > self.max_val:
-            raise ValueError(f"FloatParam {self.name}: min_val {self.min_val} > max_val {self.max_val}")
+            raise ValueError(f"FloatParam {self.name}: min {self.min_val} > max {self.max_val}")
         if self.scale == "log" and self.min_val <= 0:
-            raise ValueError(f"FloatParam {self.name}: log scale requires min_val > 0, got {self.min_val}")
+            raise ValueError(
+                f"FloatParam {self.name}: log scale requires min > 0, got {self.min_val}"
+            )
 
     def sample(self, rng: random.Random) -> float:
         if self.scale == "log":
@@ -148,7 +149,8 @@ class FloatParam(ParameterSpec):
             snapped = []
             for val in vals:
                 k = round((val - self.min_val) / self.step)
-                snapped.append(round(max(self.min_val, min(self.max_val, self.min_val + k * self.step)), 6))
+                snapped_val = max(self.min_val, min(self.max_val, self.min_val + k * self.step))
+                snapped.append(round(snapped_val, 6))
             vals = sorted(set(snapped))
         return vals
 
@@ -166,9 +168,7 @@ class FloatParam(ParameterSpec):
         if not isinstance(val, (int, float)) or isinstance(val, bool):
             return False
         val_f = float(val)
-        if not (self.min_val - 1e-9 <= val_f <= self.max_val + 1e-9):
-            return False
-        return True
+        return bool(self.min_val - 1e-9 <= val_f <= self.max_val + 1e-9)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -399,11 +399,13 @@ def extract_parameter_space_from_code(code: str) -> ParameterSpace:
                         if isinstance(default_val, int) and not isinstance(default_val, bool):
                             min_val = max(1, int(default_val * 0.4))
                             max_val = max(min_val + 2, int(default_val * 2.5))
-                            space.add_param(IntParam(name, min_val, max_val, step=1, default=default_val))
+                            space.add_param(
+                                IntParam(name, min_val, max_val, step=1, default=default_val)
+                            )
                         elif isinstance(default_val, float):
-                            min_val = round(max(1e-4, default_val * 0.4), 6)
-                            max_val = round(default_val * 2.5, 6)
-                            space.add_param(FloatParam(name, min_val, max_val, default=default_val))
+                            min_flt = round(max(1e-4, default_val * 0.4), 6)
+                            max_flt = round(default_val * 2.5, 6)
+                            space.add_param(FloatParam(name, min_flt, max_flt, default=default_val))
 
                 # Check config.get("param", default) calls in methods
                 elif isinstance(item, ast.FunctionDef):
@@ -424,9 +426,11 @@ def extract_parameter_space_from_code(code: str) -> ParameterSpace:
                                     max_v = max(min_v + 2, int(val * 2.5))
                                     space.add_param(IntParam(key, min_v, max_v, default=val))
                                 elif isinstance(val, float):
-                                    min_v = round(max(1e-4, val * 0.5), 6)
-                                    max_v = round(val * 2.5, 6)
-                                    space.add_param(FloatParam(key, min_v, max_v, default=val))
+                                    min_v_flt = round(max(1e-4, val * 0.5), 6)
+                                    max_v_flt = round(val * 2.5, 6)
+                                    space.add_param(
+                                        FloatParam(key, min_v_flt, max_v_flt, default=val)
+                                    )
 
     # Add common heuristic constraints
     if "fast_period" in space.parameters and "slow_period" in space.parameters:
@@ -442,7 +446,12 @@ def extract_parameter_space_from_code(code: str) -> ParameterSpace:
 def _extract_literal_val(node: ast.AST) -> Any:
     if isinstance(node, ast.Constant):
         return node.value
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub) and isinstance(node.operand, ast.Constant):
+    if (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+        and isinstance(node.operand.value, (int, float))
+    ):
         return -node.operand.value
     return None
 
@@ -505,11 +514,11 @@ class LlmMutationSampler:
 
         system_prompt = (
             "You are an expert quantitative trading researcher specializing in parameter tuning.\n"
-            "Analyze the parameter search space and the historical backtest performance differences "
+            "Analyze the parameter search space and backtest performance differences "
             "between top-performing trials and worst-performing trials.\n"
-            "Propose new parameter candidates that explore promising regions, refine the best settings, "
-            "and escape overfitting traps.\n"
-            "Respond ONLY with a JSON array of parameter dictionaries matching the parameter specifications."
+            "Propose new parameter candidates that explore promising regions, refine the best "
+            "settings, and escape overfitting traps.\n"
+            "Respond ONLY with a JSON array of parameter dictionaries matching specifications."
         )
 
         user_content = json.dumps(

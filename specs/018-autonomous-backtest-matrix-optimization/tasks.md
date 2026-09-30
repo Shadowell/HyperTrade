@@ -24,7 +24,7 @@
   - API: `POST /api/research/optimization/start`, `GET /api/research/optimization/{study_id}`, `GET /api/research/optimization/{study_id}/trials`, `POST /api/research/optimization/{study_id}/export`
   - CLI: `hypertrade optimize run`, `hypertrade optimize list`, `hypertrade optimize status`, `hypertrade optimize export`
   - 编写 E2E 测试 `tests/test_optimization_e2e.py`
-- [ ] T007: 全量测试验证与质量门禁通关 (`./scripts/check.sh`)
+- [x] T007: 全量测试验证与质量门禁通关 (`./scripts/check.sh`)
   - 运行全量代码风格、类型检查与全量单元测试
   - 确保 100% 绿灯且无回归
 - [ ] T008: PR 创建、合并与测试机验证 (Landing per AGENTS.md)

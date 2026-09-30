@@ -3,31 +3,26 @@
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import desc, select
 
+from hypertrade.backtest.candidate import Bar
 from hypertrade.db import (
     Database,
     OptimizationStudy,
     OptimizationTrial,
-    utc_now,
 )
 from hypertrade.research.codegen import generate_strategy
 from hypertrade.research.optimization.exporter import export_to_bitpro, export_to_quantlab
 from hypertrade.research.optimization.matrix import (
     BacktestMatrixEngine,
-    Bar,
-    MatrixTrialResult,
     generate_synthetic_bars,
 )
-from hypertrade.research.optimization.robustness import RobustnessEvaluator, RobustnessScoreCard
+from hypertrade.research.optimization.robustness import RobustnessEvaluator
 from hypertrade.research.optimization.space import (
     GridSampler,
-    LlmMutationSampler,
     ParameterSpace,
     RandomSampler,
     extract_parameter_space_from_code,
@@ -260,9 +255,7 @@ class OptimizationService:
     def list_studies(self, limit: int = 50) -> list[dict[str, Any]]:
         with self.db.session() as session:
             rows = session.scalars(
-                select(OptimizationStudy)
-                .order_by(desc(OptimizationStudy.created_at))
-                .limit(limit)
+                select(OptimizationStudy).order_by(desc(OptimizationStudy.created_at)).limit(limit)
             ).all()
             return [
                 {

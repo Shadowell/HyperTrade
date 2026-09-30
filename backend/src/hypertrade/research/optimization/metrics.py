@@ -11,7 +11,6 @@ from hypertrade.backtest.candidate import (
     _BARS_PER_YEAR,
     _DEFAULT_BARS_PER_YEAR,
     CandidateBacktestResult,
-    Trade,
 )
 
 
@@ -90,8 +89,8 @@ def compute_quantitative_metrics(
     # Annualized Return
     if years > 0 and result.starting_equity > 0 and result.ending_equity > 0:
         annualized_return_pct = (
-            ((result.ending_equity / result.starting_equity) ** (1.0 / years) - 1.0) * 100.0
-        )
+            (result.ending_equity / result.starting_equity) ** (1.0 / years) - 1.0
+        ) * 100.0
     else:
         annualized_return_pct = total_return_pct
 

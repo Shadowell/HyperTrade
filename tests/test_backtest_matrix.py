@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-import pytest
-
+from hypertrade.research.codegen import generate_strategy
 from hypertrade.research.optimization.matrix import (
     BacktestMatrixEngine,
     generate_synthetic_bars,
 )
 from hypertrade.research.optimization.metrics import (
     QuantitativeMetrics,
-    compute_quantitative_metrics,
 )
-
-from hypertrade.research.codegen import generate_strategy
 
 
 def _spec(**overrides):

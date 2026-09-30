@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from hypertrade.db import Database, OptimizationStudy, OptimizationTrial
 from hypertrade.research.optimization.exporter import export_to_bitpro, export_to_quantlab
 
@@ -30,7 +28,11 @@ def test_exporter_quantlab_and_bitpro() -> None:
             trial_index=1,
             parameters_json={"fast": 8, "slow": 24},
             status="completed",
-            is_metrics_json={"annualized_sharpe": 2.1, "total_return_pct": 35.0, "max_drawdown_pct": 6.5},
+            is_metrics_json={
+                "annualized_sharpe": 2.1,
+                "total_return_pct": 35.0,
+                "max_drawdown_pct": 6.5,
+            },
             oos_metrics_json={"annualized_sharpe": 1.9, "total_return_pct": 28.0},
             scorecard_json={"verdict": "OPTIMIZED_PROMOTABLE"},
             composite_score=84.5,
