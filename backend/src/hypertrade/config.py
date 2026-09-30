@@ -306,6 +306,34 @@ class Settings(BaseSettings):
         default="500",
         alias="AUTONOMOUS_MAX_POSITION_NOTIONAL_USDT",
     )
+    autonomous_pulse_enabled: bool = Field(
+        default=True,
+        alias="AUTONOMOUS_PULSE_ENABLED",
+    )
+    autonomous_pulse_interval_seconds: int = Field(
+        default=60,
+        alias="AUTONOMOUS_PULSE_INTERVAL_SECONDS",
+    )
+    autonomous_pulse_symbols: str = Field(
+        default="BTC-USDT-SWAP,ETH-USDT-SWAP,SOL-USDT-SWAP",
+        alias="AUTONOMOUS_PULSE_SYMBOLS",
+    )
+    autonomous_pulse_min_conviction: float = Field(
+        default=0.70,
+        alias="AUTONOMOUS_PULSE_MIN_CONVICTION",
+    )
+    enable_external_news_feed: bool = Field(
+        default=True,
+        alias="ENABLE_EXTERNAL_NEWS_FEED",
+    )
+    cryptopanic_api_key: str = Field(
+        default="",
+        alias="CRYPTOPANIC_API_KEY",
+    )
+    news_poll_interval_seconds: int = Field(
+        default=60,
+        alias="NEWS_POLL_INTERVAL_SECONDS",
+    )
 
 
 @lru_cache
