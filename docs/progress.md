@@ -1,5 +1,14 @@
 # Progress Log
 
+## 常驻自主巡航盯盘守护进程与实时全息感知流接入 (Spec 014) — 2026-09-30
+
+- **真实外部新闻流与交易所公告全息感知源 (T001)**：在 `hypertrade.market.news` 中构建多源感知接入体系，实现 `RssCryptoNewsSource`（CoinDesk、Cointelegraph、Decrypt RSS 解析）、`CryptoPanicNewsSource`（CryptoPanic API 情绪与币种抓取）、`OkxAnnouncementsSource`（OKX 官方上币/下币/规则变动公告抓取）与 `WhaleMovementSource`（链上大单转账异动报警）。提供并发聚合、自动容错降级与 `KNOWN_CRYPTO_SYMBOLS` 实体提取；
+- **全息脉冲周期审计持久化 (T002)**：在 `hypertrade.db` 中新增 `AutonomousPulseCycle` 表结构，完整记录每次盯盘巡航周期的触发源（`scheduled` / `manual` / `cli`）、健康状态、巡航币种列表、聚合舆情情绪摘要、LLM 决策明细与执行订单收据，确保自主交易每一步均具备生产级可审计性；
+- **自主盯盘巡航中枢与启发式快速初筛 (T003)**：实现 `AutonomousMarketPulseService`，采用两阶段决策范式（Two-Stage Pulse Decision Pipeline）——第一阶段采用启发式初筛（Fast Heuristic Filter）过滤窄幅震荡无异动平静行情，零消耗 Token 迅速判定 HOLD；第二阶段遇到异动、关键突破或重大舆情时调用 LLM 综合行情、资金费、未平仓量、舆情情绪生成多空决策，并联动 `AutonomousExecutionManager` 受控下单；
+- **后台 Worker 7x24 常驻巡航守护循环 (T004)**：在 `hypertrade.worker` 中新增 `autonomous_market_pulse_loop` 并并入后台事件循环，支持通过 `AUTONOMOUS_PULSE_ENABLED`、`AUTONOMOUS_PULSE_INTERVAL_SECONDS`、`AUTONOMOUS_PULSE_SYMBOLS` 配置，形成无人值守 7x24 持续盯盘守护闭环；
+- **RESTful API 与 CLI 双模态交互集成 (T005)**：在 `hypertrade.main` 暴露 `GET /api/agent/pulse/history`、`POST /api/agent/pulse/trigger`、`GET /api/market/news/latest` 端点；在 `hypertrade.cli` 暴露 `hypertrade pulse once [--dry-run]` 与 `hypertrade pulse history` 命令行工具；
+- **端到端集成测试与质量门禁验证 (T006)**：新增 `tests/test_live_perception_sources.py`、`tests/test_autonomous_pulse_service.py` 与 `tests/test_autonomous_pulse_e2e.py`；全量通过 `./scripts/check.sh`（前端 15 项 vitest、TypeScript 构建、ESLint 0 报错；后端 1763 项 pytest、Ruff 格式与检查、Mypy 283 模块类型检查 100% 通过）。
+
 ## 全自主量化交易 Agent 架构设计与闭环落地 (Spec 013) — 2026-09-30
 
 - **全自主交易 Agent 架构设计与多维感知升级**：完成 `docs/architecture/64-autonomous-trading-agent-system-architecture.md` 与 Spec 013 规格套件（`spec.md`, `plan.md`, `tasks.md`）。实现 `hypertrade.market.news` 实时新闻流采集与 `hypertrade.market.sentiment` 多维情绪打分引擎，结合行情、资金费、未平仓合约与舆情情绪构建统一感知总线（Perception Bus），暴露 `market.perception_snapshot` 与 `market.news_stream` 工具。
