@@ -9,7 +9,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -98,7 +98,7 @@ class RemoteKlineProvider:
             raise ValueError("history_timeframe_unsupported")
         symbol = _normalize_bitpro_symbol(symbol)
         period = int(timeframe[:-1]) * {"m": 60000, "h": 3600000, "d": 86400000}[timeframe[-1]]
-        anchor = int(self.now() * 1000) // period * period
+        anchor = int(self.now() * 1000) // 60000 * 60000
         upper = anchor - period
         result: list[Candle] = []
         while len(result) < limit:
@@ -120,15 +120,28 @@ class RemoteKlineProvider:
             rows = page.get("candles")
             if not isinstance(rows, list) or len(rows) != size:
                 raise ValueError("history_window_incomplete")
+            if not all(isinstance(row, dict) for row in rows):
+                raise ValueError("history_invalid_row")
+            latest = rows[-1].get("timestamp")
+            if (
+                isinstance(latest, bool)
+                or not isinstance(latest, int)
+                or not upper - period < latest <= upper
+                or (result and latest != upper)
+            ):
+                raise ValueError("history_window_stale_or_discontinuous")
             batch = []
             for index, row in enumerate(rows):
-                expected = upper - (size - 1 - index) * period
+                expected = latest - (size - 1 - index) * period
                 if row.get("timestamp") != expected:
                     raise ValueError("history_window_stale_or_discontinuous")
-                prices = {
-                    key: Decimal(str(row[key]))
-                    for key in ("open", "high", "low", "close", "volume")
-                }
+                try:
+                    prices = {
+                        key: Decimal(str(row[key]))
+                        for key in ("open", "high", "low", "close", "volume")
+                    }
+                except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
+                    raise ValueError("history_invalid_values") from exc
                 if not all(value.is_finite() for value in prices.values()) or prices["volume"] < 0:
                     raise ValueError("history_invalid_values")
                 if (
@@ -145,7 +158,7 @@ class RemoteKlineProvider:
                     )
                 )
             result = batch + result
-            upper -= size * period
+            upper = latest - size * period
             if len(result) < limit and page.get("next_end_ms") != upper:
                 raise ValueError("history_pagination_cursor_mismatch")
         return result

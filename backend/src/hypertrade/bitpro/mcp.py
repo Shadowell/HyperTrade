@@ -478,8 +478,7 @@ class BitProToolAdapter:
         }
 
     def market_history_page(self, **parameters: Any) -> dict[str, Any]:
-        self.last_tool_calls = []
-        self._preflight()
+        # fetch_candles owns the preflight and complete multi-page audit scope.
         return _ensure_dict(self._call("market_history_page", parameters))
 
     def fetch_candles(self, *, symbol: str, timeframe: str, limit: int) -> list[Candle]:
@@ -488,6 +487,8 @@ class BitProToolAdapter:
 
         from hypertrade.backtest.remote import RemoteKlineProvider
 
+        self.last_tool_calls = []
+        self._preflight()
         namespace = hashlib.sha256(
             f"{self.client.base_url}|{self.client.auth_header}|{self.client.auth_token}".encode()
         ).hexdigest()
