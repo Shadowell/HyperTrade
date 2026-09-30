@@ -255,6 +255,19 @@ class Settings(BaseSettings):
         alias="CODEX_MODEL_OPTIONS",
     )
     codex_timeout_seconds: float = Field(default=90.0, alias="CODEX_TIMEOUT_SECONDS")
+    agy_bin_path: str = Field(default="agy", alias="AGY_BIN_PATH")
+    agy_model: str = Field(default="gemini-3.8-flash-high", alias="AGY_MODEL")
+    agy_model_options: str = Field(
+        default="gemini-3.8-flash-high,gemini-3.8-flash-medium,gemini-3.8-flash-low,gemini-3.7-flash-high,gemini-3.1-pro-high,claude-sonnet-4-6,gpt-oss-120b-medium",
+        alias="AGY_MODEL_OPTIONS",
+    )
+    agy_timeout_seconds: float = Field(default=120.0, alias="AGY_TIMEOUT_SECONDS")
+    agy_auth_token_path: Path = Field(
+        default_factory=lambda: (
+            Path.home() / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
+        ),
+        alias="AGY_AUTH_TOKEN_PATH",
+    )
     openrouter_base_url: str = Field(
         default="https://openrouter.ai/api/v1",
         alias="OPENROUTER_BASE_URL",
@@ -280,6 +293,46 @@ class Settings(BaseSettings):
     world_model_defensive_action_allowlist: str = Field(
         default="",
         alias="WORLD_MODEL_DEFENSIVE_ACTION_ALLOWLIST",
+    )
+    autonomous_trading_enabled: bool = Field(
+        default=False,
+        alias="AUTONOMOUS_TRADING_ENABLED",
+    )
+    autonomous_max_daily_loss_pct: str = Field(
+        default="3.0",
+        alias="AUTONOMOUS_MAX_DAILY_LOSS_PCT",
+    )
+    autonomous_max_position_notional_usdt: str = Field(
+        default="500",
+        alias="AUTONOMOUS_MAX_POSITION_NOTIONAL_USDT",
+    )
+    autonomous_pulse_enabled: bool = Field(
+        default=True,
+        alias="AUTONOMOUS_PULSE_ENABLED",
+    )
+    autonomous_pulse_interval_seconds: int = Field(
+        default=60,
+        alias="AUTONOMOUS_PULSE_INTERVAL_SECONDS",
+    )
+    autonomous_pulse_symbols: str = Field(
+        default="BTC-USDT-SWAP,ETH-USDT-SWAP,SOL-USDT-SWAP",
+        alias="AUTONOMOUS_PULSE_SYMBOLS",
+    )
+    autonomous_pulse_min_conviction: float = Field(
+        default=0.70,
+        alias="AUTONOMOUS_PULSE_MIN_CONVICTION",
+    )
+    enable_external_news_feed: bool = Field(
+        default=True,
+        alias="ENABLE_EXTERNAL_NEWS_FEED",
+    )
+    cryptopanic_api_key: str = Field(
+        default="",
+        alias="CRYPTOPANIC_API_KEY",
+    )
+    news_poll_interval_seconds: int = Field(
+        default=60,
+        alias="NEWS_POLL_INTERVAL_SECONDS",
     )
 
 

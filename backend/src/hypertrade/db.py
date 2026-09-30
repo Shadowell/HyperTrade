@@ -1408,6 +1408,19 @@ class LiveOrderIntent(Base, TimestampMixin):
     exchange_order_id: Mapped[str] = mapped_column(String(128), default="")
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+class AutonomousPulseCycle(Base, TimestampMixin):
+    __tablename__ = "autonomous_pulse_cycles"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("apc"))
+    trigger: Mapped[str] = mapped_column(String(32), default="scheduled", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="completed", index=True)
+    symbols: Mapped[list[str]] = mapped_column(JSON, default=list)
+    sentiment_summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    decisions_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    orders_executed: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    error_message: Mapped[str] = mapped_column(Text, default="")
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+
 
 class StrategyExperiment(Base, TimestampMixin):
     __tablename__ = "strategy_experiments"

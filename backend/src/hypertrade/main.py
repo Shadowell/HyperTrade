@@ -2119,6 +2119,53 @@ def create_app(
             raise HTTPException(status_code=404, detail="Run not found") from exc
         return _run_to_dict(run)
 
+    @app.get("/api/agent/pulse/history")
+    def get_pulse_history(limit: int = 20) -> dict[str, Any]:
+        from hypertrade.agent.pulse import AutonomousMarketPulseService
+
+        service = AutonomousMarketPulseService(database, settings=app_settings)
+        return {"items": service.list_history(limit=limit)}
+
+    @app.post("/api/agent/pulse/trigger")
+    def trigger_pulse(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        from hypertrade.agent.pulse import AutonomousMarketPulseService
+        from hypertrade.providers.runtime import ProviderRuntime
+
+        data = payload or {}
+        dry_run = bool(data.get("dry_run", False))
+        symbols = data.get("symbols")
+        autonomous_override = bool(data.get("autonomous_override", False))
+        try:
+            chat_provider = ProviderRuntime(app_settings).get_chat_provider(
+                selected=app_settings.active_chat_provider
+            )
+        except Exception:
+            chat_provider = None
+
+        service = AutonomousMarketPulseService(
+            database,
+            settings=app_settings,
+            chat_provider=chat_provider,
+        )
+        return service.run_pulse_once(
+            trigger="manual",
+            dry_run=dry_run,
+            symbols=symbols,
+            autonomous_override=autonomous_override,
+        )
+
+    @app.get("/api/market/news/latest")
+    def get_latest_news(limit: int = 20, symbol: str | None = None) -> dict[str, Any]:
+        from hypertrade.market.news import build_default_news_service
+
+        service = build_default_news_service(
+            cryptopanic_key=app_settings.cryptopanic_api_key,
+            enable_external=app_settings.enable_external_news_feed,
+        )
+        service.sync_sources()
+        articles = service.get_latest(limit=limit, symbol=symbol)
+        return {"count": len(articles), "articles": [a.to_dict() for a in articles]}
+
     @app.get("/api/market/tickers/latest")
     def latest_tickers(limit: int = 50) -> dict[str, list[dict[str, str]]]:
         rows = MarketRepository(database).latest_tickers(limit=limit)

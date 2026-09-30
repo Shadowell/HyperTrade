@@ -108,6 +108,16 @@ class ToolRegistry:
                     "market",
                 ),
                 ToolDefinition(
+                    "market.news_stream",
+                    "Read real-time crypto news stream and parsed sentiment tags.",
+                    "market",
+                ),
+                ToolDefinition(
+                    "market.perception_snapshot",
+                    "Capture holistic perception across funding, OI, news sentiment, and state.",
+                    "market",
+                ),
+                ToolDefinition(
                     "world_model.snapshot",
                     (
                         "Read global operator WorldState across market, strategy, "
@@ -356,6 +366,37 @@ class ToolRegistry:
                     "world_model.defensive_action",
                     "Execute an explicitly allowlisted defensive world-model action.",
                     "world_model",
+                ),
+                ToolDefinition(
+                    "target.profile",
+                    "Read active or requested market target profile, calendar, and capabilities.",
+                    "target",
+                ),
+                ToolDefinition(
+                    "quantlab.capabilities",
+                    "Read QuantLab quant workbench capabilities, venue, and calendar.",
+                    "quantlab",
+                ),
+                ToolDefinition(
+                    "quantlab.strategies",
+                    "List and inspect running or deployed strategies on QuantLab workbench.",
+                    "quantlab",
+                ),
+                ToolDefinition(
+                    "quantlab.paper_snapshot",
+                    "Read paper trading session snapshot and performance metrics on QuantLab.",
+                    "quantlab",
+                ),
+                ToolDefinition(
+                    "quantlab.deploy",
+                    "Deploy or configure an evolved strategy on QuantLab quant workbench.",
+                    "quantlab",
+                ),
+                ToolDefinition(
+                    "live.autonomous_order",
+                    "Execute a bounded autonomous trading order within pre-authorized risk gates.",
+                    "live",
+                    requires_approval=False,
                 ),
                 ToolDefinition(
                     "live.order_intent",
@@ -1536,6 +1577,186 @@ RUNTIME_TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "market_news_stream",
+            "description": (
+                "Fetch real-time crypto news articles and structured sentiment/urgency scores. "
+                "Can filter by symbol (e.g. BTC, ETH, SOL) or retrieve market-wide flow."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Optional coin symbol such as BTC or ETH to filter news.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of articles to fetch, default 10.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "market_perception_snapshot",
+            "description": (
+                "Capture holistic market perception for one symbol, synthesizing OKX "
+                "funding rates, open interest, and real-time news sentiment."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or OKX instrument id.",
+                    },
+                    "limit_news": {
+                        "type": "integer",
+                        "description": "Number of news articles to include, default 10.",
+                    },
+                },
+                "required": ["symbol"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "live_autonomous_order",
+            "description": (
+                "Execute a pre-authorized autonomous order within hardware risk bounds "
+                "(daily loss circuit breaker, notional limits), without human manual approval."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or OKX instrument id.",
+                    },
+                    "side": {"type": "string", "enum": ["buy", "sell"]},
+                    "size": {
+                        "type": "string",
+                        "description": "Contract/order size as decimal text.",
+                    },
+                    "order_type": {"type": "string", "enum": ["market", "limit"]},
+                    "price": {
+                        "type": "string",
+                        "description": "Limit price, if order_type is limit.",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Autonomous signal or reason driving this order.",
+                    },
+                },
+                "required": ["symbol", "side", "size"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "target_profile",
+            "description": (
+                "Read active or specified market target profile, calendar, and capabilities."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_id": {
+                        "type": "string",
+                        "description": (
+                            "Target ID to query, e.g. bitpro, quantlab. Defaults to active target."
+                        ),
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "quantlab_capabilities",
+            "description": (
+                "Query QuantLab quant workbench capabilities, venue, and trading calendar."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "quantlab_strategies",
+            "description": (
+                "List running or deployed strategies on QuantLab quantitative workbench."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of strategies to return (default 50).",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "quantlab_paper_snapshot",
+            "description": (
+                "Query QuantLab paper trading session snapshot and performance metrics."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {
+                        "type": "string",
+                        "description": "QuantLab strategy ID.",
+                    },
+                    "instance_id": {
+                        "type": "string",
+                        "description": "QuantLab paper session instance ID.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "quantlab_deploy",
+            "description": (
+                "Deploy an evolved strategy or configure paper session on QuantLab workbench."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Strategy display name."},
+                    "code": {"type": "string", "description": "Python source code for strategy."},
+                    "config": {
+                        "type": "object",
+                        "description": "Strategy configuration dictionary.",
+                    },
+                    "start_paper": {
+                        "type": "boolean",
+                        "description": "Whether to start paper trading immediately (default true).",
+                    },
+                },
+                "required": ["name", "code"],
+            },
+        },
+    },
 )
 
 
@@ -1552,6 +1773,8 @@ _IDEMPOTENCY_REQUIRED_TOOL_NAMES = {
     "paper_promotion_request",
     "mcp_invoke_tool",
     "live_order_intent",
+    "live_autonomous_order",
+    "quantlab_deploy",
 }
 
 # Write tools must carry an idempotency_key in their planner schema so the
@@ -1689,6 +1912,16 @@ def _default_policy_for(
             safe_sample_limit=1,
             failure_behavior="return_structured_error",
         )
+    if name == "live.autonomous_order":
+        return ToolPolicy(
+            scope="live_write",
+            approval="none",
+            idempotency="required",
+            source_of_truth="hypertrade_db",
+            timeout_class="quick",
+            safe_sample_limit=1,
+            failure_behavior="return_structured_error",
+        )
     if category == "memory" and name.endswith(".write"):
         return ToolPolicy(
             scope="research_write",
@@ -1717,6 +1950,8 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "market_candles": "market.candles",
     "market_compare": "market.compare",
     "market_intelligence": "market.intelligence",
+    "market_news_stream": "market.news_stream",
+    "market_perception_snapshot": "market.perception_snapshot",
     "world_model_snapshot": "world_model.snapshot",
     "global_market_snapshot": "global_market.snapshot",
     "rag_search": "rag.search",
@@ -1765,6 +2000,12 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "bitpro_live_strategy_performance": "bitpro.live_strategy_performance",
     "world_model_defensive_action": "world_model.defensive_action",
     "live_order_intent": "live.order_intent",
+    "live_autonomous_order": "live.autonomous_order",
+    "target_profile": "target.profile",
+    "quantlab_capabilities": "quantlab.capabilities",
+    "quantlab_strategies": "quantlab.strategies",
+    "quantlab_paper_snapshot": "quantlab.paper_snapshot",
+    "quantlab_deploy": "quantlab.deploy",
 }
 
 
@@ -2023,6 +2264,53 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
         idempotency="required",
         source="hypertrade_db",
         timeout="quick",
+        sample=1,
+    ),
+    "live.autonomous_order": _policy(
+        scope="live_write",
+        approval="none",
+        idempotency="required",
+        source="hypertrade_db",
+        timeout="quick",
+        sample=1,
+    ),
+    "market.news_stream": _policy(
+        source="news_feed",
+        timeout="standard",
+        sample=20,
+        failure="return_unavailable",
+    ),
+    "market.perception_snapshot": _policy(
+        source="okx_rest_and_news",
+        timeout="standard",
+        sample=10,
+        failure="return_unavailable",
+    ),
+    "target.profile": _policy(
+        source="market_targets_registry",
+        timeout="quick",
+        sample=1,
+    ),
+    "quantlab.capabilities": _policy(
+        source="quantlab_workbench",
+        timeout="quick",
+        sample=1,
+    ),
+    "quantlab.strategies": _policy(
+        source="quantlab_workbench",
+        timeout="standard",
+        sample=50,
+    ),
+    "quantlab.paper_snapshot": _policy(
+        source="quantlab_workbench",
+        timeout="standard",
+        sample=1,
+    ),
+    "quantlab.deploy": _policy(
+        scope="paper_write",
+        idempotency="required",
+        source="quantlab_workbench",
+        timeout="standard",
         sample=1,
     ),
 }

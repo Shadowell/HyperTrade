@@ -558,6 +558,17 @@ class AgentKernel:
                 symbol=str(args.get("symbol", "")),
                 include_curated=bool(args.get("include_curated", True)),
             )
+        elif tool_name == "market_news_stream":
+            raw_sym = args.get("symbol")
+            result = self._market_news_stream_payload(
+                symbol=str(raw_sym) if raw_sym else None,
+                limit=int(args.get("limit", 10)),
+            )
+        elif tool_name == "market_perception_snapshot":
+            result = self._market_perception_snapshot_payload(
+                symbol=str(args.get("symbol", "")),
+                limit_news=int(args.get("limit_news", 10)),
+            )
 
         elif tool_name == "world_model_snapshot":
             settings = self._settings if self._settings is not None else get_settings()
@@ -884,6 +895,112 @@ class AgentKernel:
                 source="agent",
                 source_run_id=run_id,
             )
+        elif tool_name == "live_autonomous_order":
+            settings = self._settings if self._settings is not None else get_settings()
+            live_service = LiveOrderIntentService(self.db, settings=settings)
+            result = live_service.create_and_execute_autonomous(
+                symbol=str(args.get("symbol", "")),
+                side=str(args.get("side", "")),
+                size=str(args.get("size", "")),
+                order_type=str(args.get("order_type", "market")),
+                price=str(args["price"]) if args.get("price") else None,
+                reason=str(args.get("reason", "")),
+                source="autonomous_agent",
+                source_run_id=run_id,
+            )
+        elif tool_name == "target_profile":
+            from hypertrade.targets.registry import (
+                get_active_market_target,
+                get_market_target,
+                registered_market_targets,
+            )
+
+            target_id = str(args.get("target_id") or "").strip()
+            binding = get_market_target(target_id) if target_id else get_active_market_target()
+            p = binding.profile
+            result = {
+                "target_id": p.target_id,
+                "display_name": p.display_name,
+                "transport": p.transport,
+                "tool_contract": p.tool_contract,
+                "venue": p.venue,
+                "market_type": p.market_type,
+                "quote_currency": p.quote_currency,
+                "strategy_id_format": p.strategy_id_format,
+                "calendar": {
+                    "mode": p.calendar.mode,
+                    "timezone": p.calendar.timezone,
+                    "evidence_window_days": p.calendar.evidence_window_days,
+                    "session_open": p.calendar.session_open,
+                    "session_close": p.calendar.session_close,
+                },
+                "capabilities": p.capabilities.model_dump(),
+                "registered_targets": [t.target_id for t in registered_market_targets()],
+            }
+        elif tool_name == "quantlab_capabilities":
+            from hypertrade.targets.quantlab import (
+                quantlab_adapter_factory,
+                register_quantlab_target,
+            )
+
+            register_quantlab_target()
+            adapter = quantlab_adapter_factory()
+            result = adapter.capabilities()
+        elif tool_name == "quantlab_strategies":
+            from hypertrade.targets.quantlab import (
+                quantlab_adapter_factory,
+                register_quantlab_target,
+            )
+
+            register_quantlab_target()
+            adapter = quantlab_adapter_factory()
+            limit = int(args.get("limit", 50))
+            strategies = adapter.list_running_strategies(limit=limit)
+            result = {
+                "target_id": "quantlab",
+                "count": len(strategies),
+                "strategies": [
+                    {
+                        "strategy_id": s.strategy_id,
+                        "name": s.name,
+                        "timeframe": s.timeframe,
+                        "mode": s.mode,
+                        "symbols": list(s.symbols),
+                    }
+                    for s in strategies
+                ],
+            }
+        elif tool_name == "quantlab_paper_snapshot":
+            from hypertrade.targets.quantlab import (
+                quantlab_adapter_factory,
+                register_quantlab_target,
+            )
+
+            register_quantlab_target()
+            adapter = quantlab_adapter_factory()
+            sid = str(args.get("strategy_id") or "") or None
+            iid = str(args.get("instance_id") or "") or None
+            result = adapter.paper_snapshot(strategy_id=sid, instance_id=iid)
+        elif tool_name == "quantlab_deploy":
+            from hypertrade.targets.quantlab import (
+                quantlab_adapter_factory,
+                register_quantlab_target,
+            )
+
+            register_quantlab_target()
+            adapter = quantlab_adapter_factory()
+            name = str(args.get("name", ""))
+            code = str(args.get("code", ""))
+            raw_cfg = args.get("config")
+            config: dict[str, Any] = dict(raw_cfg) if isinstance(raw_cfg, dict) else {}
+            start_paper = bool(args.get("start_paper", True))
+            deploy_res = adapter.deploy_strategy(name=name, code=code, config=config)
+            if start_paper:
+                start_res = adapter.start_paper(
+                    deploy_res["strategy_id"], strategy_id=deploy_res["strategy_id"]
+                )
+                deploy_res["paper_session"] = start_res
+            result = deploy_res
         else:
             result = self._tool_error_payload(
                 tool_name,
@@ -1728,6 +1845,30 @@ class AgentKernel:
         return MarketIntelligenceService(settings=settings).collect(
             symbol=symbol,
             include_curated=include_curated,
+        )
+
+    def _market_news_stream_payload(
+        self,
+        *,
+        symbol: str | None = None,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        settings = self._settings if self._settings is not None else get_settings()
+        return MarketIntelligenceService(settings=settings).get_news_stream(
+            symbol=symbol,
+            limit=limit,
+        )
+
+    def _market_perception_snapshot_payload(
+        self,
+        *,
+        symbol: str,
+        limit_news: int = 10,
+    ) -> dict[str, Any]:
+        settings = self._settings if self._settings is not None else get_settings()
+        return MarketIntelligenceService(settings=settings).collect_perception(
+            symbol=symbol,
+            limit_news=limit_news,
         )
 
     def _fetch_market_candles(

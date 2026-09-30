@@ -15,7 +15,13 @@ from hypertrade.targets.mcp_contract import (
     McpContractPreflight,
     build_mcp_contract_profile,
 )
-from hypertrade.targets.mcp_read_ports import McpReadPorts
+from hypertrade.targets.quantlab import (
+    QUANTLAB_TARGET_ID,
+    QUANTLAB_TARGET_PROFILE,
+    QuantLabTargetAdapter,
+    quantlab_adapter_factory,
+    register_quantlab_target,
+)
 from hypertrade.targets.registry import (
     MarketTargetBinding,
     MarketTargetUnavailable,
@@ -42,6 +48,9 @@ __all__ = [
     "McpContractClient",
     "McpContractPreflight",
     "McpReadPorts",
+    "QUANTLAB_TARGET_ID",
+    "QUANTLAB_TARGET_PROFILE",
+    "QuantLabTargetAdapter",
     "READ_EXTENSION_TOOLS",
     "TargetCalendarV1",
     "TargetCapabilitiesV1",
@@ -49,7 +58,9 @@ __all__ = [
     "build_mcp_contract_profile",
     "get_active_market_target",
     "get_market_target",
+    "quantlab_adapter_factory",
     "register_market_target",
+    "register_quantlab_target",
     "registered_market_targets",
     "reset_market_targets",
 ]

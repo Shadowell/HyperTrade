@@ -59,7 +59,16 @@ def register_market_target(
 
 def get_market_target(target_id: str) -> MarketTargetBinding:
     _ensure_builtin_targets()
-    binding = _REGISTRY.get(str(target_id).strip())
+    normalized = str(target_id).strip()
+    if (
+        normalized == "quantlab"
+        and normalized not in _REGISTRY
+        and active_market_target_id() == "quantlab"
+    ):
+        from hypertrade.targets.quantlab import register_quantlab_target
+
+        register_quantlab_target()
+    binding = _REGISTRY.get(normalized)
     if binding is None:
         known = ", ".join(sorted(_REGISTRY)) or "none"
         raise MarketTargetUnavailable(
