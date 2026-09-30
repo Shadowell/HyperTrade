@@ -2943,6 +2943,58 @@ def main(
         output.write("Usage: hypertrade pulse [once|history]\n")
         return 1
 
+    if args.command == "optimize":
+        from pathlib import Path
+        from hypertrade.db import Database
+        from hypertrade.research.optimization.service import OptimizationService
+
+        settings = _local_runtime_settings()
+        db = Database(settings.database_url)
+        svc = OptimizationService(db)
+
+        action = getattr(args, "optimize_action", None)
+        if action == "run":
+            code = None
+            if getattr(args, "code_path", None):
+                code = Path(args.code_path).read_text(encoding="utf-8")
+            symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+            timeframes = [t.strip() for t in args.timeframes.split(",") if t.strip()]
+
+            res = svc.start_study(
+                strategy_identifier=args.strategy,
+                strategy_code=code,
+                symbols=symbols,
+                timeframes=timeframes,
+                search_method=args.method,
+                max_trials=args.trials,
+                is_ratio=args.is_ratio,
+            )
+            output.write(json.dumps(res, indent=2) + "\n")
+            return 0
+        elif action == "list":
+            items = svc.list_studies(limit=int(getattr(args, "limit", 20)))
+            output.write(json.dumps(items, indent=2) + "\n")
+            return 0
+        elif action == "status":
+            res = svc.get_study(args.study_id)
+            if res is None:
+                output.write(f"Study not found: {args.study_id}\n")
+                return 1
+            trials = svc.get_study_trials(args.study_id)
+            res["trials_count"] = len(trials)
+            output.write(json.dumps(res, indent=2) + "\n")
+            return 0
+        elif action == "export":
+            try:
+                exported = svc.export_study(args.study_id, target_format=args.format)
+                output.write(json.dumps(exported, indent=2) + "\n")
+                return 0
+            except KeyError:
+                output.write(f"Study not found: {args.study_id}\n")
+                return 1
+        output.write("Usage: hypertrade optimize [run|list|status|export]\n")
+        return 1
+
     run_chat(client=agent_client, input_fn=input_fn, output=output)
     return 0
 
@@ -8613,6 +8665,32 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     pulse_history = pulse_sub.add_parser("history", help="List recent autonomous pulse cycles.")
     pulse_history.add_argument("--limit", type=int, default=10, help="Max records to display.")
+
+    opt = subparsers.add_parser(
+        "optimize", help="Automated Backtest Matrix & Parameter Optimization Sandbox."
+    )
+    opt_sub = opt.add_subparsers(dest="optimize_action")
+
+    opt_run = opt_sub.add_parser("run", help="Run a parameter optimization study.")
+    opt_run.add_argument("--strategy", default="trend_breakout_v1", help="Strategy identifier/key.")
+    opt_run.add_argument("--code-path", default="", help="Optional path to strategy Python source file.")
+    opt_run.add_argument("--symbols", default="BTC-USDT-SWAP", help="Comma-separated symbols.")
+    opt_run.add_argument("--timeframes", default="1H", help="Comma-separated timeframes (e.g. 15M,1H).")
+    opt_run.add_argument("--method", default="grid", choices=["grid", "random", "llm"], help="Search method.")
+    opt_run.add_argument("--trials", type=int, default=20, help="Max trials to evaluate.")
+    opt_run.add_argument("--is-ratio", type=float, default=0.70, help="In-sample data ratio.")
+
+    opt_list = opt_sub.add_parser("list", help="List recent optimization studies.")
+    opt_list.add_argument("--limit", type=int, default=20, help="Max studies to list.")
+
+    opt_status = opt_sub.add_parser("status", help="Get status and best trial for a study.")
+    opt_status.add_argument("study_id", help="Optimization study ID.")
+
+    opt_export = opt_sub.add_parser("export", help="Export study to QuantLab or BitPro format.")
+    opt_export.add_argument("study_id", help="Optimization study ID.")
+    opt_export.add_argument(
+        "--format", default="quantlab", choices=["quantlab", "bitpro"], help="Export format."
+    )
     return parser
 
 
