@@ -1,0 +1,33 @@
+# 018 任务清单 (Tasks)
+
+- [ ] T001: 参数空间模型与变异采样器开发 (`backend/src/hypertrade/research/optimization/space.py` + tests)
+  - 实现 `ParameterSpec`, `IntParam`, `FloatParam`, `CategoricalParam`, `ParameterSpace`
+  - 实现 AST 自动提取参数与约束校验
+  - 实现 Grid, Random, 以及结合 LLM 提示词的启发式变异采样器
+  - 编写测试 `tests/test_optimization_space.py`
+- [ ] T002: 综合量化指标计算器与回测矩阵执行器 (`backend/src/hypertrade/research/optimization/metrics.py`, `matrix.py` + tests)
+  - 实现 Sortino, Calmar, Profit Factor, Win Rate, Turnover 等指标计算
+  - 实现 `BacktestMatrixEngine`：支持多品种 x 多周期 (1m-1d) x 多参数组合的极速回放与数据切分
+  - 编写测试 `tests/test_backtest_matrix.py`
+- [ ] T003: Walk-Forward 滚动验证与参数敏感度抗过拟合沙盒 (`backend/src/hypertrade/research/optimization/robustness.py` + tests)
+  - 实现 IS (样本内) 与 OOS (样本外) 自动划分与比较
+  - 实现邻域微扰敏感度检验 (Parameter Sensitivity / Ridge Test)，识别刀锋过拟合
+  - 实现综合稳健度评分卡算法 (Composite Robustness Score)
+  - 编写测试 `tests/test_optimization_robustness.py`
+- [ ] T004: 数据库持久化模型与 QuantLab/BitPro 配置导出器 (`backend/src/hypertrade/db.py`, `exporter.py` + tests)
+  - 新增 `OptimizationStudy` 与 `OptimizationTrial` 表模型
+  - 实现导出至 QuantLab 配置与 BitPro 标准参数字典的格式化输出
+  - 编写测试 `tests/test_optimization_exporter.py`
+- [ ] T005: 综合寻优服务门面与生命周期管理 (`backend/src/hypertrade/research/optimization/service.py`)
+  - 实现 `OptimizationService`: 接收寻优请求、异步执行、状态保存、最优参数汇总与查询
+- [ ] T006: REST API 端点与 CLI 交互工具 (`backend/src/hypertrade/main.py`, `cli.py` + tests)
+  - API: `POST /api/research/optimization/start`, `GET /api/research/optimization/{study_id}`, `GET /api/research/optimization/{study_id}/trials`, `POST /api/research/optimization/{study_id}/export`
+  - CLI: `hypertrade optimize run`, `hypertrade optimize list`, `hypertrade optimize status`, `hypertrade optimize export`
+  - 编写 E2E 测试 `tests/test_optimization_e2e.py`
+- [ ] T007: 全量测试验证与质量门禁通关 (`./scripts/check.sh`)
+  - 运行全量代码风格、类型检查与全量单元测试
+  - 确保 100% 绿灯且无回归
+- [ ] T008: PR 创建、合并与测试机验证 (Landing per AGENTS.md)
+  - 提交代码到特性分支，rebase origin/main
+  - 提交 PR 并合并至 main
+  - 同步部署至测试服务器 `tokyo` (64.83.43.61) 并完成真机验收
