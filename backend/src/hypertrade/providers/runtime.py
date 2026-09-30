@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from hypertrade.config import Settings
+from hypertrade.providers.agy import AgyChatProvider, resolve_agy_access
 from hypertrade.providers.chat import ChatProvider, OpenAICompatibleChatProvider
 from hypertrade.providers.codex import CodexResponsesChatProvider, resolve_codex_access_token
 from hypertrade.providers.deepseek import DeepSeekClient
@@ -26,7 +27,12 @@ class ProviderDefinition:
 
 
 class ProviderRuntime:
-    PROVIDER_ALIASES = {"openai-codex": "codex", "openai_codex": "codex"}
+    PROVIDER_ALIASES = {
+        "openai-codex": "codex",
+        "openai_codex": "codex",
+        "gemini": "agy",
+        "antigravity": "agy",
+    }
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -53,6 +59,12 @@ class ProviderRuntime:
         codex_token = resolve_codex_access_token(
             api_key=self.settings.codex_api_key,
             auth_json=self.settings.codex_auth_json,
+        )
+        agy_model_options = self._agy_model_options()
+        agy_model = selected_model_map.get("agy") or self.settings.agy_model
+        agy_enabled = resolve_agy_access(
+            bin_path=self.settings.agy_bin_path,
+            auth_token_path=self.settings.agy_auth_token_path,
         )
         # Missing providers are still listed so the harness can teach the full
         # ecosystem without requiring every API key during local development.
@@ -82,8 +94,16 @@ class ProviderRuntime:
                 selected_name == "codex",
                 codex_model_options,
             ),
+            ProviderDefinition(
+                "agy",
+                "Antigravity (AGY / Gemini)",
+                "",
+                agy_model,
+                bool(agy_enabled),
+                selected_name == "agy",
+                agy_model_options,
+            ),
             ProviderDefinition("anthropic", "Anthropic", "", "", False),
-            ProviderDefinition("gemini", "Gemini", "", "", False),
             ProviderDefinition(
                 "qwen",
                 "Qwen",
@@ -186,6 +206,16 @@ class ProviderRuntime:
                 base_url=self.settings.vide_coding_base_url,
                 model=model_override or self.settings.vide_coding_model,
             )
+        if name in {"agy", "gemini", "antigravity"} and resolve_agy_access(
+            bin_path=self.settings.agy_bin_path,
+            auth_token_path=self.settings.agy_auth_token_path,
+        ):
+            return AgyChatProvider(
+                model=model_override or self.settings.agy_model,
+                bin_path=self.settings.agy_bin_path,
+                timeout_seconds=self.settings.agy_timeout_seconds,
+                auth_token_path=self.settings.agy_auth_token_path,
+            )
         return None
 
     def validate_model_choice(self, provider: str, model: str | None) -> str:
@@ -219,5 +249,15 @@ class ProviderRuntime:
             if item.strip()
         ]
         current = self.settings.codex_model.strip()
+        ordered = [current, *configured] if current else configured
+        return tuple(dict.fromkeys(ordered))
+
+    def _agy_model_options(self) -> tuple[str, ...]:
+        configured = [
+            item.strip()
+            for item in self.settings.agy_model_options.split(",")
+            if item.strip()
+        ]
+        current = self.settings.agy_model.strip()
         ordered = [current, *configured] if current else configured
         return tuple(dict.fromkeys(ordered))

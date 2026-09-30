@@ -255,6 +255,19 @@ class Settings(BaseSettings):
         alias="CODEX_MODEL_OPTIONS",
     )
     codex_timeout_seconds: float = Field(default=90.0, alias="CODEX_TIMEOUT_SECONDS")
+    agy_bin_path: str = Field(default="agy", alias="AGY_BIN_PATH")
+    agy_model: str = Field(default="gemini-3.8-flash-high", alias="AGY_MODEL")
+    agy_model_options: str = Field(
+        default="gemini-3.8-flash-high,gemini-3.8-flash-medium,gemini-3.8-flash-low,gemini-3.7-flash-high,gemini-3.1-pro-high,claude-sonnet-4-6,gpt-oss-120b-medium",
+        alias="AGY_MODEL_OPTIONS",
+    )
+    agy_timeout_seconds: float = Field(default=120.0, alias="AGY_TIMEOUT_SECONDS")
+    agy_auth_token_path: Path = Field(
+        default_factory=lambda: (
+            Path.home() / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
+        ),
+        alias="AGY_AUTH_TOKEN_PATH",
+    )
     openrouter_base_url: str = Field(
         default="https://openrouter.ai/api/v1",
         alias="OPENROUTER_BASE_URL",
