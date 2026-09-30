@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 from hypertrade.market.news import (
     CryptoPanicNewsSource,
-    NewsArticle,
     OkxAnnouncementsSource,
     RssCryptoNewsSource,
     WhaleMovementSource,
@@ -24,7 +23,7 @@ SAMPLE_RSS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
     <item>
       <title>Bitcoin surges above $95,000 as institutional demand grows</title>
       <link>https://cointelegraph.com/news/btc-surges-95k</link>
-      <description>&lt;p&gt;BTC market cap reaches new heights while ETH and SOL also gain traction.&lt;/p&gt;</description>
+      <description>&lt;p&gt;BTC surges while ETH and SOL gain.&lt;/p&gt;</description>
       <pubDate>Wed, 30 Sep 2026 12:00:00 GMT</pubDate>
     </item>
     <item>

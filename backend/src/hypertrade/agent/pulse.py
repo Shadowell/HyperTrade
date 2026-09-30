@@ -11,13 +11,12 @@ from __future__ import annotations
 import json
 import logging
 import time
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import desc, select
 
 from hypertrade.config import Settings, get_settings
-from hypertrade.db import AutonomousPulseCycle, Database, MarketTicker, utc_now
+from hypertrade.db import AutonomousPulseCycle, Database, MarketTicker
 from hypertrade.live.service import AutonomousExecutionManager
 from hypertrade.market.intelligence import MarketIntelligenceService, normalize_swap_inst_id
 from hypertrade.market.news import NewsIngestionService, build_default_news_service

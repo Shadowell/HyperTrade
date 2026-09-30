@@ -4,18 +4,24 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
 from hypertrade.agent.pulse import AutonomousMarketPulseService
 from hypertrade.config import Settings
 from hypertrade.db import Database, MarketTicker
 from hypertrade.market.client import OkxRestClient
 from hypertrade.market.news import InMemoryNewsFeed, NewsArticle, NewsIngestionService
 from hypertrade.providers.chat import ChatResponse
-import pytest
+
 
 @pytest.fixture(autouse=True)
 def mock_okx_intelligence(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _mock_funding(*args, **kwargs):
-        return {"fundingRate": "0.0001", "nextFundingRate": "0.0001", "fundingTime": "1700000000000"}
+        return {
+            "fundingRate": "0.0001",
+            "nextFundingRate": "0.0001",
+            "fundingTime": "1700000000000",
+        }
+
     async def _mock_oi(*args, **kwargs):
         return {"oi": "1000", "oiCcy": "3500000", "ts": "1700000000000"}
     monkeypatch.setattr(OkxRestClient, "fetch_funding_rate", _mock_funding)
@@ -113,7 +119,10 @@ def test_pulse_llm_reasoning_integration() -> None:
     db = _build_test_db()
     mock_provider = MagicMock()
     mock_provider.chat.return_value = ChatResponse(
-        content='{"action": "sell", "confidence": 0.88, "suggested_size": "2", "reason": "macro_rate_hike_dump", "risk_assessment": "short_hedge"}'
+        content=(
+            '{"action": "sell", "confidence": 0.88, "suggested_size": "2", '
+            '"reason": "macro_rate_hike_dump", "risk_assessment": "short_hedge"}'
+        )
     )
 
     # Feed some news so fast-filter passes to LLM

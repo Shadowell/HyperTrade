@@ -4,6 +4,9 @@ Provides normalized news article models, deduplication, multiple source adapters
 and a unified query interface for the Perception Layer.
 """
 
+from __future__ import annotations
+
+import contextlib
 import email.utils
 import hashlib
 import json
@@ -348,12 +351,10 @@ class CryptoPanicNewsSource:
                 published_at_str = item.get("published_at")
                 published_at: datetime | None = None
                 if published_at_str:
-                    try:
+                    with contextlib.suppress(Exception):
                         published_at = datetime.fromisoformat(
                             published_at_str.replace("Z", "+00:00")
                         )
-                    except Exception:
-                        pass
                 votes = item.get("votes", {})
                 articles.append(
                     NewsArticle.create(
@@ -403,10 +404,8 @@ class OkxAnnouncementsSource:
                 ptime = item.get("pTime")
                 published_at: datetime | None = None
                 if ptime:
-                    try:
+                    with contextlib.suppress(Exception):
                         published_at = datetime.fromtimestamp(int(ptime) / 1000, tz=UTC)
-                    except Exception:
-                        pass
                 symbols = extract_symbols_from_text(title)
                 category = (
                     "partnership_listing"
@@ -449,13 +448,22 @@ class WhaleMovementSource:
         headline: str | None = None,
     ) -> NewsArticle:
         sym = symbol.strip().upper().split("-")[0]
+        wallet_from_short = from_wallet[:6]
+        wallet_to_short = to_wallet[:6]
         title = (
             headline
-            or f"Whale Alert: ${amount_usd:,.0f} of {sym} transferred ({from_wallet[:6]}... -> {to_wallet[:6]}...)"
+            or (
+                f"Whale Alert: ${amount_usd:,.0f} of {sym} "
+                f"({wallet_from_short}... -> {wallet_to_short}...)"
+            )
+        )
+        tx_summary = (
+            f"On-chain large transfer of ${amount_usd:,.0f} {sym}. "
+            f"From: {from_wallet} To: {to_wallet}. Tx: {tx_hash}"
         )
         article = NewsArticle.create(
             title=title,
-            content=f"On-chain large transfer of ${amount_usd:,.0f} {sym}. From: {from_wallet} To: {to_wallet}. Tx: {tx_hash}",
+            content=tx_summary,
             url=f"https://etherscan.io/tx/{tx_hash}" if tx_hash else "",
             source="whale_alert",
             published_at=datetime.now(UTC),

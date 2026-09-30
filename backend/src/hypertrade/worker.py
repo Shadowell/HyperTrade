@@ -497,6 +497,8 @@ async def main() -> None:
             tasks.append(mission_worker_loop(db))
     if settings.research_triggers_enabled and not full_mission_cutover:
         tasks.append(research_trigger_loop(db))
+    if settings.autonomous_pulse_enabled:
+        tasks.append(autonomous_market_pulse_loop(db))
     tasks.append(arc_observation_loop(db))
     tasks.append(arc_evolution_loop(db))
     tasks.append(arc_auto_review_loop(db))
@@ -520,6 +522,51 @@ async def _journal(
     db: Database, component: str, exc: Exception, *, mission_id: str | None = None
 ) -> None:
     await asyncio.to_thread(record_runtime_error, component, exc, mission_id=mission_id, db=db)
+
+
+async def autonomous_market_pulse_loop(
+    db: Database,
+    settings: Settings | None = None,
+    *,
+    service: Any | None = None,
+) -> None:
+    """7x24 Autonomous Market Pulse & Live Perception loop."""
+    from hypertrade.agent.pulse import AutonomousMarketPulseService
+    from hypertrade.providers.runtime import ProviderRuntime
+
+    active_settings = settings or get_settings()
+    if service is None:
+        try:
+            chat_provider = ProviderRuntime(active_settings).get_chat_provider(
+                selected=active_settings.active_chat_provider
+            )
+        except Exception:
+            chat_provider = None
+
+        service = AutonomousMarketPulseService(
+            db,
+            settings=active_settings,
+            chat_provider=chat_provider,
+        )
+    logger.info(
+        "autonomous_market_pulse_loop started interval=%ss symbols=%s",
+        active_settings.autonomous_pulse_interval_seconds,
+        active_settings.autonomous_pulse_symbols,
+    )
+    while True:
+        try:
+            result = await asyncio.to_thread(service.run_pulse_once, trigger="scheduled")
+            decisions = result.get("decisions", [])
+            orders = result.get("orders_executed", [])
+            logger.info(
+                "autonomous_pulse completed decisions=%s orders=%s duration=%sms",
+                len(decisions),
+                len(orders),
+                result.get("duration_ms", 0),
+            )
+        except Exception:
+            logger.exception("autonomous_market_pulse_loop cycle error")
+        await asyncio.sleep(max(1, active_settings.autonomous_pulse_interval_seconds))
 
 
 async def arc_meta_tuning_loop(db: Database) -> None:

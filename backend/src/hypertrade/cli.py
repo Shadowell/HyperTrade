@@ -2904,7 +2904,7 @@ def main(
     if args.command == "tui":
         agent_client.login()
         try:
-            from hypertrade.tui import dependency_error, launch_tui
+            from hypertrade.tui import launch_tui
 
             launch_tui(agent_client, session_id=str(args.session or ""))
         except ImportError as exc:
@@ -2912,6 +2912,36 @@ def main(
 
             raise dependency_error(exc) from exc
         return 0
+
+    if args.command == "pulse":
+        from hypertrade.agent.pulse import AutonomousMarketPulseService
+        from hypertrade.db import Database
+
+        settings = _local_runtime_settings()
+        db = Database(settings.database_url)
+        svc = AutonomousMarketPulseService(db, settings=settings)
+
+        if getattr(args, "pulse_action", None) == "once":
+            symbols = (
+                [s.strip() for s in args.symbols.split(",") if s.strip()]
+                if getattr(args, "symbols", None)
+                else None
+            )
+            result = svc.run_pulse_once(
+                trigger="cli",
+                dry_run=bool(getattr(args, "dry_run", False)),
+                symbols=symbols,
+                autonomous_override=bool(getattr(args, "override", False)),
+            )
+            output.write(json.dumps(result, indent=2) + "\n")
+            return 0
+        elif getattr(args, "pulse_action", None) == "history":
+            limit = int(getattr(args, "limit", 10))
+            history = svc.list_history(limit=limit)
+            output.write(json.dumps(history, indent=2) + "\n")
+            return 0
+        output.write("Usage: hypertrade pulse [once|history]\n")
+        return 1
 
     run_chat(client=agent_client, input_fn=input_fn, output=output)
     return 0
@@ -8562,6 +8592,27 @@ def _build_parser() -> argparse.ArgumentParser:
     tui.add_argument("--session", default="", help="Initially select tasks from this session.")
     subparsers.add_parser("login", help="Save remote HyperTrade API login for this machine.")
     subparsers.add_parser("/login", help="Save remote HyperTrade API login for this machine.")
+
+    pulse = subparsers.add_parser(
+        "pulse", help="Autonomous Market Pulse inspection and triggers."
+    )
+    pulse_sub = pulse.add_subparsers(dest="pulse_action")
+    pulse_once = pulse_sub.add_parser(
+        "once", help="Trigger one autonomous pulse cycle immediately."
+    )
+    pulse_once.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate pulse decisions without executing orders.",
+    )
+    pulse_once.add_argument("--symbols", default="", help="Comma-separated symbols to survey.")
+    pulse_once.add_argument(
+        "--override",
+        action="store_true",
+        help="Override autonomous trading enable gate.",
+    )
+    pulse_history = pulse_sub.add_parser("history", help="List recent autonomous pulse cycles.")
+    pulse_history.add_argument("--limit", type=int, default=10, help="Max records to display.")
     return parser
 
 
@@ -8644,3 +8695,7 @@ def _parse_sse_event(event_name: str, data_lines: list[str]) -> dict[str, Any]:
         payload.setdefault("event", event_name)
         return payload
     return {"event": event_name, "data": payload}
+
+
+if __name__ == "__main__":
+    entrypoint()
