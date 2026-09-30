@@ -537,3 +537,28 @@ def test_portfolio_review_scope_must_equal_candidate_basket(review_scope) -> Non
     assert ok is False
     assert msg in {"paper_scope_must_match_candidate", "candidate_symbols_outside_research_scope"}
     assert client.calls == []
+
+
+def test_incubation_rejects_invalid_name_before_any_remote_action():
+    client = _RecordingClient()
+    result = ARCPaperIncubationResolver(client).resolve_and_provision_paper_trading(
+        _validated(timeframe="7H"), PaperPreauthorizationV1(symbols=["BTC-USDT-SWAP"])
+    )
+    assert result[0] is False
+    assert "bitpro_strategy_name_invalid" in result[3]
+    assert client.calls == []
+
+
+def test_incubation_preserves_fractional_capital_in_name():
+    from decimal import Decimal
+
+    client = _RecordingClient()
+    result = ARCPaperIncubationResolver(client).resolve_and_provision_paper_trading(
+        _validated(timeframe="1H"),
+        PaperPreauthorizationV1(
+            symbols=["BTC-USDT-SWAP"], max_capital_per_instance=Decimal("100.5")
+        ),
+    )
+    assert result[0] is True
+    assert result[2].endswith(" · 100.5U")
+    assert client.kwargs["paper_configure"]["initial_equity"] == 100.5

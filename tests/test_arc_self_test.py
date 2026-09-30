@@ -338,3 +338,20 @@ def test_development_cost_identity_comes_from_validated_creation_receipt(fault):
         spec, {**result.metrics, "net_return": 0.2}, entries, windows, "100"
     )
     assert assessment["status"] == ("observed" if fault is None else "unknown")
+
+
+def test_self_test_rejects_invalid_name_before_remote_validation():
+    class Client:
+        def strategy_validate_code(self, **kwargs):
+            raise AssertionError("invalid name reached remote validation")
+
+    attempt = ARCCandidateAttemptV1(
+        attempt_id="att_name",
+        candidate_id="cand_name",
+        hypothesis="x",
+        strategy_code="class X: pass",
+        strategy_spec={"symbol": "BTC-USDT-SWAP", "timeframe": "7H"},
+    )
+    result = ARCSelfTestService(Client()).run(attempt, ARCGoalV1(objective="x"))
+    assert not result.passed
+    assert result.reasons[0].startswith("bitpro_strategy_name_invalid")

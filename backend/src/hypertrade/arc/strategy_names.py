@@ -1,7 +1,7 @@
 """Human-readable BitPro names; execution identities remain in separate request keys."""
 
 import re
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 
@@ -60,11 +60,55 @@ def format_bitpro_strategy_name(
     asset_type: str = "合约",
     scope_label: str | None = None,
 ) -> str:
-    base = (scope_label or symbol).strip().upper()
+    # This validates the external naming protocol, not BitPro trading logic.
+    asset_type = asset_type.strip()
+    timeframe = timeframe.strip().upper()
+    strategy_type = strategy_type.strip()
+    method = logic_summary.strip()
+    if asset_type not in {"合约", "现货", "期权"}:
+        raise ValueError("bitpro_strategy_name_invalid:asset")
+    if not re.fullmatch(r"(?:(?:1|3|5|15|30)M|(?:1|2|4|6|8|12)H|1D|AI)", timeframe):
+        raise ValueError("bitpro_strategy_name_invalid:timeframe")
+    if strategy_type not in {
+        "CTA",
+        "ML",
+        "AI",
+        "马丁",
+        "网格",
+        "套利",
+        "均值回归",
+        "做市",
+        "信号",
+        "轮动",
+        "中性",
+    }:
+        raise ValueError("bitpro_strategy_name_invalid:type")
+    if not method or any(char in logic_summary for char in "·[]\r\n"):
+        raise ValueError("bitpro_strategy_name_invalid:method")
+    if any(
+        re.search(pattern, method)
+        for pattern in (
+            r"^ht_",
+            r"^cand[_-]",
+            r"(?i)^arc[_-](?:probe|canary|selftest|self-test)",
+            r"[0-9a-fA-F]{16,}",
+            r"^[A-Za-z][A-Za-z0-9]*Strategy$",
+        )
+    ):
+        raise ValueError("bitpro_strategy_name_invalid:machine_identifier")
+    base = (scope_label if scope_label is not None else symbol).strip().upper()
+    if not base or any(char in base for char in "·[]\r\n"):
+        raise ValueError("bitpro_strategy_name_invalid:scope")
     if "/USDT" in base:
         base = base.split("/")[0]
     else:
         base = base.removesuffix("-SWAP").removesuffix("-USDT")
-    capital = format(Decimal(str(capital_u)).normalize(), "f")
+    try:
+        number = Decimal(str(capital_u))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError("bitpro_strategy_name_invalid:capital") from exc
+    if isinstance(capital_u, bool) or not number.is_finite() or number <= 0:
+        raise ValueError("bitpro_strategy_name_invalid:capital")
+    capital = format(number.normalize(), "f")
     prefix = f"[{asset_type}][{timeframe.upper()}][{strategy_type}] {base}"
-    return f"{prefix} · {logic_summary} · {capital}U"
+    return f"{prefix} · {method} · {capital}U"

@@ -385,18 +385,19 @@ class ARCSelfTestService:
         create_key = f"arc-selftest-create-{scope}"
         backtest_key = f"arc-selftest-backtest-{scope}"
         validate_key = f"arc-selftest-validate-{scope}"
-        strategy_name = f"ARC self-test {attempt.candidate_id}"
-        if goal.paper_review_required:
-            # Full identity stays in dispatch keys. Frozen creation rejects name collisions;
-            # a compact revision distinguishes independent experiments without hiding the method.
+        try:
+            # Full execution identity stays in the description and operation keys.
+            # All creation paths, including unreviewed research, use legal names.
             strategy_name = format_bitpro_strategy_name(
                 symbol,
                 timeframe,
                 logic_summary=f"{logic_summary(attempt.strategy_spec)} V{scope[:12]}",
-                capital_u=goal.paper_initial_equity,
+                capital_u=goal.paper_initial_equity if goal.paper_review_required else 10000,
                 asset_type="合约" if symbol.endswith("-SWAP") or ":USDT" in symbol else "现货",
                 scope_label=scope_label_from_symbols(symbols) if len(symbols) > 1 else None,
             )
+        except ValueError as exc:
+            return SelfTestResult(False, None, None, None, reasons=[str(exc)])
 
         if not is_source_variant:
             try:

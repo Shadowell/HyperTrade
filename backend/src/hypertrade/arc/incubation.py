@@ -155,14 +155,17 @@ class ARCPaperIncubationResolver:
             return False, None, None, "paper_scope_must_match_candidate"
         symbol = symbols[0]
         timeframe = str(attempt.strategy_spec.get("timeframe") or "1H")
-        bitpro_strategy_name = format_bitpro_strategy_name(
-            symbol=symbol,
-            timeframe=timeframe,
-            strategy_type="CTA",
-            logic_summary=_logic_summary(attempt),
-            capital_u=int(capital),
-            scope_label=scope_label_from_symbols(symbols) if len(symbols) > 1 else None,
-        )
+        try:
+            bitpro_strategy_name = format_bitpro_strategy_name(
+                symbol=symbol,
+                timeframe=timeframe,
+                strategy_type="CTA",
+                logic_summary=_logic_summary(attempt),
+                capital_u=capital,
+                scope_label=scope_label_from_symbols(symbols) if len(symbols) > 1 else None,
+            )
+        except ValueError as exc:
+            return False, None, None, str(exc)
         client = self._client or BitProToolAdapter()
         create_key = f"arc-create-{attempt.candidate_id}"
         # New review packages bind the operation to mission, code and capital;
