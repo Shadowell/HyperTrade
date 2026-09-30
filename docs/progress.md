@@ -1,5 +1,14 @@
 # Progress Log
 
+## 全自动回测矩阵与参数自动寻优沙盒 (Spec 018) — 2026-09-30
+
+- **参数搜索空间模型、AST自动提取与智能变异采样器 (T001)**：在 `hypertrade.research.optimization.space` 中实现完整的超参数空间抽象，支持 `IntParam`、`FloatParam`、`CategoricalParam`、参数间约束规则（`ConstraintRule`，如 `fast < slow`）。提供从任意 `BaseStrategy` 源代码 AST 自动推导参数空间（提取 `__init__` 与 `config.get` 变量）。实现 `GridSampler`（网格穷举）、`RandomSampler`（均匀/超立方采样）以及 `LlmMutationSampler`（利用历史最佳与最差 trials 结合 LLM 提示词自主推理并提出高潜参数变异）；
+- **综合量化指标计算器与极速回测矩阵执行器 (T002)**：在 `metrics.py` 与 `matrix.py` 中实现专业量化绩效指标计算体系（年化夏普、索提诺比率 Sortino、卡玛比率 Calmar、最大回撤 Max Drawdown、胜率、盈亏比 Profit Factor、换手率 Turnover、暴露率与平均持仓周期）。实现 `BacktestMatrixEngine`，支持多标的（Symbols）x 多周期（Timeframes）x 多参数候选（Parameter Variants）的多维矩阵并发高速回放与数据切分；
+- **Walk-Forward 滚动验证与参数敏感度抗过拟合沙盒 (T003)**：在 `robustness.py` 中构建 `RobustnessEvaluator` 与 `RobustnessScoreCard`，对样本内（IS）与样本外（OOS）执行 Walk-Forward 衰减测试；引入参数敏感度与峭壁检验（Parameter Sensitivity / Ridge Test），对最优解邻域执行 ±5%~10% 扰动测试，惩罚“刀锋尖刺过拟合（Knife-edge Overfit）”，奖励宽阔平坦收益面（Plateau）；计算综合稳健度卡（0-100分），综合得分 >= 70 且满足交易笔数置信度的策略评定为 `OPTIMIZED_PROMOTABLE`；
+- **持久化审计模型与 QuantLab/BitPro 双兼容策略导出 (T004)**：在 `hypertrade.db` 中新增 `OptimizationStudy`（`opt_studies`）与 `OptimizationTrial`（`opt_trials`）数据模型，完整记录寻优任务与所有参数试验细分指标；在 `exporter.py` 中实现一键导出至 QuantLab 工作台配置（`quantlab_strategy_config.v1`）与 BitPro 策略清单（`bitpro_strategy_manifest.v3`）；
+- **寻优服务生命周期门面与统一协调 (T005)**：在 `service.py` 中实现 `OptimizationService`，统一管理参数寻优的生命周期（发起研究、参数采样、矩阵回放、抗过拟合评分、最优解判定与配置导出）；
+- **RESTful API 与 CLI 全功能交互控制 (T006)**：在 `hypertrade.main` 暴露 `POST /api/research/optimization/start`、`GET /api/research/optimization/studies`、`GET /api/research/optimization/studies/{id}`、`GET /api/research/optimization/studies/{id}/trials`、`POST /api/research/optimization/studies/{id}/export` 端点；在 `hypertrade.cli` 暴露 `hypertrade optimize run`、`list`、`status`、`export` 命令行工具。编写 `tests/test_optimization_e2e.py` 验证全链路 100% 绿灯通过。
+
 ## 常驻自主巡航盯盘守护进程与实时全息感知流接入 (Spec 014) — 2026-09-30
 
 - **真实外部新闻流与交易所公告全息感知源 (T001)**：在 `hypertrade.market.news` 中构建多源感知接入体系，实现 `RssCryptoNewsSource`（CoinDesk、Cointelegraph、Decrypt RSS 解析）、`CryptoPanicNewsSource`（CryptoPanic API 情绪与币种抓取）、`OkxAnnouncementsSource`（OKX 官方上币/下币/规则变动公告抓取）与 `WhaleMovementSource`（链上大单转账异动报警）。提供并发聚合、自动容错降级与 `KNOWN_CRYPTO_SYMBOLS` 实体提取；
