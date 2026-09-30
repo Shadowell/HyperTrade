@@ -1,19 +1,20 @@
 # 019 任务清单 (Tasks)
 
-- [ ] T001: 交易反思飞书告警卡片模型与派发引擎 (`backend/src/hypertrade/arc/reflexion_alert.py` + tests)
+- [x] T001: 交易反思飞书告警卡片模型与派发引擎 (`backend/src/hypertrade/arc/reflexion_alert.py` + tests)
   - 实现 `ReflexionAlertPayload` 数据模型
   - 实现飞书交互式卡片 (`build_feishu_card_payload`) 与纯文本降级格式 (`build_feishu_text_payload`)
   - 实现 `dispatch_reflexion_alert` 调度函数，对接 `FEISHU_WEBHOOK_URL`，具备超时重试与超长截断保护
   - 编写单元测试 `tests/test_reflexion_alert.py`
-- [ ] T002: 反思记忆总账与模拟盘监控的告警联动集成 (`backend/src/hypertrade/arc/reflexion.py`, `bitpro/paper_monitor.py`)
+- [x] T002: 反思记忆总账与模拟盘监控的告警联动集成 (`backend/src/hypertrade/arc/reflexion.py`, `bitpro/paper_monitor.py`)
   - 在 `ARCReflexionLedger` 中支持自动/手动分发 Reflexion 告警
   - 在 `PaperAnomalyDetector` / `IncrementalEvolutionTrigger` 中打通异常捕获后的自动飞书卡片推送
-- [ ] T003: RSI 专属自主进化与反思闭环演练引擎 (`backend/src/hypertrade/research/rsi_evolution.py` + tests)
+- [x] T003: RSI 专属自主进化与反思闭环演练引擎 (`backend/src/hypertrade/research/rsi_evolution.py` + tests)
   - 实现 `RsiEvolutionEngine`：初代参数构建 -> 压力测试/回测 -> 因果归因与负向约束提炼 -> 变异重训 -> 飞书卡片派发
   - 编写集成测试 `tests/test_rsi_evolution.py`
-- [ ] T004: REST API 端点与 CLI 交互工具 (`backend/src/hypertrade/main.py`, `cli.py`)
-  - API: `POST /api/v1/arc/reflexion/alerts/test`, `POST /api/v1/arc/reflexion/dispatch`, `POST /api/v1/arc/evolution/rsi-cycle`, `GET /api/v1/arc/reflexion/history`
+- [x] T004: REST API 端点与 CLI 交互工具 (`backend/src/hypertrade/main.py`, `cli.py`)
+  - API: `POST /api/research/reflexion/alerts/test`, `POST /api/research/evolution/rsi-cycle`, `GET /api/research/reflexion/history`
   - CLI: `hypertrade reflexion alert --test`, `hypertrade reflexion evolve-rsi`, `hypertrade reflexion list`
+  - 编写 E2E 测试 `tests/test_reflexion_e2e.py`
 - [ ] T005: 质量门禁通关 (`./scripts/check.sh`)
   - 前端 vitest / lint / build
   - 后端 ruff format / ruff check / mypy / pytest 全量 100% 绿灯
