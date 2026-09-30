@@ -355,7 +355,14 @@ class EvolutionService:
                 if chosen is None:
                     return self._save_cycle(cycle_id, "no_action", payload)
                 context = chosen
-                if config.target_id != "bitpro":
+                client = self._client(config)
+                has_write_port = (
+                    config.target_id == "bitpro"
+                    or hasattr(client, "paper_configure")
+                    or hasattr(client, "configure_paper")
+                    or hasattr(client, "deploy_strategy")
+                )
+                if not has_write_port:
                     payload["source_strategy_id"] = context["source_strategy_id"]
                     payload["source_instance_id"] = context["source_instance_id"]
                     payload["target_id"] = config.target_id
