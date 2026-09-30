@@ -142,7 +142,7 @@ class PaperPromotionService:
             paper = _dict(configured.get("paper"))
             instance_id = paper.get("instance_id") or paper.get("id") or strategy_id
             started = self.bitpro_adapter.paper_start(
-                strategy_id=int(instance_id),
+                strategy_id=strategy_id,
                 idempotency_key=f"{idempotency_key}:start"[:128],
             )
         except Exception as exc:  # noqa: BLE001 - preserve failed external approval audit

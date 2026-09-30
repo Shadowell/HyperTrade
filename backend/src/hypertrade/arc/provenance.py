@@ -111,7 +111,7 @@ def project_provenance(raw: Any, snapshot: dict[str, Any]) -> dict[str, Any]:
         code = identity.get("code_sha256")
         if code is not None and not re.fullmatch(r"[a-f0-9]{64}", str(code)):
             return unavailable()
-        if identity["assurance"] not in {"review_bound", "snapshot_only", "invalid"}:
+        if identity["assurance"] not in {"review_bound", "runtime_snapshot", "snapshot_only", "invalid"}:
             return unavailable()
         started = identity.get("started_at")
         if (
@@ -121,7 +121,7 @@ def project_provenance(raw: Any, snapshot: dict[str, Any]) -> dict[str, Any]:
             return unavailable()
         verified = (
             known_costs
-            and identity["assurance"] == "review_bound"
+            and identity["assurance"] in {"review_bound", "runtime_snapshot"}
             and bool(code)
             and bool(started)
             and not reasons

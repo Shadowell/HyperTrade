@@ -56,6 +56,23 @@ def test_source_identity_survives_window_read_failure_without_claiming_coverage(
     assert all(d["state"] == "unknown" for d in report["dimensions"].values())
 
 
+def test_runtime_snapshot_ordinary_strategy_is_accepted_as_verified():
+    body = deepcopy(provenance())
+    body["identity"]["assurance"] = "runtime_snapshot"
+    body["source_snapshot"] = "paper_session_snapshot"
+
+    class Reader:
+        def paper_provenance(self, **kwargs):
+            return signed(body)
+
+        def paper_evidence(self, **kwargs):
+            raise RuntimeError()
+
+    report = collect_attribution(Reader(), SNAPSHOT, NOW)
+    assert report["provenance"]["status"] == "verified"
+    assert report["provenance"]["blocking_reasons"] == []
+
+
 def test_legacy_source_keeps_separate_cost_and_code_gaps():
     body = deepcopy(provenance())
     body.update(

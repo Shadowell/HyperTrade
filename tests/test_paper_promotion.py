@@ -21,11 +21,11 @@ class PaperFixtureAdapter:
     def paper_configure(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append("paper_configure")
         assert kwargs["idempotency_key"]
-        return {"paper": {"instance_id": 901}, "tool_calls": []}
+        return {"paper": {"instance_id": "paper_c37a89f21"}, "tool_calls": []}
 
     def paper_start(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append("paper_start")
-        assert kwargs["strategy_id"] == 901
+        assert kwargs["strategy_id"] == 42
         assert kwargs["idempotency_key"]
         return {"paper": {"status": "running"}, "tool_calls": []}
 
