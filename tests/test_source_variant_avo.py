@@ -647,3 +647,57 @@ def test_propose_rejects_policy_without_execution_identity(source_variant_missio
             ARCSelfTestService(client=MockSelfTestClient()),
         )
     assert source_variant_mission.projection.attempts == []
+
+
+def test_structural_proposal_runs_through_active_avo_and_dedupes(source_variant_mission):
+    from hypertrade.arc.avo import _perform
+
+    ctrl = source_variant_mission
+    context = ctrl.projection.goal.evolution_context
+    context["variant_policy"]["structural_operators"] = {
+        "direction_bias": {"side": {"enum": ["long", "short"]}}
+    }
+    context["market_regime"] = {
+        "report_id": "regime01",
+        "symbols": {"BTC-USDT": {"state": "observed", "metrics": {"ma_spread_pct": 2}}},
+    }
+    proposal = {
+        "hypothesis": "Test trend-aligned long entry filter",
+        "structural_changes": {"direction_bias": {"side": "long"}},
+        "evolution_hypothesis": {
+            "evidence_refs": ["regime:regime01:BTC-USDT:ma_spread_pct"],
+            "expected_metric": "net_return",
+            "expected_direction": "increase",
+            "falsification": "Reject when development net excess return is not positive",
+        },
+    }
+    result = _perform(ctrl, "propose", proposal, ARCSelfTestService())
+    attempt = next(a for a in ctrl.projection.attempts if a.attempt_id == result["attempt_id"])
+    assert attempt.strategy_code == context["baseline"]["strategy_code"]
+    assert attempt.strategy_spec["structural_changes"] == proposal["structural_changes"]
+    assert _perform(ctrl, "propose", proposal, ARCSelfTestService())["duplicate"] is True
+
+    class StructuralClient(MockSelfTestClient):
+        def strategy_research_variant_create(self, *, structural_changes=None, **kwargs):
+            if structural_changes:
+                self.structural_seen = structural_changes
+            return super().strategy_research_variant_create(**kwargs)
+
+    client = StructuralClient()
+    ctrl.projection.goal.research_windows = ResearchWindowsV1(as_of="2026-09-24")
+    ctrl.projection.goal.research_id = "structural-forward-contract"
+    outcome = ARCSelfTestService(client=client).run(
+        attempt, ctrl.projection.goal, purpose="development"
+    )
+    assert client.structural_seen == proposal["structural_changes"]
+    assert outcome.backtest_id is not None
+
+    bad = {
+        **proposal,
+        "structural_changes": {"direction_bias": {"side": "short"}},
+        "evolution_hypothesis": None,
+    }
+    from jsonschema.exceptions import ValidationError
+
+    with pytest.raises(ValidationError):
+        _perform(ctrl, "propose", bad, ARCSelfTestService())

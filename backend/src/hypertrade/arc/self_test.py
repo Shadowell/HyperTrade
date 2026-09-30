@@ -62,6 +62,7 @@ class SelfTestClient(Protocol):
         idempotency_key: str,
         parameter_changes: dict[str, int | float],
         purpose: str = "candidate",
+        structural_changes: dict[str, Any] | None = None,
     ) -> dict[str, Any]: ...
 
     def backtest_start_job(
@@ -206,6 +207,8 @@ def _experiment_scope(
             spec.get("parent_manifest_sha256"),
             json.dumps(parameter_changes, sort_keys=True, separators=(",", ":")),
         )
+    if spec.get("structural_changes"):
+        identity += "|structural|" + json.dumps(spec["structural_changes"], sort_keys=True)
     return hashlib.sha256(identity.encode()).hexdigest()
 
 
@@ -473,6 +476,11 @@ class ARCSelfTestService:
                         expected_parent_execution_identity_sha256=parent_identity,
                         idempotency_key=create_key,
                         parameter_changes=param_changes,
+                        **(
+                            {"structural_changes": attempt.strategy_spec["structural_changes"]}
+                            if attempt.strategy_spec.get("structural_changes")
+                            else {}
+                        ),
                         purpose="baseline" if is_baseline_attempt else "candidate",
                     )
                     strategy_id = _strategy_id(created)

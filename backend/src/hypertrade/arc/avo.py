@@ -101,6 +101,14 @@ _PARAMETERS = {
                     "additionalProperties": False,
                 },
             },
+            "structural_changes": {
+                "type": "object",
+                "maxProperties": 5,
+                "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": {"type": ["number", "string"]},
+                },
+            },
             "parameter_changes": {
                 "type": "object",
                 "additionalProperties": {"type": "number"},
@@ -379,8 +387,10 @@ def _perform(
         variant_supported = bool(
             variant_policy and variant_policy.get("variant_creation_supported")
         )
-        is_source_variant_proposal = "parameter_changes" in arguments or (
-            variant_supported and "family_key" not in arguments
+        is_source_variant_proposal = (
+            "structural_changes" in arguments
+            or "parameter_changes" in arguments
+            or (variant_supported and "family_key" not in arguments)
         )
         if goal.evolution_context and variant_supported and not is_source_variant_proposal:
             # Evolution tunes the running strategy's own logic; a template family would
@@ -391,7 +401,9 @@ def _perform(
             )
         bound_hypothesis = None
         if goal.evolution_context and (
-            arguments.get("evolution_hypothesis") or not is_source_variant_proposal
+            arguments.get("evolution_hypothesis")
+            or arguments.get("structural_changes")
+            or not is_source_variant_proposal
         ):
             bound_hypothesis = bind_hypothesis(
                 arguments, goal.evolution_context, controller.projection.avo.get("development", {})
@@ -399,9 +411,18 @@ def _perform(
         if is_source_variant_proposal:
             if not variant_policy or not variant_policy.get("variant_creation_supported"):
                 raise ValueError("source variant policy unavailable or not supported")
-            param_changes = arguments.get("parameter_changes")
-            if not isinstance(param_changes, dict) or not param_changes:
-                raise ValueError("parameter_changes must be a non-empty mapping")
+            param_changes = arguments.get("parameter_changes", {})
+            structural_changes = arguments.get("structural_changes", {})
+            if not isinstance(param_changes, dict) or (
+                not param_changes and not structural_changes
+            ):
+                raise ValueError("parameter_changes or structural_changes must be non-empty")
+            if structural_changes:
+                from hypertrade.arc.regime import validate_structural_changes
+
+                validate_structural_changes(
+                    structural_changes, variant_policy.get("structural_operators") or {}
+                )
             # BitPro's strategy_research_variant_policy.v1 names parameters by `key`.
             auth_params = {
                 str(p.get("key") or p.get("name")): p
@@ -429,7 +450,7 @@ def _perform(
                 or baseline_spec.get("baseline_config")
                 or {}
             )
-            diff_found = False
+            diff_found = bool(structural_changes)
             for p_name, p_val in param_changes.items():
                 curr = current_params.get(p_name)
                 if curr is None or curr != p_val:
@@ -446,13 +467,18 @@ def _perform(
             ):
                 raise ValueError("parent execution identity missing")
             variant_fingerprint = hashlib.sha256(
-                f"{parent_manifest_sha256}:{json.dumps(param_changes, sort_keys=True)}".encode()
+                (
+                    parent_manifest_sha256
+                    + ":"
+                    + json.dumps([param_changes, structural_changes], sort_keys=True)
+                ).encode()
             ).hexdigest()
             for old in controller.projection.attempts:
                 if (
                     old.strategy_spec.get("is_source_variant")
                     and old.strategy_spec.get("parent_manifest_sha256") == parent_manifest_sha256
                     and old.strategy_spec.get("parameter_changes") == param_changes
+                    and (old.strategy_spec.get("structural_changes") or {}) == structural_changes
                 ):
                     return {
                         "attempt_id": old.attempt_id,
@@ -475,6 +501,7 @@ def _perform(
                     "parent_manifest_sha256": parent_manifest_sha256,
                     "parent_execution_identity_sha256": parent_execution_identity_sha256,
                     "parameter_changes": param_changes,
+                    "structural_changes": structural_changes,
                     "tunable_parameters": merged_tunable,
                     "baseline_config": merged_config,
                     "variation_operator": "avo",
@@ -759,9 +786,7 @@ _PROVIDER_CONTEXT_BUDGET = {"deepseek": 900_000}
 
 
 def _context_budget(provider: Any) -> int:
-    return _PROVIDER_CONTEXT_BUDGET.get(
-        str(getattr(provider, "name", "")), _DEFAULT_CONTEXT_BUDGET
-    )
+    return _PROVIDER_CONTEXT_BUDGET.get(str(getattr(provider, "name", "")), _DEFAULT_CONTEXT_BUDGET)
 
 
 _VIEW_RECENT_FILLS = 30
@@ -961,8 +986,12 @@ def _run(
                     "Preserve the source instrument. The source baseline and candidate must "
                     "to pass a same-window comparison. Do not claim to rewrite a running strategy."
                     + (
-                        " The source supports parameter variants: propose only parameter_changes"
-                        " within source_variant_policy; template families are rejected."
+                        " Propose parameter_changes and/or structural_changes"
+                        " only within source_variant_policy."
+                        " Structural proposals must cite an observed"
+                        " regime:<report_id>:<symbol>:<field>"
+                        " and explicit falsification; unknown data is not evidence. Preserve code,"
+                        " universe, costs and capital. Template families are rejected."
                         if (current_goal.evolution_context.get("variant_policy") or {}).get(
                             "variant_creation_supported"
                         )

@@ -361,7 +361,9 @@ class EvolutionService:
                     payload["target_id"] = config.target_id
                     payload["skip_reason"] = "target_paper_write_port_not_migrated"
                     return self._save_cycle(cycle_id, "deferred_target_write_port", payload)
+                from hypertrade.arc.regime import collect_regime
                 memory = self._memory(context, now)
+                context["market_regime"] = collect_regime(self._client(config), context)
                 payload["memory_count"] = len(memory)
                 payload["memory_manifest"] = context["memory_manifest"]
                 context["memory"] = memory

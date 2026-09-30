@@ -41,6 +41,7 @@ _SPEC = {
     "parent_strategy_id",
     "parent_manifest_sha256",
     "parameter_changes",
+    "structural_changes",
 }
 
 
@@ -67,6 +68,8 @@ def experiment_key(
         identity["parent_manifest_sha256"] = str(spec["parent_manifest_sha256"])
     if spec.get("parameter_changes") is not None:
         identity["parameter_changes"] = spec["parameter_changes"]
+    if spec.get("structural_changes"):
+        identity["structural_changes"] = spec["structural_changes"]
     return _digest(identity)
 
 
@@ -308,6 +311,17 @@ def bind_hypothesis(
         available.add("order_sample")
     available.update(key for key, result in development.items() if result.get("backtest_id"))
     diagnostic_fields = []
+    regime = context.get("market_regime") or {}
+    regime_refs = {
+        f"regime:{regime['report_id']}:{symbol}:{field}"
+        for symbol, row in regime.get("symbols", {}).items()
+        if row.get("state") == "observed"
+        for field, value in row.get("metrics", {}).items()
+        if value is not None
+    }
+    if proposal.get("structural_changes") and not (set(hypothesis["evidence_refs"]) & regime_refs):
+        raise ValueError("structural hypothesis requires observed regime evidence")
+    available.update(regime_refs)
     report = context.get("attribution_report")
     if report:
         fields = {
@@ -315,7 +329,7 @@ def bind_hypothesis(
             for name, row in report["dimensions"].items()
         }
         diagnostic_fields = [fields[ref] for ref in hypothesis["evidence_refs"] if ref in fields]
-        if not diagnostic_fields:
+        if not diagnostic_fields and not (set(hypothesis["evidence_refs"]) & regime_refs):
             raise ValueError("evolution_hypothesis requires a specific diagnostic field")
         falsification = hypothesis.get("falsification")
         if not isinstance(falsification, str) or not 12 <= len(falsification.strip()) <= 400:

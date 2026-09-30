@@ -582,6 +582,7 @@ class BitProToolAdapter:
         expected_parent_execution_identity_sha256: str,
         idempotency_key: str, parameter_changes: dict[str, int | float],
         purpose: str = "candidate",
+        structural_changes: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create one stopped research row through BitPro's idempotent write boundary."""
         if not isinstance(expected_parent_manifest_sha256, str) or not re.fullmatch(
@@ -599,7 +600,7 @@ class BitProToolAdapter:
         ):
             raise ValueError("invalid research variant request")
         if not isinstance(parameter_changes, dict) or (
-            (purpose == "baseline") != (parameter_changes == {})
+            (purpose == "baseline") != (parameter_changes == {} and not structural_changes)
         ):
             raise ValueError("invalid research variant parameter changes")
         self.last_tool_calls = []
@@ -612,8 +613,11 @@ class BitProToolAdapter:
             ),
             "idempotency_key": idempotency_key,
             "parameter_changes": parameter_changes,
+            **({"structural_changes": structural_changes} if structural_changes else {}),
             "purpose": purpose,
         }))
+        if structural_changes and created.get("structural_changes") != structural_changes:
+            raise ValueError("BitPro structural variant receipt mismatch")
         binding = created.get("source_binding") or {}
         if binding.get("parent_execution_identity_sha256") != (
             expected_parent_execution_identity_sha256

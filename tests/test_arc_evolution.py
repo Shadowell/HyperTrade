@@ -137,7 +137,7 @@ def test_schedule_creates_source_bound_research_once_per_hour(service, monkeypat
 
     now = prepare(service, monkeypatch)
     first = service.tick(now)
-    assert first["status"] == "research_created"
+    assert first["status"] == "research_created", first
     child = get_controller(first["payload"]["mission_id"])
     assert child.projection.goal.symbols == ["SOL-USDT-SWAP"]
     context = child.projection.goal.evolution_context
