@@ -79,6 +79,7 @@ RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "sync_start_history": {"method": "POST", "path": "/sync/start"},
     "sync_one": {"method": "POST", "path": "/sync/sync-one"},
     "strategy_create": {"method": "POST", "path": "/strategies"},
+    "strategy_validate_code": {"method": "POST", "path": "/strategies/validate-code"},
     "strategy_research_variant_create": {
         "method": "POST", "path": "/strategies/{strategy_id}/research-variants",
     },
@@ -125,7 +126,6 @@ RESEARCH_MUTATION_TOOLS = {
     "paper_stop",
 }
 
-LOCAL_ONLY_TOOLS = {"strategy_validate_code"}
 
 LIVE_DIAGNOSTIC_TOOLS = {
     "live_preflight",
@@ -247,13 +247,9 @@ class BitProMcpClient:
             return bitpro_capabilities()
         if tool_name in LIVE_MUTATION_TOOLS:
             raise PermissionError(f"BitPro live write tool is blocked: {tool_name}")
-        if tool_name in LOCAL_ONLY_TOOLS:
-            caller = self.remote_tool_caller or (
-                lambda name, arguments: _run_async(
-                    _call_remote_mcp_tool(self.settings, name, arguments)
-                )
-            )
-            return caller(tool_name, params)
+        if tool_name == "strategy_validate_code" and self.remote_tool_caller is not None:
+            # Explicit overrides remain supported; production uses the scoped API.
+            return self.remote_tool_caller(tool_name, params)
         endpoints = {**READ_TOOL_ENDPOINTS, **RESEARCH_MUTATION_TOOL_ENDPOINTS}
         if tool_name not in endpoints:
             raise KeyError(f"Unknown BitPro MCP tool: {tool_name}")
@@ -1567,7 +1563,6 @@ def bitpro_capabilities() -> dict[str, Any]:
             "bitpro_capabilities": {"method": "LOCAL", "path": "bitpro://capabilities"},
             **{name: dict(spec) for name, spec in READ_TOOL_ENDPOINTS.items()},
             **{name: dict(spec) for name, spec in RESEARCH_MUTATION_TOOL_ENDPOINTS.items()},
-            "strategy_validate_code": {"method": "LOCAL", "path": "BaseStrategy sandbox"},
         },
         "data_policy": "real_market_data_only_no_mock_or_synthetic_ohlcv",
         "live_trading_enabled": False,

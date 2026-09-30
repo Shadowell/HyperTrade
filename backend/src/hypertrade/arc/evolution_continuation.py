@@ -13,6 +13,12 @@ from sqlalchemy import select
 from hypertrade.arc.controller import ARCMissionProjection
 from hypertrade.arc.evolution_models import EvolutionAcceptance, EvolutionContinuation
 from hypertrade.arc.provenance import alert_codes
+from hypertrade.arc.short_horizon import (
+    LONG_MEASUREMENT,
+    MEASUREMENT,
+    verify_long_trigger,
+    verify_short_trigger,
+)
 from hypertrade.db import Database
 
 if TYPE_CHECKING:
@@ -186,6 +192,21 @@ def readiness(
         else None
     )
     cursor["window_receipt_hash"] = diagnostic.get("window_receipt_hash")
+    short = diagnostic.get("short_horizon") or diagnostic.get("window") or {}
+    short_ready = (
+        verify_short_trigger(short)
+        and short.get("source_id") == snapshot.get("instance_id")
+        and str(short.get("strategy_id")) == str(snapshot.get("strategy_id"))
+        and all(
+            (short.get("identity") or {}).get(key) == snapshot.get(key)
+            for key in ("strategy_version", "config_version")
+        )
+    )
+    if short_ready:
+        cursor["observation_horizon"] = "short"
+        cursor["requested_window_start"] = short["requested_start_at"]
+        cursor["requested_window_end"] = short["requested_end_at"]
+        cursor["short_proof_hash"] = short["proof_hash"]
     provenance = (diagnostic.get("attribution_report") or {}).get("provenance")
     source_alerts = alert_codes(provenance)
     if provenance is not None:
@@ -209,7 +230,7 @@ def readiness(
                 "condition": "original Paper must be running; do not restart or reconfigure",
             }
         )
-    if snapshot:
+    if snapshot and not short_ready:
         trades = snapshot.get("trade_count")
         try:
             observed = int(trades) if trades is not None and not isinstance(trades, bool) else None
@@ -224,7 +245,7 @@ def readiness(
                     "condition": "same-session trade_count >= required",
                 }
             )
-    if snapshot_read:
+    if snapshot_read and not short_ready:
         try:
             if not start:
                 raise ValueError("missing start")
@@ -494,7 +515,19 @@ class ContinuationLedger:
                             )
                     passed = {e["stage"] for e in entries if e["result"] == "passed"}
                     required = {
-                        "trigger_7_plus_7",
+                        next(
+                            (
+                                entry["stage"]
+                                for entry in entries
+                                if entry["stage"]
+                                in {
+                                    "trigger_short_horizon",
+                                    "trigger_observed_7_plus_7",
+                                    "trigger_7_plus_7",
+                                }
+                            ),
+                            "trigger_7_plus_7",
+                        ),
                         "budgeted_avo",
                         "same_window_comparison",
                         "final_validation",
@@ -622,6 +655,10 @@ def acceptance_entries(projection: ARCMissionProjection, now: datetime) -> list[
             )
         )
     )
+    trigger_stage = {
+        MEASUREMENT: "trigger_short_horizon",
+        LONG_MEASUREMENT: "trigger_observed_7_plus_7",
+    }.get(str(feedback.get("measurement") or ""), "trigger_7_plus_7")
     entries: list[dict[str, Any]] = [
         {
             "stage": "budgeted_avo",
@@ -631,13 +668,17 @@ def acceptance_entries(projection: ARCMissionProjection, now: datetime) -> list[
             "payload": {"budget": budget},
         },
         {
-            "stage": "trigger_7_plus_7",
+            "stage": trigger_stage,
             "reference_id": projection.mission_id,
             "observed_at": utc(now).isoformat(),
             "result": "passed"
             if feedback.get("triggered") is True
             and (
-                complete_session_receipt_chain(receipts, feedback)
+                verify_short_trigger(feedback)
+                if feedback.get("measurement") == MEASUREMENT
+                else verify_long_trigger(feedback)
+                if feedback.get("measurement") == LONG_MEASUREMENT
+                else complete_session_receipt_chain(receipts, feedback)
                 if feedback.get("measurement") == "session_paper_equity"
                 else complete_receipt_chain(receipts, feedback.get("end_at"))
             )

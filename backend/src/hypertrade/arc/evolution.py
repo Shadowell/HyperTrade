@@ -34,6 +34,12 @@ from hypertrade.arc.evolution_diagnostics import (
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import collect_windows
 from hypertrade.arc.runtime_journal import failure_text, record_runtime_error
+from hypertrade.arc.short_horizon import (
+    LONG_MEASUREMENT,
+    collect_observed_long_window,
+    collect_short_horizon,
+    verify_short_trigger,
+)
 from hypertrade.arc.store import get_controller, load_projection, research_lock
 from hypertrade.arc.universe import declared_symbols, normalize_symbols
 from hypertrade.db import ArcMission, Database
@@ -51,6 +57,11 @@ class EvolutionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool = True
     proactive_enabled: bool = False
+    emergency_enabled: bool = True
+    observed_gap_fallback_enabled: bool = True
+    emergency_days: int = Field(default=3, ge=3, le=5)
+    emergency_min_trades: int = Field(default=10, ge=10, le=10000)
+    emergency_drawdown_pp: Decimal = Field(default=Decimal("15"), gt=0, le=100)
     # Which registered market target the loop runs against; resolves through
     # hypertrade.targets so swapping platforms is configuration, not code.
     target_id: str = Field(default="bitpro", pattern=r"^[a-z][a-z0-9_-]{1,63}$")
@@ -571,6 +582,7 @@ class EvolutionService:
             preferred = "degradation"
             return (
                 blocked,
+                not context.get("short_term_emergency", False),
                 context["trigger_source"] != preferred,
                 source.get("last_admitted_at", ""),
                 context["source_strategy_id"],
@@ -632,25 +644,59 @@ class EvolutionService:
                     raise ValueError("模拟盘身份或运行状态不满足诊断条件")
                 if profile.transport == "bitpro_mcp_v1":
                     diagnostic["attribution_report"] = collect_attribution(client, snapshot, now)
-                if int(snapshot.get("trade_count") or 0) < config.min_trades:
-                    raise ValueError("成交样本不足")
-                benchmark_symbols = (
-                    target_symbols(snapshot, bitpro=profile.transport == "bitpro_mcp_v1") or None
-                )
-                feedback = collect_windows(
-                    ports,
-                    str(snapshot["instance_id"]),
-                    str(sid),
-                    end,
-                    PaperFeedbackPolicyV1(
-                        enabled=True,
-                        threshold_pp=config.threshold_pp,
-                        benchmark_relative=config.degradation_basis == "benchmark_relative",
-                    ),
-                    benchmark_symbols=benchmark_symbols,
-                    timeframe=row.timeframe or None,
-                    calendar=profile.calendar,
-                )
+                short = {}
+                if config.emergency_enabled and profile.transport == "bitpro_mcp_v1":
+                    short = collect_short_horizon(
+                        ports,
+                        snapshot,
+                        now,
+                        days=config.emergency_days,
+                        min_trades=config.emergency_min_trades,
+                        threshold_pp=float(config.emergency_drawdown_pp),
+                    )
+                    diagnostic["short_horizon"] = short
+                emergency = verify_short_trigger(short)
+                if emergency:
+                    feedback = short
+                else:
+                    if int(snapshot.get("trade_count") or 0) < config.min_trades:
+                        raise ValueError("成交样本不足")
+                    benchmark_symbols = (
+                        target_symbols(snapshot, bitpro=profile.transport == "bitpro_mcp_v1")
+                        or None
+                    )
+                    try:
+                        feedback = collect_windows(
+                            ports,
+                            str(snapshot["instance_id"]),
+                            str(sid),
+                            end,
+                            PaperFeedbackPolicyV1(
+                                enabled=True,
+                                threshold_pp=config.threshold_pp,
+                                benchmark_relative=config.degradation_basis == "benchmark_relative",
+                            ),
+                            benchmark_symbols=benchmark_symbols,
+                            timeframe=row.timeframe or None,
+                            calendar=profile.calendar,
+                        )
+                    except Exception:
+                        if (
+                            not config.observed_gap_fallback_enabled
+                            or profile.transport != "bitpro_mcp_v1"
+                        ):
+                            raise
+                        observed = collect_observed_long_window(
+                            ports,
+                            snapshot,
+                            end,
+                            min_trades=config.min_trades,
+                            threshold_pp=float(config.threshold_pp),
+                        )
+                        if observed.get("status") != "observed":
+                            raise
+                        feedback = observed
+                        diagnostic["long_horizon"] = observed
                 diagnostic["window_receipt_hash"] = digest(
                     {
                         "baseline": feedback.get("baseline_receipt"),
@@ -664,7 +710,9 @@ class EvolutionService:
                     status="stable",
                     window=(
                         feedback
-                        if profile.calendar.mode == "sessions"
+                        if emergency
+                        or feedback.get("measurement") == LONG_MEASUREMENT
+                        or profile.calendar.mode == "sessions"
                         else {k: v for k, v in feedback.items() if k != "receipts"}
                     ),
                 )
@@ -730,10 +778,7 @@ class EvolutionService:
                         variant_policy = None
                 is_source_variant = False
                 parent_execution_identity_sha256 = None
-                if (
-                    variant_policy is not None
-                    and variant_policy.get("variant_creation_supported")
-                ):
+                if variant_policy is not None and variant_policy.get("variant_creation_supported"):
                     is_source_variant = True
                     parent_execution_identity_sha256 = variant_policy.get(
                         "parent_execution_identity_sha256"
@@ -742,6 +787,8 @@ class EvolutionService:
                         r"[0-9a-f]{64}", parent_execution_identity_sha256
                     ):
                         raise ValueError("parent execution identity missing")
+                if emergency and not is_source_variant:
+                    raise ValueError("short_emergency_requires_bound_variant_policy")
                 # BitPro binds a variant to its parent's capital; any other research
                 # capital makes every bound backtest fail its capital receipt.
                 research_capital = (
@@ -774,6 +821,7 @@ class EvolutionService:
                     "target_id": config.target_id,
                     "research_capital": str(research_capital),
                     "trigger_source": trigger,
+                    "short_term_emergency": emergency,
                     "source_strategy_id": sid,
                     "source_instance_id": snapshot["instance_id"],
                     "source_snapshot": {
@@ -792,7 +840,9 @@ class EvolutionService:
                     },
                     "diagnosis": (
                         (
-                            "收益下降或回撤扩大达到阈值；"
+                            "短期实际净值回撤达到阈值，仅触发受风险约束的研究；"
+                            if emergency
+                            else "收益下降或回撤扩大达到阈值；"
                             if feedback["triggered"]
                             else "完整观察未达到退化阈值，主动探索可证伪方向；"
                         )
