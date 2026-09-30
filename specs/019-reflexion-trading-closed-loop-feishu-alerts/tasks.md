@@ -15,7 +15,7 @@
   - API: `POST /api/research/reflexion/alerts/test`, `POST /api/research/evolution/rsi-cycle`, `GET /api/research/reflexion/history`
   - CLI: `hypertrade reflexion alert --test`, `hypertrade reflexion evolve-rsi`, `hypertrade reflexion list`
   - 编写 E2E 测试 `tests/test_reflexion_e2e.py`
-- [ ] T005: 质量门禁通关 (`./scripts/check.sh`)
+- [x] T005: 质量门禁通关 (`./scripts/check.sh`)
   - 前端 vitest / lint / build
   - 后端 ruff format / ruff check / mypy / pytest 全量 100% 绿灯
 - [ ] T006: PR 创建、合并与测试机验证 (Landing per AGENTS.md)
