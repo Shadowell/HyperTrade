@@ -1,3 +1,7 @@
+## 远程数据部署配置修正 — 2026-09-30
+
+移除worker空volumes字段；Docker Compose真实配置校验先复现同一错误，修复后通过。新增Compose volumes结构回归，完整scripts/check.sh后端1835项及前端/Ruff/mypy通过。此前失败发生在镜像构建前，未重建运行容器；本次提交触发新部署。
+
 ## #1173 远程历史行情 — 2026-09-30（实施中）
 
 新增 RemoteKlineProvider 与有界分页/内容校验/短期文件缓存，ARC 与 BitPro 回测来源切到远程读取，取消两处宿主机数据挂载；离线归档改为显式 bitpro_archive。82项相关回归通过，完整 scripts/check.sh 后端1827项及前端/Ruff/mypy通过；真实临时Parquet经BitPro HTTP路由跨仓读取并校验6000根。等待双方部署后做只读验收。

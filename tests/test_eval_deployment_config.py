@@ -62,3 +62,14 @@ def test_agent_eval_runner_is_a_separate_docker_target() -> None:
     assert "FROM runtime AS agent-eval" in dockerfile
     assert "RUN uv sync --frozen --no-dev --extra agent-evals" in dockerfile
     assert "FROM runtime AS production" in dockerfile
+
+
+def test_production_compose_volume_declarations_remain_arrays():
+    import jsonschema
+    import yaml
+
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text())
+    # Compose rejects null volumes before it can rebuild any service.
+    schema = {"type": "object", "properties": {"volumes": {"type": "array"}}}
+    for service in compose["services"].values():
+        jsonschema.validate(service, schema)
