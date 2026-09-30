@@ -8,9 +8,29 @@ from typing import Any
 
 from hypertrade.config import Settings, get_settings
 from hypertrade.market.client import OkxRestClient
+from hypertrade.market.news import NewsIngestionService
+from hypertrade.market.sentiment import NewsSentimentAnalyzer
 
 CURATED_CONTEXT_PATH = Path("docs/knowledge/market-intelligence-curated.md")
 OKX_INTELLIGENCE_SOURCE_PATH = "/api/v5/public/funding-rate + /api/v5/public/open-interest"
+NEWS_SENTIMENT_SOURCE_PATH = "/perception/news_sentiment"
+
+_DEFAULT_NEWS_SERVICE: NewsIngestionService | None = None
+_DEFAULT_SENTIMENT_ANALYZER: NewsSentimentAnalyzer | None = None
+
+
+def get_default_news_service() -> NewsIngestionService:
+    global _DEFAULT_NEWS_SERVICE
+    if _DEFAULT_NEWS_SERVICE is None:
+        _DEFAULT_NEWS_SERVICE = NewsIngestionService()
+    return _DEFAULT_NEWS_SERVICE
+
+
+def get_default_sentiment_analyzer() -> NewsSentimentAnalyzer:
+    global _DEFAULT_SENTIMENT_ANALYZER
+    if _DEFAULT_SENTIMENT_ANALYZER is None:
+        _DEFAULT_SENTIMENT_ANALYZER = NewsSentimentAnalyzer()
+    return _DEFAULT_SENTIMENT_ANALYZER
 
 
 @dataclass(frozen=True)
@@ -85,17 +105,29 @@ class MarketIntelligenceService:
         okx_client: Any | None = None,
         repository: MarketIntelligenceRepository | None = None,
         settings: Settings | None = None,
+        news_service: NewsIngestionService | None = None,
+        sentiment_analyzer: NewsSentimentAnalyzer | None = None,
     ) -> None:
         self.settings = settings
         self.okx_client = okx_client
         self.repository = repository or MarketIntelligenceRepository()
+        self.news_service = news_service or get_default_news_service()
+        self.sentiment_analyzer = sentiment_analyzer or get_default_sentiment_analyzer()
 
-    def collect(self, *, symbol: str, include_curated: bool = True) -> dict[str, Any]:
+    def collect(
+        self,
+        *,
+        symbol: str,
+        include_curated: bool = True,
+        include_news: bool = False,
+    ) -> dict[str, Any]:
         now = datetime.now(UTC)
         inst_id = normalize_swap_inst_id(symbol)
         results = [self._okx_funding_open_interest(inst_id=inst_id, now=now)]
         if include_curated:
             results.append(self.repository.curated_context(symbol=inst_id, now=now))
+        if include_news:
+            results.append(self._news_sentiment_result(inst_id=inst_id, now=now))
         return {
             "symbol": symbol,
             "inst_id": inst_id,
@@ -103,6 +135,88 @@ class MarketIntelligenceService:
             "results": [result.to_dict() for result in results],
             "as_of_utc": now.isoformat(),
         }
+
+    def collect_perception(
+        self,
+        *,
+        symbol: str = "BTC-USDT-SWAP",
+        include_news: bool = True,
+        limit_news: int = 10,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        inst_id = normalize_swap_inst_id(symbol)
+        funding = self._okx_funding_open_interest(inst_id=inst_id, now=now).to_dict()
+        news_data = self.get_news_stream(symbol=inst_id, limit=limit_news) if include_news else {}
+        return {
+            "symbol": symbol,
+            "inst_id": inst_id,
+            "funding_and_oi": funding,
+            "news_and_sentiment": news_data,
+            "as_of_utc": now.isoformat(),
+        }
+
+    def get_news_stream(
+        self,
+        *,
+        symbol: str | None = None,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        articles = self.news_service.get_latest(symbol=symbol, limit=limit)
+        sentiments = self.sentiment_analyzer.analyze_batch(articles)
+        aggregated = (
+            self.sentiment_analyzer.aggregate_symbol_sentiment(symbol, sentiments)
+            if symbol
+            else {
+                "symbol": "ALL",
+                "sentiment_score": 0.0,
+                "label": "neutral",
+                "sample_count": len(sentiments),
+                "urgency": "low",
+                "breaking_events": [],
+                "confidence": 0.0,
+            }
+        )
+        return {
+            "symbol": symbol or "ALL",
+            "aggregated": aggregated,
+            "article_count": len(articles),
+            "articles": [
+                {
+                    **art.to_dict(),
+                    "sentiment": sent.to_dict(),
+                }
+                for art, sent in zip(articles, sentiments, strict=False)
+            ],
+        }
+
+    def _news_sentiment_result(
+        self,
+        *,
+        inst_id: str,
+        now: datetime,
+    ) -> MarketIntelligenceResult:
+        articles = self.news_service.get_latest(symbol=inst_id, limit=10)
+        sentiments = self.sentiment_analyzer.analyze_batch(articles)
+        agg = self.sentiment_analyzer.aggregate_symbol_sentiment(inst_id, sentiments)
+        sample = agg.get("breaking_events", [])
+        if not sample:
+            sample = [f"sentiment={agg['label']} (score={agg['sentiment_score']})"]
+
+        return MarketIntelligenceResult(
+            source="market.news_sentiment",
+            source_path=NEWS_SENTIMENT_SOURCE_PATH,
+            symbol=inst_id,
+            as_of=now.isoformat(),
+            freshness_seconds=0,
+            metrics={
+                "sentiment_score": str(agg["sentiment_score"]),
+                "label": str(agg["label"]),
+                "sample_count": str(agg["sample_count"]),
+                "urgency": str(agg["urgency"]),
+            },
+            missing_fields=[] if articles else ["recent_articles"],
+            sample=sample[:3],
+        )
 
     def _okx_funding_open_interest(
         self,

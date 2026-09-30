@@ -558,6 +558,17 @@ class AgentKernel:
                 symbol=str(args.get("symbol", "")),
                 include_curated=bool(args.get("include_curated", True)),
             )
+        elif tool_name == "market_news_stream":
+            raw_sym = args.get("symbol")
+            result = self._market_news_stream_payload(
+                symbol=str(raw_sym) if raw_sym else None,
+                limit=int(args.get("limit", 10)),
+            )
+        elif tool_name == "market_perception_snapshot":
+            result = self._market_perception_snapshot_payload(
+                symbol=str(args.get("symbol", "")),
+                limit_news=int(args.get("limit_news", 10)),
+            )
 
         elif tool_name == "world_model_snapshot":
             settings = self._settings if self._settings is not None else get_settings()
@@ -882,6 +893,19 @@ class AgentKernel:
                 price=str(args["price"]) if args.get("price") else None,
                 reason=str(args.get("reason", "")),
                 source="agent",
+                source_run_id=run_id,
+            )
+        elif tool_name == "live_autonomous_order":
+            settings = self._settings if self._settings is not None else get_settings()
+            live_service = LiveOrderIntentService(self.db, settings=settings)
+            result = live_service.create_and_execute_autonomous(
+                symbol=str(args.get("symbol", "")),
+                side=str(args.get("side", "")),
+                size=str(args.get("size", "")),
+                order_type=str(args.get("order_type", "market")),
+                price=str(args["price"]) if args.get("price") else None,
+                reason=str(args.get("reason", "")),
+                source="autonomous_agent",
                 source_run_id=run_id,
             )
         else:
@@ -1728,6 +1752,30 @@ class AgentKernel:
         return MarketIntelligenceService(settings=settings).collect(
             symbol=symbol,
             include_curated=include_curated,
+        )
+
+    def _market_news_stream_payload(
+        self,
+        *,
+        symbol: str | None = None,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        settings = self._settings if self._settings is not None else get_settings()
+        return MarketIntelligenceService(settings=settings).get_news_stream(
+            symbol=symbol,
+            limit=limit,
+        )
+
+    def _market_perception_snapshot_payload(
+        self,
+        *,
+        symbol: str,
+        limit_news: int = 10,
+    ) -> dict[str, Any]:
+        settings = self._settings if self._settings is not None else get_settings()
+        return MarketIntelligenceService(settings=settings).collect_perception(
+            symbol=symbol,
+            limit_news=limit_news,
         )
 
     def _fetch_market_candles(

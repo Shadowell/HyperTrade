@@ -363,6 +363,22 @@ class ToolRegistry:
                     "live",
                     requires_approval=True,
                 ),
+                ToolDefinition(
+                    "market.news_stream",
+                    "Read real-time crypto news stream and parsed sentiment tags.",
+                    "market",
+                ),
+                ToolDefinition(
+                    "market.perception_snapshot",
+                    "Capture holistic perception across funding, OI, news sentiment, and state.",
+                    "market",
+                ),
+                ToolDefinition(
+                    "live.autonomous_order",
+                    "Execute a bounded autonomous trading order within pre-authorized risk gates.",
+                    "live",
+                    requires_approval=False,
+                ),
             ]
         )
 
@@ -1536,6 +1552,88 @@ RUNTIME_TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "market_news_stream",
+            "description": (
+                "Fetch real-time crypto news articles and structured sentiment/urgency scores. "
+                "Can filter by symbol (e.g. BTC, ETH, SOL) or retrieve market-wide flow."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Optional coin symbol such as BTC or ETH to filter news.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of articles to fetch, default 10.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "market_perception_snapshot",
+            "description": (
+                "Capture holistic market perception for one symbol, synthesizing OKX "
+                "funding rates, open interest, and real-time news sentiment."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or OKX instrument id.",
+                    },
+                    "limit_news": {
+                        "type": "integer",
+                        "description": "Number of news articles to include, default 10.",
+                    },
+                },
+                "required": ["symbol"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "live_autonomous_order",
+            "description": (
+                "Execute a pre-authorized autonomous order within hardware risk bounds "
+                "(daily loss circuit breaker, notional limits), without human manual approval."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Coin symbol or OKX instrument id.",
+                    },
+                    "side": {"type": "string", "enum": ["buy", "sell"]},
+                    "size": {
+                        "type": "string",
+                        "description": "Contract/order size as decimal text.",
+                    },
+                    "order_type": {"type": "string", "enum": ["market", "limit"]},
+                    "price": {
+                        "type": "string",
+                        "description": "Limit price, if order_type is limit.",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Autonomous signal or reason driving this order.",
+                    },
+                },
+                "required": ["symbol", "side", "size"],
+            },
+        },
+    },
 )
 
 
@@ -1552,6 +1650,7 @@ _IDEMPOTENCY_REQUIRED_TOOL_NAMES = {
     "paper_promotion_request",
     "mcp_invoke_tool",
     "live_order_intent",
+    "live_autonomous_order",
 }
 
 # Write tools must carry an idempotency_key in their planner schema so the
@@ -1689,6 +1788,16 @@ def _default_policy_for(
             safe_sample_limit=1,
             failure_behavior="return_structured_error",
         )
+    if name == "live.autonomous_order":
+        return ToolPolicy(
+            scope="live_write",
+            approval="none",
+            idempotency="required",
+            source_of_truth="hypertrade_db",
+            timeout_class="quick",
+            safe_sample_limit=1,
+            failure_behavior="return_structured_error",
+        )
     if category == "memory" and name.endswith(".write"):
         return ToolPolicy(
             scope="research_write",
@@ -1717,6 +1826,8 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "market_candles": "market.candles",
     "market_compare": "market.compare",
     "market_intelligence": "market.intelligence",
+    "market_news_stream": "market.news_stream",
+    "market_perception_snapshot": "market.perception_snapshot",
     "world_model_snapshot": "world_model.snapshot",
     "global_market_snapshot": "global_market.snapshot",
     "rag_search": "rag.search",
@@ -1765,6 +1876,7 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "bitpro_live_strategy_performance": "bitpro.live_strategy_performance",
     "world_model_defensive_action": "world_model.defensive_action",
     "live_order_intent": "live.order_intent",
+    "live_autonomous_order": "live.autonomous_order",
 }
 
 
@@ -2024,5 +2136,25 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
         source="hypertrade_db",
         timeout="quick",
         sample=1,
+    ),
+    "live.autonomous_order": _policy(
+        scope="live_write",
+        approval="none",
+        idempotency="required",
+        source="hypertrade_db",
+        timeout="quick",
+        sample=1,
+    ),
+    "market.news_stream": _policy(
+        source="news_feed",
+        timeout="standard",
+        sample=20,
+        failure="return_unavailable",
+    ),
+    "market.perception_snapshot": _policy(
+        source="okx_rest_and_news",
+        timeout="standard",
+        sample=10,
+        failure="return_unavailable",
     ),
 }

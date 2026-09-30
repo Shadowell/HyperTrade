@@ -281,6 +281,18 @@ class Settings(BaseSettings):
         default="",
         alias="WORLD_MODEL_DEFENSIVE_ACTION_ALLOWLIST",
     )
+    autonomous_trading_enabled: bool = Field(
+        default=False,
+        alias="AUTONOMOUS_TRADING_ENABLED",
+    )
+    autonomous_max_daily_loss_pct: str = Field(
+        default="3.0",
+        alias="AUTONOMOUS_MAX_DAILY_LOSS_PCT",
+    )
+    autonomous_max_position_notional_usdt: str = Field(
+        default="500",
+        alias="AUTONOMOUS_MAX_POSITION_NOTIONAL_USDT",
+    )
 
 
 @lru_cache
