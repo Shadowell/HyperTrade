@@ -368,6 +368,31 @@ class ToolRegistry:
                     "world_model",
                 ),
                 ToolDefinition(
+                    "target.profile",
+                    "Read active or requested market target profile, calendar, and capabilities.",
+                    "target",
+                ),
+                ToolDefinition(
+                    "quantlab.capabilities",
+                    "Read QuantLab quant workbench capabilities, venue, and calendar.",
+                    "quantlab",
+                ),
+                ToolDefinition(
+                    "quantlab.strategies",
+                    "List and inspect running or deployed strategies on QuantLab workbench.",
+                    "quantlab",
+                ),
+                ToolDefinition(
+                    "quantlab.paper_snapshot",
+                    "Read paper trading session snapshot and performance metrics on QuantLab.",
+                    "quantlab",
+                ),
+                ToolDefinition(
+                    "quantlab.deploy",
+                    "Deploy or configure an evolved strategy on QuantLab quant workbench.",
+                    "quantlab",
+                ),
+                ToolDefinition(
                     "live.autonomous_order",
                     "Execute a bounded autonomous trading order within pre-authorized risk gates.",
                     "live",
@@ -1634,6 +1659,104 @@ RUNTIME_TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "target_profile",
+            "description": (
+                "Read active or specified market target profile, calendar, and capabilities."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_id": {
+                        "type": "string",
+                        "description": (
+                            "Target ID to query, e.g. bitpro, quantlab. Defaults to active target."
+                        ),
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "quantlab_capabilities",
+            "description": (
+                "Query QuantLab quant workbench capabilities, venue, and trading calendar."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "quantlab_strategies",
+            "description": (
+                "List running or deployed strategies on QuantLab quantitative workbench."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of strategies to return (default 50).",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "quantlab_paper_snapshot",
+            "description": (
+                "Query QuantLab paper trading session snapshot and performance metrics."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {
+                        "type": "string",
+                        "description": "QuantLab strategy ID.",
+                    },
+                    "instance_id": {
+                        "type": "string",
+                        "description": "QuantLab paper session instance ID.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "quantlab_deploy",
+            "description": (
+                "Deploy an evolved strategy or configure paper session on QuantLab workbench."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Strategy display name."},
+                    "code": {"type": "string", "description": "Python source code for strategy."},
+                    "config": {
+                        "type": "object",
+                        "description": "Strategy configuration dictionary.",
+                    },
+                    "start_paper": {
+                        "type": "boolean",
+                        "description": "Whether to start paper trading immediately (default true).",
+                    },
+                },
+                "required": ["name", "code"],
+            },
+        },
+    },
 )
 
 
@@ -1651,6 +1774,7 @@ _IDEMPOTENCY_REQUIRED_TOOL_NAMES = {
     "mcp_invoke_tool",
     "live_order_intent",
     "live_autonomous_order",
+    "quantlab_deploy",
 }
 
 # Write tools must carry an idempotency_key in their planner schema so the
@@ -1877,6 +2001,11 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "world_model_defensive_action": "world_model.defensive_action",
     "live_order_intent": "live.order_intent",
     "live_autonomous_order": "live.autonomous_order",
+    "target_profile": "target.profile",
+    "quantlab_capabilities": "quantlab.capabilities",
+    "quantlab_strategies": "quantlab.strategies",
+    "quantlab_paper_snapshot": "quantlab.paper_snapshot",
+    "quantlab_deploy": "quantlab.deploy",
 }
 
 
@@ -2156,5 +2285,32 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
         timeout="standard",
         sample=10,
         failure="return_unavailable",
+    ),
+    "target.profile": _policy(
+        source="market_targets_registry",
+        timeout="quick",
+        sample=1,
+    ),
+    "quantlab.capabilities": _policy(
+        source="quantlab_workbench",
+        timeout="quick",
+        sample=1,
+    ),
+    "quantlab.strategies": _policy(
+        source="quantlab_workbench",
+        timeout="standard",
+        sample=50,
+    ),
+    "quantlab.paper_snapshot": _policy(
+        source="quantlab_workbench",
+        timeout="standard",
+        sample=1,
+    ),
+    "quantlab.deploy": _policy(
+        scope="paper_write",
+        idempotency="required",
+        source="quantlab_workbench",
+        timeout="standard",
+        sample=1,
     ),
 }

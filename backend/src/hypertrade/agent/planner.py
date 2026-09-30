@@ -247,9 +247,9 @@ class AgentPlanner:
     # promotion) need more turns than the old hard cap of 8, which existed only
     # because total history was unmanaged.
     MAX_ITERATIONS = 12
-    # Preserve the old ~24k * 4 byte capacity while counting the entire request.
-    # This conservative input allowance does not alter provider reasoning/output settings.
-    MAX_HISTORY_TOKENS = 96_000
+    # Preserve conservative bounded capacity (~32k tokens * 4 bytes) while counting
+    # the entire request including dynamic tool schemas and world-model snapshots.
+    MAX_HISTORY_TOKENS = 128_000
     KEEP_RECENT_GROUPS = 4
 
     def __init__(
