@@ -2938,6 +2938,77 @@ def main(
         output.write("Usage: hypertrade optimize [run|list|status|export]\n")
         return 1
 
+    if args.command == "reflexion":
+        action = getattr(args, "reflexion_action", None)
+        if action == "alert":
+            from hypertrade.arc.reflexion_alert import (
+                ReflexionAlertPayload,
+                dispatch_reflexion_alert,
+            )
+
+            alert = ReflexionAlertPayload(
+                strategy_name="RSI超买超卖反转策略",
+                symbol="ETH-USDT-SWAP",
+                timeframe="1H",
+                failure_class="MAX_DRAWDOWN_BREACH",
+                severity="critical",
+                observed_metrics={
+                    "max_drawdown": 0.125,
+                    "win_rate": 0.38,
+                    "consecutive_losses": 4,
+                },
+                regime_attribution=[
+                    {
+                        "regime_name": "ranging_high_vol",
+                        "passed": False,
+                        "attribution_notes": "高波动震荡市超买超卖频繁打止损",
+                    },
+                    {
+                        "regime_name": "bull_trend_high_vol",
+                        "passed": True,
+                        "attribution_notes": "单边多头走势稳健",
+                    },
+                ],
+                negative_constraints=[
+                    "止损比例 (stop_loss) 必须限制在 5% 以内以承受极端流动性缺口",
+                    "RSI 超卖阈值 (oversold_level) 必须 <= 20 以防震荡市过早抄底",
+                ],
+                evolution_action="测试卡片：已自动启动第 2 代 MCTS 变异重训，剪枝参数解空间",
+            )
+            delivered, status = dispatch_reflexion_alert(
+                alert, webhook_url=args.webhook or None
+            )
+            output.write(f"Reflexion alert status: {status} (delivered={delivered})\n")
+            return 0 if delivered or status == "skipped_no_webhook" else 1
+
+        if action == "evolve-rsi":
+            from hypertrade.research.rsi_evolution import RsiEvolutionEngine
+
+            engine = RsiEvolutionEngine()
+            rsi_result = engine.run_full_cycle(
+                symbol=args.symbol,
+                timeframe=args.timeframe,
+                webhook_url=args.webhook or None,
+                dispatch_alert=not args.no_alert,
+            )
+            output.write(rsi_result.summary_markdown + "\n")
+            return 0
+
+        if action == "list":
+            from hypertrade.arc.reflexion import ARCReflexionLedger
+
+            ledger = ARCReflexionLedger()
+            constraints = ledger.get_all_negative_constraints()
+            output.write(
+                f"Active Negative Constraints in Reflexion Ledger ({len(constraints)}):\n"
+            )
+            for idx, c in enumerate(constraints, 1):
+                output.write(f"  {idx}. {c}\n")
+            return 0
+
+        output.write("Usage: hypertrade reflexion [alert|evolve-rsi|list]\n")
+        return 1
+
     run_chat(client=agent_client, input_fn=input_fn, output=output)
     return 0
 
@@ -8632,6 +8703,28 @@ def _build_parser() -> argparse.ArgumentParser:
     opt_export.add_argument(
         "--format", default="quantlab", choices=["quantlab", "bitpro"], help="Export format."
     )
+
+    ref = subparsers.add_parser(
+        "reflexion", help="Trading Reflexion Closed-Loop & Autonomous Evolution Feishu Alerts."
+    )
+    ref_sub = ref.add_subparsers(dest="reflexion_action")
+
+    ref_alert = ref_sub.add_parser("alert", help="Dispatch a test Reflexion alert card to Feishu.")
+    ref_alert.add_argument("--test", action="store_true", help="Send a test alert card.")
+    ref_alert.add_argument("--webhook", default="", help="Custom Feishu webhook URL.")
+
+    ref_evolve = ref_sub.add_parser(
+        "evolve-rsi", help="Run RSI autonomous evolution & reflexion cycle."
+    )
+    ref_evolve.add_argument("--symbol", default="ETH-USDT-SWAP", help="Trading symbol.")
+    ref_evolve.add_argument("--timeframe", default="1H", help="Timeframe (e.g. 15M, 1H).")
+    ref_evolve.add_argument(
+        "--no-alert", action="store_true", help="Disable Feishu alert dispatch."
+    )
+    ref_evolve.add_argument("--webhook", default="", help="Custom Feishu webhook URL.")
+
+    ref_sub.add_parser("list", help="List negative constraints currently in Reflexion memory.")
+
     return parser
 
 

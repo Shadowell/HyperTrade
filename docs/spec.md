@@ -1,3 +1,10 @@
+# 019 交易反思闭环 (Reflexion) 与自主进化飞书实时告警联动 (Spec 019)
+
+1. **结构化交易反思数据模型与飞书卡片分发器 (`ReflexionAlertPayload` & `reflexion_alert.py`)**：统一多源交易失败事件（模拟盘监控、红队压力测试、回测矩阵沙盒），包含标的、周期、触发异常绩效（回撤/连亏/胜率下滑）、4大宏观市态因果归因（`ranging_high_vol` 震荡高波等）、结构化负向反思约束（Negative Constraints）与后续进化动作。构建飞书交互式消息卡片（`msg_type: "interactive"`）与纯文本降级备份，直连 `FEISHU_WEBHOOK_URL`，具备超时重试与超长截断保护。
+2. **反思记忆总账与模拟盘监控联动**：在 `ARCReflexionLedger` 与 `IncrementalEvolutionTrigger` 中打通自动告警分发机制，当模拟盘或对抗测试触发异常并生成负向规则时，毫秒级推送全息卡片至飞书群。
+3. **RSI 专属自主进化与反思闭环演练引擎 (`RsiEvolutionEngine`)**：针对 `rsi_reversal` 策略家族，实现初代参数构建 -> 模拟高波震荡市压力 -> 因果反思与负向约束提炼 -> AST/参数变异重训 -> 飞书卡片派发的全生命周期闭环。
+4. **REST API 与 CLI 运维工具**：暴露 `/api/research/reflexion/alerts/test`、`/api/research/evolution/rsi-cycle`、`/api/research/reflexion/history` 端点，以及 `hypertrade reflexion alert --test`、`hypertrade reflexion evolve-rsi`、`hypertrade reflexion list` 命令行工具。
+
 # 018 全自动回测矩阵与参数自动寻优沙盒规范 (Spec 018)
 
 1. **参数搜索空间与智能变异生成器**：支持从策略源码 AST 自动提取超参数空间，也支持显式定义（`IntParam`, `FloatParam`, `CategoricalParam`）与约束规则（`ConstraintRule`）。提供网格穷举（Grid）、随机超立方采样（Random）以及 LLM 指导的启发式变异（LLM-Guided Mutation）三种采样策略。

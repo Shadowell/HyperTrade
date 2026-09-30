@@ -466,9 +466,15 @@ class IncrementalEvolutionTrigger:
         self,
         anomaly: PaperAnomalyEvent,
         reflexion_ledger: Any = None,
+        *,
+        dispatch_alert: bool = True,
     ) -> ARCController:
         from hypertrade.arc.contracts import ARCBudgetV1, ARCGoalV1, PaperPreauthorizationV1
         from hypertrade.arc.controller import ARCController
+        from hypertrade.arc.reflexion_alert import (
+            ReflexionAlertPayload,
+            dispatch_reflexion_alert,
+        )
 
         translator = PaperReflexionTranslator()
         new_constraints = translator.translate_anomaly_to_constraints(anomaly)
@@ -476,6 +482,28 @@ class IncrementalEvolutionTrigger:
         if reflexion_ledger:
             for c in new_constraints:
                 reflexion_ledger.record_negative_constraint(c)
+
+        if dispatch_alert:
+            alert = ReflexionAlertPayload(
+                strategy_id=anomaly.instance_id,
+                strategy_name=f"模拟盘策略 ({anomaly.symbol})",
+                symbol=anomaly.symbol,
+                timeframe="1H",
+                failure_class=anomaly.anomaly_type,
+                severity="critical" if "DRAWDOWN" in anomaly.anomaly_type else "warning",
+                trigger_source="paper_observation",
+                observed_metrics={
+                    "observed_value": anomaly.observed_value,
+                    "threshold_value": anomaly.threshold_value,
+                    "message": anomaly.message,
+                },
+                negative_constraints=new_constraints,
+                evolution_action=(
+                    f"针对模拟盘异常 ({anomaly.anomaly_type}) 重新演化 {anomaly.symbol} 1H 策略，"
+                    "修复回撤并重新测试上线"
+                ),
+            )
+            dispatch_reflexion_alert(alert)
 
         objective = (
             f"针对模拟盘异常 ({anomaly.anomaly_type}) 重新演化 {anomaly.symbol} 1H 策略，"

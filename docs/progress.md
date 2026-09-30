@@ -4,6 +4,13 @@
 
 # Progress Log
 
+## 交易反思闭环 (Reflexion) 与自主进化飞书实时告警联动 (Spec 019) — 2026-10-01
+
+- **结构化交易反思数据模型与飞书卡片派发引擎 (T001)**：在 `hypertrade.arc.reflexion_alert` 中实现 `ReflexionAlertPayload` 数据模型、飞书交互式富文本卡片构造器（`build_feishu_card_payload`）与纯文本降级备份（`build_feishu_text_payload`）。支持自适应配色（严重/警示/提示）、4大宏观市态因果归因、结构化负向反思约束展示以及控制台深链。实现 `dispatch_reflexion_alert`，对接 `FEISHU_WEBHOOK_URL`，具备网络异常兜底、回执校验与单条消息 3900 字符超长保护；
+- **反思记忆总账与模拟盘监控的告警联动集成 (T002)**：在 `hypertrade.arc.reflexion`（`ARCReflexionLedger`）与 `hypertrade.bitpro.paper_monitor`（`IncrementalEvolutionTrigger`）中打通异常捕获后的实时告警派发，当模拟盘/实盘发生回撤超标、胜率下滑或连亏时，提炼负向约束并立即向飞书推送全息告警卡片；
+- **RSI 专属自主进化与反思闭环演练引擎 (T003)**：在 `hypertrade.research.rsi_evolution` 中构建 `RsiEvolutionEngine`，实现针对 `rsi_reversal` 策略家族的完整实战闭环：初代参数生成 -> 模拟高波震荡市压力与假突破打损 -> 多状态因果归因与负向约束提炼（收紧止损至 5%、提高超卖阈值准入门槛）-> 遗传变异器剪枝重训 -> 飞书卡片派发 -> 样本外结果汇报；
+- **RESTful API 与 CLI 运维交互工具 (T004)**：在 `hypertrade.main` 暴露 `POST /api/research/reflexion/alerts/test`、`POST /api/research/evolution/rsi-cycle`、`GET /api/research/reflexion/history` 端点；在 `hypertrade.cli` 暴露 `hypertrade reflexion alert --test`、`hypertrade reflexion evolve-rsi`、`hypertrade reflexion list` 命令行交互工具。编写 `tests/test_reflexion_e2e.py` 验证 100% 绿灯。
+
 ## 全自动回测矩阵与参数自动寻优沙盒 (Spec 018) — 2026-09-30
 
 - **参数搜索空间模型、AST自动提取与智能变异采样器 (T001)**：在 `hypertrade.research.optimization.space` 中实现完整的超参数空间抽象，支持 `IntParam`、`FloatParam`、`CategoricalParam`、参数间约束规则（`ConstraintRule`，如 `fast < slow`）。提供从任意 `BaseStrategy` 源代码 AST 自动推导参数空间（提取 `__init__` 与 `config.get` 变量）。实现 `GridSampler`（网格穷举）、`RandomSampler`（均匀/超立方采样）以及 `LlmMutationSampler`（利用历史最佳与最差 trials 结合 LLM 提示词自主推理并提出高潜参数变异）；

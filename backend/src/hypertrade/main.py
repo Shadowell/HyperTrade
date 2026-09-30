@@ -22,7 +22,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from itsdangerous import BadSignature, URLSafeSerializer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, func, select
 
 from hypertrade.agent.checkpoints import TaskCheckpointService, checkpoint_to_dict
@@ -404,6 +404,24 @@ class OptimizationStartPayload(BaseModel):
 
 class OptimizationExportPayload(BaseModel):
     target_format: Literal["quantlab", "bitpro"] = "quantlab"
+
+
+class ReflexionTestAlertPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    webhook_url: str | None = None
+    strategy_name: str = "RSI超买超卖反转策略"
+    symbol: str = "ETH-USDT-SWAP"
+    timeframe: str = "1H"
+    failure_class: str = "MAX_DRAWDOWN_BREACH"
+    severity: str = "critical"
+
+
+class RsiEvolutionCyclePayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    symbol: str = "ETH-USDT-SWAP"
+    timeframe: str = "1H"
+    webhook_url: str | None = None
+    dispatch_alert: bool = True
 
 
 class LiveOrderDecisionPayload(BaseModel):
@@ -2231,6 +2249,80 @@ def create_app(
             raise HTTPException(status_code=404, detail="Optimization study not found") from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/research/reflexion/alerts/test")
+    def test_reflexion_alert_endpoint(
+        payload: ReflexionTestAlertPayload | None = None,
+    ) -> dict[str, Any]:
+        from hypertrade.arc.reflexion_alert import (
+            ReflexionAlertPayload,
+            dispatch_reflexion_alert,
+        )
+
+        p = payload or ReflexionTestAlertPayload()
+        alert = ReflexionAlertPayload(
+            strategy_name=p.strategy_name,
+            symbol=p.symbol,
+            timeframe=p.timeframe,
+            failure_class=p.failure_class,
+            severity=p.severity,
+            observed_metrics={
+                "max_drawdown": 0.125,
+                "win_rate": 0.38,
+                "consecutive_losses": 4,
+            },
+            regime_attribution=[
+                {
+                    "regime_name": "ranging_high_vol",
+                    "passed": False,
+                    "attribution_notes": "高波动震荡市频繁打止损，超买超卖阈值过敏",
+                },
+                {
+                    "regime_name": "bull_trend_high_vol",
+                    "passed": True,
+                    "attribution_notes": "单边多头走势稳健",
+                },
+            ],
+            negative_constraints=[
+                "止损比例 (stop_loss) 必须限制在 5% 以内以承受极端流动性缺口",
+                "RSI 超卖阈值 (oversold_level) 必须 <= 20 以防震荡市过早抄底",
+            ],
+            evolution_action="测试告警卡片：已自动启动第 2 代 MCTS 变异重训，剪枝参数解空间",
+        )
+        delivered, status = dispatch_reflexion_alert(
+            alert, webhook_url=p.webhook_url
+        )
+        return {
+            "alert_id": alert.alert_id,
+            "delivered": delivered,
+            "status": status,
+        }
+
+    @app.post("/api/research/evolution/rsi-cycle")
+    def run_rsi_evolution_cycle_endpoint(
+        payload: RsiEvolutionCyclePayload | None = None,
+    ) -> dict[str, Any]:
+        from hypertrade.research.rsi_evolution import RsiEvolutionEngine
+
+        p = payload or RsiEvolutionCyclePayload()
+        engine = RsiEvolutionEngine()
+        result = engine.run_full_cycle(
+            symbol=p.symbol,
+            timeframe=p.timeframe,
+            webhook_url=p.webhook_url,
+            dispatch_alert=p.dispatch_alert,
+        )
+        return result.model_dump()
+
+    @app.get("/api/research/reflexion/history")
+    def get_reflexion_history_endpoint() -> dict[str, Any]:
+        from hypertrade.arc.reflexion import ARCReflexionLedger
+
+        ledger = ARCReflexionLedger()
+        return {
+            "negative_constraints": ledger.get_all_negative_constraints(),
+            "history_count": len(ledger.get_history()),
+        }
 
     @app.get("/api/market/news/latest")
     def get_latest_news(limit: int = 20, symbol: str | None = None) -> dict[str, Any]:
