@@ -54,6 +54,11 @@ class MockBroker:
         self.equity = equity
 
 
+class MockStrategyState:
+    def __init__(self) -> None:
+        self.positions: dict[str, Any] = {}
+
+
 class MockBarData:
     def __init__(
         self,
@@ -63,21 +68,28 @@ class MockBarData:
         high_price: float | None = None,
         low_price: float | None = None,
         volume: float = 100.0,
+        timestamp: int = 1700000000,
     ) -> None:
         self.symbol = symbol
         self.close_price = close_price
         self.close = close_price
         self.open_price = open_price if open_price is not None else close_price
+        self.open = self.open_price
         self.high_price = high_price if high_price is not None else close_price * 1.01
+        self.high = self.high_price
         self.low_price = low_price if low_price is not None else close_price * 0.99
+        self.low = self.low_price
         self.volume = volume
+        self.timestamp = timestamp
 
 
 class MockBaseStrategy:
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}
         self.broker = MockBroker()
+        self.state = MockStrategyState()
         self.orders: list[dict[str, Any]] = []
+        self._mock_positions: dict[str, dict[str, Any]] = {}
 
     def symbols(self) -> list[str]:
         return ["BTC-USDT-SWAP"]
@@ -89,6 +101,7 @@ class MockBaseStrategy:
         volume: float,
         order_type: str = "market",
         price: float | None = None,
+        leverage: float = 1.0,
     ) -> dict[str, Any]:
         order = {
             "action": "open",
@@ -96,16 +109,27 @@ class MockBaseStrategy:
             "direction": direction,
             "volume": volume,
             "order_type": order_type,
-            "price": price,
+            "price": price or 60000.0,
         }
         self.orders.append(order)
-        return {"status": "ok", "order": order}
+        self._mock_positions[symbol] = {
+            "direction": direction,
+            "entry_price": price or 60000.0,
+            "notional_usdt": volume,
+            "contracts": volume,
+            "size": volume,
+            "bars_held": 0,
+            "entry_time": 0,
+            "stop_price": (price or 60000.0) * 0.95,
+            "take_profit_price": (price or 60000.0) * 1.05,
+        }
+        return {"status": "filled", "order": order}
 
     async def close_contract(
         self,
         symbol: str,
         direction: str,
-        volume: float,
+        volume: float = 0.0,
         order_type: str = "market",
         price: float | None = None,
     ) -> dict[str, Any]:
@@ -115,16 +139,20 @@ class MockBaseStrategy:
             "direction": direction,
             "volume": volume,
             "order_type": order_type,
-            "price": price,
+            "price": price or 60000.0,
         }
         self.orders.append(order)
-        return {"status": "ok", "order": order}
+        self._mock_positions.pop(symbol, None)
+        return {"status": "filled", "order": order}
 
     async def get_contract_position(
         self,
         symbol: str,
         direction: str = "long",
     ) -> dict[str, Any] | None:
+        pos = self._mock_positions.get(symbol)
+        if pos and pos.get("direction") == direction:
+            return pos
         return None
 
     async def on_init(self) -> None:
@@ -264,7 +292,11 @@ class FreeformStrategySynthesizer:
             processed = 0
             for i in range(bars_count):
                 price = 60000.0 + (i * 100.0 if i % 2 == 0 else -i * 50.0)
-                bar = MockBarData(symbol="BTC-USDT-SWAP", close_price=price)
+                bar = MockBarData(
+                    symbol="BTC-USDT-SWAP",
+                    close_price=price,
+                    timestamp=1700000000 + (i + 1) * 3600,
+                )
                 bar_res = instance.on_bar(bar)
                 if asyncio.iscoroutine(bar_res):
                     asyncio.run(bar_res)
