@@ -3009,6 +3009,88 @@ def main(
         output.write("Usage: hypertrade reflexion [alert|evolve-rsi|list]\n")
         return 1
 
+    if args.command == "portfolio":
+        action = getattr(args, "portfolio_action", None)
+        from hypertrade.config import get_settings
+        from hypertrade.db import Database
+        from hypertrade.paper.portfolio import PortfolioCoordinatorService
+
+        settings = _local_runtime_settings() if _use_local_runtime(args) else get_settings()
+        service = PortfolioCoordinatorService(Database(settings.database_url), settings=settings)
+
+        if action == "summary":
+            summary = service.get_summary()
+            output.write("==================================================\n")
+            output.write("   HyperTrade Multi-Strategy Portfolio Summary    \n")
+            output.write("==================================================\n")
+            output.write(f"Session ID       : {summary['session_id']}\n")
+            output.write(f"Status           : {summary['status']}\n")
+            output.write(f"Total Equity     : {summary['equity']} USDT\n")
+            output.write(f"Available Cash   : {summary['cash']} USDT\n")
+            output.write(f"Realized PnL     : {summary['realized_pnl']} USDT\n")
+            output.write(f"Unrealized PnL   : {summary['unrealized_pnl']} USDT\n")
+            output.write(f"Total Notional   : {summary['total_notional']} USDT\n")
+            lev = summary["leverage_ratio"]
+            max_lev = summary["max_leverage"]
+            output.write(f"Leverage Ratio   : {lev}x (Max: {max_lev}x)\n")
+            pos_cnt = summary["open_position_count"]
+            max_pos = summary["max_positions"]
+            output.write(f"Open Positions   : {pos_cnt} / {max_pos}\n\n")
+
+            if summary["positions"]:
+                output.write("Open Positions:\n")
+                for p in summary["positions"]:
+                    line = (
+                        f"  - {p['inst_id']} ({p['side']}): size={p['quantity']} "
+                        f"mark={p['mark_price']} notional={p['notional']} "
+                        f"unPnl={p['unrealized_pnl']}\n"
+                    )
+                    output.write(line)
+            else:
+                output.write("No open positions.\n")
+            return 0
+
+        if action == "strategies":
+            strategies = service.get_strategies()
+            output.write(f"Registered Execution Strategies ({len(strategies)}):\n")
+            header = (
+                f"{'Strategy':<22} {'Stage':<18} {'Alloc':<8} "
+                f"{'Trades':<8} {'Win Rate':<10} {'Profit Factor':<14} {'Max DD'}\n"
+            )
+            output.write(header)
+            output.write("-" * 92 + "\n")
+            for s in strategies:
+                win_pct = f"{s['win_rate'] * 100:.1f}%"
+                dd_pct = f"{s['max_drawdown_pct'] * 100:.1f}%"
+                row_line = (
+                    f"{s['strategy_key']:<22} {s['stage']:<18} {s['multiplier']:<8} "
+                    f"{s['trade_count']:<8} {win_pct:<10} {s['profit_factor']:<14.2f} {dd_pct}\n"
+                )
+                output.write(row_line)
+            return 0
+
+        if action == "stage":
+            res = service.set_strategy_stage(
+                args.strategy, args.stage, reason=getattr(args, "reason", "")
+            )
+            stage_msg = (
+                f"Strategy {res['strategy_key']} stage updated to {res['stage']} "
+                f"(reason: {res['reason']})\n"
+            )
+            output.write(stage_msg)
+            return 0
+
+        if action == "rebalance":
+            res = service.trigger_rebalance()
+            output.write(f"Rebalance triggered. Result: {res['run_result']}\n")
+            eq = res["portfolio"]["equity"]
+            cnt = res["portfolio"]["open_position_count"]
+            output.write(f"New Equity: {eq} USDT, Open Positions: {cnt}\n")
+            return 0
+
+        output.write("Usage: hypertrade portfolio [summary|strategies|stage|rebalance]\n")
+        return 1
+
     run_chat(client=agent_client, input_fn=input_fn, output=output)
     return 0
 
@@ -8724,6 +8806,22 @@ def _build_parser() -> argparse.ArgumentParser:
     ref_evolve.add_argument("--webhook", default="", help="Custom Feishu webhook URL.")
 
     ref_sub.add_parser("list", help="List negative constraints currently in Reflexion memory.")
+
+    port = subparsers.add_parser(
+        "portfolio", help="Multi-Strategy Execution & Risk-Parity Portfolio Management."
+    )
+    port_sub = port.add_subparsers(dest="portfolio_action")
+    port_sub.add_parser("summary", help="Show multi-strategy portfolio summary and exposures.")
+    port_sub.add_parser("strategies", help="List registered execution strategies and stage gates.")
+    port_stage = port_sub.add_parser("stage", help="Update strategy operational stage.")
+    port_stage.add_argument("--strategy", required=True, help="Strategy key (e.g. rsi_reversal).")
+    port_stage.add_argument(
+        "--stage",
+        required=True,
+        help="Target stage (e.g. canary_live, controlled_live, degraded).",
+    )
+    port_stage.add_argument("--reason", default="", help="Reason for stage change.")
+    port_sub.add_parser("rebalance", help="Trigger risk-parity mark-to-market rebalance cycle.")
 
     return parser
 

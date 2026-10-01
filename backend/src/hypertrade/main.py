@@ -78,6 +78,7 @@ from hypertrade.memory.governance import (
 )
 from hypertrade.memory.service import MemoryService
 from hypertrade.monitoring import MonitorService
+from hypertrade.paper.portfolio import PortfolioCoordinatorService
 from hypertrade.paper.service import PaperTradingService
 from hypertrade.portfolio.cohort_schemas import (
     PaperCohortBuildV1,
@@ -333,6 +334,11 @@ class ProviderSelectionPayload(BaseModel):
 class PaperControlPayload(BaseModel):
     action: Literal["pause", "resume", "close", "reset"]
     symbol: str | None = None
+
+
+class StrategyStagePayload(BaseModel):
+    stage: str
+    reason: str = ""
 
 
 class StrategyResearchPayload(BaseModel):
@@ -2476,6 +2482,33 @@ def create_app(
         if payload.action == "close":
             return service.close(symbol=payload.symbol)
         return service.reset()
+
+    @app.get("/api/portfolio/summary")
+    @app.get("/api/portfolio/execution/summary")
+    def portfolio_execution_summary() -> dict[str, Any]:
+        return PortfolioCoordinatorService(database, settings=app_settings).get_summary()
+
+    @app.get("/api/portfolio/strategies")
+    @app.get("/api/portfolio/execution/strategies")
+    def portfolio_execution_strategies() -> list[dict[str, Any]]:
+        return PortfolioCoordinatorService(database, settings=app_settings).get_strategies()
+
+    @app.post("/api/portfolio/strategies/{key}/stage")
+    @app.post("/api/portfolio/execution/strategies/{key}/stage")
+    def set_portfolio_strategy_stage(
+        key: str, payload: StrategyStagePayload, _: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return PortfolioCoordinatorService(database, settings=app_settings).set_strategy_stage(
+                key, payload.stage, reason=payload.reason
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/portfolio/rebalance")
+    @app.post("/api/portfolio/execution/rebalance")
+    def trigger_portfolio_rebalance(_: AdminUser) -> dict[str, Any]:
+        return PortfolioCoordinatorService(database, settings=app_settings).trigger_rebalance()
 
     @app.post("/api/strategy/research")
     def create_strategy_research(

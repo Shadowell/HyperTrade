@@ -16,6 +16,10 @@ class PaperSignal:
     side: str
     change_utc0_pct: Decimal
     reason: str
+    strategy_key: str = "utc0_momentum_legacy"
+    conviction: float = 0.5
+    stop_loss_pct: Decimal = Decimal("0.035")
+    take_profit_pct: Decimal = Decimal("0.070")
 
 
 @dataclass(frozen=True)
