@@ -32,6 +32,7 @@ import {
   AgentFlightRecorder,
   RunObservability
 } from "./components/observability/AgentFlightRecorder";
+import { QuantumPortfolioDashboard } from "./components/portfolio/QuantumPortfolioDashboard";
 import {
   archiveAgentThread,
   clearThreadSession,
@@ -2820,8 +2821,9 @@ function App() {
             </div>
           </section>
 
-          <section className="mt-5" hidden={activeSection !== "portfolio"}>
+          <section className="mt-5 space-y-5" hidden={activeSection !== "portfolio"}>
             <RouteMetricStrip label={t.pageMetrics} metrics={portfolioRouteMetrics} />
+            <QuantumPortfolioDashboard t={t} />
             <PortfolioLifecyclePanel
               assessments={portfolioAssessments}
               cohorts={paperCohorts}
