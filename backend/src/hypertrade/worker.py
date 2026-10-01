@@ -505,6 +505,8 @@ async def main() -> None:
     tasks.append(arc_meta_tuning_loop(db))
     if settings.mission_runtime_worker_enabled:
         tasks.append(avo_research_loop(db))
+    if settings.self_healing_evolution_enabled:
+        tasks.append(self_healing_evolution_loop(db, settings=settings))
     await asyncio.gather(*tasks)
 
 
@@ -622,6 +624,34 @@ async def avo_research_loop(db: Database) -> None:
     while True:
         await _guarded(db, "worker.avo_research", run_pending_avo_once)
         await asyncio.sleep(5)
+
+
+async def self_healing_evolution_loop(
+    db: Database,
+    settings: Settings | None = None,
+    *,
+    engine: Any | None = None,
+) -> None:
+    """Monitors DEGRADED execution strategies and performs autonomous parameter self-healing."""
+    from hypertrade.paper.self_healing import SelfHealingEvolutionEngine
+
+    active_settings = settings or get_settings()
+    evolution_engine = engine or SelfHealingEvolutionEngine()
+    poll_interval = max(5.0, active_settings.self_healing_evolution_interval_seconds)
+    logger.info("self_healing_evolution_loop started poll_interval=%ss", poll_interval)
+    while True:
+        try:
+            healed = await asyncio.to_thread(evolution_engine.scan_and_heal_all_degraded)
+            if healed:
+                logger.info(
+                    "self_healing_evolution_loop healed %d strategies: %s",
+                    len(healed),
+                    [h.offspring_strategy_id for h in healed],
+                )
+        except Exception as exc:
+            logger.exception("self_healing_evolution_loop cycle error")
+            await _journal(db, "worker.self_healing_evolution", exc)
+        await asyncio.sleep(poll_interval)
 
 
 if __name__ == "__main__":

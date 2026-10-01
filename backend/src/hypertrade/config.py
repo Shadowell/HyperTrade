@@ -334,6 +334,14 @@ class Settings(BaseSettings):
         default=60,
         alias="NEWS_POLL_INTERVAL_SECONDS",
     )
+    self_healing_evolution_enabled: bool = Field(
+        default=True,
+        alias="SELF_HEALING_EVOLUTION_ENABLED",
+    )
+    self_healing_evolution_interval_seconds: int = Field(
+        default=60,
+        alias="SELF_HEALING_EVOLUTION_INTERVAL_SECONDS",
+    )
 
 
 @lru_cache
