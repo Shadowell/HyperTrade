@@ -7,6 +7,8 @@ from typing import Any
 
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import Database
+from hypertrade.paper.registry import StrategyRecord, StrategyRegistry, get_strategy_registry
+from hypertrade.paper.self_healing import SelfHealingEvolutionEngine
 from hypertrade.paper.service import PaperTradingService
 from hypertrade.paper.stage_gate import ProgressiveStageGate, StrategyStage
 
@@ -24,10 +26,14 @@ class PortfolioCoordinatorService:
         settings: Settings | None = None,
         paper_service: PaperTradingService | None = None,
         stage_gate: ProgressiveStageGate | None = None,
+        registry: StrategyRegistry | None = None,
+        self_healing: SelfHealingEvolutionEngine | None = None,
     ) -> None:
         self.db = db
         self.settings = settings or get_settings()
         self.stage_gate = stage_gate or _GLOBAL_STAGE_GATE
+        self.registry = registry or get_strategy_registry()
+        self.self_healing = self_healing or SelfHealingEvolutionEngine(registry=self.registry)
         self.paper_service = paper_service or PaperTradingService(
             db, settings=self.settings, stage_gate=self.stage_gate
         )
@@ -102,3 +108,26 @@ class PortfolioCoordinatorService:
             },
             "portfolio": summary,
         }
+
+    def list_registry_records(self) -> list[dict[str, Any]]:
+        """List all strategies in the persistent registry, including all generations."""
+        records = self.registry.list_all()
+        return [r.to_dict() for r in records]
+
+    def register_strategy(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Register a new strategy record into the persistent registry."""
+        record = StrategyRecord.from_dict(data)
+        saved = self.registry.register(record)
+        return saved.to_dict()
+
+    def evolve_strategy(self, strategy_key: str) -> dict[str, Any]:
+        """Trigger autonomous self-healing evolution for a strategy."""
+        healed = self.self_healing.heal_strategy(strategy_key)
+        if not healed:
+            raise ValueError(f"Strategy '{strategy_key}' not found or could not be evolved")
+        return healed.to_dict()
+
+    def get_evolution_history(self) -> list[dict[str, Any]]:
+        """Get history of all self-healing evolution events."""
+        history = self.self_healing.get_history()
+        return [h.to_dict() for h in history]
