@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from hypertrade.paper.registry import StrategyRecord, StrategyRegistry
+from hypertrade.paper.registry import StrategyRegistry
 from hypertrade.paper.self_healing import SelfHealingEvolutionEngine
 from hypertrade.paper.stage_gate import StrategyStage
 
@@ -18,11 +18,15 @@ def test_self_healing_evolution_cycle() -> None:
         engine = SelfHealingEvolutionEngine(registry=registry, history_file=hist_file)
 
         # Trigger degradation on rsi_reversal
-        registry.update_stage("rsi_reversal", StrategyStage.DEGRADED, reason="consecutive losses >= 4")
+        registry.update_stage(
+            "rsi_reversal", StrategyStage.DEGRADED, reason="consecutive losses >= 4"
+        )
         assert registry.get("rsi_reversal").stage == StrategyStage.DEGRADED
 
         # Mock dispatch_reflexion_alert to verify Feishu delivery path
-        with patch("hypertrade.paper.self_healing.dispatch_reflexion_alert", return_value=(True, "sent")):
+        with patch(
+            "hypertrade.paper.self_healing.dispatch_reflexion_alert", return_value=(True, "sent")
+        ):
             healed = engine.heal_strategy("rsi_reversal")
 
         assert healed is not None
@@ -58,9 +62,14 @@ def test_scan_and_heal_all_degraded() -> None:
         engine = SelfHealingEvolutionEngine(registry=registry, history_file=hist_file)
 
         # Degrade momentum_breakout_v1
-        registry.update_stage("momentum_breakout_v1", StrategyStage.DEGRADED, reason="max drawdown breached")
+        registry.update_stage(
+            "momentum_breakout_v1", StrategyStage.DEGRADED, reason="max drawdown breached"
+        )
 
-        with patch("hypertrade.paper.self_healing.dispatch_reflexion_alert", return_value=(False, "skipped")):
+        with patch(
+            "hypertrade.paper.self_healing.dispatch_reflexion_alert",
+            return_value=(False, "skipped"),
+        ):
             healed_list = engine.scan_and_heal_all_degraded()
 
         assert len(healed_list) == 1

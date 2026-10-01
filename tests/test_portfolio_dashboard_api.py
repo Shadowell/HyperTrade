@@ -8,10 +8,8 @@ from hypertrade.cli import main as cli_main
 from hypertrade.config import Settings
 from hypertrade.db import Database, MarketTicker, PaperSession
 from hypertrade.main import create_app
-from hypertrade.paper.portfolio import PortfolioCoordinatorService
-from hypertrade.paper.registry import StrategyRecord, StrategyRegistry
+from hypertrade.paper.registry import StrategyRegistry
 from hypertrade.paper.self_healing import SelfHealingEvolutionEngine
-from hypertrade.paper.stage_gate import StrategyStage
 
 
 def _test_setup(db_file: Path | None = None, tmp_path: Path | None = None):
@@ -51,10 +49,7 @@ def _test_setup(db_file: Path | None = None, tmp_path: Path | None = None):
 
 
 def test_portfolio_registry_and_evolution_endpoints(tmp_path: Path):
-    db, settings, registry, self_healing = _test_setup(tmp_path=tmp_path)
-    service = PortfolioCoordinatorService(
-        db, settings=settings, registry=registry, self_healing=self_healing
-    )
+    db, settings, _, _ = _test_setup(tmp_path=tmp_path)
     app = create_app(settings=settings, db=db)
     # Inject service into app dependency if needed or use coordinator directly
     client = TestClient(app)

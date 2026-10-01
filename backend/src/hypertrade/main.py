@@ -2519,7 +2519,8 @@ def create_app(
         payload: dict[str, Any], _: AdminUser
     ) -> dict[str, Any]:
         try:
-            return PortfolioCoordinatorService(database, settings=app_settings).register_strategy(payload)
+            service = PortfolioCoordinatorService(database, settings=app_settings)
+            return service.register_strategy(payload)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

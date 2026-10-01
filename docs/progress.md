@@ -4,6 +4,15 @@
 
 # Progress Log
 
+## 动态策略持久化注册表、自愈进化守护进程与前台量化指挥台 (Spec 021) — 2026-10-01
+
+- **动态策略注册表与工厂 (T001)**：在 `hypertrade.paper.registry` 中实现 `StrategyRecord`、`StrategyFactory` 与 `StrategyRegistry`。支持策略定义持久化与线程安全热读写，自动预装 RSI、动量突破、MACD 趋势与 UTC-0 核心基准策略；改造 `MultiStrategySignalEngine` 动态依赖注册表，使新注册或变异策略无需重启即可实时参与信号评估；
+- **策略自愈突变与闭环进化中枢 (T002)**：在 `hypertrade.paper.self_healing` 中实现 `SelfHealingEvolutionEngine` 与 `HealedOffspring`。对触发熔断降级（`DEGRADED`）的策略提取事后 Reflexion 归因原因与负向约束，执行有界超参数自愈变异（如 RSI 收紧止损、展宽极端阈值、扩大平滑周期），经快速回测抗过拟合检验通过后，自动构造新代系（Generation N+1）注册进入模拟观察期，并派发飞书交互式通知卡片；
+- **后台 Worker 自愈守护循环 (T003)**：在 `hypertrade.worker` 中新增 `self_healing_evolution_loop` 并并入事件循环任务清单，支持通过 `SELF_HEALING_EVOLUTION_ENABLED` 与 `SELF_HEALING_EVOLUTION_INTERVAL_SECONDS` 配置常驻巡航，彻底打通策略熔断后的自动化修复链路；
+- **组合服务、REST API 与 CLI 运维集成 (T004)**：在 `PortfolioCoordinatorService` 中接入注册表与自愈引擎；在 `hypertrade.main` 暴露 `/api/portfolio/registry`、`/api/portfolio/strategies/{key}/evolve`、`/api/portfolio/evolution/history` 端点；在 `hypertrade.cli` 暴露 `hypertrade portfolio registry`、`evolve`、`history` 运维命令；
+- **前台量化交易指挥台组件 (T005)**：在 `frontend/src/components/portfolio/QuantumPortfolioDashboard.tsx` 构建量子多策略动态执行与自愈指挥台，提供实时账户总览、10 大标的实时标记价与未实现盈亏盯市表格、撮合成交审计流、多策略代系矩阵卡片与一键自愈进化/重平衡操作；在 `App.tsx` 深度集成；
+- **质量门禁全绿通过 (T006)**：编写 `tests/test_strategy_registry.py`、`tests/test_self_healing_evolution.py`、`tests/test_portfolio_dashboard_api.py`。全量通过 `./scripts/check.sh` 质量门禁。
+
 ## 进阶实盘/模拟盘执行器升级与策略动态协同总线 (Spec 020) — 2026-10-01
 
 - **多策略信号引擎与核心策略族实现 (T001)**：在 `hypertrade.paper.strategies` 中实现 `StrategySignal` 数据模型与 `ExecutionStrategy` 策略协议。提供 `RsiReversalExecutionStrategy`（自适应超买超卖与均线滤波）、`MomentumBreakoutExecutionStrategy`（唐奇安/EMA 趋势突破）、`MacdTrendExecutionStrategy`（双均线与 MACD 柱扩张）以及向后兼容的 `FallbackUtc0Strategy`。构建 `MultiStrategySignalEngine`，支持多策略并发评估、同向共识置信度强化与反向多空冲突仲裁；

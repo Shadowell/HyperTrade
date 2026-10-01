@@ -3104,7 +3104,9 @@ def main(
             res = service.evolve_strategy(args.strategy)
             output.write("Strategy self-healing evolution complete!\n")
             output.write(f"  Parent Strategy    : {res['parent_strategy_id']}\n")
-            output.write(f"  Offspring Strategy : {res['offspring_strategy_id']} (Gen {res['generation']})\n")
+            output.write(
+                f"  Offspring Strategy : {res['offspring_strategy_id']} (Gen {res['generation']})\n"
+            )
             output.write(f"  Mutated Parameters : {res['mutated_parameters']}\n")
             output.write(f"  Validation Metrics : {res['validation_metrics']}\n")
             output.write(f"  Feishu Delivered   : {res['feishu_delivered']}\n")
@@ -3116,11 +3118,15 @@ def main(
             for h in history:
                 output.write(
                     f"  - [{h['timestamp']}] {h['parent_strategy_id']} -> "
-                    f"{h['offspring_strategy_id']} (Gen {h['generation']}): feishu={h['feishu_delivered']}\n"
+                    f"{h['offspring_strategy_id']} (Gen {h['generation']}): "
+                    f"feishu={h['feishu_delivered']}\n"
                 )
             return 0
 
-        output.write("Usage: hypertrade portfolio [summary|strategies|stage|rebalance|registry|evolve|history]\n")
+        output.write(
+            "Usage: hypertrade portfolio "
+            "[summary|strategies|stage|rebalance|registry|evolve|history]\n"
+        )
         return 1
 
     run_chat(client=agent_client, input_fn=input_fn, output=output)

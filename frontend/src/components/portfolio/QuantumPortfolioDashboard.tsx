@@ -1,20 +1,14 @@
 import {
   Activity,
-  AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
   CheckCircle2,
   Cpu,
   Dna,
-  Flame,
-  Layers,
   RefreshCw,
-  Scale,
   ShieldAlert,
-  Sparkles,
   TrendingDown,
-  TrendingUp,
-  Zap
+  TrendingUp
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -97,11 +91,7 @@ export type EvolutionEvent = {
 
 type ViewTab = "execution" | "matrix";
 
-export function QuantumPortfolioDashboard({
-  t,
-}: {
-  t: Record<string, string>;
-}) {
+export function QuantumPortfolioDashboard() {
   const [activeTab, setActiveTab] = useState<ViewTab>("execution");
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [registryRecords, setRegistryRecords] = useState<StrategyRegistryRecord[]>([]);
@@ -140,7 +130,16 @@ export function QuantumPortfolioDashboard({
   }, []);
 
   useEffect(() => {
-    void fetchDashboardData();
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (!cancelled) {
+        void fetchDashboardData();
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [fetchDashboardData]);
 
   const handleRebalance = async () => {

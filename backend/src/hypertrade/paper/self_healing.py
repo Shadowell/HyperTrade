@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-import threading
 from typing import Any
 
 from hypertrade.arc.reflexion_alert import ReflexionAlertPayload, dispatch_reflexion_alert
@@ -59,7 +59,7 @@ class HealedOffspring:
 
 
 class SelfHealingEvolutionEngine:
-    """Executes closed-loop parameter mutation and offspring regeneration for degraded strategies."""
+    """Executes closed-loop parameter mutation and offspring regeneration."""
 
     def __init__(
         self,
@@ -185,7 +185,9 @@ class SelfHealingEvolutionEngine:
             strategy_id=offspring_id,
             strategy_type=record.strategy_type,
             name=f"{record.name} (Gen {next_gen})",
-            description=f"Self-healed offspring evolved from {record.strategy_id} following circuit breaker",
+            description=(
+                f"Self-healed offspring evolved from {record.strategy_id} following circuit breaker"
+            ),
             parameters=mutated_params,
             stage=StrategyStage.PAPER_OBSERVING,
             generation=next_gen,
@@ -200,6 +202,8 @@ class SelfHealingEvolutionEngine:
         # Dispatch Feishu Reflexion notification
         feishu_ok = False
         try:
+            win_pct = f"{validation_metrics['win_rate'] * 100:.1f}%"
+            sharpe_val = f"{validation_metrics['sharpe_ratio']:.2f}"
             alert = ReflexionAlertPayload(
                 strategy_id=offspring_id,
                 strategy_name=offspring_record.name,
@@ -212,14 +216,17 @@ class SelfHealingEvolutionEngine:
                     {
                         "regime": "HIGH_VOLATILITY_CHOP",
                         "weight": 0.85,
-                        "causal_factor": f"Parent strategy {record.strategy_id} degraded; healed in Gen {next_gen}",
+                        "causal_factor": (
+                            f"Parent {record.strategy_id} degraded; healed in Gen {next_gen}"
+                        ),
                     }
                 ],
                 negative_constraints=new_constraints,
                 evolution_action=(
                     f"策略自愈进化成功：原策略 [{record.strategy_id}] 触发降级熔断，"
-                    f"自愈突变体 [{offspring_id}] (Gen {next_gen}) 已通过回测验证（胜率 {validation_metrics['win_rate']*100:.1f}%, "
-                    f"夏普 {validation_metrics['sharpe_ratio']:.2f}），已动态部署至模拟观察期 (PAPER_OBSERVING)。"
+                    f"自愈突变体 [{offspring_id}] (Gen {next_gen}) 已通过回测验证"
+                    f"（胜率 {win_pct}, 夏普 {sharpe_val}），"
+                    "已动态部署至模拟观察期 (PAPER_OBSERVING)。"
                 ),
                 candidate_id=offspring_id,
                 next_candidate_id=offspring_id,

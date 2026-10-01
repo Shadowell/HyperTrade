@@ -8,11 +8,11 @@ injection into MultiStrategySignalEngine.
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-import threading
 from typing import Any
 
 from hypertrade.paper.stage_gate import StrategyStage
@@ -52,7 +52,9 @@ class StrategyRecord:
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        data["stage"] = self.stage.value if isinstance(self.stage, StrategyStage) else str(self.stage)
+        data["stage"] = (
+            self.stage.value if isinstance(self.stage, StrategyStage) else str(self.stage)
+        )
         return data
 
     @classmethod
@@ -165,7 +167,9 @@ class StrategyRegistry:
                 strategy_id="rsi_reversal",
                 strategy_type="rsi_reversal",
                 name="RSI Mean Reversion Baseline",
-                description="Counter-trend execution on overbought/oversold boundaries with EMA filter",
+                description=(
+                    "Counter-trend execution on overbought/oversold boundaries with EMA filter"
+                ),
                 parameters={
                     "rsi_period": 14,
                     "oversold_threshold": 30.0,
@@ -224,7 +228,10 @@ class StrategyRegistry:
         try:
             self._storage_path.parent.mkdir(parents=True, exist_ok=True)
             serialized = [rec.to_dict() for rec in self._records.values()]
-            self._storage_path.write_text(json.dumps(serialized, indent=2, ensure_ascii=False), encoding="utf-8")
+            self._storage_path.write_text(
+                json.dumps(serialized, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
         except Exception:
             # File system errors must not crash execution in memory
             pass
@@ -252,7 +259,9 @@ class StrategyRegistry:
                 if r.is_active and r.stage != StrategyStage.DEGRADED
             ]
 
-    def update_stage(self, strategy_id: str, stage: StrategyStage, reason: str = "") -> StrategyRecord | None:
+    def update_stage(
+        self, strategy_id: str, stage: StrategyStage, reason: str = ""
+    ) -> StrategyRecord | None:
         with self._lock:
             record = self._records.get(strategy_id)
             if not record:

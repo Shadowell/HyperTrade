@@ -1,4 +1,4 @@
-"""Unit tests for StrategyRecord, StrategyFactory, StrategyRegistry and MultiStrategySignalEngine integration."""
+"""Unit tests for StrategyRecord, StrategyFactory, and StrategyRegistry."""
 
 import tempfile
 from decimal import Decimal
@@ -117,7 +117,9 @@ def test_strategy_registry_lifecycle_and_engine_integration() -> None:
         assert len(active) == 5
 
         # Degrade a strategy
-        registry.update_stage("rsi_reversal", StrategyStage.DEGRADED, reason="circuit breaker drawdown")
+        registry.update_stage(
+            "rsi_reversal", StrategyStage.DEGRADED, reason="circuit breaker drawdown"
+        )
         active_after_degrade = registry.build_active_strategies()
         assert len(active_after_degrade) == 4
         assert not any(s.strategy_key == "rsi_reversal" for s in active_after_degrade)

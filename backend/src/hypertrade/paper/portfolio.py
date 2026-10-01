@@ -8,7 +8,7 @@ from typing import Any
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import Database
 from hypertrade.paper.registry import StrategyRecord, StrategyRegistry, get_strategy_registry
-from hypertrade.paper.self_healing import HealedOffspring, SelfHealingEvolutionEngine
+from hypertrade.paper.self_healing import SelfHealingEvolutionEngine
 from hypertrade.paper.service import PaperTradingService
 from hypertrade.paper.stage_gate import ProgressiveStageGate, StrategyStage
 

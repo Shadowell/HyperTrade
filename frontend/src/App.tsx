@@ -2823,7 +2823,7 @@ function App() {
 
           <section className="mt-5 space-y-5" hidden={activeSection !== "portfolio"}>
             <RouteMetricStrip label={t.pageMetrics} metrics={portfolioRouteMetrics} />
-            <QuantumPortfolioDashboard t={t} />
+            <QuantumPortfolioDashboard />
             <PortfolioLifecyclePanel
               assessments={portfolioAssessments}
               cohorts={paperCohorts}
