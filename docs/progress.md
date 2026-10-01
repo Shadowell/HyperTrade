@@ -4,6 +4,15 @@
 
 # Progress Log
 
+## 进阶实盘/模拟盘执行器升级与策略动态协同总线 (Spec 020) — 2026-10-01
+
+- **多策略信号引擎与核心策略族实现 (T001)**：在 `hypertrade.paper.strategies` 中实现 `StrategySignal` 数据模型与 `ExecutionStrategy` 策略协议。提供 `RsiReversalExecutionStrategy`（自适应超买超卖与均线滤波）、`MomentumBreakoutExecutionStrategy`（唐奇安/EMA 趋势突破）、`MacdTrendExecutionStrategy`（双均线与 MACD 柱扩张）以及向后兼容的 `FallbackUtc0Strategy`。构建 `MultiStrategySignalEngine`，支持多策略并发评估、同向共识置信度强化与反向多空冲突仲裁；
+- **逆波动率风险平价资金分配器 (T002)**：在 `hypertrade.paper.allocation` 中实现 `RiskParityAllocator`。基于各标的历史振幅或收益率标准差估算资产波动率 $\sigma$，按 $w_i \propto 1/\sigma_i$ 计算逆波动率风险权重；引入信号置信度加权、运行阶段（Stage）缩放以及跨资产同向相关性衰减（Correlation Damping），精准控制各标的在账户最大杠杆与单币种敞口下的开仓名义价值；
+- **渐进式实盘晋升阶梯与熔断降级门禁 (T003)**：在 `hypertrade.paper.stage_gate` 中实现 `StrategyStage`（`INCUBATING` -> `PAPER_OBSERVING` -> `CANARY_LIVE` -> `CONTROLLED_LIVE` -> `FULL_LIVE` -> `DEGRADED`）与 `ProgressiveStageGate`。对交易笔数、胜率、盈亏比与回撤满足条件的策略自动推荐晋升；引入硬熔断机制，当连亏达到 4 笔或回撤超标时自动降级至 `DEGRADED`，并联动派发飞书 Reflexion 反思告警卡片；
+- **纸面执行引擎与盯市退出机制升级 (T004)**：在 `hypertrade.paper.repository` 中新增 `sync_mark_prices` 与 `check_and_trigger_bracket_orders`；在 `hypertrade.paper.service` 中将 `run_once()` 升级为三阶段闭环：1. 实时逐笔 Mark-to-Market 估值同步；2. 自动化 Bracket Order（移动止损/止盈）扫描退出并记入阶段表现；3. 多策略信号生成与风险平价资金分配撮合；
+- **组合协同协调服务与 REST API / CLI 运维集成 (T005)**：在 `hypertrade.paper.portfolio` 中实现 `PortfolioCoordinatorService`；在 `hypertrade.main` 暴露 `/api/portfolio/summary`、`/api/portfolio/strategies`、`/api/portfolio/strategies/{key}/stage`、`/api/portfolio/rebalance`；在 `hypertrade.cli` 暴露 `hypertrade portfolio summary`、`strategies`、`stage`、`rebalance` 运维命令；
+- **端到端测试与质量门禁全绿 (T006)**：编写 `tests/test_multi_strategy_execution.py`、`tests/test_risk_parity_allocation.py`、`tests/test_progressive_stage_gate.py`、`tests/test_portfolio_coordinator_e2e.py`。执行 `./scripts/check.sh`，前端 15 项 vitest、TypeScript 构建、Vite 打包全过，后端 Ruff、Mypy（302 模块）、全量 1981 项 pytest 100% 绿灯。
+
 ## 交易反思闭环 (Reflexion) 与自主进化飞书实时告警联动 (Spec 019) — 2026-10-01
 
 - **结构化交易反思数据模型与飞书卡片派发引擎 (T001)**：在 `hypertrade.arc.reflexion_alert` 中实现 `ReflexionAlertPayload` 数据模型、飞书交互式富文本卡片构造器（`build_feishu_card_payload`）与纯文本降级备份（`build_feishu_text_payload`）。支持自适应配色（严重/警示/提示）、4大宏观市态因果归因、结构化负向反思约束展示以及控制台深链。实现 `dispatch_reflexion_alert`，对接 `FEISHU_WEBHOOK_URL`，具备网络异常兜底、回执校验与单条消息 3900 字符超长保护；

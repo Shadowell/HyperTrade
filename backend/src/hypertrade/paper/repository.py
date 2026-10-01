@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import desc, select
 
@@ -10,6 +11,7 @@ from hypertrade.db import (
     PaperOrder,
     PaperPosition,
     PaperSession,
+    utc_now,
 )
 from hypertrade.paper.models import PaperTicker, SimulatedFill
 
@@ -170,7 +172,7 @@ class PaperRepository:
         session_id: str,
         kind: str,
         message: str,
-        payload: dict[str, object],
+        payload: dict[str, Any],
     ) -> None:
         with self.db.session() as session:
             session.add(
@@ -181,3 +183,86 @@ class PaperRepository:
                     payload=payload,
                 )
             )
+
+    def sync_mark_prices(self, session_id: str) -> tuple[Decimal, int]:
+        """Update mark price and unrealized PnL for all open positions."""
+        with self.db.session() as session:
+            positions = session.scalars(
+                select(PaperPosition)
+                .where(PaperPosition.session_id == session_id)
+                .where(PaperPosition.status == "open")
+            ).all()
+            if not positions:
+                paper_session = session.get(PaperSession, session_id)
+                return (paper_session.equity if paper_session else Decimal("0")), 0
+
+            updated_count = 0
+            total_unrealized = Decimal("0")
+            for pos in positions:
+                ticker = session.scalar(
+                    select(MarketTicker).where(MarketTicker.inst_id == pos.inst_id)
+                )
+                if ticker and ticker.last > 0:
+                    pos.mark_price = ticker.last
+                    if pos.side == "long":
+                        pos.unrealized_pnl = (ticker.last - pos.entry_price) * pos.quantity
+                    else:
+                        pos.unrealized_pnl = (pos.entry_price - ticker.last) * pos.quantity
+                    pos.notional = pos.quantity * ticker.last
+                    updated_count += 1
+                total_unrealized += pos.unrealized_pnl
+
+            paper_session = session.get(PaperSession, session_id)
+            if paper_session is not None:
+                paper_session.equity = paper_session.cash + total_unrealized
+                session.flush()
+                return paper_session.equity, updated_count
+            return total_unrealized, updated_count
+
+    def check_and_trigger_bracket_orders(
+        self,
+        session_id: str,
+        *,
+        taker_fee_bps: Decimal,
+        default_stop_loss_pct: Decimal = Decimal("0.04"),
+        default_take_profit_pct: Decimal = Decimal("0.08"),
+    ) -> list[dict[str, str]]:
+        """Scan open positions and trigger automatic stop-loss or take-profit bracket exits."""
+        to_close: list[tuple[str, Decimal, str]] = []
+        with self.db.session() as session:
+            positions = session.scalars(
+                select(PaperPosition)
+                .where(PaperPosition.session_id == session_id)
+                .where(PaperPosition.status == "open")
+            ).all()
+            for pos in positions:
+                if pos.entry_price <= 0 or pos.mark_price <= 0:
+                    continue
+                if pos.side == "long":
+                    ret = (pos.mark_price - pos.entry_price) / pos.entry_price
+                else:
+                    ret = (pos.entry_price - pos.mark_price) / pos.entry_price
+
+                if ret <= -default_stop_loss_pct:
+                    reason = f"bracket_stop_loss_{ret * 100:.2f}%"
+                    to_close.append((pos.id, pos.mark_price, reason))
+                elif ret >= default_take_profit_pct:
+                    reason = f"bracket_take_profit_{ret * 100:.2f}%"
+                    to_close.append((pos.id, pos.mark_price, reason))
+
+        closed_reports: list[dict[str, str]] = []
+        for pos_id, exit_price, trigger_reason in to_close:
+            try:
+                report = self.close_position(
+                    session_id=session_id,
+                    position_id=pos_id,
+                    exit_price=exit_price,
+                    source_ticker_updated_at=utc_now(),
+                    taker_fee_bps=taker_fee_bps,
+                    reason=trigger_reason,
+                )
+                report["trigger_reason"] = trigger_reason
+                closed_reports.append(report)
+            except Exception:
+                continue
+        return closed_reports
