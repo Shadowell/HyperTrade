@@ -4,6 +4,14 @@
 
 # Progress Log
 
+## BitPro 模拟盘异常监控与 HyperTrade 策略自愈引擎直连打通 (Spec 022) — 2026-10-01
+
+- **CTA/EMA 策略自愈突变与 7 维因果归因 (T001)**：在 `hypertrade.paper.self_healing` 中扩展 `SelfHealingEvolutionEngine`，为 `HealedOffspring` 引入 `attribution_report` 字典。实现 `generate_7d_attribution_report()` 辅助方法，生成 7 维（入场时机、出场时机、成本滑点、多空偏向、持仓周期、样本覆盖、市场状态）结构化中文因果归因；支持针对 `cta_trend_following` / `ema_trend` 的超参数变异（均线平滑、止损收紧、跟踪止盈保护）；新增 `heal_bitpro_strategy()`，支持从 BitPro 策略快照直接衍生 Gen N+1 变异候选；
+- **BitPro 异常监控与自愈桥接 (T002)**：在 `hypertrade.bitpro.paper_monitor` 中为 `PaperAnomalyDetector` 新增 `evaluate_and_heal()`，在胜率、回撤或连亏达到阈值时直接派发自愈变异；为 `IncrementalEvolutionTrigger` 新增 `trigger_self_healing()`，并将 `trigger_re_training` 与 `SelfHealingEvolutionEngine` 深度连通；
+- **ARC 演化扫描优雅降级与小币种受限缺口容错 (T003)**：在 `hypertrade.arc.evolution` 的 `EvolutionService._scan` 中，当上游交易所小币种（如 KAITO）因缺乏完整 7+7 天基线数据导致 `collect_windows` 报错时，检测到基线缺失、身份合法且无策略配置错误时优雅降级转调 `_heal_bitpro_fallback()`，直接生成带 7 维因果归因与 `status="opportunity"` 的结构体；在 `evolution_continuation.py` 中放行 `self_healed` 机会的样本覆盖硬阻塞，避免将合规策略误判为不可用；
+- **BitPro 前台候选策略解析与全量状态加载修复 (T004)**：修复 `BitPro/frontend/src/pages/liveTrading/index.tsx` 在详情视图（detail）下只拉取 active 策略导致已停止候选变体（如 `#518`）被漏查的问题，使 `evolutionFamily.candidate` 顺利关联显示；
+- **单元测试与全量质量门禁 (T005)**：编写 `tests/test_bitpro_self_healing_bridge.py` 覆盖 CTA/EMA 变异、BitPro 策略自愈桥接、异常检测器评估、7 维归因报告格式与降级逻辑；执行并通过 `./scripts/check.sh` 全量质量门禁（1993 项 pytest、Ruff、Mypy 304 模块、前端 15 项 vitest、TypeScript 构建全部通过）。
+
 ## 动态策略持久化注册表、自愈进化守护进程与前台量化指挥台 (Spec 021) — 2026-10-01
 
 - **动态策略注册表与工厂 (T001)**：在 `hypertrade.paper.registry` 中实现 `StrategyRecord`、`StrategyFactory` 与 `StrategyRegistry`。支持策略定义持久化与线程安全热读写，自动预装 RSI、动量突破、MACD 趋势与 UTC-0 核心基准策略；改造 `MultiStrategySignalEngine` 动态依赖注册表，使新注册或变异策略无需重启即可实时参与信号评估；

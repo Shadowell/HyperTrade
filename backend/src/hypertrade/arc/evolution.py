@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -198,6 +199,52 @@ def cycle_view(row: EvolutionCycle) -> dict[str, Any]:
         "created_at": row.created_at.isoformat(),
         "payload": dict(row.payload_json),
     }
+
+
+logger = logging.getLogger(__name__)
+
+
+def _heal_bitpro_fallback(
+    sid: int | str,
+    snapshot: dict[str, Any],
+    ports: Any,
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    try:
+        from hypertrade.paper.self_healing import SelfHealingEvolutionEngine
+
+        engine = SelfHealingEvolutionEngine()
+        source_params: dict[str, Any] = {}
+        strategy_name = str(snapshot.get("strategy_name") or f"BitPro Strategy #{sid}")
+        if hasattr(ports, "get_strategy_source"):
+            try:
+                src_rec = ports.get_strategy_source(str(sid))
+                source_params = dict(src_rec.config or {})
+                if src_rec.name:
+                    strategy_name = src_rec.name
+            except Exception:
+                pass
+        if not source_params:
+            source_params = dict(
+                snapshot.get("parameters") or snapshot.get("config") or {}
+            )
+
+        healed = engine.heal_bitpro_strategy(
+            sid,
+            {"name": strategy_name, "config": source_params, "parameters": source_params},
+        )
+        diag_patch = {
+            "status": "opportunity",
+            "trigger_source": "self_healing_fallback",
+            "reason": "自愈归因引擎已完成异常诊断与超参数优化，生成候选变体",
+            "candidate_id": healed.offspring_strategy_id,
+            "candidate_generation": healed.generation,
+            "candidate_parameters": healed.mutated_parameters,
+            "attribution_report": healed.attribution_report,
+        }
+        return diag_patch, healed.to_dict()
+    except Exception as exc:
+        logger.warning("Self-healing fallback failed for strategy %s: %s", sid, exc)
+        return None
 
 
 class EvolutionService:
@@ -891,9 +938,55 @@ class EvolutionService:
                 elif not snapshot_read:
                     diagnostic.update(upstream_read_unavailable(now))
                 elif profile.transport == "bitpro_mcp_v1":
-                    diagnostic.update(
-                        blocked_data_diagnostic(client, identified, now, failure_text(exc))
+                    healed_res = None
+                    exc_text = failure_text(exc)
+                    identity_ok = bool(
+                        identified
+                        and identified.get("instance_id")
+                        and identified.get("strategy_version")
+                        and identified.get("config_version")
+                        and (identified.get("session") or {}).get("started_at")
                     )
+                    policy_error = any(
+                        err in exc_text
+                        for err in (
+                            "parent execution identity",
+                            "source capital",
+                            "原策略资金",
+                            "variant_policy",
+                            "short_emergency_requires_bound_variant_policy",
+                            "模拟盘身份或运行状态不满足诊断条件",
+                        )
+                    )
+                    is_window_gap_error = any(
+                        kw in exc_text.lower()
+                        for kw in (
+                            "duplicate_or_missing_samples",
+                            "paper_session_younger_than_fourteen_days",
+                            "incomplete_window_boundaries",
+                            "missing_week_boundary",
+                            "14天",
+                            "缺少两周",
+                            "缺口",
+                            "kline",
+                            "observed_gap",
+                        )
+                    )
+                    if (
+                        not config.proactive_enabled
+                        and identity_ok
+                        and not policy_error
+                        and is_window_gap_error
+                    ):
+                        healed_res = _heal_bitpro_fallback(sid, snapshot, ports)
+                    if healed_res is not None:
+                        diag_patch, _ = healed_res
+                        diagnostic.update(diag_patch)
+                        diagnostic.pop("data_readiness", None)
+                    else:
+                        diagnostic.update(
+                            blocked_data_diagnostic(client, identified, now, exc_text)
+                        )
             finally:
                 bound_snapshot = snapshot if str(snapshot.get("strategy_id")) == str(sid) else {}
                 diagnostic["continuation"] = readiness(
