@@ -2510,6 +2510,34 @@ def create_app(
     def trigger_portfolio_rebalance(_: AdminUser) -> dict[str, Any]:
         return PortfolioCoordinatorService(database, settings=app_settings).trigger_rebalance()
 
+    @app.get("/api/portfolio/registry")
+    def list_portfolio_registry() -> list[dict[str, Any]]:
+        return PortfolioCoordinatorService(database, settings=app_settings).list_registry_records()
+
+    @app.post("/api/portfolio/registry")
+    def register_portfolio_strategy(
+        payload: dict[str, Any], _: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return PortfolioCoordinatorService(database, settings=app_settings).register_strategy(payload)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/portfolio/strategies/{key}/evolve")
+    def trigger_strategy_self_healing(
+        key: str, _: AdminUser
+    ) -> dict[str, Any]:
+        try:
+            return PortfolioCoordinatorService(database, settings=app_settings).evolve_strategy(key)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/api/portfolio/evolution/history")
+    def get_portfolio_evolution_history() -> list[dict[str, Any]]:
+        return PortfolioCoordinatorService(database, settings=app_settings).get_evolution_history()
+
     @app.post("/api/strategy/research")
     def create_strategy_research(
         payload: StrategyResearchPayload,

@@ -3088,7 +3088,39 @@ def main(
             output.write(f"New Equity: {eq} USDT, Open Positions: {cnt}\n")
             return 0
 
-        output.write("Usage: hypertrade portfolio [summary|strategies|stage|rebalance]\n")
+        if action == "registry":
+            records = service.list_registry_records()
+            output.write(f"Persistent Strategy Registry ({len(records)} records):\n")
+            output.write(f"{'Strategy ID':<26} {'Type':<20} {'Stage':<18} {'Gen':<5} {'Active'}\n")
+            output.write("-" * 75 + "\n")
+            for r in records:
+                output.write(
+                    f"{r['strategy_id']:<26} {r['strategy_type']:<20} {r['stage']:<18} "
+                    f"{r['generation']:<5} {r['is_active']}\n"
+                )
+            return 0
+
+        if action == "evolve":
+            res = service.evolve_strategy(args.strategy)
+            output.write("Strategy self-healing evolution complete!\n")
+            output.write(f"  Parent Strategy    : {res['parent_strategy_id']}\n")
+            output.write(f"  Offspring Strategy : {res['offspring_strategy_id']} (Gen {res['generation']})\n")
+            output.write(f"  Mutated Parameters : {res['mutated_parameters']}\n")
+            output.write(f"  Validation Metrics : {res['validation_metrics']}\n")
+            output.write(f"  Feishu Delivered   : {res['feishu_delivered']}\n")
+            return 0
+
+        if action == "history":
+            history = service.get_evolution_history()
+            output.write(f"Self-Healing Evolution Events ({len(history)}):\n")
+            for h in history:
+                output.write(
+                    f"  - [{h['timestamp']}] {h['parent_strategy_id']} -> "
+                    f"{h['offspring_strategy_id']} (Gen {h['generation']}): feishu={h['feishu_delivered']}\n"
+                )
+            return 0
+
+        output.write("Usage: hypertrade portfolio [summary|strategies|stage|rebalance|registry|evolve|history]\n")
         return 1
 
     run_chat(client=agent_client, input_fn=input_fn, output=output)
@@ -8822,6 +8854,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     port_stage.add_argument("--reason", default="", help="Reason for stage change.")
     port_sub.add_parser("rebalance", help="Trigger risk-parity mark-to-market rebalance cycle.")
+    port_sub.add_parser("registry", help="List all strategies in the persistent registry.")
+    port_evolve = port_sub.add_parser(
+        "evolve", help="Trigger autonomous self-healing evolution for a strategy."
+    )
+    port_evolve.add_argument(
+        "--strategy", required=True, help="Strategy key to self-heal (e.g. rsi_reversal)."
+    )
+    port_sub.add_parser("history", help="Show self-healing evolution history.")
 
     return parser
 
