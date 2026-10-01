@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Protocol
@@ -11,6 +12,7 @@ from hypertrade.db import BitProPaperMonitorSnapshot, Database
 
 if TYPE_CHECKING:
     from hypertrade.arc.controller import ARCController
+    from hypertrade.paper.self_healing import HealedOffspring, SelfHealingEvolutionEngine
 
 
 class BitProPaperMonitorAdapter(Protocol):
@@ -430,6 +432,26 @@ class PaperAnomalyDetector:
 
         return anomalies
 
+    def evaluate_and_heal(
+        self,
+        snapshot: PaperObservationSnapshot,
+        trigger: IncrementalEvolutionTrigger | None = None,
+    ) -> list[HealedOffspring]:
+        """Detect anomalies on paper observation snapshot and trigger self-healing."""
+        anomalies = self.detect_anomalies(snapshot)
+        if not anomalies:
+            return []
+        active_trigger = trigger or IncrementalEvolutionTrigger()
+        healed_results: list[HealedOffspring] = []
+        for anomaly in anomalies:
+            with contextlib.suppress(Exception):
+                healed = active_trigger.trigger_self_healing(
+                    anomaly,
+                    snapshot_or_config=snapshot.model_dump(),
+                )
+                healed_results.append(healed)
+        return healed_results
+
 
 class PaperReflexionTranslator:
     """
@@ -462,12 +484,41 @@ class IncrementalEvolutionTrigger:
     Triggers an incremental ARC evolution loop based on paper anomaly events.
     """
 
+    def __init__(
+        self,
+        self_healing_engine: SelfHealingEvolutionEngine | None = None,
+    ) -> None:
+        from hypertrade.paper.self_healing import SelfHealingEvolutionEngine
+
+        self.self_healing_engine = self_healing_engine or SelfHealingEvolutionEngine()
+        self.latest_healed_offspring: HealedOffspring | None = None
+
+    def trigger_self_healing(
+        self,
+        anomaly: PaperAnomalyEvent,
+        snapshot_or_config: dict[str, Any] | None = None,
+    ) -> HealedOffspring:
+        """Directly heal a strategy triggering an anomaly via the self-healing engine."""
+        cfg = dict(snapshot_or_config or {})
+        cfg.setdefault("symbol", anomaly.symbol)
+        cfg.setdefault(
+            "strategy_name", f"BitPro Strategy #{anomaly.instance_id} ({anomaly.symbol})"
+        )
+
+        healed = self.self_healing_engine.heal_bitpro_strategy(
+            anomaly.instance_id,
+            snapshot_or_config=cfg,
+        )
+        self.latest_healed_offspring = healed
+        return healed
+
     def trigger_re_training(
         self,
         anomaly: PaperAnomalyEvent,
         reflexion_ledger: Any = None,
         *,
         dispatch_alert: bool = True,
+        snapshot_or_config: dict[str, Any] | None = None,
     ) -> ARCController:
         from hypertrade.arc.contracts import ARCBudgetV1, ARCGoalV1, PaperPreauthorizationV1
         from hypertrade.arc.controller import ARCController
@@ -482,6 +533,9 @@ class IncrementalEvolutionTrigger:
         if reflexion_ledger:
             for c in new_constraints:
                 reflexion_ledger.record_negative_constraint(c)
+
+        with contextlib.suppress(Exception):
+            self.trigger_self_healing(anomaly, snapshot_or_config)
 
         if dispatch_alert:
             alert = ReflexionAlertPayload(

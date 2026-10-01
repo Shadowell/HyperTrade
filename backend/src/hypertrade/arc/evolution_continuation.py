@@ -222,6 +222,13 @@ def readiness(
         blockers.append(
             {"code": "session_identity", "condition": "verify original session and versions"}
         )
+    self_healed = (
+        diagnostic.get("trigger_source") in ("self_healing_fallback", "self_healing_anomaly")
+        or (
+            diagnostic.get("status") == "opportunity"
+            and diagnostic.get("candidate_id") is not None
+        )
+    )
     if snapshot and snapshot.get("status") != "running":
         blockers.append(
             {
@@ -230,7 +237,7 @@ def readiness(
                 "condition": "original Paper must be running; do not restart or reconfigure",
             }
         )
-    if snapshot and not short_ready:
+    if snapshot and not short_ready and not self_healed:
         trades = snapshot.get("trade_count")
         try:
             observed = int(trades) if trades is not None and not isinstance(trades, bool) else None
@@ -245,7 +252,7 @@ def readiness(
                     "condition": "same-session trade_count >= required",
                 }
             )
-    if snapshot_read and not short_ready:
+    if snapshot_read and not short_ready and not self_healed:
         try:
             if not start:
                 raise ValueError("missing start")
