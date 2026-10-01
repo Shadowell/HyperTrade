@@ -333,13 +333,24 @@ class MacdTrendExecutionStrategy:
 class MultiStrategySignalEngine:
     """Coordinates multiple active execution strategies with arbitration & deduplication."""
 
-    def __init__(self, strategies: list[ExecutionStrategy] | None = None) -> None:
-        self._strategies: list[ExecutionStrategy] = strategies or [
-            RsiReversalExecutionStrategy(),
-            MomentumBreakoutExecutionStrategy(),
-            MacdTrendExecutionStrategy(),
-            FallbackUtc0Strategy(),
-        ]
+    def __init__(
+        self,
+        strategies: list[ExecutionStrategy] | None = None,
+        *,
+        registry: Any | None = None,
+    ) -> None:
+        self._registry = registry
+        if strategies is not None:
+            self._strategies: list[ExecutionStrategy] = strategies
+        elif self._registry is not None:
+            self._strategies = self._registry.build_active_strategies()
+        else:
+            self._strategies = [
+                RsiReversalExecutionStrategy(),
+                MomentumBreakoutExecutionStrategy(),
+                MacdTrendExecutionStrategy(),
+                FallbackUtc0Strategy(),
+            ]
 
     def register(self, strategy: ExecutionStrategy) -> None:
         """Register a new strategy or replace existing by key."""
@@ -347,6 +358,8 @@ class MultiStrategySignalEngine:
         self._strategies.append(strategy)
 
     def strategies(self) -> list[ExecutionStrategy]:
+        if self._registry is not None:
+            self._strategies = self._registry.build_active_strategies()
         return list(self._strategies)
 
     def generate(
@@ -357,6 +370,9 @@ class MultiStrategySignalEngine:
         max_signals: int = 10,
     ) -> list[StrategySignal]:
         """Evaluate all registered strategies and perform conflict arbitration."""
+        if self._registry is not None:
+            self._strategies = self._registry.build_active_strategies()
+
         raw_signals: list[StrategySignal] = []
         for strategy in self._strategies:
             if not getattr(strategy, "enabled", True):
