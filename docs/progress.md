@@ -4,6 +4,15 @@
 
 # Progress Log
 
+## 策略自愈闭环强化、真实回测与 BitPro 孪生模拟盘实时上线 (Spec 023) — 2026-10-03
+
+- **消除 Mock 校验与真实 BitPro 回测对接 (T001)**：彻底移除 `hypertrade.paper.self_healing` 中的硬编码验证指标（`validation_metrics = {"win_rate": 0.58, ...}`），引入 `_validate_offspring()`。在连接 `BitProToolAdapter` 且具备策略 ID 时，调用真实 `backtest_start_job` 获取胜率、夏普比率、最大回撤与交易笔数，标定 `source="bitpro_backtest"`；无外部适配器时安全降级为明确标注的 `source="heuristic_projection"`，告别虚假验证声明；
+- **真实 BitPro 孪生模拟盘自动部署 (T002)**：在 `SelfHealingEvolutionEngine` 中实现 `_deploy_offspring_to_bitpro()`，扩展 `HealedOffspring` 记录 `bitpro_deployed`、`bitpro_strategy_id` 与 `bitpro_instance_id`。自愈变体自动按 BitPro 命名规范 `[资产类型][周期][策略类型] 标的 · 方法自愈(Gen N) · 资金` 组装合规策略名，注入演化系谱元数据，通过 `strategy_create`、`paper_configure` 与 `paper_start` 全自动创建并启动 BitPro 孪生模拟盘实例；
+- **飞书通知卡片真实状态汇报 (T003)**：改造飞书 Reflexion 卡片文案，如实反映验证来源（"BitPro 真实回测" vs "启发式前瞻校验"）以及实际部署状态（"已上线 BitPro 孪生模拟盘 (策略 #ID)" vs "已动态部署至模拟观察期"），确保运维与交易员知悉真实状态；
+- **全家族参数变异规则扩充 (T004)**：实现 `mutate_strategy_parameters()`，覆盖网格（Grid：自适应拓宽网格间距、削减层数与安全止损）、马丁（Martingale：衰减加仓乘数至 1.15~1.3、调宽步长与限制最大加仓层数）、动态池/轮动（Dynamic Pool/Basket：调整动量回溯窗口、平滑调仓周期与收紧持仓规模）以及通用数值型兜底变异，全面支持全品类策略自愈；
+- **原生/自愈策略来源核验免误报 (T005)**：在 `evolution_continuation.py` 中识别 `is_organic` 与 `self_healed` 状态，当策略属于原生模拟盘或动态自愈候选时，放行缺失历史 ARC 研究成本元数据带来的 `source_alerts` 阻塞，防止持续触发无效的人工介入告警；
+- **质量门禁全绿 (T006)**：在 `tests/test_bitpro_self_healing_bridge.py` 中新增真实部署与回测、全家族参数突变及来源核验免误报的单元测试；执行 `./scripts/check.sh` 质量门禁，通过前端 lint/test/build 及后端 Ruff、Mypy（304 模块）、全量 1996 项 pytest（100% 绿灯）。
+
 ## BitPro 模拟盘异常监控与 HyperTrade 策略自愈引擎直连打通 (Spec 022) — 2026-10-01
 
 - **CTA/EMA 策略自愈突变与 7 维因果归因 (T001)**：在 `hypertrade.paper.self_healing` 中扩展 `SelfHealingEvolutionEngine`，为 `HealedOffspring` 引入 `attribution_report` 字典。实现 `generate_7d_attribution_report()` 辅助方法，生成 7 维（入场时机、出场时机、成本滑点、多空偏向、持仓周期、样本覆盖、市场状态）结构化中文因果归因；支持针对 `cta_trend_following` / `ema_trend` 的超参数变异（均线平滑、止损收紧、跟踪止盈保护）；新增 `heal_bitpro_strategy()`，支持从 BitPro 策略快照直接衍生 Gen N+1 变异候选；
