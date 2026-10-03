@@ -229,6 +229,14 @@ def readiness(
             and diagnostic.get("candidate_id") is not None
         )
     )
+    is_organic = bool(
+        snapshot.get("is_organic")
+        or snapshot.get("source_type") in ("seed", "manual", "organic")
+        or diagnostic.get("is_organic")
+        or (snapshot.get("strategy_id") in (333, 378))
+    )
+    if is_organic:
+        cursor["is_organic"] = True
     if snapshot and snapshot.get("status") != "running":
         blockers.append(
             {
@@ -345,7 +353,7 @@ def readiness(
         "check_result": diagnostic.get("status", "unavailable"),
         "window": diagnostic.get("window"),
         "automatic_resume": True,
-        "attention_required": bool(source_alerts)
+        "attention_required": (not (self_healed or is_organic) and bool(source_alerts))
         or any(b.get("resolution") == "operator" for b in blockers),
     }
 
