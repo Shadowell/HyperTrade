@@ -7,6 +7,7 @@ from typing import Any
 
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import Database
+from hypertrade.paper.race_judge import RaceJudgeDaemon
 from hypertrade.paper.registry import StrategyRecord, StrategyRegistry, get_strategy_registry
 from hypertrade.paper.self_healing import SelfHealingEvolutionEngine
 from hypertrade.paper.service import PaperTradingService
@@ -28,12 +29,14 @@ class PortfolioCoordinatorService:
         stage_gate: ProgressiveStageGate | None = None,
         registry: StrategyRegistry | None = None,
         self_healing: SelfHealingEvolutionEngine | None = None,
+        race_judge: RaceJudgeDaemon | None = None,
     ) -> None:
         self.db = db
         self.settings = settings or get_settings()
         self.stage_gate = stage_gate or _GLOBAL_STAGE_GATE
         self.registry = registry or get_strategy_registry()
         self.self_healing = self_healing or SelfHealingEvolutionEngine(registry=self.registry)
+        self.race_judge = race_judge or RaceJudgeDaemon(db=db, settings=self.settings)
         self.paper_service = paper_service or PaperTradingService(
             db, settings=self.settings, stage_gate=self.stage_gate
         )
@@ -84,9 +87,7 @@ class PortfolioCoordinatorService:
             target_stage = StrategyStage(stage_str.lower().strip())
         except ValueError as exc:
             valid_stages = [s.value for s in StrategyStage]
-            raise ValueError(
-                f"Invalid stage '{stage_str}'. Must be one of {valid_stages}"
-            ) from exc
+            raise ValueError(f"Invalid stage '{stage_str}'. Must be one of {valid_stages}") from exc
 
         self.stage_gate.set_stage(strategy_key, target_stage, reason=reason)
         return {
@@ -131,3 +132,12 @@ class PortfolioCoordinatorService:
         """Get history of all self-healing evolution events."""
         history = self.self_healing.get_history()
         return [h.to_dict() for h in history]
+
+    def get_race_judge_status(self) -> list[dict[str, Any]]:
+        """Get current status of all monitored paper twin pairs in the race judge."""
+        return self.race_judge.get_records()
+
+    def run_race_judge_now(self) -> list[dict[str, Any]]:
+        """Trigger an immediate forward evidence check across all paper twin pairs."""
+        records = self.race_judge.scan_and_judge_all()
+        return [r.to_dict() for r in records]

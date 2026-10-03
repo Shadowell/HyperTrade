@@ -1054,9 +1054,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="Unified validation not found") from exc
 
     @app.get("/api/research/unified-validations/{left_id}/diff/{right_id}")
-    def diff_unified_validations(
-        left_id: str, right_id: str, _: AdminUser
-    ) -> dict[str, Any]:
+    def diff_unified_validations(left_id: str, right_id: str, _: AdminUser) -> dict[str, Any]:
         try:
             return UnifiedStrategyValidationService(database).diff(left_id, right_id)
         except KeyError as exc:
@@ -1159,9 +1157,7 @@ def create_app(
         username: AdminUser,
     ) -> dict[str, Any]:
         try:
-            return MarketRegimeSnapshotServiceV2(database).capture(
-                payload, actor=username
-            )
+            return MarketRegimeSnapshotServiceV2(database).capture(payload, actor=username)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -1170,30 +1166,18 @@ def create_app(
         return {"items": MarketRegimeSnapshotServiceV2(database).list()}
 
     @app.get("/api/portfolio/market-regimes-v2/{snapshot_id}")
-    def get_market_regime_v2(
-        snapshot_id: str, _: AdminUser
-    ) -> dict[str, Any]:
+    def get_market_regime_v2(snapshot_id: str, _: AdminUser) -> dict[str, Any]:
         try:
             return MarketRegimeSnapshotServiceV2(database).get(snapshot_id)
         except KeyError as exc:
-            raise HTTPException(
-                status_code=404, detail="Market regime snapshot not found"
-            ) from exc
+            raise HTTPException(status_code=404, detail="Market regime snapshot not found") from exc
 
-    @app.get(
-        "/api/portfolio/market-regimes-v2/{left_id}/diff/{right_id}"
-    )
-    def diff_market_regimes_v2(
-        left_id: str, right_id: str, _: AdminUser
-    ) -> dict[str, Any]:
+    @app.get("/api/portfolio/market-regimes-v2/{left_id}/diff/{right_id}")
+    def diff_market_regimes_v2(left_id: str, right_id: str, _: AdminUser) -> dict[str, Any]:
         try:
-            return MarketRegimeSnapshotServiceV2(database).diff(
-                left_id, right_id
-            )
+            return MarketRegimeSnapshotServiceV2(database).diff(left_id, right_id)
         except KeyError as exc:
-            raise HTTPException(
-                status_code=404, detail="Market regime snapshot not found"
-            ) from exc
+            raise HTTPException(status_code=404, detail="Market regime snapshot not found") from exc
 
     @app.post("/api/portfolio/regime-shadow-targets-v2")
     def build_regime_shadow_target_v2(
@@ -1201,45 +1185,29 @@ def create_app(
         username: AdminUser,
     ) -> dict[str, Any]:
         try:
-            return RegimeShadowAllocatorServiceV2(database).build(
-                payload, actor=username
-            )
+            return RegimeShadowAllocatorServiceV2(database).build(payload, actor=username)
         except KeyError as exc:
-            raise HTTPException(
-                status_code=404, detail="Regime shadow source not found"
-            ) from exc
+            raise HTTPException(status_code=404, detail="Regime shadow source not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/api/portfolio/regime-shadow-targets-v2")
     def list_regime_shadow_targets_v2(_: AdminUser) -> dict[str, Any]:
-        return {
-            "items": RegimeShadowAllocatorServiceV2(database).list_targets()
-        }
+        return {"items": RegimeShadowAllocatorServiceV2(database).list_targets()}
 
     @app.get("/api/portfolio/regime-shadow-targets-v2/{target_id}")
-    def get_regime_shadow_target_v2(
-        target_id: str, _: AdminUser
-    ) -> dict[str, Any]:
+    def get_regime_shadow_target_v2(target_id: str, _: AdminUser) -> dict[str, Any]:
         try:
             return RegimeShadowAllocatorServiceV2(database).get(target_id)
         except KeyError as exc:
-            raise HTTPException(
-                status_code=404, detail="Regime shadow target not found"
-            ) from exc
+            raise HTTPException(status_code=404, detail="Regime shadow target not found") from exc
 
-    @app.get(
-        "/api/portfolio/regime-shadow-targets-v2/{target_id}/replay"
-    )
-    def replay_regime_shadow_target_v2(
-        target_id: str, _: AdminUser
-    ) -> dict[str, Any]:
+    @app.get("/api/portfolio/regime-shadow-targets-v2/{target_id}/replay")
+    def replay_regime_shadow_target_v2(target_id: str, _: AdminUser) -> dict[str, Any]:
         try:
             return RegimeShadowAllocatorServiceV2(database).replay(target_id)
         except KeyError as exc:
-            raise HTTPException(
-                status_code=404, detail="Regime shadow target not found"
-            ) from exc
+            raise HTTPException(status_code=404, detail="Regime shadow target not found") from exc
 
     @app.get("/api/portfolio/shadow-portfolios")
     def list_shadow_portfolios(_: AdminUser) -> dict[str, Any]:
@@ -1481,8 +1449,7 @@ def create_app(
             if not requested_context_refs <= allowed_context_refs:
                 raise ValueError("assignment references an unknown Mission Context Pack")
             packs_by_ref = {
-                f"context:{pack.context_pack_id}@{pack.manifest_hash}": pack
-                for pack in packs
+                f"context:{pack.context_pack_id}@{pack.manifest_hash}": pack for pack in packs
             }
 
             async def load_pack(ref: str) -> Any | None:
@@ -2295,9 +2262,7 @@ def create_app(
             ],
             evolution_action="测试告警卡片：已自动启动第 2 代 MCTS 变异重训，剪枝参数解空间",
         )
-        delivered, status = dispatch_reflexion_alert(
-            alert, webhook_url=p.webhook_url
-        )
+        delivered, status = dispatch_reflexion_alert(alert, webhook_url=p.webhook_url)
         return {
             "alert_id": alert.alert_id,
             "delivered": delivered,
@@ -2515,9 +2480,7 @@ def create_app(
         return PortfolioCoordinatorService(database, settings=app_settings).list_registry_records()
 
     @app.post("/api/portfolio/registry")
-    def register_portfolio_strategy(
-        payload: dict[str, Any], _: AdminUser
-    ) -> dict[str, Any]:
+    def register_portfolio_strategy(payload: dict[str, Any], _: AdminUser) -> dict[str, Any]:
         try:
             service = PortfolioCoordinatorService(database, settings=app_settings)
             return service.register_strategy(payload)
@@ -2525,9 +2488,7 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/portfolio/strategies/{key}/evolve")
-    def trigger_strategy_self_healing(
-        key: str, _: AdminUser
-    ) -> dict[str, Any]:
+    def trigger_strategy_self_healing(key: str, _: AdminUser) -> dict[str, Any]:
         try:
             return PortfolioCoordinatorService(database, settings=app_settings).evolve_strategy(key)
         except ValueError as exc:
@@ -2538,6 +2499,16 @@ def create_app(
     @app.get("/api/portfolio/evolution/history")
     def get_portfolio_evolution_history() -> list[dict[str, Any]]:
         return PortfolioCoordinatorService(database, settings=app_settings).get_evolution_history()
+
+    @app.get("/api/portfolio/race-judge/status")
+    def get_portfolio_race_judge_status() -> list[dict[str, Any]]:
+        service = PortfolioCoordinatorService(database, settings=app_settings)
+        return service.get_race_judge_status()
+
+    @app.post("/api/portfolio/race-judge/run-now")
+    def run_portfolio_race_judge_now(_: AdminUser) -> list[dict[str, Any]]:
+        service = PortfolioCoordinatorService(database, settings=app_settings)
+        return service.run_race_judge_now()
 
     @app.post("/api/strategy/research")
     def create_strategy_research(
