@@ -27,8 +27,9 @@ logger = logging.getLogger("hypertrade.paper.race_judge")
 class RacePairRecord:
     """Audit and state record for a monitored twin race pair."""
 
-    parent_strategy_id: int
-    challenger_strategy_id: int
+    parent_strategy_id: str | int
+    challenger_strategy_id: str | int
+    target_id: str = "bitpro"
     generation: int = 1
     parent_name: str = ""
     challenger_name: str = ""
@@ -59,9 +60,28 @@ class RacePairRecord:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RacePairRecord:
+        pid_raw = data["parent_strategy_id"]
+        cid_raw = data["challenger_strategy_id"]
+
+        def _parse_id(val: Any) -> str | int:
+            if isinstance(val, int):
+                return val
+            val_str = str(val).strip()
+            if val_str.isdigit():
+                return int(val_str)
+            return val_str
+
+        pid = _parse_id(pid_raw)
+        cid = _parse_id(cid_raw)
+        target = str(
+            data.get("target_id")
+            or ("quantlab" if "quantlab" in str(pid) or "quantlab" in str(cid) else "bitpro")
+        )
+
         return cls(
-            parent_strategy_id=int(data["parent_strategy_id"]),
-            challenger_strategy_id=int(data["challenger_strategy_id"]),
+            parent_strategy_id=pid,
+            challenger_strategy_id=cid,
+            target_id=target,
             generation=int(data.get("generation", 1)),
             parent_name=data.get("parent_name", ""),
             challenger_name=data.get("challenger_name", ""),
@@ -260,7 +280,7 @@ class RaceJudgeDaemon:
         self._records: dict[str, RacePairRecord] = {}
         self._load_state()
 
-    def _pair_key(self, parent_id: int, challenger_id: int) -> str:
+    def _pair_key(self, parent_id: str | int, challenger_id: str | int) -> str:
         return f"{parent_id}:{challenger_id}"
 
     def _load_state(self) -> None:
@@ -287,28 +307,28 @@ class RaceJudgeDaemon:
         except Exception as exc:
             logger.warning("Failed to persist race judge state: %s", exc)
 
-    def discover_active_pairs(self) -> list[tuple[int, int, int]]:
+    def discover_active_pairs(self) -> list[tuple[str | int, str | int, int]]:
         """Find all deployed twin pairings from self-healing history or state."""
-        pairs: dict[tuple[int, int], int] = {}
+        pairs: dict[tuple[str | int, str | int], int] = {}
 
         if self.history_file.exists():
             try:
                 raw = json.loads(self.history_file.read_text(encoding="utf-8"))
                 if isinstance(raw, list):
                     for item in raw:
-                        if not item.get("bitpro_deployed"):
+                        is_deployed = bool(
+                            item.get("bitpro_deployed") or item.get("quantlab_deployed")
+                        )
+                        if not is_deployed:
                             continue
-                        sid = item.get("bitpro_strategy_id")
+                        sid = item.get("quantlab_strategy_id") or item.get("bitpro_strategy_id")
                         pid_raw = item.get("parent_strategy_id")
                         if not sid or pid_raw is None:
                             continue
-                        try:
-                            pid = int(pid_raw)
-                            cid = int(sid)
-                            gen = int(item.get("generation", 1))
-                            pairs[(pid, cid)] = gen
-                        except (ValueError, TypeError):
-                            continue
+                        gen = int(item.get("generation", 1))
+                        pid: str | int = int(pid_raw) if str(pid_raw).isdigit() else str(pid_raw)
+                        cid: str | int = int(sid) if str(sid).isdigit() else str(sid)
+                        pairs[(pid, cid)] = gen
             except Exception as exc:
                 logger.warning("Failed to read self-healing history for pairs: %s", exc)
 
@@ -322,24 +342,48 @@ class RaceJudgeDaemon:
 
     def evaluate_pair(
         self,
-        parent_id: int,
-        challenger_id: int,
+        parent_id: str | int,
+        challenger_id: str | int,
         generation: int = 1,
+        target_id: str | None = None,
     ) -> RacePairRecord:
-        """Query BitPro relay status, evaluate forward gates, and take automated action."""
+        """Query target relay status, evaluate forward gates, and take automated action."""
         key = self._pair_key(parent_id, challenger_id)
         record = self._records.get(key)
+        is_ql = "quantlab" in str(parent_id) or "quantlab" in str(challenger_id)
+        resolved_target = (
+            target_id
+            or (record.target_id if record is not None else None)
+            or ("quantlab" if is_ql else "bitpro")
+        )
         if record is None:
             record = RacePairRecord(
                 parent_strategy_id=parent_id,
                 challenger_strategy_id=challenger_id,
+                target_id=resolved_target,
                 generation=generation,
                 auto_adopt_enabled=self.auto_adopt,
             )
             self._records[key] = record
+        else:
+            record.target_id = resolved_target
+
+        adapter: Any = self.bitpro_adapter
+        if (
+            target_id == "quantlab"
+            or "quantlab" in str(parent_id)
+            or "quantlab" in str(challenger_id)
+        ):
+            record.target_id = "quantlab"
+            from hypertrade.targets.registry import adapter_for_target
+
+            try:
+                adapter = adapter_for_target("quantlab")
+            except Exception:
+                adapter = self.bitpro_adapter
 
         try:
-            status_data = self.bitpro_adapter.paper_relay_status(
+            status_data = adapter.paper_relay_status(
                 parent_id=parent_id, challenger_id=challenger_id
             )
         except Exception as exc:
@@ -386,7 +430,7 @@ class RaceJudgeDaemon:
         else:
             if self.auto_adopt and record.state == "observing":
                 try:
-                    self.bitpro_adapter.paper_relay_control(
+                    adapter.paper_relay_control(
                         parent_id=parent_id,
                         action="enable_auto",
                         challenger_id=challenger_id,
@@ -403,7 +447,7 @@ class RaceJudgeDaemon:
             if record.eligible and record.proof_sha256:
                 if self.auto_adopt:
                     try:
-                        self.bitpro_adapter.paper_relay_control(
+                        adapter.paper_relay_control(
                             parent_id=parent_id,
                             action="adopt",
                             challenger_id=challenger_id,
