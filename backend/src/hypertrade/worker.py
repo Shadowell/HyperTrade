@@ -105,8 +105,7 @@ async def mission_worker_once(
 
     active_settings = settings or get_settings()
     if not (
-        active_settings.mission_runtime_enabled
-        and active_settings.mission_runtime_worker_enabled
+        active_settings.mission_runtime_enabled and active_settings.mission_runtime_worker_enabled
     ):
         return {"status": "disabled", "mission_id": None}
     owner = worker_id or f"{socket.gethostname()}:{os.getpid()}:missions"
@@ -507,6 +506,8 @@ async def main() -> None:
         tasks.append(avo_research_loop(db))
     if settings.self_healing_evolution_enabled:
         tasks.append(self_healing_evolution_loop(db, settings=settings))
+    if settings.race_judge_enabled:
+        tasks.append(race_judge_loop(db, settings=settings))
     await asyncio.gather(*tasks)
 
 
@@ -610,6 +611,7 @@ async def arc_evolution_loop(db: Database) -> None:
 
 async def arc_auto_review_loop(db: Database) -> None:
     from hypertrade.arc.auto_review import auto_review_once
+
     configure_store(db)
     while True:
         await _guarded(db, "worker.arc_auto_review", lambda: auto_review_once(db))
@@ -651,6 +653,34 @@ async def self_healing_evolution_loop(
         except Exception as exc:
             logger.exception("self_healing_evolution_loop cycle error")
             await _journal(db, "worker.self_healing_evolution", exc)
+        await asyncio.sleep(poll_interval)
+
+
+async def race_judge_loop(
+    db: Database,
+    settings: Settings | None = None,
+    *,
+    daemon: Any | None = None,
+) -> None:
+    """Periodically evaluates paper twin strategies, forward gates, and triggers relay."""
+    from hypertrade.paper.race_judge import RaceJudgeDaemon
+
+    active_settings = settings or get_settings()
+    judge_daemon = daemon or RaceJudgeDaemon(db=db, settings=active_settings)
+    poll_interval = max(5.0, float(active_settings.race_judge_interval_seconds))
+    logger.info("race_judge_loop started poll_interval=%ss", poll_interval)
+    while True:
+        try:
+            records = await asyncio.to_thread(judge_daemon.scan_and_judge_all)
+            if records:
+                logger.info(
+                    "race_judge_loop evaluated %d twin pairs: %s",
+                    len(records),
+                    [(r.parent_strategy_id, r.challenger_strategy_id, r.state) for r in records],
+                )
+        except Exception as exc:
+            logger.exception("race_judge_loop cycle error")
+            await _journal(db, "worker.race_judge", exc)
         await asyncio.sleep(poll_interval)
 
 

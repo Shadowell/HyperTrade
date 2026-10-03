@@ -94,6 +94,16 @@ def test_portfolio_registry_and_evolution_endpoints(tmp_path: Path):
     assert len(hist_items) >= 1
     assert any(h["offspring_strategy_id"] == "rsi_reversal_gen2" for h in hist_items)
 
+    # 5. GET /api/portfolio/race-judge/status
+    res_race = client.get("/api/portfolio/race-judge/status")
+    assert res_race.status_code == 200
+    assert isinstance(res_race.json(), list)
+
+    # 6. POST /api/portfolio/race-judge/run-now
+    res_run = client.post("/api/portfolio/race-judge/run-now")
+    assert res_run.status_code == 200
+    assert isinstance(res_run.json(), list)
+
 
 def test_portfolio_registry_and_evolution_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_file = tmp_path / "cli_port_evo.db"

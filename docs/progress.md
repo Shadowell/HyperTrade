@@ -4,6 +4,15 @@
 
 # Progress Log
 
+## 自动化赛马裁决守护进程、BitPro 策略接力调度与飞书事件通知 (Spec 024) — 2026-10-03
+
+- **BitPro 配额接力客户端与适配器扩展 (T001)**：在 `backend/src/hypertrade/bitpro/mcp.py` 中为 MCP 工具注册表接入 `paper_relay_status`（GET 查询接力计划与前向证据）与 `paper_relay_control`（POST 配置托管或执行采纳）；在 `BitProToolAdapter` 中暴露对应类型安全调用方法；为 `BitProMcpClient` 新增管理员鉴权支持（`admin_cookie` 及 `ensure_admin_session`），支持安全调用受控接力入口；
+- **自动化赛马裁决守护进程 (T002)**：在 `backend/src/hypertrade/paper/race_judge.py` 中实现 `RaceJudgeDaemon` 与 `RacePairRecord`。自动从自愈历史与状态注册表中发现已部署至 BitPro 的孪生策略对（母体 vs. 挑战者），周期性获取 BitPro 前向门禁证据（14天 337 小时连续净值桶、双方至少 30 笔平仓、超额净收益为正、最大回撤不劣、14天日间配对符号检验 p <= 0.05）；
+- **自动采纳交接与安全降级 (T003)**：当前向门禁完全满足且开启 `RACE_JUDGE_AUTO_ADOPT` 时，自动调用 `paper_relay_control(parent_id, action="adopt", expected_proof=...)` 触发母体减仓 (draining) 与配额原子转移；在 MCP Token 受到 BitPro 管理员权限限制返回 403 时，自动标记 `requires_admin_authorization` 并生成带有 BitPro 控制台一键直达链接的待授权通知；
+- **全生命周期飞书交互式卡片通知 (T004)**：实现 `dispatch_race_feishu_card()`，覆盖达标就绪 (`ELIGIBLE`)、接力触发 (`ADOPTED`)、接力完成 (`COMPLETED`) 与待管理员授权 (`REQUIRES_ADMIN`) 4 种里程碑事件，卡片包含超额收益率、回撤对比、p-value 显著性、成交笔数、当前状态与 BitPro 孪生监控直达跳转按钮；
+- **Worker 循环与组合服务 REST 端点打通 (T005)**：在 `backend/src/hypertrade/worker.py` 中实现 `race_judge_loop`，受 `RACE_JUDGE_ENABLED` 与 `RACE_JUDGE_INTERVAL_SECONDS` 统一调度；在 `PortfolioCoordinatorService` 中接入赛马裁决状态与即时触发，并在 `hypertrade.main` 暴露 `GET /api/portfolio/race-judge/status` 与 `POST /api/portfolio/race-judge/run-now`；
+- **质量门禁全绿 (T006)**：编写 `tests/test_race_judge.py` 覆盖 10 项端到端及边界测试（数据序列化、飞书卡片渲染、对子发现、观测期累积、达标自动采纳、403 权限降级拦截、全生命周期完结、工具方法封装）；执行并通过 `./scripts/check.sh` 质量门禁，通过前端 lint/test/build 及后端 Ruff、Mypy（305 模块 0 错误）、全量 2006 项 pytest（100% 绿灯）。
+
 ## 策略自愈闭环强化、真实回测与 BitPro 孪生模拟盘实时上线 (Spec 023) — 2026-10-03
 
 - **消除 Mock 校验与真实 BitPro 回测对接 (T001)**：彻底移除 `hypertrade.paper.self_healing` 中的硬编码验证指标（`validation_metrics = {"win_rate": 0.58, ...}`），引入 `_validate_offspring()`。在连接 `BitProToolAdapter` 且具备策略 ID 时，调用真实 `backtest_start_job` 获取胜率、夏普比率、最大回撤与交易笔数，标定 `source="bitpro_backtest"`；无外部适配器时安全降级为明确标注的 `source="heuristic_projection"`，告别虚假验证声明；

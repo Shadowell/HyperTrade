@@ -40,10 +40,12 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "strategy_search": {"method": "GET", "path": "/strategies"},
     "strategy_get": {"method": "GET", "path": "/strategies/{strategy_id}"},
     "strategy_research_source": {
-        "method": "GET", "path": "/strategies/{strategy_id}/research-source",
+        "method": "GET",
+        "path": "/strategies/{strategy_id}/research-source",
     },
     "strategy_research_variant_policy": {
-        "method": "GET", "path": "/strategies/{strategy_id}/research-variant-policy",
+        "method": "GET",
+        "path": "/strategies/{strategy_id}/research-variant-policy",
     },
     "strategy_trades": {"method": "GET", "path": "/strategies/{strategy_id}/trades"},
     "backtest_get_job": {"method": "GET", "path": "/backtest/job/{job_id}"},
@@ -73,6 +75,10 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "trading_positions": {"method": "GET", "path": "/trading/accounts/positions"},
     "trading_open_orders": {"method": "GET", "path": "/trading/orders/open"},
     "trading_order_history": {"method": "GET", "path": "/trading/orders/history"},
+    "paper_relay_status": {
+        "method": "GET",
+        "path": "/strategies/{parent_id}/relay-control",
+    },
 }
 
 RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
@@ -81,7 +87,8 @@ RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "strategy_create": {"method": "POST", "path": "/strategies"},
     "strategy_validate_code": {"method": "POST", "path": "/strategies/validate-code"},
     "strategy_research_variant_create": {
-        "method": "POST", "path": "/strategies/{strategy_id}/research-variants",
+        "method": "POST",
+        "path": "/strategies/{strategy_id}/research-variants",
     },
     "strategy_update": {"method": "PUT", "path": "/strategies/{strategy_id}"},
     "strategy_generate": {"method": "POST", "path": "/agent/generate_strategy"},
@@ -101,6 +108,10 @@ RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "paper_pause": {"method": "POST", "path": "/live/pause"},
     "paper_resume": {"method": "POST", "path": "/live/resume"},
     "paper_stop": {"method": "POST", "path": "/live/stop"},
+    "paper_relay_control": {
+        "method": "POST",
+        "path": "/strategies/{parent_id}/relay-control",
+    },
 }
 
 RESEARCH_MUTATION_TOOLS = {
@@ -124,6 +135,7 @@ RESEARCH_MUTATION_TOOLS = {
     "paper_pause",
     "paper_resume",
     "paper_stop",
+    "paper_relay_control",
 }
 
 
@@ -227,11 +239,15 @@ class BitProMcpClient:
         settings: Settings | None = None,
         http_client: httpx.Client | None = None,
         remote_tool_caller: Callable[[str, dict[str, Any]], Any] | None = None,
+        admin_cookie: str | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.base_url = (self.settings.bitpro_mcp_api_base or DEFAULT_API_BASE).rstrip("/")
         self.auth_token = self.settings.bitpro_mcp_api_token.strip()
         self.auth_header = (self.settings.bitpro_mcp_auth_header or DEFAULT_AUTH_HEADER).strip()
+        self.admin_cookie = (
+            admin_cookie if admin_cookie is not None else self.settings.bitpro_admin_cookie.strip()
+        )
         self.http_client = http_client or httpx.Client(
             timeout=self.settings.bitpro_mcp_timeout_seconds
         )
@@ -314,9 +330,40 @@ class BitProMcpClient:
         return payload
 
     def _auth_headers(self) -> dict[str, str] | None:
-        if not self.auth_token:
-            return None
-        return {self.auth_header: self.auth_token}
+        headers: dict[str, str] = {}
+        if self.auth_token:
+            headers[self.auth_header] = self.auth_token
+        if self.admin_cookie:
+            val = self.admin_cookie
+            if not val.startswith("bp_session="):
+                val = f"bp_session={val}"
+            headers["Cookie"] = val
+        return headers or None
+
+    def ensure_admin_session(
+        self,
+        username: str | None = None,
+        password: str | None = None,
+    ) -> bool:
+        if self.admin_cookie:
+            return True
+        user = (username or self.settings.bitpro_admin_username).strip()
+        pwd = (password or self.settings.bitpro_admin_password).strip()
+        if not user or not pwd:
+            return False
+        try:
+            resp = self.http_client.post(
+                f"{self.base_url}/auth/admin/login",
+                json={"username": user, "password": pwd},
+            )
+            if resp.status_code == 200:
+                cookie = resp.cookies.get("bp_session")
+                if cookie:
+                    self.admin_cookie = cookie
+                    return True
+        except Exception:
+            pass
+        return bool(self.admin_cookie)
 
 
 async def _call_remote_mcp_tool(
@@ -578,9 +625,13 @@ class BitProToolAdapter:
         return policy
 
     def strategy_research_variant_create(
-        self, *, strategy_id: int, expected_parent_manifest_sha256: str,
+        self,
+        *,
+        strategy_id: int,
+        expected_parent_manifest_sha256: str,
         expected_parent_execution_identity_sha256: str,
-        idempotency_key: str, parameter_changes: dict[str, int | float],
+        idempotency_key: str,
+        parameter_changes: dict[str, int | float],
         purpose: str = "candidate",
         structural_changes: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -605,17 +656,22 @@ class BitProToolAdapter:
             raise ValueError("invalid research variant parameter changes")
         self.last_tool_calls = []
         self._preflight()
-        created = _ensure_dict(self._call("strategy_research_variant_create", {
-            "strategy_id": strategy_id,
-            "expected_parent_manifest_sha256": expected_parent_manifest_sha256,
-            "expected_parent_execution_identity_sha256": (
-                expected_parent_execution_identity_sha256
-            ),
-            "idempotency_key": idempotency_key,
-            "parameter_changes": parameter_changes,
-            **({"structural_changes": structural_changes} if structural_changes else {}),
-            "purpose": purpose,
-        }))
+        created = _ensure_dict(
+            self._call(
+                "strategy_research_variant_create",
+                {
+                    "strategy_id": strategy_id,
+                    "expected_parent_manifest_sha256": expected_parent_manifest_sha256,
+                    "expected_parent_execution_identity_sha256": (
+                        expected_parent_execution_identity_sha256
+                    ),
+                    "idempotency_key": idempotency_key,
+                    "parameter_changes": parameter_changes,
+                    **({"structural_changes": structural_changes} if structural_changes else {}),
+                    "purpose": purpose,
+                },
+            )
+        )
         if structural_changes and created.get("structural_changes") != structural_changes:
             raise ValueError("BitPro structural variant receipt mismatch")
         binding = created.get("source_binding") or {}
@@ -1128,6 +1184,33 @@ class BitProToolAdapter:
             strategy_id=strategy_id,
             clear_metrics=clear_metrics,
         )
+
+    def paper_relay_status(
+        self, *, parent_id: int, challenger_id: int | None = None
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        params: dict[str, Any] = {"parent_id": parent_id}
+        if challenger_id is not None:
+            params["challenger_id"] = challenger_id
+        return _ensure_dict(self._call("paper_relay_status", params))
+
+    def paper_relay_control(
+        self,
+        *,
+        parent_id: int,
+        action: str,
+        challenger_id: int,
+        proof_sha256: str | None = None,
+    ) -> dict[str, Any]:
+        self.last_tool_calls = []
+        params: dict[str, Any] = {
+            "parent_id": parent_id,
+            "action": action,
+            "challenger_id": challenger_id,
+        }
+        if proof_sha256:
+            params["proof_sha256"] = proof_sha256
+        return _ensure_dict(self._call("paper_relay_control", params))
 
     def _paper_lifecycle(self, tool_name: str, **parameters: Any) -> dict[str, Any]:
         self.last_tool_calls = []
@@ -1664,6 +1747,14 @@ def _post_payload(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
             "instance_id": int(params["strategy_id"]),
             "clear_metrics": bool(params.get("clear_metrics", False)),
         }
+    if tool_name == "paper_relay_control":
+        payload = {
+            "action": str(params["action"]),
+            "challenger_id": int(params["challenger_id"]),
+        }
+        if params.get("proof_sha256"):
+            payload["proof_sha256"] = str(params["proof_sha256"])
+        return payload
     if tool_name == "sync_start_history":
         return _compact(
             {
@@ -1873,12 +1964,27 @@ def _backtest_job_item(raw: dict[str, Any]) -> dict[str, Any]:
     input_snapshot = raw.get("strategy_input_snapshot")
     safe_input = None
     if isinstance(input_snapshot, dict):
-        safe_input = {key: input_snapshot[key] for key in (
-            "schema_version", "hash", "strategy_id", "source_kind", "source_sha256",
-            "bundle_sha256", "manifest_sha256", "symbols", "timeframes",
-            "start_date", "end_date", "initial_capital", "cost_policy_hash",
-            "market_data_status", "comparison_eligible",
-        ) if key in input_snapshot}
+        safe_input = {
+            key: input_snapshot[key]
+            for key in (
+                "schema_version",
+                "hash",
+                "strategy_id",
+                "source_kind",
+                "source_sha256",
+                "bundle_sha256",
+                "manifest_sha256",
+                "symbols",
+                "timeframes",
+                "start_date",
+                "end_date",
+                "initial_capital",
+                "cost_policy_hash",
+                "market_data_status",
+                "comparison_eligible",
+            )
+            if key in input_snapshot
+        }
     data_binding = raw.get("verified_data_binding")
     safe_binding = None
     if isinstance(data_binding, dict) and data_binding.get("version") in {
@@ -1890,10 +1996,21 @@ def _backtest_job_item(raw: dict[str, Any]) -> dict[str, Any]:
             safe_binding = {
                 "version": data_binding["version"],
                 "entries": [
-                    {key: item[key] for key in (
-                        "timeframe", "symbols", "start_ms", "trade_start_ms", "end_ms",
-                        "verified_snapshot_id", "manifest_sha256", "source", "data_quality",
-                    ) if key in item}
+                    {
+                        key: item[key]
+                        for key in (
+                            "timeframe",
+                            "symbols",
+                            "start_ms",
+                            "trade_start_ms",
+                            "end_ms",
+                            "verified_snapshot_id",
+                            "manifest_sha256",
+                            "source",
+                            "data_quality",
+                        )
+                        if key in item
+                    }
                     for item in entries
                 ],
             }

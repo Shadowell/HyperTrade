@@ -342,6 +342,30 @@ class Settings(BaseSettings):
         default=60,
         alias="SELF_HEALING_EVOLUTION_INTERVAL_SECONDS",
     )
+    race_judge_enabled: bool = Field(
+        default=True,
+        alias="RACE_JUDGE_ENABLED",
+    )
+    race_judge_interval_seconds: int = Field(
+        default=60,
+        alias="RACE_JUDGE_INTERVAL_SECONDS",
+    )
+    race_judge_auto_adopt: bool = Field(
+        default=True,
+        alias="RACE_JUDGE_AUTO_ADOPT",
+    )
+    bitpro_admin_cookie: str = Field(
+        default="",
+        alias="BITPRO_ADMIN_COOKIE",
+    )
+    bitpro_admin_username: str = Field(
+        default="",
+        alias="BITPRO_ADMIN_USERNAME",
+    )
+    bitpro_admin_password: str = Field(
+        default="",
+        alias="BITPRO_ADMIN_PASSWORD",
+    )
 
 
 @lru_cache
