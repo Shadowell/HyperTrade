@@ -100,6 +100,16 @@ class Settings(BaseSettings):
             "must match a hypertrade.targets profile."
         ),
     )
+    quantlab_mcp_url: str = Field(
+        default="",
+        alias="QUANTLAB_MCP_URL",
+        description="Remote QuantLab MCP server URL implementing market-evolution.v1.",
+    )
+    quantlab_mcp_token: str = Field(
+        default="",
+        alias="QUANTLAB_MCP_TOKEN",
+        description="Bearer token or API key for QuantLab MCP endpoint.",
+    )
     mission_runtime_canary_percent: int = Field(
         default=0,
         ge=0,

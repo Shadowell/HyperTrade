@@ -4,6 +4,14 @@
 
 # Progress Log
 
+## QuantLab 市场目标一等公民适配与多资产自愈闭环 (Spec 025) — 2026-10-03
+
+- **配置扩展与目标惰性注册 (T001)**：在 `backend/src/hypertrade/config.py` 为 `Settings` 新增 `quantlab_mcp_url` 与 `quantlab_mcp_token`，默认空字符串以保障离线/测试无依赖纯本地仿真；在 `hypertrade.targets.registry` 保持受控按需注册原则；
+- **QuantLab 市场适配器双模态与工具接口扩展 (T002)**：在 `backend/src/hypertrade/targets/quantlab.py` 实现 `QuantLabTargetAdapter`，全面适配 `StrategySourcePort`、`PaperSessionPort`、`EvidencePort`、`PaperProvisionPort` 与 `MarketWritePort`。支持远程 MCP 契约与本地高仿真双模态；新增 `strategy_create`、真实回测作业代理（`backtest_start_job` / `backtest_get_job`）、模拟盘接力状态与控制（`paper_relay_status` / `paper_relay_control`）；
+- **赛马裁决中枢支持字符串策略 ID 与 QuantLab 路由 (T003)**：在 `backend/src/hypertrade/paper/race_judge.py` 中将 `RacePairRecord` 的 `parent_strategy_id` 与 `challenger_strategy_id` 升级为 `str | int` 并新增 `target_id`；`RaceJudgeDaemon` 支持对 QuantLab 策略对（如 `quantlab:alpha_01`）进行自动发现与分流评测；
+- **A 股/股票专属自愈变异与 7 维因果归因 (T004)**：在 `backend/src/hypertrade/paper/self_healing.py` 中为 `HealedOffspring` 引入 QuantLab 专属部署字段（`quantlab_deployed`、`quantlab_strategy_id`、`quantlab_instance_id`、`target_id`）；在 `generate_7d_attribution_report` 注入 A 股专属 7 维因果归因（涵盖沪深300基准、现货单向多头与现金比例管理、T+1 持仓约束、印花税与佣金损耗）；在 `mutate_strategy_parameters` 强制注入 A 股现货护栏（`allow_short=False` 禁止裸卖空、`min_holding_days>=1` T+1 制度约束、仓位上限 30%）；实现 `_deploy_offspring_to_quantlab()` 与 `heal_quantlab_strategy()` 闭环；
+- **单元测试与全量质量门禁通过 (T005)**：编写 `tests/test_quantlab_target_adapter.py`，完整覆盖目标档案与能力、适配器生命周期与端口协议、回测与接力、A 股变异护栏、7 维因果归因、自愈引擎孪生部署与赛马裁决中枢；全量通过 `./scripts/check.sh` 质量门禁（前端 lint/test/build，后端 Ruff、Mypy 305 模块 0 错误、全量 2014 项 pytest 100% 绿灯）。
+
 ## 自动化赛马裁决守护进程、BitPro 策略接力调度与飞书事件通知 (Spec 024) — 2026-10-03
 
 - **BitPro 配额接力客户端与适配器扩展 (T001)**：在 `backend/src/hypertrade/bitpro/mcp.py` 中为 MCP 工具注册表接入 `paper_relay_status`（GET 查询接力计划与前向证据）与 `paper_relay_control`（POST 配置托管或执行采纳）；在 `BitProToolAdapter` 中暴露对应类型安全调用方法；为 `BitProMcpClient` 新增管理员鉴权支持（`admin_cookie` 及 `ensure_admin_session`），支持安全调用受控接力入口；
