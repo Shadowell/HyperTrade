@@ -22,7 +22,7 @@ Before substantial work, read:
 4. Never commit secrets, OKX credentials, provider keys, database files, or production `.env`.
 5. Update `docs/progress.md` after meaningful implementation steps.
 6. If requirements, architecture, or API contracts change, update `docs/spec.md` and the active contract in the same change.
-7. AUTOMATIC GIT COMMIT: every meaningful code, documentation, or configuration change MUST be committed immediately on the task branch — each logical change as its own commit with a descriptive message; never batch unrelated changes. Landing on `origin/main` always goes through a GitHub Pull Request per the "Worktrees And Landing" procedure below; never push feature work directly to `main` unless the user explicitly asks for an emergency direct push. Never push secrets or unfinished work, and never force-push shared branches.
+7. AUTOMATIC GIT COMMIT, MERGE AND PUSH: 每次修改都必须完整闭环完成“提交 -> 校验 -> 合并 -> 推送”全流程。每个有意义的代码、文档或配置变更必须立即在任务分支上原子化提交（每个逻辑变更独立 commit，带描述性信息；严禁批量打包不相关变更）。只要通过 `./scripts/check.sh` 门禁，必须立即自动执行 PR 创建、合并到 `origin/main` 并推送到远端（通过 GitHub PR 流程），最后同步本地 `main` 分支。严禁仅停留在本地分支或仅 commit 不推。除非用户明确要求“仅建分支/不要合并/不要推送”，否则默认每次修改均必须自动合并并推送至 `origin/main`。
 8. Before landing, ensure `./scripts/check.sh` passes for implementation work. If check.sh fails, fix issues before committing.
 
 ## Worktrees And Landing
@@ -35,7 +35,7 @@ Parallel tasks run in per-task git worktrees (for example `~/.codex/worktrees/<i
   2. `git push -u origin HEAD` and open a PR targeting `main` (`gh pr create --base main`).
   3. Merge the PR once required checks and mergeability allow it (`gh pr merge --merge --delete-branch`), then delete the feature branch. If the PR is not mergeable because `main` moved, fetch, rebase, verify, force-push only that feature branch, and retry.
   4. The merged `main` is the only deployment source.
-- When the user says "push to GitHub", "publish to GitHub" or similar, interpret it as the full PR → merge → deploy-trigger flow unless the user explicitly says PR-only, do not merge, or do not deploy.
+- MANDATORY AUTOMATIC MERGE AND PUSH: 每次修改必须自动合并并推送。不需要等待用户额外提示“合并”或“push to GitHub”，在本地提交并通过 `./scripts/check.sh` 验证后，必须立即自动推进 PR 创建、合并入 `origin/main`、推送到远端，并同步本地 `main`。
 - Production deploys only from merged `main`: `Deploy HyperTrade` runs on `push` to `main`. After merging, confirm the `main` push happened and report that deployment was triggered from `main`; waiting for it to finish is only required when the user asks for runtime verification. If the `push` event fails or is delayed, re-run the deployment for `main` from GitHub Actions; never treat a feature-branch run as a production deploy.
 - After Codex causes remote `main` to update, sync local `main` before finishing: `git fetch origin`, `git switch main`, `git pull --ff-only origin main`. If a stale worktree blocks `main`, clean up or remove that worktree first so local `main` matches `origin/main`.
 - Keep worktree-local bookkeeping (GitNexus alias/count refreshes) on the task branch; it does not belong on `main`.
@@ -52,7 +52,7 @@ When adding or changing core Agent code, prefer concise comments that explain pr
 4. Run verification.
 5. Record QA findings if needed.
 6. Update progress and next step.
-7. MANDATORY: commit on the task branch, then land on `origin/main` through a Pull Request per "Worktrees And Landing" when verification passes.
+7. MANDATORY AUTOMATIC MERGE & PUSH: commit on the task branch, then IMMEDIATELY land on `origin/main` through PR merge and push to remote (`gh pr create` -> `gh pr merge --merge --delete-branch` -> sync local `main`), completing the full merge & push cycle for every modification.
 
 ## Verification
 
