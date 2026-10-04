@@ -23,8 +23,16 @@ declare global {
   }
 }
 
+const LEGACY_API_BASE = "http://47.79.36.92:3333";
+
 export const DEFAULT_API_BASE =
-  import.meta.env.VITE_HT_API_BASE?.trim() || "http://47.79.36.92:3333";
+  import.meta.env.VITE_HT_API_BASE?.trim() || "http://64.83.43.61:3333";
+
+export function resolveSavedApiBase(saved: string | null): string {
+  const normalized = saved?.trim().replace(/\/$/, "");
+  if (!normalized || normalized === LEGACY_API_BASE) return DEFAULT_API_BASE;
+  return saved ?? DEFAULT_API_BASE;
+}
 
 function isTauriRuntime() {
   return typeof window !== "undefined" && Boolean(window.__TAURI_INTERNALS__);
