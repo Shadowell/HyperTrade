@@ -11,7 +11,7 @@ from hypertrade.runtime.domain.models import StrictModel, utc_now
 
 
 class SandboxCommandV1(StrictModel):
-    name: Literal["ruff", "pytest", "limited_backtest"]
+    name: Literal["ruff", "pytest", "limited_backtest", "co_steer_smoke"]
     args: tuple[str, ...] = Field(default=(), max_length=12)
 
     @model_validator(mode="after")

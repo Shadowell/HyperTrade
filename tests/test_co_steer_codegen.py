@@ -1,5 +1,6 @@
 """Unit and integration tests for Co-STEER strategy domain scaffolding and AST Gatekeeper."""
 
+import builtins
 from decimal import Decimal
 
 import numpy as np
@@ -9,6 +10,22 @@ from hypertrade.research.co_steer import (
     BaseEvolutionStrategy,
     LocalSelfHealController,
 )
+
+
+class RecordingIsolatedSandbox:
+    def __init__(self, error: str | None = None) -> None:
+        self.error = error
+        self.sources: list[str] = []
+
+    def smoke_strategy(self, source_code: str) -> str | None:
+        self.sources.append(source_code)
+        return self.error
+
+
+class UnavailableIsolatedSandbox:
+    def smoke_strategy(self, source_code: str) -> str | None:
+        del source_code
+        raise RuntimeError("isolated sandbox service is unavailable")
 
 
 class MockCompliantStrategy(BaseEvolutionStrategy):
@@ -114,6 +131,27 @@ class HackStrategy(BaseEvolutionStrategy):
     assert any("eval" in err for err in val.errors)
 
 
+def test_ast_gatekeeper_rejects_builtins_subscript_escape_and_unbounded_loop() -> None:
+    source = """
+from hypertrade.research.co_steer import BaseEvolutionStrategy
+
+class EscapeStrategy(BaseEvolutionStrategy):
+    def compute_features(self, df):
+        __builtins__['open']('/tmp/escaped', 'w')
+        while True:
+            pass
+        return df
+    def generate_signals(self, features): return None
+    def position_sizing(self, signal, features): return 0
+"""
+
+    result = ASTGatekeeper.validate(source)
+
+    assert result.valid is False
+    assert any("dunder" in error for error in result.errors)
+    assert any("unbounded while" in error for error in result.errors)
+
+
 def test_ast_gatekeeper_lookahead_forward_shift() -> None:
     lookahead_code = """
 import pandas as pd
@@ -156,6 +194,148 @@ class LeakyStrategy(BaseEvolutionStrategy):
     assert any("pct_change with negative period" in err for err in val.errors)
 
 
+def test_ast_gatekeeper_rejects_keyword_and_variable_future_shift() -> None:
+    source = """
+import pandas as pd
+from hypertrade.research.co_steer import BaseEvolutionStrategy
+
+class LeakyStrategy(BaseEvolutionStrategy):
+    def compute_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        k = -1
+        features = df.copy()
+        features['keyword'] = df['close'].shift(periods=-1)
+        features['variable'] = df['close'].shift(k)
+        return features
+    def generate_signals(self, features): return pd.Series(0, index=features.index)
+    def position_sizing(self, signal, features): return 0
+"""
+
+    result = ASTGatekeeper.validate(source)
+
+    assert result.valid is False
+    assert sum("shift" in error for error in result.errors) >= 2
+
+
+def test_ast_gatekeeper_rejects_expanded_kwargs_and_mutated_shift_period() -> None:
+    source = """
+import pandas as pd
+from hypertrade.research.co_steer import BaseEvolutionStrategy
+
+class LeakyStrategy(BaseEvolutionStrategy):
+    def compute_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        k = 1
+        k -= 2
+        options = {'periods': -1}
+        features = df.copy()
+        features['expanded'] = df['close'].shift(**options)
+        features['mutated'] = df['close'].shift(k)
+        return features
+    def generate_signals(self, features): return pd.Series(0, index=features.index)
+    def position_sizing(self, signal, features): return 0
+"""
+
+    result = ASTGatekeeper.validate(source)
+
+    assert result.valid is False
+    assert any("expanded keyword" in error for error in result.errors)
+    assert any("statically non-negative" in error for error in result.errors)
+
+
+def test_ast_gatekeeper_rejects_uncertain_shift_period() -> None:
+    source = """
+import pandas as pd
+from hypertrade.research.co_steer import BaseEvolutionStrategy
+
+class UncertainStrategy(BaseEvolutionStrategy):
+    def compute_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        return df.assign(lag=df['close'].shift(self.params['periods']))
+    def generate_signals(self, features): return pd.Series(0, index=features.index)
+    def position_sizing(self, signal, features): return 0
+"""
+
+    result = ASTGatekeeper.validate(source)
+
+    assert result.valid is False
+    assert any("statically non-negative" in error for error in result.errors)
+
+
+def test_ast_gatekeeper_rejects_full_sample_statistics_and_reverse_iloc() -> None:
+    source = """
+import pandas as pd
+from hypertrade.research.co_steer import BaseEvolutionStrategy
+
+class GlobalStrategy(BaseEvolutionStrategy):
+    def compute_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        features = df.copy()
+        features['normalized'] = df['close'] / df['close'].mean()
+        return features.iloc[::-1]
+    def generate_signals(self, features): return pd.Series(0, index=features.index)
+    def position_sizing(self, signal, features): return 0
+"""
+
+    result = ASTGatekeeper.validate(source)
+
+    assert result.valid is False
+    assert any("full-sample statistic" in error for error in result.errors)
+    assert any("reverse iloc" in error for error in result.errors)
+
+
+def test_ast_gatekeeper_rejects_signal_global_statistic_and_centered_rolling() -> None:
+    source = """
+import pandas as pd
+from hypertrade.research.co_steer import BaseEvolutionStrategy
+
+class SignalLeakStrategy(BaseEvolutionStrategy):
+    def compute_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        return df.assign(centered=df['close'].rolling(5, center=True).mean())
+    def generate_signals(self, features):
+        return (features['close'] > features['close'].mean()).astype(int)
+    def position_sizing(self, signal, features): return 0
+"""
+
+    result = ASTGatekeeper.validate(source)
+
+    assert result.valid is False
+    assert any("centered rolling" in error for error in result.errors)
+    assert any("full-sample statistic" in error for error in result.errors)
+
+
+def test_ast_gatekeeper_rejects_allowlisted_but_uninstalled_dependencies() -> None:
+    source = """
+import scipy
+import talib
+from hypertrade.research.co_steer import BaseEvolutionStrategy
+
+class DependencyProbe(BaseEvolutionStrategy):
+    def compute_features(self, df): return df
+    def generate_signals(self, features): return None
+    def position_sizing(self, signal, features): return 0
+"""
+
+    result = ASTGatekeeper.validate(source)
+
+    assert result.valid is False
+    assert any("scipy" in error for error in result.errors)
+    assert any("talib" in error for error in result.errors)
+
+
+def test_ast_gatekeeper_allows_windowed_mean() -> None:
+    source = """
+import pandas as pd
+from hypertrade.research.co_steer import BaseEvolutionStrategy
+
+class RollingStrategy(BaseEvolutionStrategy):
+    def compute_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        return df.assign(average=df['close'].rolling(3).mean())
+    def generate_signals(self, features): return pd.Series(0, index=features.index)
+    def position_sizing(self, signal, features): return 0
+"""
+
+    result = ASTGatekeeper.validate(source)
+
+    assert result.valid is True, result.errors
+
+
 def test_ast_gatekeeper_missing_required_methods() -> None:
     incomplete_code = """
 from hypertrade.research.co_steer import BaseEvolutionStrategy
@@ -183,11 +363,61 @@ class SimpleGoodStrategy(BaseEvolutionStrategy):
     def position_sizing(self, signal: int, features: pd.DataFrame) -> Decimal:
         return Decimal("0.0")
 """
-    res = LocalSelfHealController.attempt_compile_and_heal(valid_code)
+    sandbox = RecordingIsolatedSandbox()
+    res = LocalSelfHealController.attempt_compile_and_heal(valid_code, sandbox=sandbox)
     assert res.success is True
     assert res.attempts == 1
     assert res.strategy_digest.startswith("sha256:")
     assert len(res.errors) == 0
+    assert sandbox.sources == [valid_code]
+
+
+def test_local_self_heal_never_executes_generated_code_in_host(monkeypatch) -> None:
+    valid_code = """
+import pandas as pd
+from decimal import Decimal
+from hypertrade.research.co_steer import BaseEvolutionStrategy
+
+class HostEscapeProbe(BaseEvolutionStrategy):
+    def compute_features(self, df): return df
+    def generate_signals(self, features): return pd.Series(0, index=features.index)
+    def position_sizing(self, signal, features): return Decimal('0')
+"""
+    sandbox = RecordingIsolatedSandbox()
+
+    def deny_host_exec(*args, **kwargs):
+        raise AssertionError("generated code reached host exec")
+
+    monkeypatch.setattr(builtins, "exec", deny_host_exec)
+
+    result = LocalSelfHealController.attempt_compile_and_heal(valid_code, sandbox=sandbox)
+
+    assert result.success is True
+    assert sandbox.sources == [valid_code]
+
+
+def test_local_self_heal_fails_closed_when_isolated_sandbox_is_unavailable() -> None:
+    valid_code = """
+import pandas as pd
+from decimal import Decimal
+from hypertrade.research.co_steer import BaseEvolutionStrategy
+
+class UnavailableProbe(BaseEvolutionStrategy):
+    def compute_features(self, df): return df
+    def generate_signals(self, features): return pd.Series(0, index=features.index)
+    def position_sizing(self, signal, features): return Decimal('0')
+"""
+
+    result = LocalSelfHealController.attempt_compile_and_heal(
+        valid_code,
+        sandbox=UnavailableIsolatedSandbox(),
+        max_retries=0,
+    )
+
+    assert result.success is False
+    assert result.errors == [
+        "Isolated sandbox unavailable: isolated sandbox service is unavailable"
+    ]
 
 
 def test_local_self_heal_repaired_successfully() -> None:
@@ -213,6 +443,7 @@ class LeakyThenHealedStrategy(BaseEvolutionStrategy):
 
     res = LocalSelfHealController.attempt_compile_and_heal(
         buggy_code,
+        sandbox=RecordingIsolatedSandbox(),
         repair_callback=mock_repair_callback,
         max_retries=2,
     )
@@ -236,6 +467,7 @@ import subprocess
 
     res = LocalSelfHealController.attempt_compile_and_heal(
         hopeless_code,
+        sandbox=RecordingIsolatedSandbox(),
         repair_callback=mock_useless_callback,
         max_retries=2,
     )

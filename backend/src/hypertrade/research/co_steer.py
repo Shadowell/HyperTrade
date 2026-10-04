@@ -16,9 +16,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any
+from typing import Any, Protocol
 
-import numpy as np
 import pandas as pd  # type: ignore[import-untyped]
 
 
@@ -93,8 +92,6 @@ class ASTGatekeeper:
             "np",
             "pandas",
             "pd",
-            "scipy",
-            "talib",
             "math",
             "decimal",
             "datetime",
@@ -141,6 +138,12 @@ class ASTGatekeeper:
                 errors=[f"SyntaxError on line {e.lineno}: {e.msg}"],
             )
 
+        parents = {
+            child: parent
+            for parent in ast.walk(tree)
+            for child in ast.iter_child_nodes(parent)
+        }
+        numeric_constants = cls._constant_bindings(tree)
         found_strategy_class = False
         implemented_methods: set[str] = set()
 
@@ -176,26 +179,93 @@ class ASTGatekeeper:
                 # 3. Lookahead bias detection (Future leakage)
                 if isinstance(node.func, ast.Attribute):
                     if node.func.attr == "shift":
-                        if node.args and cls._is_negative_literal(node.args[0]):
+                        if cls._has_expanded_keywords(node):
                             errors.append(
-                                "Lookahead bias violation: forward shift with negative offset "
-                                "leaks future data"
+                                "Lookahead bias violation: shift expanded keyword arguments "
+                                "cannot be statically verified"
                             )
+                        else:
+                            period = cls._call_argument(node, position=0, keywords={"periods"})
+                            period_value = cls._numeric_value(period, numeric_constants)
+                            if period is not None and period_value is None:
+                                errors.append(
+                                    "Lookahead bias violation: shift period must be statically "
+                                    "non-negative"
+                                )
+                            elif period_value is not None and period_value < 0:
+                                errors.append(
+                                    "Lookahead bias violation: forward shift with negative offset "
+                                    "leaks future data"
+                                )
                     elif node.func.attr == "rolling":
-                        if node.args and cls._is_negative_literal(node.args[0]):
+                        window = cls._call_argument(node, position=0, keywords={"window"})
+                        window_value = cls._numeric_value(window, numeric_constants)
+                        center = cls._call_argument(node, position=2, keywords={"center"})
+                        if cls._has_expanded_keywords(node):
+                            errors.append(
+                                "Lookahead bias violation: rolling expanded keyword arguments "
+                                "cannot be statically verified"
+                            )
+                        elif window is not None and window_value is None:
+                            errors.append(
+                                "Lookahead bias violation: rolling window must be "
+                                "statically positive"
+                            )
+                        elif window_value is not None and window_value < 0:
                             errors.append(
                                 "Lookahead bias violation: rolling with negative window "
                                 "is forbidden"
                             )
+                        if not cls._is_literal_false(center):
+                            errors.append(
+                                "Lookahead bias violation: centered rolling windows may consume "
+                                "future rows"
+                            )
+                    elif node.func.attr in {"lead", "pct_change"}:
+                        if cls._has_expanded_keywords(node):
+                            errors.append(
+                                f"Lookahead bias violation: {node.func.attr} expanded keyword "
+                                "arguments cannot be statically verified"
+                            )
+                        else:
+                            period = cls._call_argument(node, position=0, keywords={"periods"})
+                            period_value = cls._numeric_value(period, numeric_constants)
+                            if period is not None and period_value is None:
+                                errors.append(
+                                    f"Lookahead bias violation: {node.func.attr} period must be "
+                                    "statically non-negative"
+                                )
+                            elif period_value is not None and period_value < 0:
+                                errors.append(
+                                    f"Lookahead bias violation: {node.func.attr} with negative "
+                                    "period leaks future data"
+                                )
                     elif (
-                        node.func.attr in {"lead", "pct_change"}
-                        and node.args
-                        and cls._is_negative_literal(node.args[0])
+                        node.func.attr in {"mean", "median", "std", "var", "quantile"}
+                        and cls._enclosing_function(node, parents)
+                        in {"compute_features", "generate_signals"}
+                        and not cls._uses_bounded_window(node.func.value)
                     ):
                         errors.append(
-                            f"Lookahead bias violation: {node.func.attr} with negative period "
-                            "leaks future data"
+                            "Lookahead bias violation: full-sample statistic in strategy pipeline "
+                            "must use a bounded rolling or expanding window"
                         )
+
+            elif isinstance(node, ast.Name) and node.id.startswith("__"):
+                errors.append(f"Security violation: dunder name access is forbidden: {node.id}")
+
+            elif isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+                errors.append(
+                    f"Security violation: dunder attribute access is forbidden: {node.attr}"
+                )
+
+            elif isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and bool(
+                node.test.value
+            ):
+                errors.append("Security violation: unbounded while loop is forbidden")
+
+            elif isinstance(node, ast.Subscript) and cls._is_reverse_iloc(node):
+                errors.append("Lookahead bias violation: reverse iloc traversal is forbidden")
 
             # 4. Check class definition & required methods
             elif isinstance(node, ast.ClassDef):
@@ -231,6 +301,105 @@ class ASTGatekeeper:
             return node.value < 0
         return False
 
+    @classmethod
+    def _constant_bindings(cls, tree: ast.AST) -> dict[str, float]:
+        assignments: dict[str, list[ast.expr]] = {}
+        mutated_names: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                target = node.targets[0]
+                if isinstance(target, ast.Name):
+                    assignments.setdefault(target.id, []).append(node.value)
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                if node.value is not None:
+                    assignments.setdefault(node.target.id, []).append(node.value)
+            elif isinstance(node, (ast.AugAssign, ast.NamedExpr)) and isinstance(
+                node.target, ast.Name
+            ):
+                mutated_names.add(node.target.id)
+        bindings: dict[str, float] = {}
+        for name, values in assignments.items():
+            if len(values) != 1 or name in mutated_names:
+                continue
+            value = cls._numeric_value(values[0], {})
+            if value is not None:
+                bindings[name] = value
+        return bindings
+
+    @staticmethod
+    def _call_argument(
+        node: ast.Call, *, position: int, keywords: set[str]
+    ) -> ast.expr | None:
+        if len(node.args) > position:
+            return node.args[position]
+        for keyword in node.keywords:
+            if keyword.arg in keywords:
+                return keyword.value
+        return None
+
+    @staticmethod
+    def _has_expanded_keywords(node: ast.Call) -> bool:
+        return any(keyword.arg is None for keyword in node.keywords)
+
+    @staticmethod
+    def _is_literal_false(node: ast.expr | None) -> bool:
+        return node is None or (isinstance(node, ast.Constant) and node.value is False)
+
+    @staticmethod
+    def _numeric_value(node: ast.expr | None, bindings: dict[str, float]) -> float | None:
+        if node is None:
+            return None
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, (int, float))
+            and not isinstance(node.value, bool)
+        ):
+            return float(node.value)
+        if (
+            isinstance(node, ast.UnaryOp)
+            and isinstance(node.op, (ast.USub, ast.UAdd))
+            and isinstance(node.operand, ast.Constant)
+            and isinstance(node.operand.value, (int, float))
+        ):
+            value = float(node.operand.value)
+            return -value if isinstance(node.op, ast.USub) else value
+        if isinstance(node, ast.Name):
+            return bindings.get(node.id)
+        return None
+
+    @staticmethod
+    def _enclosing_function(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> str | None:
+        current = parents.get(node)
+        while current is not None:
+            if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                return current.name
+            current = parents.get(current)
+        return None
+
+    @staticmethod
+    def _uses_bounded_window(receiver: ast.expr) -> bool:
+        for node in ast.walk(receiver):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in {"rolling", "expanding", "ewm"}
+            ):
+                return True
+        return False
+
+    @classmethod
+    def _is_reverse_iloc(cls, node: ast.Subscript) -> bool:
+        if not isinstance(node.value, ast.Attribute) or node.value.attr != "iloc":
+            return False
+        indexer = node.slice
+        slices = indexer.elts if isinstance(indexer, ast.Tuple) else [indexer]
+        return any(
+            isinstance(item, ast.Slice)
+            and item.step is not None
+            and (cls._numeric_value(item.step, {}) or 0) < 0
+            for item in slices
+        )
+
 
 @dataclass
 class SelfHealResult:
@@ -242,6 +411,12 @@ class SelfHealResult:
     strategy_digest: str = ""
 
 
+class CoSteerSandbox(Protocol):
+    """Execution boundary for generated strategy smoke validation."""
+
+    def smoke_strategy(self, source_code: str) -> str | None: ...
+
+
 class LocalSelfHealController:
     """Executes local self-healing for generated strategy code."""
 
@@ -250,6 +425,7 @@ class LocalSelfHealController:
         cls,
         initial_code: str,
         *,
+        sandbox: CoSteerSandbox,
         repair_callback: Callable[[str, list[str]], str] | None = None,
         max_retries: int = 2,
     ) -> SelfHealResult:
@@ -260,8 +436,7 @@ class LocalSelfHealController:
         for attempt in range(max_retries + 1):
             validation = ASTGatekeeper.validate(current_code)
             if validation.valid:
-                # Test dry execution inside an isolated safe namespace
-                exec_error = cls._dry_run_instantiate(current_code)
+                exec_error = cls._dry_run_instantiate(current_code, sandbox=sandbox)
                 if exec_error is None:
                     raw_hash = hashlib.sha256(current_code.encode("utf-8")).hexdigest()[:20]
                     return SelfHealResult(
@@ -290,40 +465,11 @@ class LocalSelfHealController:
         )
 
     @staticmethod
-    def _dry_run_instantiate(source_code: str) -> str | None:
-        """Instantiate strategy class inside an isolated mock namespace."""
-        safe_globals: dict[str, Any] = {
-            "BaseEvolutionStrategy": BaseEvolutionStrategy,
-            "pd": pd,
-            "np": np,
-            "Decimal": Decimal,
-            "ABC": ABC,
-            "abstractmethod": abstractmethod,
-            "Any": Any,
-        }
+    def _dry_run_instantiate(
+        source_code: str, *, sandbox: CoSteerSandbox
+    ) -> str | None:
+        """Submit generated code to the isolated sandbox; never execute it in the host."""
         try:
-            compiled = compile(source_code, "<co_steer_sandbox>", "exec")
-            exec(compiled, safe_globals)
-        except Exception as e:
-            return f"Runtime error during execution: {type(e).__name__}: {e}"
-
-        # Find instantiated strategy class
-        strategy_class = None
-        for obj in safe_globals.values():
-            if (
-                isinstance(obj, type)
-                and issubclass(obj, BaseEvolutionStrategy)
-                and obj is not BaseEvolutionStrategy
-            ):
-                strategy_class = obj
-                break
-
-        if strategy_class is None:
-            return "No subclass of BaseEvolutionStrategy was defined in the source"
-
-        try:
-            strategy_class()
-        except Exception as e:
-            return f"Failed to instantiate strategy constructor: {type(e).__name__}: {e}"
-
-        return None
+            return sandbox.smoke_strategy(source_code)
+        except Exception as exc:
+            return f"Isolated sandbox unavailable: {exc}"
