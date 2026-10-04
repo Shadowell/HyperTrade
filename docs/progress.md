@@ -4,6 +4,17 @@
 
 # Progress Log
 
+## RD-Agent 假设演进与 FinMem 分层认知记忆基础设施 (Spec 026 Phase 1) — 2026-10-04
+
+- **持久化数据模型扩充 (T001)**：在 `backend/src/hypertrade/db.py` 中新增 `ArcHypothesisNode`（RD-Agent 假设演进树节点与代码摘要绑定）、`ArcEpisodicMemory`（FinMem Tier 2 情景记忆，记录回测、退化与红队审查事件）与 `ArcSemanticAssertion`（FinMem Tier 3 语义记忆，因果规则与先验知识断言）；
+- **分层认知记忆服务实现 (T002)**：在 `backend/src/hypertrade/memory/layered_service.py` 实现 `LayeredMemoryService`，完整支持：
+  1. **Tier 1 工作记忆 (WM)**：基于会话/Turn 的短期上下文管理、Token 预算紧缩与高信息密度 Prompt 上下文渲染；
+  2. **Tier 2 情景记忆 (EM)**：按标的、周期、Regime 与向量检索客观历史实例；
+  3. **Tier 3 语义记忆 (SM)**：通用因果量化规则存取、反例计数与置信度动态衰减降级（$\le 0.30$ 自动转入 `disputed` 状态）；
+  4. **RD-Agent 假设生命周期**：支持 6 类变异算子节点录入、树系谱查询与回测指标回写状态机；
+- **Regime 敏感评分检索与跨牛熊冲突硬惩罚 (T003)**：实现 $S(i) = \alpha \cdot \text{CosineSim} + \beta \cdot \text{RegimeMatch} + \gamma \cdot \text{Confidence}$ 打分；对牛市激进追涨经验误用于大跌行情（`bull_trend` vs `bear_crash`）施加负向评分硬防火墙过滤，杜绝经验误用；
+- **单元测试与质量门禁全绿 (T004)**：编写 `tests/test_layered_cognitive_memory.py` 覆盖 8 项测试（嵌入与余弦相似度、Regime 匹配度、工作记忆生命周期、情景读写、反例降级与废弃、假设演进树、跨周期检索惩罚过滤与工作记忆装载）；全量通过 `./scripts/check.sh` 质量门禁（前端 15 项 vitest、TypeScript 构建、Vite 打包，后端 Ruff、Mypy 306 模块 0 错误、全量 2022 项 pytest 100% 绿灯）。
+
 ## QuantLab 市场目标一等公民适配与多资产自愈闭环 (Spec 025) — 2026-10-03
 
 - **配置扩展与目标惰性注册 (T001)**：在 `backend/src/hypertrade/config.py` 为 `Settings` 新增 `quantlab_mcp_url` 与 `quantlab_mcp_token`，默认空字符串以保障离线/测试无依赖纯本地仿真；在 `hypertrade.targets.registry` 保持受控按需注册原则；

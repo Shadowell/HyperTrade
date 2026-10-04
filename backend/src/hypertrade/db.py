@@ -2141,6 +2141,78 @@ class ArcMissionEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class ArcHypothesisNode(Base, TimestampMixin):
+    """RD-Agent inspired hypothesis evolution node tracking hypothesis tree and code bindings."""
+
+    __tablename__ = "arc_hypothesis_nodes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("hypo"))
+    tree_id: Mapped[str] = mapped_column(String(64), index=True)
+    parent_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    depth: Mapped[int] = mapped_column(Integer, default=0)
+
+    claim: Mapped[str] = mapped_column(Text)
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    target_regimes_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    mutation_type: Mapped[str] = mapped_column(String(32), default="init", index=True)
+
+    strategy_digest: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    experiment_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+
+    benchmark_relative_pnl: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    sharpe_ratio: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    max_drawdown: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    ic_mean: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+
+    status: Mapped[str] = mapped_column(String(32), default="proposed", index=True)
+    prune_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class ArcEpisodicMemory(Base, TimestampMixin):
+    """FinMem Tier 2 Episodic Memory: records backtests, decays, and redteam outcomes."""
+
+    __tablename__ = "arc_episodic_memories"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("aepm"))
+    mission_id: Mapped[str] = mapped_column(String(64), index=True)
+    experiment_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+
+    symbols_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    timeframe: Mapped[str] = mapped_column(String(16), default="", index=True)
+    market_regime: Mapped[str] = mapped_column(String(32), default="unknown", index=True)
+
+    event_type: Mapped[str] = mapped_column(String(32), index=True)
+    metrics_delta_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    raw_evidence_ref: Mapped[str] = mapped_column(String(128), default="")
+    reflection_summary: Mapped[str] = mapped_column(Text, default="")
+
+    embedding_json: Mapped[list[float]] = mapped_column(JSON, default=list)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class ArcSemanticAssertion(Base, TimestampMixin):
+    """FinMem Tier 3 Semantic Memory: distilled domain rules and causal invariants."""
+
+    __tablename__ = "arc_semantic_assertions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("asmt"))
+    assertion_type: Mapped[str] = mapped_column(String(32), default="causal_heuristic", index=True)
+    claim: Mapped[str] = mapped_column(Text)
+    applicable_regimes_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("0.5000"))
+
+    derived_from_episodes_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    counter_evidence_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    replaced_by: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+
+    embedding_json: Mapped[list[float]] = mapped_column(JSON, default=list)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class Database:
     def __init__(self, url: str, *, echo: bool = False) -> None:
         self.url = url
