@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -19,6 +20,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, select
+from sqlalchemy.exc import IntegrityError
 
 from hypertrade.db import (
     ArcEpisodicMemory,
@@ -51,6 +53,7 @@ class HypothesisNodeV1(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: str | None = None
+    idempotency_key: str = ""
     tree_id: str
     parent_id: str | None = None
     depth: int = 0
@@ -74,6 +77,7 @@ class EpisodicMemoryItemV1(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: str | None = None
+    idempotency_key: str = ""
     mission_id: str
     experiment_id: str | None = None
     symbols: list[str] = Field(default_factory=list)
@@ -92,6 +96,7 @@ class SemanticMemoryAssertionV1(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: str | None = None
+    idempotency_key: str = ""
     assertion_type: str = "causal_heuristic"
     claim: str
     applicable_regimes: list[str] = Field(default_factory=list)
@@ -102,6 +107,8 @@ class SemanticMemoryAssertionV1(BaseModel):
     replaced_by: str | None = None
     embedding: list[float] = Field(default_factory=list)
     version: int = 1
+    evidence_set_hash: str | None = None
+    distillation_version: str = "manual"
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -156,7 +163,11 @@ class WorkingMemoryStateV1(BaseModel):
             for ep_idx, ep_item in enumerate(self.retrieved_episodic_memories, start=1):
                 summary = ep_item.reflection_summary
                 prefix = f"{ep_idx}. [{ep_item.event_type} | {ep_item.market_regime}]"
-                sections.append(f"{prefix} {summary}")
+                metrics = json.dumps(ep_item.metrics_delta, ensure_ascii=False, default=str)
+                sections.append(
+                    f"{prefix} id={ep_item.id} evidence={ep_item.raw_evidence_ref} "
+                    f"metrics={metrics} {summary}"
+                )
 
         if self.active_hypotheses:
             sections.append("--- Active Hypothesis Lineage ---")
@@ -177,15 +188,26 @@ class WorkingMemoryStateV1(BaseModel):
 
 
 def deterministic_embedding(content: str, *, dimensions: int = 64) -> list[float]:
-    """Deterministic normalized float embedding stand-in for keyless local testing."""
+    """Deterministic lexical feature hash for keyless bounded retrieval."""
     if not content:
         return [0.0] * dimensions
-    digest = hashlib.sha256(content.encode("utf-8")).digest()
-    raw = [digest[idx % len(digest)] / 255.0 for idx in range(dimensions)]
+    raw = [0.0] * dimensions
+    tokens = re.findall(r"[\w-]+", content.lower())
+    for token in tokens:
+        digest = hashlib.sha256(token.encode("utf-8")).digest()
+        index = int.from_bytes(digest[:4], "big") % dimensions
+        sign = 1.0 if digest[4] % 2 == 0 else -1.0
+        raw[index] += sign
     norm = sum(val * val for val in raw) ** 0.5
     if norm == 0:
         return raw
     return [round(val / norm, 6) for val in raw]
+
+
+def stable_memory_key(*parts: object, prefix: str = "mem") -> str:
+    """Build a bounded deterministic idempotency key from canonical JSON values."""
+    encoded = json.dumps(parts, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    return f"{prefix}:{hashlib.sha256(encoded).hexdigest()}"
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
@@ -219,7 +241,7 @@ def compute_regime_match_score(task_regime: str, memory_regimes: list[str]) -> f
     if clean_task in clean_memories:
         return 1.0
 
-    bull_group = {"bull_trend", "high_volatility", "momentum_expansion", "bull_surge"}
+    bull_group = {"bull_trend", "momentum_expansion", "bull_surge"}
     bear_group = {"bear_trend", "bear_crash", "capitulation", "extreme_down"}
     range_group = {"sideways_range", "low_volatility", "mean_reverting"}
 
@@ -303,24 +325,50 @@ class LayeredMemoryService:
     def record_episode(self, item: EpisodicMemoryItemV1) -> str:
         embedding = item.embedding or deterministic_embedding(item.reflection_summary)
         record_id = item.id or new_id("aepm")
+        idempotency_key = item.idempotency_key or stable_memory_key(
+            item.mission_id,
+            item.experiment_id,
+            item.event_type,
+            item.raw_evidence_ref,
+            prefix="episode",
+        )
 
-        with self.db.session() as session:
-            db_item = ArcEpisodicMemory(
-                id=record_id,
-                mission_id=item.mission_id,
-                experiment_id=item.experiment_id,
-                symbols_json=item.symbols,
-                timeframe=item.timeframe,
-                market_regime=item.market_regime,
-                event_type=item.event_type,
-                metrics_delta_json=item.metrics_delta,
-                raw_evidence_ref=item.raw_evidence_ref,
-                reflection_summary=item.reflection_summary,
-                embedding_json=embedding,
-                metadata_json=item.metadata,
-            )
-            session.add(db_item)
-            session.flush()
+        try:
+            with self.db.session() as session:
+                existing = session.scalar(
+                    select(ArcEpisodicMemory).where(
+                        ArcEpisodicMemory.idempotency_key == idempotency_key
+                    )
+                )
+                if existing is not None:
+                    return existing.id
+                db_item = ArcEpisodicMemory(
+                    id=record_id,
+                    mission_id=item.mission_id,
+                    experiment_id=item.experiment_id,
+                    idempotency_key=idempotency_key,
+                    symbols_json=item.symbols,
+                    timeframe=item.timeframe,
+                    market_regime=item.market_regime,
+                    event_type=item.event_type,
+                    metrics_delta_json=item.metrics_delta,
+                    raw_evidence_ref=item.raw_evidence_ref,
+                    reflection_summary=item.reflection_summary,
+                    embedding_json=embedding,
+                    metadata_json=item.metadata,
+                )
+                session.add(db_item)
+                session.flush()
+        except IntegrityError:
+            with self.db.session() as session:
+                existing = session.scalar(
+                    select(ArcEpisodicMemory).where(
+                        ArcEpisodicMemory.idempotency_key == idempotency_key
+                    )
+                )
+                if existing is None:
+                    raise
+                return existing.id
 
         return record_id
 
@@ -340,10 +388,12 @@ class LayeredMemoryService:
         limit: int = 50,
     ) -> list[EpisodicMemoryItemV1]:
         with self.db.session() as session:
+            bounded_limit = max(1, min(limit, 200))
+            scan_limit = min(1_000, bounded_limit * 10)
             stmt = (
                 select(ArcEpisodicMemory)
                 .order_by(desc(ArcEpisodicMemory.created_at))
-                .limit(limit)
+                .limit(scan_limit)
             )
             if timeframe:
                 stmt = stmt.where(ArcEpisodicMemory.timeframe == timeframe)
@@ -357,7 +407,11 @@ class LayeredMemoryService:
                     sym_set = set(symbols)
                     if not sym_set.intersection(set(r.symbols_json or [])):
                         continue
+                if r.metadata_json and r.metadata_json.get("recall_eligible") is False:
+                    continue
                 results.append(self._db_to_episodic(r))
+                if len(results) >= bounded_limit:
+                    break
             return results
 
     # -------------------------------------------------------------------------
@@ -366,10 +420,25 @@ class LayeredMemoryService:
     def record_semantic_assertion(self, assertion: SemanticMemoryAssertionV1) -> str:
         embedding = assertion.embedding or deterministic_embedding(assertion.claim)
         record_id = assertion.id or new_id("asmt")
+        idempotency_key = assertion.idempotency_key or stable_memory_key(
+            assertion.claim,
+            assertion.applicable_regimes,
+            assertion.version,
+            assertion.derived_from_episodes,
+            prefix="semantic",
+        )
 
         with self.db.session() as session:
+            existing = session.scalar(
+                select(ArcSemanticAssertion).where(
+                    ArcSemanticAssertion.idempotency_key == idempotency_key
+                )
+            )
+            if existing is not None:
+                return existing.id
             db_item = ArcSemanticAssertion(
                 id=record_id,
+                idempotency_key=idempotency_key,
                 assertion_type=assertion.assertion_type,
                 claim=assertion.claim,
                 applicable_regimes_json=assertion.applicable_regimes,
@@ -380,12 +449,109 @@ class LayeredMemoryService:
                 replaced_by=assertion.replaced_by,
                 embedding_json=embedding,
                 version=assertion.version,
+                evidence_set_hash=assertion.evidence_set_hash,
+                distillation_version=assertion.distillation_version,
                 metadata_json=assertion.metadata,
             )
             session.add(db_item)
             session.flush()
 
         return record_id
+
+    def record_distilled_assertion(
+        self,
+        assertion: SemanticMemoryAssertionV1,
+        *,
+        evidence_set_hash: str,
+        distillation_version: str,
+        validated_contradiction_ids: list[str] | None = None,
+    ) -> tuple[str, bool]:
+        """Atomically record one evidence-version result and explicit contradictions.
+
+        Similarity is retrieval evidence only. Existing rules are deprecated here
+        solely when the summarizer supplied a separately validated contradiction id.
+        """
+        episode_ids = sorted(set(assertion.derived_from_episodes))
+        idempotency_key = stable_memory_key(
+            distillation_version,
+            evidence_set_hash,
+            prefix="distill",
+        )
+        embedding = assertion.embedding or deterministic_embedding(assertion.claim)
+        try:
+            with self.db.session() as session:
+                existing = session.scalar(
+                    select(ArcSemanticAssertion).where(
+                        ArcSemanticAssertion.idempotency_key == idempotency_key
+                    )
+                )
+                if existing is not None:
+                    return existing.id, False
+                record_id = assertion.id or new_id("asmt")
+                session.add(
+                    ArcSemanticAssertion(
+                        id=record_id,
+                        idempotency_key=idempotency_key,
+                        assertion_type=assertion.assertion_type,
+                        claim=assertion.claim,
+                        applicable_regimes_json=assertion.applicable_regimes,
+                        confidence=assertion.confidence,
+                        derived_from_episodes_json=episode_ids,
+                        counter_evidence_count=assertion.counter_evidence_count,
+                        status=assertion.status,
+                        replaced_by=assertion.replaced_by,
+                        embedding_json=embedding,
+                        version=assertion.version,
+                        evidence_set_hash=evidence_set_hash,
+                        distillation_version=distillation_version,
+                        metadata_json=assertion.metadata,
+                    )
+                )
+                session.flush()
+                contradiction_ids = sorted(set(validated_contradiction_ids or []))
+                if contradiction_ids:
+                    rows = session.scalars(
+                        select(ArcSemanticAssertion).where(
+                            ArcSemanticAssertion.id.in_(contradiction_ids),
+                            ArcSemanticAssertion.status == "active",
+                        )
+                    ).all()
+                    for row in rows:
+                        row.status = "deprecated"
+                        row.replaced_by = record_id
+                        metadata = dict(row.metadata_json or {})
+                        metadata["deprecation_reason"] = (
+                            f"validated_contradiction:{record_id}"
+                        )
+                        metadata["deprecated_at"] = utc_now().isoformat()
+                        row.metadata_json = metadata
+                session.flush()
+                return record_id, True
+        except IntegrityError:
+            with self.db.session() as session:
+                existing = session.scalar(
+                    select(ArcSemanticAssertion).where(
+                        ArcSemanticAssertion.idempotency_key == idempotency_key
+                    )
+                )
+                if existing is None:
+                    raise
+                return existing.id, False
+
+    def get_distilled_assertion(
+        self,
+        *,
+        evidence_set_hash: str,
+        distillation_version: str,
+    ) -> SemanticMemoryAssertionV1 | None:
+        with self.db.session() as session:
+            existing = session.scalar(
+                select(ArcSemanticAssertion).where(
+                    ArcSemanticAssertion.evidence_set_hash == evidence_set_hash,
+                    ArcSemanticAssertion.distillation_version == distillation_version,
+                )
+            )
+            return None if existing is None else self._db_to_semantic(existing)
 
     def get_semantic_assertion(self, assertion_id: str) -> SemanticMemoryAssertionV1 | None:
         with self.db.session() as session:
@@ -443,28 +609,54 @@ class LayeredMemoryService:
     # -------------------------------------------------------------------------
     def record_hypothesis(self, node: HypothesisNodeV1) -> str:
         record_id = node.id or new_id("hypo")
-        with self.db.session() as session:
-            db_item = ArcHypothesisNode(
-                id=record_id,
-                tree_id=node.tree_id,
-                parent_id=node.parent_id,
-                depth=node.depth,
-                claim=node.claim,
-                rationale=node.rationale,
-                target_regimes_json=node.target_regimes,
-                mutation_type=str(node.mutation_type),
-                strategy_digest=node.strategy_digest,
-                experiment_id=node.experiment_id,
-                benchmark_relative_pnl=node.benchmark_relative_pnl,
-                sharpe_ratio=node.sharpe_ratio,
-                max_drawdown=node.max_drawdown,
-                ic_mean=node.ic_mean,
-                status=str(node.status),
-                prune_reason=node.prune_reason,
-                metadata_json=node.metadata,
-            )
-            session.add(db_item)
-            session.flush()
+        idempotency_key = node.idempotency_key or stable_memory_key(
+            node.tree_id,
+            node.parent_id,
+            node.claim,
+            node.metadata.get("candidate_id"),
+            prefix="hypothesis",
+        )
+        try:
+            with self.db.session() as session:
+                existing = session.scalar(
+                    select(ArcHypothesisNode).where(
+                        ArcHypothesisNode.idempotency_key == idempotency_key
+                    )
+                )
+                if existing is not None:
+                    return existing.id
+                db_item = ArcHypothesisNode(
+                    id=record_id,
+                    tree_id=node.tree_id,
+                    parent_id=node.parent_id,
+                    idempotency_key=idempotency_key,
+                    depth=node.depth,
+                    claim=node.claim,
+                    rationale=node.rationale,
+                    target_regimes_json=node.target_regimes,
+                    mutation_type=str(node.mutation_type),
+                    strategy_digest=node.strategy_digest,
+                    experiment_id=node.experiment_id,
+                    benchmark_relative_pnl=node.benchmark_relative_pnl,
+                    sharpe_ratio=node.sharpe_ratio,
+                    max_drawdown=node.max_drawdown,
+                    ic_mean=node.ic_mean,
+                    status=str(node.status),
+                    prune_reason=node.prune_reason,
+                    metadata_json=node.metadata,
+                )
+                session.add(db_item)
+                session.flush()
+        except IntegrityError:
+            with self.db.session() as session:
+                existing = session.scalar(
+                    select(ArcHypothesisNode).where(
+                        ArcHypothesisNode.idempotency_key == idempotency_key
+                    )
+                )
+                if existing is None:
+                    raise
+                return existing.id
         return record_id
 
     def get_hypothesis(self, node_id: str) -> HypothesisNodeV1 | None:
@@ -537,9 +729,15 @@ class LayeredMemoryService:
         task_emb = query_embedding or deterministic_embedding(f"{symbol} {timeframe} {goal}")
 
         # 1. Score Semantic Assertions
-        active_semantics = self.list_semantic_assertions(status="active", limit=100)
+        active_semantics = self.list_semantic_assertions(status="active", limit=1_000)
         scored_semantics: list[tuple[float, SemanticMemoryAssertionV1]] = []
         for sem in active_semantics:
+            scoped_symbols = sem.metadata.get("symbols") or []
+            scoped_timeframe = str(sem.metadata.get("timeframe") or "")
+            if scoped_symbols and symbol not in scoped_symbols:
+                continue
+            if scoped_timeframe and timeframe != scoped_timeframe:
+                continue
             regime_score = compute_regime_match_score(current_regime, sem.applicable_regimes)
             if regime_score < 0:
                 # Filter out polar opposite regime rules to prevent catastrophic misapplication
@@ -554,7 +752,11 @@ class LayeredMemoryService:
         selected_semantics = [item for _, item in scored_semantics[:top_k_semantic]]
 
         # 2. Score Episodic Memories
-        episodes = self.list_episodes(symbols=[symbol] if symbol else None, limit=100)
+        episodes = self.list_episodes(
+            symbols=[symbol] if symbol else None,
+            timeframe=timeframe or None,
+            limit=100,
+        )
         scored_episodes: list[tuple[float, EpisodicMemoryItemV1]] = []
         for ep in episodes:
             regime_score = compute_regime_match_score(current_regime, [ep.market_regime])
@@ -616,6 +818,7 @@ class LayeredMemoryService:
     def _db_to_episodic(item: ArcEpisodicMemory) -> EpisodicMemoryItemV1:
         return EpisodicMemoryItemV1(
             id=item.id,
+            idempotency_key=item.idempotency_key,
             mission_id=item.mission_id,
             experiment_id=item.experiment_id,
             symbols=list(item.symbols_json or []),
@@ -634,6 +837,7 @@ class LayeredMemoryService:
     def _db_to_semantic(item: ArcSemanticAssertion) -> SemanticMemoryAssertionV1:
         return SemanticMemoryAssertionV1(
             id=item.id,
+            idempotency_key=item.idempotency_key,
             assertion_type=item.assertion_type,
             claim=item.claim,
             applicable_regimes=list(item.applicable_regimes_json or []),
@@ -644,6 +848,8 @@ class LayeredMemoryService:
             replaced_by=item.replaced_by,
             embedding=list(item.embedding_json or []),
             version=item.version,
+            evidence_set_hash=item.evidence_set_hash,
+            distillation_version=item.distillation_version,
             metadata=dict(item.metadata_json or {}),
             created_at=item.created_at,
             updated_at=item.updated_at,
@@ -653,6 +859,7 @@ class LayeredMemoryService:
     def _db_to_hypothesis(item: ArcHypothesisNode) -> HypothesisNodeV1:
         return HypothesisNodeV1(
             id=item.id,
+            idempotency_key=item.idempotency_key,
             tree_id=item.tree_id,
             parent_id=item.parent_id,
             depth=item.depth,

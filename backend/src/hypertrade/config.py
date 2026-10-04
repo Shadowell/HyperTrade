@@ -178,6 +178,22 @@ class Settings(BaseSettings):
         default=False,
         alias="ARC_PROVIDER_HYPOTHESES_ENABLED",
     )
+    arc_memory_distillation_enabled: bool = Field(
+        default=False,
+        alias="ARC_MEMORY_DISTILLATION_ENABLED",
+    )
+    arc_memory_distillation_max_model_calls_per_pass: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        alias="ARC_MEMORY_DISTILLATION_MAX_MODEL_CALLS_PER_PASS",
+    )
+    arc_memory_distillation_poll_interval_seconds: int = Field(
+        default=3600,
+        ge=60,
+        le=86400,
+        alias="ARC_MEMORY_DISTILLATION_POLL_INTERVAL_SECONDS",
+    )
     # Hashed service principals only. Format: label:arc:read+arc:start:sha256hex, comma-separated.
     # No token value can carry an approve capability; approval is not a token scope.
     arc_service_tokens: str = Field(default="", alias="ARC_SERVICE_TOKENS")

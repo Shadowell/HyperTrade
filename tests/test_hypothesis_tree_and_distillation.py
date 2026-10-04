@@ -235,8 +235,66 @@ def test_memory_distillation_pipeline(
     assert len(distilled.derived_from_episodes) == 3
     assert "widen ATR trailing stop" in distilled.claim
 
-    # Verify older similar assertion was automatically deprecated
+    # Similarity alone is not a contradiction and cannot deprecate a valid rule.
+    old_rule = memory_svc.get_semantic_assertion(old_rule_id)
+    assert old_rule is not None
+    assert old_rule.status == "active"
+    assert old_rule.replaced_by is None
+
+    # Replaying the same evidence set and summarizer version is idempotent.
+    repeated = distill_svc.distill_episodes_for_regime(
+        market_regime=regime,
+        min_episode_count=3,
+        causal_summarizer=custom_summarizer,
+    )
+    assert repeated is not None
+    assert repeated.id == distilled.id
+
+    # Deprecation requires an explicit, separately validated contradiction id.
+    replacement = distill_svc.distill_episodes_for_regime(
+        market_regime=regime,
+        min_episode_count=3,
+        causal_summarizer=custom_summarizer,
+        summarizer_version="causal-v2",
+        validated_contradiction_ids=[old_rule_id],
+    )
+    assert replacement is not None
     old_rule = memory_svc.get_semantic_assertion(old_rule_id)
     assert old_rule is not None
     assert old_rule.status == "deprecated"
-    assert old_rule.replaced_by == distilled.id
+    assert old_rule.replaced_by == replacement.id
+
+
+def test_distillation_skips_unknown_summary(
+    memory_svc: LayeredMemoryService,
+    distill_svc: MemoryDistillationService,
+) -> None:
+    for index in range(3):
+        memory_svc.record_episode(
+            EpisodicMemoryItemV1(
+                mission_id=f"unknown-{index}",
+                market_regime="sideways_range",
+                event_type="paper_decay",
+                reflection_summary="Observed decay without enough causal evidence.",
+            )
+        )
+
+    assert (
+        distill_svc.distill_episodes_for_regime(market_regime="sideways_range") is None
+    )
+    calls = 0
+
+    def unknown_summarizer(_episodes: list[EpisodicMemoryItemV1]) -> None:
+        nonlocal calls
+        calls += 1
+        return None
+
+    for _ in range(2):
+        assert (
+            distill_svc.distill_episodes_for_regime(
+                market_regime="sideways_range",
+                causal_summarizer=unknown_summarizer,
+            )
+            is None
+        )
+    assert calls == 1
