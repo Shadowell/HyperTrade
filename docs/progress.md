@@ -4,6 +4,11 @@
 
 # Progress Log
 
+## 确立每次修改自动合并与推送落地准则 (AGENTS.md 治理增强) — 2026-10-04
+
+- **明确每次修改全自动闭环 (T001)**：在 `AGENTS.md` 运行规则（Operating Rule 7）与 Standard Loop 中写入强制准则：任何功能、修复或配置修改在通过 `./scripts/check.sh` 质量门禁后，必须自动推进创建 PR、合并至 `origin/main`、删除特性分支并同步本地 `main` 分支全流程，无需等待额外的人工推送提示；
+- **更新落地工作流 (T002)**：在 "Worktrees And Landing" 章节中将默认交付升级为自动全闭环，确保生产唯一交付源 `origin/main` 始终保持最新且自动触发部署。
+
 ## RD-Agent 假设演进树与 FinMem 异步记忆蒸馏 (Spec 026 Phase 3) — 2026-10-04
 
 - **假设演进树 (HET) 服务实现 (T001)**：在 `backend/src/hypertrade/research/hypothesis_tree.py` 实现 `HypothesisTreeService`：
