@@ -360,22 +360,22 @@ def test_self_test_rejects_invalid_name_before_remote_validation():
 def test_deflated_sharpe_ratio_penalizes_multiple_trials():
     from hypertrade.arc.self_test import calculate_deflated_sharpe_ratio
 
-    # 1. Single trial -> no discount
-    sr_single = calculate_deflated_sharpe_ratio(1.5, num_trials=1)
-    assert sr_single == 1.5
+    moments = {"sample_length": 120, "skewness": 0, "kurtosis": 3, "trial_sharpe_variance": 0.01}
+    sr_single = calculate_deflated_sharpe_ratio(0.15, num_trials=1, **moments)
+    assert 0 <= sr_single <= 1
 
     # 2. 50 trials -> discounted due to expected maximum of random trials
-    sr_50 = calculate_deflated_sharpe_ratio(1.5, num_trials=50)
-    assert sr_50 < 1.5
+    sr_50 = calculate_deflated_sharpe_ratio(0.15, num_trials=50, **moments)
+    assert sr_50 < sr_single
     assert sr_50 > 0.0
 
     # 3. 200 trials -> further discounted
-    sr_200 = calculate_deflated_sharpe_ratio(1.5, num_trials=200)
+    sr_200 = calculate_deflated_sharpe_ratio(0.15, num_trials=200, **moments)
     assert sr_200 < sr_50
 
 
 def test_success_criteria_applies_deflated_sharpe_check():
-    # Pass with 1 trial (no multiple testing)
+    # A count in upstream metrics is not a server trial receipt, even when it is 1.
     passed_single, reasons_single = apply_success_criteria(
         {
             "out_of_sample_sharpe": 1.1,
@@ -386,8 +386,8 @@ def test_success_criteria_applies_deflated_sharpe_check():
         },
         ARCSuccessCriteriaV1(min_oos_sharpe=Decimal("1.0")),
     )
-    assert passed_single is True
-    assert reasons_single == []
+    assert passed_single is False
+    assert any("server_trial_evidence_required" in r for r in reasons_single)
 
     # Fail with 100 trials due to DSR discount falling below 1.0 threshold
     passed_multi, reasons_multi = apply_success_criteria(
@@ -402,4 +402,3 @@ def test_success_criteria_applies_deflated_sharpe_check():
     )
     assert passed_multi is False
     assert any("deflated_sharpe" in r for r in reasons_multi)
-

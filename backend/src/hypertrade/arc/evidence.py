@@ -364,9 +364,7 @@ def preflight_window(
             origin is not None and origin != ORIGIN_OKX_SWAP
         ),
         "detail": (
-            "ok"
-            if folds
-            else "window supports a single split but is too short for rolling folds"
+            "ok" if folds else "window supports a single split but is too short for rolling folds"
         ),
         **fingerprint,
     }
@@ -456,6 +454,23 @@ class HistoricalEvidenceGate:
 
         findings = _judge(in_sample, out_of_sample) + _judge_folds(folds)
         metrics = _metrics(in_sample, out_of_sample)
+        from hypertrade.research.sharpe import equity_return_statistics
+
+        # Local search trials count too. Closing the book appends a same-bar mark;
+        # fold that final cost into the last bar instead of inventing a time interval.
+        curve = list(out_of_sample.equity_curve)
+        if len(curve) == len(bars[split:]) + 1:
+            curve[-2:] = [curve[-1]]
+        metrics["return_statistics"] = (
+            equity_return_statistics(
+                [
+                    {"timestamp": bar.timestamp, "equity": value}
+                    for bar, value in zip(bars[split:], curve, strict=True)
+                ]
+            )
+            if len(curve) == len(bars[split:])
+            else {"status": "unknown"}
+        )
         metrics.update(_fold_metrics(folds))
         metrics.update(provenance)
         return EvidenceVerdict(findings=findings, metrics=metrics)
@@ -498,8 +513,7 @@ def walk_forward_slices(total_bars: int) -> tuple[tuple[int, int], ...]:
     if fold_bars < MIN_OUT_OF_SAMPLE_BARS:
         return ()
     return tuple(
-        (fold_bars * index, fold_bars * (index + 1))
-        for index in range(1, WALK_FORWARD_FOLDS + 1)
+        (fold_bars * index, fold_bars * (index + 1)) for index in range(1, WALK_FORWARD_FOLDS + 1)
     )
 
 

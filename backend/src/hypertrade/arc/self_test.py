@@ -25,6 +25,9 @@ from hypertrade.arc.universe import candidate_symbols
 from hypertrade.bitpro.cost_identity import source_cost_policy_hash
 from hypertrade.bitpro.mcp import BitProToolAdapter
 from hypertrade.research.codegen import StrategyCodegenError, generated_candidate_config
+from hypertrade.research.sharpe import (
+    calculate_deflated_sharpe_ratio as calculate_deflated_sharpe_ratio,
+)
 
 
 class SelfTestClient(Protocol):
@@ -100,7 +103,10 @@ class SelfTestResult:
 
 
 def apply_success_criteria(
-    metrics: dict[str, Any], criteria: ARCSuccessCriteriaV1
+    metrics: dict[str, Any],
+    criteria: ARCSuccessCriteriaV1,
+    *,
+    require_selection_evidence: bool = False,
 ) -> tuple[bool, list[str]]:
     """Deterministic paper-promotion referee. Model text cannot pass this.
 
@@ -148,41 +154,22 @@ def apply_success_criteria(
             f"net_return {net_return} below success_criteria.min_oos_net_return "
             f"{criteria.min_oos_net_return}"
         )
-    num_trials = int(metrics.get("num_trials") or metrics.get("trial_count") or 1)
-    if num_trials > 1 and sharpe is not None:
-        deflated_sr = calculate_deflated_sharpe_ratio(sharpe, num_trials)
-        if deflated_sr < float(criteria.min_oos_sharpe):
-            reasons.append(
-                f"deflated_sharpe {round(deflated_sr, 3)} (under {num_trials} trials) below "
-                f"success_criteria.min_oos_sharpe {criteria.min_oos_sharpe}"
-            )
+    # Only the orchestration layer owns trial history. Upstream metric text cannot
+    # set the trial count, and DSR is a probability rather than a discounted SR.
+    selection = metrics.get("selection_bias")
+    if (
+        require_selection_evidence
+        or selection is not None
+        or "num_trials" in metrics
+        or "trial_count" in metrics
+    ):
+        if not isinstance(selection, dict) or selection.get("status") != "observed":
+            reasons.append("deflated_sharpe_unknown:server_trial_evidence_required")
+        else:
+            probability = _number(selection, "probability")
+            if probability is None or not 0.95 <= probability <= 1:
+                reasons.append("deflated_sharpe_probability_below_0.95")
     return not reasons, reasons
-
-
-def calculate_deflated_sharpe_ratio(
-    observed_sharpe: float,
-    num_trials: int,
-    *,
-    sample_length: int = 120,
-    skewness: float = 0.0,
-    kurtosis: float = 3.0,
-) -> float:
-    """Calculate the Deflated Sharpe Ratio (Bailey & Lopez de Prado, 2014).
-
-    Adjusts for selection bias and data snooping under multiple hypothesis testing:
-    When `num_trials` candidate parameter combinations or variations are evaluated,
-    the expected maximum Sharpe ratio under the zero-alpha null hypothesis increases with sqrt(2*ln(N)).
-    """
-    if num_trials <= 1:
-        return observed_sharpe
-
-    z_max = math.sqrt(2.0 * math.log(max(num_trials, 2)))
-    sr_var = (
-        1.0 - skewness * observed_sharpe + (kurtosis - 1.0) / 4.0 * (observed_sharpe**2)
-    ) / max(sample_length, 10)
-    sr_std = math.sqrt(max(sr_var, 1e-6))
-    penalty = z_max * sr_std * 0.5  # 50% conservative discount on selection bias
-    return observed_sharpe - penalty
 
 
 def _fraction(

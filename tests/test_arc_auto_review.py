@@ -9,6 +9,7 @@ from hypertrade.arc.evolution import EvolutionConfig, EvolutionService
 from hypertrade.arc.paper_review import request_paper_review
 from hypertrade.arc.store import configure_store, get_controller, reset_store, save_mission
 from hypertrade.db import Database
+from test_arc_selection_bias import stats
 
 
 @pytest.fixture
@@ -78,6 +79,7 @@ def ready(monkeypatch):
             "backtest_id": "55",
             "validation_id": "validated",
             "metrics": {
+                "return_statistics": stats(),
                 "net_return": 0.5,
                 "sharpe": 2,
                 "max_drawdown": 0.01,

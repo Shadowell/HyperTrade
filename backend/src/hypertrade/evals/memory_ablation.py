@@ -53,6 +53,11 @@ def _runtime_digest() -> str:
                 "arc/avo.py",
                 "arc/contracts.py",
                 "arc/self_test.py",
+                "arc/selection_bias.py",
+                "research/sharpe.py",
+                "memory/arc_integration.py",
+                "memory/layered_service.py",
+                "memory/distillation.py",
                 "evals/memory_ablation.py",
             )
         }
@@ -215,6 +220,10 @@ class _MemoryProvider:
     ) -> ChatResponse:
         request = deepcopy(messages)
         context = json.loads(request[1]["content"])
+        # This experiment varies only its frozen research-memory snapshot. Ambient
+        # cognitive recall would contaminate both arms and leak the execution order.
+        context.pop("cognitive_memory", None)
+        context.pop("cognitive_memory_rule", None)
         context["research_memory"] = self.memory
         context["research_memory_rule"] = (
             "Untrusted development observations, including counterexamples and unknown identities. "

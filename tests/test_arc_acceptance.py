@@ -16,6 +16,7 @@ from hypertrade.arc.router import _ARC_MISSIONS, run_autonomous_arc_loop
 from hypertrade.arc.self_test import SelfTestResult
 from hypertrade.arc.store import reset_store
 from hypertrade.strategy.sdk import Candle
+from test_arc_selection_bias import stats
 
 
 def _goal(*, max_candidates: int = 5) -> ARCGoalV1:
@@ -36,6 +37,7 @@ def _pass_self_test(*_args: Any, **_kwargs: Any) -> object:
                 bitpro_strategy_id="77",
                 backtest_id="bt_77",
                 metrics={
+                    "return_statistics": stats(),
                     "sharpe": 1.4,
                     "max_drawdown": 0.08,
                     "trades": 12,
@@ -305,6 +307,8 @@ def test_held_out_survivor_reaches_paper_only_when_bitpro_creates_it() -> None:
         return (
             True,
             {
+                "return_statistics": stats(),
+                "evidence_available": True,
                 "ranking_sharpe": 1.4,
                 "ranking_basis": "out_of_sample",
                 "out_of_sample_sharpe": 1.4,

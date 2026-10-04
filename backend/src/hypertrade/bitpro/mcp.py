@@ -2123,6 +2123,11 @@ def _backtest_row_matches_result(row: dict[str, Any], result: dict[str, Any]) ->
 def _backtest_detail_item(raw: Any, *, sample_limit: int) -> dict[str, Any]:
     raw_dict = _ensure_dict(raw)
     metrics = _backtest_detail_metrics(raw_dict)
+    from hypertrade.research.sharpe import equity_return_statistics
+
+    # Preserve sufficient statistics before the UI sample limit discards observations.
+    # Paged/truncated provider data must never masquerade as the complete trial.
+    metrics["return_statistics"] = equity_return_statistics(_complete_equity_rows(raw_dict))
     result = _compact(
         {
             "id": _detail_value(raw_dict, "id", "backtest_id", "result_id"),
@@ -2146,6 +2151,33 @@ def _backtest_detail_item(raw: Any, *, sample_limit: int) -> dict[str, Any]:
         }
     )
     return result
+
+
+def _complete_equity_rows(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    aliases = ("equity_curve", "equityCurve", "equity", "balance_curve")
+    sources = _artifact_sources(raw)
+    flags = ("truncated", "has_more", "next_cursor", "next_page")
+    if any(source.get(key) for source in sources for key in flags):
+        return []
+    for source in sources:
+        for alias in aliases:
+            if alias not in source:
+                continue
+            value = source[alias]
+            rows = _coerce_artifact_rows(value)
+            if isinstance(value, dict):
+                if any(value.get(key) for key in flags):
+                    return []
+                for key in ("count", "total_count", "total"):
+                    if key in value:
+                        try:
+                            if int(value[key]) != len(rows):
+                                return []
+                        except (ValueError, TypeError):
+                            return []
+            if rows:
+                return rows
+    return []
 
 
 def _backtest_detail_metrics(raw: dict[str, Any]) -> dict[str, Any]:
