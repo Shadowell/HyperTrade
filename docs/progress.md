@@ -4,6 +4,19 @@
 
 # Progress Log
 
+## RD-Agent 假设演进树与 FinMem 异步记忆蒸馏 (Spec 026 Phase 3) — 2026-10-04
+
+- **假设演进树 (HET) 服务实现 (T001)**：在 `backend/src/hypertrade/research/hypothesis_tree.py` 实现 `HypothesisTreeService`：
+  1. **拓扑分支与系谱溯源**：支持根假设提出（`propose_root`）、变异分支衍生（`propose_branch`）与严格的树深约束（`max_depth`，超限抛出 `MaxTreeDepthExceededError`）；
+  2. **语义向量局部去重**：基于高维嵌入余弦相似度（`deduplication_threshold=0.88`）过滤重复或高度冗余的假设，抛出 `DuplicateHypothesisError`，避免无效算力开销；
+  3. **指标回写与剪枝裁决**：实现 `evaluate_and_update()`，比对父子节点夏普比率（`sharpe_ratio`）与 PnL；当子节点相比父节点退化且低于惩罚阈值（$\Delta \text{Sharpe} < -0.20$ 且 $\text{PnL} < -0.05$）时触发自动剪枝（`status="pruned"`），终止无效劣势分支进一步繁衍；
+  4. **活跃叶节点与最佳候选检索**：实现 `list_active_leaves()` 与 `get_best_candidate()`，为上层自动化研究调度器提供决策支持；
+- **FinMem 异步情景记忆蒸馏管道 (T002)**：在 `backend/src/hypertrade/memory/distillation.py` 实现 `MemoryDistillationService`：
+  1. **同类情景聚类与因果归因**：周期性扫描特定 Regime 下的失效与退化事件（如 `paper_decay`、`backtest_overfit`、`redteam_falsified`），当满足样本量阈值（`min_episode_count`）时自动生成结构化因果断言；
+  2. **知识矛盾检测与自动废弃置换**：比对既有活跃语义记忆相似度（`similarity_threshold`），自动将陈旧/冲突的前验规则置换为 `deprecated`（记录 `replaced_by` 指针与废弃原因），晋升最新规则为 Tier 3 `active` 语义记忆；
+- **模块导出规范化 (T003)**：在 `backend/src/hypertrade/research/__init__.py` 与 `backend/src/hypertrade/memory/__init__.py` 统一暴露核心接口；
+- **单元测试与质量门禁全绿 (T004)**：编写 `tests/test_hypothesis_tree_and_distillation.py` 覆盖 5 项测试（演进树创建与多代分支、语义相似度去重拦截、树深上限越界拦截、回测表现劣后分支剪枝、多情景事件聚类蒸馏与旧规则自动废弃）；全量通过 `./scripts/check.sh` 质量门禁。
+
 ## Co-STEER 策略代码合成与 AST 门禁 (Spec 026 Phase 2) — 2026-10-04
 
 - **统一领域脚手架与策略契约 (T001)**：在 `backend/src/hypertrade/research/co_steer.py` 实现 `BaseEvolutionStrategy`，强制约束三段式执行流（`compute_features()` 特征工程、`generate_signals()` 信号生成、`position_sizing()` 动态仓位），提供开箱即用的对齐回测评估器 `evaluate_signals()`；

@@ -1,5 +1,6 @@
 """Memory package."""
 
+from hypertrade.memory.distillation import MemoryDistillationService
 from hypertrade.memory.layered_service import (
     EpisodicMemoryItemV1,
     HypothesisNodeV1,
@@ -19,6 +20,7 @@ __all__ = [
     "HypothesisNodeV1",
     "HypothesisStatus",
     "LayeredMemoryService",
+    "MemoryDistillationService",
     "MemoryService",
     "MutationType",
     "SemanticMemoryAssertionV1",
