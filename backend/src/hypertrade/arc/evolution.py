@@ -715,7 +715,14 @@ class EvolutionService:
                 if emergency:
                     feedback = short
                 else:
-                    if int(snapshot.get("trade_count") or 0) < config.min_trades:
+                    trade_count = int(snapshot.get("trade_count") or 0)
+                    timeframe = str(row.timeframe or snapshot.get("timeframe") or "1D").upper()
+                    # 自适应不同 K 线周期的成交门槛 (低频日线/周线策略成交频率较低)
+                    effective_min_trades = config.min_trades
+                    if timeframe in ("1D", "1W", "1MONTH") and config.min_trades > 10:
+                        effective_min_trades = max(5, config.min_trades // 3)
+
+                    if trade_count < effective_min_trades:
                         raise ValueError("成交样本不足")
                     benchmark_symbols = (
                         target_symbols(snapshot, bitpro=profile.transport == "bitpro_mcp_v1")

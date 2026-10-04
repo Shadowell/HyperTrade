@@ -148,7 +148,41 @@ def apply_success_criteria(
             f"net_return {net_return} below success_criteria.min_oos_net_return "
             f"{criteria.min_oos_net_return}"
         )
+    num_trials = int(metrics.get("num_trials") or metrics.get("trial_count") or 1)
+    if num_trials > 1 and sharpe is not None:
+        deflated_sr = calculate_deflated_sharpe_ratio(sharpe, num_trials)
+        if deflated_sr < float(criteria.min_oos_sharpe):
+            reasons.append(
+                f"deflated_sharpe {round(deflated_sr, 3)} (under {num_trials} trials) below "
+                f"success_criteria.min_oos_sharpe {criteria.min_oos_sharpe}"
+            )
     return not reasons, reasons
+
+
+def calculate_deflated_sharpe_ratio(
+    observed_sharpe: float,
+    num_trials: int,
+    *,
+    sample_length: int = 120,
+    skewness: float = 0.0,
+    kurtosis: float = 3.0,
+) -> float:
+    """Calculate the Deflated Sharpe Ratio (Bailey & Lopez de Prado, 2014).
+
+    Adjusts for selection bias and data snooping under multiple hypothesis testing:
+    When `num_trials` candidate parameter combinations or variations are evaluated,
+    the expected maximum Sharpe ratio under the zero-alpha null hypothesis increases with sqrt(2*ln(N)).
+    """
+    if num_trials <= 1:
+        return observed_sharpe
+
+    z_max = math.sqrt(2.0 * math.log(max(num_trials, 2)))
+    sr_var = (
+        1.0 - skewness * observed_sharpe + (kurtosis - 1.0) / 4.0 * (observed_sharpe**2)
+    ) / max(sample_length, 10)
+    sr_std = math.sqrt(max(sr_var, 1e-6))
+    penalty = z_max * sr_std * 0.5  # 50% conservative discount on selection bias
+    return observed_sharpe - penalty
 
 
 def _fraction(

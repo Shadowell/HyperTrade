@@ -355,3 +355,51 @@ def test_self_test_rejects_invalid_name_before_remote_validation():
     result = ARCSelfTestService(Client()).run(attempt, ARCGoalV1(objective="x"))
     assert not result.passed
     assert result.reasons[0].startswith("bitpro_strategy_name_invalid")
+
+
+def test_deflated_sharpe_ratio_penalizes_multiple_trials():
+    from hypertrade.arc.self_test import calculate_deflated_sharpe_ratio
+
+    # 1. Single trial -> no discount
+    sr_single = calculate_deflated_sharpe_ratio(1.5, num_trials=1)
+    assert sr_single == 1.5
+
+    # 2. 50 trials -> discounted due to expected maximum of random trials
+    sr_50 = calculate_deflated_sharpe_ratio(1.5, num_trials=50)
+    assert sr_50 < 1.5
+    assert sr_50 > 0.0
+
+    # 3. 200 trials -> further discounted
+    sr_200 = calculate_deflated_sharpe_ratio(1.5, num_trials=200)
+    assert sr_200 < sr_50
+
+
+def test_success_criteria_applies_deflated_sharpe_check():
+    # Pass with 1 trial (no multiple testing)
+    passed_single, reasons_single = apply_success_criteria(
+        {
+            "out_of_sample_sharpe": 1.1,
+            "max_drawdown": 0.1,
+            "trades": 30,
+            "net_return": 0.05,
+            "num_trials": 1,
+        },
+        ARCSuccessCriteriaV1(min_oos_sharpe=Decimal("1.0")),
+    )
+    assert passed_single is True
+    assert reasons_single == []
+
+    # Fail with 100 trials due to DSR discount falling below 1.0 threshold
+    passed_multi, reasons_multi = apply_success_criteria(
+        {
+            "out_of_sample_sharpe": 1.1,
+            "max_drawdown": 0.1,
+            "trades": 30,
+            "net_return": 0.05,
+            "num_trials": 100,
+        },
+        ARCSuccessCriteriaV1(min_oos_sharpe=Decimal("1.0")),
+    )
+    assert passed_multi is False
+    assert any("deflated_sharpe" in r for r in reasons_multi)
+
