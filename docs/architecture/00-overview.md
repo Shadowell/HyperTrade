@@ -14,6 +14,9 @@
   decoupled from any trading platform (`market_target.v1` profiles and the `market-evolution.v1`
   MCP contract); [63 Evolution Hardening](63-evolution-effectiveness-alerts-and-benchmark.md) covers
   the effectiveness ledger, data-gap alerts and benchmark-relative decay detection.
+- [65 RD-Agent Evolution & FinMem Layered Memory](65-rd-agent-evolution-and-finmem-layered-memory.md)
+  specifies the hypothesis evolution tree (HET), Co-STEER structured strategy code synthesis with
+  AST gatekeeper, and FinMem-inspired 3-tier cognitive memory with episodic-to-semantic distillation.
 - [19 Visual Architecture Map](19-hypertrade-architecture-diagram.md) is the concise layer diagram
   for product discussion.
 - [30 Professional Agent Runtime V2 Roadmap](30-professional-agent-runtime-v2-roadmap.md) explains

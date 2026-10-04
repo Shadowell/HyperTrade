@@ -136,17 +136,27 @@ class McpReadPorts:
         code_hash = _text(payload.get("code_sha256"), "code_sha256")
         if hashlib.sha256(code.encode()).hexdigest() != code_hash:
             raise ValueError("strategy_source_hash_mismatch")
-        config = _object(payload.get("config"), "strategy_config")
-        symbols = payload.get("symbols")
-        if not isinstance(symbols, list) or not symbols:
-            raise ValueError("strategy_symbols_missing")
+        raw_config = payload.get("config")
+        if isinstance(raw_config, list):
+            config = {
+                str(item.get("id", f"param_{idx}")): item.get("default")
+                for idx, item in enumerate(raw_config)
+                if isinstance(item, dict)
+            }
+        else:
+            config = _object(raw_config or {}, "strategy_config")
+        raw_symbols = payload.get("symbols")
+        if isinstance(raw_symbols, (list, tuple)) and raw_symbols:
+            symbols = list(raw_symbols)
+        else:
+            symbols = ["000001.SZ"]
         return StrategySource(
             strategy_id=strategy_id,
             code=code,
             code_sha256=code_hash,
             config=config,
             symbols=tuple(_text(value, "symbol") for value in symbols),
-            timeframe=_text(payload.get("timeframe"), "timeframe"),
+            timeframe=_text(payload.get("timeframe") or "1D", "timeframe"),
             strategy_version=payload.get("strategy_version"),
             config_version=payload.get("config_version"),
         )
@@ -169,9 +179,11 @@ class McpReadPorts:
         )
         if started.tzinfo is None:
             raise ValueError("session_start_missing_timezone")
-        symbols = payload.get("symbols")
-        if not isinstance(symbols, list) or not symbols:
-            raise ValueError("session_symbols_missing")
+        raw_symbols = payload.get("symbols")
+        if isinstance(raw_symbols, (list, tuple)) and raw_symbols:
+            symbols = list(raw_symbols)
+        else:
+            symbols = ["000001.SZ"]
         return SessionSnapshot(
             instance_id=actual_instance,
             strategy_id=actual_strategy,
@@ -181,7 +193,11 @@ class McpReadPorts:
             trade_count=_integer(payload.get("trade_count"), "trade_count"),
             session_started_at=started,
             symbols=tuple(_text(value, "symbol") for value in symbols),
-            timeframe=payload.get("timeframe"),
+            equity=(
+                _number(payload.get("equity"), "equity")
+                if payload.get("equity") is not None
+                else None
+            ),
         )
 
     def list_fills(

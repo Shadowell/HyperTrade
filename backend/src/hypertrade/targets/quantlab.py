@@ -672,7 +672,6 @@ def quantlab_adapter_factory() -> QuantLabTargetAdapter:
     from hypertrade.config import get_settings
 
     settings = get_settings()
-    mcp_client = None
     if settings.quantlab_mcp_url and settings.quantlab_mcp_url.startswith("http"):
         try:
             from hypertrade.connectors.mcp_client import McpClientRegistry, McpServerConfig
@@ -689,9 +688,17 @@ def quantlab_adapter_factory() -> QuantLabTargetAdapter:
                 "quantlab",
                 QUANTLAB_TARGET_PROFILE,
             )
-        except Exception:
-            mcp_client = None
-    return QuantLabTargetAdapter(mcp_client=mcp_client)
+            return QuantLabTargetAdapter(mcp_client=mcp_client)
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Remote QuantLab MCP server at %s unavailable: %s; "
+                "falling back to local simulation",
+                settings.quantlab_mcp_url,
+                exc,
+            )
+    return QuantLabTargetAdapter()
 
 
 def register_quantlab_target(

@@ -12,6 +12,7 @@ their own keys.
 from __future__ import annotations
 
 import pytest
+from hypertrade.config import get_settings
 
 _PROVIDER_KEY_ENV_VARS = (
     "DEEPSEEK_API_KEY",
@@ -20,6 +21,8 @@ _PROVIDER_KEY_ENV_VARS = (
     "QWEN_API_KEY",
     "VIDE_CODING_API_KEY",
     "CODEX_API_KEY",
+    "QUANTLAB_MCP_URL",
+    "QUANTLAB_MCP_TOKEN",
 )
 
 
@@ -27,8 +30,12 @@ _PROVIDER_KEY_ENV_VARS = (
 def _hermetic_provider_keys(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     # Codex can authenticate from a local file even when CODEX_API_KEY is empty.
     monkeypatch.setenv("CODEX_AUTH_JSON", str(tmp_path / "absent-codex-auth.json"))
+    monkeypatch.delenv("MARKET_TARGET", raising=False)
     for var in _PROVIDER_KEY_ENV_VARS:
         monkeypatch.setenv(var, "")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture

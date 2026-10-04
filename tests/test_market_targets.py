@@ -53,7 +53,7 @@ def test_bitpro_adapter_factory_builds_lazy_client() -> None:
 
 def test_unknown_target_is_refused_with_registered_list() -> None:
     with pytest.raises(MarketTargetUnavailable) as excinfo:
-        get_market_target("quantlab")
+        get_market_target("unknown_target")
     assert "bitpro" in str(excinfo.value)
 
 

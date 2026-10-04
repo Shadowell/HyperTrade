@@ -35,7 +35,9 @@ from hypertrade.tools.registry import ToolRegistry
 
 
 @pytest.fixture(autouse=True)
-def clean_registry() -> Generator[None, None, None]:
+def clean_registry(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    settings = get_settings()
+    monkeypatch.setattr(settings, "quantlab_mcp_url", None, raising=False)
     reset_market_targets()
     yield
     reset_market_targets()
