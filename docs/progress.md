@@ -4,6 +4,16 @@
 
 # Progress Log
 
+## Co-STEER 策略代码合成与 AST 门禁 (Spec 026 Phase 2) — 2026-10-04
+
+- **统一领域脚手架与策略契约 (T001)**：在 `backend/src/hypertrade/research/co_steer.py` 实现 `BaseEvolutionStrategy`，强制约束三段式执行流（`compute_features()` 特征工程、`generate_signals()` 信号生成、`position_sizing()` 动态仓位），提供开箱即用的对齐回测评估器 `evaluate_signals()`；
+- **ASTGatekeeper 静态安全与时序穿越门禁 (T002)**：实现静态 AST 解析器，构建安全双防线：
+  1. **恶意代码与反射拦截**：全面阻止非白名单导入、危险函数调用（`eval`、`exec`、`open`、`__import__`）与反射逃逸尝试；
+  2. **未来函数 (Lookahead Bias) 严查**：全面检测负偏移前向切片（如 `shift(-k)`）、负窗口滚动（`rolling(-k)`）与负滞后周期（`pct_change(-k)`），从源头扼杀数据泄漏；
+  3. **结构契约完整性检查**：严格核验策略类对三大核心抽象方法的实现覆盖；
+- **沙箱局部自愈循环 (Local Self-Healing Loop) (T003)**：实现 `LocalSelfHealController`，在隔离测试沙箱内捕获编译及实例化异常，支持有界（最大 2 次）错误局部自愈与 Traceback 针对性修复，生成可溯源 SHA-256 策略代码摘要，避免未治愈代码污染全局 Mission 会话；
+- **单元测试与质量门禁全绿 (T004)**：编写 `tests/test_co_steer_codegen.py` 覆盖 10 项测试（策略脚手架运行、AST 合规放行、危险导入/函数拦截、前向时序穿越捕获、负窗口检测、抽象方法缺漏拦截、自愈单次通过、自愈多轮修复及超限优雅退出）；通过前端与后端全量质量门禁（Ruff、Mypy 307 模块 0 错误、全量 2032 项 pytest 100% 绿灯）。
+
 ## RD-Agent 假设演进与 FinMem 分层认知记忆基础设施 (Spec 026 Phase 1) — 2026-10-04
 
 - **持久化数据模型扩充 (T001)**：在 `backend/src/hypertrade/db.py` 中新增 `ArcHypothesisNode`（RD-Agent 假设演进树节点与代码摘要绑定）、`ArcEpisodicMemory`（FinMem Tier 2 情景记忆，记录回测、退化与红队审查事件）与 `ArcSemanticAssertion`（FinMem Tier 3 语义记忆，因果规则与先验知识断言）；
