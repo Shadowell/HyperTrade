@@ -136,7 +136,64 @@ def test_discover_active_pairs(tmp_path: Path) -> None:
         state_file=state_file,
     )
     pairs = daemon.discover_active_pairs()
-    assert pairs == [(100, 105, 2)]
+    assert pairs == [("bitpro", "100", 105, 2)]
+
+
+def test_discovery_namespaces_same_opaque_ids_by_target(tmp_path: Path) -> None:
+    history_file = tmp_path / "paper_history.json"
+    history_file.write_text(
+        json.dumps(
+            [
+                {
+                    "target_id": "bitpro",
+                    "parent_strategy_id": "42",
+                    "bitpro_deployed": True,
+                    "bitpro_strategy_id": 99,
+                    "generation": 2,
+                },
+                {
+                    "target_id": "quantlab",
+                    "parent_strategy_id": "42",
+                    "quantlab_deployed": True,
+                    "quantlab_strategy_id": "99",
+                    "generation": 3,
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    daemon = RaceJudgeDaemon(
+        history_file=history_file, state_file=tmp_path / "state.json"
+    )
+    assert daemon.discover_active_pairs() == [
+        ("bitpro", "42", 99, 2),
+        ("quantlab", "42", "99", 3),
+    ]
+
+
+def test_quantlab_adapter_failure_never_falls_back_to_bitpro(tmp_path: Path) -> None:
+    bitpro = MagicMock(spec=BitProToolAdapter)
+    daemon = RaceJudgeDaemon(
+        bitpro_adapter=bitpro, state_file=tmp_path / "state.json"
+    )
+    with patch(
+        "hypertrade.targets.registry.adapter_for_target",
+        side_effect=RuntimeError("quantlab unavailable"),
+    ):
+        record = daemon.evaluate_pair("42", "99", target_id="quantlab")
+    assert record.target_id == "quantlab"
+    assert record.reason == "target_adapter_unavailable:RuntimeError"
+    bitpro.paper_relay_status.assert_not_called()
+
+
+def test_unknown_target_never_dispatches_to_bitpro(tmp_path: Path) -> None:
+    bitpro = MagicMock(spec=BitProToolAdapter)
+    daemon = RaceJudgeDaemon(
+        bitpro_adapter=bitpro, state_file=tmp_path / "state.json"
+    )
+    record = daemon.evaluate_pair("42", "99", target_id="unknown-market")
+    assert record.reason == "unsupported_target:unknown-market"
+    bitpro.paper_relay_status.assert_not_called()
 
 
 def test_evaluate_pair_observing_accumulating(tmp_path: Path) -> None:

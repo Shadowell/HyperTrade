@@ -6,6 +6,7 @@ from collections.abc import Generator
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -24,6 +25,7 @@ from hypertrade.targets import (
     registered_market_targets,
     reset_market_targets,
 )
+from hypertrade.targets.mcp_contract import McpContractClient
 from hypertrade.targets.ports import (
     EvidencePort,
     MarketWritePort,
@@ -31,6 +33,7 @@ from hypertrade.targets.ports import (
     PaperSessionPort,
     StrategySourcePort,
 )
+from hypertrade.targets.registry import MarketTargetUnavailable
 from hypertrade.tools.registry import ToolRegistry
 
 
@@ -84,12 +87,12 @@ def test_quantlab_active_target_switching(monkeypatch: pytest.MonkeyPatch) -> No
     binding = get_active_market_target()
     assert binding.profile.target_id == "quantlab"
     assert binding.adapter_factory is not None
-    adapter = binding.adapter_factory()
+    adapter = quantlab_adapter_factory(simulation=True)
     assert isinstance(adapter, QuantLabTargetAdapter)
 
 
 def test_quantlab_adapter_conforms_to_typed_ports() -> None:
-    adapter = QuantLabTargetAdapter()
+    adapter = QuantLabTargetAdapter(simulation=True)
     assert isinstance(adapter, StrategySourcePort)
     assert isinstance(adapter, PaperSessionPort)
     assert isinstance(adapter, EvidencePort)
@@ -98,7 +101,7 @@ def test_quantlab_adapter_conforms_to_typed_ports() -> None:
 
 
 def test_quantlab_read_ports_operations() -> None:
-    adapter = QuantLabTargetAdapter()
+    adapter = QuantLabTargetAdapter(simulation=True)
 
     # Strategy source port
     running = adapter.list_running_strategies(limit=10)
@@ -146,7 +149,7 @@ def test_quantlab_read_ports_operations() -> None:
 
 
 def test_quantlab_write_ports_lifecycle() -> None:
-    adapter = QuantLabTargetAdapter()
+    adapter = QuantLabTargetAdapter(simulation=True)
 
     # 1. Deploy strategy
     custom_code = 'class CustomTrendAlpha:\n    pass\n'
@@ -186,7 +189,13 @@ def test_quantlab_write_ports_lifecycle() -> None:
     assert snap_stopped.status == "stopped"
 
 
-def test_quantlab_agent_kernel_tool_execution(tmp_path: Path) -> None:
+def test_quantlab_agent_kernel_tool_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "hypertrade.targets.quantlab.quantlab_adapter_factory",
+        lambda: QuantLabTargetAdapter(simulation=True),
+    )
     db = Database(f"sqlite:///{tmp_path}/agent_quantlab.db")
     db.create_all()
 
@@ -251,12 +260,147 @@ def test_quantlab_agent_kernel_tool_execution(tmp_path: Path) -> None:
     assert deploy_result["paper_session"]["status"] == "running"
 
 
+def test_quantlab_factory_requires_real_transport_or_explicit_simulator() -> None:
+    with pytest.raises(MarketTargetUnavailable, match="MCP URL is not configured"):
+        quantlab_adapter_factory()
+
+    assert isinstance(
+        quantlab_adapter_factory(simulation=True), QuantLabTargetAdapter
+    )
+
+
+class _QuantLabMcpRegistry:
+    def __init__(
+        self, *, omit: str | None = None, identity_mismatch: str | None = None
+    ) -> None:
+        self.omit = omit
+        self.identity_mismatch = identity_mismatch
+        self.calls: list[tuple[str, dict]] = []
+
+    async def list_tools(self, server: str, *, force_refresh: bool = False):
+        names = {
+            "evolution_list_running_strategies",
+            "evolution_get_session_snapshot",
+            "evolution_get_equity_series",
+            "evolution_list_session_trades",
+            "evolution_get_strategy_source",
+            "evolution_list_trading_sessions",
+            "evolution_configure_paper",
+            "evolution_start_paper",
+            "evolution_stop_paper",
+            "backtest_start_job",
+            "backtest_get_job",
+        }
+        return [SimpleNamespace(name=name) for name in names if name != self.omit]
+
+    async def call_tool(self, server: str, name: str, arguments: dict):
+        self.calls.append((name, arguments))
+        base = {"schema_version": "market-evolution.v1", "target_id": "quantlab"}
+        if name == "evolution_configure_paper":
+            return {
+                **base,
+                "status": "configured",
+                "instance_id": "paper_remote_1",
+                "strategy_id": (
+                    "wrong-strategy"
+                    if self.identity_mismatch == "configure_strategy"
+                    else arguments["strategy_id"]
+                ),
+            }
+        if name == "evolution_start_paper":
+            return {
+                **base,
+                "status": "running",
+                "instance_id": (
+                    "wrong-instance"
+                    if self.identity_mismatch == "start_instance"
+                    else arguments["instance_id"]
+                ),
+                "strategy_id": arguments["strategy_id"],
+            }
+        if name == "backtest_start_job":
+            return {**base, "status": "running", "job_id": "bt_remote_1"}
+        if name == "backtest_get_job":
+            return {**base, "status": "completed", "job_id": arguments["job_id"], "metrics": {}}
+        raise AssertionError(name)
+
+
+def _remote_quantlab_adapter(registry: _QuantLabMcpRegistry) -> QuantLabTargetAdapter:
+    return QuantLabTargetAdapter(
+        McpContractClient(registry, "quantlab", QUANTLAB_TARGET_PROFILE)
+    )
+
+
+def test_quantlab_remote_writes_forward_verified_identity_and_idempotency() -> None:
+    registry = _QuantLabMcpRegistry()
+    adapter = _remote_quantlab_adapter(registry)
+    configured = adapter.configure_paper(
+        "candidate-1",
+        strategy_id="opaque-42",
+        capital=100000,
+        symbols=["600519.SH"],
+        timeframe="1D",
+    )
+    started = adapter.start_paper(
+        "candidate-1",
+        strategy_id="opaque-42",
+        instance_id=configured["instance_id"],
+    )
+    assert started["instance_id"] == "paper_remote_1"
+    assert registry.calls[0][1]["idempotency_key"] == "quantlab:candidate-1:configure"
+    assert registry.calls[1][1]["idempotency_key"] == "quantlab:candidate-1:start"
+    assert registry.calls[1][1]["instance_id"] == configured["instance_id"]
+    started_job = adapter.backtest_start_job(strategy_id="opaque-42")
+    completed_job = adapter.backtest_get_job(started_job["job_id"])
+    assert completed_job["status"] == "completed"
+    with pytest.raises(MarketTargetUnavailable, match="relay status"):
+        adapter.paper_relay_status("opaque-42")
+
+
+def test_quantlab_remote_write_requires_advertised_tool() -> None:
+    adapter = _remote_quantlab_adapter(
+        _QuantLabMcpRegistry(omit="evolution_configure_paper")
+    )
+    with pytest.raises(MarketTargetUnavailable, match="does not advertise"):
+        adapter.configure_paper(
+            "candidate-1",
+            strategy_id="opaque-42",
+            symbols=["600519.SH"],
+            timeframe="1D",
+        )
+
+
+@pytest.mark.parametrize(
+    "mismatch,operation",
+    [("configure_strategy", "configure"), ("start_instance", "start")],
+)
+def test_quantlab_remote_write_rejects_identity_mismatch(mismatch, operation) -> None:
+    adapter = _remote_quantlab_adapter(
+        _QuantLabMcpRegistry(identity_mismatch=mismatch)
+    )
+    if operation == "configure":
+        with pytest.raises(MarketTargetUnavailable, match="strategy identity mismatch"):
+            adapter.configure_paper(
+                "candidate-1",
+                strategy_id="opaque-42",
+                symbols=["600519.SH"],
+                timeframe="1D",
+            )
+    else:
+        with pytest.raises(MarketTargetUnavailable, match="instance identity mismatch"):
+            adapter.start_paper(
+                "candidate-1",
+                strategy_id="opaque-42",
+                instance_id="paper_remote_1",
+            )
+
+
 def test_quantlab_evolution_service_integration(tmp_path: Path) -> None:
     register_quantlab_target(replace=True)
     db = Database(f"sqlite:///{tmp_path}/evolution_quantlab.db")
     db.create_all()
 
-    adapter = quantlab_adapter_factory()
+    adapter = quantlab_adapter_factory(simulation=True)
     service = EvolutionService(db, adapter)
 
     config = EvolutionConfig(

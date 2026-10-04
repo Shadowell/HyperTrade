@@ -20,6 +20,7 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from hypertrade.connectors.mcp_client import run_async
 from hypertrade.targets.mcp_contract import (
     MARKET_EVOLUTION_CONTRACT_V1,
     McpContractClient,
@@ -36,6 +37,7 @@ from hypertrade.targets.ports import (
 )
 from hypertrade.targets.registry import (
     MarketTargetBinding,
+    MarketTargetUnavailable,
     register_market_target,
 )
 from hypertrade.targets.schemas import (
@@ -119,8 +121,15 @@ class QuantLabTargetAdapter:
         mcp_client: McpContractClient | None = None,
         *,
         timezone: str = "Asia/Shanghai",
+        simulation: bool = False,
     ) -> None:
+        if mcp_client is None and not simulation:
+            raise MarketTargetUnavailable(
+                "QuantLab requires a configured MCP transport; "
+                "pass simulation=True only for explicit offline tests"
+            )
         self._mcp_client = mcp_client
+        self._simulation = simulation
         self._mcp_read_ports: McpReadPorts | None = None
         if mcp_client is not None:
             self._mcp_read_ports = McpReadPorts(mcp_client)
@@ -130,7 +139,68 @@ class QuantLabTargetAdapter:
         self._sessions: dict[str, dict[str, Any]] = {}
         self._fills: dict[str, list[Fill]] = {}
         self._equity_curves: dict[str, list[EquityPoint]] = {}
-        self._seed_default_state()
+        if simulation:
+            self._seed_default_state()
+
+    def _call_remote_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if self._mcp_client is None:
+            raise MarketTargetUnavailable(
+                f"QuantLab tool {tool_name!r} requires a configured MCP transport"
+            )
+        registry = self._mcp_client._registry
+        server = self._mcp_client._server
+        descriptors = run_async(registry.list_tools(server))
+        advertised = {str(item.name) for item in descriptors}
+        if tool_name not in advertised:
+            raise MarketTargetUnavailable(
+                f"QuantLab MCP server does not advertise required tool {tool_name!r}"
+            )
+        payload = run_async(registry.call_tool(server, tool_name, dict(arguments)))
+        if not isinstance(payload, dict):
+            raise MarketTargetUnavailable(
+                f"QuantLab MCP tool {tool_name!r} returned an invalid non-object receipt"
+            )
+        if (
+            payload.get("schema_version") != MARKET_EVOLUTION_CONTRACT_V1
+            or payload.get("target_id") != QUANTLAB_TARGET_ID
+        ):
+            raise MarketTargetUnavailable(
+                f"QuantLab MCP tool {tool_name!r} returned a mismatched contract receipt"
+            )
+        return payload
+
+    @staticmethod
+    def _require_receipt(
+        payload: dict[str, Any],
+        *,
+        operation: str,
+        statuses: tuple[str, ...],
+        require_instance: bool = False,
+        expected_strategy_id: str | None = None,
+        expected_instance_id: str | None = None,
+    ) -> dict[str, Any]:
+        status = str(payload.get("status") or "").lower()
+        if status not in statuses:
+            raise MarketTargetUnavailable(
+                f"QuantLab {operation} returned unverified status {status or 'missing'!r}"
+            )
+        if require_instance and not str(payload.get("instance_id") or "").strip():
+            raise MarketTargetUnavailable(
+                f"QuantLab {operation} receipt is missing instance_id"
+            )
+        if expected_strategy_id is not None and str(payload.get("strategy_id") or "") != str(
+            expected_strategy_id
+        ):
+            raise MarketTargetUnavailable(
+                f"QuantLab {operation} receipt strategy identity mismatch"
+            )
+        if expected_instance_id is not None and str(payload.get("instance_id") or "") != str(
+            expected_instance_id
+        ):
+            raise MarketTargetUnavailable(
+                f"QuantLab {operation} receipt instance identity mismatch"
+            )
+        return payload
 
     def _seed_default_state(self) -> None:
         """Seed initial default running paper strategies and 15-day session series."""
@@ -419,6 +489,10 @@ class QuantLabTargetAdapter:
 
     def deploy_strategy(self, name: str, code: str, config: dict[str, Any]) -> dict[str, Any]:
         """Deploy or register an evolved strategy directly to QuantLab workbench."""
+        if not self._simulation:
+            raise MarketTargetUnavailable(
+                "QuantLab MCP does not advertise a strategy deployment tool"
+            )
         code_sha256 = hashlib.sha256(code.encode("utf-8")).hexdigest()
         sid = f"quantlab:deployed_{code_sha256[:8]}"
         symbols = tuple(config.get("symbols", ("600519.SH",)))
@@ -445,6 +519,41 @@ class QuantLabTargetAdapter:
 
     def configure_paper(self, candidate_key: str, **fields: Any) -> dict[str, Any]:
         """Configure paper trading session parameters on QuantLab workbench."""
+        if not self._simulation:
+            strategy_id = str(fields.get("strategy_id") or "").strip()
+            symbols = fields.get("symbols")
+            timeframe = str(fields.get("timeframe") or "").strip()
+            if (
+                not strategy_id
+                or not isinstance(symbols, (list, tuple))
+                or not symbols
+                or not timeframe
+            ):
+                raise ValueError("quantlab_paper_scope_missing")
+            idempotency_key = str(
+                fields.get("idempotency_key") or f"quantlab:{candidate_key}:configure"
+            )
+            payload = self._call_remote_tool(
+                "evolution_configure_paper",
+                {
+                    "strategy_id": strategy_id,
+                    "capital": float(fields.get("capital", 100000.0)),
+                    "symbols": list(symbols),
+                    "timeframe": timeframe,
+                    "code_sha256": str(fields.get("code_sha256") or ""),
+                    "parameters": dict(fields.get("parameters") or fields.get("config") or {}),
+                    "review_hash": str(fields.get("review_hash") or ""),
+                    "idempotency_key": idempotency_key,
+                    "market": str(fields.get("market") or "cn"),
+                },
+            )
+            return self._require_receipt(
+                payload,
+                operation="configure_paper",
+                statuses=("configured", "created", "ready", "stopped"),
+                require_instance=True,
+                expected_strategy_id=strategy_id,
+            )
         instance_id = f"quantlab:paper_{candidate_key[:12]}"
         strategy_id = fields.get("strategy_id", f"quantlab:strategy_{candidate_key[:8]}")
         symbols = tuple(fields.get("symbols", ("600519.SH",)))
@@ -482,6 +591,33 @@ class QuantLabTargetAdapter:
 
     def start_paper(self, candidate_key: str, **fields: Any) -> dict[str, Any]:
         """Start paper trading session on QuantLab workbench."""
+        if not self._simulation:
+            strategy_id = str(fields.get("strategy_id") or "").strip()
+            instance_id = str(fields.get("instance_id") or "").strip()
+            if not strategy_id or not instance_id:
+                raise ValueError("quantlab_paper_identity_missing")
+            payload = self._call_remote_tool(
+                "evolution_start_paper",
+                {
+                    "strategy_id": strategy_id,
+                    "instance_id": instance_id,
+                    "code_sha256": str(fields.get("code_sha256") or ""),
+                    "review_hash": str(fields.get("review_hash") or ""),
+                    "strategy_version": str(fields.get("strategy_version") or "v1.0.0"),
+                    "config_version": str(fields.get("config_version") or "c1.0.0"),
+                    "idempotency_key": str(
+                        fields.get("idempotency_key") or f"quantlab:{candidate_key}:start"
+                    ),
+                },
+            )
+            return self._require_receipt(
+                payload,
+                operation="start_paper",
+                statuses=("running",),
+                require_instance=True,
+                expected_strategy_id=strategy_id,
+                expected_instance_id=instance_id,
+            )
         strategy_id = fields.get("strategy_id", f"quantlab:strategy_{candidate_key[:8]}")
         instance_id = fields.get("instance_id") or f"quantlab:paper_{candidate_key[:12]}"
         if strategy_id in self._sessions:
@@ -501,6 +637,21 @@ class QuantLabTargetAdapter:
 
     def stop_paper(self, candidate_key: str, **fields: Any) -> dict[str, Any]:
         """Stop paper trading session on QuantLab workbench."""
+        if not self._simulation:
+            instance_id = str(fields.get("instance_id") or "").strip()
+            if not instance_id:
+                raise ValueError("quantlab_paper_instance_missing")
+            action = str(fields.get("action") or "stop")
+            payload = self._call_remote_tool(
+                "evolution_stop_paper", {"instance_id": instance_id, "action": action}
+            )
+            return self._require_receipt(
+                payload,
+                operation="stop_paper",
+                statuses=("stopped", "draining"),
+                require_instance=True,
+                expected_instance_id=instance_id,
+            )
         strategy_id = fields.get("strategy_id", f"quantlab:strategy_{candidate_key[:8]}")
         instance_id = fields.get("instance_id") or f"quantlab:paper_{candidate_key[:12]}"
         if strategy_id in self._sessions:
@@ -535,15 +686,15 @@ class QuantLabTargetAdapter:
         }
 
     def paper_configure(self, **fields: Any) -> dict[str, Any]:
-        cand = str(fields.get("candidate_key") or fields.get("strategy_id") or "cand_01")
+        cand = str(fields.pop("candidate_key", None) or fields.get("strategy_id") or "cand_01")
         return self.configure_paper(cand, **fields)
 
     def paper_start(self, **fields: Any) -> dict[str, Any]:
-        cand = str(fields.get("candidate_key") or fields.get("strategy_id") or "cand_01")
+        cand = str(fields.pop("candidate_key", None) or fields.get("strategy_id") or "cand_01")
         return self.start_paper(cand, **fields)
 
     def paper_stop(self, **fields: Any) -> dict[str, Any]:
-        cand = str(fields.get("candidate_key") or fields.get("strategy_id") or "cand_01")
+        cand = str(fields.pop("candidate_key", None) or fields.get("strategy_id") or "cand_01")
         return self.stop_paper(cand, **fields)
 
     def paper_snapshot(
@@ -587,6 +738,10 @@ class QuantLabTargetAdapter:
 
     def strategy_create(self, **fields: Any) -> dict[str, Any]:
         """Create a new strategy on QuantLab workbench."""
+        if not self._simulation:
+            raise MarketTargetUnavailable(
+                "QuantLab MCP does not advertise a strategy creation tool"
+            )
         sid = str(fields.get("strategy_id") or f"quantlab:strategy_{len(self._strategies) + 1:03d}")
         name = str(fields.get("name") or sid)
         code = str(fields.get("code") or DEFAULT_STRATEGY_CODE)
@@ -616,11 +771,22 @@ class QuantLabTargetAdapter:
 
     def backtest_start_job(self, **kwargs: Any) -> dict[str, Any]:
         """Trigger backtest on QuantLab workbench."""
+        if not self._simulation:
+            return self._require_receipt(
+                self._call_remote_tool("backtest_start_job", kwargs),
+                operation="backtest_start_job",
+                statuses=("queued", "running", "completed"),
+            )
         job_id = f"ql_bt_{int(datetime.now(self._tz).timestamp() * 1000)}"
         return {"job_id": job_id, "status": "running"}
 
     def backtest_get_job(self, job_id: str) -> dict[str, Any]:
         """Fetch backtest metrics on QuantLab workbench."""
+        if not self._simulation:
+            payload = self._call_remote_tool("backtest_get_job", {"job_id": job_id})
+            if str(payload.get("job_id") or "") != job_id:
+                raise MarketTargetUnavailable("QuantLab backtest receipt identity mismatch")
+            return payload
         return {
             "job_id": job_id,
             "status": "completed",
@@ -638,6 +804,10 @@ class QuantLabTargetAdapter:
 
     def paper_relay_status(self, parent_id: str | int, **kwargs: Any) -> dict[str, Any]:
         """Get relay status between parent and candidate in QuantLab."""
+        if not self._simulation:
+            raise MarketTargetUnavailable(
+                "QuantLab MCP does not advertise a paper relay status tool"
+            )
         pid = str(parent_id)
         parent_snap = self.get_session_snapshot(strategy_id=pid)
         return {
@@ -656,6 +826,10 @@ class QuantLabTargetAdapter:
         self, parent_id: str | int, action: str = "adopt", **kwargs: Any
     ) -> dict[str, Any]:
         """Execute relay control (adopt/draining/stop) on QuantLab workbench."""
+        if not self._simulation:
+            raise MarketTargetUnavailable(
+                "QuantLab MCP does not advertise a paper relay control tool"
+            )
         pid = str(parent_id)
         if pid in self._sessions:
             self._sessions[pid]["status"] = "draining" if action == "adopt" else "stopped"
@@ -667,38 +841,32 @@ class QuantLabTargetAdapter:
         }
 
 
-def quantlab_adapter_factory() -> QuantLabTargetAdapter:
+def quantlab_adapter_factory(*, simulation: bool = False) -> QuantLabTargetAdapter:
     """Lazy factory constructing default QuantLab adapter."""
     from hypertrade.config import get_settings
 
     settings = get_settings()
     if settings.quantlab_mcp_url and settings.quantlab_mcp_url.startswith("http"):
-        try:
-            from hypertrade.connectors.mcp_client import McpClientRegistry, McpServerConfig
-            from hypertrade.targets.mcp_contract import McpContractClient
+        from hypertrade.connectors.mcp_client import McpClientRegistry, McpServerConfig
+        from hypertrade.targets.mcp_contract import McpContractClient
 
-            server_cfg = McpServerConfig(
-                name="quantlab",
-                url=settings.quantlab_mcp_url,
-                auth_token=settings.quantlab_mcp_token or "",
-            )
-            registry = McpClientRegistry((server_cfg,))
-            mcp_client = McpContractClient(
-                registry,
-                "quantlab",
-                QUANTLAB_TARGET_PROFILE,
-            )
-            return QuantLabTargetAdapter(mcp_client=mcp_client)
-        except Exception as exc:
-            import logging
-
-            logging.getLogger(__name__).warning(
-                "Remote QuantLab MCP server at %s unavailable: %s; "
-                "falling back to local simulation",
-                settings.quantlab_mcp_url,
-                exc,
-            )
-    return QuantLabTargetAdapter()
+        server_cfg = McpServerConfig(
+            name="quantlab",
+            url=settings.quantlab_mcp_url,
+            auth_token=settings.quantlab_mcp_token or "",
+        )
+        registry = McpClientRegistry((server_cfg,))
+        mcp_client = McpContractClient(
+            registry,
+            "quantlab",
+            QUANTLAB_TARGET_PROFILE,
+        )
+        return QuantLabTargetAdapter(mcp_client=mcp_client)
+    if simulation:
+        return QuantLabTargetAdapter(simulation=True)
+    raise MarketTargetUnavailable(
+        "QuantLab MCP URL is not configured; simulator requires explicit simulation=True"
+    )
 
 
 def register_quantlab_target(

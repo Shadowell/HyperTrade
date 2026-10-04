@@ -361,6 +361,44 @@ def test_session_evidence_missing_or_ambiguous_fails_closed(fault):
         )
 
 
+@pytest.mark.parametrize("missing", ["symbols", "timeframe"])
+def test_mcp_strategy_source_rejects_missing_research_scope(missing):
+    ports = object.__new__(McpReadPorts)
+    code = "class Source: pass"
+    payload = {
+        "strategy_id": "cn-strategy:alpha",
+        "code": code,
+        "code_sha256": hashlib.sha256(code.encode()).hexdigest(),
+        "config": {},
+        "symbols": ["600519.SH"],
+        "timeframe": "1H",
+    }
+    payload.pop(missing)
+    ports._call = lambda capability, arguments: payload
+    with pytest.raises(ValueError, match=missing):
+        ports.get_strategy_source("cn-strategy:alpha")
+
+
+@pytest.mark.parametrize("missing", ["symbols", "timeframe"])
+def test_mcp_session_snapshot_rejects_missing_research_scope(missing):
+    ports = object.__new__(McpReadPorts)
+    payload = {
+        "strategy_id": "cn-strategy:alpha",
+        "instance_id": "cn-paper:1",
+        "strategy_version": "v1",
+        "config_version": "c1",
+        "status": "running",
+        "trade_count": 1,
+        "session_started_at": "2026-09-01T09:30:00+08:00",
+        "symbols": ["600519.SH"],
+        "timeframe": "1H",
+    }
+    payload.pop(missing)
+    ports._call = lambda capability, arguments: payload
+    with pytest.raises(ValueError, match=missing):
+        ports.get_session_snapshot(strategy_id="cn-strategy:alpha")
+
+
 def test_stable_session_series_does_not_trigger():
     result = collect_windows(
         ContractReads(falling=False),

@@ -146,17 +146,17 @@ class McpReadPorts:
         else:
             config = _object(raw_config or {}, "strategy_config")
         raw_symbols = payload.get("symbols")
-        if isinstance(raw_symbols, (list, tuple)) and raw_symbols:
-            symbols = list(raw_symbols)
-        else:
-            symbols = ["000001.SZ"]
+        if not isinstance(raw_symbols, (list, tuple)) or not raw_symbols:
+            raise ValueError("strategy_symbols_missing_or_invalid")
+        symbols = list(raw_symbols)
+        timeframe = _text(payload.get("timeframe"), "timeframe")
         return StrategySource(
             strategy_id=strategy_id,
             code=code,
             code_sha256=code_hash,
             config=config,
             symbols=tuple(_text(value, "symbol") for value in symbols),
-            timeframe=_text(payload.get("timeframe") or "1D", "timeframe"),
+            timeframe=timeframe,
             strategy_version=payload.get("strategy_version"),
             config_version=payload.get("config_version"),
         )
@@ -180,10 +180,10 @@ class McpReadPorts:
         if started.tzinfo is None:
             raise ValueError("session_start_missing_timezone")
         raw_symbols = payload.get("symbols")
-        if isinstance(raw_symbols, (list, tuple)) and raw_symbols:
-            symbols = list(raw_symbols)
-        else:
-            symbols = ["000001.SZ"]
+        if not isinstance(raw_symbols, (list, tuple)) or not raw_symbols:
+            raise ValueError("session_symbols_missing_or_invalid")
+        symbols = list(raw_symbols)
+        timeframe = _text(payload.get("timeframe"), "timeframe")
         return SessionSnapshot(
             instance_id=actual_instance,
             strategy_id=actual_strategy,
@@ -193,6 +193,7 @@ class McpReadPorts:
             trade_count=_integer(payload.get("trade_count"), "trade_count"),
             session_started_at=started,
             symbols=tuple(_text(value, "symbol") for value in symbols),
+            timeframe=timeframe,
             equity=(
                 _number(payload.get("equity"), "equity")
                 if payload.get("equity") is not None

@@ -40,7 +40,7 @@ def test_self_healing_evolution_cycle() -> None:
         # Verify offspring in registry
         offspring_rec = registry.get("rsi_reversal_gen2")
         assert offspring_rec is not None
-        assert offspring_rec.stage == StrategyStage.PAPER_OBSERVING
+        assert offspring_rec.stage == StrategyStage.INCUBATING
         assert offspring_rec.generation == 2
         assert offspring_rec.parent_strategy_id == "rsi_reversal"
 
