@@ -66,17 +66,11 @@ class RacePairRecord:
         def _parse_id(val: Any) -> str | int:
             if isinstance(val, int):
                 return val
-            val_str = str(val).strip()
-            if val_str.isdigit():
-                return int(val_str)
-            return val_str
+            return str(val).strip()
 
         pid = _parse_id(pid_raw)
         cid = _parse_id(cid_raw)
-        target = str(
-            data.get("target_id")
-            or ("quantlab" if "quantlab" in str(pid) or "quantlab" in str(cid) else "bitpro")
-        )
+        target = str(data.get("target_id") or "bitpro")
 
         return cls(
             parent_strategy_id=pid,
@@ -280,8 +274,10 @@ class RaceJudgeDaemon:
         self._records: dict[str, RacePairRecord] = {}
         self._load_state()
 
-    def _pair_key(self, parent_id: str | int, challenger_id: str | int) -> str:
-        return f"{parent_id}:{challenger_id}"
+    def _pair_key(
+        self, target_id: str, parent_id: str | int, challenger_id: str | int
+    ) -> str:
+        return json.dumps([target_id, parent_id, challenger_id], separators=(",", ":"))
 
     def _load_state(self) -> None:
         if not self.state_file.exists():
@@ -291,7 +287,9 @@ class RaceJudgeDaemon:
             if isinstance(raw, list):
                 for item in raw:
                     rec = RacePairRecord.from_dict(item)
-                    key = self._pair_key(rec.parent_strategy_id, rec.challenger_strategy_id)
+                    key = self._pair_key(
+                        rec.target_id, rec.parent_strategy_id, rec.challenger_strategy_id
+                    )
                     self._records[key] = rec
         except Exception as exc:
             logger.warning("Failed to load race judge state: %s", exc)
@@ -307,9 +305,9 @@ class RaceJudgeDaemon:
         except Exception as exc:
             logger.warning("Failed to persist race judge state: %s", exc)
 
-    def discover_active_pairs(self) -> list[tuple[str | int, str | int, int]]:
+    def discover_active_pairs(self) -> list[tuple[str, str | int, str | int, int]]:
         """Find all deployed twin pairings from self-healing history or state."""
-        pairs: dict[tuple[str | int, str | int], int] = {}
+        pairs: dict[tuple[str, str | int, str | int], int] = {}
 
         if self.history_file.exists():
             try:
@@ -321,24 +319,41 @@ class RaceJudgeDaemon:
                         )
                         if not is_deployed:
                             continue
-                        sid = item.get("quantlab_strategy_id") or item.get("bitpro_strategy_id")
+                        target_raw = item.get("target_id")
+                        if target_raw is None:
+                            if bool(item.get("quantlab_deployed")) == bool(
+                                item.get("bitpro_deployed")
+                            ):
+                                logger.warning(
+                                    "Skipping race history row without unambiguous target identity"
+                                )
+                                continue
+                            target_raw = (
+                                "quantlab" if item.get("quantlab_deployed") else "bitpro"
+                            )
+                        target_id = str(target_raw)
+                        sid = (
+                            item.get("quantlab_strategy_id")
+                            if target_id == "quantlab"
+                            else item.get("bitpro_strategy_id")
+                        )
                         pid_raw = item.get("parent_strategy_id")
                         if not sid or pid_raw is None:
                             continue
                         gen = int(item.get("generation", 1))
-                        pid: str | int = int(pid_raw) if str(pid_raw).isdigit() else str(pid_raw)
-                        cid: str | int = int(sid) if str(sid).isdigit() else str(sid)
-                        pairs[(pid, cid)] = gen
+                        pid: str | int = pid_raw if isinstance(pid_raw, int) else str(pid_raw)
+                        cid: str | int = sid if isinstance(sid, int) else str(sid)
+                        pairs[(target_id, pid, cid)] = gen
             except Exception as exc:
                 logger.warning("Failed to read self-healing history for pairs: %s", exc)
 
         for rec in self._records.values():
             if rec.state not in ("completed", "rejected"):
-                pair = (rec.parent_strategy_id, rec.challenger_strategy_id)
+                pair = (rec.target_id, rec.parent_strategy_id, rec.challenger_strategy_id)
                 if pair not in pairs:
                     pairs[pair] = rec.generation
 
-        return [(pid, cid, gen) for (pid, cid), gen in pairs.items()]
+        return [(target, pid, cid, gen) for (target, pid, cid), gen in pairs.items()]
 
     def evaluate_pair(
         self,
@@ -348,13 +363,13 @@ class RaceJudgeDaemon:
         target_id: str | None = None,
     ) -> RacePairRecord:
         """Query target relay status, evaluate forward gates, and take automated action."""
-        key = self._pair_key(parent_id, challenger_id)
+        lookup_target = target_id or "bitpro"
+        key = self._pair_key(lookup_target, parent_id, challenger_id)
         record = self._records.get(key)
-        is_ql = "quantlab" in str(parent_id) or "quantlab" in str(challenger_id)
         resolved_target = (
             target_id
             or (record.target_id if record is not None else None)
-            or ("quantlab" if is_ql else "bitpro")
+            or "bitpro"
         )
         if record is None:
             record = RacePairRecord(
@@ -369,18 +384,22 @@ class RaceJudgeDaemon:
             record.target_id = resolved_target
 
         adapter: Any = self.bitpro_adapter
-        if (
-            target_id == "quantlab"
-            or "quantlab" in str(parent_id)
-            or "quantlab" in str(challenger_id)
-        ):
+        if resolved_target not in {"bitpro", "quantlab"}:
+            record.reason = f"unsupported_target:{resolved_target}"
+            record.updated_at = datetime.now(UTC).isoformat()
+            self._persist_state()
+            return record
+        if resolved_target == "quantlab":
             record.target_id = "quantlab"
             from hypertrade.targets.registry import adapter_for_target
 
             try:
                 adapter = adapter_for_target("quantlab")
-            except Exception:
-                adapter = self.bitpro_adapter
+            except Exception as exc:
+                record.reason = f"target_adapter_unavailable:{type(exc).__name__}"
+                record.updated_at = datetime.now(UTC).isoformat()
+                self._persist_state()
+                return record
 
         try:
             status_data = adapter.paper_relay_status(
@@ -497,9 +516,9 @@ class RaceJudgeDaemon:
         """Run one evaluation sweep across all active twin pairs."""
         pairs = self.discover_active_pairs()
         results: list[RacePairRecord] = []
-        for pid, cid, gen in pairs:
+        for target_id, pid, cid, gen in pairs:
             try:
-                rec = self.evaluate_pair(pid, cid, gen)
+                rec = self.evaluate_pair(pid, cid, gen, target_id=target_id)
                 results.append(rec)
             except Exception as exc:
                 logger.exception("Error evaluating pair (%s, %s): %s", pid, cid, exc)

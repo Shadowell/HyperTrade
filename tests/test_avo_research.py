@@ -8,6 +8,7 @@ from hypertrade.arc.controller import ARCController
 from hypertrade.arc.self_test import SelfTestResult
 from hypertrade.arc.store import reset_store, save_mission
 from hypertrade.providers.chat import ChatResponse, ToolCallRequest
+from test_arc_selection_bias import stats
 
 
 @pytest.fixture
@@ -69,10 +70,15 @@ class Experiments:
             "val-final",
             "445",
             "bt-final" if purpose == "final" else f"bt-dev-{len(self.calls)}",
-            metrics={"net_return": 0.2},
+            metrics={"net_return": 0.2, "return_statistics": stats()},
         )
         if len(self.calls) == 1:
-            return replace(result, passed=False, metrics={"net_return": -0.1}, reasons=["loss"])
+            return replace(
+                result,
+                passed=False,
+                metrics={"net_return": -0.1, "return_statistics": stats(-0.05)},
+                reasons=["loss"],
+            )
         return result
 
 
@@ -520,6 +526,7 @@ def test_feedback_candidate_gets_same_window_baseline_and_human_review(
                 "strategy",
                 f"bt-{len(self.calls)}",
                 metrics={
+                    "return_statistics": stats(),
                     "net_return": ".1" if attempt.attempt_id == "baseline" else ".2",
                     "max_drawdown": ".1",
                     "evaluation_window": {"purpose": purpose, "research_id": goal.research_id},
@@ -593,6 +600,7 @@ def test_development_to_final_reuses_verified_platform_strategy(mission):
                 "backtest_result": {
                     "id": f"bt-{self.backtests}",
                     "metrics": {
+                        "return_statistics": stats(),
                         "net_return": 0.12,
                         "sharpe": 2,
                         "max_drawdown": 0.05,

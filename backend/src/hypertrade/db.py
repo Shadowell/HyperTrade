@@ -9,6 +9,7 @@ from uuid import uuid4
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -2148,7 +2149,10 @@ class ArcHypothesisNode(Base, TimestampMixin):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("hypo"))
     tree_id: Mapped[str] = mapped_column(String(64), index=True)
-    parent_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    parent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("arc_hypothesis_nodes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(96), unique=True, index=True)
     depth: Mapped[int] = mapped_column(Integer, default=0)
 
     claim: Mapped[str] = mapped_column(Text)
@@ -2168,6 +2172,8 @@ class ArcHypothesisNode(Base, TimestampMixin):
     prune_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
+    __table_args__ = (CheckConstraint("depth >= 0", name="ck_arc_hypothesis_depth"),)
+
 
 class ArcEpisodicMemory(Base, TimestampMixin):
     """FinMem Tier 2 Episodic Memory: records backtests, decays, and redteam outcomes."""
@@ -2177,6 +2183,7 @@ class ArcEpisodicMemory(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("aepm"))
     mission_id: Mapped[str] = mapped_column(String(64), index=True)
     experiment_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(96), unique=True, index=True)
 
     symbols_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     timeframe: Mapped[str] = mapped_column(String(16), default="", index=True)
@@ -2206,11 +2213,31 @@ class ArcSemanticAssertion(Base, TimestampMixin):
     counter_evidence_count: Mapped[int] = mapped_column(Integer, default=0)
 
     status: Mapped[str] = mapped_column(String(32), default="active", index=True)
-    replaced_by: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    replaced_by: Mapped[str | None] = mapped_column(
+        ForeignKey("arc_semantic_assertions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     embedding_json: Mapped[list[float]] = mapped_column(JSON, default=list)
     version: Mapped[int] = mapped_column(Integer, default=1)
+    evidence_set_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    distillation_version: Mapped[str] = mapped_column(String(32), default="manual")
+    idempotency_key: Mapped[str] = mapped_column(String(96), unique=True, index=True)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    __table_args__ = (
+        CheckConstraint(
+            "confidence >= 0 AND confidence <= 1", name="ck_arc_semantic_confidence"
+        ),
+        CheckConstraint(
+            "counter_evidence_count >= 0", name="ck_arc_semantic_counter_evidence"
+        ),
+        CheckConstraint("version >= 1", name="ck_arc_semantic_version"),
+        UniqueConstraint(
+            "evidence_set_hash",
+            "distillation_version",
+            name="uq_arc_semantic_evidence_version",
+        ),
+    )
 
 
 class Database:

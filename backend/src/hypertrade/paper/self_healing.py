@@ -25,6 +25,36 @@ from hypertrade.paper.stage_gate import StrategyStage
 logger = logging.getLogger(__name__)
 
 
+def _paper_snapshot_payload(response: Any) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        return {}
+    nested = response.get("snapshot")
+    return nested if isinstance(nested, dict) else response
+
+
+def _running_snapshot(
+    adapter: Any, *, strategy_id: str | int, instance_id: str | None
+) -> str | None:
+    if not hasattr(adapter, "paper_snapshot"):
+        return None
+    try:
+        snapshot = _paper_snapshot_payload(
+            adapter.paper_snapshot(strategy_id=strategy_id, instance_id=instance_id)
+        )
+    except Exception:
+        return None
+    actual_strategy = str(snapshot.get("strategy_id") or "")
+    actual_instance = str(snapshot.get("instance_id") or snapshot.get("id") or "")
+    if (
+        actual_strategy == str(strategy_id)
+        and actual_instance
+        and (not instance_id or actual_instance == instance_id)
+        and str(snapshot.get("status") or "").lower() == "running"
+    ):
+        return actual_instance
+    return None
+
+
 @dataclass
 class HealedOffspring:
     """Audit record of a self-healed strategy generation."""
@@ -53,10 +83,9 @@ class HealedOffspring:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> HealedOffspring:
-        pid = str(data["parent_strategy_id"])
         target = str(
             data.get("target_id")
-            or ("quantlab" if "quantlab" in pid or data.get("quantlab_deployed") else "bitpro")
+            or ("quantlab" if data.get("quantlab_deployed") else "bitpro")
         )
         return cls(
             parent_strategy_id=data["parent_strategy_id"],
@@ -619,15 +648,10 @@ class SelfHealingEvolutionEngine:
         timeframe: str | None = None,
         target_id: str = "bitpro",
     ) -> dict[str, Any]:
-        """Validate offspring using real target backtest if available, else projection."""
+        """Validate offspring; QuantLab must produce a real, completed backtest receipt."""
         now = datetime.now(UTC)
         sid_str = str(strategy_id)
-        is_quantlab = (
-            target_id == "quantlab"
-            or "quantlab" in sid_str.lower()
-            or "a_share" in strategy_type.lower()
-            or "ashare" in strategy_type.lower()
-        )
+        is_quantlab = target_id == "quantlab"
 
         if is_quantlab:
             ql_adapter = self._get_quantlab_adapter()
@@ -642,12 +666,19 @@ class SelfHealingEvolutionEngine:
                     job_id = start_job.get("job_id")
                     if job_id and hasattr(ql_adapter, "backtest_get_job"):
                         job_res = ql_adapter.backtest_get_job(job_id)
-                        metrics = job_res.get("metrics") or {}
-                        win_rate = float(metrics.get("win_rate", 0.585))
-                        profit_factor = float(metrics.get("profit_factor", 1.72))
-                        sharpe = float(metrics.get("annualized_sharpe", 1.45))
-                        max_dd = float(metrics.get("max_drawdown_pct", 0.115))
-                        trades = int(metrics.get("total_trades", 56))
+                        if job_res.get("status") != "completed":
+                            raise RuntimeError("quantlab_backtest_not_completed")
+                        metrics = job_res.get("metrics")
+                        if not isinstance(metrics, dict):
+                            raise RuntimeError("quantlab_backtest_metrics_missing")
+                        win_rate = float(metrics["win_rate"])
+                        profit_factor = float(metrics["profit_factor"])
+                        sharpe_raw = metrics.get("annualized_sharpe")
+                        if sharpe_raw is None:
+                            sharpe_raw = metrics["sharpe_ratio"]
+                        sharpe = float(sharpe_raw)
+                        max_dd = float(metrics["max_drawdown_pct"])
+                        trades = int(metrics["total_trades"])
                         passed = win_rate >= 0.40 and (profit_factor >= 1.0 or sharpe >= 0.5)
                         return {
                             "win_rate": round(win_rate, 4),
@@ -661,9 +692,15 @@ class SelfHealingEvolutionEngine:
                         }
                 except Exception as exc:
                     logger.info(
-                        "QuantLab backtest validation skipped or failed: %s; using projection",
+                        "QuantLab backtest validation unavailable: %s",
                         exc,
                     )
+            return {
+                "validation_passed": False,
+                "source": "quantlab_backtest_unavailable",
+                "reason": "real_quantlab_backtest_receipt_required",
+                "simulated_trades": 0,
+            }
 
         elif self._bitpro_adapter is not None:
             try:
@@ -859,38 +896,59 @@ class SelfHealingEvolutionEngine:
 
             new_sid_int = int(new_sid)
 
-            if hasattr(self._bitpro_adapter, "paper_configure"):
-                try:
-                    self._bitpro_adapter.paper_configure(
-                        strategy_id=new_sid_int,
-                        initial_equity=10000.0,
-                        exchange=exchange,
-                        idempotency_key=f"paper_cfg_{new_sid_int}",
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to paper_configure BitPro strategy #%s: %s", new_sid_int, exc
-                    )
-
-            instance_id = f"inst_{new_sid_int}"
-            if hasattr(self._bitpro_adapter, "paper_start"):
-                try:
-                    start_resp = self._bitpro_adapter.paper_start(
-                        strategy_id=new_sid_int,
-                        idempotency_key=f"paper_start_{new_sid_int}",
-                    )
-                    paper_data = (
-                        start_resp.get("paper")
-                        if isinstance(start_resp.get("paper"), dict)
-                        else {}
-                    )
-                    instance_id = str(
-                        paper_data.get("instance_id") or paper_data.get("id") or instance_id
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to paper_start BitPro strategy #%s: %s", new_sid_int, exc
-                    )
+            if not hasattr(self._bitpro_adapter, "paper_configure") or not hasattr(
+                self._bitpro_adapter, "paper_start"
+            ):
+                return False, new_sid_int, None
+            key_base = f"self_heal:bitpro:{parent_sid}:gen{next_gen}"
+            try:
+                configured = self._bitpro_adapter.paper_configure(
+                    strategy_id=new_sid_int,
+                    initial_equity=10000.0,
+                    exchange=exchange,
+                    idempotency_key=f"{key_base}:configure",
+                )
+            except Exception:
+                reconciled = _running_snapshot(
+                    self._bitpro_adapter, strategy_id=new_sid_int, instance_id=None
+                )
+                return (reconciled is not None), new_sid_int, reconciled
+            configured_paper = (
+                configured.get("paper") if isinstance(configured.get("paper"), dict) else {}
+            )
+            instance_id = str(
+                configured_paper.get("instance_id") or configured_paper.get("id") or ""
+            )
+            if (
+                configured.get("status") != "ok"
+                or configured_paper.get("configured") is not True
+                or not instance_id
+            ):
+                return False, new_sid_int, None
+            try:
+                start_resp = self._bitpro_adapter.paper_start(
+                    strategy_id=new_sid_int,
+                    idempotency_key=f"{key_base}:start",
+                )
+            except Exception:
+                reconciled = _running_snapshot(
+                    self._bitpro_adapter,
+                    strategy_id=new_sid_int,
+                    instance_id=instance_id,
+                )
+                return (reconciled is not None), new_sid_int, reconciled
+            started_paper = (
+                start_resp.get("paper") if isinstance(start_resp.get("paper"), dict) else {}
+            )
+            started_instance = str(
+                started_paper.get("instance_id") or started_paper.get("id") or ""
+            )
+            if (
+                start_resp.get("status") != "ok"
+                or started_paper.get("started") is not True
+                or started_instance != instance_id
+            ):
+                return False, new_sid_int, None
 
             logger.info(
                 "Successfully deployed self-healed twin strategy #%s (%s) on BitPro",
@@ -936,6 +994,17 @@ class SelfHealingEvolutionEngine:
                 "market_target": "quantlab",
             }
 
+            strategy_code = str(
+                record.parameters.get("strategy_code") or record.parameters.get("code") or ""
+            )
+            if not strategy_code and hasattr(adapter, "get_strategy_source"):
+                try:
+                    strategy_code = str(adapter.get_strategy_source(parent_sid).code)
+                except Exception:
+                    strategy_code = ""
+            if not strategy_code.strip():
+                return False, None, None
+
             if not hasattr(adapter, "strategy_create"):
                 return False, None, None
 
@@ -944,39 +1013,53 @@ class SelfHealingEvolutionEngine:
                 name=offspring_name,
                 symbols=symbols,
                 timeframe=timeframe,
+                code=strategy_code,
                 config=merged_config,
                 mode="paper",
             )
-            created_sid = str(create_resp.get("strategy_id") or offspring_id)
-
-            if hasattr(adapter, "paper_configure"):
-                try:
-                    adapter.paper_configure(
-                        candidate_key=offspring_id,
-                        strategy_id=created_sid,
-                        capital=100000.0,
-                        symbols=symbols,
-                        timeframe=timeframe,
-                        idempotency_key=f"paper_cfg_{created_sid}",
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to paper_configure QuantLab strategy %s: %s", created_sid, exc
-                    )
-
-            instance_id = f"quantlab:paper_{created_sid}"
-            if hasattr(adapter, "paper_start"):
-                try:
-                    start_resp = adapter.paper_start(
-                        candidate_key=offspring_id,
-                        strategy_id=created_sid,
-                        idempotency_key=f"paper_start_{created_sid}",
-                    )
-                    instance_id = str(start_resp.get("instance_id") or instance_id)
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to paper_start QuantLab strategy %s: %s", created_sid, exc
-                    )
+            created_sid = str(create_resp.get("strategy_id") or "").strip()
+            if create_resp.get("status") not in ("created", "deployed") or not created_sid:
+                return False, None, None
+            if not hasattr(adapter, "paper_configure") or not hasattr(adapter, "paper_start"):
+                return False, created_sid, None
+            key_base = f"self_heal:quantlab:{parent_sid}:gen{next_gen}"
+            try:
+                configured = adapter.paper_configure(
+                    candidate_key=offspring_id,
+                    strategy_id=created_sid,
+                    capital=100000.0,
+                    symbols=symbols,
+                    timeframe=timeframe,
+                    idempotency_key=f"{key_base}:configure",
+                )
+            except Exception:
+                reconciled = _running_snapshot(
+                    adapter, strategy_id=created_sid, instance_id=None
+                )
+                return (reconciled is not None), created_sid, reconciled
+            instance_id = str(configured.get("instance_id") or "").strip()
+            if configured.get("status") not in ("configured", "created", "ready", "stopped"):
+                return False, created_sid, None
+            if not instance_id or str(configured.get("strategy_id") or "") != created_sid:
+                return False, created_sid, None
+            try:
+                start_resp = adapter.paper_start(
+                    candidate_key=offspring_id,
+                    strategy_id=created_sid,
+                    instance_id=instance_id,
+                    idempotency_key=f"{key_base}:start",
+                )
+            except Exception:
+                reconciled = _running_snapshot(
+                    adapter, strategy_id=created_sid, instance_id=instance_id
+                )
+                return (reconciled is not None), created_sid, reconciled
+            if (
+                start_resp.get("status") != "running"
+                or str(start_resp.get("instance_id") or "") != instance_id
+                or str(start_resp.get("strategy_id") or "") != created_sid
+            ):
+                return False, created_sid, None
 
             logger.info(
                 "Successfully deployed self-healed twin strategy %s (%s) on QuantLab",
@@ -1008,16 +1091,11 @@ class SelfHealingEvolutionEngine:
             c for c in new_constraints if c not in record.reflexion_constraints
         ]
 
-        target_id = "bitpro"
-        if (
-            record.parameters.get("market_target") == "quantlab"
-            or record.parameters.get("target_id") == "quantlab"
-            or "quantlab" in str(record.strategy_id).lower()
-            or "a_share" in record.strategy_type.lower()
-            or "ashare" in record.strategy_type.lower()
-            or "a股" in record.name.lower()
-        ):
-            target_id = "quantlab"
+        target_id = str(
+            record.parameters.get("market_target")
+            or record.parameters.get("target_id")
+            or "bitpro"
+        )
 
         # Robustness validation (real backtest via platform adapter if available, else projection)
         validation_metrics = self._validate_offspring(
@@ -1048,20 +1126,31 @@ class SelfHealingEvolutionEngine:
         quantlab_sid = None
         quantlab_iid = None
 
-        if target_id == "quantlab":
+        if validation_metrics.get("validation_passed") is not True:
+            logger.warning(
+                "Self-healing validation did not pass for %s on %s; deployment blocked",
+                record.strategy_id,
+                target_id,
+            )
+        elif target_id == "quantlab":
             quantlab_deployed, quantlab_sid, quantlab_iid = self._deploy_offspring_to_quantlab(
                 record=record,
                 offspring_id=offspring_id,
                 next_gen=next_gen,
                 mutated_params=mutated_params,
             )
-        else:
+        elif target_id == "bitpro":
             bitpro_deployed, bitpro_sid, bitpro_iid = self._deploy_offspring_to_bitpro(
                 record=record,
                 offspring_id=offspring_id,
                 next_gen=next_gen,
                 mutated_params=mutated_params,
             )
+
+        execution_verified = (
+            validation_metrics.get("validation_passed") is True
+            and (quantlab_deployed or bitpro_deployed)
+        )
 
         # Create and register offspring
         offspring_record = StrategyRecord(
@@ -1072,12 +1161,16 @@ class SelfHealingEvolutionEngine:
                 f"Self-healed offspring evolved from {record.strategy_id} following circuit breaker"
             ),
             parameters=mutated_params,
-            stage=StrategyStage.PAPER_OBSERVING,
+            stage=(
+                StrategyStage.PAPER_OBSERVING
+                if execution_verified
+                else StrategyStage.INCUBATING
+            ),
             generation=next_gen,
             parent_strategy_id=record.strategy_id,
             reflexion_constraints=combined_constraints,
             performance_metrics=validation_metrics,
-            is_active=True,
+            is_active=execution_verified,
         )
 
         self._registry.register(offspring_record)
@@ -1099,7 +1192,7 @@ class SelfHealingEvolutionEngine:
             elif bitpro_deployed and bitpro_sid:
                 deploy_desc = f"已上线 BitPro 孪生模拟盘 (策略 #{bitpro_sid})"
             else:
-                deploy_desc = "已动态部署至模拟观察期 (PAPER_OBSERVING)"
+                deploy_desc = "尚未取得经验证的模拟盘启动回执，保留在孵化阶段"
 
             evolution_action = (
                 f"策略自愈进化成功：原策略 [{record.strategy_id}] 触发降级熔断，"

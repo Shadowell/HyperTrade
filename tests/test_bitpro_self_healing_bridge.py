@@ -219,11 +219,21 @@ def test_self_healing_real_bitpro_deployment_and_backtest() -> None:
         }
         mock_adapter.paper_configure.return_value = {
             "status": "ok",
-            "paper": {"strategy_id": 999, "status": "configured"},
+            "paper": {
+                "strategy_id": 999,
+                "instance_id": "inst_999",
+                "configured": True,
+                "status": "configured",
+            },
         }
         mock_adapter.paper_start.return_value = {
             "status": "ok",
-            "paper": {"strategy_id": 999, "instance_id": "inst_999", "status": "running"},
+            "paper": {
+                "strategy_id": 999,
+                "instance_id": "inst_999",
+                "started": True,
+                "status": "running",
+            },
         }
 
         engine = SelfHealingEvolutionEngine(
@@ -261,11 +271,11 @@ def test_self_healing_real_bitpro_deployment_and_backtest() -> None:
             strategy_id=999,
             initial_equity=10000.0,
             exchange="okx",
-            idempotency_key="paper_cfg_999",
+            idempotency_key="self_heal:bitpro:333:gen2:configure",
         )
         mock_adapter.paper_start.assert_called_once_with(
             strategy_id=999,
-            idempotency_key="paper_start_999",
+            idempotency_key="self_heal:bitpro:333:gen2:start",
         )
 
         # Verify Feishu alert payload reported real deployment

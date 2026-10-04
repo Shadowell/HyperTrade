@@ -42,6 +42,10 @@ def test_deterministic_embedding_and_cosine() -> None:
     assert -1.0 <= cosine_similarity(emb1, emb3) <= 1.0
     assert cosine_similarity([], emb1) == 0.0
 
+    related = deterministic_embedding("BTC breakout momentum trend")
+    unrelated = deterministic_embedding("funding basis carry arbitrage")
+    assert cosine_similarity(emb1, related) > cosine_similarity(emb1, unrelated)
+
 
 def test_compute_regime_match_score() -> None:
     # Exact match
@@ -51,9 +55,10 @@ def test_compute_regime_match_score() -> None:
     assert compute_regime_match_score("bear_crash", []) == 0.8
     assert compute_regime_match_score("sideways_range", ["ALL"]) == 0.8
 
-    # Compatible adjacent
+    # Volatility is direction-neutral and must not be inferred as bullish.
     score_adjacent = compute_regime_match_score("bull_trend", ["high_volatility"])
-    assert score_adjacent == 0.4
+    assert score_adjacent == 0.0
+    assert compute_regime_match_score("bear_trend", ["high_volatility"]) == 0.0
 
     # Conflicting polarities (bull vs bear)
     score_conflict = compute_regime_match_score("bear_crash", ["bull_trend"])

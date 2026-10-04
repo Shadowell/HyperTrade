@@ -5,6 +5,7 @@ import pytest
 from hypertrade.arc.contracts import ARCBudgetV1, ARCGoalV1, ARCSuccessCriteriaV1
 from hypertrade.arc.store import load_projection, reset_store
 from hypertrade.providers.chat import ChatResponse, TokenUsage, ToolCallRequest
+from test_arc_selection_bias import stats
 from test_evolution_memory import WINDOWS, record
 
 
@@ -327,6 +328,7 @@ class ResearchExperiments:
             "123",
             f"bt-{len(self.calls)}",
             metrics={
+                "return_statistics": stats(),
                 "net_return": 0.2,
                 "cost_policy_hash": "c" * 64,
             },
@@ -462,8 +464,9 @@ def test_pair_runtime_identity_covers_final_view_and_private_journal(monkeypatch
             scope.setattr(
                 Path,
                 "read_bytes",
-                lambda path, target=target: original(path)
-                + (b"drift" if path.name == target else b""),
+                lambda path, target=target: (
+                    original(path) + (b"drift" if path.name == target else b"")
+                ),
             )
             assert module._runtime_digest() != baseline
 
@@ -486,8 +489,7 @@ def test_final_memory_context_block_is_honest_terminal_state(tmp_path, monkeypat
     result = module.run_pair(tmp_path, provider=provider, max_arms=1)
     assert provider.seen == []
     assert any(
-        "avo_context_budget_exhausted" in arm["failure_reasons"]
-        for arm in result["arms"].values()
+        "avo_context_budget_exhausted" in arm["failure_reasons"] for arm in result["arms"].values()
     )
     assert all(arm["model_calls_used"] == 1 for arm in result["arms"].values())
     assert all(arm["tool_calls_used"] == 0 for arm in result["arms"].values())
@@ -510,7 +512,8 @@ def test_pair_journals_the_final_request_manifest_after_memory_injection(tmp_pat
             arm = mission.mission_id.rsplit("_", 1)[-1]
             audit = next(item for item in requests if item["arm"] == arm)
             final_events = [
-                event for event in load_projection(session, mission).events
+                event
+                for event in load_projection(session, mission).events
                 if event.event_type == "avo_context_recorded"
                 and event.payload["manifest"].get("final_hash") == audit["request_hash"]
             ]

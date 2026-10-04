@@ -80,6 +80,11 @@ def configure_store(database: Database | None) -> None:
     _database = database
 
 
+def get_configured_database() -> Database | None:
+    """Return the process ARC database without constructing a second truth source."""
+    return _database
+
+
 def reset_runtime() -> None:
     """Drop in-process controllers. Persisted rows and the memory snapshot stay."""
     MISSIONS.clear()

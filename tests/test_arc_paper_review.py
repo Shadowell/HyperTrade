@@ -151,6 +151,7 @@ def test_replay_restores_review_and_instance(controller):
 def test_real_loop_defers_all_paper_effects_until_review(monkeypatch):
     import hypertrade.arc.router as router
     from test_arc_acceptance import _flat_window, _goal, _pass_self_test, _start
+    from test_arc_selection_bias import stats
 
     goal = _goal()
     goal.paper_review_required = True
@@ -162,7 +163,12 @@ def test_real_loop_defers_all_paper_effects_until_review(monkeypatch):
         "run_adversarial_session",
         lambda *args: (
             True,
-            {"ranking_basis": "out_of_sample", "ranking_sharpe": 1.4},
+            {
+                "ranking_basis": "out_of_sample",
+                "ranking_sharpe": 1.4,
+                "evidence_available": True,
+                "return_statistics": stats(),
+            },
             [],
         ),
     )

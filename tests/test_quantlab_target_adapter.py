@@ -58,12 +58,12 @@ def test_quantlab_target_profile_and_capabilities() -> None:
     registered = registered_market_targets()
     assert any(t.target_id == "quantlab" for t in registered)
 
-    factory_adapter = quantlab_adapter_factory()
+    factory_adapter = quantlab_adapter_factory(simulation=True)
     assert isinstance(factory_adapter, QuantLabTargetAdapter)
 
 
 def test_quantlab_adapter_lifecycle_and_ports() -> None:
-    adapter = QuantLabTargetAdapter()
+    adapter = QuantLabTargetAdapter(simulation=True)
 
     # Create strategy
     created = adapter.strategy_create(
@@ -119,7 +119,7 @@ def test_quantlab_adapter_lifecycle_and_ports() -> None:
 
 
 def test_quantlab_adapter_backtest_and_relay() -> None:
-    adapter = QuantLabTargetAdapter()
+    adapter = QuantLabTargetAdapter(simulation=True)
 
     # Start and fetch backtest
     bt_start = adapter.backtest_start_job(
@@ -193,7 +193,7 @@ def test_self_healing_quantlab_strategy() -> None:
         reg_file = Path(tmpdir) / "registry.json"
         hist_file = Path(tmpdir) / "history.json"
         registry = StrategyRegistry(storage_path=reg_file)
-        adapter = QuantLabTargetAdapter()
+        adapter = QuantLabTargetAdapter(simulation=True)
         engine = SelfHealingEvolutionEngine(
             registry=registry,
             history_file=hist_file,
@@ -211,6 +211,7 @@ def test_self_healing_quantlab_strategy() -> None:
                 "hard_stop_loss_pct": "0.06",
                 "symbols": ["600519.SH", "000858.SZ"],
                 "market_target": "quantlab",
+                "strategy_code": "class ParentStrategy: pass",
             },
             stage=StrategyStage.DEGRADED,
             generation=1,
@@ -246,7 +247,7 @@ def test_heal_quantlab_strategy_helper_function() -> None:
         reg_file = Path(tmpdir) / "registry.json"
         hist_file = Path(tmpdir) / "history.json"
         registry = StrategyRegistry(storage_path=reg_file)
-        adapter = QuantLabTargetAdapter()
+        adapter = QuantLabTargetAdapter(simulation=True)
         engine = SelfHealingEvolutionEngine(
             registry=registry,
             history_file=hist_file,
@@ -266,6 +267,7 @@ def test_heal_quantlab_strategy_helper_function() -> None:
                         "fast_period": 10,
                         "slow_period": 30,
                         "symbols": ["600519.SH"],
+                        "strategy_code": "class ParentGridStrategy: pass",
                     },
                 },
                 engine=engine,
@@ -274,6 +276,181 @@ def test_heal_quantlab_strategy_helper_function() -> None:
         assert healed.offspring_strategy_id == "quantlab:stock_grid_01_gen2"
         assert healed.quantlab_deployed is True
         assert healed.target_id == "quantlab"
+
+
+class _ReceiptQuantLabAdapter:
+    def __init__(
+        self,
+        *,
+        start_status: str = "running",
+        reconcile_running: bool = False,
+        backtest_status: str = "completed",
+    ) -> None:
+        self.start_status = start_status
+        self.reconcile_running = reconcile_running
+        self.backtest_status = backtest_status
+        self.create_fields: dict = {}
+        self.configure_fields: dict = {}
+        self.start_fields: dict = {}
+
+    def backtest_start_job(self, **kwargs):
+        return {"job_id": "bt-1", "status": "running"}
+
+    def backtest_get_job(self, job_id):
+        return {
+            "job_id": job_id,
+            "status": self.backtest_status,
+            "metrics": {
+                "win_rate": 0.55,
+                "profit_factor": 1.2,
+                "annualized_sharpe": 0.8,
+                "max_drawdown_pct": 0.1,
+                "total_trades": 30,
+            },
+        }
+
+    def strategy_create(self, **fields):
+        self.create_fields = fields
+        return {"status": "created", "strategy_id": fields["strategy_id"]}
+
+    def paper_configure(self, **fields):
+        self.configure_fields = fields
+        return {
+            "status": "configured",
+            "strategy_id": fields["strategy_id"],
+            "instance_id": "paper-verified-1",
+        }
+
+    def paper_start(self, **fields):
+        self.start_fields = fields
+        if self.start_status == "raise":
+            raise TimeoutError("unknown remote outcome")
+        return {
+            "status": self.start_status,
+            "strategy_id": fields["strategy_id"],
+            "instance_id": fields["instance_id"],
+        }
+
+    def paper_snapshot(self, **fields):
+        return {
+            "status": "running" if self.reconcile_running else "configured",
+            "strategy_id": fields["strategy_id"],
+            "instance_id": fields.get("instance_id") or "paper-verified-1",
+        }
+
+
+def test_quantlab_self_healing_requires_verified_configure_and_start_receipts() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = StrategyRegistry(storage_path=Path(tmpdir) / "registry.json")
+        adapter = _ReceiptQuantLabAdapter(start_status="unknown")
+        engine = SelfHealingEvolutionEngine(
+            registry=registry,
+            history_file=Path(tmpdir) / "history.json",
+            quantlab_adapter=adapter,
+        )
+        registry.register(
+            StrategyRecord(
+                strategy_id="42",
+                strategy_type="a_share_alpha_trend",
+                name="A share opaque id",
+                parameters={
+                    "market_target": "quantlab",
+                    "symbols": ["600519.SH"],
+                    "timeframe": "1D",
+                    "strategy_code": "class ParentOpaqueStrategy: pass",
+                },
+                stage=StrategyStage.DEGRADED,
+            )
+        )
+        active_before = len(registry.build_active_strategies())
+        healed = engine.heal_strategy("42")
+        assert healed is not None
+        assert healed.target_id == "quantlab"
+        assert healed.quantlab_deployed is False
+        assert healed.quantlab_instance_id is None
+        assert registry.get(healed.offspring_strategy_id).stage == StrategyStage.INCUBATING
+        assert adapter.start_fields["instance_id"] == "paper-verified-1"
+        assert adapter.create_fields["code"] == "class ParentOpaqueStrategy: pass"
+        assert adapter.configure_fields["idempotency_key"] == (
+            "self_heal:quantlab:42:gen2:configure"
+        )
+        assert adapter.start_fields["idempotency_key"] == (
+            "self_heal:quantlab:42:gen2:start"
+        )
+        assert registry.get(healed.offspring_strategy_id).is_active is False
+        assert len(registry.build_active_strategies()) == active_before
+
+
+def test_quantlab_self_healing_reconciles_unknown_start_outcome() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = StrategyRegistry(storage_path=Path(tmpdir) / "registry.json")
+        adapter = _ReceiptQuantLabAdapter(
+            start_status="raise", reconcile_running=True
+        )
+        engine = SelfHealingEvolutionEngine(
+            registry=registry,
+            history_file=Path(tmpdir) / "history.json",
+            quantlab_adapter=adapter,
+        )
+        registry.register(
+            StrategyRecord(
+                strategy_id="42",
+                strategy_type="a_share_alpha_trend",
+                name="A share opaque id",
+                parameters={
+                    "market_target": "quantlab",
+                    "symbols": ["600519.SH"],
+                    "timeframe": "1D",
+                    "strategy_code": "class ParentOpaqueStrategy: pass",
+                },
+                stage=StrategyStage.DEGRADED,
+            )
+        )
+        active_before = len(registry.build_active_strategies())
+        healed = engine.heal_strategy("42")
+        assert healed is not None
+        assert healed.quantlab_deployed is True
+        assert healed.quantlab_instance_id == "paper-verified-1"
+        assert registry.get(healed.offspring_strategy_id).stage == StrategyStage.PAPER_OBSERVING
+        assert len(registry.build_active_strategies()) == active_before + 1
+
+
+def test_quantlab_unknown_backtest_blocks_every_remote_write() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = StrategyRegistry(storage_path=Path(tmpdir) / "registry.json")
+        adapter = _ReceiptQuantLabAdapter(backtest_status="running")
+        engine = SelfHealingEvolutionEngine(
+            registry=registry,
+            history_file=Path(tmpdir) / "history.json",
+            quantlab_adapter=adapter,
+        )
+        registry.register(
+            StrategyRecord(
+                strategy_id="42",
+                strategy_type="a_share_alpha_trend",
+                name="A share opaque id",
+                parameters={
+                    "market_target": "quantlab",
+                    "symbols": ["600519.SH"],
+                    "timeframe": "1D",
+                    "strategy_code": "class ParentOpaqueStrategy: pass",
+                },
+                stage=StrategyStage.DEGRADED,
+            )
+        )
+        active_before = len(registry.build_active_strategies())
+        healed = engine.heal_strategy("42")
+        assert healed is not None
+        assert healed.validation_metrics["source"] == "quantlab_backtest_unavailable"
+        assert healed.quantlab_deployed is False
+        assert adapter.create_fields == {}
+        assert adapter.configure_fields == {}
+        assert adapter.start_fields == {}
+        preview = registry.get(healed.offspring_strategy_id)
+        assert preview is not None
+        assert preview.is_active is False
+        assert preview.stage == StrategyStage.INCUBATING
+        assert len(registry.build_active_strategies()) == active_before
 
 
 def test_race_judge_with_quantlab_string_ids() -> None:
@@ -315,6 +492,9 @@ def test_race_judge_with_quantlab_string_ids() -> None:
             }
         ]
         hist_file.write_text(json.dumps(history_data), encoding="utf-8")
+        register_quantlab_target(
+            lambda: QuantLabTargetAdapter(simulation=True), replace=True
+        )
 
         daemon = RaceJudgeDaemon(
             history_file=hist_file,
@@ -323,9 +503,19 @@ def test_race_judge_with_quantlab_string_ids() -> None:
 
         pairs = daemon.discover_active_pairs()
         assert len(pairs) == 1
-        assert pairs[0] == ("quantlab:parent_01", "quantlab:parent_01_gen2", 2)
+        assert pairs[0] == (
+            "quantlab",
+            "quantlab:parent_01",
+            "quantlab:parent_01_gen2",
+            2,
+        )
 
-        pair_record = daemon.evaluate_pair("quantlab:parent_01", "quantlab:parent_01_gen2", 2)
+        pair_record = daemon.evaluate_pair(
+            "quantlab:parent_01",
+            "quantlab:parent_01_gen2",
+            2,
+            target_id="quantlab",
+        )
         assert pair_record.parent_strategy_id == "quantlab:parent_01"
         assert pair_record.challenger_strategy_id == "quantlab:parent_01_gen2"
         assert pair_record.target_id == "quantlab"

@@ -466,6 +466,36 @@ class UdsSandboxRunner:
             raise RuntimeError("isolated sandbox service is unavailable") from exc
 
 
+class UdsCoSteerSandbox:
+    """Run Co-STEER generated code only through the digest-bound UDS service."""
+
+    def __init__(self, runner: UdsSandboxRunner, *, timeout_seconds: float = 10.0) -> None:
+        if not isinstance(runner, UdsSandboxRunner):
+            raise TypeError("Co-STEER requires the digest-bound UDS runner")
+        self.runner = runner
+        self.timeout_seconds = timeout_seconds
+
+    def smoke_strategy(self, source_code: str) -> str | None:
+        with tempfile.TemporaryDirectory(prefix="hypertrade-co-steer-submit-") as temporary:
+            root = Path(temporary)
+            workspace = root / "workspace"
+            guard = root / "guard"
+            strategy_path = workspace / "strategies" / "candidate.py"
+            strategy_path.parent.mkdir(mode=0o700, parents=True)
+            guard.mkdir(mode=0o700)
+            strategy_path.write_text(source_code, encoding="utf-8")
+            result = self.runner.execute(
+                SandboxCommandV1(name="co_steer_smoke"),
+                workspace,
+                guard,
+                self.timeout_seconds,
+            )
+        if result.status == "passed":
+            return None
+        detail = result.output_preview.strip() or "no diagnostic output"
+        return f"Isolated sandbox smoke {result.status}: {detail}"
+
+
 def is_pinned_oci_image(image: str) -> bool:
     """Only immutable OCI images are eligible for a production sandbox canary."""
 
@@ -564,7 +594,9 @@ def _command_argv(command: SandboxCommandV1, workspace: Path, guard: Path) -> li
         return [sys.executable, "-m", "pytest", "-q", "tests", *command.args]
     strategies = sorted((workspace / "strategies").glob("*.py"))
     if not strategies:
-        raise ValueError("limited backtest requires a Python strategy file")
+        raise ValueError(f"{command.name} requires a Python strategy file")
+    if command.name == "co_steer_smoke":
+        return [sys.executable, str(guard / "co_steer_smoke.py"), str(strategies[0])]
     return [sys.executable, str(guard / "limited_backtest.py"), str(strategies[0])]
 
 
@@ -606,6 +638,106 @@ if any(item not in (-1, 0, 1) for item in signals):
     raise SystemExit('signals must contain only -1, 0, 1')
 print('limited_backtest: contract passed; no orders dispatched')
 """,
+        encoding="utf-8",
+    )
+    (guard / "co_steer_smoke.py").write_text(
+        '''import importlib.util, math, sys
+from decimal import Decimal
+
+import numpy as np
+import pandas as pd
+
+from hypertrade.research.co_steer import BaseEvolutionStrategy
+
+
+def fail(message):
+    raise SystemExit(message)
+
+
+def load_strategy_type(path):
+    spec = importlib.util.spec_from_file_location("candidate_strategy", path)
+    if spec is None or spec.loader is None:
+        fail("candidate strategy could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    candidates = [
+        value
+        for value in vars(module).values()
+        if isinstance(value, type)
+        and issubclass(value, BaseEvolutionStrategy)
+        and value is not BaseEvolutionStrategy
+    ]
+    if len(candidates) != 1:
+        fail("source must define exactly one BaseEvolutionStrategy subclass")
+    return candidates[0]
+
+
+def run_pipeline(strategy_type, frame):
+    strategy = strategy_type()
+    features = strategy.compute_features(frame.copy())
+    if not isinstance(features, pd.DataFrame):
+        fail("compute_features must return pandas.DataFrame")
+    if not features.index.equals(frame.index):
+        fail("compute_features index must exactly match input")
+    signals = strategy.generate_signals(features.copy())
+    if not isinstance(signals, pd.Series):
+        fail("generate_signals must return pandas.Series")
+    if not signals.index.equals(features.index):
+        fail("generate_signals index must exactly match features")
+    if signals.isna().any() or not signals.isin((-1, 0, 1)).all():
+        fail("generate_signals must contain only -1, 0, 1")
+    for index, signal in signals.items():
+        size = strategy.position_sizing(int(signal), features.loc[[index]].copy())
+        try:
+            numeric_size = float(Decimal(str(size)))
+        except Exception:
+            fail("position_sizing must return a finite numeric value")
+        if not math.isfinite(numeric_size):
+            fail("position_sizing must return a finite numeric value")
+        if numeric_size < 0 or numeric_size > 1:
+            fail("position_sizing must be between 0 and 1")
+    return features, signals
+
+
+strategy_type = load_strategy_type(sys.argv[1])
+periods = 64
+index = pd.date_range("2026-01-01", periods=periods, freq="h", tz="UTC")
+sequence = np.arange(periods, dtype=float)
+close = 100.0 + sequence * 0.2 + np.sin(sequence / 3.0)
+frame = pd.DataFrame(
+    {
+        "open": close - 0.25,
+        "high": close + 0.75,
+        "low": close - 0.75,
+        "close": close,
+        "volume": 1000.0 + sequence * 7.0,
+    },
+    index=index,
+)
+full_features, full_signals = run_pipeline(strategy_type, frame)
+for prefix_length in (24, 40, 56):
+    prefix_features, prefix_signals = run_pipeline(strategy_type, frame.iloc[:prefix_length])
+    try:
+        pd.testing.assert_frame_equal(
+            full_features.iloc[:prefix_length],
+            prefix_features,
+            check_dtype=False,
+            check_exact=False,
+            rtol=1e-12,
+            atol=1e-12,
+        )
+        pd.testing.assert_series_equal(
+            full_signals.iloc[:prefix_length],
+            prefix_signals,
+            check_dtype=False,
+            check_exact=False,
+            rtol=1e-12,
+            atol=1e-12,
+        )
+    except AssertionError:
+        fail("prefix invariance failed: earlier outputs changed when future rows were appended")
+print("co_steer_smoke: three-stage contract passed; prefix invariant; no orders dispatched")
+''',
         encoding="utf-8",
     )
 

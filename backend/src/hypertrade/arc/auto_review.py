@@ -14,7 +14,8 @@ from hypertrade.arc.evolution_models import EvolutionControl
 from hypertrade.arc.feedback import compare_backtests
 from hypertrade.arc.incubation import ARCPaperIncubationResolver
 from hypertrade.arc.paper_review import build_paper_review, decide_paper_review
-from hypertrade.arc.self_test import apply_success_criteria
+from hypertrade.arc.selection_bias import enforce_selection_gate
+from hypertrade.arc.self_test import SelfTestResult, apply_success_criteria
 from hypertrade.arc.store import get_controller, list_mission_ids, research_lock
 from hypertrade.db import Database
 
@@ -57,10 +58,27 @@ def evaluate_auto_review(controller: ARCController, config: EvolutionConfig) -> 
     ):
         reasons.append("missing_version_bound_final_receipt")
     metrics = proof.get("metrics") or {}
-    passed, failed = apply_success_criteria(metrics, goal.success_criteria)
+    checked = enforce_selection_gate(
+        controller,
+        attempt,
+        SelfTestResult(
+            True,
+            attempt.validation_id,
+            attempt.bitpro_strategy_id,
+            attempt.bitpro_backtest_id,
+            metrics=metrics,
+        ),
+    )
+    reasons.extend(checked.reasons)
+    metrics = checked.metrics
+    passed, failed = apply_success_criteria(
+        metrics, goal.success_criteria, require_selection_evidence=True
+    )
     if not passed:
         reasons.extend(failed)
-    policy_passed, policy_failed = apply_success_criteria(metrics, config.paper_criteria)
+    policy_passed, policy_failed = apply_success_criteria(
+        metrics, config.paper_criteria, require_selection_evidence=True
+    )
     if not policy_passed:
         reasons.extend("policy: " + reason for reason in policy_failed)
     if config.paper_criteria.required_validation_policy != "arc_windowed_v1":
@@ -82,7 +100,13 @@ def evaluate_auto_review(controller: ARCController, config: EvolutionConfig) -> 
     if goal.live_allowed:
         reasons.append("paper_only_policy")
     return {
-        "decision": "reject" if reasons else "approve",
+        "decision": (
+            "block"
+            if metrics["selection_bias"]["status"] == "unknown"
+            else "reject"
+            if reasons
+            else "approve"
+        ),
         "reasons": reasons,
         "package_hash": package["package_hash"],
         "policy": "autonomous_paper_referee_v1",

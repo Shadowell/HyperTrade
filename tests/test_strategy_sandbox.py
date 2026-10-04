@@ -11,10 +11,15 @@ from hypertrade.runtime.adapters.sandbox import (
     InMemorySandboxStore,
     SqlSandboxStore,
     StrategySandbox,
+    UdsCoSteerSandbox,
     UdsSandboxRunner,
     is_pinned_oci_image,
 )
-from hypertrade.runtime.domain.sandbox import ImportReviewV1, SandboxRequestV1
+from hypertrade.runtime.domain.sandbox import (
+    ImportReviewV1,
+    SandboxCommandResultV1,
+    SandboxRequestV1,
+)
 
 
 @pytest.fixture
@@ -51,6 +56,55 @@ def request(**updates: object) -> SandboxRequestV1:
     }
     values.update(updates)
     return SandboxRequestV1.model_validate(values)
+
+
+class RecordingUdsRunner(UdsSandboxRunner):
+    def __init__(self, *, error: Exception | None = None) -> None:
+        self.error = error
+        self.calls = []
+
+    def execute(self, command, workspace, guard, timeout_seconds):
+        if self.error is not None:
+            raise self.error
+        submitted_source = (workspace / "strategies" / "candidate.py").read_text()
+        self.calls.append((command, submitted_source, guard, timeout_seconds))
+        return SandboxCommandResultV1(
+            name="co_steer_smoke",
+            argv=("co_steer_smoke",),
+            status="passed",
+            exit_code=0,
+            duration_ms=1,
+            output_preview="three-stage contract passed",
+            output_hash="a" * 64,
+            output_bytes=27,
+        )
+
+
+def test_co_steer_uds_adapter_submits_source_without_host_execution() -> None:
+    runner = RecordingUdsRunner()
+    sandbox = UdsCoSteerSandbox(runner)  # type: ignore[arg-type]
+    source = "class Candidate: pass\n"
+
+    error = sandbox.smoke_strategy(source)
+
+    assert error is None
+    command, submitted_source, _guard, timeout_seconds = runner.calls[0]
+    assert command.name == "co_steer_smoke"
+    assert submitted_source == source
+    assert timeout_seconds == 10.0
+
+
+def test_co_steer_uds_adapter_fails_closed_when_service_is_unavailable() -> None:
+    runner = RecordingUdsRunner(error=RuntimeError("isolated sandbox service is unavailable"))
+    sandbox = UdsCoSteerSandbox(runner)  # type: ignore[arg-type]
+
+    with pytest.raises(RuntimeError, match="isolated sandbox service is unavailable"):
+        sandbox.smoke_strategy("class Candidate: pass\n")
+
+
+def test_co_steer_adapter_rejects_non_uds_runner() -> None:
+    with pytest.raises(TypeError, match="digest-bound UDS runner"):
+        UdsCoSteerSandbox(object())  # type: ignore[arg-type]
 
 
 @pytest.mark.anyio

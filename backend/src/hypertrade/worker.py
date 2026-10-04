@@ -1,9 +1,12 @@
 import asyncio
+import hashlib
+import json
 import logging
 import os
 import socket
 from collections.abc import Callable
 from contextlib import suppress
+from decimal import Decimal, InvalidOperation
 from threading import Event, Thread
 from typing import Any, cast
 
@@ -15,13 +18,20 @@ from hypertrade.agent.task_executor import (
 )
 from hypertrade.agent.tasks import AgentTaskService
 from hypertrade.arc.observation import observe_arc_missions_once
-from hypertrade.arc.runtime_journal import record_runtime_error
+from hypertrade.arc.runtime_journal import record_model_exchange, record_runtime_error
 from hypertrade.arc.store import configure_store
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import Database
 from hypertrade.market.client import MarketIngestor
 from hypertrade.market.repository import MarketRepository
+from hypertrade.memory.arc_integration import replay_arc_cognitive_memory_once
+from hypertrade.memory.distillation import (
+    CausalSummarizer,
+    DistillationBudgetExhausted,
+    distill_pending_regimes,
+)
+from hypertrade.memory.layered_service import EpisodicMemoryItemV1
 from hypertrade.monitoring import MonitorService
 from hypertrade.paper.service import PaperTradingService
 from hypertrade.providers.runtime import ProviderRuntime
@@ -502,13 +512,157 @@ async def main() -> None:
     tasks.append(arc_evolution_loop(db))
     tasks.append(arc_auto_review_loop(db))
     tasks.append(arc_meta_tuning_loop(db))
+    tasks.append(cognitive_memory_replay_loop(db))
     if settings.mission_runtime_worker_enabled:
         tasks.append(avo_research_loop(db))
     if settings.self_healing_evolution_enabled:
         tasks.append(self_healing_evolution_loop(db, settings=settings))
     if settings.race_judge_enabled:
         tasks.append(race_judge_loop(db, settings=settings))
+    if settings.arc_memory_distillation_enabled:
+        tasks.append(memory_distillation_loop(db, settings=settings))
     await asyncio.gather(*tasks)
+
+
+def memory_distillation_worker_once(
+    db: Database,
+    *,
+    settings: Settings | None = None,
+    causal_summarizer: CausalSummarizer | None = None,
+) -> dict[str, object]:
+    """Run one idempotent evidence-set distillation pass."""
+    active_settings = settings or get_settings()
+    summarizer = causal_summarizer
+    version = "injected-v1"
+    if summarizer is None:
+        if not active_settings.arc_memory_distillation_enabled:
+            return {"status": "disabled", "ids": []}
+        provider = ProviderRuntime(active_settings).get_chat_provider(
+            selected=active_settings.active_chat_provider
+        )
+        if provider is None:
+            return {"status": "skipped", "reason": "provider_unavailable", "ids": []}
+        summarizer = _provider_causal_summarizer(
+            provider,
+            db=db,
+            max_calls=active_settings.arc_memory_distillation_max_model_calls_per_pass,
+        )
+        identity = f"cognitive-distillation-json-v1:{provider.name}:{provider.model}"
+        version = f"model-{hashlib.sha256(identity.encode()).hexdigest()[:16]}"
+    return distill_pending_regimes(
+        db,
+        causal_summarizer=summarizer,
+        summarizer_version=version,
+    )
+
+
+async def memory_distillation_loop(
+    db: Database,
+    *,
+    settings: Settings | None = None,
+) -> None:
+    """Periodically distill episodes only when the paid-model ARC channel is enabled."""
+    active_settings = settings or get_settings()
+    while True:
+        await _guarded(
+            db,
+            "worker.memory_distillation",
+            lambda: memory_distillation_worker_once(db, settings=active_settings),
+        )
+        await asyncio.sleep(active_settings.arc_memory_distillation_poll_interval_seconds)
+
+
+async def cognitive_memory_replay_loop(db: Database) -> None:
+    """Recover missed inline cognitive projections from the canonical ARC journal."""
+    configure_store(db)
+    while True:
+        await _guarded(
+            db,
+            "worker.cognitive_memory_replay",
+            replay_arc_cognitive_memory_once,
+        )
+        await asyncio.sleep(60)
+
+
+def _provider_causal_summarizer(
+    provider: Any,
+    *,
+    db: Database,
+    max_calls: int,
+) -> CausalSummarizer:
+    calls = 0
+
+    def summarize(
+        episodes: list[EpisodicMemoryItemV1],
+    ) -> tuple[str, str, Decimal] | None:
+        nonlocal calls
+        if calls >= max_calls:
+            raise DistillationBudgetExhausted
+        evidence = [
+            {
+                "id": item.id,
+                "event_type": item.event_type,
+                "market_regime": item.market_regime,
+                "symbols": item.symbols,
+                "timeframe": item.timeframe,
+                "metrics": item.metrics_delta,
+                "summary": item.reflection_summary[:500],
+            }
+            for item in episodes[:20]
+        ]
+        request_content = json.dumps(evidence, default=str, sort_keys=True)
+        request_hash = hashlib.sha256(request_content.encode()).hexdigest()
+        calls += 1
+        response = provider.chat(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Return one JSON object only. Derive a conservative reusable quant rule "
+                        "from the supplied audited episodes. If causality is unsupported, return "
+                        '{"status":"unknown"}. Otherwise return status=ok, claim, '
+                        "assertion_type (causal_heuristic|structural_constraint|factor_affinity), "
+                        "and confidence in [0,1]. Do not invent metrics or evidence."
+                    ),
+                },
+                {"role": "user", "content": request_content},
+            ]
+        )
+        record_model_exchange(
+            f"memory-distillation:{request_hash[:20]}",
+            provider=str(provider.name),
+            model=str(provider.model),
+            request_hash=request_hash,
+            context_record_id=f"episode-set:{request_hash}",
+            content=response.content,
+            reasoning_content=response.reasoning_content,
+            tool_calls=[],
+            usage=response.usage.to_dict(),
+            db=db,
+        )
+        try:
+            payload = json.loads(response.content)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(payload, dict) or payload.get("status") != "ok":
+            return None
+        assertion_type = str(payload.get("assertion_type") or "")
+        if assertion_type not in {
+            "causal_heuristic",
+            "structural_constraint",
+            "factor_affinity",
+        }:
+            return None
+        claim = str(payload.get("claim") or "").strip()
+        try:
+            confidence = Decimal(str(payload.get("confidence")))
+        except (InvalidOperation, ValueError):
+            return None
+        if not claim or not Decimal("0") <= confidence <= Decimal("1"):
+            return None
+        return claim, assertion_type, confidence
+
+    return summarize
 
 
 async def _guarded(db: Database, component: str, step: Callable[[], Any]) -> Any:
