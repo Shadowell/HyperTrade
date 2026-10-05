@@ -7,25 +7,20 @@ runbooks, and sprint state. Chat history is not considered durable project state
 
 - `spec.md`: product scope, V1 acceptance criteria, and explicit out-of-scope boundaries.
 - `progress.md`: latest completed work, verification status, and deployment notes.
-- `architecture/33-system-architecture.md`: canonical system architecture:
-  Mission Runtime, control/data planes, trust boundaries, lifecycle, safety and deployment.
-- `architecture/19-hypertrade-architecture-diagram.md`: poster-style
-  HyperTrade architecture map and layer responsibilities.
-- `architecture/18-hypertrade-capability-roadmap.md`: post-Sprint-44 capability
-  roadmap and parallel sprint plan for Agent development.
-- `architecture/20-connector-framework.md`: trusted connector capability
-  registry and BitPro compatibility path.
-- `architecture/21-world-model-agent-action-plan.md`: world-model-driven
-  strategy Agent action plan and phased execution guide.
-- `contracts/sprint-57-architecture-diagram.md`: current architecture diagram
-  contract.
-- `contracts/sprint-56-market-heat-summary.md`: focused market-reporting
-  contract for summary-first market heat answers.
-- `agent-prompts/parallel-sprint-prompts.md`: copy-ready prompts for Agents
-  implementing Sprint 45-54 in parallel.
-- `knowledge/tool-usage-guide.md`: operator-facing guide for validating Agent tools.
-- `knowledge/connector-framework-guide.md`: steps and safety rules for adding
-  trusted connectors.
+- `architecture/00-overview.md`: architecture document reading index and maintenance rules.
+- `architecture/33-system-architecture.md`: canonical system architecture (Mission Runtime,
+  control/data planes, multi-market targets, trust boundaries, lifecycle, safety and deployment).
+- `architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md`: QuantLab
+  market adapter, A-share microstructure hard rules, Co-STEER strategy transpiler and position netting relay.
+- `architecture/67-production-observability-probes-and-token-rotation.md`: production container
+  probes (`/livez`, `/readyz`, `/healthz`), zero-trust security token hot rotation and multi-target console.
+- `architecture/65-rd-agent-evolution-and-finmem-layered-memory.md`: RD-Agent Hypothesis Evolution
+  Tree (HET), Co-STEER structured synthesis and FinMem 3-tier cognitive memory.
+- `architecture/64-autonomous-trading-agent-system-architecture.md`: end-to-end perception,
+  tri-speed decision cycles, and bounded autonomous execution.
+- `architecture/62-pluggable-market-targets.md` & `63-evolution-effectiveness-alerts-and-benchmark.md`:
+  pluggable market targets and evolution engine hardening.
+- `architecture/19-hypertrade-architecture-diagram.md`: poster-style HyperTrade architecture map.
 - `runbooks/deployment-smoke.md`: post-deploy smoke checklist.
 - `runbooks/bitpro-mcp-data-access.md`: BitPro MCP access and safety procedure.
 - `runbooks/monitoring-alerts.md`: monitor execution and alert triage procedure.
@@ -34,32 +29,33 @@ runbooks, and sprint state. Chat history is not considered durable project state
 
 | Area | Current surface | Source of truth |
 | --- | --- | --- |
-| Agent graph and trace | API, CLI, `/harness` | `architecture/12-agent-graph-langgraph-runtime.md` |
 | System architecture | Canonical system context, runtime layers, data flow, trust boundaries and deployment model | `architecture/33-system-architecture.md` |
-| System architecture map | SVG poster, layer responsibilities, logical flow | `architecture/19-hypertrade-architecture-diagram.md` |
-| Professional Mission Runtime | Mission/Plan/Step/Event, reviewed Catalog, Context, Supervisor, sandbox and full cutover | `architecture/30-professional-agent-runtime-v2-roadmap.md`, `architecture/31-professional-agent-runtime-v2-technical-design.md` |
-| Provider routing | CLI `/model`, API, settings | `architecture/13-provider-router.md` |
-| Tool calling | Agent planner, ToolRegistry, trace | `architecture/04-tool-calling.md` |
-| RAG | `/rag`, `/api/rag/search`, Memory/RAG panels | `architecture/05-rag-pgvector.md` |
-| Memory | `/memory`, `/api/memory`, audited items | `architecture/06-memory.md` |
-| Strategy research | `/research`, `/backtest`, `/experiment` | `architecture/16-strategy-agent-workflow.md` |
-| Strategy knowledge memory | `/strategy library`, `GET /api/strategy/library`, `kind=strategy_knowledge` memory search | `knowledge/strategy-research-playbook.md` |
-| BitPro MCP | Agent tools, API adapter, backtest artifacts, paper evidence snapshots | `architecture/17-bitpro-tool-adapter.md` |
-| Connector framework | `GET /api/connectors/capabilities`, CLI `/connectors`, ToolRegistry origin metadata | `architecture/20-connector-framework.md`, `knowledge/connector-framework-guide.md` |
-| World-model strategy Agent | `WorldState`, action simulation, risk-gated decision cycle | `architecture/21-world-model-agent-action-plan.md` |
-| Monitoring and alerts | `/monitors`, `/monitor run`, `/alerts`, monitor API | `runbooks/monitoring-alerts.md` |
-| Capability roadmap | Parallel Agent sprint contracts after Sprint 44 | `architecture/18-hypertrade-capability-roadmap.md` |
-| Parallel Agent prompts | Copy-ready prompts for Sprint 45-54 Agents | `agent-prompts/parallel-sprint-prompts.md` |
-| Risk/Testnet execution | `/live intent`, `/live approve`, `/live execute` | `architecture/14-risk-engine.md`, `architecture/15-okx-testnet-execution.md` |
-| CLI | `hypertrade`, `ht`, slash commands | `architecture/11-cli-conversation-harness.md` |
-| Frontend workbench | `/harness` core console | `architecture/09-frontend-harness.md` |
-| Deployment | GitHub Actions, Docker Compose, Nginx | `architecture/10-deployment.md`, `deployment.md` |
+| Architecture overview & maintenance | Architecture reading guide and synchronization rules | `architecture/00-overview.md` |
+| Multi-market QuantLab & A-Share rules | QuantLab adapter, A-share rules (T+1, long-only, lot size), Transpiler, Position Netting Relay | `architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md` |
+| Production probes & Token rotation | Container probes (`/healthz`, `/readyz`, `/livez`), TokenRotationService, Quantum console | `architecture/67-production-observability-probes-and-token-rotation.md` |
+| RD-Agent HET & FinMem memory | Hypothesis Evolution Tree, Co-STEER synthesis, AST gatekeeper, 3-tier cognitive memory | `architecture/65-rd-agent-evolution-and-finmem-layered-memory.md` |
+| Autonomous trading agent | Perception bus, tri-speed decision cycles, bounded autonomous execution | `architecture/64-autonomous-trading-agent-system-architecture.md` |
+| Pluggable market targets | `market_target.v1` profile, `market-evolution.v1` MCP contract | `architecture/62-pluggable-market-targets.md` |
+| Evolution hardening & alerts | Benchmark-relative decay, continuation ledger, effectiveness ledger, Feishu alerts | `architecture/63-evolution-effectiveness-alerts-and-benchmark.md` |
+| Professional Mission Runtime | Mission/Plan/Step/Event, reviewed Catalog, Context, Supervisor, sandbox | `architecture/30-professional-agent-runtime-v2-roadmap.md`, `architecture/31-professional-agent-runtime-v2-technical-design.md` |
+| Target architecture & audit | Canonical Thread/Turn protocol, state machines, tool governance, evaluation gates | `architecture/34-next-generation-agent-runtime-audit-and-target-design.md` |
+| BitPro MCP & Paper evidence | Agent tools, API adapter, backtest artifacts, paper evidence snapshots | `architecture/17-bitpro-tool-adapter.md` |
+| Strategy research & AVO loop | `/research`, `/backtest`, AVO research loop, adversarial red-teaming | `architecture/16-strategy-agent-workflow.md`, `architecture/37-arc-autonomous-research-core-architecture.md` |
+| Provider routing | CLI `/model`, API, settings, multi-provider fallbacks | `architecture/13-provider-router.md` |
+| Memory & RAG | `/memory`, `/rag`, pgvector storage, audited assertions | `architecture/05-rag-pgvector.md`, `architecture/06-memory.md` |
+| CLI & TUI harness | `hypertrade`, `ht`, interactive streaming research watcher | `architecture/11-cli-conversation-harness.md` |
+| Frontend workbench | Quantum portfolio dashboard, mission control, HET tree, relay monitor | `architecture/09-frontend-harness.md` |
+| Deployment & ops | Docker Compose, Nginx, GitHub Actions CI/CD, `./scripts/check.sh` | `architecture/10-deployment.md`, `deployment.md` |
 
 ## Documentation Rules
 
-- Keep production behavior in docs, not only in chat.
-- Do not document secrets, tokens, provider keys, or production `.env` values.
-- If a feature changes API behavior, update `spec.md`, relevant architecture docs,
-  the active sprint contract, and `progress.md` in the same change.
-- Keep BitPro boundaries explicit: HyperTrade uses stable MCP/API contracts and
-  must not copy BitPro business logic or bypass live-risk gates.
+1. **Architecture & Design Docs Synchronization (强约束)**:
+   Whenever the overall architecture undergoes changes (such as new core modules, multi-market adapters,
+   data/control flow updates, storage migrations, or execution model evolution), all related architecture
+   design documents under `docs/architecture/`, `docs/spec.md`, `docs/progress.md`, sprint contracts,
+   and both Chinese and English README files (`README.md`, `README.en.md`) MUST be updated promptly.
+   Code evolution without synchronized design documentation is strictly forbidden.
+2. Keep production behavior in docs, not only in chat.
+3. Do not document secrets, tokens, provider keys, or production `.env` values.
+4. Keep market boundaries explicit: HyperTrade uses stable MCP/API contracts and
+   must not copy external platform business logic or bypass live-risk gates.
