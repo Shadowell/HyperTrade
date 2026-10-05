@@ -111,10 +111,32 @@ def resolve_admin_session(request: Request) -> str | None:
 
 
 def resolve_service_principal(request: Request) -> ServicePrincipal | None:
-    """Hash ``X-HyperTrade-Service-Token`` and match it against configured digests."""
+    """Hash ``X-HyperTrade-Service-Token`` and match it against token service
+    or configured digests.
+    """
     provided = str(request.headers.get(SERVICE_TOKEN_HEADER, "") or "").strip()
     if not provided:
+        auth_header = str(request.headers.get("Authorization", "") or "").strip()
+        if auth_header.startswith("Bearer "):
+            provided = auth_header[7:].strip()
+    if not provided:
         return None
+
+    # 1. Check dynamic TokenRotationService if mounted
+    token_svc = getattr(getattr(request, "app", None), "state", None)
+    if token_svc is not None:
+        service_instance = getattr(token_svc, "token_service", None)
+        if service_instance is not None:
+            rec = service_instance.verify_token(provided)
+            if rec is not None:
+                scopes = frozenset(
+                    ARCScope(item) for item in rec.scopes if item in ARCScope._value2member_map_
+                )
+                principal = ServicePrincipal(label=rec.token_label, scopes=scopes)
+                request.state.service_principal = principal
+                return principal
+
+    # 2. Check static configured digests
     digest = hash_service_token(provided)
     for principal, stored in parse_service_tokens(_settings(request).arc_service_tokens):
         if hmac.compare_digest(digest, stored):

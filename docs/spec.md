@@ -1,3 +1,20 @@
+# 032 运维探活与安全令牌管理（2026-10-05）
+
+在系统底层与 API 接入层建设生产级运维探活体系与动态安全令牌轮换管理系统：
+
+1. **容器级运维探活端点 (`/healthz`, `/readyz`, `/livez`)**：
+   - 提供符合 Kubernetes/Docker/负载均衡标准的探活探针：
+     - `/livez`: 轻量进程存活检查（HTTP 200 `{"status": "alive"}`）；
+     - `/readyz`: 依赖就绪性检查（DB 连通性测试 `SELECT 1`，服务就绪返回 HTTP 200，故障返回 HTTP 503）；
+     - `/healthz`: 全景健康汇总（Uptime、数据库延迟、各目标适配器 BitPro/QuantLab 心跳与延迟、Paper 会话状态、安全令牌审计统计）；
+   - 在根路径与 `/api/*` 前缀同时挂载，保持既有 `/api/health` 向下兼容。
+2. **安全令牌生命周期与动态轮换 (`TokenRotationService`)**：
+   - 动态安全令牌管理：支持按需签发带权限 Scope（如 `arc:read`, `arc:start`, `quantlab:mcp`, `bitpro:sync`）的哈希凭据，杜绝明文凭据落地；
+   - 无缝热轮换与宽限期（Token Grace Period）：支持在不中断生产运行的情况下生成新密钥，旧密钥进入指定宽限期（默认 24 小时）平滑过渡；
+   - 紧急吊销与过期审计预警：提供主动吊销黑名单机制，自动审计临期凭据（7天内过期），支持告警与审计日志。
+3. **适配器心跳守护探测 (Target Heartbeat)**：
+   - 为各目标适配器注入标准化心跳（`heartbeat()` / `ping()`）探测，实时汇总外部 MCP 状态与连通延迟。
+
 # 031 前端量化指挥台支持 QuantLab 专属看板与 HET 假设演进树（2026-10-05）
 
 在前端量化指挥台（`QuantumPortfolioDashboard`）全面支持多目标平台架构与科学演进监控：

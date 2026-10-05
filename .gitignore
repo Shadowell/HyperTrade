@@ -40,3 +40,5 @@ frontend/vite.config.d.ts
 *.sqlite3
 hypertrade-local.db
 data/
+security_tokens.json
+docs/knowledge/security_tokens.json
