@@ -127,7 +127,7 @@ class ASTGatekeeper:
     )
 
     @classmethod
-    def validate(cls, source_code: str) -> ASTValidationResult:
+    def validate(cls, source_code: str, *, market: str = "global") -> ASTValidationResult:
         errors: list[str] = []
         warnings: list[str] = []
 
@@ -274,6 +274,74 @@ class ASTGatekeeper:
                 for item in node.body:
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         implemented_methods.add(item.name)
+
+            # 5. Check China A-Share spot long-only constraint (no shorting)
+            if market.lower() in ("cn", "a_share", "ashare"):
+                enclosing = cls._enclosing_function(node, parents)
+                if enclosing == "generate_signals":
+                    if isinstance(node, ast.Assign):
+                        for tgt in node.targets:
+                            is_sig = (
+                                (isinstance(tgt, ast.Name) and "signal" in tgt.id.lower())
+                                or (
+                                    isinstance(tgt, ast.Subscript)
+                                    and isinstance(tgt.value, ast.Name)
+                                    and "signal" in tgt.value.id.lower()
+                                )
+                            )
+                            if is_sig:
+                                if cls._is_negative_literal(node.value):
+                                    errors.append(
+                                        "A-Share spot constraint violation: naked shorting / "
+                                        "negative signal (-1) is forbidden in China equity market "
+                                        "(market='cn'). Only long (1) or exit/flat (0) signals "
+                                        "are permitted."
+                                    )
+                                elif isinstance(node.value, ast.Call):
+                                    for arg in node.value.args:
+                                        if cls._is_negative_literal(arg):
+                                            errors.append(
+                                                "A-Share spot constraint violation: "
+                                                "naked shorting / negative signal (-1) is "
+                                                "forbidden in China equity market (market='cn'). "
+                                                "Only long (1) or exit/flat (0) signals permitted."
+                                            )
+                                            break
+                    elif (
+                        isinstance(node, ast.Return)
+                        and node.value is not None
+                        and cls._is_negative_literal(node.value)
+                    ):
+                        errors.append(
+                            "A-Share spot constraint violation: returning negative signal "
+                            "is forbidden in China equity market (market='cn')."
+                        )
+                elif (
+                    enclosing == "position_sizing"
+                    and isinstance(node, ast.Return)
+                    and node.value is not None
+                ):
+                    is_neg_pos = False
+                    if cls._is_negative_literal(node.value):
+                        is_neg_pos = True
+                    elif isinstance(node.value, ast.Call):
+                        for arg in node.value.args:
+                            if isinstance(arg, ast.Constant) and isinstance(
+                                arg.value, (int, float, str)
+                            ):
+                                try:
+                                    if float(arg.value) < 0:
+                                        is_neg_pos = True
+                                except Exception:
+                                    pass
+                            elif cls._is_negative_literal(arg):
+                                is_neg_pos = True
+                    if is_neg_pos:
+                        errors.append(
+                            "A-Share spot constraint violation: negative position sizing "
+                            "is forbidden in China equity market (market='cn'). "
+                            "Position size must be in [0.0, 1.0]."
+                        )
 
         if not found_strategy_class:
             errors.append("Structure violation: no strategy class definition found")

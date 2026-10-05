@@ -1,3 +1,11 @@
+# 029 A 股市场微观结构与硬规则注入（2026-10-05）
+
+将 A 股特有的市场微观结构硬约束（T+1 交易交收、现货禁止裸做空、涨跌停流动性截断、单边 0.05% 印花税与摩擦滑点）同时注入 LLM/Co-STEER 策略生成 Prompt 端与 ASTGatekeeper 静态及运行时校验端。
+
+1. **Prompt 上下文注入**：在策略合成、参数变异与假设提议 Prompt 中注入强制约束（`ASHARE_MICROSTRUCTURE_PROMPT_CONSTRAINTS`），禁止模型生成日内同一标的高频平开反转、现货空头或涨跌停假成交逻辑；
+2. **ASTGatekeeper 安全与单向多头门禁**：在 AST 解析中针对 `market="cn"` 严格检测并拦截负向信号常量（`-1`）及做空仓位，杜绝现货裸空；
+3. **运行时合规与转译器支持**：`QuantLabStrategyTranspiler` 与 `AShareRuleValidator` 确保转译为 QuantLab 矩阵代码时内嵌 A 股单向长仓和 T+1 状态机，保证跨周期、多资产回测与实盘模拟的制度真实性。
+
 # 028 QuantLab 策略格式转译器与代码部署闭环（2026-10-05）
 
 将 HyperTrade Co-STEER 生成的标准三段式 `BaseEvolutionStrategy`（特征工程、信号计算、动态仓位）通过 `QuantLabStrategyTranspiler` 自动转译与脚手架包装为 QuantLab 原生兼容的 `MatrixStrategy` 规范（声明 `META`、`ENTRY_SIGNALS`、`EXIT_SIGNALS`、`EXECUTION_BACKEND = "matrix_native"` 与 `MATRIX_STRATEGY`）。转译后代码严格通过 `ASTGatekeeper` 静态解析杜绝未来时序穿越与非白名单调用。
