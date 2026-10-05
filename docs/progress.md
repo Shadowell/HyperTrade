@@ -4,6 +4,26 @@
 
 # Progress Log
 
+## 前端量化指挥台支持 QuantLab 专属看板与 HET 假设演进树 (Spec 031) — 2026-10-05
+
+- **后端控制台与演进树 REST 端点矩阵**：
+  1. 在 `backend/src/hypertrade/main.py` 新增 6 个专用 REST API：
+     - `GET /api/portfolio/targets`: 获取执行目标适配器注册清单（BitPro / QuantLab）及对应市场微观硬规则；
+     - `GET /api/portfolio/targets/quantlab/strategies`: 获取 QuantLab 策略注册详情、标的池、代码 SHA-256 指纹及模拟盘权益；
+     - `POST /api/portfolio/targets/quantlab/strategies/{strategy_id}/backtest`: 触发 QuantLab 矩阵回测引擎并返回标准化夏普比率、年化收益及回测任务凭证；
+     - `GET /api/portfolio/relay/handovers`: 获取净额平滑换仓接力计划列表与切片进度；
+     - `POST /api/portfolio/relay/handovers/{plan_id}/step`: 手动步进执行下一周期换仓切片；
+     - `GET /api/research/hypothesis-tree`: 层次化呈现 RD-Agent 假设演进树节点、变异类型、超额收益与剪枝状态；
+- **前端量子量化指挥台升级 (QuantumPortfolioDashboard.tsx)**：
+  1. **平台切换器 (Target Switcher)**：顶部控制栏支持在 BitPro (Crypto) 与 QuantLab (A股) 之间无缝切换；切换至 QuantLab 时动态呈现 A 股微观结构硬规则警示徽章（T+1 现货单向多头、佣金万2.5/印花税5bps、最小100股一手、涨跌停限制）；
+  2. **QuantLab 专属看板 (`quantlab` Tab)**：展示 QuantLab 策略卡片、标的池、参数、`matrix_native` 执行架构、SHA-256 代码指纹、模拟权益与持仓计数；支持一键触发矩阵回测并即时渲染 Sharpe、年化收益率、Calmar 比率及任务凭据；
+  3. **HET 演进树与净额平滑换仓监视器 (`het_relay` Tab)**：
+     - 结构化渲染 RD-Agent 假设演进树（Root 与派生分支），可视化呈现假设陈述、突变类型、相对超额、夏普比率及劣汰剪枝原因；
+     - 深度集成赛马接力净额平滑换仓监视器，直观展示换手节省率（最高超 80%）、节省摩擦金额、净额/毛名义本金对比、切片步进进度条与一键步进切片按钮；
+- **测试套件与全量门禁**：
+  1. 编写 `tests/test_quantlab_console_endpoints.py`，全量测试目标清单、策略查询、回测触发、净额切片步进及假设演进树接口；
+  2. 前端构建与测试通过（15 项 vitest 全部通过，tsc/vite build 成功构建）；后端 Ruff 检查与 Mypy 类型检查 0 错误；全量测试套件通过。
+
 ## 赛马接力阶段的净额平滑换仓 (Spec 030) — 2026-10-05
 
 - **持仓净额对冲与两腿重合期调度引擎 (PositionNettingRelayService)**：
