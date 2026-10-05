@@ -1,3 +1,9 @@
+# 028 QuantLab 策略格式转译器与代码部署闭环（2026-10-05）
+
+将 HyperTrade Co-STEER 生成的标准三段式 `BaseEvolutionStrategy`（特征工程、信号计算、动态仓位）通过 `QuantLabStrategyTranspiler` 自动转译与脚手架包装为 QuantLab 原生兼容的 `MatrixStrategy` 规范（声明 `META`、`ENTRY_SIGNALS`、`EXIT_SIGNALS`、`EXECUTION_BACKEND = "matrix_native"` 与 `MATRIX_STRATEGY`）。转译后代码严格通过 `ASTGatekeeper` 静态解析杜绝未来时序穿越与非白名单调用。
+
+`QuantLabTargetAdapter` 扩展支持自动转译、代码指纹计算、调用 QuantLab 异步回测作业并以指数退避轮询获取标准化金融评价指标，并将策略自愈引擎与模拟盘供给及启动（`configure_paper` / `start_paper`）形成全自动部署闭环。
+
 # 027 Gemini 功能审查修复（2026-10-05）
 
 接力身份为 `(target_id, parent_id, challenger_id)`，策略 ID 保持不透明；未知目标、未发布的远端工具或缺失标的/周期均阻断。QuantLab 模拟器仅显式离线使用，配置、启动和回测以真实且身份匹配的回执为准；验证未知或失败不得进入 Paper 创建/启动。
