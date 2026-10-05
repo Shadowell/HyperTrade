@@ -14,6 +14,10 @@ from hypertrade.research.hypothesis_tree import (
 )
 from hypertrade.research.orchestrator import ResearchOrchestrator
 from hypertrade.research.paper_promotion import PaperPromotionService
+from hypertrade.research.quantlab_transpiler import (
+    QuantLabStrategyTranspiler,
+    TranspiledQuantLabStrategy,
+)
 from hypertrade.research.service import ResearchProgramService
 
 __all__ = [
@@ -25,7 +29,9 @@ __all__ = [
     "LocalSelfHealController",
     "MaxTreeDepthExceededError",
     "PaperPromotionService",
+    "QuantLabStrategyTranspiler",
     "ResearchOrchestrator",
     "ResearchProgramService",
     "SelfHealResult",
+    "TranspiledQuantLabStrategy",
 ]
