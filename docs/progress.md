@@ -4,7 +4,20 @@
 
 # Progress Log
 
-## Gemini 功能审查修复 (Spec 027) — 2026-10-05
+## QuantLab 策略格式转译器与代码部署闭环 (Spec 028) — 2026-10-05
+
+- **转译器实现 (QuantLabStrategyTranspiler)**：
+  1. 在 `backend/src/hypertrade/research/quantlab_transpiler.py` 实现 `QuantLabStrategyTranspiler`，将 HyperTrade Co-STEER 合成的 `BaseEvolutionStrategy` 三段式策略（`compute_features`, `generate_signals`, `position_sizing`）自动转译包装为 QuantLab 原生 `MatrixStrategy` 向量化模块；
+  2. 自动注入模块级字面量 `META`（包含 `execution_backend="matrix_native"`、资产与参数字典）、`ENTRY_SIGNALS`、`EXIT_SIGNALS`、`STOP_LOSS`、`MAX_HOLD_DAYS` 与 `MATRIX_STRATEGY` 实例；
+  3. 内置独立解耦脚手架 `_BASE_EVO_SCAFFOLD`，消除生成的策略代码对宿主 HyperTrade 安装包的反向依赖；
+  4. 采用 `ASTGatekeeper` 进行两级静态语法与未来数据穿越（Lookahead Bias）严格校验，生成确定性代码签名 `code_sha256`；支持原生 QuantLab 策略直通包装，提供默认合规模板生成器 `generate_default_evolution_code`；
+- **目标适配器与自愈闭环增强 (QuantLabTargetAdapter & Self-Healing)**：
+  1. 在 `QuantLabTargetAdapter.deploy_strategy` 与 `strategy_create` 引入 `QuantLabStrategyTranspiler`，自动完成源码合规转译、SHA-256 签名计算并注册持久化；
+  2. 新增 `QuantLabTargetAdapter.run_backtest`，支持源码/参数提交回测并基于指数退避轮询 `backtest_get_job`，返回标准化回测指标与任务凭证；
+  3. 打通自愈引擎 `SelfHealingEvolutionEngine`：在 `_validate_offspring` 中直通 `adapter.run_backtest` 获取 QuantLab 实盘回测收据；在 `_deploy_offspring_to_quantlab` 中支持缺失源码时自动合成合规代码并无缝启动 Paper 孪生会话；
+- **测试套件与质量门禁全绿**：
+  1. 编写 `tests/test_quantlab_transpiler_and_deployment.py`（7 项测试全部通过：转译三段式策略、原生代码兼容、未来函数/恶意调用静态拦截、模板生成、适配器转译部署与回测、自愈引擎 QuantLab 闭环）；
+  2. 通过全量门禁 `./scripts/check.sh`（前端测试 15 项、前端构建、后端 ruff、mypy 313 文件 0 错误、pytest 2098 项 100% 绿灯）。
 
 - 修复接力目标混淆、QuantLab 生产模拟回退、Paper 假成功和缺失研究范围补造；验证失败阻断创建/启动，未知状态保留为未核实。
 - Co-STEER 改走摘要绑定的隔离服务，三阶段真实 smoke 与多前缀检查覆盖已复现未来数据写法；缺服务不在宿主执行。

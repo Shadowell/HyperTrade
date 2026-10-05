@@ -88,6 +88,7 @@ class ASTGatekeeper:
 
     ALLOWED_MODULES: frozenset[str] = frozenset(
         {
+            "__future__",
             "numpy",
             "np",
             "pandas",

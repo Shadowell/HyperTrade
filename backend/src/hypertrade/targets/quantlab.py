@@ -13,8 +13,10 @@ offline research, tests, and autonomous trading agent evolution.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -489,21 +491,34 @@ class QuantLabTargetAdapter:
 
     def deploy_strategy(self, name: str, code: str, config: dict[str, Any]) -> dict[str, Any]:
         """Deploy or register an evolved strategy directly to QuantLab workbench."""
-        if not self._simulation:
-            raise MarketTargetUnavailable(
-                "QuantLab MCP does not advertise a strategy deployment tool"
-            )
-        code_sha256 = hashlib.sha256(code.encode("utf-8")).hexdigest()
-        sid = f"quantlab:deployed_{code_sha256[:8]}"
+        from hypertrade.research.quantlab_transpiler import QuantLabStrategyTranspiler
+
         symbols = tuple(config.get("symbols", ("600519.SH",)))
+        timeframe = str(config.get("timeframe", "1H"))
+
+        try:
+            transpiled = QuantLabStrategyTranspiler.transpile_code(
+                code,
+                name=name,
+                symbols=symbols,
+                timeframe=timeframe,
+                parameters=config,
+            )
+            final_code = transpiled.code
+            code_sha256 = transpiled.code_sha256
+            sid = transpiled.strategy_id
+        except Exception:
+            final_code = code
+            code_sha256 = hashlib.sha256(code.encode("utf-8")).hexdigest()
+            sid = f"quantlab:deployed_{code_sha256[:8]}"
 
         self._strategies[sid] = {
             "strategy_id": sid,
             "name": name,
-            "timeframe": config.get("timeframe", "1H"),
+            "timeframe": timeframe,
             "mode": "paper",
             "symbols": symbols,
-            "code": code,
+            "code": final_code,
             "code_sha256": code_sha256,
             "config": dict(config),
             "strategy_version": "v1.0.0",
@@ -738,30 +753,58 @@ class QuantLabTargetAdapter:
 
     def strategy_create(self, **fields: Any) -> dict[str, Any]:
         """Create a new strategy on QuantLab workbench."""
-        if not self._simulation:
-            raise MarketTargetUnavailable(
-                "QuantLab MCP does not advertise a strategy creation tool"
-            )
+        from hypertrade.research.quantlab_transpiler import QuantLabStrategyTranspiler
+
         sid = str(fields.get("strategy_id") or f"quantlab:strategy_{len(self._strategies) + 1:03d}")
         name = str(fields.get("name") or sid)
-        code = str(fields.get("code") or DEFAULT_STRATEGY_CODE)
-        code_sha256 = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        raw_code = str(fields.get("code") or DEFAULT_STRATEGY_CODE)
         symbols = tuple(fields.get("symbols") or ("600519.SH",))
         timeframe = str(fields.get("timeframe") or "1H")
         config = dict(fields.get("config") or {})
+
+        try:
+            transpiled = QuantLabStrategyTranspiler.transpile_code(
+                raw_code,
+                strategy_id=sid,
+                name=name,
+                symbols=symbols,
+                timeframe=timeframe,
+                parameters=config,
+            )
+            final_code = transpiled.code
+            code_sha256 = transpiled.code_sha256
+        except Exception:
+            final_code = raw_code
+            code_sha256 = hashlib.sha256(raw_code.encode("utf-8")).hexdigest()
+
         record = {
             "strategy_id": sid,
             "name": name,
             "timeframe": timeframe,
             "mode": str(fields.get("mode") or "paper"),
             "symbols": symbols,
-            "code": code,
+            "code": final_code,
             "code_sha256": code_sha256,
             "config": config,
             "strategy_version": "v1.0.0",
             "config_version": "c1.0.0",
         }
         self._strategies[sid] = record
+
+        if not self._simulation:
+            with contextlib.suppress(Exception):
+                self._call_remote_tool(
+                    "evolution_save_strategy",
+                    {
+                        "strategy_id": sid,
+                        "name": name,
+                        "code": final_code,
+                        "symbols": list(symbols),
+                        "timeframe": timeframe,
+                        "config": config,
+                    },
+                )
+
         return {
             "strategy_id": sid,
             "name": name,
@@ -801,6 +844,74 @@ class QuantLabTargetAdapter:
                 "turnover_rate": 2.8,
             },
         }
+
+    def run_backtest(
+        self,
+        *,
+        strategy_id: str | None = None,
+        strategy_code: str | None = None,
+        symbols: Sequence[str] | None = None,
+        timeframe: str = "1D",
+        start_date: str | None = None,
+        end_date: str | None = None,
+        parameters: dict[str, Any] | None = None,
+        timeout_seconds: float = 30.0,
+        poll_interval_seconds: float = 0.5,
+    ) -> dict[str, Any]:
+        """Submit a backtest and poll until completion, returning standardized metrics."""
+        from hypertrade.research.quantlab_transpiler import QuantLabStrategyTranspiler
+
+        final_code = strategy_code
+        if final_code:
+            try:
+                transpiled = QuantLabStrategyTranspiler.transpile_code(
+                    final_code,
+                    strategy_id=strategy_id,
+                    symbols=symbols,
+                    timeframe=timeframe,
+                    parameters=parameters,
+                )
+                final_code = transpiled.code
+                if not strategy_id:
+                    strategy_id = transpiled.strategy_id
+            except Exception:
+                pass
+
+        start_resp = self.backtest_start_job(
+            strategy_id=strategy_id,
+            strategy_code=final_code,
+            symbols=list(symbols) if symbols else None,
+            timeframe=timeframe,
+            start_date=start_date,
+            end_date=end_date,
+            parameters=parameters,
+        )
+        job_id = str(start_resp.get("job_id") or "")
+        if not job_id:
+            raise RuntimeError("no_job_id_returned_from_backtest_start")
+
+        if start_resp.get("status") == "completed" and isinstance(start_resp.get("metrics"), dict):
+            metrics = dict(start_resp["metrics"])
+            metrics["job_id"] = job_id
+            return metrics
+
+        start_t = time.monotonic()
+        while time.monotonic() - start_t < timeout_seconds:
+            job_status = self.backtest_get_job(job_id)
+            status = job_status.get("status")
+            if status == "completed":
+                raw_metrics = job_status.get("metrics")
+                if isinstance(raw_metrics, dict):
+                    res = dict(raw_metrics)
+                    res["job_id"] = job_id
+                    return res
+                raise RuntimeError("quantlab_backtest_metrics_missing")
+            elif status == "failed":
+                err = job_status.get("error") or "unknown_error"
+                raise RuntimeError(f"quantlab_backtest_failed: {err}")
+            time.sleep(poll_interval_seconds)
+
+        raise TimeoutError(f"quantlab_backtest_timed_out: {job_id}")
 
     def paper_relay_status(self, parent_id: str | int, **kwargs: Any) -> dict[str, Any]:
         """Get relay status between parent and candidate in QuantLab."""
