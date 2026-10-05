@@ -21,7 +21,7 @@ Before substantial work, read:
 3. BitPro may provide external APIs and data surfaces through stable contracts; never copy BitPro business logic into HyperTrade.
 4. Never commit secrets, OKX credentials, provider keys, database files, or production `.env`.
 5. Update `docs/progress.md` after meaningful implementation steps.
-6. If requirements, architecture, or API contracts change, update `docs/spec.md` and the active contract in the same change.
+6. ARCHITECTURE & DESIGN DOCS SYNCHRONIZATION: 当整体架构有了新的变更（包括新增核心模块、扩展多市场适配层、调整数据/控制流拓扑、演进存储或执行模型等）时，必须及时同步更新所有相关的设计文档（如 `docs/architecture/` 目录下的架构设计文档、`docs/spec.md`、`docs/progress.md`、相关交付合同）以及中英文 `README`（`README.md`、`README.en.md` 等），严禁出现代码与架构演进但设计文档与 README 滞后或失步的情况。
 7. AUTOMATIC GIT COMMIT, MERGE AND PUSH: 每次修改都必须完整闭环完成“提交 -> 校验 -> 合并 -> 推送”全流程。每个有意义的代码、文档或配置变更必须立即在任务分支上原子化提交（每个逻辑变更独立 commit，带描述性信息；严禁批量打包不相关变更）。只要通过 `./scripts/check.sh` 门禁，必须立即自动执行 PR 创建、合并到 `origin/main` 并推送到远端（通过 GitHub PR 流程），最后同步本地 `main` 分支。严禁仅停留在本地分支或仅 commit 不推。除非用户明确要求“仅建分支/不要合并/不要推送”，否则默认每次修改均必须自动合并并推送至 `origin/main`。
 8. Before landing, ensure `./scripts/check.sh` passes for implementation work. If check.sh fails, fix issues before committing.
 
@@ -51,7 +51,7 @@ When adding or changing core Agent code, prefer concise comments that explain pr
 3. Implement only that slice.
 4. Run verification.
 5. Record QA findings if needed.
-6. Update progress and next step.
+6. Update progress and next step. 若涉及整体架构演进或模块变更，必须同步更新 `docs/architecture/` 下的设计文档、`docs/spec.md` 以及中英文 `README`。
 7. MANDATORY AUTOMATIC MERGE & PUSH: commit on the task branch, then IMMEDIATELY land on `origin/main` through PR merge and push to remote (`gh pr create` -> `gh pr merge --merge --delete-branch` -> sync local `main`), completing the full merge & push cycle for every modification.
 
 ## Verification

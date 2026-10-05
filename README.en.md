@@ -1,7 +1,7 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
 <p align="center">
-  <strong>Self-Hosted, Governed Strategy-Research Agent Runtime · Autonomous Research & Evolution Loop</strong>
+  <strong>Self-Hosted, Governed Multi-Market Strategy-Research Agent Runtime · Autonomous Research & Evolution Loop</strong>
 </p>
 
 <p align="center">
@@ -11,8 +11,9 @@
   <a href="#"><img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.9-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14%2B_pgvector-4169E1.svg" alt="PostgreSQL" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-1593%20passed-success.svg" alt="Tests" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-2100%2B%20passed-success.svg" alt="Tests" /></a>
   <a href="docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md"><img src="https://img.shields.io/badge/evolution-default_on-brightgreen.svg" alt="Evolution" /></a>
+  <a href="docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md"><img src="https://img.shields.io/badge/markets-BitPro_%7C_QuantLab-orange.svg" alt="Markets" /></a>
 </p>
 
 <p align="center">
@@ -21,7 +22,9 @@
   <a href="docs/architecture/00-overview.md">Architecture Overview</a> ·
   <a href="docs/architecture/33-system-architecture.md">System Architecture</a> ·
   <a href="docs/architecture/62-pluggable-market-targets.md">Pluggable Market Targets</a> ·
-  <a href="docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md">Evolution Hardening</a> ·
+  <a href="docs/architecture/65-rd-agent-evolution-and-finmem-layered-memory.md">RD-Agent Evolution</a> ·
+  <a href="docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md">QuantLab & A-Share Rules</a> ·
+  <a href="docs/architecture/67-production-observability-probes-and-token-rotation.md">Production Probes & Tokens</a> ·
   <a href="docs/spec.md">Product Spec</a>
 </p>
 
@@ -29,79 +32,83 @@
 
 ## 🌟 Overview
 
-**HyperTrade** is a self-hosted, governed Agent runtime for quantitative strategy research. It turns natural-language research objectives into **Missions** bounded by permissions, budgets, evidence and human review; the ARC autonomous research loop proposes candidates, validates them through an isolated sandbox backtest, a same-window baseline comparison and adversarial review, and incubates survivors into BitPro paper trading. In production it also runs an **always-on, default-enabled evolution engine**: an hourly scan detects performance decay of paper strategies against a benchmark-relative baseline and re-opens research inside budget and evidence gates.
+**HyperTrade** is a self-hosted, governed Agent runtime for quantitative strategy research and autonomous evolution. It transforms natural-language research goals into verifiable **Missions** constrained by permissions, budgets, evidence, and human review. The ARC autonomous research loop (powered by Microsoft RD-Agent Hypothesis Evolution Trees and Co-STEER structured synthesis) proposes candidate strategies, tests them via isolated sandboxes and same-window baselines, and deploys them to target paper trading environments (**BitPro for Crypto SWAP** and **QuantLab for A-Shares / multi-asset equities**). In production, an **always-on evolution engine** continuously scans for benchmark-relative performance decay, triggers targeted re-research, and performs **position netting smooth relay handovers** during strategy promotion, saving >80% in turnover friction.
 
-Three facts that define the system:
+Four core principles:
 
-- **Governed, never self-authorizing.** The model can only propose schema-bounded plans or inputs; permissions, approvals, budgets and risk gates are verified independently before and after every call. Mainnet live execution is blocked by governance (`live_allowed=false`); the only write path today is BitPro paper trading.
-- **Pluggable markets.** The evolution core is decoupled from any trading platform: a `market_target.v1` profile describes the universe, timeframe and capabilities; the `market-evolution.v1` MCP contract defines 7 canonical tools. BitPro is the first target; new markets (e.g. QuantLab for A-shares / US equities) plug in through the same contract.
-- **Traceable conclusions, no hidden gaps.** Unavailable data, fallback bases and invalid comparisons are always annotated explicitly (e.g. when the benchmark series cannot be built, the decision falls back to an absolute basis and the payload records why). The system never fabricates facts.
+- **Governed, never self-authorizing.** The model only produces schema-bounded plans and code; permissions, approvals, budgets, and risk gates are validated independently before and after execution. Mainnet live trading is hard-blocked (`live_allowed=false`); external writes target only authorized paper trading instances.
+- **Pluggable markets with native microstructure enforcement.** The core evolution engine is completely decoupled from underlying trading platforms via `market_target.v1` profiles and `market-evolution.v1` MCP contracts. For Chinese A-shares, hard institutional rules are strictly enforced across Prompt and ASTGatekeeper levels: T+1 settlement state machine, spot long-only enforcement (no naked shorting), price limit band liquidity cutoffs, 100-share lot size constraints, and institutional friction models (0.05% stamp duty, transfer fees, commissions, and slippage).
+- **Hypothesis-driven scientific evolution with minimal friction.** Integrates RD-Agent's Hypothesis Evolution Tree (HET) for genealogical tracking and explicit hypothesis pruning. During champion-challenger promotions, two-leg position netting ($\Delta = C - P$) preserves common holdings $\min(P_i, C_i)$, cutting turnover costs by over 80%.
+- **Zero-trust credential governance and cloud-native observability.** Production container health probes (`/livez`, `/readyz`, `/healthz`) provide granular diagnostics for Kubernetes and load balancers. `TokenRotationService` provides SHA-256 hashed credentials, zero plaintext persistence, granular scopes, and zero-downtime 24-hour grace period hot rotation.
 
-It is not a money printer, does not promise profitability, and is not investment advice.
+It is not an automated money maker, promises no profitability, and does not provide investment advice.
 
 ---
 
-## 🏗️ System at a Glance
+## 🏗️ System Topology
 
 ```mermaid
 flowchart LR
-  Op["Operator / External Agent<br/>Web · ht CLI · TUI · Desktop"] --> API["FastAPI Control Plane<br/>Mission · Thread/Turn · ARC · Evolution"]
-  API --> DB[("PostgreSQL + pgvector<br/>Mission projections · research & evolution ledgers")]
-  Worker["Worker Loops<br/>Mission · AVO research · evolution · auto-review · meta-tuning"] --> DB
-  Worker --> Research["ARC Autonomous Research Loop<br/>hypothesis → candidate → sandbox self-test → same-window baseline → adversarial review → paper review"]
-  Worker --> Evolution["Evolution Engine (default on)<br/>decay scan → budget admission → re-research → effectiveness → alerts"]
+  Op["Operator / External Agent<br/>Web · ht CLI · TUI · Desktop"] --> API["FastAPI Control Plane<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
+  API --> DB[("PostgreSQL + pgvector<br/>49 migrations · Mission projections · HET tree · Memory")]
+  Worker["Worker Loops (13 Loops)<br/>Mission · AVO research · evolution · auto-review · meta-tuning"] --> DB
+  Worker --> Research["ARC Autonomous Research Loop (AVO + RD-Agent)<br/>HET tree → Co-STEER synthesis → AST gatekeeper → sandbox → baseline"]
+  Worker --> Evolution["Evolution Engine (default on)<br/>decay scan → budget admission → re-research → race duel → ledger"]
   Research --> Sandbox["Isolated Strategy Sandbox<br/>UDS · non-root · no network · digest-bound"]
-  Research --> Targets["Market Target Adapter Layer<br/>market_target.v1 · market-evolution.v1"]
-  Evolution --> Targets
-  Targets --> BitPro["BitPro (first target)<br/>backtests · paper trading · strategy store · market data"]
-  Targets -.->|same MCP contract| Future["Future Markets<br/>QuantLab / A-shares / US equities …"]
+  Research --> Targets["Multi-Market Target Layer<br/>market_target.v1 · market-evolution.v1"]
+  Evolution --> Relay["Position Netting Relay Handover<br/>retain min(P,C) · >80% turnover saved · K slices"]
+  Relay --> Targets
+  Targets --> BitPro["BitPro Target<br/>Crypto SWAP · Market Data · Backtests · Paper"]
+  Targets --> QuantLab["QuantLab Target<br/>A-Shares · Vectorized Matrix Backtests · T+1 / Long-Only"]
 ```
 
-External data sources and the trading platform remain the source of truth in their own domains; HyperTrade stores only bounded references, digests, metrics and audit projections — it does not copy BitPro business logic or read its database directly.
+External trading platforms remain the source of truth for their own domains. HyperTrade maintains only bounded references, digests, hashes, metrics, and audit projections, never replicating private platform logic or directly accessing private databases.
 
 ---
 
 ## 🔁 Core Capabilities
 
-### 1. Governed Agent Runtime (Mission Runtime V2)
+### 1. Governed Agent Runtime & Zero-Trust Token Rotation
+The source of truth for research tasks is the **Mission** (Plan / Step / Event / budgets / approvals / completion proof); interaction is driven by the server-owned **Thread / Turn / Item** protocol with resumable cursor SSE. External writes require one-shot parameter-bound approvals and write-ahead DispatchIntent records. The platform integrates **`TokenRotationService`**: credentials store only SHA-256 hashes, support granular scopes (`arc:read`, `arc:start`, etc.), seamless 24-hour grace periods during hot rotation, and proactive 7-day expiration audits.
 
-The source of truth for a research task is the **Mission** (Plan / Step / Event / budgets / approvals / completion proof); the interaction source of truth for Remote CLI and Web is the server-owned **Thread / Turn / Item** protocol with resumable cursor SSE. Capability calls can only target reviewed entries of the Capability Catalog; external writes require one-shot parameter-bound approvals, write-ahead DispatchIntent records and reconciliation. A deterministic reducer replayed offline must reproduce the online projection hash; version gaps quarantine the aggregate instead of fabricating history.
+Design docs: [30 Roadmap](docs/architecture/30-professional-agent-runtime-v2-roadmap.md) · [31 Technical Design](docs/architecture/31-professional-agent-runtime-v2-technical-design.md) · [67 Probes & Token Rotation](docs/architecture/67-production-observability-probes-and-token-rotation.md)
 
-Design docs: [30 Roadmap](docs/architecture/30-professional-agent-runtime-v2-roadmap.md) · [31 Technical Design](docs/architecture/31-professional-agent-runtime-v2-technical-design.md) · [34 Audit & Target Design](docs/architecture/34-next-generation-agent-runtime-audit-and-target-design.md)
+### 2. ARC Research Core & RD-Agent Hypothesis Evolution (HET + Co-STEER)
+Extracts key methodologies from Microsoft RD-Agent:
+- **Hypothesis Evolution Tree (HET)**: Maintains complete hypothesis lineages from root to mutant branches, explicitly pruning underperforming or overfitted hypotheses.
+- **Co-STEER Structured Code Synthesis**: Guides LLMs to generate modular features, signals, and sizing logic.
+- **ASTGatekeeper Syntax & Anti-Lookahead Gate**: Statically scans AST nodes at compile time to block lookahead bias, future data leakage, and unauthorized system calls.
+- **Isolated Sandbox & Same-Window Baselines**: Bounded UDS sandboxing with byte-identical time window comparisons.
 
-### 2. ARC Autonomous Research Loop (AVO)
+Design docs: [65 RD-Agent Evolution & Layered Memory](docs/architecture/65-rd-agent-evolution-and-finmem-layered-memory.md) · [37 ARC Architecture](docs/architecture/37-arc-autonomous-research-core-architecture.md) · [61 Research Loop Rationalization](docs/architecture/61-research-loop-architecture-rationalization.md)
 
-Starting from the goal contract: evidence preflight (an unavailable window stops in front of the operator instead of burning candidate budget) → candidate generation (LLM provider hypothesis channel plus deterministic strategy-family codegen) → adversarial review (red-team attacks and genetic mutation) → **isolated sandbox self-test** (validate → create → backtest, digest-bound, UDS, non-root, no network) → **same-window baseline comparison** (candidate vs. baseline on identical windows; invalid comparisons are counted separately, never silently scored as losses) → reflexion constraints and distilled skills feed later rounds → paper review (human mode waits for explicit approval; agent mode applies system policy automatically) → approved candidates derive a candidate-bound paper authorization from the operator's pre-authorization and start an independent paper instance in BitPro.
+### 3. Multi-Market Targets & A-Share Microstructure Rules
+The evolution core decouples from execution platforms via `market_target.v1` and `market-evolution.v1`:
+- **BitPro Target**: 24/7 perpetual cryptocurrency swaps, dual-direction long/short.
+- **QuantLab Target**: A-share equities; `QuantLabStrategyTranspiler` translates standard strategies into native vectorized `MatrixStrategy` modules with isolated `_BASE_EVO_SCAFFOLD`.
+- **Institutional Hard Rules**: Prompt contexts and ASTGatekeeper strictly enforce T+1 settlement state machines, spot long-only enforcement (blocking `-1` short signals), price limit bands, 100-share integer lot sizes, and exact institutional friction models (0.05% stamp duty, transfer fees, commissions).
 
-Design docs: [35 North Star](docs/architecture/35-autonomous-quant-trader-north-star.md) · [36 Goal-Driven Research Loop M0](docs/architecture/36-goal-driven-autonomous-research-loop-m0.md) · [61 Research-Loop Rationalization](docs/architecture/61-research-loop-architecture-rationalization.md) · [ARC core designs 37–41](docs/architecture/37-arc-autonomous-research-core-architecture.md)
+Design docs: [62 Pluggable Market Targets](docs/architecture/62-pluggable-market-targets.md) · [66 QuantLab & A-Share Microstructure](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md)
 
-### 3. Evolution Engine (Default On)
+### 4. Evolution Engine & Position Netting Smooth Relay Handover
+Scans active incubating paper strategies hourly:
+- **Benchmark-Relative Decay Detection**: Strategy performance change over 14 days minus benchmark buy-and-hold change prevents broader market drops from falsely flagging strategy decay.
+- **Position Netting Relay Service**: During strategy turnover, intersecting holdings $\min(P_i, C_i)$ are preserved in place. Only net differences $\Delta = C - P$ are sliced and executed over $K$ periods with 100-share constraints, slashing turnover friction by >80%.
+- **Effectiveness Ledger & Feishu Alerts**: Full ledger accounting with automatic Feishu webhook card alerts for stalled data gaps and error streaks.
 
-A production worker scans every incubating paper strategy hourly, answering three questions — **is it useful, is it stuck, is it judging correctly**:
+Design docs: [63 Evolution Hardening](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) · [66 Smooth Relay Handover](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md)
 
-- **Benchmark-relative decay detection.** The two-week window (previous 7 days vs. recent 7 days) compares the strategy's change against the buy-and-hold change of its own symbols; a market-wide selloff cannot masquerade as strategy decay. Portfolio strategies use an equal-weight composite benchmark.
-- **Budget and continuation.** Evolution research is admitted through `research_budget.v1`; per-strategy continuation records track blockers and the next eligible evaluation time, classifying each blocker as `time` (self-healing) or `operator` (needs intervention).
-- **Auto-review and meta-tuning.** The review mode (human/agent) is configurable; offline meta-tuning applies a bounded step to the decay threshold using a p90 rule (records recommendations only by default; auto-apply requires explicit opt-in).
-- **Effectiveness ledger and alerts.** `evolution_effectiveness.v1` aggregates cycles, missions, evidence, decisions, costs and per-strategy outcomes (invalid comparisons counted separately; small samples are declared insufficient for conclusions). Silent data-gap stalls, persistent error streaks and operator-blocked strategies raise alerts that auto-resolve when the condition clears, delivered to a Feishu webhook when configured.
-- **Portfolios are first-class.** A basket strategy keeps its full symbol set through scan, research, self-test, paper incubation and benchmarking; evolution can never quietly shrink it to a single symbol.
+### 5. Production Probe Matrix & Quantum Portfolio Console
+- **Probe Matrix**: `/livez` (liveness), `/readyz` (readiness with `SELECT 1` DB probe), `/healthz` (comprehensive diagnostics with DB latency, adapter heartbeats, paper session counts, and token status), fully aligned with Kubernetes standards.
+- **Quantum Portfolio Dashboard**: React 19 UI with BitPro / QuantLab target switcher, dynamic A-share rule badges, interactive HET evolution tree visualization, and real-time relay handover slice stepping monitor.
 
-Design docs: [42 Paper-Feedback Loop](docs/architecture/42-arc-dynamic-paper-observation-feedback.md) · [63 Evolution Hardening](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md)
-
-### 4. Pluggable Market Targets
-
-The evolution core is bound to no trading platform. A market target is defined by a `market_target.v1` profile (identity, symbol universe, timeframes, calendar, capability declarations) and the `market-evolution.v1` MCP contract (7 canonical tools: read paper snapshots, market data, backtests, strategy validate/create, paper configure/start/stop). The `MARKET_TARGET` environment variable selects the active target; BitPro is the first implementation. Adding a market only requires implementing the same contract — the evolution engine, ledgers, alerts and effectiveness reporting are inherited automatically.
-
-Design docs: [62 Pluggable Market Targets](docs/architecture/62-pluggable-market-targets.md) · Contract: [User-Directed Contract — Pluggable Market Targets](docs/contracts/user-directed-pluggable-market-targets.md)
-
-### 5. Research Assets and Memory
-
-Research settles into long-lived, reviewable assets: StrategyCards, ExperimentManifests, same-window baseline evidence, robustness validation, settled `StrategyOutcome`s, pending Lessons (conflicting and opposing evidence preserved), research memory and the skill library. These are research facts and review material, not execution authorization; only reviewed Lessons may enter bounded context.
+Design docs: [67 Production Probes & Token Rotation](docs/architecture/67-production-observability-probes-and-token-rotation.md)
 
 ---
 
 ## 💻 Quick Start
 
-### Backend
+### Backend & Database
 
 ```bash
 uv sync
@@ -110,7 +117,7 @@ uv run alembic upgrade head
 uv run uvicorn hypertrade.main:app --app-dir backend/src --reload --host 0.0.0.0 --port 3334
 ```
 
-The API and worker loops start within the same process lifecycle; the worker can also run standalone:
+API and 13 background worker loops start in the same process; workers can also run standalone:
 
 ```bash
 uv run python -m hypertrade.worker
@@ -122,89 +129,99 @@ uv run python -m hypertrade.worker
 cd frontend && pnpm install && pnpm dev
 ```
 
-### Trigger an Autonomous Research Mission
+### Health Probes
 
+```bash
+curl http://localhost:3334/livez
+curl http://localhost:3334/readyz
+curl http://localhost:3334/healthz
+```
+
+### Query Targets and Trigger Research
+
+Query registered market targets:
+```bash
+curl http://localhost:3334/api/portfolio/targets
+```
+
+Trigger an autonomous cryptocurrency trend strategy research mission:
 ```bash
 curl -X POST http://localhost:3334/api/v1/arc/missions \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: demo-1" \
+  -H "Idempotency-Key: demo-crypto-1" \
   -d '{
-    "objective": "Research a trend strategy suited to BTC high volatility; incubate into paper trading once validated",
+    "objective": "Research a trend strategy adapted to BTC high volatility, incubate to paper after validation",
     "symbol": "BTC-USDT-SWAP",
     "timeframe": "1H",
     "max_candidates": 5
   }'
 ```
 
-For portfolio research, pass `"symbols": ["NVDA-USDT-SWAP", "AMD-USDT-SWAP"]`. Inspect mission state and evidence:
-
+Inspect HET tree and relay handover plans:
 ```bash
-curl http://localhost:3334/api/v1/arc/missions/{mission_id}
-curl http://localhost:3334/api/v1/arc/missions/{mission_id}/progress
-```
-
-Inspect the evolution effectiveness ledger and alerts:
-
-```bash
-curl http://localhost:3334/api/v1/arc/evolution/effectiveness
-curl http://localhost:3334/api/v1/arc/evolution/alerts
+curl http://localhost:3334/api/research/hypothesis-tree
+curl http://localhost:3334/api/portfolio/relay/handovers
 ```
 
 ---
 
-## 🧪 Verification
+## 🧪 Verification & Quality Gates
 
 ```bash
 ./scripts/check.sh
 ```
 
-One command runs every quality gate: frontend (lint / vitest / build) + ruff + mypy + pytest (currently 1592 tests passing).
+Single command executes all quality gates: Frontend lint, Vitest, and production build + Backend Ruff linting/formatting, strict Mypy type-checking, and full Pytest suite (currently 2100+ tests passing 100%).
 
 ---
 
-## 🛠️ Technology Stack
+## 🛠️ Tech Stack
 
 | Layer | Technologies |
 |-------|-------------|
-| **Control plane** | FastAPI 0.122+ / Uvicorn, auth + scoped tokens + idempotency keys, resumable cursor SSE |
-| **Domain & runtime** | Python 3.12+, strict Pydantic v2 contracts, modular monolith with ports-and-adapters |
-| **Storage** | SQLAlchemy 2.0 + Alembic, PostgreSQL 14+ with `pgvector` |
-| **Workers** | asyncio loops with PostgreSQL SQL leases (Mission, AVO research, evolution scan, auto-review, meta-tuning and 8 more loops) |
-| **LLM providers** | ProviderRuntime (OpenAI, DeepSeek, Claude, Codex, OpenRouter, Qwen, … enabled by configuration) |
-| **Quant & backtesting** | BitPro (MCP/API contract): market data, backtests, paper trading, strategy store |
-| **Strategy sandbox** | UDS-isolated process, non-root, no network, read-only root, resource limits, digest-bound |
-| **Frontend & terminals** | React 19 + TypeScript 5.9 + Vite 7 + Tailwind CSS; Tauri desktop; Textual TUI; `ht` CLI |
-| **Evaluation** | Physically isolated evaluation target (separate network, database and synthetic facts) |
-| **Deployment** | Docker Compose + Nginx + GitHub Actions (auto-deploy on `main`) |
+| **Control Plane** | FastAPI 0.122+ / Uvicorn, scoped security tokens, `/livez`, `/readyz`, `/healthz` container probes, cursor SSE |
+| **Credential Security**| `TokenRotationService` (SHA-256 single-way hashing, zero plaintext storage, 24h grace period hot rotation, 7-day expiration audit) |
+| **Domain & Runtime** | Python 3.12+, Pydantic v2 strict models, modular monolith + ports-and-adapters |
+| **Storage** | SQLAlchemy 2.0 + Alembic (49 migrations), PostgreSQL 14+ with `pgvector` |
+| **Workers** | asyncio + PostgreSQL SQL lease locking (13 concurrent background loops) |
+| **Research Core** | ARC + RD-Agent Hypothesis Evolution Tree (HET) + Co-STEER synthesizer + `ASTGatekeeper` |
+| **Target Adapters** | `market_target.v1` and `market-evolution.v1` MCP contracts; BitPro (Crypto) + QuantLab (A-Shares) |
+| **A-Share Rules** | `AShareMarketRules` / `AShareRuleValidator` (T+1 state machine, spot long-only, 100-share lot size, exact fees) |
+| **Relay Handover** | `PositionNettingRelayService` (retain $\min(P,C)$, net orders $\Delta = C-P$, >80% turnover saved) |
+| **Sandbox** | UDS isolated processes, non-root, no network, read-only root, resource caps, digest-bound |
+| **Frontend & UI** | React 19 + TypeScript 5.9 + Vite 7 + Tailwind CSS; Tauri desktop; Textual TUI; `ht` CLI |
+| **Deployment** | Docker Compose + Nginx + GitHub Actions (auto-deploy on push to `main`) |
 
 ---
 
 ## 📚 Documentation Map
 
-| Entry | Content |
-|---------|-----------------------------|
-| [Architecture Overview](docs/architecture/00-overview.md) | Reading order and system boundary |
-| [33 System Architecture](docs/architecture/33-system-architecture.md) | Current implementation snapshot: runtime layers, research loop, evolution engine, market targets, security boundaries |
-| [62 Pluggable Market Targets](docs/architecture/62-pluggable-market-targets.md) | `market_target.v1` / `market-evolution.v1` contracts and onboarding |
-| [63 Evolution Hardening](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) | Effectiveness ledger, data-gap alerts, benchmark-relative decay |
-| [Product Spec](docs/spec.md) | Scope, user journeys, acceptance and non-goals |
+| Entrypoint | Contents |
+|------------|----------|
+| [Architecture Overview](docs/architecture/00-overview.md) | Reading guide and **mandatory architecture synchronization rule** |
+| [33 System Architecture](docs/architecture/33-system-architecture.md) | Canonical system architecture snapshot: multi-market targets, runtime layers, safety & probes |
+| [66 QuantLab & A-Share Rules](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md) | QuantLab adapter, strategy transpiler, A-share hard rules, position netting relay |
+| [67 Production Probes & Tokens](docs/architecture/67-production-observability-probes-and-token-rotation.md) | `/livez`, `/readyz`, `/healthz` probes, `TokenRotationService`, quantum portfolio console |
+| [65 RD-Agent Evolution & Memory](docs/architecture/65-rd-agent-evolution-and-finmem-layered-memory.md) | Hypothesis Evolution Tree (HET), Co-STEER synthesis, FinMem 3-tier cognitive memory |
+| [64 Autonomous Trading Agent](docs/architecture/64-autonomous-trading-agent-system-architecture.md) | Perception bus, tri-speed decision cycles, and bounded autonomous execution |
+| [62 Pluggable Market Targets](docs/architecture/62-pluggable-market-targets.md) | `market_target.v1` / `market-evolution.v1` contracts and integration |
+| [63 Evolution Hardening](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) | Effectiveness ledgers, data-gap alerts, benchmark-relative decay |
+| [Product Spec](docs/spec.md) | Product scope, user journeys, acceptance criteria, non-goals |
 | [Progress Log](docs/progress.md) | Current verified state and production evidence |
-| [Contracts](docs/contracts/) | Per-sprint delivery scope and technical specs |
-| [Runbooks](docs/runbooks/) | Deployment, monitoring, incident response |
-| [Developer Guide](docs/developer-guide.md) | Local development and extension entry points |
+| [Delivery Contracts](docs/contracts/) | Sprint-by-sprint scope and technical contracts |
+| [Runbooks](docs/runbooks/) | Deployment, monitoring, and incident response |
+| [Developer Guide](docs/developer-guide.md) | Local development and extension guide |
 
 ---
 
-## 🖥️ Streaming Research & Terminal Interaction
+## 🖥️ Terminal Research Stream
 
-`ht research start "<objective>"` follows the whole research process by default: an interactive terminal shows the workflow, activity and detailed logs; piped output is a line-by-line event stream. `--detach` submits only; `--plain` forces line output.
-
-Reattach to an existing task with `ht research watch <task-id>`. In the interactive view, arrow keys select logs, E shows evidence, R opens per-version review, C explicitly appends budget, F reconnects, and Q or Ctrl+C exits the watch — exiting never stops the server-side task. The review mode can be configured as human (explicit approval required) or agent (system policy reviews automatically and starts an independent paper instance); the terminal keeps streaming through the auto-review phase. Paper-observation status still requires real operating evidence to judge.
+`ht research start "research goal"` follows the research process with live events and activity panes. Use `--detach` to submit in background. Use `ht research watch <mission-id>` to reconnect.
 
 ---
 
 ## 📄 License & Disclaimer
 
-Distributed under the MIT License. See `LICENSE` for details.
+Open-source under MIT License. See `LICENSE`.
 
-> **Disclaimer**: Nothing in this repository constitutes investment advice or financial guidance. Mainnet live trading execution remains strictly blocked by governance (`live_allowed=false`).
+> **Disclaimer**: Nothing in this repository constitutes investment advice. Mainnet live trading is strictly forbidden by risk governance (`live_allowed=false`).

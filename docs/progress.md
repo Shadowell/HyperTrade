@@ -4,6 +4,28 @@
 
 # Progress Log
 
+## 完善系统架构设计文档与建立架构变更同步强准则 (AGENTS.md 治理增强) — 2026-10-06
+
+- **AGENTS.md 治理规则增强（架构变更同步强准则）**：
+  1. 在 `AGENTS.md` 的 `## Operating Rules` 第 6 条增加明确强约束：`ARCHITECTURE & DESIGN DOCS SYNCHRONIZATION: 当整体架构有了新的变更（包括新增核心模块、扩展多市场适配层、调整数据/控制流拓扑、演进存储或执行模型等）时，必须及时同步更新所有相关的设计文档（如 docs/architecture/ 目录下的架构设计文档、docs/spec.md、docs/progress.md、相关交付合同）以及中英文 README（README.md、README.en.md 等），严禁出现代码与架构演进但设计文档与 README 滞后或失步的情况。`；
+  2. 在 `AGENTS.md` 的 `## Standard Loop` 标准交付闭环步骤 6 中明确强化：若涉及整体架构演进或模块变更，必须同步更新 `docs/architecture/` 下的设计文档、`docs/spec.md` 以及中英文 `README`。
+- **补全与完善最新架构设计文档 (`docs/architecture/`)**：
+  1. 新增 `docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md`：
+     - 系统性阐明 QuantLab 市场目标适配器架构与 `QuantLabStrategyTranspiler` 向量化转译器（注入 `META`, `ENTRY_SIGNALS`, `EXIT_SIGNALS`, `MATRIX_STRATEGY`，内置隔离脚手架 `_BASE_EVO_SCAFFOLD` 消除反向依赖，计算 SHA-256 签名）；
+     - 规定 A 股微观结构硬规则引擎（`AShareMarketRules` 与 `AShareRuleValidator`）：Prompt 注入、T+1 时序状态机、现货单向多头（ASTGatekeeper 静态阻断 `-1` 信号与负仓位）、一手 100 股向下取整、涨跌停截断与印花税/佣金模型；
+     - 阐述赛马接力阶段净额平滑换仓（`PositionNettingRelayService`）：持仓交集对冲原地保留 $\min(P_i, C_i)$，差量 $\Delta = C - P$ 分批平滑切片执行，节约换手摩擦超 80%，联动 `RaceJudgeDaemon` 与飞书卡片。
+  2. 新增 `docs/architecture/67-production-observability-probes-and-token-rotation.md`：
+     - 规定容器级分级探活矩阵（`/livez` 进程存活、`/readyz` DB连通性就绪、`/healthz` 全景诊断），双挂载根路径与 `/api/*`，适配 K8s 编排；
+     - 阐明零信任安全令牌动态轮换引擎（`TokenRotationService`）：SHA-256 存储、细粒度作用域、24 小时宽限期无停机热轮换、主动吊销黑名单与 7 天临期审计；
+     - 阐述多目标量子量化指挥台（`QuantumPortfolioDashboard`）与 HET 假设演进树渲染架构。
+  3. 全面刷新 `docs/architecture/00-overview.md` 与 `docs/architecture/33-system-architecture.md`：
+     - 更新系统全景拓扑图（纳入 QuantLab、探活探针、令牌轮换与净额对冲）；
+     - 刷新运行时分层、数据流、多市场目标规范与质量门禁；
+     - 明确写入架构变更同步强准则。
+- **全站 README 与文档地图同步更新**：
+  1. 更新 `README.md`、`README.en.md` 与 `README.zh-CN.md`：同步最新系统架构图、核心能力（多市场目标、A 股规则、净额接力、HET 演进树、生产探活与令牌轮换）、快速开始 API 样例、文档地图与 2100+ 测试通过徽章；
+  2. 更新 `docs/README.md`：更新当前能力地图（Capability Map）与文档维护准则。
+
 ## 运维探活与安全令牌管理 (Spec 032) — 2026-10-05
 
 - **容器级运维探活与诊断矩阵 (`/healthz`, `/readyz`, `/livez`)**：
