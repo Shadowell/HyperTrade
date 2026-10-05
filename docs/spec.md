@@ -1,3 +1,11 @@
+# 031 前端量化指挥台支持 QuantLab 专属看板与 HET 假设演进树（2026-10-05）
+
+在前端量化指挥台（`QuantumPortfolioDashboard`）全面支持多目标平台架构与科学演进监控：
+
+1. **目标平台切换器 (Target Switcher)**：支持 BitPro（全币种合约）与 QuantLab（A股多资产）一键切换，动态适配交易规则与微观结构上下文提示；
+2. **QuantLab 专属策略面板**：展示 QuantLab 向量化策略（标的组合、`code_sha256` 代码指纹、`matrix_native` 架构、实盘模拟权益），支持一键异步回测与指标预览；
+3. **RD-Agent 假设演进树 (HET) 与净额换仓监视器**：可视化呈现假设从根节点到变异分支的演化系谱与剪枝状态，实时监控净额换仓切片进度、换手节省率与摩擦损耗节省金额。
+
 # 030 赛马接力阶段的净额平滑换仓（2026-10-05）
 
 在赛马接力（Champion vs. Challenger）判定优胜并触发采纳（Adoption）阶段，引入「两腿重合期持仓净额对冲与差额平滑换仓 (Position Netting & Smooth Relay Handover)」引擎，消除粗暴全平全开带来的双向摩擦损耗：
