@@ -31,7 +31,7 @@ class DualMaMomentumStrategy(BaseEvolutionStrategy):
         long_cond = features["ma_fast"] > features["ma_slow"]
         short_cond = features["ma_fast"] < features["ma_slow"]
         signals[long_cond] = 1
-        signals[short_cond] = -1
+        signals[short_cond] = 0
         return signals
 
     def position_sizing(self, signal: int, features: pd.DataFrame) -> Decimal:

@@ -85,7 +85,7 @@ class QuantLabStrategyTranspiler:
 
         # 1. Check if the code is already a native QuantLab strategy module
         if "MATRIX_STRATEGY" in raw_code and "META" in raw_code:
-            cls._validate_ast_safety(raw_code, is_native_matrix=True)
+            cls._validate_ast_safety(raw_code, is_native_matrix=True, market=market)
             return cls._wrap_native_quantlab_strategy(
                 raw_code,
                 strategy_id=strategy_id,
@@ -97,7 +97,7 @@ class QuantLabStrategyTranspiler:
             )
 
         # 2. First-pass AST validation on BaseEvolutionStrategy input code
-        cls._validate_ast_safety(raw_code, is_native_matrix=False)
+        cls._validate_ast_safety(raw_code, is_native_matrix=False, market=market)
 
         # 3. Detect strategy class name
         tree = ast.parse(raw_code)
@@ -216,7 +216,7 @@ class {wrapper_name}(MatrixStrategy):
                 signals = self._evo.generate_signals(features)
                 sig_arr = np.asarray(signals)
                 entry_matrix[:, j] = np.where(sig_arr == 1, 1, 0).astype(np.uint8)
-                exit_matrix[:, j] = np.where(sig_arr == -1, 1, 0).astype(np.uint8)
+                exit_matrix[:, j] = np.where(sig_arr <= 0, 1, 0).astype(np.uint8)
             except Exception:
                 pass
 
@@ -235,7 +235,7 @@ MATRIX_STRATEGY = {wrapper_name}()
 '''
 
         # 6. Safety validation on the fully generated code
-        cls._validate_ast_safety(scaffold_header, is_native_matrix=True)
+        cls._validate_ast_safety(scaffold_header, is_native_matrix=True, market=market)
 
         code_hash = hashlib.sha256(scaffold_header.encode("utf-8")).hexdigest()
 
@@ -257,11 +257,14 @@ MATRIX_STRATEGY = {wrapper_name}()
         class_name: str = "MovingAverageCrossStrategy",
         fast_window: int = 5,
         slow_window: int = 20,
+        market: str = "cn",
     ) -> str:
         """Generate a compliant BaseEvolutionStrategy code snippet."""
         clean_cls = re.sub(r"[^a-zA-Z0-9_]", "", class_name)
         if not clean_cls or clean_cls[0].isdigit():
             clean_cls = f"Strategy{clean_cls}"
+
+        short_sig = "0" if market.lower() in ("cn", "a_share", "ashare") else "-1"
 
         return f'''from decimal import Decimal
 import pandas as pd
@@ -281,7 +284,7 @@ class {clean_cls}(BaseEvolutionStrategy):
         long_cond = features["fast_ma"] > features["slow_ma"]
         short_cond = features["fast_ma"] < features["slow_ma"]
         signals[long_cond] = 1
-        signals[short_cond] = -1
+        signals[short_cond] = {short_sig}
         return signals
 
     def position_sizing(self, signal: int, features: pd.DataFrame) -> Decimal:
@@ -316,9 +319,14 @@ class {clean_cls}(BaseEvolutionStrategy):
         )
 
     @classmethod
-    def _validate_ast_safety(cls, code: str, is_native_matrix: bool = False) -> None:
+    def _validate_ast_safety(
+        cls,
+        code: str,
+        is_native_matrix: bool = False,
+        market: str = "cn",
+    ) -> None:
         """Run ASTGatekeeper rules to block unsafe modules or lookahead bias."""
-        result = ASTGatekeeper.validate(code)
+        result = ASTGatekeeper.validate(code, market=market)
         if not result.valid:
             if is_native_matrix:
                 critical_errors = [

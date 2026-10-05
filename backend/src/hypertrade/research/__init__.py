@@ -1,5 +1,11 @@
 """Durable, operator-governed strategy research program services."""
 
+from hypertrade.research.a_share_rules import (
+    AShareMarketRules,
+    ASharePromptContext,
+    AShareRuleValidator,
+    AShareValidationReport,
+)
 from hypertrade.research.co_steer import (
     ASTGatekeeper,
     ASTValidationResult,
@@ -21,6 +27,10 @@ from hypertrade.research.quantlab_transpiler import (
 from hypertrade.research.service import ResearchProgramService
 
 __all__ = [
+    "AShareMarketRules",
+    "ASharePromptContext",
+    "AShareRuleValidator",
+    "AShareValidationReport",
     "ASTGatekeeper",
     "ASTValidationResult",
     "BaseEvolutionStrategy",

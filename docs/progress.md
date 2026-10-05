@@ -4,6 +4,19 @@
 
 # Progress Log
 
+## A 股市场微观结构与硬规则注入 (Spec 029) — 2026-10-05
+
+- **A 股硬规则约束核心引擎 (AShareMarketRules & AShareRuleValidator)**：
+  1. 在 `backend/src/hypertrade/research/a_share_rules.py` 实现 `AShareMarketRules`，内嵌交易日 T+1 交收制度、现货单向多头（严禁裸做空）、涨跌停幅度限制（主板 ±10%、创业板/科创板 ±20%、ST/北交所 ±5%/±30%）、印花税（出让方单边 0.05%）、过户费（双边 0.01‰）、券商佣金（万 2.5 最低 5 元）与保守滑点（1.5 bps）；
+  2. 实现 `AShareRuleValidator` 动态验证器：核验交易信号与仓位边界 `[0.0, 1.0]`，严防负向做空；实现时序 T+1 状态机验证（`validate_t_plus_one_sequence`），在持仓状态变更或逐笔撮合下严格阻止当天买入当天卖出违规；提供精确费率与滑点成本计算方法 `calculate_frictional_costs`；
+  3. 实现 `ASharePromptContext`，为 LLM 策略合成阶段提供结构化、高权重的 A 股交易规则系统提示词；
+- **ASTGatekeeper 与转译器规则强化 (ASTGatekeeper & QuantLabStrategyTranspiler)**：
+  1. 增强 `backend/src/hypertrade/research/co_steer.py` 中的 `ASTGatekeeper`：支持 `market="cn"` 模式，静态扫描 AST 中的 `generate_signals` 与 `position_sizing` 返回值，阻断字面量负信号（如 `-1`）及负数仓位（如 `Decimal("-0.5")` 或 `float < 0`）；
+  2. 增强 `backend/src/hypertrade/research/quantlab_transpiler.py`：为 A 股生成平仓信号 `0`（非 `-1` 做空），在转译与部署校验时透传 `market="cn"` 确保符合交易所监管规则；
+- **测试套件与全量门禁**：
+  1. 编写 `tests/test_a_share_microstructure_rules.py`（9 项测试 100% 通过：规则常量、LLM Prompt 渲染、信号与仓位校验、T+1 序列守则、交易成本计算、AST 负信号拦截、AST 负仓位拦截、合规策略放行、转译器 A 股适配）；
+  2. 通过 `./scripts/check.sh` 质量门禁（前端测试、前端构建、Ruff、Mypy、全量 Pytest 测试）。
+
 ## QuantLab 策略格式转译器与代码部署闭环 (Spec 028) — 2026-10-05
 
 - **转译器实现 (QuantLabStrategyTranspiler)**：
