@@ -141,3 +141,21 @@ class PortfolioCoordinatorService:
         """Trigger an immediate forward evidence check across all paper twin pairs."""
         records = self.race_judge.scan_and_judge_all()
         return [r.to_dict() for r in records]
+
+    def get_relay_handover_plans(self) -> list[dict[str, Any]]:
+        """Return all persisted position netting relay handover plans."""
+        from hypertrade.paper.relay_netting import PositionNettingRelayService
+
+        svc = PositionNettingRelayService()
+        return [p.to_dict() for p in svc.list_plans()]
+
+    def step_relay_handover_slice(self, plan_id: str) -> dict[str, Any]:
+        """Advance the next slice in a position netting handover plan."""
+        from hypertrade.paper.relay_netting import PositionNettingRelayService
+
+        svc = PositionNettingRelayService()
+        slice_obj, updated_plan = svc.step_slice(plan_id)
+        return {
+            "slice": slice_obj.to_dict() if slice_obj else None,
+            "plan": updated_plan.to_dict(),
+        }

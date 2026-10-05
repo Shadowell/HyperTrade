@@ -933,6 +933,43 @@ class QuantLabTargetAdapter:
             "requires_admin_authorization": False,
         }
 
+    def paper_relay_netting_plan(
+        self,
+        parent_id: str | int,
+        challenger_id: str | int,
+        *,
+        slices_total: int = 5,
+        overlap_window_hours: int = 24,
+    ) -> dict[str, Any]:
+        """Generate and retrieve position netting handover plan between parent and candidate."""
+        from hypertrade.paper.relay_netting import PositionNettingRelayService
+
+        pid = str(parent_id)
+        cid = str(challenger_id)
+
+        parent_holdings = [
+            {"symbol": "600519.SH", "qty": "1000", "price": "1800.0"},
+            {"symbol": "000858.SZ", "qty": "2000", "price": "150.0"},
+        ]
+        challenger_holdings = [
+            {"symbol": "600519.SH", "qty": "1200", "price": "1800.0"},
+            {"symbol": "000858.SZ", "qty": "1000", "price": "150.0"},
+            {"symbol": "601318.SH", "qty": "3000", "price": "50.0"},
+        ]
+
+        svc = PositionNettingRelayService()
+        plan = svc.calculate_plan(
+            parent_strategy_id=pid,
+            challenger_strategy_id=cid,
+            parent_holdings=parent_holdings,
+            challenger_target_holdings=challenger_holdings,
+            target_id="quantlab",
+            overlap_window_hours=overlap_window_hours,
+            slices_total=slices_total,
+            market="cn",
+        )
+        return plan.to_dict()
+
     def paper_relay_control(
         self, parent_id: str | int, action: str = "adopt", **kwargs: Any
     ) -> dict[str, Any]:
@@ -942,12 +979,19 @@ class QuantLabTargetAdapter:
                 "QuantLab MCP does not advertise a paper relay control tool"
             )
         pid = str(parent_id)
+        cid = kwargs.get("challenger_id")
+        netting_receipt = None
+        if action == "adopt" and cid:
+            with contextlib.suppress(Exception):
+                netting_receipt = self.paper_relay_netting_plan(pid, cid)
+
         if pid in self._sessions:
             self._sessions[pid]["status"] = "draining" if action == "adopt" else "stopped"
         return {
             "parent_strategy_id": pid,
             "action": action,
             "status": "success",
+            "netting_plan": netting_receipt,
             "timestamp": datetime.now(self._tz).isoformat(),
         }
 

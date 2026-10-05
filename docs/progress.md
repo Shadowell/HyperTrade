@@ -4,6 +4,23 @@
 
 # Progress Log
 
+## 赛马接力阶段的净额平滑换仓 (Spec 030) — 2026-10-05
+
+- **持仓净额对冲与两腿重合期调度引擎 (PositionNettingRelayService)**：
+  1. 在 `backend/src/hypertrade/paper/relay_netting.py` 实现 `PositionNettingRelayService`，计算母策略（Gen N）与优胜挑战者策略（Gen N+1）在重合期的持仓交集与净额差量 $\Delta = C - P$；
+  2. 原地保留共有持仓 $\min(P_i, C_i)$，彻底消除粗暴“母策略全平仓、子策略重新全开仓”带来的重复换手摩擦（重合组合换手节约率超 80%）；
+  3. 基于 `AShareRuleValidator` 精确审计并量化节约的印花税、过户费、佣金与滑点成本（`total_friction_saved`），生成防篡改 SHA-256 计划签名凭据（`plan_sha256`）；
+  4. 实现 `RelayHandoverSlice` 平滑切片调度器，支持 $K$ 期均匀分批执行；买入指令严格遵循 A 股 100 股一手（Lot Size）整数倍向下取整规则；
+- **赛马裁判与目标适配器闭环集成 (RaceJudgeDaemon & QuantLabTargetAdapter)**：
+  1. 增强 `backend/src/hypertrade/paper/race_judge.py` 中的 `RacePairRecord`，记录换仓计划 ID、指纹、换手节省率（`turnover_reduction_ratio`）、节省摩擦金额（`friction_saved_cny`）与切片进度；
+  2. 在 `RaceJudgeDaemon.evaluate_pair()` 判定前向门禁达标采纳（`adopt`）时，自动初始化净额换仓计划并在后续 `draining` 周期中自驱动步进切片，直至全量平滑交接完毕自动晋升；
+  3. 在 `build_race_feishu_card` 飞书告警卡片中实时渲染净额换仓切片进度、换手减少百分比与摩擦节约金额；
+  4. 增强 `backend/src/hypertrade/targets/quantlab.py` 的 `QuantLabTargetAdapter`，提供 `paper_relay_netting_plan` 接口，并在 `paper_relay_control` 的 `adopt` 动作中自动生成净额收据；
+  5. 增强 `backend/src/hypertrade/paper/portfolio.py` 的 `PortfolioCoordinatorService`，暴露 `get_relay_handover_plans` 与 `step_relay_handover_slice` 组合协调接口；
+- **测试套件与全量门禁**：
+  1. 编写 `tests/test_position_netting_relay.py`（6 项测试 100% 通过：持仓净额计算与超 80% 换手节约校验、平滑切片与 100 股整数手约束、换仓计划步进生命周期状态机、QuantLab 适配器净额计划生成与采纳联动、赛马裁判守护进程自动接力与飞书卡片渲染、组合协调器服务集成）；
+  2. 全量通过 Ruff 静态检查与 Mypy 315 个源文件类型检查（0 错误）。
+
 ## A 股市场微观结构与硬规则注入 (Spec 029) — 2026-10-05
 
 - **A 股硬规则约束核心引擎 (AShareMarketRules & AShareRuleValidator)**：

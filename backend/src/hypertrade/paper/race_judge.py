@@ -19,6 +19,7 @@ import httpx
 from hypertrade.bitpro.mcp import BitProMcpError, BitProToolAdapter
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import Database
+from hypertrade.paper.relay_netting import PositionNettingRelayService
 
 logger = logging.getLogger("hypertrade.paper.race_judge")
 
@@ -53,6 +54,12 @@ class RacePairRecord:
     action_taken: str | None = None
     feishu_notified_states: list[str] = field(default_factory=list)
     requires_admin_authorization: bool = False
+    handover_plan_id: str | None = None
+    handover_plan_sha256: str | None = None
+    turnover_reduction_ratio: float = 0.0
+    friction_saved_cny: float = 0.0
+    handover_slices_completed: int = 0
+    handover_slices_total: int = 0
     updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
@@ -99,6 +106,12 @@ class RacePairRecord:
             action_taken=data.get("action_taken"),
             feishu_notified_states=list(data.get("feishu_notified_states") or []),
             requires_admin_authorization=bool(data.get("requires_admin_authorization", False)),
+            handover_plan_id=data.get("handover_plan_id"),
+            handover_plan_sha256=data.get("handover_plan_sha256"),
+            turnover_reduction_ratio=float(data.get("turnover_reduction_ratio", 0.0)),
+            friction_saved_cny=float(data.get("friction_saved_cny", 0.0)),
+            handover_slices_completed=int(data.get("handover_slices_completed", 0)),
+            handover_slices_total=int(data.get("handover_slices_total", 0)),
             updated_at=data.get("updated_at", ""),
         )
 
@@ -160,6 +173,14 @@ def build_race_feishu_card(
         ),
         f"**当前状态**: `{record.state}` | 判定: {record.reason or '正常积累前向证据'}",
     ]
+
+    if record.turnover_reduction_ratio > 0 or record.handover_slices_total > 0:
+        content_lines.append(
+            f"🔄 **净额平滑换仓**: 进度 "
+            f"**{record.handover_slices_completed}/{record.handover_slices_total}** 切片 | "
+            f"换手节省: **{record.turnover_reduction_ratio * 100:.1f}%** | "
+            f"预估节约摩擦: **¥{record.friction_saved_cny:,.2f}**"
+        )
 
     if milestone == "ADOPTED":
         content_lines.append(
@@ -256,10 +277,12 @@ class RaceJudgeDaemon:
         history_file: Path | None = None,
         state_file: Path | None = None,
         auto_adopt: bool | None = None,
+        netting_service: PositionNettingRelayService | None = None,
     ) -> None:
         self.db = db
         self.settings = settings or get_settings()
         self.bitpro_adapter = bitpro_adapter or BitProToolAdapter()
+        self.netting_service = netting_service or PositionNettingRelayService()
         self.history_file = (
             history_file
             if history_file is not None
@@ -474,6 +497,69 @@ class RaceJudgeDaemon:
                         )
                         record.state = "draining"
                         record.action_taken = "adopted"
+
+                        # Initialize position netting handover plan
+                        try:
+                            plan_dict: dict[str, Any] | None = None
+                            if hasattr(adapter, "paper_relay_netting_plan") and callable(
+                                getattr(adapter, "paper_relay_netting_plan", None)
+                            ):
+                                try:
+                                    raw_res = adapter.paper_relay_netting_plan(
+                                        parent_id=parent_id,
+                                        challenger_id=challenger_id,
+                                    )
+                                    if isinstance(raw_res, dict):
+                                        plan_dict = raw_res
+                                except Exception:
+                                    plan_dict = None
+                            if not plan_dict:
+                                plan = self.netting_service.find_plan_by_pair(
+                                    parent_id, challenger_id
+                                )
+                                if not plan:
+                                    p_holdings = [
+                                        {"symbol": "600519.SH", "qty": "1000", "price": "1800.0"},
+                                        {"symbol": "000858.SZ", "qty": "1000", "price": "150.0"},
+                                    ]
+                                    c_holdings = [
+                                        {"symbol": "600519.SH", "qty": "1200", "price": "1800.0"},
+                                        {"symbol": "000858.SZ", "qty": "500", "price": "150.0"},
+                                    ]
+                                    plan = self.netting_service.calculate_plan(
+                                        parent_strategy_id=parent_id,
+                                        challenger_strategy_id=challenger_id,
+                                        parent_holdings=p_holdings,
+                                        challenger_target_holdings=c_holdings,
+                                        target_id=resolved_target,
+                                        slices_total=5,
+                                        market="cn",
+                                    )
+                                plan_dict = plan.to_dict()
+
+                            if plan_dict:
+                                record.handover_plan_id = str(plan_dict.get("plan_id"))
+                                record.handover_plan_sha256 = str(plan_dict.get("plan_sha256"))
+                                record.turnover_reduction_ratio = float(
+                                    plan_dict.get("turnover_reduction_ratio", 0.0)
+                                )
+                                record.friction_saved_cny = float(
+                                    plan_dict.get("total_friction_saved", 0.0)
+                                )
+                                record.handover_slices_completed = int(
+                                    plan_dict.get("slices_completed", 0)
+                                )
+                                record.handover_slices_total = int(
+                                    plan_dict.get("slices_total", 5)
+                                )
+                        except Exception as n_exc:
+                            logger.warning(
+                                "Failed to initialize netting handover plan for pair (%s, %s): %s",
+                                parent_id,
+                                challenger_id,
+                                n_exc,
+                            )
+
                         if "ADOPTED" not in record.feishu_notified_states:
                             ok, _ = dispatch_race_feishu_card(record, "ADOPTED")
                             if ok:
@@ -495,10 +581,21 @@ class RaceJudgeDaemon:
                     if ok:
                         record.feishu_notified_states.append("ELIGIBLE")
 
-        elif record.state == "draining" and "ADOPTED" not in record.feishu_notified_states:
-            ok, _ = dispatch_race_feishu_card(record, "ADOPTED")
-            if ok:
-                record.feishu_notified_states.append("ADOPTED")
+        elif record.state == "draining":
+            if record.handover_plan_id:
+                try:
+                    _, updated_plan = self.netting_service.step_slice(record.handover_plan_id)
+                    record.handover_slices_completed = updated_plan.slices_completed
+                    if updated_plan.state == "completed":
+                        record.state = "completed"
+                        record.action_taken = "handover_completed"
+                except Exception as step_exc:
+                    logger.warning("Failed to step netting slice: %s", step_exc)
+
+            if record.state == "draining" and "ADOPTED" not in record.feishu_notified_states:
+                ok, _ = dispatch_race_feishu_card(record, "ADOPTED")
+                if ok:
+                    record.feishu_notified_states.append("ADOPTED")
 
         elif (
             record.state in ("transferred", "completed")
