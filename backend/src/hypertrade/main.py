@@ -2510,6 +2510,140 @@ def create_app(
         service = PortfolioCoordinatorService(database, settings=app_settings)
         return service.run_race_judge_now()
 
+    @app.get("/api/portfolio/targets")
+    def list_portfolio_targets() -> list[dict[str, Any]]:
+        return [
+            {
+                "target_id": "bitpro",
+                "name": "BitPro 全币种/合约量化交易平台",
+                "market": "crypto",
+                "status": "active",
+                "rules": "T+0 双向多空 · 5x~20x 动态杠杆 · 逐笔标记价盯市与自愈",
+                "timeframes": ["1m", "5m", "15m", "1H"],
+            },
+            {
+                "target_id": "quantlab",
+                "name": "QuantLab A股/多资产向量化工作台",
+                "market": "cn",
+                "status": "active",
+                "rules": "T+1 交易交收 · 现货单向多头 · 万2.5佣金/印花税5bps · 100股一手",
+                "timeframes": ["1D", "1H"],
+            },
+        ]
+
+    @app.get("/api/portfolio/targets/quantlab/strategies")
+    def list_quantlab_strategies() -> list[dict[str, Any]]:
+        from hypertrade.targets.registry import adapter_for_target
+
+        try:
+            try:
+                adapter = adapter_for_target("quantlab")
+            except Exception:
+                from hypertrade.targets.quantlab import QuantLabTargetAdapter
+                adapter = QuantLabTargetAdapter(simulation=True)
+
+            items: list[dict[str, Any]] = []
+            if hasattr(adapter, "_strategies"):
+                strats = getattr(adapter, "_strategies", {})
+                sessions = getattr(adapter, "_sessions", {})
+                for sid, strat in strats.items():
+                    session = sessions.get(sid, {})
+                    items.append({
+                        "strategy_id": sid,
+                        "name": strat.get("name", ""),
+                        "timeframe": strat.get("timeframe", "1H"),
+                        "symbols": list(strat.get("symbols", ())),
+                        "code_sha256": strat.get("code_sha256", ""),
+                        "execution_backend": "matrix_native",
+                        "status": session.get("status", "running"),
+                        "equity": session.get("equity", 100000.0),
+                        "trade_count": session.get("trade_count", 0),
+                        "mode": strat.get("mode", "paper"),
+                    })
+            return items
+        except Exception as exc:
+            logger.warning("Failed to list quantlab strategies: %s", exc)
+            return []
+
+    @app.post("/api/portfolio/targets/quantlab/strategies/{strategy_id}/backtest")
+    def run_quantlab_strategy_backtest(strategy_id: str, _: AdminUser) -> dict[str, Any]:
+        from hypertrade.targets.registry import adapter_for_target
+
+        try:
+            try:
+                adapter = adapter_for_target("quantlab")
+            except Exception:
+                from hypertrade.targets.quantlab import QuantLabTargetAdapter
+                adapter = QuantLabTargetAdapter(simulation=True)
+
+            receipt = adapter.run_backtest(
+                strategy_id=strategy_id,
+                parameters={"capital": 100000.0, "timeframe": "1H"},
+                poll_interval_seconds=0.01,
+            )
+            return {
+                "status": "success",
+                "strategy_id": strategy_id,
+                "metrics": dict(receipt),
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/api/portfolio/relay/handovers")
+    def list_portfolio_relay_handovers() -> list[dict[str, Any]]:
+        service = PortfolioCoordinatorService(database, settings=app_settings)
+        return service.get_relay_handover_plans()
+
+    @app.post("/api/portfolio/relay/handovers/{plan_id}/step")
+    def step_portfolio_relay_handover(plan_id: str, _: AdminUser) -> dict[str, Any]:
+        try:
+            service = PortfolioCoordinatorService(database, settings=app_settings)
+            return service.step_relay_handover_slice(plan_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/api/research/hypothesis-tree")
+    def get_research_hypothesis_tree(
+        tree_id: str = "mission_evo_tree_default",
+    ) -> list[dict[str, Any]]:
+        from hypertrade.memory.layered_service import LayeredMemoryService, MutationType
+        from hypertrade.research.hypothesis_tree import HypothesisTreeService
+
+        mem_service = LayeredMemoryService(database)
+        nodes = mem_service.list_hypotheses_for_tree(tree_id)
+        if not nodes:
+            tree_svc = HypothesisTreeService(mem_service)
+            root = tree_svc.create_tree(
+                tree_id=tree_id,
+                claim="A股大盘消费/白酒龙头均线突破具备显著样本外动量Alpha",
+                rationale="贵州茅台与五粮液1H级别大资金建仓时滞与趋势延续性",
+                target_regimes=["trend", "low_vol"],
+            )
+            tree_svc.evaluate_and_prune_node(
+                node_id=root.id or "root",
+                relative_pnl=Decimal("0.15"),
+                sharpe=Decimal("1.92"),
+                strategy_digest="sha256:root_quantlab_alpha",
+            )
+            child1 = tree_svc.propose_branch(
+                tree_id=tree_id,
+                parent_id=root.id or "root",
+                mutation_type=MutationType.PARAM_REFINE,
+                claim="缩短快线周期至8以加快对急拉起爆点的捕捉",
+                rationale="在多头行情下降低信号滞后，提升盈亏比",
+            )
+            tree_svc.evaluate_and_prune_node(
+                node_id=child1.id or "c1",
+                relative_pnl=Decimal("0.28"),
+                sharpe=Decimal("2.45"),
+                strategy_digest="sha256:c1_mutated_fast8",
+            )
+            nodes = mem_service.list_hypotheses_for_tree(tree_id)
+
+        return [n.model_dump(mode="json") for n in nodes]
+
     @app.post("/api/strategy/research")
     def create_strategy_research(
         payload: StrategyResearchPayload,
