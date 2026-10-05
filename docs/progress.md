@@ -4,6 +4,27 @@
 
 # Progress Log
 
+## 运维探活与安全令牌管理 (Spec 032) — 2026-10-05
+
+- **容器级运维探活与诊断矩阵 (`/healthz`, `/readyz`, `/livez`)**：
+  1. 在 `backend/src/hypertrade/main.py` 挂载根路径与 `/api/*` 双入口的探活探针：
+     - `GET /livez` & `/api/livez`: 存活探针，轻量毫秒级响应 `status: alive` 与时间戳；
+     - `GET /readyz` & `/api/readyz`: 就绪探针，基于 `SELECT 1` 探测数据库真实连通性与时延，故障时返回 HTTP 503 与错误诊断；
+     - `GET /healthz` & `/api/healthz`: 全景健康报告，汇总运行时长 `uptime_seconds`、DB 延迟、适配器状态（QuantLab 心跳与 BitPro 健康）、Paper 会话总数与安全令牌活跃/临期统计，故障时返回 HTTP 503；
+  2. 在 `QuantLabTargetAdapter` 注入 `heartbeat()` 探测方法，上报仿真/MCP 连接延迟；
+  3. 保留既有 `/api/health` 确保客户端向下兼容。
+- **安全令牌生命周期与动态轮换引擎 (`TokenRotationService`)**：
+  1. 在 `backend/src/hypertrade/security/token_manager.py` 实现 `TokenRotationService`：
+     - 基于 SHA-256 哈希与单向散列存储凭据元数据，严禁持久化明文凭据；
+     - 支持动态签发（`issue_token`）带权限 Scope（如 `arc:read`, `arc:start`）的安全令牌；
+     - 支持无停机热轮换（`rotate_token`），旧令牌进入指定宽限期（Grace Period）平滑过渡；
+     - 支持主动吊销（`revoke_token`）与临期审计预警（`audit_expiring_tokens`）；
+  2. 深度打通 `hypertrade.arc.auth`，使 `TokenRotationService` 签发/轮换的令牌直接获权调用 ARC 与服务接口（支持 `X-HyperTrade-Service-Token` 与 `Authorization: Bearer <token>` 凭证）；
+  3. 暴露管理 REST 端点：`GET /api/security/tokens`、`POST /api/security/tokens/issue`、`POST /api/security/tokens/{token_id}/rotate`、`POST /api/security/tokens/{token_id}/revoke`、`GET /api/security/tokens/expiring`。
+- **测试套件与全量门禁**：
+  1. 编写 `tests/test_healthz_and_token_rotation.py`（4 项完整测试：令牌签发与验签生命周期、平滑轮换宽限期、紧急吊销拦截、状态机计算、健康探活三探针响应、API 接口与 ARC Bearer 鉴权闭环）；
+  2. 通过 Ruff 静态检查与 Mypy 类型检查（316 文件 0 错误）。
+
 ## 前端量化指挥台支持 QuantLab 专属看板与 HET 假设演进树 (Spec 031) — 2026-10-05
 
 - **后端控制台与演进树 REST 端点矩阵**：
