@@ -995,6 +995,38 @@ class QuantLabTargetAdapter:
             "timestamp": datetime.now(self._tz).isoformat(),
         }
 
+    def heartbeat(self) -> dict[str, Any]:
+        """Probe QuantLab target connectivity and readiness."""
+        t0 = time.monotonic()
+        try:
+            if self._simulation:
+                return {
+                    "target_id": "quantlab",
+                    "status": "ready",
+                    "mode": "simulation",
+                    "latency_ms": round((time.monotonic() - t0) * 1000, 2),
+                }
+            if self._mcp_client is not None:
+                return {
+                    "target_id": "quantlab",
+                    "status": "ready",
+                    "mode": "remote_mcp",
+                    "latency_ms": round((time.monotonic() - t0) * 1000, 2),
+                }
+            return {
+                "target_id": "quantlab",
+                "status": "degraded",
+                "mode": "unconfigured",
+                "latency_ms": round((time.monotonic() - t0) * 1000, 2),
+            }
+        except Exception as exc:
+            return {
+                "target_id": "quantlab",
+                "status": "unhealthy",
+                "error": str(exc),
+                "latency_ms": round((time.monotonic() - t0) * 1000, 2),
+            }
+
 
 def quantlab_adapter_factory(*, simulation: bool = False) -> QuantLabTargetAdapter:
     """Lazy factory constructing default QuantLab adapter."""

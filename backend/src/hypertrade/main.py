@@ -18,12 +18,12 @@ from threading import Thread
 from typing import Annotated, Any, Literal, Protocol, cast
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from itsdangerous import BadSignature, URLSafeSerializer
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, text
 
 from hypertrade.agent.checkpoints import TaskCheckpointService, checkpoint_to_dict
 from hypertrade.agent.kernel import AgentKernel, CompletedAgentRun
@@ -60,6 +60,7 @@ from hypertrade.db import (
     LiveOrderIntent,
     MarketTicker,
     MemoryItem,
+    PaperSession,
     RagChunk,
     RagDocument,
     TraceEvent,
@@ -220,6 +221,7 @@ from hypertrade.runtime.domain.models import (
 )
 from hypertrade.runtime.domain.sandbox import ImportReviewV1, SandboxRequestV1
 from hypertrade.runtime.domain.supervision import TeamRunRequestV1
+from hypertrade.security.token_manager import TokenRotationService, TokenStatus
 from hypertrade.skills.lifecycle import (
     ApprovedSkillLoader,
     SkillApprovalV1,
@@ -312,6 +314,21 @@ def _bitpro_read_or_502(
 class LoginPayload(BaseModel):
     username: str
     password: str
+
+
+class IssueSecurityTokenPayload(BaseModel):
+    label: str
+    scopes: list[str] = Field(default_factory=lambda: ["arc:read"])
+    ttl_days: int | None = 30
+
+
+class RotateSecurityTokenPayload(BaseModel):
+    grace_period_hours: float = 24.0
+    ttl_days: int | None = 30
+
+
+class RevokeSecurityTokenPayload(BaseModel):
+    reason: str = "manual_revocation"
 
 
 class AgentRunPayload(BaseModel):
@@ -597,6 +614,10 @@ def create_app(
     app.state.supervision_store = supervision_store
     app.state.strategy_sandbox = strategy_sandbox
     app.state.sandbox_store = sandbox_store
+    app.state.started_at = datetime.now(UTC)
+    app.state.token_service = TokenRotationService(
+        storage_path=app_settings.knowledge_dir / "security_tokens.json"
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -794,6 +815,200 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "service": "hypertrade-api"}
+
+    @app.get("/livez")
+    @app.get("/api/livez")
+    def livez() -> dict[str, Any]:
+        return {
+            "status": "alive",
+            "service": "hypertrade-api",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+
+    @app.get("/readyz")
+    @app.get("/api/readyz")
+    def readyz(response: Response) -> dict[str, Any]:
+        t0 = time.monotonic()
+        db_ok = False
+        error_msg = None
+        try:
+            with database.session() as s:
+                s.execute(text("SELECT 1")).scalar()
+            db_ok = True
+        except Exception as exc:
+            error_msg = str(exc)
+            logger.warning("Readiness probe database check failed: %s", exc)
+
+        latency_ms = round((time.monotonic() - t0) * 1000, 2)
+        if not db_ok:
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            return {
+                "status": "not_ready",
+                "database": "disconnected",
+                "error": error_msg,
+                "latency_ms": latency_ms,
+            }
+        return {
+            "status": "ready",
+            "database": "connected",
+            "latency_ms": latency_ms,
+        }
+
+    @app.get("/healthz")
+    @app.get("/api/healthz")
+    def healthz(response: Response) -> dict[str, Any]:
+        t0 = time.monotonic()
+        now = datetime.now(UTC)
+        started_at: datetime = getattr(app.state, "started_at", now)
+        uptime_seconds = round((now - started_at).total_seconds(), 2)
+
+        # 1. Database check
+        db_status = "connected"
+        db_latency_ms = 0.0
+        t_db = time.monotonic()
+        try:
+            with database.session() as s:
+                s.execute(text("SELECT 1")).scalar()
+            db_latency_ms = round((time.monotonic() - t_db) * 1000, 2)
+        except Exception as exc:
+            db_status = "error"
+            logger.warning("Healthz database check failed: %s", exc)
+
+        # 2. Adapters check
+        adapters: dict[str, Any] = {}
+        # QuantLab
+        try:
+            from hypertrade.targets.registry import adapter_for_target
+            ql_adapter = adapter_for_target("quantlab")
+        except Exception:
+            from hypertrade.targets.quantlab import QuantLabTargetAdapter
+            ql_adapter = QuantLabTargetAdapter(simulation=True)
+        try:
+            adapters["quantlab"] = ql_adapter.heartbeat()
+        except Exception as exc:
+            adapters["quantlab"] = {"status": "degraded", "error": str(exc)}
+
+        # BitPro
+        try:
+            bp_adapter = get_bitpro_adapter()
+            adapters["bitpro"] = bp_adapter.health()
+        except Exception as exc:
+            adapters["bitpro"] = {"status": "degraded", "error": str(exc)}
+
+        # 3. Paper Session
+        paper_session_status = "ready"
+        try:
+            with database.session() as s:
+                count = s.query(PaperSession).count()
+                paper_session_status = f"{count} sessions"
+        except Exception:
+            paper_session_status = "unknown"
+
+        # 4. Security Token audit
+        token_svc: TokenRotationService | None = getattr(app.state, "token_service", None)
+        token_stats = {"active_tokens": 0, "expiring_soon_tokens": 0}
+        if token_svc is not None:
+            all_toks = token_svc.list_tokens()
+            expiring = token_svc.audit_expiring_tokens(warning_threshold_days=7)
+            token_stats["active_tokens"] = len(
+                [t for t in all_toks if t.compute_status(now) == TokenStatus.ACTIVE]
+            )
+            token_stats["expiring_soon_tokens"] = len(expiring)
+
+        # Compute overall status
+        if db_status != "connected":
+            overall_status = "unhealthy"
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        elif any(
+            isinstance(a, dict) and a.get("status") in ("degraded", "unhealthy")
+            for a in adapters.values()
+        ):
+            overall_status = "degraded"
+        else:
+            overall_status = "healthy"
+
+        total_latency_ms = round((time.monotonic() - t0) * 1000, 2)
+        return {
+            "status": overall_status,
+            "timestamp": now.isoformat(),
+            "uptime_seconds": uptime_seconds,
+            "total_latency_ms": total_latency_ms,
+            "database": {
+                "status": db_status,
+                "latency_ms": db_latency_ms,
+            },
+            "adapters": adapters,
+            "paper_session": paper_session_status,
+            "security": token_stats,
+        }
+
+    # Security Token Management Endpoints
+    @app.get("/api/security/tokens")
+    def list_security_tokens(_: AdminUser) -> list[dict[str, Any]]:
+        token_svc: TokenRotationService = app.state.token_service
+        return [r.to_public_dict() for r in token_svc.list_tokens()]
+
+    @app.post("/api/security/tokens/issue")
+    def issue_security_token(
+        payload: IssueSecurityTokenPayload, _: AdminUser
+    ) -> dict[str, Any]:
+        token_svc: TokenRotationService = app.state.token_service
+        record, plaintext = token_svc.issue_token(
+            label=payload.label,
+            scopes=payload.scopes,
+            ttl_days=payload.ttl_days,
+        )
+        return {
+            "record": record.to_public_dict(),
+            "token": plaintext,
+        }
+
+    @app.post("/api/security/tokens/{token_id}/rotate")
+    def rotate_security_token(
+        token_id: str,
+        payload: RotateSecurityTokenPayload,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        token_svc: TokenRotationService = app.state.token_service
+        try:
+            old_rec, new_rec, new_plaintext = token_svc.rotate_token(
+                token_id,
+                grace_period_hours=payload.grace_period_hours,
+                ttl_days=payload.ttl_days,
+            )
+            return {
+                "old_record": old_rec.to_public_dict(),
+                "new_record": new_rec.to_public_dict(),
+                "token": new_plaintext,
+            }
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/security/tokens/{token_id}/revoke")
+    def revoke_security_token(
+        token_id: str,
+        payload: RevokeSecurityTokenPayload,
+        _: AdminUser,
+    ) -> dict[str, Any]:
+        token_svc: TokenRotationService = app.state.token_service
+        try:
+            record = token_svc.revoke_token(token_id, reason=payload.reason)
+            return {"record": record.to_public_dict()}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/security/tokens/expiring")
+    def get_expiring_security_tokens(
+        _: AdminUser,
+        warning_threshold_days: int = 7,
+    ) -> list[dict[str, Any]]:
+        token_svc: TokenRotationService = app.state.token_service
+        return [
+            r.to_public_dict()
+            for r in token_svc.audit_expiring_tokens(warning_threshold_days=warning_threshold_days)
+        ]
 
     @app.post("/api/auth/login")
     def login(payload: LoginPayload, response: Response) -> dict[str, str]:
