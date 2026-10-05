@@ -655,22 +655,34 @@ class SelfHealingEvolutionEngine:
 
         if is_quantlab:
             ql_adapter = self._get_quantlab_adapter()
-            if ql_adapter is not None and hasattr(ql_adapter, "backtest_start_job"):
+            if ql_adapter is not None:
                 try:
-                    start_job = ql_adapter.backtest_start_job(
-                        strategy_id=sid_str,
-                        parameters=mutated_params,
-                        symbols=symbols,
-                        timeframe=timeframe,
-                    )
-                    job_id = start_job.get("job_id")
-                    if job_id and hasattr(ql_adapter, "backtest_get_job"):
-                        job_res = ql_adapter.backtest_get_job(job_id)
-                        if job_res.get("status") != "completed":
-                            raise RuntimeError("quantlab_backtest_not_completed")
-                        metrics = job_res.get("metrics")
-                        if not isinstance(metrics, dict):
-                            raise RuntimeError("quantlab_backtest_metrics_missing")
+                    metrics: dict[str, Any] | None = None
+                    job_id = "ql_bt_direct"
+                    if hasattr(ql_adapter, "run_backtest"):
+                        metrics = ql_adapter.run_backtest(
+                            strategy_id=sid_str,
+                            parameters=mutated_params,
+                            symbols=symbols,
+                            timeframe=timeframe or "1D",
+                            timeout_seconds=15.0,
+                        )
+                        job_id = str(metrics.get("job_id") or "ql_bt_direct")
+                    elif hasattr(ql_adapter, "backtest_start_job"):
+                        start_job = ql_adapter.backtest_start_job(
+                            strategy_id=sid_str,
+                            parameters=mutated_params,
+                            symbols=symbols,
+                            timeframe=timeframe,
+                        )
+                        job_id = start_job.get("job_id") or "ql_bt_job"
+                        if job_id and hasattr(ql_adapter, "backtest_get_job"):
+                            job_res = ql_adapter.backtest_get_job(job_id)
+                            if job_res.get("status") != "completed":
+                                raise RuntimeError("quantlab_backtest_not_completed")
+                            metrics = job_res.get("metrics")
+
+                    if isinstance(metrics, dict):
                         win_rate = float(metrics["win_rate"])
                         profit_factor = float(metrics["profit_factor"])
                         sharpe_raw = metrics.get("annualized_sharpe")
@@ -678,7 +690,9 @@ class SelfHealingEvolutionEngine:
                             sharpe_raw = metrics["sharpe_ratio"]
                         sharpe = float(sharpe_raw)
                         max_dd = float(metrics["max_drawdown_pct"])
-                        trades = int(metrics["total_trades"])
+                        sim_trades = metrics.get("simulated_trades") or 0
+                        raw_trades = metrics.get("total_trades") or sim_trades
+                        trades = int(raw_trades)
                         passed = win_rate >= 0.40 and (profit_factor >= 1.0 or sharpe >= 0.5)
                         return {
                             "win_rate": round(win_rate, 4),
@@ -1003,7 +1017,27 @@ class SelfHealingEvolutionEngine:
                 except Exception:
                     strategy_code = ""
             if not strategy_code.strip():
-                return False, None, None
+                from hypertrade.research.quantlab_transpiler import QuantLabStrategyTranspiler
+
+                fast_w = int(
+                    merged_config.get("fast_window")
+                    or merged_config.get("fast_period")
+                    or 5
+                )
+                slow_w = int(
+                    merged_config.get("slow_window")
+                    or merged_config.get("slow_period")
+                    or 20
+                )
+                normalized_id = offspring_id.title().replace("-", "_").replace(".", "_")
+                clean_cls = re.sub(r"[^a-zA-Z0-9_]", "", normalized_id)
+                if not clean_cls or clean_cls[0].isdigit():
+                    clean_cls = f"Strategy{clean_cls}"
+                strategy_code = QuantLabStrategyTranspiler.generate_default_evolution_code(
+                    class_name=clean_cls,
+                    fast_window=fast_w,
+                    slow_window=slow_w,
+                )
 
             if not hasattr(adapter, "strategy_create"):
                 return False, None, None
