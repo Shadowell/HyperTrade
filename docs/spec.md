@@ -1207,3 +1207,5 @@ Phase 2 读取切片要求 sessions 日历提供前一交易日收盘基准与�
 
 研究并发配额扩容（2026-10-09）：为解决多策略自主进化场景下并发配额过紧导致的频繁 `concurrency_limit` 推迟与卡死问题，`EvolutionConfig.max_active_research` 默认并发活跃数从 2 扩容至 20（取值范围由 `[1, 5]` 放宽为 `[1, 50]`），支持更大规模的并行策略假设演化与回测探索。
 
+高置信度候选策略免审直通 Paper（2026-10-09）：新增 `EvolutionConfig.auto_approve_paper: bool = False` 配置。当启用 `auto_approve_paper=True` 时，若候选策略通过确定性安全门禁，且在回测沙箱中夏普比率、最大回撤、净收益率等核心指标均显著优于基线（`verify_significantly_better_than_baseline` 成立且 Pareto 占优），系统自动执行审批（`decide_paper_review`）并直接开通 Paper 模拟盘进入 `paper_observing` 观察阶段，无需人工逐一点击审批，避免名额长期卡死；未显著超越基线的候选策略则安全保留在人工审核队列中。
+
