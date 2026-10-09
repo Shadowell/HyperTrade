@@ -105,7 +105,7 @@ class EvolutionConfig(BaseModel):
     meta_tuning_auto_apply: bool = False
     min_trades: int = Field(default=30, ge=1, le=10000)
     cooldown_hours: int = Field(default=24, ge=24, le=720)
-    max_active_research: int = Field(default=2, ge=1, le=5)
+    max_active_research: int = Field(default=20, ge=1, le=50)
     max_candidates: int = Field(default=3, ge=1, le=10)
     max_model_calls: int = Field(default=20, ge=3, le=50)
     max_backtests: int = Field(default=8, ge=3, le=30)

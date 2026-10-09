@@ -887,3 +887,20 @@ def test_untyped_source_identity_is_rejected_without_raising(service, context, p
     assert receipt["accepted"] is False
     assert receipt["reason"] == reason
     assert get_controller(ctrl.mission_id) is None
+
+
+def test_evolution_config_max_active_research_expanded():
+    from pydantic import ValidationError
+
+    cfg = EvolutionConfig()
+    assert cfg.max_active_research == 20
+
+    cfg_custom = EvolutionConfig(max_active_research=50)
+    assert cfg_custom.max_active_research == 50
+
+    with pytest.raises(ValidationError):
+        EvolutionConfig(max_active_research=0)
+
+    with pytest.raises(ValidationError):
+        EvolutionConfig(max_active_research=51)
+

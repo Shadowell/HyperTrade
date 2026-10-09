@@ -4,6 +4,12 @@
 
 # Progress Log
 
+## 自主研究并发配额扩容至 20 (max_active_research = 20) — 2026-10-09
+
+- **并发配置与上限扩展**：在 `backend/src/hypertrade/arc/evolution.py` 中将 `EvolutionConfig.max_active_research` 的默认值从 2 扩容至 20（取值范围上限由 5 放宽至 50），彻底解除多策略自进化场景下的 `concurrency_limit` 瓶颈；
+- **回归测试与质量保证**：在 `tests/test_evolution_budget.py` 中新增 `test_evolution_config_max_active_research_expanded`，覆盖默认值 20、自定义上限 50 及范围越界校验；
+- **设计与规格文档同步**：同步更新 `docs/spec.md` 与 `docs/progress.md`。
+
 ## 完善系统架构设计文档与建立架构变更同步强准则 (AGENTS.md 治理增强) — 2026-10-06
 
 - **AGENTS.md 治理规则增强（架构变更同步强准则）**：
