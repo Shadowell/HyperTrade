@@ -110,6 +110,7 @@ class EvolutionConfig(BaseModel):
     max_model_calls: int = Field(default=20, ge=3, le=50)
     max_backtests: int = Field(default=8, ge=3, le=30)
     paper_capital: Decimal = Field(default=Decimal("100"), gt=0, le=10000)
+    auto_approve_paper: bool = False
 
 
 def digest(value: Any) -> str:

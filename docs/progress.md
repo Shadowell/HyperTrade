@@ -4,6 +4,12 @@
 
 # Progress Log
 
+## 高置信度候选策略免审直通模拟盘 (auto_approve_paper) — 2026-10-09
+
+- **高置信度免审直通 Paper**：在 `EvolutionConfig` 新增 `auto_approve_paper: bool = False` 配置；在 `backend/src/hypertrade/arc/auto_review.py` 中实现 `verify_significantly_better_than_baseline`，全方位核验夏普比率、最大回撤与净收益率；当候选策略在确定性门禁与回测沙箱中显著超越基线时，自动执行 `decide_paper_review` 并开通 Paper 模拟盘，彻底打通无人值守自进化闭环；
+- **人工审核安全兜底**：若候选策略回测指标未显著胜出，在 `human` 评审模式下安全保留在 `paper_review_ready` 待审队列，严防低质策略误入；
+- **全量测试与规格同步**：在 `tests/test_arc_auto_review.py` 中新增指标显著优于基线自动放行、未显著优于基线安全留审及判定算法各分支单元测试；同步更新 `docs/spec.md`。
+
 ## 自主研究并发配额扩容至 20 (max_active_research = 20) — 2026-10-09
 
 - **并发配置与上限扩展**：在 `backend/src/hypertrade/arc/evolution.py` 中将 `EvolutionConfig.max_active_research` 的默认值从 2 扩容至 20（取值范围上限由 5 放宽至 50），彻底解除多策略自进化场景下的 `concurrency_limit` 瓶颈；

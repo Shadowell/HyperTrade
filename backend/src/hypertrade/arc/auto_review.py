@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from hypertrade.arc.controller import ARCController
@@ -155,12 +155,17 @@ def auto_review_once(
                                 "authorized_by": control.updated_by,
                             },
                         )
-                    if (
-                        config.paper_review_mode != "agent"
-                        or projection.state != "paper_review_ready"
-                    ):
+                    if projection.state != "paper_review_ready":
+                        continue
+                    should_evaluate = (
+                        config.paper_review_mode == "agent" or config.auto_approve_paper is True
+                    )
+                    if not should_evaluate:
                         continue
                     evaluation = evaluate_auto_review(controller, config)
+                    is_auto_approve_mode = (
+                        config.auto_approve_paper is True and config.paper_review_mode != "agent"
+                    )
                     if evaluation["decision"] == "approve":
                         cost_reasons = verify_candidate_costs(controller)
                         if cost_reasons:
@@ -172,6 +177,42 @@ def auto_review_once(
                             evaluation.update(
                                 decision="reject" if recover_with_new_candidate else "block",
                                 reasons=cost_reasons,
+                            )
+                        elif is_auto_approve_mode:
+                            package = build_paper_review(projection)
+                            attempt_id = package.get("attempt_id")
+                            proof = next(
+                                (
+                                    r
+                                    for r in reversed(projection.self_test_records)
+                                    if r.get("attempt_id") == attempt_id
+                                    and r.get("purpose") == "final"
+                                ),
+                                {},
+                            )
+                            metrics = proof.get("metrics") or {}
+                            baseline_entry = projection.avo.get("baseline_final", {})
+                            better, better_reasons = verify_significantly_better_than_baseline(
+                                metrics, baseline_entry
+                            )
+                            if not better:
+                                # When in human mode with auto_approve_paper, if candidate does not
+                                # significantly beat baseline, safely leave in review ready state.
+                                evaluation.update(
+                                    auto_approve_eligible=False,
+                                    auto_approve_reasons=better_reasons,
+                                )
+                                if (
+                                    projection.paper_review.get("automatic_evaluation")
+                                    != evaluation
+                                ):
+                                    controller.apply_event(
+                                        "paper_auto_review_evaluated", evaluation
+                                    )
+                                continue
+                            evaluation.update(
+                                auto_approved=True,
+                                auto_approve_reasons=["metrics_significantly_better_than_baseline"],
                             )
                     evaluation["policy_revision"] = control.revision
                     if projection.paper_review.get("automatic_evaluation") != evaluation:
@@ -186,16 +227,23 @@ def auto_review_once(
                             "evaluation": evaluation,
                         }
                     check_owner()
+                    reason = (
+                        "Auto-Approve：回测核心指标显著优于基线且确定性门禁通过"
+                        if is_auto_approve_mode
+                        else (
+                            "Agent自动评审："
+                            + (
+                                "全部确定性门禁通过"
+                                if not evaluation["reasons"]
+                                else "; ".join(evaluation["reasons"])
+                            )
+                        )
+                    )
                     result = decide_paper_review(
                         controller,
                         package_hash=evaluation["package_hash"],
                         decision=evaluation["decision"],
-                        reason="Agent自动评审："
-                        + (
-                            "全部确定性门禁通过"
-                            if not evaluation["reasons"]
-                            else "; ".join(evaluation["reasons"])
-                        ),
+                        reason=reason,
                         operator_id=f"hypertrade:paper-referee:policy-{control.revision}",
                         identity_source="agent_policy",
                         idempotency_key=f"auto-paper:{control.revision}:{evaluation['package_hash']}",
@@ -203,6 +251,76 @@ def auto_review_once(
                     )
                     return {"status": result["status"], "mission_id": mission_id}
             return {"status": "idle"}
+
+
+def verify_significantly_better_than_baseline(
+    candidate_metrics: dict[str, Any], baseline_entry: dict[str, Any]
+) -> tuple[bool, list[str]]:
+    """Verify candidate metrics significantly beat baseline on Sharpe, drawdown, and return."""
+    if not isinstance(baseline_entry, dict) or not baseline_entry.get("metrics"):
+        return False, ["missing_baseline_evidence"]
+    old = baseline_entry.get("metrics") or {}
+    window = candidate_metrics.get("evaluation_window") or {}
+    old_window = old.get("evaluation_window") or {}
+    if window and old_window and window != old_window:
+        return False, ["comparison_window_mismatch"]
+
+    def read_decimal(row: dict[str, Any], ratio: str, pct: str) -> Decimal:
+        val = row.get(ratio) if ratio in row else row.get(pct)
+        if val is None:
+            return Decimal("0")
+        try:
+            d = Decimal(str(val))
+            return d if ratio in row else d / Decimal("100")
+        except (InvalidOperation, ValueError, TypeError):
+            return Decimal("0")
+
+    def read_sharpe(row: dict[str, Any]) -> float | None:
+        for key in ("sharpe", "sharpe_ratio", "out_of_sample_sharpe", "oos_sharpe"):
+            v = row.get(key)
+            if v is not None and not isinstance(v, bool):
+                try:
+                    f = float(v)
+                    if math.isfinite(f):
+                        return f
+                except (ValueError, TypeError):
+                    continue
+        return None
+
+    new_return = read_decimal(candidate_metrics, "net_return", "total_return_pct")
+    old_return = read_decimal(old, "net_return", "total_return_pct")
+    new_dd = abs(read_decimal(candidate_metrics, "max_drawdown", "max_drawdown_pct"))
+    old_dd = abs(read_decimal(old, "max_drawdown", "max_drawdown_pct"))
+
+    new_sharpe = read_sharpe(candidate_metrics)
+    old_sharpe = read_sharpe(old)
+
+    reasons: list[str] = []
+
+    if new_return < old_return:
+        reasons.append("return_below_baseline")
+
+    if new_dd > old_dd:
+        reasons.append("drawdown_worse_than_baseline")
+
+    if new_sharpe is not None and old_sharpe is not None:
+        if new_sharpe < old_sharpe:
+            reasons.append("sharpe_below_baseline")
+    elif new_sharpe is not None and new_sharpe <= 0:
+        reasons.append("sharpe_non_positive")
+
+    better_sharpe = bool(
+        new_sharpe is not None and old_sharpe is not None and new_sharpe > old_sharpe
+    )
+    better_dd = bool(new_dd < old_dd)
+    better_return = bool(new_return > old_return)
+
+    if not (better_sharpe or better_dd or better_return):
+        reasons.append("no_significant_improvement")
+
+    if reasons:
+        return False, reasons
+    return True, []
 
 
 def read_candidate_source(strategy_id: int) -> dict[str, Any]:

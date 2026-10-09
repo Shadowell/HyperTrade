@@ -264,3 +264,146 @@ def test_automatic_budget_end_does_not_require_human_to_release_source(ready):
     assert _feedback_child_active(ctrl) is False
     ctrl.projection.avo["pending"] = {"kind": "tool", "id": "unsettled"}
     assert _feedback_child_active(ctrl) is True
+
+
+def test_auto_approve_paper_when_metrics_significantly_better(ready):
+    db, service, mid = ready
+    ctrl = get_controller(mid)
+    goal = ctrl.projection.goal
+    start, end = goal.research_windows.window("final")
+    window = {
+        "purpose": "final",
+        "start_date": str(start),
+        "end_date": str(end),
+        "research_id": goal.research_id,
+    }
+    # Configure human review mode, but enable auto_approve_paper
+    service.configure(
+        EvolutionConfig(enabled=True, paper_review_mode="human", auto_approve_paper=True),
+        revision=1,
+        actor="user",
+    )
+    # Inject baseline final backtest metrics
+    ctrl.projection.avo["baseline_final"] = {
+        "backtest_id": "base-55",
+        "metrics": {
+            "evaluation_window": window,
+            "net_return": 0.2,
+            "max_drawdown": 0.05,
+            "sharpe": 1.2,
+        },
+    }
+    save_mission(ctrl)
+
+    # Candidate in ready fixture has net_return=0.5 (>0.2), sharpe=2 (>1.2), max_dd=0.01 (<0.05)
+    runner = Runner()
+    result = auto_review_once(db, runner)
+    assert result["status"] == "paper_observing"
+    assert runner.calls == 1
+
+    ctrl_after = get_controller(mid)
+    decision = ctrl_after.projection.paper_review.get("decision") or {}
+    assert decision.get("decision") == "approve"
+    assert "Auto-Approve" in decision.get("reason", "")
+    assert ctrl_after.projection.state == "paper_observing"
+
+
+def test_auto_approve_paper_leaves_in_review_ready_when_metrics_not_better(ready):
+    db, service, mid = ready
+    ctrl = get_controller(mid)
+    goal = ctrl.projection.goal
+    start, end = goal.research_windows.window("final")
+    window = {
+        "purpose": "final",
+        "start_date": str(start),
+        "end_date": str(end),
+        "research_id": goal.research_id,
+    }
+    service.configure(
+        EvolutionConfig(enabled=True, paper_review_mode="human", auto_approve_paper=True),
+        revision=1,
+        actor="user",
+    )
+    # Baseline metrics are superior to candidate (e.g. sharpe=3 > candidate's sharpe=2)
+    ctrl.projection.avo["baseline_final"] = {
+        "backtest_id": "base-55",
+        "metrics": {
+            "evaluation_window": window,
+            "net_return": 0.8,
+            "max_drawdown": 0.005,
+            "sharpe": 3.0,
+        },
+    }
+    save_mission(ctrl)
+
+    runner = Runner()
+    result = auto_review_once(db, runner)
+    assert result["status"] == "idle"
+    assert runner.calls == 0
+    # Still safely waiting in paper_review_ready for human operator
+    assert get_controller(mid).projection.state == "paper_review_ready"
+
+
+def test_verify_significantly_better_than_baseline_helper():
+    from hypertrade.arc.auto_review import verify_significantly_better_than_baseline
+
+    window = {"start_date": "2026-01-01", "end_date": "2026-01-14"}
+    base_entry = {
+        "backtest_id": "b1",
+        "metrics": {
+            "evaluation_window": window,
+            "net_return": 0.15,
+            "max_drawdown": 0.08,
+            "sharpe": 1.5,
+        },
+    }
+
+    # Case 1: Sharpe significantly higher, return higher, drawdown lower -> Pass
+    cand_better = {
+        "evaluation_window": window,
+        "net_return": 0.25,
+        "max_drawdown": 0.05,
+        "sharpe": 2.2,
+    }
+    better, reasons = verify_significantly_better_than_baseline(cand_better, base_entry)
+    assert better is True
+    assert reasons == []
+
+    # Case 2: Sharpe degraded -> Fail
+    cand_worse_sharpe = {
+        "evaluation_window": window,
+        "net_return": 0.20,
+        "max_drawdown": 0.05,
+        "sharpe": 1.2,
+    }
+    better, reasons = verify_significantly_better_than_baseline(cand_worse_sharpe, base_entry)
+    assert better is False
+    assert "sharpe_below_baseline" in reasons
+
+    # Case 3: Drawdown worse -> Fail
+    cand_worse_dd = {
+        "evaluation_window": window,
+        "net_return": 0.25,
+        "max_drawdown": 0.12,
+        "sharpe": 2.2,
+    }
+    better, reasons = verify_significantly_better_than_baseline(cand_worse_dd, base_entry)
+    assert better is False
+    assert "drawdown_worse_than_baseline" in reasons
+
+    # Case 4: No improvement at all (identical) -> Fail
+    cand_identical = {
+        "evaluation_window": window,
+        "net_return": 0.15,
+        "max_drawdown": 0.08,
+        "sharpe": 1.5,
+    }
+    better, reasons = verify_significantly_better_than_baseline(cand_identical, base_entry)
+    assert better is False
+    assert "no_significant_improvement" in reasons
+
+    # Case 5: Missing baseline -> Fail
+    better, reasons = verify_significantly_better_than_baseline(cand_better, {})
+    assert better is False
+    assert "missing_baseline_evidence" in reasons
+
