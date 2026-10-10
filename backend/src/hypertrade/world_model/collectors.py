@@ -9,9 +9,6 @@ from hypertrade.global_market.service import GlobalMarketService
 
 logger = logging.getLogger(__name__)
 
-# Deprecated: replaced by live global market data
-GLOBAL_MARKET_MISSING_DATA: list[str] = []
-
 
 def collect_global_market() -> dict[str, Any]:
     """Collect cross-asset global market state.

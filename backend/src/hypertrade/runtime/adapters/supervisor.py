@@ -555,8 +555,6 @@ def llm_assignment_worker(
                 return _handoff_from_model(
                     response.content,
                     assignment=assignment,
-                    role=role,
-                    pack_evidence_chars=sum(len(text) for text, _ in pack_evidence),
                 )
             except _TeamHandoffValidationError as exc:
                 if attempt == 1:
@@ -652,8 +650,6 @@ def _handoff_from_model(
     content: str,
     *,
     assignment: AssignmentV1,
-    role: RoleDefinitionV1,
-    pack_evidence_chars: int,
 ) -> HandoffV1:
     def _reject(reason: str) -> None:
         raise _TeamHandoffValidationError(reason, content)

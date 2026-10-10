@@ -29,9 +29,4 @@ elif [ -d "$ROOT_DIR/backend" ]; then
   python3 -m compileall "$ROOT_DIR/backend"
 fi
 
-if [ -f "$ROOT_DIR/voice_gen.py" ]; then
-  echo "[check] compiling standalone python entrypoints"
-  python3 -m compileall "$ROOT_DIR/voice_gen.py"
-fi
-
 echo "[check] done"
