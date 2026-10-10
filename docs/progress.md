@@ -4,6 +4,24 @@
 
 # Progress Log
 
+## 全库死代码清理、弃用告警治理与无用实验模块退役 — 2026-10-10
+
+- **死代码与废弃符号物理清理**：
+  1. 彻底删除早期脚手架遗留的未用模块 `backend/src/hypertrade/jobs.py`（`JobQueue` 0引用，任务流已完全由 `AgentTask` / `ResearchJob` / `TaskNodeRun` 统一接管）；
+  2. 物理删除无调用的未用模块 `backend/src/hypertrade/world_model/evaluators.py`（`risk_regime_from_crypto` 0引用，世界模型已完全由 `GlobalMarketService` 驱动）；
+  3. 清理 `backend/src/hypertrade/strategy/experiment.py` 中 50 行未引用私有函数 `_render_strategy_knowledge_memory`；
+  4. 移除 `backend/src/hypertrade/world_model/collectors.py` 中已废弃的常量 `GLOBAL_MARKET_MISSING_DATA`；
+  5. 精简 `backend/src/hypertrade/runtime/adapters/supervisor.py` 中 `_handoff_from_model` 未使用形参 `role` 与 `pack_evidence_chars`。
+- **孤立/冻结实验模块与单测退役**：
+  1. 退役并删除长期处于 `FROZEN` 状态、无生产连线且依赖外部未审计 RSS 的实验模块 `backend/src/hypertrade/strategy/macro_event.py` 及其测试 `tests/test_arc_macro_event.py`，更新架构设计文档 47 为已退役；
+  2. 退役并删除无业务依赖的微观因子库 `backend/src/hypertrade/strategy/operators.py` 及其测试 `tests/test_arc_higher_order_factors.py`，更新架构设计文档 43 为已退役，更新 `codegen.py` 相关说明；
+  3. 移除 `scratch/` 目录中 4 个一次性调试探针脚本（`repro_turn_hang.py`, `probe_arc_auth.py`, `test_clusdt_mission.py`, `test_crude_oil_mission.py`）；
+  4. 移除构建生成物 `output/hypertrade-tech-architecture.html` 并在 `.gitignore` 中忽略 `output/` 目录；
+  5. 清理 `scripts/check.sh` 中对不存在的 `voice_gen.py` 的无效判断。
+- **3,246 条 Pytest 弃用警告清零**：
+  1. 将 `backend/src/hypertrade/arc/contracts.py` 与 `backend/src/hypertrade/arc/controller.py` 中 5 处已弃用的 `datetime.utcnow` 声明统一重构为 `lambda: datetime.now(UTC)`；
+  2. 彻底消除全量测试执行时的 3,246 条 `DeprecationWarning`，实现测试日志 0 警告完全纯净输出。
+
 ## 高置信度候选策略免审直通模拟盘 (auto_approve_paper) — 2026-10-09
 
 - **高置信度免审直通 Paper**：在 `EvolutionConfig` 新增 `auto_approve_paper: bool = False` 配置；在 `backend/src/hypertrade/arc/auto_review.py` 中实现 `verify_significantly_better_than_baseline`，全方位核验夏普比率、最大回撤与净收益率；当候选策略在确定性门禁与回测沙箱中显著超越基线时，自动执行 `decide_paper_review` 并开通 Paper 模拟盘，彻底打通无人值守自进化闭环；
