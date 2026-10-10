@@ -162,7 +162,7 @@ class ARCReflexionEventV1(BaseModel):
     # two by index attributed the wrong explanation to every objection. Defaults empty so
     # projections persisted before this field still load.
     reason_details: dict[str, str] = Field(default_factory=dict)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class ARCCandidateAttemptV1(BaseModel):
@@ -195,7 +195,7 @@ class ARCCandidateAttemptV1(BaseModel):
     live_instance_id: str | None = None
     observed_metrics: dict[str, Any] = Field(default_factory=dict)
     reflexion_events: list[ARCReflexionEventV1] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class CanaryTier(str):
@@ -220,7 +220,7 @@ class LiveTradingMandateV1(BaseModel):
     max_pnl_drift_pct: Decimal = Field(default=Decimal("10.0"))
     mandatory_stop_loss_pct: Decimal = Field(default=Decimal("7.0"))
     is_active: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class LiveApprovalPackageV1(BaseModel):

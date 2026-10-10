@@ -576,58 +576,6 @@ def _strategy_evidence_from_experiment(
     )
 
 
-def _render_strategy_knowledge_memory(
-    *,
-    experiment: dict[str, Any],
-    report_json: dict[str, Any],
-    winner: dict[str, Any],
-    strategy_key: str,
-) -> str:
-    metrics = _as_dict(winner.get("metrics"))
-    data_selection = _as_dict(report_json.get("data_selection"))
-    variants = report_json.get("variants")
-    variants = variants if isinstance(variants, list) else []
-    gate_results = _as_dict(winner.get("gate_results"))
-    failure_reasons = winner.get("failure_reasons")
-    failure_reasons = failure_reasons if isinstance(failure_reasons, list) else []
-    gates = _as_dict(report_json.get("evidence_gates"))
-    revision = _as_dict(report_json.get("revision_suggestion"))
-    return "\n".join(
-        [
-            "策略经验: local strategy experiment evidence",
-            (
-                f"experiment={experiment.get('id', '')}; "
-                f"research={experiment.get('research_id', '')}; "
-                f"backtest={winner.get('backtest_id', '')}; "
-                f"strategy={strategy_key}; "
-                f"winner={winner.get('variant_id', '')}; "
-                f"passed={str(bool(winner.get('passed'))).lower()}"
-            ),
-            f"variant_count={len(variants)}",
-            f"params={_stable_mapping(_as_dict(winner.get('strategy_params')))}",
-            (
-                "metrics="
-                f"total_return_pct={metrics.get('total_return_pct', 'n/a')}; "
-                f"max_drawdown_pct={metrics.get('max_drawdown_pct', 'n/a')}; "
-                f"trade_count={metrics.get('trade_count', 'n/a')}; "
-                f"score={winner.get('score', 'n/a')}"
-            ),
-            (
-                "data="
-                f"source={data_selection.get('source', 'n/a')}; "
-                f"inst_id={data_selection.get('inst_id', '')}; "
-                f"bar={data_selection.get('bar', '')}; "
-                f"candle_count={data_selection.get('candle_count', 'n/a')}"
-            ),
-            f"evidence_gates={_stable_mapping(gates)}",
-            f"gate_results={_stable_mapping(gate_results)}",
-            f"failure_reasons={', '.join(failure_reasons) if failure_reasons else 'none'}",
-            f"next_experiment={revision.get('next_experiment', '')}",
-            "boundary=research_only; no_bitpro_write; no_live_or_testnet_order",
-        ]
-    )
-
-
 def _strategy_knowledge_tags(*, strategy_key: str, winner_id: str) -> list[str]:
     tags = [
         "strategy",

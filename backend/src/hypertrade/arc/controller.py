@@ -4,7 +4,7 @@ ARC Controller Engine and State Machine
 
 import json
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -42,7 +42,7 @@ class ARCEventV1(BaseModel):
     mission_id: str
     event_type: str
     payload: dict[str, Any]
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class ARCMissionProjection(BaseModel):
@@ -61,7 +61,7 @@ class ARCMissionProjection(BaseModel):
     paper_started_at: datetime | None = None
     self_test_records: list[dict[str, Any]] = Field(default_factory=list)
     created_by: str = "operator"
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class ARCController:

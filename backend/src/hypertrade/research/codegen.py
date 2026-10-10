@@ -7,7 +7,7 @@ compile to byte-identical source or replay and idempotent reuse both break.
 
 Generated code runs inside the BitPro strategy runtime, which does not have
 `hypertrade` importable. Every indicator is therefore inlined into the emitted
-class rather than imported from `hypertrade.strategy.operators`.
+class rather than imported from external libraries.
 """
 
 from __future__ import annotations

@@ -1,5 +1,7 @@
 # 47. ARC Macro & Unstructured Event Causal Factor Engine
 
+> 已退役：其中 strategy/macro_event.py 实验模块已于 2026-10-10 删除；本文保留为历史设计，不代表当前运行能力。
+
 ## 1. Executive Summary
 
 This specification defines **Phase 6 of the ARC Production Evolution Upgrade**: the **Macro & Unstructured Event Causal Factor Engine**.
