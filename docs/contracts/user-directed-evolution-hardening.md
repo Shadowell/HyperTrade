@@ -129,3 +129,7 @@ ARC 默认使用 RemoteWindow，经 KlineDataProvider 获取 BitPro 的 market_h
 短期紧急通道必须有受控来源变体政策，保持原风险参数、完整标的、预算、冷却与Paper审核；不直接采纳或启用实盘。持久续跑和验收分别使用trigger_short_horizon / trigger_observed_7_plus_7 / trigger_7_plus_7，不伪装14日完整证据。观察设置可关闭，原长窗规则保留。
 
 代码校验默认通过研究权限POST /strategies/validate-code，沿用平台校验合同；显式注入的MCP传输仍兼容，默认不再依赖通用MCP入口的POST权限。
+
+## 自愈证据边界（2026-10-11）
+
+旧自愈参数建议不代表已验证候选。缺少不可变候选回测回执时验证失败，不借用母策略结果，不发送成功通知或启动 Paper；正常 ARC 来源变体、同窗验证与审核流程仍负责自动研发。7 维归因复用执行证据合同，汇总回测指标不能推出交易路径或因果结论；数据缺口扫描保持 unavailable，不生成伪候选。
