@@ -69,7 +69,7 @@ def test_self_healing_cta_ema_mutation() -> None:
             "regime",
         ):
             assert key in dims
-            assert dims[key]["state"] == "observed"
+            assert dims[key]["state"] == "unknown"
             assert len(dims[key]["reason"]) > 0
 
 
@@ -146,10 +146,10 @@ def test_generate_7d_attribution_report_structure() -> None:
         strategy_id="333",
     )
     assert report["schema_version"] == "paper_attribution.v1"
-    assert report["causal_conclusion"] == "established_via_self_healing"
+    assert report["causal_conclusion"] == "not_established"
     assert len(report["dimensions"]) == 7
-    assert "EMA8/25" in report["dimensions"]["entry_timing"]["reason"]
-    assert report["dimensions"]["sample_coverage"]["metrics"]["execution_count"] == 40
+    assert report["dimensions"]["entry_timing"]["state"] == "unknown"
+    assert report["dimensions"]["sample_coverage"]["metrics"] == {}
 
 
 def test_heal_bitpro_fallback() -> None:
@@ -172,13 +172,7 @@ def test_heal_bitpro_fallback() -> None:
     ):
         res = _heal_bitpro_fallback(333, snapshot, mock_ports)
 
-    assert res is not None
-    diag_patch, _ = res
-    assert diag_patch["status"] == "opportunity"
-    assert diag_patch["trigger_source"] == "self_healing_fallback"
-    assert diag_patch["candidate_id"] == "333_gen2"
-    assert diag_patch["candidate_parameters"]["fast_window"] == 8
-    assert len(diag_patch["attribution_report"]["dimensions"]) == 7
+    assert res is None
 
 
 def test_self_healing_real_bitpro_deployment_and_backtest() -> None:
@@ -252,37 +246,15 @@ def test_self_healing_real_bitpro_deployment_and_backtest() -> None:
             )
 
         assert healed is not None
-        assert healed.bitpro_deployed is True
-        assert healed.bitpro_strategy_id == 999
-        assert healed.bitpro_instance_id == "inst_999"
-        assert healed.validation_metrics["source"] == "bitpro_backtest"
-        assert healed.validation_metrics["win_rate"] == 0.64
-        assert healed.validation_metrics["sharpe_ratio"] == 1.82
-
-        # Verify calls to adapter
-        mock_adapter.backtest_start_job.assert_called_once()
-        mock_adapter.strategy_create.assert_called_once()
-        create_kwargs = mock_adapter.strategy_create.call_args.kwargs
-        assert "[合约][1H][CTA]" in create_kwargs["name"]
-        assert "自愈(Gen 2)" in create_kwargs["name"]
-        assert create_kwargs["config"]["_parent_strategy_id"] == 333
-        assert create_kwargs["config"]["_evolution_generation"] == 2
-        mock_adapter.paper_configure.assert_called_once_with(
-            strategy_id=999,
-            initial_equity=10000.0,
-            exchange="okx",
-            idempotency_key="self_heal:bitpro:333:gen2:configure",
-        )
-        mock_adapter.paper_start.assert_called_once_with(
-            strategy_id=999,
-            idempotency_key="self_heal:bitpro:333:gen2:start",
-        )
-
-        # Verify Feishu alert payload reported real deployment
-        mock_alert.assert_called_once()
-        alert_payload = mock_alert.call_args[0][0]
-        assert "BitPro 真实回测" in alert_payload.evolution_action
-        assert "已上线 BitPro 孪生模拟盘 (策略 #999)" in alert_payload.evolution_action
+        assert healed.bitpro_deployed is False
+        assert healed.validation_metrics["validation_passed"] is False
+        assert registry.get(healed.offspring_strategy_id).stage == StrategyStage.INCUBATING
+        # A parent result cannot validate a mutated child or authorize Paper.
+        mock_adapter.backtest_start_job.assert_not_called()
+        mock_adapter.strategy_create.assert_not_called()
+        mock_adapter.paper_configure.assert_not_called()
+        mock_adapter.paper_start.assert_not_called()
+        mock_alert.assert_not_called()
 
 
 def test_expanded_mutations_across_families() -> None:

@@ -210,42 +210,10 @@ def _heal_bitpro_fallback(
     snapshot: dict[str, Any],
     ports: Any,
 ) -> tuple[dict[str, Any], dict[str, Any]] | None:
-    try:
-        from hypertrade.paper.self_healing import SelfHealingEvolutionEngine
-
-        engine = SelfHealingEvolutionEngine()
-        source_params: dict[str, Any] = {}
-        strategy_name = str(snapshot.get("strategy_name") or f"BitPro Strategy #{sid}")
-        if hasattr(ports, "get_strategy_source"):
-            try:
-                src_rec = ports.get_strategy_source(str(sid))
-                source_params = dict(src_rec.config or {})
-                if src_rec.name:
-                    strategy_name = src_rec.name
-            except Exception:
-                pass
-        if not source_params:
-            source_params = dict(
-                snapshot.get("parameters") or snapshot.get("config") or {}
-            )
-
-        healed = engine.heal_bitpro_strategy(
-            sid,
-            {"name": strategy_name, "config": source_params, "parameters": source_params},
-        )
-        diag_patch = {
-            "status": "opportunity",
-            "trigger_source": "self_healing_fallback",
-            "reason": "自愈归因引擎已完成异常诊断与超参数优化，生成候选变体",
-            "candidate_id": healed.offspring_strategy_id,
-            "candidate_generation": healed.generation,
-            "candidate_parameters": healed.mutated_parameters,
-            "attribution_report": healed.attribution_report,
-        }
-        return diag_patch, healed.to_dict()
-    except Exception as exc:
-        logger.warning("Self-healing fallback failed for strategy %s: %s", sid, exc)
-        return None
+    # A missing observation window is not degradation evidence. Keep the
+    # diagnostic unavailable; the regular ARC path will resume when its own
+    # source, cost and window gates pass. Scanning must not fabricate a child.
+    return None
 
 
 class EvolutionService:

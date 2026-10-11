@@ -225,3 +225,7 @@ Single command executes all quality gates: Frontend lint, Vitest, and production
 Open-source under MIT License. See `LICENSE`.
 
 > **Disclaimer**: Nothing in this repository constitutes investment advice. Mainnet live trading is strictly forbidden by risk governance (`live_allowed=false`).
+
+## 自愈证据边界（2026-10-11）
+
+旧自愈参数建议不代表已验证候选。缺少不可变候选回测回执时验证失败，不借用母策略结果，不发送成功通知或启动 Paper；正常 ARC 来源变体、同窗验证与审核流程仍负责自动研发。7 维归因复用执行证据合同，汇总回测指标不能推出交易路径或因果结论；数据缺口扫描保持 unavailable，不生成伪候选。

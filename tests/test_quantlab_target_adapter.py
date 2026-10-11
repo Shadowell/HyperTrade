@@ -182,10 +182,8 @@ def test_ashare_7d_attribution_report() -> None:
     assert report["schema_version"] == "paper_attribution.v1"
     dims = report["dimensions"]
 
-    assert "T+1" in dims["holding_duration"]["reason"]
-    assert "单向多头" in dims["long_short"]["reason"]
-    assert "印花税" in dims["costs"]["reason"]
-    assert "沪深300" in dims["regime"]["reason"]
+    assert report["causal_conclusion"] == "not_established"
+    assert all(d["state"] == "unknown" and d["metrics"] == {} for d in dims.values())
 
 
 def test_self_healing_quantlab_strategy() -> None:

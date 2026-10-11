@@ -34,7 +34,8 @@ def test_self_healing_evolution_cycle() -> None:
         assert healed.offspring_strategy_id == "rsi_reversal_gen2"
         assert healed.generation == 2
         assert healed.registered is True
-        assert healed.feishu_delivered is True
+        assert healed.feishu_delivered is False
+        assert healed.validation_metrics["validation_passed"] is False
         assert "tighten_stop_loss_under_adverse_momentum" in healed.reflexion_constraints
 
         # Verify offspring in registry

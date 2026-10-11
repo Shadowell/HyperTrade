@@ -13,7 +13,7 @@ import logging
 import re
 import threading
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -117,210 +117,12 @@ def generate_7d_attribution_report(
     metrics: dict[str, Any] | None = None,
     strategy_id: str | int | None = None,
 ) -> dict[str, Any]:
-    """Generate full 7-dimension causal attribution report for BitPro and ARC consumers."""
-    now = datetime.now(UTC)
-    metrics = metrics or {}
-    win_rate = float(metrics.get("win_rate", 0.58))
-    trades = int(metrics.get("simulated_trades", 35))
-    sl_val = str(
-        parameters.get("hard_stop_loss_pct")
-        or parameters.get("stop_loss_pct")
-        or "0.025"
-    )
-    fast_val = parameters.get("fast_window") or parameters.get("fast_period") or 8
-    slow_val = parameters.get("slow_window") or parameters.get("slow_period") or 25
+    """Summary metrics and parameter proposals are not execution evidence."""
+    from hypertrade.arc.attribution import attribution_report
 
-    is_quantlab = (
-        (strategy_id is not None and "quantlab" in str(strategy_id))
-        or "a_share" in strategy_type.lower()
-        or "quantlab" in strategy_type.lower()
-        or "a股" in strategy_name.lower()
-        or "现货" in strategy_name.lower()
-        or "ashare" in strategy_name.lower()
-    )
-
-    if is_quantlab:
-        dimensions = {
-            "entry_timing": {
-                "state": "observed",
-                "reason": (
-                    f"A股选股滤波与动量确认，均线窗口平滑至 MA{fast_val}/{slow_val} "
-                    "以过滤震荡伪突破"
-                ),
-                "metrics": {
-                    "signal_count": trades,
-                    "filter_window": f"{fast_val}/{slow_val}",
-                    "entry_efficiency": 0.72,
-                },
-                "required_fields": ["signal_at", "entry_at", "signal_ref"],
-            },
-            "exit_timing": {
-                "state": "observed",
-                "reason": (
-                    f"T+1 保护生效，建议出场止损收紧至 {float(sl_val) * 100:.1f}% "
-                    "并叠加跟踪止盈保护回撤"
-                ),
-                "metrics": {
-                    "hard_stop_loss_pct": float(sl_val),
-                    "exit_efficiency": 0.76,
-                    "peak_pullback_pct": float(parameters.get("profit_peak_pullback_pct", 0.20)),
-                },
-                "required_fields": ["gross_pnl", "mfe_pnl", "path_ref", "path_complete"],
-            },
-            "costs": {
-                "state": "observed",
-                "reason": "A 股摩擦成本：印花税单边 0.05% + 经手过户费与万 2.5 佣金，处于可控区间",
-                "metrics": {
-                    "fee_sample_count": trades,
-                    "estimated_fee_rate": 0.0008,
-                    "avg_slippage_bps": float(metrics.get("avg_slippage_bps", 1.8)),
-                },
-                "required_fields": ["gross_pnl", "net_pnl", "fees", "slippage"],
-            },
-            "long_short": {
-                "state": "observed",
-                "reason": (
-                    f"A 股现货单向多头与现金比例管理，胜率 {win_rate * 100:.1f}%，"
-                    "无违规裸卖空"
-                ),
-                "metrics": {
-                    "win_rate": win_rate,
-                    "long_ratio": 1.0,
-                    "short_ratio": 0.0,
-                },
-                "required_fields": ["side", "net_pnl"],
-            },
-            "holding_duration": {
-                "state": "observed",
-                "reason": "持仓周期满足 T+1 约束（平均持仓 2.8 交易日），无违规日内回转",
-                "metrics": {
-                    "avg_holding_days": 2.8,
-                    "median_holding_days": 2.0,
-                },
-                "required_fields": ["entry_at", "exit_at"],
-            },
-            "sample_coverage": {
-                "state": "observed",
-                "reason": f"已覆盖最近 14 交易日完整运行周期与有效交易样本 ({trades} 笔)",
-                "metrics": {
-                    "execution_count": trades,
-                    "trading_days_count": 14,
-                    "coverage_ratio": 1.0,
-                },
-                "required_fields": [
-                    "coverage.pagination_complete",
-                    "coverage.record_count",
-                    "source_ref",
-                ],
-            },
-            "regime": {
-                "state": "observed",
-                "reason": "标的对标沪深300/中证500基准，市态处于结构性震荡轮动期",
-                "metrics": {
-                    "market_regime": "STRUCTURAL_ROTATION",
-                    "benchmark": "000300.SH",
-                },
-                "required_fields": ["regime", "regime_ref", "regime_method"],
-            },
-        }
-    else:
-        dimensions = {
-            "entry_timing": {
-                "state": "observed",
-                "reason": (
-                    f"入场滤波偏弱，已建议平滑均线窗口至 EMA{fast_val}/{slow_val} "
-                    "以过滤震荡伪突破"
-                ),
-                "metrics": {
-                    "signal_count": trades,
-                    "filter_window": f"{fast_val}/{slow_val}",
-                    "entry_efficiency": 0.68,
-                },
-                "required_fields": ["signal_at", "entry_at", "signal_ref"],
-            },
-            "exit_timing": {
-                "state": "observed",
-                "reason": (
-                    f"出场硬止损偏宽，建议收紧至 {float(sl_val) * 100:.1f}% "
-                    "并叠加跟踪止盈保护回撤"
-                ),
-                "metrics": {
-                    "hard_stop_loss_pct": float(sl_val),
-                    "exit_efficiency": 0.74,
-                    "peak_pullback_pct": float(parameters.get("profit_peak_pullback_pct", 0.22)),
-                },
-                "required_fields": ["gross_pnl", "mfe_pnl", "path_ref", "path_complete"],
-            },
-            "costs": {
-                "state": "observed",
-                "reason": "费率与滑点损耗处于可控区间 (约 0.08%)，无异常滑点冲击",
-                "metrics": {
-                    "fee_sample_count": trades,
-                    "estimated_fee_rate": 0.0005,
-                    "avg_slippage_bps": float(metrics.get("avg_slippage_bps", 2.1)),
-                },
-                "required_fields": ["gross_pnl", "net_pnl", "fees", "slippage", "funding"],
-            },
-            "long_short": {
-                "state": "observed",
-                "reason": (
-                    f"多空执行对称均衡，多头胜率 {win_rate * 100:.1f}%，"
-                    "无单边方向性倾斜风险"
-                ),
-                "metrics": {
-                    "win_rate": win_rate,
-                    "long_ratio": 0.52,
-                    "short_ratio": 0.48,
-                },
-                "required_fields": ["side", "net_pnl"],
-            },
-            "holding_duration": {
-                "state": "observed",
-                "reason": "平均持仓约 3.2 小时，贴合 1H 趋势波段周期",
-                "metrics": {
-                    "avg_holding_hours": 3.2,
-                    "median_holding_hours": 2.5,
-                },
-                "required_fields": ["entry_at", "exit_at"],
-            },
-            "sample_coverage": {
-                "state": "observed",
-                "reason": f"已覆盖最近 14 天完整运行周期与有效交易样本 ({trades} 笔)",
-                "metrics": {
-                    "execution_count": trades,
-                    "equity_sample_count": 168,
-                    "coverage_ratio": 1.0,
-                },
-                "required_fields": [
-                    "coverage.pagination_complete",
-                    "coverage.record_count",
-                    "source_ref",
-                ],
-            },
-            "regime": {
-                "state": "observed",
-                "reason": "近期市场处于高波动宽幅震荡周期，动量均线加速衰减",
-                "metrics": {
-                    "market_regime": "HIGH_VOLATILITY_CHOP",
-                    "regime_weight": 0.85,
-                },
-                "required_fields": ["regime", "regime_ref", "regime_method"],
-            },
-        }
-
-    return {
-        "schema_version": "paper_attribution.v1",
-        "semantics": "descriptive_execution_coverage_only",
-        "causal_conclusion": "established_via_self_healing",
-        "scope": {
-            "strategy_id": str(strategy_id) if strategy_id is not None else None,
-            "strategy_name": strategy_name,
-            "strategy_type": strategy_type,
-            "start_at": (now - timedelta(days=14)).isoformat(),
-            "end_at": now.isoformat(),
-        },
-        "dimensions": dimensions,
-    }
+    report = attribution_report({"strategy_id": strategy_id}, datetime.now(UTC))
+    report["scope"].update(strategy_name=strategy_name, strategy_type=strategy_type)
+    return report
 
 
 def mutate_strategy_parameters(
@@ -649,7 +451,6 @@ class SelfHealingEvolutionEngine:
         target_id: str = "bitpro",
     ) -> dict[str, Any]:
         """Validate offspring; QuantLab must produce a real, completed backtest receipt."""
-        now = datetime.now(UTC)
         sid_str = str(strategy_id)
         is_quantlab = target_id == "quantlab"
 
@@ -716,68 +517,15 @@ class SelfHealingEvolutionEngine:
                 "simulated_trades": 0,
             }
 
-        elif self._bitpro_adapter is not None:
-            try:
-                if sid_str.isdigit():
-                    sid_int = int(sid_str)
-                    start_date = (now - timedelta(days=30)).strftime("%Y-%m-%d")
-                    end_date = now.strftime("%Y-%m-%d")
-                    symbol = symbols[0] if symbols else None
-                    if hasattr(self._bitpro_adapter, "backtest_start_job"):
-                        bt_resp = self._bitpro_adapter.backtest_start_job(
-                            strategy_id=sid_int,
-                            start_date=start_date,
-                            end_date=end_date,
-                            symbol=symbol,
-                            timeframe=timeframe,
-                            wait_for_result=True,
-                            timeout_sec=30.0,
-                        )
-                        bt_result = bt_resp.get("result") or bt_resp.get("backtest") or {}
-                        if bt_result:
-                            raw_wr = bt_result.get("win_rate") or bt_result.get("win_rate_pct")
-                            win_rate = float(raw_wr or 0.0)
-                            if win_rate > 1.0:
-                                win_rate = win_rate / 100.0
-                            raw_trades = (
-                                bt_result.get("total_trades") or bt_result.get("trade_count")
-                            )
-                            trades = int(raw_trades or 0)
-                            profit_factor = float(bt_result.get("profit_factor") or 1.0)
-                            sharpe = float(bt_result.get("sharpe_ratio") or 0.0)
-                            raw_dd = (
-                                bt_result.get("max_drawdown")
-                                or bt_result.get("max_drawdown_pct")
-                            )
-                            max_dd = float(raw_dd or 0.0)
-                            if max_dd > 1.0:
-                                max_dd = max_dd / 100.0
-
-                            passed = win_rate >= 0.40 and (profit_factor >= 1.0 or sharpe >= 0.5)
-                            return {
-                                "win_rate": round(win_rate, 4),
-                                "profit_factor": round(profit_factor, 2),
-                                "sharpe_ratio": round(sharpe, 2),
-                                "max_drawdown_pct": round(max_dd, 4),
-                                "simulated_trades": trades,
-                                "validation_passed": passed,
-                                "source": "bitpro_backtest",
-                                "backtest_id": bt_result.get("id") or bt_resp.get("job_id"),
-                            }
-            except Exception as exc:
-                logger.info(
-                    "BitPro backtest validation skipped or failed: %s; using projection",
-                    exc,
-                )
-
+        # This legacy path knows a parent ID and a parameter proposal, not an
+        # immutable candidate receipt. The ARC pipeline owns candidate creation,
+        # same-window backtests, review and Paper admission. Never borrow the
+        # parent's backtest or promote a heuristic projection as that evidence.
         return {
-            "win_rate": 0.58,
-            "profit_factor": 1.62,
-            "sharpe_ratio": 1.48,
-            "max_drawdown_pct": 0.035,
-            "simulated_trades": 45,
-            "validation_passed": True,
-            "source": "heuristic_projection",
+            "validation_passed": False,
+            "source": "bitpro_candidate_backtest_unavailable",
+            "reason": "immutable_candidate_backtest_required",
+            "simulated_trades": 0,
         }
 
     def _deploy_offspring_to_bitpro(
@@ -1131,7 +879,7 @@ class SelfHealingEvolutionEngine:
             or "bitpro"
         )
 
-        # Robustness validation (real backtest via platform adapter if available, else projection)
+        # Only verified candidate results may authorize execution.
         validation_metrics = self._validate_offspring(
             strategy_id=record.strategy_id,
             strategy_type=record.strategy_type,
@@ -1211,56 +959,57 @@ class SelfHealingEvolutionEngine:
 
         # Dispatch Feishu Reflexion notification
         feishu_ok = False
-        try:
-            win_pct = f"{validation_metrics['win_rate'] * 100:.1f}%"
-            sharpe_val = f"{validation_metrics['sharpe_ratio']:.2f}"
-            val_source = validation_metrics.get("source", "heuristic_projection")
-            source_desc = "回测验证"
-            if val_source == "bitpro_backtest":
-                source_desc = "BitPro 真实回测"
-            elif val_source == "quantlab_backtest":
-                source_desc = "QuantLab 真实回测"
+        if execution_verified:
+            try:
+                win_pct = f"{validation_metrics['win_rate'] * 100:.1f}%"
+                sharpe_val = f"{validation_metrics['sharpe_ratio']:.2f}"
+                val_source = validation_metrics.get("source", "unknown")
+                source_desc = "回测验证"
+                if val_source == "bitpro_backtest":
+                    source_desc = "BitPro 真实回测"
+                elif val_source == "quantlab_backtest":
+                    source_desc = "QuantLab 真实回测"
 
-            if quantlab_deployed and quantlab_sid:
-                deploy_desc = f"已上线 QuantLab 孪生模拟盘 (策略 {quantlab_sid})"
-            elif bitpro_deployed and bitpro_sid:
-                deploy_desc = f"已上线 BitPro 孪生模拟盘 (策略 #{bitpro_sid})"
-            else:
-                deploy_desc = "尚未取得经验证的模拟盘启动回执，保留在孵化阶段"
+                if quantlab_deployed and quantlab_sid:
+                    deploy_desc = f"已上线 QuantLab 孪生模拟盘 (策略 {quantlab_sid})"
+                elif bitpro_deployed and bitpro_sid:
+                    deploy_desc = f"已上线 BitPro 孪生模拟盘 (策略 #{bitpro_sid})"
+                else:
+                    deploy_desc = "尚未取得经验证的模拟盘启动回执，保留在孵化阶段"
 
-            evolution_action = (
-                f"策略自愈进化成功：原策略 [{record.strategy_id}] 触发降级熔断，"
-                f"自愈突变体 [{offspring_id}] (Gen {next_gen}) 已通过{source_desc}"
-                f"（胜率 {win_pct}, 夏普 {sharpe_val}），"
-                f"{deploy_desc}。"
-            )
+                evolution_action = (
+                    f"策略自愈进化成功：原策略 [{record.strategy_id}] 触发降级熔断，"
+                    f"自愈突变体 [{offspring_id}] (Gen {next_gen}) 已通过{source_desc}"
+                    f"（胜率 {win_pct}, 夏普 {sharpe_val}），"
+                    f"{deploy_desc}。"
+                )
 
-            alert = ReflexionAlertPayload(
-                strategy_id=offspring_id,
-                strategy_name=offspring_record.name,
-                strategy_family=record.strategy_type,
-                failure_class="SELF_HEALING_EVOLUTION_COMPLETED",
-                severity="info",
-                trigger_source="self_healing_evolution",
-                observed_metrics=validation_metrics,
-                regime_attribution=[
-                    {
-                        "regime": "HIGH_VOLATILITY_CHOP",
-                        "weight": 0.85,
-                        "causal_factor": (
-                            f"Parent {record.strategy_id} degraded; healed in Gen {next_gen}"
-                        ),
-                    }
-                ],
-                negative_constraints=combined_constraints,
-                evolution_action=evolution_action,
-                candidate_id=offspring_id,
-                next_candidate_id=offspring_id,
-            )
-            delivered, _ = dispatch_reflexion_alert(alert)
-            feishu_ok = delivered
-        except Exception as exc:
-            logger.error("Failed to dispatch Feishu self-healing card: %s", exc)
+                alert = ReflexionAlertPayload(
+                    strategy_id=offspring_id,
+                    strategy_name=offspring_record.name,
+                    strategy_family=record.strategy_type,
+                    failure_class="SELF_HEALING_EVOLUTION_COMPLETED",
+                    severity="info",
+                    trigger_source="self_healing_evolution",
+                    observed_metrics=validation_metrics,
+                    regime_attribution=[
+                        {
+                            "regime": "HIGH_VOLATILITY_CHOP",
+                            "weight": 0.85,
+                            "causal_factor": (
+                                f"Parent {record.strategy_id} degraded; healed in Gen {next_gen}"
+                            ),
+                        }
+                    ],
+                    negative_constraints=combined_constraints,
+                    evolution_action=evolution_action,
+                    candidate_id=offspring_id,
+                    next_candidate_id=offspring_id,
+                )
+                delivered, _ = dispatch_reflexion_alert(alert)
+                feishu_ok = delivered
+            except Exception as exc:
+                logger.error("Failed to dispatch Feishu self-healing card: %s", exc)
 
         healed = HealedOffspring(
             parent_strategy_id=record.strategy_id,

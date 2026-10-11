@@ -1209,3 +1209,7 @@ Phase 2 读取切片要求 sessions 日历提供前一交易日收盘基准与�
 
 高置信度候选策略免审直通 Paper（2026-10-09）：新增 `EvolutionConfig.auto_approve_paper: bool = False` 配置。当启用 `auto_approve_paper=True` 时，若候选策略通过确定性安全门禁，且在回测沙箱中夏普比率、最大回撤、净收益率等核心指标均显著优于基线（`verify_significantly_better_than_baseline` 成立且 Pareto 占优），系统自动执行审批（`decide_paper_review`）并直接开通 Paper 模拟盘进入 `paper_observing` 观察阶段，无需人工逐一点击审批，避免名额长期卡死；未显著超越基线的候选策略则安全保留在人工审核队列中。
 
+
+## 自愈证据边界（2026-10-11）
+
+旧自愈参数建议不代表已验证候选。缺少不可变候选回测回执时验证失败，不借用母策略结果，不发送成功通知或启动 Paper；正常 ARC 来源变体、同窗验证与审核流程仍负责自动研发。7 维归因复用执行证据合同，汇总回测指标不能推出交易路径或因果结论；数据缺口扫描保持 unavailable，不生成伪候选。
