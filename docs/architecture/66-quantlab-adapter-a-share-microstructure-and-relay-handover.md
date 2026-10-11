@@ -51,7 +51,7 @@ flowchart TB
     RuleValidator["AShareRuleValidator 动态验证器<br/>T+1 状态机 · 费率与滑点审计 · 100 股向下取整"]
     NettingService["PositionNettingRelayService (净额对冲)<br/>母子交集保留 min(P, C) · 差额 Δ=C-P · 节省换手 >80%"]
     RelaySlicer["RelayHandoverSlice (平滑分批执行)<br/>K 期切片 · 涨跌停保护 · 签名凭据 plan_sha256"]
-    RaceJudge["RaceJudgeDaemon (赛马裁判)<br/>adopt 判定 → 自动初始化净额计划 → draining 步进"]
+    RaceJudge["RaceJudgeDaemon (赛马裁判)<br/>只读镜像目标接力状态 → 里程碑通知（不再自动 adopt）"]
     
     Deployer --> RuleValidator
     RaceJudge --> NettingService --> RelaySlicer --> RuleValidator
@@ -136,3 +136,6 @@ $$\Delta_i = C_{i, \text{challenger}} - P_{i, \text{parent}}$$
    - `tests/test_a_share_microstructure_rules.py`（9 项微观规则与 T+1 状态机测试）；
    - `tests/test_position_netting_relay.py`（6 项净额换仓与赛马联动测试）；
    - `tests/test_quantlab_console_endpoints.py`（控制台接口全闭环测试）。
+
+
+> 2026-10-11 更新：赛马裁判不再调用目标的 `adopt` / `enable_auto`，也不再以示例持仓兜底生成净额计划；净额换仓服务只在目标提供真实持仓的交接计划时使用。BitPro 合约接力由 BitPro 自身的减仓状态机完成。

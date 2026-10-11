@@ -79,6 +79,8 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
         "method": "GET",
         "path": "/strategies/{parent_id}/relay-control",
     },
+    # BitPro's persisted relay plans: the authoritative list of live races.
+    "paper_relay_plans": {"method": "GET", "path": "/strategies/relay-plans"},
 }
 
 RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
@@ -1193,6 +1195,14 @@ class BitProToolAdapter:
         if challenger_id is not None:
             params["challenger_id"] = challenger_id
         return _ensure_dict(self._call("paper_relay_status", params))
+
+    def paper_relay_plans(self) -> list[dict[str, Any]]:
+        """Read-only list of BitPro relay plans (any state)."""
+        self.last_tool_calls = []
+        result = self._call("paper_relay_plans", {})
+        if not isinstance(result, list):
+            return []
+        return [plan for plan in result if isinstance(plan, dict)]
 
     def paper_relay_control(
         self,

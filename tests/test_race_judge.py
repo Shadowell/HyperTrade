@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from hypertrade.bitpro.mcp import BitProMcpError, BitProToolAdapter
+from hypertrade.bitpro.mcp import BitProToolAdapter
 from hypertrade.paper.race_judge import (
     RaceJudgeDaemon,
     RacePairRecord,
@@ -80,8 +80,8 @@ def test_build_race_feishu_card() -> None:
         assert card["msg_type"] == "interactive"
         assert card["card"]["header"]["template"] == expected_color
         btn = card["card"]["elements"][2]["actions"][0]
-        assert "strategy_id=1" in btn["url"]
-        assert "challenger_id=2" in btn["url"]
+        assert "strategyId=1" in btn["url"]
+        assert "challengerId=2" in btn["url"]
 
 
 def test_dispatch_race_feishu_card_skipped_no_webhook() -> None:
@@ -237,17 +237,16 @@ def test_evaluate_pair_observing_accumulating(tmp_path: Path) -> None:
     assert "不足" in rec.reason
 
 
-def test_evaluate_pair_eligible_and_auto_adopted(tmp_path: Path) -> None:
-    mock_adapter = MagicMock(spec=BitProToolAdapter)
-    proof_sha = "e" * 64
-    mock_adapter.paper_relay_status.return_value = {
+def _eligible_status(proof_sha: str, *, auto_enabled: bool) -> dict:
+    return {
         "plan": {
             "parent_id": 1,
             "challenger_id": 2,
             "state": "observing",
-            "auto_enabled": True,
+            "auto_enabled": auto_enabled,
             "generation": 2,
         },
+        "auto_enabled": auto_enabled,
         "proof": {
             "eligible": True,
             "reason": "前向门禁通过",
@@ -260,12 +259,15 @@ def test_evaluate_pair_eligible_and_auto_adopted(tmp_path: Path) -> None:
             "sign_test_p": 0.015,
         },
     }
-    mock_adapter.paper_relay_control.return_value = {"status": "ok"}
 
-    state_file = tmp_path / "state.json"
+
+def test_eligible_race_is_announced_never_adopted_by_judge(tmp_path: Path) -> None:
+    """BitPro is the only relay controller: even auto_adopt=True never writes."""
+    mock_adapter = MagicMock(spec=BitProToolAdapter)
+    mock_adapter.paper_relay_status.return_value = _eligible_status("e" * 64, auto_enabled=True)
     daemon = RaceJudgeDaemon(
         bitpro_adapter=mock_adapter,
-        state_file=state_file,
+        state_file=tmp_path / "state.json",
         auto_adopt=True,
     )
 
@@ -273,63 +275,65 @@ def test_evaluate_pair_eligible_and_auto_adopted(tmp_path: Path) -> None:
         mock_dispatch.return_value = (True, "sent_interactive_card")
         rec = daemon.evaluate_pair(1, 2, generation=2)
 
-        assert rec.eligible is True
-        assert rec.state == "draining"
-        assert rec.action_taken == "adopted"
-        mock_adapter.paper_relay_control.assert_called_with(
-            parent_id=1,
-            action="adopt",
-            challenger_id=2,
-            proof_sha256=proof_sha,
-        )
-        mock_dispatch.assert_called_once()
-        assert "ADOPTED" in rec.feishu_notified_states
+    assert rec.eligible is True
+    assert rec.state == "observing"
+    assert rec.action_taken is None
+    assert rec.handover_plan_id is None
+    mock_adapter.paper_relay_control.assert_not_called()
+    assert "ELIGIBLE" in rec.feishu_notified_states
 
 
-def test_evaluate_pair_requires_admin_authorization(tmp_path: Path) -> None:
+def test_operator_disabled_auto_gets_admin_prompt_not_adoption(tmp_path: Path) -> None:
     mock_adapter = MagicMock(spec=BitProToolAdapter)
-    proof_sha = "f" * 64
+    mock_adapter.paper_relay_status.return_value = _eligible_status("f" * 64, auto_enabled=False)
+    daemon = RaceJudgeDaemon(
+        bitpro_adapter=mock_adapter,
+        state_file=tmp_path / "state.json",
+        auto_adopt=True,
+    )
+
+    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as mock_dispatch:
+        mock_dispatch.return_value = (True, "sent_interactive_card")
+        rec = daemon.evaluate_pair(1, 2, generation=2)
+
+    assert rec.requires_admin_authorization is True
+    mock_adapter.paper_relay_control.assert_not_called()
+    mock_dispatch.assert_called_once()
+    assert "REQUIRES_ADMIN" in rec.feishu_notified_states
+
+
+def test_unknown_evidence_is_not_rendered_as_zero(tmp_path: Path) -> None:
+    mock_adapter = MagicMock(spec=BitProToolAdapter)
     mock_adapter.paper_relay_status.return_value = {
-        "plan": {
-            "parent_id": 1,
-            "challenger_id": 2,
-            "state": "observing",
-            "auto_enabled": True,
-            "generation": 2,
-        },
+        "plan": {"parent_id": 1, "challenger_id": 2, "state": "observing", "generation": 2},
         "proof": {
-            "eligible": True,
-            "reason": "前向门禁通过",
-            "proof_sha256": proof_sha,
-            "observed_points": 337,
-            "net_return_pct": [2.0, 7.0],
-            "observed_drawdown_pct": [5.0, 3.0],
-            "excess_return_pct": 5.0,
-            "closed_fills": [30, 32],
-            "sign_test_p": 0.02,
+            "eligible": False,
+            "reason": "等待完整前向证据",
+            "progress": {"paired_points": 40},
         },
     }
-    # Simulate BitPro returning 403 because token is not admin
-    mock_adapter.paper_relay_control.side_effect = BitProMcpError(
-        "接力及自动托管需要管理员明确授权", status_code=403
-    )
+    daemon = RaceJudgeDaemon(bitpro_adapter=mock_adapter, state_file=tmp_path / "state.json")
+    rec = daemon.evaluate_pair(1, 2, generation=2)
+    assert rec.observed_hours == 40
+    assert rec.parent_net_return_pct is None and rec.excess_return_pct is None
+    card = build_race_feishu_card(rec, "ELIGIBLE")
+    text = card["card"]["elements"][0]["text"]["content"]
+    assert "未知" in text and "+0.00%" not in text
 
-    state_file = tmp_path / "state.json"
+
+def test_discovery_reads_live_bitpro_relay_plans(tmp_path: Path) -> None:
+    mock_adapter = MagicMock(spec=BitProToolAdapter)
+    mock_adapter.paper_relay_plans.return_value = [
+        {"parent_id": 7, "challenger_id": 8, "state": "observing", "generation": 3},
+        {"parent_id": 9, "challenger_id": 10, "state": "completed", "generation": 2},
+        {"parent_id": 11, "challenger_id": 12, "state": "cancelled", "generation": 2},
+    ]
     daemon = RaceJudgeDaemon(
         bitpro_adapter=mock_adapter,
-        state_file=state_file,
-        auto_adopt=True,
+        state_file=tmp_path / "state.json",
+        history_file=tmp_path / "missing-history.json",
     )
-
-    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as mock_dispatch:
-        mock_dispatch.return_value = (True, "sent_interactive_card")
-        rec = daemon.evaluate_pair(1, 2, generation=2)
-
-        assert rec.eligible is True
-        assert rec.requires_admin_authorization is True
-        assert rec.action_taken == "needs_admin_approval"
-        mock_dispatch.assert_called_once()
-        assert "REQUIRES_ADMIN" in rec.feishu_notified_states
+    assert daemon.discover_active_pairs() == [("bitpro", 7, 8, 3)]
 
 
 def test_evaluate_pair_completed_lifecycle(tmp_path: Path) -> None:
