@@ -9,7 +9,7 @@ import json
 import os
 import subprocess
 import tempfile
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 ALIAS = "host.docker.internal"
@@ -73,7 +73,7 @@ def main():
     if not (args.repair_running or args.check_running):
         print(gateway)
         return
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")  # noqa: UP017
     for container in ("hypertrade-api", "hypertrade-worker"):
         content = subprocess.check_output(
             ["docker", "exec", container, "cat", "/etc/hosts"], text=True

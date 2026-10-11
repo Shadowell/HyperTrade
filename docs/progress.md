@@ -1,3 +1,7 @@
+## 部署宿主 Python 兼容修复（2026-10-11）
+
+- 首次 #41 部署在容器切换前被宿主 Python 3.10 拒绝：格式检查将 `timezone.utc` 自动改为3.11才支持的 `datetime.UTC`。恢复宿主兼容写法并显式排除该升级规则；旧服务保持运行，未执行任务收敛。部署脚本与容器应用的 Python 版本边界必须分别验证。
+
 ## 自进化线上阻塞修复（2026-10-11）
 
 - API/worker 的 hosts 实际出现 `invalid IP`；读取真实 Docker 网关后原地修复，认证健康均通过，未重启 Paper。原 hosts 已备份到 `/opt/hypertrade/data/backups/*-hosts-20261011T045355765255Z.txt`。部署脚本持久生成网关并验证两容器连接。
