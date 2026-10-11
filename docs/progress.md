@@ -1,3 +1,8 @@
+## BitPro 接力单一控制与自进化集成修复（2026-10-11）
+
+- 赛马裁判改为只读通知：不再自动采纳/开启 BitPro 托管，删除硬编码 A 股持仓的伪造交接计划，未知证据保持未知；赛马对来自 BitPro 接力计划。ARC 扫描遵守 BitPro `research-variant-policy.relay`，跳过赛马中/减仓中的策略并记录 `relay_in_progress`。自动评审不再被单个 block 任务队头阻塞，基线比较缺指标或缺窗口不通过；已确认告警短暂消失后不重复推送；旧自愈引擎默认关闭。
+- 验证：定向 130 项（race_judge / auto_review / evolution_alerts / arc_evolution / self_healing）通过；`ruff check`、`mypy backend/src` 通过；完整 pytest 结果见交付说明。依赖 BitPro 同日接力生命周期补强（`relay` 字段、`relay-plans` 读取）。
+
 ## 逐策略扫描原始失败回执（2026-10-11）
 
 - 完整preview扫描结束，但7条快照读取失败被通用就绪提示覆盖，丢失根因。补充`evolution.read`持久错误回执及诊断`error_message/error_id`，业务就绪门禁保持不变；46项定向回归及完整check（2129项后端、15项前端、ruff/mypy/build）通过。
