@@ -7,7 +7,8 @@ from hypertrade.config import Settings
 def test_docker_compose_maps_host_gateway_for_bitpro_mcp() -> None:
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
 
-    assert compose.count("host.docker.internal:host-gateway") >= 2
+    mapping = "host.docker.internal:${BITPRO_DOCKER_HOST_GATEWAY:-host-gateway}"
+    assert compose.count(mapping) >= 2
     for service in ("api", "worker"):
         match = re.search(
             rf"(?ms)^  {service}:\n(?P<section>.*?)(?=^  [a-zA-Z0-9_-]+:\n|^networks:|\Z)",
@@ -16,7 +17,10 @@ def test_docker_compose_maps_host_gateway_for_bitpro_mcp() -> None:
         assert match is not None
         section = match.group("section")
         assert "extra_hosts:" in section
-        assert "host.docker.internal:host-gateway" in section
+        assert mapping in section
+    deploy = Path("deploy/deploy.sh").read_text()
+    assert deploy.index("--write-env") < deploy.index("docker compose run --rm api")
+    assert deploy.index("docker compose up -d sandbox api worker") < deploy.index("--check-running")
 
 
 def test_production_trigger_feature_is_disabled_by_default() -> None:

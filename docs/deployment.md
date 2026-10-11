@@ -1,5 +1,7 @@
 # HyperTrade Deployment
 
+BitPro 主机路由由 `deploy/bitpro_host_route.py` 读取实际 Docker 网关后写入专用环境变量，Compose 显式注入地址；应用启动后必须通过 API/worker 的认证健康探测。仅修复运行容器时使用 `--repair-running`，先备份 hosts，不重启 Paper。
+
 ## Summary
 
 HyperTrade deploys to one Linux server with host Nginx, Docker Compose app services, PostgreSQL/pgvector, and a GitHub Actions self-hosted runner labeled `hypertrade-production`.

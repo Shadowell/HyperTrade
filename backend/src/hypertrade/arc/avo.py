@@ -258,6 +258,36 @@ def reduce_avo_event(projection: ARCMissionProjection, event: ARCEventV1) -> Non
         )
         goal.budget.tool_calls_used += 1
         state["pending"] = {"kind": "tool", **payload}
+    elif kind == "avo_effect_reconciled":
+        # Operator-only audited settlement; never a retry or a successful backtest.
+        pending = state.get("pending") or {}
+        if projection.state != "needs_operator" or pending.get("name") != "develop":
+            raise ValueError("only blocked development effects can be reconciled")
+        if payload.get("pending_sha256") != hashlib.sha256(_json(pending).encode()).hexdigest():
+            raise ValueError("pending effect changed since audit")
+        receipt = payload.get("receipt") or {}
+        if (
+            receipt.get("mission_id") != projection.mission_id
+            or receipt.get("tool_call_id") != pending.get("id")
+            or receipt.get("attempt_id") != (pending.get("arguments") or {}).get("attempt_id")
+            or receipt.get("outcome") not in {"rejected_before_creation", "failed", "interrupted"}
+            or receipt.get("active_jobs") != []
+            or not receipt.get("external_evidence")
+        ):
+            raise ValueError("incomplete external effect reconciliation receipt")
+        attempt = next(
+            (a for a in projection.attempts if a.attempt_id == receipt["attempt_id"]), None
+        )
+        if (
+            attempt is None
+            or receipt.get("code_sha256")
+            != hashlib.sha256(attempt.strategy_code.encode()).hexdigest()
+        ):
+            raise ValueError("reconciliation attempt code mismatch")
+        state["effect_reconciliation"] = dict(payload)
+        state["pending"] = None
+        state["awaiting"] = []
+        projection.state = "failed"
     elif kind == "avo_tool_finished":
         if (state.get("pending") or {}).get("id") != payload["id"]:
             raise ValueError("AVO tool receipt does not match its request")
@@ -458,6 +488,13 @@ def _perform(
                     break
             if not diff_found:
                 raise ValueError("parameter optimization must change at least one source parameter")
+            # The remote variant contract rejects each unchanged key, even when
+            # another key changes. Reject before creating an external effect.
+            if any(
+                current_params.get(key, auth_params[key].get("current_value")) == value
+                for key, value in param_changes.items()
+            ):
+                raise ValueError("parameter_changes must omit unchanged source parameters")
             parent_manifest_sha256 = variant_policy["parent_manifest_sha256"]
             parent_execution_identity_sha256 = variant_policy.get(
                 "parent_execution_identity_sha256"

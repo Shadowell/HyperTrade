@@ -20,6 +20,21 @@ from hypertrade.arc.store import reset_store, save_mission
 from hypertrade.providers.chat import ChatResponse, ToolCallRequest
 
 
+def test_mixed_changed_and_unchanged_parameters_rejected_before_effect(source_variant_mission):
+    from hypertrade.arc.avo import _perform
+
+    with pytest.raises(ValueError, match="omit unchanged"):
+        _perform(
+            source_variant_mission,
+            "propose",
+            {
+                "hypothesis": "mixed change",
+                "parameter_changes": {"fast_window": 10, "slow_window": 40},
+            },
+            ARCSelfTestService(),
+        )
+
+
 @pytest.fixture
 def source_variant_mission():
     reset_store()

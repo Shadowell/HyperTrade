@@ -26,7 +26,7 @@ services:
     env_file:
       - .env
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:${BITPRO_DOCKER_HOST_GATEWAY:-host-gateway}"
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hypertrade}:${POSTGRES_PASSWORD:-hypertrade}@postgres:5432/${POSTGRES_DB:-hypertrade}
       # The server-local file is mounted as a read-only Compose secret. An
@@ -60,7 +60,7 @@ services:
     env_file:
       - .env
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:${BITPRO_DOCKER_HOST_GATEWAY:-host-gateway}"
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hypertrade}:${POSTGRES_PASSWORD:-hypertrade}@postgres:5432/${POSTGRES_DB:-hypertrade}
       # Background Agent work uses the same read-only provider credential as
