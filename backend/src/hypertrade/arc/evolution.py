@@ -902,6 +902,19 @@ class EvolutionService:
                     chosen = context
             except Exception as exc:
                 diagnostic.update(status="unavailable", reason=failure_text(exc))
+                failure = record_runtime_error(
+                    "evolution.read",
+                    exc,
+                    context={
+                        "strategy_id": sid,
+                        "target_id": config.target_id,
+                        "snapshot_read": snapshot_read,
+                    },
+                    db=self.db,
+                )
+                # Readiness describes the next action, not the original cause.
+                # Keep both when a generic readiness message replaces `reason`.
+                diagnostic.update(error_message=failure["message"], error_id=failure["error_id"])
                 # Explain current sampling separately; never fill the missing historical window.
                 identified = (
                     snapshot

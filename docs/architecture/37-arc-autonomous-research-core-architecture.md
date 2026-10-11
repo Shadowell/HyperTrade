@@ -1,5 +1,7 @@
 # 37 ARC (Autonomous Research Core) 自主进化控制内核架构设计
 
+逐策略扫描读取异常通过 `evolution.read` 写入既有 `ArcRuntimeError` 去重账本，保留策略/目标/快照阶段；诊断返回脱敏原始消息与错误ID，通用就绪提示不能抹去根因。
+
 未知开发副作用采用单事件 `avo_effect_reconciled`：在研究锁和持久化行锁下校验 pending 摘要、任务/工具/attempt/源码与外部终态回执，原子清除 pending 并置 failed。历史、候选与 Paper 不变；失败仍遵守现有冷却期。事件不可被模型工具调用。
 
 > 文档性质：核心架构规范、技术设计与组件接口指南。

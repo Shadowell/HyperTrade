@@ -253,6 +253,14 @@ def test_snapshot_read_failure_does_not_claim_session_fields_missing(service):
     row = diagnostics[0]
     assert row["data_readiness"]["sampling"]["reason_code"] == "recent_read_unavailable"
     assert {b["code"] for b in row["continuation"]["blockers"]} == {"evidence_recheck"}
+    assert row["error_message"] == "temporary upstream failure"
+    assert row["error_id"]
+    from hypertrade.arc.evolution_models import ArcRuntimeError
+
+    with service.db.session() as session:
+        receipt = session.get(ArcRuntimeError, row["error_id"])
+        assert receipt.message == "temporary upstream failure"
+        assert receipt.context_json["strategy_id"] == 44
 
 
 def test_returned_snapshot_with_missing_fields_keeps_identity_blockers(service):
