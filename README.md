@@ -1,5 +1,7 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
+部署从实际 Docker network 获取 BitPro 主机网关，并验证 API/worker 的 DNS 与认证健康请求。未知开发副作用只能凭精确外部对账回执收敛失败，不能盲目重试或宣称成功。
+
 <p align="center">
   <strong>自托管、受治理的多市场策略研究 Agent Runtime · 自主研究与自主进化闭环</strong>
 </p>

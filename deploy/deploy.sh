@@ -51,12 +51,14 @@ PY
 
 echo "[deploy] starting postgres"
 docker compose up -d postgres
+python3 "$ROOT_DIR/deploy/bitpro_host_route.py" --write-env "$ROOT_DIR/.env"
 
 echo "[deploy] running database migrations"
 docker compose run --rm api alembic upgrade head
 
 echo "[deploy] starting app services"
 docker compose up -d sandbox api worker
+python3 "$ROOT_DIR/deploy/bitpro_host_route.py" --check-running
 
 echo "[deploy] installing host cli wrapper"
 install -m 755 "$ROOT_DIR/deploy/hypertrade-host-cli" /usr/local/bin/hypertrade
