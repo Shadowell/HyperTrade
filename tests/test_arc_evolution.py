@@ -617,3 +617,31 @@ def test_scan_without_execution_identity_does_not_start_variant_research(service
     assert diagnostic["status"] == "unavailable"
     assert "parent execution identity missing" in diagnostic["reason"]
     assert list_mission_ids() == []
+
+
+def test_mid_relay_source_is_held_not_researched(service, monkeypatch):
+    """BitPro marks racing/draining strategies; evolving them would orphan or nest races."""
+    from hypertrade.arc.store import list_mission_ids
+
+    class Racing(VariantPaper):
+        def strategy_research_variant_policy(self, **kwargs):
+            policy = super().strategy_research_variant_policy(**kwargs)
+            policy["relay"] = {
+                "blocks_evolution": True,
+                "role": "challenger",
+                "plan_state": "observing",
+                "reason": "策略正作为挑战者参与赛马，结束前不再派生变体",
+            }
+            return policy
+
+    now = _variant_service(service, monkeypatch, 100)
+    service.client = Racing()
+    service.client.capital = 100
+    result = service.tick(now)
+    diagnostic = result["payload"]["diagnostics"][0]
+    assert result["status"] == "no_action"
+    assert diagnostic["skip_reason"] == "relay_in_progress"
+    assert diagnostic["relay_hold"]["role"] == "challenger"
+    codes = [b["code"] for b in diagnostic["continuation"]["blockers"]]
+    assert "relay_in_progress" in codes
+    assert list_mission_ids() == []

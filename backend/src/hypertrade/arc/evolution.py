@@ -722,7 +722,7 @@ class EvolutionService:
                             ports,
                             snapshot,
                             end,
-                            min_trades=config.min_trades,
+                            min_trades=effective_min_trades,
                             threshold_pp=float(config.threshold_pp),
                         )
                         if observed.get("status") != "observed":
@@ -808,6 +808,17 @@ class EvolutionService:
                         if "parent execution identity" in text:
                             raise
                         variant_policy = None
+                # BitPro owns the relay lifecycle. A racing challenger or a challenged,
+                # draining or retired parent is mid-relay: its variants could never race
+                # (one plan per parent) or would nest a second race, so skip it now and
+                # let continuation re-check once the relay ends or is cancelled.
+                relay = (variant_policy or {}).get("relay") or {}
+                if relay.get("blocks_evolution") is True:
+                    diagnostic["relay_hold"] = {
+                        key: relay.get(key) for key in ("role", "plan_state", "reason")
+                    }
+                    diagnostic["skip_reason"] = "relay_in_progress"
+                    continue
                 is_source_variant = False
                 parent_execution_identity_sha256 = None
                 if variant_policy is not None and variant_policy.get("variant_creation_supported"):
@@ -1003,6 +1014,8 @@ class EvolutionService:
                 select(ArcMission).order_by(ArcMission.updated_at.desc())
             ).yield_per(20)
             for row in records:
+                if len(memory) >= 200:
+                    break  # Full: later rows cannot add entries, so stop loading projections.
                 projection = load_projection(session, row)
                 goal = projection.goal
                 if goal is None:

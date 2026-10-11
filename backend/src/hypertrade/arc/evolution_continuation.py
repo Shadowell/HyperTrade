@@ -331,6 +331,16 @@ def readiness(
                 "condition": "return_drop_pp or drawdown_increase_pp >= required_pp",
             }
         )
+    relay = diagnostic.get("relay_hold")
+    if isinstance(relay, dict):
+        blockers.append(
+            {
+                "code": "relay_in_progress",
+                "role": relay.get("role"),
+                "plan_state": relay.get("plan_state"),
+                "condition": "BitPro relay must complete or be cancelled before evolving again",
+            }
+        )
     # Poll unknown/trade/data conditions; a date is only the known minimum time gate.
     sampling_reason = (cursor.get("sampling") or {}).get("reason_code")
     for blocker in blockers:
