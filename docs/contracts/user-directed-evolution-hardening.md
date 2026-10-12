@@ -137,3 +137,14 @@ ARC 默认使用 RemoteWindow，经 KlineDataProvider 获取 BitPro 的 market_h
 ## 自愈证据边界（2026-10-11）
 
 旧自愈参数建议不代表已验证候选。缺少不可变候选回测回执时验证失败，不借用母策略结果，不发送成功通知或启动 Paper；正常 ARC 来源变体、同窗验证与审核流程仍负责自动研发。7 维归因复用执行证据合同，汇总回测指标不能推出交易路径或因果结论；数据缺口扫描保持 unavailable，不生成伪候选。
+
+## BitPro 接力单一控制与研究源保护（2026-10-11）
+
+- 赛马裁判只镜像 BitPro 接力计划状态并发送里程碑通知（达标、待操作者采纳、减仓、完成、取消），不再调用 `paper_relay_control` 的 `adopt` / `enable_auto`；BitPro 操作者关闭的自动托管不会被外部系统绕过。`RACE_JUDGE_AUTO_ADOPT` 保留为兼容空开关，默认关闭。
+- 删除使用硬编码 A 股持仓（600519.SH / 000858.SZ）计算"净额交接计划"与 `friction_saved_cny` 的兜底分支；BitPro 合约接力由其自身减仓状态机完成。未知收益、回撤、成交数保持 `None`，通知显示"未知"，不渲染为 0。
+- 赛马对优先读取 BitPro `GET /strategies/relay-plans` 中 observing / draining / transferred 的计划；通知跳转改为 BitPro 实际路由 `/live?mode=paper&strategyId=..&challengerId=..&tab=evolution`。
+- ARC 扫描读取 BitPro `research-variant-policy.relay`：`blocks_evolution=true`（赛马中的挑战者、被挑战或减仓中的母体、已退役席位）时不选为研究源，诊断记录 `relay_hold` 与 `skip_reason=relay_in_progress`，续跑台账新增 `relay_in_progress` 时间型阻塞。
+- 自动评审遇到 block 的任务记录后继续评审后续任务，不再队头阻塞；"显著优于基线"缺少收益或回撤指标、缺少评估窗口时一律不通过，不把缺失当成 0。
+- 已确认告警在 24 小时内因单次扫描消失又以相同条件出现时保持已确认，不重新推送。
+- 旧规则自愈引擎 `SELF_HEALING_EVOLUTION_ENABLED` 默认关闭（其 BitPro 部署分支已无法通过不可变候选验证）。
+- 长窗口兜底与主路径使用同一份按周期自适应的最少成交门槛；`_memory` 收满200条后停止加载其余任务投影。

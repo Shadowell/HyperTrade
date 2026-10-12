@@ -360,8 +360,10 @@ class Settings(BaseSettings):
         default=60,
         alias="NEWS_POLL_INTERVAL_SECONDS",
     )
+    # Legacy rule-based mutation path; ARC evolution owns candidate creation and its
+    # BitPro deploy branch can no longer pass validation. Off unless explicitly enabled.
     self_healing_evolution_enabled: bool = Field(
-        default=True,
+        default=False,
         alias="SELF_HEALING_EVOLUTION_ENABLED",
     )
     self_healing_evolution_interval_seconds: int = Field(
@@ -376,8 +378,10 @@ class Settings(BaseSettings):
         default=60,
         alias="RACE_JUDGE_INTERVAL_SECONDS",
     )
+    # Deprecated no-op: the race judge only mirrors and notifies; BitPro's relay
+    # controller (operator or its own auto-managed flag) is the single adopter.
     race_judge_auto_adopt: bool = Field(
-        default=True,
+        default=False,
         alias="RACE_JUDGE_AUTO_ADOPT",
     )
     bitpro_admin_cookie: str = Field(

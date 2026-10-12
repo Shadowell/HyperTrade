@@ -957,3 +957,22 @@ def test_alerts_migration_creates_and_removes_only_its_table() -> None:
         assert "arc_evolution_alerts" in inspect(connection).get_table_names()
         module.downgrade()
         assert inspect(connection).get_table_names() == []
+
+
+def test_acknowledgement_survives_one_scan_disappearance(db, webhook) -> None:
+    sent, post = webhook
+    seed_continuation(db, 512, blockers=[{"code": "session_identity"}])
+    evolution_alerts_once(db, now=NOW, post=post)
+    acknowledge_alert(db, alert_id(ALERT_OPERATOR_BLOCKED, 512), actor="operator")
+    with db.session() as session:
+        saved = dict(session.get(EvolutionContinuation, "src_512").payload_json)
+        session.delete(session.get(EvolutionContinuation, "src_512"))
+    assert evolution_alerts_once(db, now=NOW + timedelta(hours=1), post=post)["resolved"] == 1
+    # Same condition back within the grace: still acknowledged, no new page.
+    seed_continuation(db, 512, blockers=[{"code": "session_identity"}])
+    touch_continuation(db, 512, NOW + timedelta(hours=2))
+    result = evolution_alerts_once(db, now=NOW + timedelta(hours=2), post=post)
+    assert result["delivered"] == 0
+    assert list_alerts(db)[0]["status"] == "acknowledged"
+    assert len(sent) == 1
+    assert saved  # the continuation fixture really existed before the blip

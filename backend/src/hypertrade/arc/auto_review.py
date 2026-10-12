@@ -133,6 +133,9 @@ def auto_review_once(
             config = EvolutionConfig.model_validate(control.config_json if control else {})
             if not config.enabled or control is None:
                 return {"status": "disabled"}
+            # A blocked mission is recorded and skipped: returning on it would starve
+            # every mission listed after it on every tick.
+            blocked: dict[str, Any] | None = None
             for mission_id in list_mission_ids():
                 with research_lock(mission_id) as check_owner:
                     if check_owner is None:
@@ -221,11 +224,12 @@ def auto_review_once(
                         evaluation["decision"] == "block"
                         or build_paper_review(projection)["unknowns"]
                     ):
-                        return {
+                        blocked = blocked or {
                             "status": "blocked",
                             "mission_id": mission_id,
                             "evaluation": evaluation,
                         }
+                        continue
                     check_owner()
                     reason = (
                         "Auto-Approve：回测核心指标显著优于基线且确定性门禁通过"
@@ -250,7 +254,7 @@ def auto_review_once(
                         resolver=resolver,
                     )
                     return {"status": result["status"], "mission_id": mission_id}
-            return {"status": "idle"}
+            return blocked or {"status": "idle"}
 
 
 def verify_significantly_better_than_baseline(
@@ -262,18 +266,25 @@ def verify_significantly_better_than_baseline(
     old = baseline_entry.get("metrics") or {}
     window = candidate_metrics.get("evaluation_window") or {}
     old_window = old.get("evaluation_window") or {}
-    if window and old_window and window != old_window:
+    # Same-window comparison must be proven, not assumed when either side omits it.
+    if not window or not old_window:
+        return False, ["comparison_window_missing"]
+    if window != old_window:
         return False, ["comparison_window_mismatch"]
 
-    def read_decimal(row: dict[str, Any], ratio: str, pct: str) -> Decimal:
+    def read_decimal(row: dict[str, Any], ratio: str, pct: str) -> Decimal | None:
+        # Missing or unreadable evidence is unknown, never 0: a missing return must
+        # not "beat" a negative baseline, nor a missing drawdown look like 0%.
         val = row.get(ratio) if ratio in row else row.get(pct)
-        if val is None:
-            return Decimal("0")
+        if val is None or isinstance(val, bool):
+            return None
         try:
             d = Decimal(str(val))
-            return d if ratio in row else d / Decimal("100")
         except (InvalidOperation, ValueError, TypeError):
-            return Decimal("0")
+            return None
+        if not d.is_finite():
+            return None
+        return d if ratio in row else d / Decimal("100")
 
     def read_sharpe(row: dict[str, Any]) -> float | None:
         for key in ("sharpe", "sharpe_ratio", "out_of_sample_sharpe", "oos_sharpe"):
@@ -289,8 +300,23 @@ def verify_significantly_better_than_baseline(
 
     new_return = read_decimal(candidate_metrics, "net_return", "total_return_pct")
     old_return = read_decimal(old, "net_return", "total_return_pct")
-    new_dd = abs(read_decimal(candidate_metrics, "max_drawdown", "max_drawdown_pct"))
-    old_dd = abs(read_decimal(old, "max_drawdown", "max_drawdown_pct"))
+    new_dd_raw = read_decimal(candidate_metrics, "max_drawdown", "max_drawdown_pct")
+    old_dd_raw = read_decimal(old, "max_drawdown", "max_drawdown_pct")
+    missing = [
+        name
+        for name, value in (
+            ("candidate_return", new_return),
+            ("baseline_return", old_return),
+            ("candidate_drawdown", new_dd_raw),
+            ("baseline_drawdown", old_dd_raw),
+        )
+        if value is None
+    ]
+    if missing:
+        return False, ["missing_metric:" + name for name in missing]
+    assert new_return is not None and old_return is not None
+    assert new_dd_raw is not None and old_dd_raw is not None
+    new_dd, old_dd = abs(new_dd_raw), abs(old_dd_raw)
 
     new_sharpe = read_sharpe(candidate_metrics)
     old_sharpe = read_sharpe(old)

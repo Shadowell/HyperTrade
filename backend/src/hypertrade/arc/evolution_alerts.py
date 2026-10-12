@@ -114,6 +114,18 @@ def _operator_message(row: dict[str, Any], strategy_id: int, codes: list[str]) -
     return message
 
 
+# An acknowledged alert that clears and returns unchanged within this grace keeps
+# its acknowledgement; a longer gap or a changed condition is a new episode.
+ACK_GRACE_HOURS = 24
+
+
+def _within_ack_grace(resolved_at: str, now: datetime) -> bool:
+    try:
+        return now - _aware(datetime.fromisoformat(resolved_at)) < timedelta(hours=ACK_GRACE_HOURS)
+    except ValueError:
+        return False
+
+
 def alert_id(code: str, strategy_id: int | None = None) -> str:
     seed = f"{code}:{strategy_id if strategy_id is not None else 'global'}"
     return "evoalert_" + hashlib.sha256(seed.encode()).hexdigest()[:24]
@@ -455,7 +467,20 @@ def evolution_alerts_once(
                 row.payload_json = payload
                 if not block["tracking_only"]:
                     row.message = block["message"]
-                if row.status == "resolved" or changed:
+                resolved_at = payload.get("resolved_at")
+                if (
+                    row.status == "resolved"
+                    and not changed
+                    and payload.get("acknowledged_at")
+                    and isinstance(resolved_at, str)
+                    and _within_ack_grace(resolved_at, now)
+                ):
+                    # A one-scan disappearance (upstream blip, stale continuation) is
+                    # not a new episode: keep the operator's acknowledgement.
+                    row.status = "acknowledged"
+                    payload.pop("resolved_at", None)
+                    row.payload_json = dict(payload)
+                elif row.status == "resolved" or changed:
                     # A changed condition is a new episode even while open; its
                     # prior receipt and reminder delay do not describe this alert.
                     payload["first_seen_at"] = now.isoformat()
@@ -491,6 +516,7 @@ def evolution_alerts_once(
         for key, row in existing.items():
             if key not in desired and row.status in {"open", "tracking", "acknowledged"}:
                 row.status = "resolved"
+                row.payload_json = {**(row.payload_json or {}), "resolved_at": now.isoformat()}
                 resolved += 1
         session.flush()
         # A provider receipt proves acceptance, not that the operator saw it.

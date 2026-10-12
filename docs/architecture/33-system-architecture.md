@@ -65,7 +65,7 @@ flowchart TB
     WorkerLoop["SQL Lease 租约与心跳循环 (13 个核心 Loop)"]
     MissionWorker["Mission 执行 Worker"]
     EvolutionWorker["自主进化扫描 Worker (小时级退化扫描)"]
-    RaceJudgeWorker["赛马裁判与净额换仓守护进程"]
+    RaceJudgeWorker["赛马裁判（只读镜像 BitPro 接力并通知）"]
   end
 
   subgraph ResearchEngine["ARC / RD-Agent 自主研究中枢"]
@@ -111,7 +111,7 @@ flowchart TB
 | **Control Plane** | `hypertrade/main.py`, `hypertrade/security/token_manager.py` | 暴露 REST/SSE 控制端点，分级探活（`/livez`, `/readyz`, `/healthz`），零信任令牌签发/轮换/鉴权 |
 | **Domain Core** | `hypertrade/runtime/domain/`, `hypertrade/arc/contracts.py` | 严格定义 Mission、Plan、Step、Capability、HET 假设、NettingPlan 等不可变 Pydantic 模型 |
 | **Research Engine** | `hypertrade/arc/`, `hypertrade/research/` | RD-Agent 假设演进、Co-STEER 代码生成、`ASTGatekeeper` 语法守卫、`QuantLabStrategyTranspiler` 转译 |
-| **Paper & Evolution** | `hypertrade/arc/evolution.py`, `hypertrade/paper/relay_netting.py` | 小时级基准相对退化扫描、预算准入、延续账本、赛马裁判对决、两腿持仓净额平滑换仓 |
+| **Paper & Evolution** | `hypertrade/arc/evolution.py`, `hypertrade/paper/relay_netting.py` | 小时级基准相对退化扫描、预算准入、延续账本（遵守 BitPro `relay.blocks_evolution` 跳过接力中的策略）、赛马裁判只读通知（BitPro 是唯一接力控制者）、两腿持仓净额平滑换仓（仅限有真实持仓的目标） |
 | **Target Adapters** | `hypertrade/targets/bitpro.py`, `hypertrade/targets/quantlab.py` | 实现 `market_target.v1` 档案与 `market-evolution.v1` 契约，提供标准化行情、回测、部署与心跳探测 |
 | **Data & Storage** | PostgreSQL 14+, pgvector, 49 项 Alembic 迁移 | 保存规范 Mission 投影、策略资产卡片、实验记录、认知记忆表及飞书告警台账 |
 | **Safety & Ops** | UDS 沙箱, GitHub Actions, Docker Compose, `./scripts/check.sh` | 进程资源限制、网络隔离、静态代码检查（Ruff/Mypy）与 2100+ 项全量自动化测试 |

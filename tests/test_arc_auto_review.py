@@ -407,3 +407,23 @@ def test_verify_significantly_better_than_baseline_helper():
     assert better is False
     assert "missing_baseline_evidence" in reasons
 
+
+
+def test_missing_metrics_or_window_never_beat_baseline():
+    from hypertrade.arc.auto_review import verify_significantly_better_than_baseline
+
+    window = {"start_date": "2026-01-01", "end_date": "2026-01-14"}
+    base_entry = {"metrics": {"evaluation_window": window, "net_return": -0.05,
+                              "max_drawdown": 0.08, "sharpe": -0.2}}
+    # A missing return must not count as 0% > -5%, nor a missing drawdown as 0%.
+    better, reasons = verify_significantly_better_than_baseline(
+        {"evaluation_window": window, "sharpe": 0.1}, base_entry
+    )
+    assert better is False
+    assert "missing_metric:candidate_return" in reasons
+    assert "missing_metric:candidate_drawdown" in reasons
+    # Same-window comparison must be proven, not assumed.
+    better, reasons = verify_significantly_better_than_baseline(
+        {"net_return": 0.1, "max_drawdown": 0.01, "sharpe": 1.0}, base_entry
+    )
+    assert (better, reasons) == (False, ["comparison_window_missing"])

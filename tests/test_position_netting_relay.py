@@ -163,12 +163,9 @@ def test_quantlab_target_adapter_netting_plan() -> None:
     assert ctrl["netting_plan"]["turnover_reduction_ratio"] > 0
 
 
-def test_race_judge_daemon_adoption_with_netting(tmp_path: Path) -> None:
-    history_file = tmp_path / "history.json"
-    state_file = tmp_path / "state.json"
-    netting_file = tmp_path / "netting.json"
-
-    netting_svc = PositionNettingRelayService(state_file=netting_file)
+def test_race_judge_never_adopts_or_fabricates_netting_plan(tmp_path: Path) -> None:
+    """The judge mirrors the target relay; it never adopts nor invents sample holdings."""
+    netting_svc = PositionNettingRelayService(state_file=tmp_path / "netting.json")
     mock_adapter = MagicMock()
     mock_adapter.paper_relay_status.return_value = {
         "status": "observing",
@@ -183,46 +180,25 @@ def test_race_judge_daemon_adoption_with_netting(tmp_path: Path) -> None:
             "closed_fills": [50, 60],
         },
     }
-    mock_adapter.paper_relay_control.return_value = {"status": "ok"}
 
     daemon = RaceJudgeDaemon(
         bitpro_adapter=mock_adapter,
-        history_file=history_file,
-        state_file=state_file,
+        history_file=tmp_path / "history.json",
+        state_file=tmp_path / "state.json",
         auto_adopt=True,
         netting_service=netting_svc,
     )
-
     record = daemon.evaluate_pair(
-        parent_id="101",
-        challenger_id="202",
-        generation=2,
-        target_id="bitpro",
+        parent_id="101", challenger_id="202", generation=2, target_id="bitpro"
     )
 
-    assert record.state == "draining"
-    assert record.action_taken == "adopted"
-    assert record.handover_plan_id is not None
-    assert record.turnover_reduction_ratio > 0.0
-    assert record.friction_saved_cny > 0.0
-    assert record.handover_slices_total == 5
-
-    # Check Feishu card rendering with netting metrics
-    card = build_race_feishu_card(record, "ADOPTED")
-    elements = card["card"]["elements"]
-    text_content = elements[0]["text"]["content"]
-    assert "净额平滑换仓" in text_content
-    assert "换手节省" in text_content
-
-    # Subsequent sweep while in draining steps next slice
-    record_step = daemon.evaluate_pair(
-        parent_id="101",
-        challenger_id="202",
-        generation=2,
-        target_id="bitpro",
-    )
-    assert record_step.handover_slices_completed >= 1
-
+    assert record.state == "observing"
+    assert record.action_taken is None
+    assert record.handover_plan_id is None
+    mock_adapter.paper_relay_control.assert_not_called()
+    assert netting_svc.find_plan_by_pair("101", "202") is None
+    text = build_race_feishu_card(record, "ELIGIBLE")["card"]["elements"][0]["text"]["content"]
+    assert "600519" not in text and "净额平滑换仓" not in text
 
 def test_portfolio_coordinator_service_relay_integration(tmp_path: Path) -> None:
     from hypertrade.db import Database

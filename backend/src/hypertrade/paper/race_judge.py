@@ -16,12 +16,44 @@ from typing import Any
 
 import httpx
 
-from hypertrade.bitpro.mcp import BitProMcpError, BitProToolAdapter
+from hypertrade.bitpro.mcp import BitProToolAdapter
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import Database
 from hypertrade.paper.relay_netting import PositionNettingRelayService
 
 logger = logging.getLogger("hypertrade.paper.race_judge")
+
+# Relay plan states that still describe a live race on the target.
+_LIVE_PLAN_STATES = ("observing", "draining", "transferred")
+
+
+def _opt_float(value: Any) -> float | None:
+    """Unknown evidence stays None; it is never rendered as a 0% result."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _opt_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _pct(value: float | None, signed: bool = True) -> str:
+    if value is None:
+        return "未知"
+    return f"{value:+.2f}%" if signed else f"{value:.2f}%"
+
+
+def _count(value: int | None) -> str:
+    return "未知" if value is None else str(value)
 
 
 @dataclass
@@ -38,19 +70,20 @@ class RacePairRecord:
     eligible: bool = False
     reason: str = ""
     proof_sha256: str | None = None
-    observed_hours: int = 0
+    observed_hours: int | None = None
     target_hours: int = 337
-    parent_trades: int = 0
-    challenger_trades: int = 0
-    parent_net_return_pct: float = 0.0
-    challenger_net_return_pct: float = 0.0
-    excess_return_pct: float = 0.0
-    parent_max_drawdown_pct: float = 0.0
-    challenger_max_drawdown_pct: float = 0.0
+    parent_trades: int | None = None
+    challenger_trades: int | None = None
+    parent_net_return_pct: float | None = None
+    challenger_net_return_pct: float | None = None
+    excess_return_pct: float | None = None
+    parent_max_drawdown_pct: float | None = None
+    challenger_max_drawdown_pct: float | None = None
     sign_test_p: float | None = None
     positive_days: int = 0
     paired_non_tie_days: int = 0
-    auto_adopt_enabled: bool = True
+    # Retained for persisted-state compatibility; the judge never adopts (BitPro owns relays).
+    auto_adopt_enabled: bool = False
     action_taken: str | None = None
     feishu_notified_states: list[str] = field(default_factory=list)
     requires_admin_authorization: bool = False
@@ -90,19 +123,19 @@ class RacePairRecord:
             eligible=bool(data.get("eligible", False)),
             reason=data.get("reason", ""),
             proof_sha256=data.get("proof_sha256"),
-            observed_hours=int(data.get("observed_hours", 0)),
+            observed_hours=_opt_int(data.get("observed_hours")),
             target_hours=int(data.get("target_hours", 337)),
-            parent_trades=int(data.get("parent_trades", 0)),
-            challenger_trades=int(data.get("challenger_trades", 0)),
-            parent_net_return_pct=float(data.get("parent_net_return_pct", 0.0)),
-            challenger_net_return_pct=float(data.get("challenger_net_return_pct", 0.0)),
-            excess_return_pct=float(data.get("excess_return_pct", 0.0)),
-            parent_max_drawdown_pct=float(data.get("parent_max_drawdown_pct", 0.0)),
-            challenger_max_drawdown_pct=float(data.get("challenger_max_drawdown_pct", 0.0)),
+            parent_trades=_opt_int(data.get("parent_trades")),
+            challenger_trades=_opt_int(data.get("challenger_trades")),
+            parent_net_return_pct=_opt_float(data.get("parent_net_return_pct")),
+            challenger_net_return_pct=_opt_float(data.get("challenger_net_return_pct")),
+            excess_return_pct=_opt_float(data.get("excess_return_pct")),
+            parent_max_drawdown_pct=_opt_float(data.get("parent_max_drawdown_pct")),
+            challenger_max_drawdown_pct=_opt_float(data.get("challenger_max_drawdown_pct")),
             sign_test_p=float(data["sign_test_p"]) if data.get("sign_test_p") is not None else None,
             positive_days=int(data.get("positive_days", 0)),
             paired_non_tie_days=int(data.get("paired_non_tie_days", 0)),
-            auto_adopt_enabled=bool(data.get("auto_adopt_enabled", True)),
+            auto_adopt_enabled=False,
             action_taken=data.get("action_taken"),
             feishu_notified_states=list(data.get("feishu_notified_states") or []),
             requires_admin_authorization=bool(data.get("requires_admin_authorization", False)),
@@ -125,8 +158,8 @@ def build_race_feishu_card(
     """Build an interactive Feishu card for race judge lifecycle milestones."""
     base_url = (console_url or "https://bitpro.notenap.com").rstrip("/")
     monitor_url = (
-        f"{base_url}/live-trading/paper-monitor?"
-        f"strategy_id={record.parent_strategy_id}&challenger_id={record.challenger_strategy_id}"
+        f"{base_url}/live?mode=paper&strategyId={record.parent_strategy_id}"
+        f"&challengerId={record.challenger_strategy_id}&tab=evolution"
     )
 
     color_map = {
@@ -158,29 +191,22 @@ def build_race_feishu_card(
             f"(Gen {record.generation}) {record.challenger_name}".strip()
         ),
         (
-            f"**前向净收益**: 挑战者 **{record.challenger_net_return_pct:+.2f}%** vs "
-            f"母体 **{record.parent_net_return_pct:+.2f}%** "
-            f"(超额: **{record.excess_return_pct:+.2f}%**)"
+            f"**前向净收益**: 挑战者 **{_pct(record.challenger_net_return_pct)}** vs "
+            f"母体 **{_pct(record.parent_net_return_pct)}** "
+            f"(超额: **{_pct(record.excess_return_pct)}**)"
         ),
         (
-            f"**最大回撤对比**: 挑战者 **{record.challenger_max_drawdown_pct:.2f}%** vs "
-            f"母体 **{record.parent_max_drawdown_pct:.2f}%**"
+            f"**最大回撤对比**: 挑战者 **{_pct(record.challenger_max_drawdown_pct, False)}** vs "
+            f"母体 **{_pct(record.parent_max_drawdown_pct, False)}**"
         ),
         f"**14日单侧符号检验**: {p_val_str}",
         (
-            f"**实测进度**: {record.observed_hours}/{record.target_hours} 小时桶 | "
-            f"平仓成交: 母体 {record.parent_trades} 笔 / 挑战者 {record.challenger_trades} 笔"
+            f"**实测进度**: {_count(record.observed_hours)}/{record.target_hours} 小时桶 | "
+            f"平仓成交: 母体 {_count(record.parent_trades)} 笔 / "
+            f"挑战者 {_count(record.challenger_trades)} 笔"
         ),
         f"**当前状态**: `{record.state}` | 判定: {record.reason or '正常积累前向证据'}",
     ]
-
-    if record.turnover_reduction_ratio > 0 or record.handover_slices_total > 0:
-        content_lines.append(
-            f"🔄 **净额平滑换仓**: 进度 "
-            f"**{record.handover_slices_completed}/{record.handover_slices_total}** 切片 | "
-            f"换手节省: **{record.turnover_reduction_ratio * 100:.1f}%** | "
-            f"预估节约摩擦: **¥{record.friction_saved_cny:,.2f}**"
-        )
 
     if milestone == "ADOPTED":
         content_lines.append(
@@ -194,8 +220,8 @@ def build_race_feishu_card(
         )
     elif milestone == "REQUIRES_ADMIN":
         content_lines.append(
-            "🔑 **提示**: 当前前向证据已全量满足，但写入接口需管理员授权，"
-            "请点击下方链接登录 BitPro 控制台进行一键采纳。"
+            "🔑 **提示**: 当前前向证据已全量满足，BitPro 未开启自动托管，"
+            "请点击下方链接登录 BitPro 控制台由操作者采纳或取消。"
         )
 
     return {
@@ -282,7 +308,8 @@ class RaceJudgeDaemon:
         self.db = db
         self.settings = settings or get_settings()
         self.bitpro_adapter = bitpro_adapter or BitProToolAdapter()
-        self.netting_service = netting_service or PositionNettingRelayService()
+        # Netting handover needs real target holdings; BitPro relays drain instead.
+        self.netting_service = netting_service
         self.history_file = (
             history_file
             if history_file is not None
@@ -370,8 +397,22 @@ class RaceJudgeDaemon:
             except Exception as exc:
                 logger.warning("Failed to read self-healing history for pairs: %s", exc)
 
+        # BitPro's persisted relay plans are authoritative for which races are live,
+        # including the ones created by its own automatic enrollment.
+        list_plans = getattr(self.bitpro_adapter, "paper_relay_plans", None)
+        if callable(list_plans):
+            try:
+                for plan in list_plans() or []:
+                    if not isinstance(plan, dict) or plan.get("state") not in _LIVE_PLAN_STATES:
+                        continue
+                    plan_pid, plan_cid = plan.get("parent_id"), plan.get("challenger_id")
+                    if isinstance(plan_pid, int) and isinstance(plan_cid, int):
+                        pairs[("bitpro", plan_pid, plan_cid)] = int(plan.get("generation") or 1)
+            except Exception as exc:
+                logger.warning("Failed to list BitPro relay plans: %s", exc)
+
         for rec in self._records.values():
-            if rec.state not in ("completed", "rejected"):
+            if rec.state not in ("completed", "rejected", "cancelled"):
                 pair = (rec.target_id, rec.parent_strategy_id, rec.challenger_strategy_id)
                 if pair not in pairs:
                     pairs[pair] = rec.generation
@@ -400,7 +441,7 @@ class RaceJudgeDaemon:
                 challenger_strategy_id=challenger_id,
                 target_id=resolved_target,
                 generation=generation,
-                auto_adopt_enabled=self.auto_adopt,
+                auto_adopt_enabled=False,
             )
             self._records[key] = record
         else:
@@ -439,171 +480,66 @@ class RaceJudgeDaemon:
 
         plan = status_data.get("plan")
         proof = status_data.get("proof") or (plan or {}).get("proof") or {}
+        progress = proof.get("progress") or {}
 
         record.eligible = bool(proof.get("eligible", False))
         record.reason = str(proof.get("reason", ""))
         record.proof_sha256 = proof.get("proof_sha256")
-        record.observed_hours = int(proof.get("observed_points", 0))
-        record.sign_test_p = (
-            float(proof["sign_test_p"]) if proof.get("sign_test_p") is not None else None
+        # Full-window proofs carry observed_points; partial ones only report progress.
+        record.observed_hours = _opt_int(
+            proof.get("observed_points", progress.get("paired_points"))
         )
-        record.positive_days = int(proof.get("positive_days", 0))
-        record.paired_non_tie_days = int(proof.get("paired_non_tie_days", 0))
-        record.excess_return_pct = float(proof.get("excess_return_pct", 0.0))
+        record.sign_test_p = _opt_float(proof.get("sign_test_p"))
+        record.positive_days = int(proof.get("positive_days") or 0)
+        record.paired_non_tie_days = int(proof.get("paired_non_tie_days") or 0)
+        record.excess_return_pct = _opt_float(proof.get("excess_return_pct"))
 
         net_returns = proof.get("net_return_pct")
         if isinstance(net_returns, list) and len(net_returns) >= 2:
-            record.parent_net_return_pct = float(net_returns[0])
-            record.challenger_net_return_pct = float(net_returns[1])
+            record.parent_net_return_pct = _opt_float(net_returns[0])
+            record.challenger_net_return_pct = _opt_float(net_returns[1])
 
         drawdowns = proof.get("observed_drawdown_pct")
         if isinstance(drawdowns, list) and len(drawdowns) >= 2:
-            record.parent_max_drawdown_pct = float(drawdowns[0])
-            record.challenger_max_drawdown_pct = float(drawdowns[1])
+            record.parent_max_drawdown_pct = _opt_float(drawdowns[0])
+            record.challenger_max_drawdown_pct = _opt_float(drawdowns[1])
 
-        fills = proof.get("closed_fills")
+        fills = proof.get("closed_fills") or progress.get("closed_fills")
         if isinstance(fills, list) and len(fills) >= 2:
-            record.parent_trades = int(fills[0])
-            record.challenger_trades = int(fills[1])
+            record.parent_trades = _opt_int(fills[0])
+            record.challenger_trades = _opt_int(fills[1])
 
+        # The target owns the relay state machine (gate, adoption, drain, pause).
+        # The judge only mirrors that state and notifies; it never calls
+        # adopt/enable_auto, so an operator's "disable auto" on the target holds.
         if plan:
-            record.state = plan.get("state", record.state)
-            record.generation = int(plan.get("generation", record.generation))
+            record.state = str(plan.get("state") or record.state)
+            record.generation = int(plan.get("generation") or record.generation)
+            auto_enabled = bool(status_data.get("auto_enabled", plan.get("auto_enabled")))
         else:
-            if self.auto_adopt and record.state == "observing":
-                try:
-                    adapter.paper_relay_control(
-                        parent_id=parent_id,
-                        action="enable_auto",
-                        challenger_id=challenger_id,
-                    )
-                    record.action_taken = "enabled_auto"
-                except BitProMcpError as exc:
-                    if exc.status_code == 403:
-                        record.requires_admin_authorization = True
-                except Exception:
-                    pass
+            auto_enabled = False
+        record.action_taken = None
 
-        # Handle forward gate eligibility and adoption
-        if record.state == "observing":
-            if record.eligible and record.proof_sha256:
-                if self.auto_adopt:
-                    try:
-                        adapter.paper_relay_control(
-                            parent_id=parent_id,
-                            action="adopt",
-                            challenger_id=challenger_id,
-                            proof_sha256=record.proof_sha256,
-                        )
-                        record.state = "draining"
-                        record.action_taken = "adopted"
-
-                        # Initialize position netting handover plan
-                        try:
-                            plan_dict: dict[str, Any] | None = None
-                            if hasattr(adapter, "paper_relay_netting_plan") and callable(
-                                getattr(adapter, "paper_relay_netting_plan", None)
-                            ):
-                                try:
-                                    raw_res = adapter.paper_relay_netting_plan(
-                                        parent_id=parent_id,
-                                        challenger_id=challenger_id,
-                                    )
-                                    if isinstance(raw_res, dict):
-                                        plan_dict = raw_res
-                                except Exception:
-                                    plan_dict = None
-                            if not plan_dict:
-                                plan = self.netting_service.find_plan_by_pair(
-                                    parent_id, challenger_id
-                                )
-                                if not plan:
-                                    p_holdings = [
-                                        {"symbol": "600519.SH", "qty": "1000", "price": "1800.0"},
-                                        {"symbol": "000858.SZ", "qty": "1000", "price": "150.0"},
-                                    ]
-                                    c_holdings = [
-                                        {"symbol": "600519.SH", "qty": "1200", "price": "1800.0"},
-                                        {"symbol": "000858.SZ", "qty": "500", "price": "150.0"},
-                                    ]
-                                    plan = self.netting_service.calculate_plan(
-                                        parent_strategy_id=parent_id,
-                                        challenger_strategy_id=challenger_id,
-                                        parent_holdings=p_holdings,
-                                        challenger_target_holdings=c_holdings,
-                                        target_id=resolved_target,
-                                        slices_total=5,
-                                        market="cn",
-                                    )
-                                plan_dict = plan.to_dict()
-
-                            if plan_dict:
-                                record.handover_plan_id = str(plan_dict.get("plan_id"))
-                                record.handover_plan_sha256 = str(plan_dict.get("plan_sha256"))
-                                record.turnover_reduction_ratio = float(
-                                    plan_dict.get("turnover_reduction_ratio", 0.0)
-                                )
-                                record.friction_saved_cny = float(
-                                    plan_dict.get("total_friction_saved", 0.0)
-                                )
-                                record.handover_slices_completed = int(
-                                    plan_dict.get("slices_completed", 0)
-                                )
-                                record.handover_slices_total = int(
-                                    plan_dict.get("slices_total", 5)
-                                )
-                        except Exception as n_exc:
-                            logger.warning(
-                                "Failed to initialize netting handover plan for pair (%s, %s): %s",
-                                parent_id,
-                                challenger_id,
-                                n_exc,
-                            )
-
-                        if "ADOPTED" not in record.feishu_notified_states:
-                            ok, _ = dispatch_race_feishu_card(record, "ADOPTED")
-                            if ok:
-                                record.feishu_notified_states.append("ADOPTED")
-                    except BitProMcpError as exc:
-                        if exc.status_code == 403:
-                            record.requires_admin_authorization = True
-                            record.action_taken = "needs_admin_approval"
-                            if "REQUIRES_ADMIN" not in record.feishu_notified_states:
-                                ok, _ = dispatch_race_feishu_card(record, "REQUIRES_ADMIN")
-                                if ok:
-                                    record.feishu_notified_states.append("REQUIRES_ADMIN")
-                        else:
-                            record.reason = f"采纳调用失败: {exc}"
-                    except Exception as exc:
-                        record.reason = f"采纳异常: {exc}"
-                elif "ELIGIBLE" not in record.feishu_notified_states:
-                    ok, _ = dispatch_race_feishu_card(record, "ELIGIBLE")
-                    if ok:
-                        record.feishu_notified_states.append("ELIGIBLE")
-
-        elif record.state == "draining":
-            if record.handover_plan_id:
-                try:
-                    _, updated_plan = self.netting_service.step_slice(record.handover_plan_id)
-                    record.handover_slices_completed = updated_plan.slices_completed
-                    if updated_plan.state == "completed":
-                        record.state = "completed"
-                        record.action_taken = "handover_completed"
-                except Exception as step_exc:
-                    logger.warning("Failed to step netting slice: %s", step_exc)
-
-            if record.state == "draining" and "ADOPTED" not in record.feishu_notified_states:
-                ok, _ = dispatch_race_feishu_card(record, "ADOPTED")
+        if record.state == "observing" and record.eligible and record.proof_sha256:
+            milestone = "ELIGIBLE" if auto_enabled else "REQUIRES_ADMIN"
+            record.requires_admin_authorization = not auto_enabled
+            if milestone not in record.feishu_notified_states:
+                ok, _ = dispatch_race_feishu_card(record, milestone)
                 if ok:
-                    record.feishu_notified_states.append("ADOPTED")
-
-        elif (
-            record.state in ("transferred", "completed")
-            and "COMPLETED" not in record.feishu_notified_states
-        ):
+                    record.feishu_notified_states.append(milestone)
+        elif record.state == "draining" and "ADOPTED" not in record.feishu_notified_states:
+            ok, _ = dispatch_race_feishu_card(record, "ADOPTED")
+            if ok:
+                record.feishu_notified_states.append("ADOPTED")
+        elif record.state == "completed" and "COMPLETED" not in record.feishu_notified_states:
+            # "transferred" still waits for the parent pause; only completion is final.
             ok, _ = dispatch_race_feishu_card(record, "COMPLETED")
             if ok:
                 record.feishu_notified_states.append("COMPLETED")
+        elif record.state == "cancelled" and "REJECTED" not in record.feishu_notified_states:
+            ok, _ = dispatch_race_feishu_card(record, "REJECTED")
+            if ok:
+                record.feishu_notified_states.append("REJECTED")
 
         record.updated_at = datetime.now(UTC).isoformat()
         self._persist_state()
