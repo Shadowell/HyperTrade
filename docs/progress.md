@@ -4,6 +4,14 @@
 - `create_app` 在 `APP_ENV=production/staging` 下拒绝仓库内置的 `ADMIN_PASSWORD`/`SESSION_SECRET` 并停止启动；开发、评估环境仍可用内置值。worker 不经过 `create_app`，不受影响。登录对用户名和口令做常量时间比较。
 - 未改会话格式：现有会话令牌不带时间戳、不会过期，但立即改为限时令牌会让当前会话全部失效。会话过期、`Secure` Cookie 与 HyperMonitor 管理员统一登录需等控制台获得 `notenap.com` 子域名与 HTTPS 后一起实施。
 
+## 交接复核：取消接力推送与完整套件时钟（2026-10-12）
+
+- 复核 BitPro #1250 / 本仓 #45 的跨仓契约：`research-variant-policy.relay.blocks_evolution` 字段名一致，`GET /strategies/relay-plans` 的 `{success,data}` 信封由适配器拆包，路由先于 `/{strategy_id}` 注册，`cancel` 仅管理员；两仓部署均成功（BitPro `cfcb799c`、本仓 `7164bf7`）。
+- 赛马裁判把 BitPro 的“取消接力”推成 `REJECTED` 卡片，标题写“挑战者被淘汰”，但取消是操作者终止、不是门禁判负。新增独立 `CANCELLED` 里程碑（灰色，“已取消，母体继续担任主力”）；首版已记录 `REJECTED` 标记的接力不重复推送。
+- #45 交付时唯一失败的 `test_regime_shadow_allocator::test_max_delta_and_dwell_prevent_regime_flip_churn` 不是偶发：`tests/regime_shadow_support.py` 的决策时刻按“导入时刻 + 5 分钟”计算，完整套件收集后过了 5 分钟才执行到用例时，服务按真实当前时间写入的 `created_at` 晚于它，触发 `lookahead source rejected: previous.created_at`，套件越长越必现。用“导入后已过 15 分钟”复现后改为固定远期时刻，3 个使用方共 10 项通过。
+- 验证：新增 3 项取消通知回归，其中 2 项在旧行为上失败；在合入上游 #47 后的代码上重跑 `./scripts/check.sh` 通过（前端 lint / 15 项测试 / build、ruff、mypy 313 个文件、pytest 2147 项）。本机需设置有效 `LC_ALL`：缺省时 Homebrew PostgreSQL 17 报 `postmaster became multithreaded`，3 个 Postgres 集成测试在本机失败，设置后通过。
+- 未完成：生产侧只读核验（Paper 连续性、三个来源 10-12 13:30 冷却结束后的首次调度）本次未执行；033 的“复验实际快照失败”仍待下一次真实读取失败出现。
+
 ## BitPro 接力单一控制与自进化集成修复（2026-10-11）
 
 - 赛马裁判改为只读通知：不再自动采纳/开启 BitPro 托管，删除硬编码 A 股持仓的伪造交接计划，未知证据保持未知；赛马对来自 BitPro 接力计划。ARC 扫描遵守 BitPro `research-variant-policy.relay`，跳过赛马中/减仓中的策略并记录 `relay_in_progress`。自动评审不再被单个 block 任务队头阻塞，基线比较缺指标或缺窗口不通过；已确认告警短暂消失后不重复推送；旧自愈引擎默认关闭。
