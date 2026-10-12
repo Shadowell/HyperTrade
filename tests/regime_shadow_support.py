@@ -20,7 +20,9 @@ from hypertrade.portfolio.regime_shadow_schemas import (
     ShadowAllocationPolicyV2,
 )
 
-DECISION = datetime.now(UTC) + timedelta(minutes=5)
+# 服务写入的 created_at 取真实当前时间，决策时刻必须晚于它。若按“导入时刻 + 5 分钟”
+# 计算，完整套件在收集后跑过 5 分钟再执行到这里就会触发 lookahead 拒绝，所以用固定远期时刻。
+DECISION = datetime(2100, 1, 1, tzinfo=UTC)
 
 
 def hash_value(value: str) -> str:
