@@ -168,6 +168,7 @@ def build_race_feishu_card(
         "COMPLETED": "green",
         "REQUIRES_ADMIN": "orange",
         "REJECTED": "grey",
+        "CANCELLED": "grey",
     }
     title_map = {
         "ELIGIBLE": "🏁 【BitPro 策略接力已达标】前向门禁全量通过",
@@ -175,6 +176,8 @@ def build_race_feishu_card(
         "COMPLETED": "🏆 【BitPro 策略接力圆满完成】Gen N 晋升 Primary 主力",
         "REQUIRES_ADMIN": "⚠️ 【BitPro 策略接力待授权】前向门禁已达标需管理员采纳",
         "REJECTED": "❌ 【BitPro 策略接力未通过】挑战者被淘汰",
+        # 操作者主动终止不是门禁判负，不能写成“挑战者被淘汰”。
+        "CANCELLED": "⏹ 【BitPro 策略接力已取消】操作者终止赛马，母体继续担任主力",
     }
 
     card_color = color_map.get(milestone, "blue")
@@ -222,6 +225,11 @@ def build_race_feishu_card(
         content_lines.append(
             "🔑 **提示**: 当前前向证据已全量满足，BitPro 未开启自动托管，"
             "请点击下方链接登录 BitPro 控制台由操作者采纳或取消。"
+        )
+    elif milestone == "CANCELLED":
+        content_lines.append(
+            "🛑 **执行动作**: 操作者已在 BitPro 取消该场接力，挑战者不再参与交接；"
+            "再次赛马需操作者重新放行候选。"
         )
 
     return {
@@ -536,10 +544,14 @@ class RaceJudgeDaemon:
             ok, _ = dispatch_race_feishu_card(record, "COMPLETED")
             if ok:
                 record.feishu_notified_states.append("COMPLETED")
-        elif record.state == "cancelled" and "REJECTED" not in record.feishu_notified_states:
-            ok, _ = dispatch_race_feishu_card(record, "REJECTED")
+        elif record.state == "cancelled" and not {"CANCELLED", "REJECTED"} & set(
+            record.feishu_notified_states
+        ):
+            # An operator cancel is not a gate verdict. "REJECTED" is the marker the first
+            # release recorded for this event; honour it so that card is not sent twice.
+            ok, _ = dispatch_race_feishu_card(record, "CANCELLED")
             if ok:
-                record.feishu_notified_states.append("REJECTED")
+                record.feishu_notified_states.append("CANCELLED")
 
         record.updated_at = datetime.now(UTC).isoformat()
         self._persist_state()
