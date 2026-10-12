@@ -363,6 +363,60 @@ def test_evaluate_pair_completed_lifecycle(tmp_path: Path) -> None:
         assert "COMPLETED" in rec.feishu_notified_states
 
 
+def _cancelled_status() -> dict:
+    return {
+        "plan": {"parent_id": 1, "challenger_id": 2, "state": "cancelled", "generation": 2},
+        "proof": {"eligible": False, "reason": "等待完整前向证据"},
+    }
+
+
+def test_operator_cancel_is_announced_once_as_cancelled_not_eliminated(tmp_path: Path) -> None:
+    mock_adapter = MagicMock(spec=BitProToolAdapter)
+    mock_adapter.paper_relay_status.return_value = _cancelled_status()
+    daemon = RaceJudgeDaemon(bitpro_adapter=mock_adapter, state_file=tmp_path / "state.json")
+
+    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as mock_dispatch:
+        mock_dispatch.return_value = (True, "sent_interactive_card")
+        rec = daemon.evaluate_pair(1, 2, generation=2)
+        daemon.evaluate_pair(1, 2, generation=2)
+
+    assert rec.state == "cancelled"
+    mock_dispatch.assert_called_once()
+    assert mock_dispatch.call_args.args[1] == "CANCELLED"
+    assert rec.feishu_notified_states == ["CANCELLED"]
+    mock_adapter.paper_relay_control.assert_not_called()
+
+
+def test_cancel_card_already_sent_under_legacy_marker_is_not_repeated(tmp_path: Path) -> None:
+    mock_adapter = MagicMock(spec=BitProToolAdapter)
+    mock_adapter.paper_relay_status.return_value = _cancelled_status()
+    daemon = RaceJudgeDaemon(bitpro_adapter=mock_adapter, state_file=tmp_path / "state.json")
+    legacy = RacePairRecord(
+        parent_strategy_id=1,
+        challenger_strategy_id=2,
+        target_id="bitpro",
+        generation=2,
+        feishu_notified_states=["REJECTED"],
+    )
+    daemon._records[daemon._pair_key("bitpro", 1, 2)] = legacy
+
+    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as mock_dispatch:
+        daemon.evaluate_pair(1, 2, generation=2)
+
+    mock_dispatch.assert_not_called()
+
+
+def test_cancel_card_says_cancelled_and_never_claims_the_challenger_was_eliminated() -> None:
+    rec = RacePairRecord(parent_strategy_id=1, challenger_strategy_id=2, state="cancelled")
+    card = build_race_feishu_card(rec, "CANCELLED", console_url="https://bitpro.test")
+
+    title = card["card"]["header"]["title"]["content"]
+    text = card["card"]["elements"][0]["text"]["content"]
+    assert card["card"]["header"]["template"] == "grey"
+    assert "已取消" in title and "淘汰" not in title
+    assert "取消" in text and "淘汰" not in text
+
+
 def test_bitpro_tool_adapter_relay_methods() -> None:
     client_mock = MagicMock()
     adapter = BitProToolAdapter(client=client_mock)
