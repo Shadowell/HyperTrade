@@ -1,3 +1,9 @@
+## 管理员凭据加固（2026-10-12）
+
+- 线上只读核对：生产 `APP_ENV=production`，`ADMIN_PASSWORD` 与 `SESSION_SECRET` 已覆盖为非默认值（未读取或输出取值）；`COOKIE_SECURE=false`，因为控制台目前只经 `IP:3333` 明文 HTTP 访问。
+- `create_app` 在 `APP_ENV=production/staging` 下拒绝仓库内置的 `ADMIN_PASSWORD`/`SESSION_SECRET` 并停止启动；开发、评估环境仍可用内置值。worker 不经过 `create_app`，不受影响。登录对用户名和口令做常量时间比较。
+- 未改会话格式：现有会话令牌不带时间戳、不会过期，但立即改为限时令牌会让当前会话全部失效。会话过期、`Secure` Cookie 与 HyperMonitor 管理员统一登录需等控制台获得 `notenap.com` 子域名与 HTTPS 后一起实施。
+
 ## BitPro 接力单一控制与自进化集成修复（2026-10-11）
 
 - 赛马裁判改为只读通知：不再自动采纳/开启 BitPro 托管，删除硬编码 A 股持仓的伪造交接计划，未知证据保持未知；赛马对来自 BitPro 接力计划。ARC 扫描遵守 BitPro `research-variant-policy.relay`，跳过赛马中/减仓中的策略并记录 `relay_in_progress`。自动评审不再被单个 block 任务队头阻塞，基线比较缺指标或缺窗口不通过；已确认告警短暂消失后不重复推送；旧自愈引擎默认关闭。

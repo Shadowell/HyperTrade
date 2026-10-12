@@ -6,6 +6,7 @@ HTTP input, call the Agent/tool service, and return redacted runtime state.
 """
 
 import asyncio
+import hmac
 import json
 import logging
 import time
@@ -240,6 +241,29 @@ from hypertrade.world_model.service import WorldModelService
 
 SESSION_COOKIE = "hypertrade_session"
 logger = logging.getLogger("hypertrade.main")
+# Environments that may expose the admin console and therefore must not run on repository defaults.
+_DEPLOYED_ENVIRONMENTS = frozenset({"production", "staging"})
+
+
+def refuse_builtin_admin_credentials(settings: Settings) -> None:
+    """Fail start-up when a deployed API would accept the publicly known built-in credentials.
+
+    The defaults only exist so a fresh checkout runs locally; anyone who reads the repository
+    knows them, so a deployed console must never authenticate with them.
+    """
+
+    if settings.app_env.casefold() not in _DEPLOYED_ENVIRONMENTS:
+        return
+    builtin = {
+        name: Settings.model_fields[name].default for name in ("admin_password", "session_secret")
+    }
+    if settings.admin_password == builtin["admin_password"] or (
+        settings.session_secret == builtin["session_secret"]
+    ):
+        raise RuntimeError(
+            f"APP_ENV={settings.app_env} refuses the built-in ADMIN_PASSWORD or SESSION_SECRET; "
+            "set real values in the server environment"
+        )
 
 
 class BitProApiAdapter(Protocol):
@@ -463,6 +487,7 @@ def create_app(
     bitpro_adapter: BitProApiAdapter | None = None,
 ) -> FastAPI:
     app_settings = settings or get_settings()
+    refuse_builtin_admin_credentials(app_settings)
     database = db or Database(app_settings.database_url)
     configure_store(database)
     mission_store = (
@@ -1012,8 +1037,13 @@ def create_app(
 
     @app.post("/api/auth/login")
     def login(payload: LoginPayload, response: Response) -> dict[str, str]:
-        valid_username = payload.username == app_settings.admin_username
-        valid_password = payload.password == app_settings.admin_password
+        # Compare both fields in constant time so response timing reveals neither of them.
+        valid_username = hmac.compare_digest(
+            payload.username.encode("utf-8"), app_settings.admin_username.encode("utf-8")
+        )
+        valid_password = hmac.compare_digest(
+            payload.password.encode("utf-8"), app_settings.admin_password.encode("utf-8")
+        )
         if not valid_username or not valid_password:
             raise HTTPException(status_code=401, detail="Invalid credentials")
         response.set_cookie(
