@@ -293,6 +293,7 @@ class BitProMcpClient:
             path,
             json=_post_payload(tool_name, params),
             tool_name=tool_name,
+            idempotency_key=params.get("idempotency_key"),
         )
 
     def _request(
@@ -303,14 +304,18 @@ class BitProMcpClient:
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
         tool_name: str,
+        idempotency_key: str | None = None,
     ) -> Any:
+        headers = self._auth_headers() or {}
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
         try:
             response = self.http_client.request(
                 method,
                 f"{self.base_url}{path}",
                 params=params,
                 json=json,
-                headers=self._auth_headers(),
+                headers=headers,
             )
         except httpx.HTTPError as exc:
             raise BitProMcpError(
@@ -925,6 +930,16 @@ class BitProToolAdapter:
         }
         self._attach_backtest_result_from_job(payload, raw_job)
         return payload
+
+    def backtest_resume_job(self, *, job_id: str, idempotency_key: str) -> dict[str, Any]:
+        """Resume the server's frozen job; never create a replacement experiment."""
+        self._preflight()
+        raw = _ensure_dict(
+            self._call(
+                "backtest_resume_job", {"job_id": job_id, "idempotency_key": idempotency_key}
+            )
+        )
+        return {"job": _backtest_job_item(raw)}
 
     def _poll_backtest_job(
         self,
@@ -2044,6 +2059,7 @@ def _backtest_job_item(raw: dict[str, Any]) -> dict[str, Any]:
             "resumable": raw.get("resumable"),
             "verified_data_binding": safe_binding,
             "strategy_input_snapshot": safe_input,
+            "input_snapshot_hash": raw.get("input_snapshot_hash") or (safe_input or {}).get("hash"),
         }
     )
 

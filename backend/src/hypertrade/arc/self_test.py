@@ -10,10 +10,12 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Protocol
 
+from hypertrade.arc.backtest_recovery import BacktestDeferred
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCGoalV1, ARCSuccessCriteriaV1
 from hypertrade.arc.runtime_journal import failure_text, record_runtime_error
 from hypertrade.arc.strategy_names import (
@@ -100,6 +102,7 @@ class SelfTestResult:
     metrics: dict[str, Any] = field(default_factory=dict)
     reasons: list[str] = field(default_factory=list)
     message: str = ""
+    terminal_failure: dict[str, Any] = field(default_factory=dict)
 
 
 def apply_success_criteria(
@@ -257,6 +260,7 @@ def _baseline_data_reference(
     purpose: str,
     start: date,
     end: date,
+    backtest_start: Callable[..., dict[str, Any]] | None = None,
 ) -> dict[str, str] | SelfTestResult:
     spec = attempt.strategy_spec
     scope = _experiment_scope(goal, attempt.strategy_code, symbols, timeframe, spec, {})
@@ -272,7 +276,7 @@ def _baseline_data_reference(
         baseline_id = _strategy_id(created) or _as_int(created.get("candidate_strategy_id"))
         if baseline_id is None:
             raise ValueError("baseline variant identity missing")
-        backtest = client.backtest_start_job(
+        backtest = (backtest_start or client.backtest_start_job)(
             strategy_id=baseline_id,
             start_date=start.isoformat(),
             end_date=end.isoformat(),
@@ -286,12 +290,31 @@ def _baseline_data_reference(
         entries = ((backtest.get("job") or {}).get("verified_data_binding") or {}).get(
             "entries"
         ) or []
+        job = backtest.get("job") or {}
+        if job.get("status") in {"failed", "cancelled"} or (
+            job.get("status") == "completed" and len(entries) != 1
+        ):
+            return SelfTestResult(
+                False,
+                None,
+                None,
+                None,
+                reasons=["baseline_data_snapshot_unavailable"],
+                message=str(job.get("error_message") or "baseline sealed data binding missing"),
+                terminal_failure={
+                    "job_id": job.get("job_id"),
+                    "status": job["status"],
+                    "stage": "baseline",
+                },
+            )
         if len(entries) != 1:
             raise ValueError("baseline sealed data binding missing")
         return {
             "verified_data_snapshot_id": str(entries[0]["verified_snapshot_id"]),
             "verified_data_manifest_sha256": str(entries[0]["manifest_sha256"]),
         }
+    except BacktestDeferred:
+        raise
     except Exception as exc:
         return SelfTestResult(
             passed=False,
@@ -372,8 +395,16 @@ def _result_metrics(payload: Any) -> dict[str, Any]:
 class ARCSelfTestService:
     """Run the BitPro experiment and judge it with the mission success_criteria."""
 
-    def __init__(self, client: SelfTestClient | None = None) -> None:
+    def __init__(
+        self, client: SelfTestClient | None = None, *, backtest_runner: Any = None
+    ) -> None:
         self._client = client
+        self._backtest_runner = backtest_runner
+
+    def _backtest(self, client: Any, **parameters: Any) -> dict[str, Any]:
+        if self._backtest_runner is not None:
+            return dict(self._backtest_runner.run(client, **parameters))
+        return dict(client.backtest_start_job(**parameters))
 
     def run(
         self,
@@ -604,14 +635,23 @@ class ARCSelfTestService:
             # uses the exact create/backtest keys its own attempt would, so the later
             # baseline self-test replays this job instead of running a second one.
             baseline_ref = _baseline_data_reference(
-                client, attempt, goal, symbols, timeframe, purpose, start, end
+                client,
+                attempt,
+                goal,
+                symbols,
+                timeframe,
+                purpose,
+                start,
+                end,
+                backtest_start=lambda **kw: self._backtest(client, **kw),
             )
             if isinstance(baseline_ref, SelfTestResult):
                 baseline_ref.bitpro_strategy_id = str(strategy_id)
                 return baseline_ref
             data_ref = baseline_ref
         try:
-            backtest = client.backtest_start_job(
+            backtest = self._backtest(
+                client,
                 strategy_id=strategy_id,
                 start_date=start.isoformat(),
                 end_date=end.isoformat(),
@@ -627,6 +667,8 @@ class ARCSelfTestService:
                 idempotency_key=backtest_key,
                 **data_ref,
             )
+        except BacktestDeferred:
+            raise
         except Exception as exc:
             return SelfTestResult(
                 passed=False,
@@ -637,6 +679,21 @@ class ARCSelfTestService:
                 message=_failure("backtest", exc),
             )
 
+        job = backtest.get("job") or {}
+        if job.get("status") in {"failed", "cancelled", "interrupted"}:
+            return SelfTestResult(
+                False,
+                None,
+                str(strategy_id),
+                _backtest_id(backtest),
+                reasons=["backtest_" + job["status"]],
+                message=str(job.get("error_message") or job["status"]),
+                terminal_failure={
+                    "job_id": job.get("job_id"),
+                    "status": job["status"],
+                    "stage": "candidate",
+                },
+            )
         if _backtest_still_running(backtest):
             return SelfTestResult(
                 passed=False,

@@ -1,5 +1,7 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
+研究回测采用行动绑定检查点和原job有界恢复，冻结输入与Paper历史不可替换；详见[ARC架构](docs/architecture/37-arc-autonomous-research-core-architecture.md)。
+
 <p align="center">
   <strong>自托管、受治理的多市场策略研究 Agent Runtime · 自主研究与自主进化闭环</strong>
 </p>

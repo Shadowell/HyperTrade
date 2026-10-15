@@ -17,6 +17,7 @@ from jsonschema import ValidationError, validate
 
 from hypertrade.agent.compaction import ContextBlocked, compact_request, sanitize_context
 from hypertrade.arc.adversarial import BlueTeamQuant
+from hypertrade.arc.backtest_recovery import BacktestActionRunner, BacktestDeferred, recoverable
 from hypertrade.arc.contracts import SIDE_EFFECT_FREE_TOOLS, ARCCandidateAttemptV1
 from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProjection
 from hypertrade.arc.evolution_memory import (
@@ -192,6 +193,7 @@ control execution.
 
 
 _STOP_MESSAGES = {
+    "avo_backtest_pending": "已保存冻结回测任务回执，等待原任务完成或恢复",
     "avo_validation_policy_unsupported": "当前研究仅支持基础窗口验证，不能声明已执行其他验证策略",
     "avo_provider_unavailable": "研究模型暂不可用，请检查配置或额度",
     "avo_effect_unknown": "操作结果尚未确认，需要先核对，系统不会盲目重复执行",
@@ -258,6 +260,14 @@ def reduce_avo_event(projection: ARCMissionProjection, event: ARCEventV1) -> Non
         )
         goal.budget.tool_calls_used += 1
         state["pending"] = {"kind": "tool", **payload}
+    elif kind == "avo_backtest_checkpoint":
+        from hypertrade.arc.backtest_recovery import reduce_checkpoint
+
+        reduce_checkpoint(projection, payload)
+    elif kind == "avo_backtest_recovery_bound":
+        from hypertrade.arc.backtest_recovery import bind_legacy_checkpoint
+
+        bind_legacy_checkpoint(projection, payload)
     elif kind == "avo_effect_reconciled":
         # Operator-only audited settlement; never a retry or a successful backtest.
         pending = state.get("pending") or {}
@@ -368,6 +378,8 @@ def _perform(
     arguments: dict[str, Any],
     experiments: ARCSelfTestService,
     check_owner: Callable[[], None] | None = None,
+    *,
+    recovering: bool = False,
 ) -> dict[str, Any]:
     goal = controller.projection.goal
     assert goal is not None
@@ -690,15 +702,43 @@ def _perform(
         )
     comparison_context = goal.feedback_parent or goal.evolution_context
     reserve = 2 if comparison_context else 1
-    if final and comparison_context and budget.max_backtests - budget.backtests_used < 2:
-        raise ValueError("two backtests are required for the frozen baseline comparison")
-    if budget.backtests_used >= budget.max_backtests - (0 if final else reserve):
+    call_id = (controller.projection.avo.get("pending") or {}).get("id")
+
+    def charged(kind: str, attempt_id: str) -> bool:
+        if (
+            recovering
+            and controller.projection.avo.get("recovered_phase_charges", {}).get(call_id) == kind
+        ):
+            return True
+        return recovering and any(
+            e.event_type == kind
+            and e.payload.get("tool_call_id") == call_id
+            and e.payload.get("attempt_id") == attempt_id
+            for e in controller.projection.events
+        )
+
+    candidate_phase = "avo_final_requested" if final else "avo_development_requested"
+    baseline = (
+        ARCCandidateAttemptV1.model_validate(comparison_context["baseline"])
+        if final and comparison_context
+        else None
+    )
+    needed = int(not charged(candidate_phase, candidate.attempt_id)) + int(
+        baseline is not None and not charged("avo_baseline_requested", baseline.attempt_id)
+    )
+    if budget.max_backtests - budget.backtests_used < needed + (0 if final else reserve):
         raise ValueError(f"backtest budget exhausted; final validation reserves {reserve} slots")
     if final and comparison_context:
-        baseline = ARCCandidateAttemptV1.model_validate(comparison_context["baseline"])
-        controller.apply_event("avo_baseline_requested", {"attempt_id": baseline.attempt_id})
+        assert baseline is not None
+        if not charged("avo_baseline_requested", baseline.attempt_id):
+            controller.apply_event(
+                "avo_baseline_requested",
+                {"attempt_id": baseline.attempt_id, "tool_call_id": call_id},
+            )
         try:
             baseline_result = experiments.run(baseline, goal, purpose="final")
+        except BacktestDeferred as exc:
+            raise ResearchStopped("avo_backtest_pending") from exc
         except Exception as exc:
             raise ResearchStopped("avo_effect_unknown") from exc
         if not baseline_result.backtest_id:
@@ -712,12 +752,14 @@ def _perform(
         )
         if (datetime.now(UTC) - started).total_seconds() >= budget.max_wall_seconds:
             raise ResearchStopped("avo_wall_budget_exhausted")
-    controller.apply_event(
-        "avo_final_requested" if final else "avo_development_requested",
-        {"attempt_id": candidate.attempt_id},
-    )
+    if not charged(candidate_phase, candidate.attempt_id):
+        controller.apply_event(
+            candidate_phase, {"attempt_id": candidate.attempt_id, "tool_call_id": call_id}
+        )
     try:
         result = experiments.run(candidate, goal, purpose="final" if final else "development")
+    except BacktestDeferred as exc:
+        raise ResearchStopped("avo_backtest_pending") from exc
     except Exception as exc:
         raise ResearchStopped("avo_effect_unknown") from exc
     if final:
@@ -744,6 +786,15 @@ def _perform(
         "purpose": "final" if final else "development",
     }
     if not result.backtest_id:
+        if result.terminal_failure:
+            if final:
+                controller.apply_event("operator_needed", {"reason": "avo_final_validation_failed"})
+            else:
+                controller.apply_event(
+                    "avo_development_result",
+                    {"attempt_id": candidate.attempt_id, "result": payload},
+                )
+            return payload
         controller.apply_event("avo_unknown_result", payload)
         raise ResearchStopped("avo_effect_unknown")
     if not final:
@@ -784,7 +835,15 @@ def run_avo_research(
         if not needs_research(controller.projection):
             return {"status": controller.projection.state, "mission_id": mission_id}
         try:
-            _run(controller, provider, experiments or ARCSelfTestService(), check_owner)
+            _run(
+                controller,
+                provider,
+                experiments
+                or ARCSelfTestService(
+                    backtest_runner=BacktestActionRunner(controller, check_owner)
+                ),
+                check_owner,
+            )
         except ResearchStopped as exc:
             message = _STOP_MESSAGES.get(str(exc), "研究需要人工检查")
             if exc.detail:
@@ -947,6 +1006,20 @@ def _run(
     if goal.success_criteria.required_validation_policy != "arc_windowed_v1":
         raise ResearchStopped("avo_validation_policy_unsupported")
     _recover_receipt(controller)
+    if recoverable(controller.projection):
+        pending = controller.projection.avo["pending"]
+        result = _perform(
+            controller,
+            pending["name"],
+            pending["arguments"],
+            experiments,
+            check_owner,
+            recovering=True,
+        )
+        controller.apply_event(
+            "avo_tool_finished", {"id": pending["id"], "result": result, "recovered": True}
+        )
+        return
     if controller.projection.state not in RESEARCH_STATES:
         return
     state = controller.projection.avo
@@ -1236,9 +1309,15 @@ def _recorded_receipt(projection: ARCMissionProjection) -> dict[str, Any] | None
 def needs_research(projection: ARCMissionProjection) -> bool:
     if projection.goal is None or projection.goal.research_mode != "avo":
         return False
-    return projection.state in RESEARCH_STATES or (
-        projection.state in {"paper_authorizing", "paper_review_ready", "needs_operator"}
-        and _recorded_receipt(projection) is not None
+    if projection.state in RESEARCH_STATES and recoverable(projection, due=False):
+        return recoverable(projection)
+    return (
+        projection.state in RESEARCH_STATES
+        or (
+            projection.state in {"paper_authorizing", "paper_review_ready", "needs_operator"}
+            and _recorded_receipt(projection) is not None
+        )
+        or (projection.state == "needs_operator" and recoverable(projection))
     )
 
 
