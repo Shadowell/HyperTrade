@@ -9,6 +9,8 @@ from typing import Any, NoReturn
 
 from hypertrade.arc.runtime_journal import failure_text
 
+PENDING_BACKTEST_STATES = {"queued", "pending", "preparing_data", "running", "cancelling"}
+
 
 class BacktestDeferred(Exception):
     """An acknowledged experiment is still pending; the worker may read it later."""
@@ -338,7 +340,7 @@ class BacktestActionRunner:
                 failed_read(exc)
             save(phase="waiting")
             defer("backtest resumed")
-        if status in {"pending", "running", "cancelling"}:
+        if status in PENDING_BACKTEST_STATES:
             if datetime.now(UTC) - datetime.fromisoformat(entry["created_at"]) > timedelta(
                 hours=24
             ):

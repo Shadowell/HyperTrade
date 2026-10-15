@@ -1,5 +1,7 @@
 ## 2026-09-30 结构化研究变体（#1171）
 
+回测处理中状态包含queued、pending、preparing_data、running、cancelling；准备行情不是未知副作用，也不是验证完成。
+
 旧环境已变化不能冒充原job续跑。版本重验发送X-Backtest-Recovery-Of，必须取得服务端明确前序回执；新旧job和输入摘要分别保留。输入损坏、策略/经济请求变化、取消或仍运行均不得以此路径绕过。
 
 回测恢复不得重新生成候选或替换冻结输入。BitPro必须先支持持久Idempotency-Key；HyperTrade转发该请求头并保留job快照摘要。failed/cancelled强制失败，残留指标不能使失败job通过。研究预算按原行动计数，轮询/中断恢复不另扣模型或候选预算；人工停止保持有效。

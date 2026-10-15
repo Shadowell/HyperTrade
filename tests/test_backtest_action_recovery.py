@@ -118,6 +118,16 @@ def test_failed_or_cancelled_job_is_never_automatically_resumed(action):
     assert client.resumed == 0
 
 
+@pytest.mark.parametrize("status", ["queued", "preparing_data"])
+def test_data_preparation_is_pending_not_a_failed_or_unknown_job(action, status):
+    client = Jobs()
+    client.status = status
+    with pytest.raises(BacktestDeferred):
+        BacktestActionRunner(action).run(client, **REQUEST)
+    assert client.created == 1 and client.resumed == 0
+    assert next(iter(action.projection.avo["backtest_effects"].values()))["phase"] == "waiting"
+
+
 def test_resume_attempts_are_bounded(action):
     client = Jobs()
     runner = BacktestActionRunner(action)
