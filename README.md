@@ -251,3 +251,5 @@ curl http://localhost:3334/api/portfolio/relay/handovers
 ## 自愈证据边界（2026-10-11）
 
 旧自愈参数建议不代表已验证候选。缺少不可变候选回测回执时验证失败，不借用母策略结果，不发送成功通知或启动 Paper；正常 ARC 来源变体、同窗验证与审核流程仍负责自动研发。7 维归因复用执行证据合同，汇总回测指标不能推出交易路径或因果结论；数据缺口扫描保持 unavailable，不生成伪候选。
+
+2026-10-15：ARC 新增 `GET /api/v1/arc/variant-status?source_strategy_id=…&candidate_strategy_id=…` 只读摘要。限定 BitPro 目标并精确绑定母体/候选，只选取持久投影子字段与当前受阻任务最近一条阻塞事件，不重建控制器、不加载完整事件/模型对话；权限继续为 `arc:read`。最多检索母体最近100条任务，无匹配返回 `not_found`，不代表审核通过。

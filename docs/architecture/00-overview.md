@@ -26,3 +26,5 @@ HyperTrade 不复制交易平台的内部业务逻辑，不直接读取其内部
 - 当前已验证状态与生产证据：[Progress Log](../progress.md)
 - 所有交付合同与 Sprint 规划：[Sprint Contracts](../contracts/)
 - 运维与部署操作手册：[Runbooks](../runbooks/)
+
+2026-10-15：ARC 新增 `GET /api/v1/arc/variant-status?source_strategy_id=…&candidate_strategy_id=…` 只读摘要。限定 BitPro 目标并精确绑定母体/候选，只选取持久投影子字段与当前受阻任务最近一条阻塞事件，不重建控制器、不加载完整事件/模型对话；权限继续为 `arc:read`。最多检索母体最近100条任务，无匹配返回 `not_found`，不代表审核通过。

@@ -324,6 +324,19 @@ async def arc_evidence_preflight(
     return preflight_window(symbol=symbol, timeframe=timeframe)
 
 
+@router.get("/variant-status", dependencies=[Depends(require_scope(ARCScope.READ))])
+async def variant_status(
+    request: Request,
+    source_strategy_id: int = Query(gt=0),
+    candidate_strategy_id: int | None = Query(default=None, gt=0),
+) -> dict[str, Any]:
+    from hypertrade.arc.variant_status import read_variant_status
+
+    return await run_in_threadpool(
+        read_variant_status, request.app.state.db, source_strategy_id, candidate_strategy_id
+    )
+
+
 @router.get("/missions", dependencies=[Depends(require_scope(ARCScope.READ))])
 async def list_arc_missions(
     state: str | None = Query(default=None),

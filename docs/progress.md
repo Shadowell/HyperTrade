@@ -1,3 +1,7 @@
+## 2026-10-15：候选原因定向读取
+
+为 BitPro 卡片新增按身份查询的紧凑只读摘要，避免枚举47个任务及约9.4万事件。覆盖目标、母体、候选隔离与非阻塞状态清除旧阻塞。生产库只读函数测得0.15～0.37秒；完整 `scripts/check.sh` 通过（2181项后端测试及前端lint/test/build、ruff、mypy）。端到端HTTP耗时待部署验证。
+
 ## 生产恢复收敛回读（2026-10-15）
 
 - BitPro #1265/#1266、HyperTrade #50/#51已部署核验，代码SHA为290aeb9c/10a3335a。东京持久备份：`/var/backups/hypertrade/avo-bound-resume-20261015T114252Z-before.json`；原Paper/任务备份：`/var/backups/hypertrade/avo-backtest-recovery-20261015T094415Z-before.json`。
