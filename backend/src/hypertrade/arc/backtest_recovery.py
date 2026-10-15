@@ -15,6 +15,10 @@ PENDING_BACKTEST_STATES = {"queued", "pending", "preparing_data", "running", "ca
 class BacktestDeferred(Exception):
     """An acknowledged experiment is still pending; the worker may read it later."""
 
+    def __init__(self, message: str = "backtest pending", *, transient_error: bool = False):
+        super().__init__(message)
+        self.transient_error = transient_error
+
 
 def digest(value: Any) -> str:
     return hashlib.sha256(
@@ -225,11 +229,12 @@ class BacktestActionRunner:
                 next_check_at=(
                     datetime.now(UTC) + timedelta(seconds=min(300, 60 * max(1, failures)))
                 ).isoformat(),
-                last_error=message,
+                last_error=message if error else None,
+                wait_reason=message,
             )
             if failures >= 5:
                 raise ValueError("backtest read recovery limit reached")
-            raise BacktestDeferred(message)
+            raise BacktestDeferred(message, transient_error=error)
 
         def failed_read(exc: Exception) -> NoReturn:
             status = getattr(exc, "status_code", None)
@@ -347,7 +352,7 @@ class BacktestActionRunner:
                 save(phase="blocked")
                 raise ValueError("backtest wait limit reached; operator reconciliation required")
             save(phase="waiting")
-            defer("backtest running")
+            defer(f"backtest {status}")
         if status not in {"completed", "failed", "cancelled"}:
             save(phase="blocked")
             raise ValueError("unknown backtest state")

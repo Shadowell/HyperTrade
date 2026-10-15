@@ -1,6 +1,6 @@
 ## 回测恢复状态对齐（2026-10-15）
 
-- BitPro真实执行器认领job后使用preparing_data；恢复器此前未识别此状态。统一排队/准备数据/运行/取消中的状态集合，均等待原回执，不误判失败或重复派发。新增queued/preparing_data回归，完整check通过：2166项后端、15项前端及ruff/mypy/build。先部署本补丁，再启用BitPro生产Python3.10兼容执行器。
+- BitPro真实执行器认领job后使用preparing_data；恢复器此前未识别此状态。统一排队/准备数据/运行/取消中的状态集合，均等待原回执，不误判失败或重复派发。正常等待不记入运行错误，真实网络失败仍留审计。新增queued/preparing_data与错误分类回归，完整check通过：2168项后端、15项前端及ruff/mypy/build。先部署本补丁，再启用BitPro生产Python3.10兼容执行器。
 
 ## 回测恢复补充：执行版本变化的关联重验（2026-10-15）
 
