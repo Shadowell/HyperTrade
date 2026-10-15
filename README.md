@@ -1,5 +1,19 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
+研究回测在外部副作用前后持久保存行动检查点：请求、attempt、源码、job与冻结输入绑定；断连后读取原job，interrupted最多恢复2次，失败/取消不重试。最多连续5次读取失败或等待24小时后明确要求对账，操作者停止不能被恢复器覆盖。部署顺序为BitPro持久幂等接口先行。
+
+```mermaid
+flowchart LR
+    A[研究行动] --> J[(持久行动检查点)]
+    J --> B[原job与冻结输入]
+    B --> S{真实状态}
+    S -->|运行中| J
+    S -->|中断| R[有界恢复原job]
+    R --> B
+    S -->|完成| Q[结果与母体比较]
+    S -->|失败或取消| F[失败证据]
+```
+
 部署从实际 Docker network 获取 BitPro 主机网关，并验证 API/worker 的 DNS 与认证健康请求。未知开发副作用只能凭精确外部对账回执收敛失败，不能盲目重试或宣称成功。
 
 <p align="center">
