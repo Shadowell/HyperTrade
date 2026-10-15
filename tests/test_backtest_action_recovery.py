@@ -118,6 +118,46 @@ def test_failed_or_cancelled_job_is_never_automatically_resumed(action):
     assert client.resumed == 0
 
 
+@pytest.mark.parametrize("status", ["queued", "preparing_data"])
+def test_data_preparation_is_pending_not_a_failed_or_unknown_job(action, status):
+    client = Jobs()
+    client.status = status
+    with pytest.raises(BacktestDeferred):
+        BacktestActionRunner(action).run(client, **REQUEST)
+    assert client.created == 1 and client.resumed == 0
+    assert next(iter(action.projection.avo["backtest_effects"].values()))["phase"] == "waiting"
+
+
+@pytest.mark.parametrize("network_failure", [False, True])
+def test_expected_wait_is_not_recorded_as_runtime_error(action, monkeypatch, network_failure):
+    from hypertrade.arc.avo import run_avo_research
+
+    client = Jobs()
+    with pytest.raises(BacktestDeferred):
+        BacktestActionRunner(action).run(client, **REQUEST)
+    action.apply_event("operator_needed", {"reason": "avo_backtest_pending"})
+    for key, entry in list(action.projection.avo["backtest_effects"].items()):
+        action.apply_event(
+            "avo_backtest_checkpoint", {"key": key, "entry": {**entry, "next_check_at": None}}
+        )
+    client.disconnect = network_failure
+    errors = []
+
+    def error(*a, **kw):
+        errors.append(a)
+        return {"error_id": "e"}
+
+    monkeypatch.setattr("hypertrade.arc.avo.record_runtime_error", error)
+
+    class Experiment:
+        def run(self, *a, **kw):
+            return BacktestActionRunner(action).run(client, **REQUEST)
+
+    run_avo_research(action.mission_id, experiments=Experiment())
+    assert len(errors) == int(network_failure)
+    assert action.projection.state == "validating"
+
+
 def test_resume_attempts_are_bounded(action):
     client = Jobs()
     runner = BacktestActionRunner(action)

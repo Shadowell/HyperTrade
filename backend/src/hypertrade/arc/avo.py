@@ -856,7 +856,9 @@ def run_avo_research(
             if exc.detail:
                 message += "：" + exc.detail
             payload: dict[str, Any] = {"reason": str(exc), "message": message}
-            if exc.__cause__ is not None:
+            if exc.__cause__ is not None and not (
+                isinstance(exc.__cause__, BacktestDeferred) and not exc.__cause__.transient_error
+            ):
                 payload["error_id"] = record_runtime_error(
                     "avo.research", exc.__cause__, mission_id=mission_id, context=payload
                 )["error_id"]

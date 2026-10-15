@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Protocol
 
-from hypertrade.arc.backtest_recovery import BacktestDeferred
+from hypertrade.arc.backtest_recovery import PENDING_BACKTEST_STATES, BacktestDeferred
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCGoalV1, ARCSuccessCriteriaV1
 from hypertrade.arc.runtime_journal import failure_text, record_runtime_error
 from hypertrade.arc.strategy_names import (
@@ -206,7 +206,7 @@ def _number(metrics: dict[str, Any], *keys: str) -> float | None:
 # Sealed research backtests add a fixed warmup and may cover whole baskets; the
 # connector's 90s interactive default abandoned completed jobs as empty results.
 BACKTEST_WAIT_SECONDS = 1800.0
-_PENDING_JOB_STATES = {"queued", "pending", "preparing_data", "running", "cancelling"}
+_PENDING_JOB_STATES = PENDING_BACKTEST_STATES
 
 
 def _backtest_still_running(payload: Any) -> bool:
