@@ -1,5 +1,7 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
+2026-10-15：来源变体强制证据引用、反证及收益/回撤改进目标；封存行情、成本和执行版本一致后才比较母体，终态执行失败单独结算。正式Paper审核须匹配最终通过回执，人工暂停不被恢复覆盖。已有回测检查点的部署健康检查断连采用5次/24小时有界恢复，审计恢复不增加预算、不改变Paper历史。
+
 版本变化只能通过显式关联的新版本重验处理；原job与Paper历史保留，恢复次数不重置。
 
 研究回测采用行动绑定检查点和原job有界恢复，冻结输入与Paper历史不可替换；详见[ARC架构](docs/architecture/37-arc-autonomous-research-core-architecture.md)。

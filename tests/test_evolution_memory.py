@@ -154,7 +154,14 @@ def test_evolution_proposal_rejects_missing_or_invented_evidence():
 
     with pytest.raises(ValueError, match="requires"):
         bind_hypothesis({}, {}, {})
-    proposal = {"evolution_hypothesis": {"evidence_refs": ["invented"]}}
+    proposal = {
+        "evolution_hypothesis": {
+            "evidence_refs": ["invented"],
+            "expected_metric": "net_return",
+            "expected_direction": "increase",
+            "falsification": "Reject unless measured net excess return improves",
+        }
+    }
     with pytest.raises(ValueError, match="unavailable"):
         bind_hypothesis(proposal, {}, {})
 

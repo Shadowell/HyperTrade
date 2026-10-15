@@ -180,6 +180,51 @@ class BacktestActionRunner:
         self.controller = controller
         self.check_owner = check_owner
 
+    def defer_prerequisite(self, exc: Exception) -> None:
+        """Bound transient preflight retries only after an exact action has a durable job."""
+        from hypertrade.bitpro.mcp import BitProMcpError
+
+        if not isinstance(exc, BitProMcpError) or exc.status_code not in {
+            None,
+            408,
+            429,
+            502,
+            503,
+            504,
+        }:
+            return
+        identity = action_identity(self.controller.projection)
+        entries = [
+            (key, value)
+            for key, value in self.controller.projection.avo.get("backtest_effects", {}).items()
+            if value.get("action") == identity
+            and value.get("job_id")
+            and value.get("phase") not in {"superseded", "blocked", "terminal"}
+        ]
+        if not entries:
+            return
+        key, stored = entries[-1]
+        count = stored.get("preflight_failures", 0) + 1
+        expired = datetime.now(UTC) - datetime.fromisoformat(stored["created_at"]) > timedelta(
+            hours=24
+        )
+        blocked = count >= 5 or expired
+        entry = {
+            **stored,
+            "preflight_failures": count,
+            "phase": "blocked" if blocked else stored["phase"],
+            "last_error": failure_text(exc),
+            "next_check_at": (
+                datetime.now(UTC) + timedelta(seconds=60 * min(count, 5))
+            ).isoformat(),
+        }
+        self.controller.apply_event("avo_backtest_checkpoint", {"key": key, "entry": entry})
+        if blocked:
+            raise ValueError("backtest prerequisite recovery limit reached") from exc
+        raise BacktestDeferred(
+            "backtest prerequisite temporarily unavailable", transient_error=True
+        ) from exc
+
     def run(self, client: Any, **parameters: Any) -> dict[str, Any]:
         request = {
             k: v
@@ -343,7 +388,7 @@ class BacktestActionRunner:
                 ) == 409 and "backtest_source_or_deployment_changed" in str(exc):
                     revalidate()
                 failed_read(exc)
-            save(phase="waiting")
+            save(phase="waiting", preflight_failures=0)
             defer("backtest resumed")
         if status in PENDING_BACKTEST_STATES:
             if datetime.now(UTC) - datetime.fromisoformat(entry["created_at"]) > timedelta(
@@ -351,7 +396,7 @@ class BacktestActionRunner:
             ):
                 save(phase="blocked")
                 raise ValueError("backtest wait limit reached; operator reconciliation required")
-            save(phase="waiting")
+            save(phase="waiting", preflight_failures=0)
             defer(f"backtest {status}")
         if status not in {"completed", "failed", "cancelled"}:
             save(phase="blocked")
