@@ -1,5 +1,7 @@
 # 37 ARC (Autonomous Research Core) 自主进化控制内核架构设计
 
+`avo_backtest_revalidation`原子关联原执行与后继检查点；只有原job恢复被明确以执行版本变化拒绝时触发，策略源码和全部经济输入仍由BitPro校验。恢复计数跨版本继承，不扩充模型/候选预算。`avo_backtest_waiting`保持validating状态，未知/永久错误停止自动恢复。
+
 回测恢复新增 `avo_backtest_checkpoint`：在外部创建前登记请求，收到响应立即保存job和input_snapshot_hash。后续worker按原请求/行动/源码回读，interrupted经原job resume接口恢复且最多2次；网络错误保留回执，5次连续读取失败或24小时等待后停止自动恢复。`avo_backtest_recovery_bound`仅接受操作者对账的旧任务与原预算事件，不重复计费。
 
 逐策略扫描读取异常通过 `evolution.read` 写入既有 `ArcRuntimeError` 去重账本，保留策略/目标/快照阶段；诊断返回脱敏原始消息与错误ID，通用就绪提示不能抹去根因。

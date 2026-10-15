@@ -7,6 +7,8 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any, NoReturn
 
+from hypertrade.arc.runtime_journal import failure_text
+
 
 class BacktestDeferred(Exception):
     """An acknowledged experiment is still pending; the worker may read it later."""
@@ -36,7 +38,9 @@ def action_identity(projection: Any) -> dict[str, Any]:
     }
 
 
-def reduce_checkpoint(projection: Any, payload: dict[str, Any]) -> None:
+def reduce_checkpoint(
+    projection: Any, payload: dict[str, Any], *, allow_successor: bool = False
+) -> None:
     entry = payload["entry"]
     if entry["action"] != action_identity(projection):
         raise ValueError("backtest action changed")
@@ -48,6 +52,8 @@ def reduce_checkpoint(projection: Any, payload: dict[str, Any]) -> None:
     entries = projection.avo.setdefault("backtest_effects", {})
     old = entries.get(expected_key)
     if old:
+        if entry.get("successor_key") != old.get("successor_key") and not allow_successor:
+            raise ValueError("successor requires explicit version revalidation")
         if any(old[k] != entry[k] for k in ("action", "request_hash")):
             raise ValueError("backtest action/request receipt mismatch")
         if any(old.get(k) and old[k] != entry.get(k) for k in ("job_id", "input_snapshot_hash")):
@@ -55,6 +61,49 @@ def reduce_checkpoint(projection: Any, payload: dict[str, Any]) -> None:
         if entry.get("resume_attempts", 0) < old.get("resume_attempts", 0):
             raise ValueError("backtest resume counter regressed")
     entries[expected_key] = dict(entry)
+
+
+def reduce_revalidation(projection: Any, payload: dict[str, Any]) -> None:
+    old = projection.avo.get("backtest_effects", {}).get(payload["previous_key"])
+    new = payload["entry"]
+    if (
+        not old
+        or old.get("phase") != "resume_requested"
+        or payload.get("reason") != "backtest_source_or_deployment_changed"
+    ):
+        raise ValueError("version revalidation needs a rejected interrupted job")
+
+    def economics(request: dict[str, Any]) -> dict[str, Any]:
+        return {
+            k: v for k, v in request.items() if k not in {"idempotency_key", "recovery_of_job_id"}
+        }
+
+    if (
+        new["action"] != old["action"]
+        or economics(new["request"]) != economics(old["request"])
+        or new["request"].get("recovery_of_job_id") != old["job_id"]
+        or new.get("resume_attempts") != old["resume_attempts"]
+        or new.get("revision") != old.get("revision", 0) + 1
+        or new["revision"] > 2
+        or old["resume_attempts"] > 2
+    ):
+        raise ValueError("version revalidation must preserve action, inputs and retry budget")
+    shadow = projection.model_copy(deep=True)
+    reduce_checkpoint(
+        shadow,
+        {
+            "key": payload["previous_key"],
+            "entry": {
+                **old,
+                "phase": "superseded",
+                "next_check_at": None,
+                "successor_key": payload["key"],
+            },
+        },
+        allow_successor=True,
+    )
+    reduce_checkpoint(shadow, {"key": payload["key"], "entry": new})
+    projection.avo["backtest_effects"] = shadow.avo["backtest_effects"]
 
 
 def recoverable(projection: Any, *, due: bool = True) -> bool:
@@ -152,6 +201,13 @@ class BacktestActionRunner:
             raise ValueError("backtest action mismatch")
         if entry["request_hash"] != digest(request):
             raise ValueError("backtest request mismatch")
+        if entry.get("successor_key"):
+            successor = self.controller.projection.avo["backtest_effects"].get(
+                entry["successor_key"]
+            )
+            if not successor:
+                raise ValueError("version revalidation checkpoint missing")
+            return self.run(client, **successor["request"])
 
         def save(**changes: Any) -> None:
             entry.update(changes)
@@ -173,6 +229,50 @@ class BacktestActionRunner:
                 raise ValueError("backtest read recovery limit reached")
             raise BacktestDeferred(message)
 
+        def failed_read(exc: Exception) -> NoReturn:
+            status = getattr(exc, "status_code", None)
+            message = f"{type(exc).__name__}: {failure_text(exc)}"
+            if isinstance(exc, (ValueError, PermissionError, KeyError)) or (
+                status is not None and 400 <= status < 500 and status not in (408, 429)
+            ):
+                save(phase="blocked", last_error=message)
+                raise ValueError("backtest recovery rejected: " + message) from exc
+            defer(message, error=True)
+
+        def revalidate() -> NoReturn:
+            revision = entry.get("revision", 0) + 1
+            if revision > 2:
+                save(phase="blocked")
+                raise ValueError("backtest version revalidation limit reached")
+            changed = {
+                **request,
+                "idempotency_key": request["idempotency_key"] + f"-version-{revision}",
+                "recovery_of_job_id": entry["job_id"],
+            }
+            child = {
+                "action": action,
+                "request": changed,
+                "request_hash": digest(changed),
+                "phase": "planned",
+                "resume_attempts": entry["resume_attempts"],
+                "revision": revision,
+                "read_failures": 0,
+                "created_at": datetime.now(UTC).isoformat(),
+                "next_check_at": (datetime.now(UTC) + timedelta(seconds=60)).isoformat(),
+            }
+            self.controller.apply_event(
+                "avo_backtest_revalidation",
+                {
+                    "previous_key": key,
+                    "key": digest([action["tool_call_id"], changed["idempotency_key"]]),
+                    "entry": child,
+                    "reason": "backtest_source_or_deployment_changed",
+                },
+            )
+            raise BacktestDeferred(
+                "execution version changed; linked revalidation queued, original job retained"
+            )
+
         if not stored:
             save()
         if not entry.get("job_id"):
@@ -181,7 +281,7 @@ class BacktestActionRunner:
             try:
                 created = client.backtest_start_job(**request, wait_for_result=False)
             except Exception as exc:
-                defer(type(exc).__name__, error=True)
+                failed_read(exc)
             job = created.get("job") or {}
             if not job.get("job_id") or not job.get("input_snapshot_hash"):
                 save(phase="blocked")
@@ -191,10 +291,16 @@ class BacktestActionRunner:
                 input_snapshot_hash=job["input_snapshot_hash"],
                 phase="submitted",
             )
+            if (
+                request.get("recovery_of_job_id")
+                and job.get("recovery_of_job_id") != request["recovery_of_job_id"]
+            ):
+                save(phase="blocked")
+                raise ValueError("server did not attest version revalidation lineage")
         try:
             response = client.backtest_get_job(job_id=entry["job_id"])
         except Exception as exc:
-            defer(type(exc).__name__, error=True)
+            failed_read(exc)
         job = response.get("job") or {}
         if (
             job.get("job_id") != entry["job_id"]
@@ -216,16 +322,20 @@ class BacktestActionRunner:
                     resume_attempts=entry["resume_attempts"] + 1,
                     resume_from=job.get("updated_at"),
                 )
+            if self.check_owner is not None:
+                self.check_owner()
             try:
-                if self.check_owner is not None:
-                    self.check_owner()
                 client.backtest_resume_job(
                     job_id=entry["job_id"],
                     idempotency_key=request["idempotency_key"]
                     + f"-resume-{entry['resume_attempts']}",
                 )
             except Exception as exc:
-                defer(type(exc).__name__, error=True)
+                if getattr(
+                    exc, "status_code", None
+                ) == 409 and "backtest_source_or_deployment_changed" in str(exc):
+                    revalidate()
+                failed_read(exc)
             save(phase="waiting")
             defer("backtest resumed")
         if status in {"pending", "running", "cancelling"}:

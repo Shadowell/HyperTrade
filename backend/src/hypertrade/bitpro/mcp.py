@@ -294,6 +294,9 @@ class BitProMcpClient:
             json=_post_payload(tool_name, params),
             tool_name=tool_name,
             idempotency_key=params.get("idempotency_key"),
+            recovery_of_job_id=params.get("recovery_of_job_id")
+            if tool_name == "backtest_start_job"
+            else None,
         )
 
     def _request(
@@ -305,10 +308,13 @@ class BitProMcpClient:
         json: dict[str, Any] | None = None,
         tool_name: str,
         idempotency_key: str | None = None,
+        recovery_of_job_id: str | None = None,
     ) -> Any:
         headers = self._auth_headers() or {}
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key
+        if recovery_of_job_id:
+            headers["X-Backtest-Recovery-Of"] = recovery_of_job_id
         try:
             response = self.http_client.request(
                 method,
@@ -830,6 +836,7 @@ class BitProToolAdapter:
         verified_data_snapshot_id: str | None = None,
         verified_data_manifest_sha256: str | None = None,
         idempotency_key: str = "",
+        recovery_of_job_id: str | None = None,
     ) -> dict[str, Any]:
         if bool(verified_data_snapshot_id) != bool(verified_data_manifest_sha256):
             raise ValueError("incomplete verified data reference")
@@ -857,6 +864,7 @@ class BitProToolAdapter:
                     "verified_data_snapshot_id": verified_data_snapshot_id,
                     "verified_data_manifest_sha256": verified_data_manifest_sha256,
                     "idempotency_key": idempotency_key,
+                    "recovery_of_job_id": recovery_of_job_id,
                 },
             )
         )
@@ -2005,6 +2013,8 @@ def _backtest_job_item(raw: dict[str, Any]) -> dict[str, Any]:
                 "end_date",
                 "initial_capital",
                 "cost_policy_hash",
+                "runtime_sha256",
+                "environment_sha256",
                 "market_data_status",
                 "comparison_eligible",
             )
@@ -2060,6 +2070,7 @@ def _backtest_job_item(raw: dict[str, Any]) -> dict[str, Any]:
             "verified_data_binding": safe_binding,
             "strategy_input_snapshot": safe_input,
             "input_snapshot_hash": raw.get("input_snapshot_hash") or (safe_input or {}).get("hash"),
+            "recovery_of_job_id": raw.get("recovery_of_job_id"),
         }
     )
 

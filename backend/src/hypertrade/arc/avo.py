@@ -193,7 +193,7 @@ control execution.
 
 
 _STOP_MESSAGES = {
-    "avo_backtest_pending": "已保存冻结回测任务回执，等待原任务完成或恢复",
+    "avo_backtest_pending": "已保存回测执行回执，等待完成或有界恢复、版本重验",
     "avo_validation_policy_unsupported": "当前研究仅支持基础窗口验证，不能声明已执行其他验证策略",
     "avo_provider_unavailable": "研究模型暂不可用，请检查配置或额度",
     "avo_effect_unknown": "操作结果尚未确认，需要先核对，系统不会盲目重复执行",
@@ -264,6 +264,13 @@ def reduce_avo_event(projection: ARCMissionProjection, event: ARCEventV1) -> Non
         from hypertrade.arc.backtest_recovery import reduce_checkpoint
 
         reduce_checkpoint(projection, payload)
+    elif kind == "avo_backtest_revalidation":
+        from hypertrade.arc.backtest_recovery import reduce_revalidation
+
+        reduce_revalidation(projection, payload)
+    elif kind == "avo_backtest_waiting":
+        projection.state = "validating"
+        state["backtest_waiting"] = dict(payload)
     elif kind == "avo_backtest_recovery_bound":
         from hypertrade.arc.backtest_recovery import bind_legacy_checkpoint
 
@@ -853,7 +860,10 @@ def run_avo_research(
                 payload["error_id"] = record_runtime_error(
                     "avo.research", exc.__cause__, mission_id=mission_id, context=payload
                 )["error_id"]
-            controller.apply_event("operator_needed", payload)
+            controller.apply_event(
+                "avo_backtest_waiting" if str(exc) == "avo_backtest_pending" else "operator_needed",
+                payload,
+            )
         except Exception as exc:
             logger.exception("avo research %s interrupted", mission_id)
             described = record_runtime_error(
