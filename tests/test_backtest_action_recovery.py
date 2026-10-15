@@ -206,6 +206,114 @@ def test_unclassified_error_is_not_retried_just_because_an_old_checkpoint_exists
     assert not recoverable(action.projection, due=False)
 
 
+def test_runtime_change_creates_explicit_successor_without_overwriting_old_job(action):
+    from hypertrade.bitpro.mcp import BitProMcpError
+
+    class ChangedRuntime(Jobs):
+        def __init__(self):
+            super().__init__()
+            self.done = False
+            self.started = []
+
+        def backtest_start_job(self, **kw):
+            self.started.append(kw)
+            self.created += 1
+            return {
+                "job": {
+                    "job_id": "new" if kw.get("recovery_of_job_id") else "old",
+                    "input_snapshot_hash": "sha256:"
+                    + ("b" if kw.get("recovery_of_job_id") else "a") * 64,
+                    "recovery_of_job_id": kw.get("recovery_of_job_id"),
+                }
+            }
+
+        def backtest_get_job(self, job_id):
+            return {
+                "job": {
+                    "job_id": job_id,
+                    "strategy_id": 7,
+                    "status": ("completed" if self.done else "running")
+                    if job_id == "new"
+                    else "interrupted",
+                    "input_snapshot_hash": "sha256:" + ("b" if job_id == "new" else "a") * 64,
+                    "updated_at": "2026-10-15T00:00:00Z",
+                }
+            }
+
+        def backtest_resume_job(self, **kw):
+            raise BitProMcpError("backtest_source_or_deployment_changed", status_code=409)
+
+    client = ChangedRuntime()
+    runner = BacktestActionRunner(action)
+    with pytest.raises(BacktestDeferred):
+        runner.run(client, **REQUEST)
+    with pytest.raises(BacktestDeferred):
+        runner.run(client, **REQUEST)
+    assert client.created == 2
+    assert client.started[-1]["recovery_of_job_id"] == "old"
+    entries = list(action.projection.avo["backtest_effects"].values())
+    assert {e.get("job_id") for e in entries} == {"old", "new"}
+    assert next(e for e in entries if e["job_id"] == "old")["phase"] == "superseded"
+    client.done = True
+    assert runner.run(client, **REQUEST)["job"]["job_id"] == "new"
+
+
+def test_corrupt_snapshot_rejection_does_not_create_successor(action):
+    from hypertrade.bitpro.mcp import BitProMcpError
+
+    class Corrupt(Jobs):
+        def backtest_resume_job(self, **kw):
+            raise BitProMcpError("backtest_input_hash_mismatch", status_code=409)
+
+    c = Corrupt()
+    c.status = "interrupted"
+    with pytest.raises(ValueError, match="rejected"):
+        BacktestActionRunner(action).run(c, **REQUEST)
+    assert c.created == 1
+
+
+def test_invalid_revalidation_event_cannot_partially_change_old_checkpoint(action):
+    from copy import deepcopy
+
+    from hypertrade.arc.backtest_recovery import digest
+
+    client = Jobs()
+    runner = BacktestActionRunner(action)
+    with pytest.raises(BacktestDeferred):
+        runner.run(client, **REQUEST)
+    key, entry = next(iter(action.projection.avo["backtest_effects"].items()))
+    action.apply_event(
+        "avo_backtest_checkpoint",
+        {"key": key, "entry": {**entry, "phase": "resume_requested", "resume_attempts": 1}},
+    )
+    entry = action.projection.avo["backtest_effects"][key]
+    before = deepcopy(action.projection.avo["backtest_effects"])
+    request = {
+        **entry["request"],
+        "idempotency_key": "version",
+        "recovery_of_job_id": entry["job_id"],
+    }
+    invalid = {
+        "action": entry["action"],
+        "request": request,
+        "request_hash": "wrong",
+        "resume_attempts": 1,
+        "revision": 1,
+        "phase": "planned",
+    }
+    with pytest.raises(ValueError):
+        action.apply_event(
+            "avo_backtest_revalidation",
+            {
+                "previous_key": key,
+                "key": digest(["call", "version"]),
+                "entry": invalid,
+                "reason": "backtest_source_or_deployment_changed",
+            },
+        )
+    assert action.projection.avo["backtest_effects"] == before
+
+
 def test_legacy_charge_binding_requires_original_requested_action(action):
     from hypertrade.arc.backtest_recovery import action_identity, digest
 

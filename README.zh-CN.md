@@ -1,5 +1,7 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
+版本变化只能通过显式关联的新版本重验处理；原job与Paper历史保留，恢复次数不重置。
+
 研究回测采用行动绑定检查点和原job有界恢复，冻结输入与Paper历史不可替换；详见[ARC架构](docs/architecture/37-arc-autonomous-research-core-architecture.md)。
 
 <p align="center">
