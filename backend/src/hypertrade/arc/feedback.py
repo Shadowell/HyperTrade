@@ -883,6 +883,19 @@ def compare_backtests(metrics: dict[str, Any], baseline: dict[str, Any]) -> dict
     """Same-window Pareto gate; baseline failure does not waive evidence completeness."""
     try:
         old = baseline["metrics"]
+        if "comparison_evidence" in metrics or "comparison_evidence" in old:
+            evidence = metrics.get("comparison_evidence")
+            if not isinstance(evidence, dict) or evidence != old.get("comparison_evidence"):
+                raise ValueError("comparison_execution_mismatch")
+            if (
+                evidence.get("status") != "completed"
+                or not evidence.get("runtime_sha256")
+                or not evidence.get("cost_policy_hash")
+                or not evidence.get("data_manifests")
+                or any(not value for value in evidence.values())
+                or "" in evidence["data_manifests"]
+            ):
+                raise ValueError("comparison_execution_incomplete")
         if metrics["evaluation_window"] != old["evaluation_window"]:
             raise ValueError("comparison_window_mismatch")
 

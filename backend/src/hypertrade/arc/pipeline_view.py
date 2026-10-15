@@ -47,6 +47,7 @@ _EVENT_LABELS = {
     "avo_backtest_recovery_bound": "绑定已审计的原回测任务",
     "avo_backtest_revalidation": "执行版本变化，登记关联重验",
     "avo_backtest_waiting": "等待回测完成",
+    "avo_execution_failed": "回测执行失败，研究已结束",
     "goal_compiled": "目标已编译",
     "candidate_proposed": "提出候选",
     "candidate_mutated": "变异候选",

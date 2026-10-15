@@ -1,3 +1,4 @@
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -302,6 +303,9 @@ def accepted_chain(service, monkeypatch):
             "passed": True,
             "backtest_id": "candidate-final",
             "validation_id": "validation",
+            "purpose": "final",
+            "bitpro_strategy_id": attempt.bitpro_strategy_id,
+            "code_sha256": hashlib.sha256(attempt.strategy_code.encode()).hexdigest(),
             "metrics": {"baseline_comparison": {"passed": True, "backtest_id": "baseline-final"}},
         },
     )

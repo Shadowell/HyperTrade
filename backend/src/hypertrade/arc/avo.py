@@ -181,6 +181,8 @@ why a controlled replication is needed; unchanged repetitions do not establish i
 For autonomous_evolution, every propose must include evolution_hypothesis with evidence_refs
 (paper_feedback, order_sample, a memory_id or a developed attempt_id), expected_metric,
 expected_direction and falsification (what observation would refute the hypothesis).
+The improvement objective must be net_return increase or max_drawdown decrease; lower trade
+count alone is not quality. Terminal execution/data failures end the epoch, not a trading signal.
 When attribution_report is present, cite at least one exact field as
 attribution:<report_id>:<dimension>. Unknown fields support investigation only; they
 cannot establish timing, fee or regime problems. State the observation that would
@@ -319,7 +321,11 @@ def reduce_avo_event(projection: ARCMissionProjection, event: ARCEventV1) -> Non
             call for call in state.get("awaiting", []) if call["id"] != payload["id"]
         ]
         state["pending"] = None
-        if payload.get("recovered") and not state.get("final_window_consumed"):
+        if (
+            payload.get("recovered")
+            and not state.get("final_window_consumed")
+            and projection.state != "failed"
+        ):
             projection.state = "exploring_candidates"
     elif kind in {"avo_development_requested", "avo_final_requested", "avo_baseline_requested"}:
         goal.budget.backtests_used += 1
@@ -332,6 +338,9 @@ def reduce_avo_event(projection: ARCMissionProjection, event: ARCEventV1) -> Non
         state["phase"] = "research"
         state.setdefault("development", {})[payload["attempt_id"]] = payload["result"]
         projection.state = "exploring_candidates"
+    elif kind == "avo_execution_failed":
+        state["terminal_execution_failure"] = dict(payload)
+        projection.state = "failed"
     elif kind == "avo_unknown_result":
         state["unknown_result"] = dict(payload)
 
@@ -522,6 +531,12 @@ def _perform(
                 r"[0-9a-f]{64}", parent_execution_identity_sha256
             ):
                 raise ValueError("parent execution identity missing")
+            if goal.evolution_context and bound_hypothesis is None:
+                bound_hypothesis = bind_hypothesis(
+                    arguments,
+                    goal.evolution_context,
+                    controller.projection.avo.get("development", {}),
+                )
             variant_fingerprint = hashlib.sha256(
                 (
                     parent_manifest_sha256
@@ -748,6 +763,14 @@ def _perform(
             raise ResearchStopped("avo_backtest_pending") from exc
         except Exception as exc:
             raise ResearchStopped("avo_effect_unknown") from exc
+        if baseline_result.terminal_failure:
+            payload = {
+                "attempt_id": candidate.attempt_id,
+                **asdict(baseline_result),
+                "purpose": "final_baseline",
+            }
+            controller.apply_event("avo_execution_failed", payload)
+            return payload
         if not baseline_result.backtest_id:
             raise ResearchStopped("avo_effect_unknown")
         controller.apply_event("avo_baseline_result", asdict(baseline_result))
@@ -792,16 +815,10 @@ def _perform(
         "code_sha256": hashlib.sha256(candidate.strategy_code.encode()).hexdigest(),
         "purpose": "final" if final else "development",
     }
+    if result.terminal_failure:
+        controller.apply_event("avo_execution_failed", payload)
+        return payload
     if not result.backtest_id:
-        if result.terminal_failure:
-            if final:
-                controller.apply_event("operator_needed", {"reason": "avo_final_validation_failed"})
-            else:
-                controller.apply_event(
-                    "avo_development_result",
-                    {"attempt_id": candidate.attempt_id, "result": payload},
-                )
-            return payload
         controller.apply_event("avo_unknown_result", payload)
         raise ResearchStopped("avo_effect_unknown")
     if not final:
@@ -1323,6 +1340,17 @@ def needs_research(projection: ARCMissionProjection) -> bool:
         return False
     if projection.state in RESEARCH_STATES and recoverable(projection, due=False):
         return recoverable(projection)
+    if projection.state == "needs_operator":
+        reason = next(
+            (
+                e.payload.get("reason")
+                for e in reversed(projection.events)
+                if e.event_type == "operator_needed"
+            ),
+            None,
+        )
+        if reason not in {"avo_effect_unknown", "avo_runtime_interrupted", "avo_backtest_pending"}:
+            return False
     return (
         projection.state in RESEARCH_STATES
         or (

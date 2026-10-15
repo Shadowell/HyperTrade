@@ -261,6 +261,7 @@ def _baseline_data_reference(
     start: date,
     end: date,
     backtest_start: Callable[..., dict[str, Any]] | None = None,
+    prerequisite_error: Callable[[Exception], None] | None = None,
 ) -> dict[str, str] | SelfTestResult:
     spec = attempt.strategy_spec
     scope = _experiment_scope(goal, attempt.strategy_code, symbols, timeframe, spec, {})
@@ -316,6 +317,8 @@ def _baseline_data_reference(
     except BacktestDeferred:
         raise
     except Exception as exc:
+        if prerequisite_error is not None:
+            prerequisite_error(exc)
         return SelfTestResult(
             passed=False,
             validation_id=None,
@@ -585,6 +588,8 @@ class ARCSelfTestService:
                 )
                 strategy_id = _strategy_id(created)
         except Exception as exc:
+            if self._backtest_runner is not None:
+                self._backtest_runner.defer_prerequisite(exc)
             return SelfTestResult(
                 passed=False,
                 validation_id=None,
@@ -644,6 +649,9 @@ class ARCSelfTestService:
                 start,
                 end,
                 backtest_start=lambda **kw: self._backtest(client, **kw),
+                prerequisite_error=self._backtest_runner.defer_prerequisite
+                if self._backtest_runner is not None
+                else None,
             )
             if isinstance(baseline_ref, SelfTestResult):
                 baseline_ref.bitpro_strategy_id = str(strategy_id)
@@ -705,6 +713,27 @@ class ARCSelfTestService:
             )
         backtest_id = _backtest_id(backtest)
         metrics = _result_metrics(backtest)
+        # Compare execution evidence from the job receipt, never strategy-supplied metrics.
+        metrics.pop("comparison_evidence", None)
+        if is_source_variant:
+            snapshot = job.get("strategy_input_snapshot") or {}
+            entries = (job.get("verified_data_binding") or {}).get("entries") or []
+            metrics["comparison_evidence"] = {
+                "status": job.get("status"),
+                **{
+                    key: snapshot.get(key)
+                    for key in (
+                        "runtime_sha256",
+                        "cost_policy_hash",
+                        "initial_capital",
+                        "symbols",
+                        "timeframes",
+                        "start_date",
+                        "end_date",
+                    )
+                },
+                "data_manifests": sorted(str(e.get("manifest_sha256") or "") for e in entries),
+            }
         # Bind to the immutable creation/read receipt, not arbitrary backtest metric text.
         metrics.pop("cost_policy_hash", None)
         metrics.pop("config_sha256", None)

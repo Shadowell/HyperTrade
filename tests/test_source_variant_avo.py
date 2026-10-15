@@ -19,6 +19,13 @@ from hypertrade.arc.self_test import ARCSelfTestService
 from hypertrade.arc.store import reset_store, save_mission
 from hypertrade.providers.chat import ChatResponse, ToolCallRequest
 
+HYPOTHESIS = {
+    "evidence_refs": ["paper_feedback"],
+    "expected_metric": "net_return",
+    "expected_direction": "increase",
+    "falsification": "Reject unless measured net excess return improves",
+}
+
 
 def test_mixed_changed_and_unchanged_parameters_rejected_before_effect(source_variant_mission):
     from hypertrade.arc.avo import _perform
@@ -99,6 +106,7 @@ def source_variant_mission():
             success_criteria=ARCSuccessCriteriaV1(required_validation_policy="arc_windowed_v1"),
             evolution_context={
                 "source_strategy_id": 107,
+                "paper_feedback": {"status": "observed"},
                 "variant_policy": variant_policy,
                 "baseline": baseline_attempt.model_dump(mode="json"),
                 "research_windows": {
@@ -178,6 +186,7 @@ class MockSourceVariantProvider:
                         "propose",
                         {
                             "hypothesis": "提高快线周期至15以过滤假突破",
+                            "evolution_hypothesis": HYPOTHESIS,
                             "parameter_changes": {"fast_window": 15},
                         },
                     )
@@ -194,6 +203,7 @@ class MockSourceVariantProvider:
                         "propose",
                         {
                             "hypothesis": "进一步提高快线周期至20",
+                            "evolution_hypothesis": HYPOTHESIS,
                             "parameter_changes": {"fast_window": 20},
                         },
                     )
@@ -210,6 +220,7 @@ class MockSourceVariantProvider:
                         "propose",
                         {
                             "hypothesis": "再次尝试快线15",
+                            "evolution_hypothesis": HYPOTHESIS,
                             "parameter_changes": {"fast_window": 15},
                         },
                     )
@@ -572,7 +583,11 @@ def test_propose_accepts_bitpro_policy_schema_and_enforces_integers(source_varia
     result = _perform(
         source_variant_mission,
         "propose",
-        {"hypothesis": "wider source windows", "parameter_changes": {"fast_window": 12}},
+        {
+            "hypothesis": "wider source windows",
+            "evolution_hypothesis": HYPOTHESIS,
+            "parameter_changes": {"fast_window": 12},
+        },
         experiments,
     )
     attempt = source_variant_mission.projection.attempts[-1]
@@ -658,7 +673,11 @@ def test_propose_rejects_policy_without_execution_identity(source_variant_missio
         _perform(
             source_variant_mission,
             "propose",
-            {"hypothesis": "wider source windows", "parameter_changes": {"fast_window": 12}},
+            {
+                "hypothesis": "wider source windows",
+                "evolution_hypothesis": HYPOTHESIS,
+                "parameter_changes": {"fast_window": 12},
+            },
             ARCSelfTestService(client=MockSelfTestClient()),
         )
     assert source_variant_mission.projection.attempts == []
@@ -716,3 +735,16 @@ def test_structural_proposal_runs_through_active_avo_and_dedupes(source_variant_
 
     with pytest.raises(ValidationError):
         _perform(ctrl, "propose", bad, ARCSelfTestService())
+
+
+def test_source_proposal_requires_evidence_before_creating_candidate(source_variant_mission):
+    from hypertrade.arc.avo import _perform
+
+    with pytest.raises(ValueError, match="evolution_hypothesis"):
+        _perform(
+            source_variant_mission,
+            "propose",
+            {"hypothesis": "guess", "parameter_changes": {"fast_window": 12}},
+            ARCSelfTestService(),
+        )
+    assert source_variant_mission.projection.attempts == []

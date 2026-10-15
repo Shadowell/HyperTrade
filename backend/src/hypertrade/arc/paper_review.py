@@ -28,6 +28,12 @@ def build_paper_review(
     unknowns = []
     if selected is None:
         unknowns.append("missing_validated_candidate")
+    elif selected.state != "validated" and not (
+        selected.state == "paper_observing"
+        and stored.get("status") == "paper_observing"
+        and selected.paper_instance_id == stored.get("paper_instance_id")
+    ):
+        unknowns.append("candidate_not_validated")
     for key in ("bitpro_strategy_id", "bitpro_backtest_id", "validation_id"):
         if selected is None or not getattr(selected, key):
             unknowns.append(f"missing_{key}")
@@ -72,6 +78,31 @@ def build_paper_review(
     if goal is not None and goal.research_windows is not None:
         binding["research_windows"] = goal.research_windows.model_dump(mode="json")
     if goal is not None and goal.evolution_context:
+        if selected is not None:
+            receipt = next(
+                (
+                    r
+                    for r in reversed(projection.self_test_records)
+                    if r.get("attempt_id") == selected.attempt_id
+                ),
+                {},
+            )
+            if (
+                receipt.get("passed") is not True
+                or receipt.get("purpose") != "final"
+                or receipt.get("terminal_failure")
+                or receipt.get("backtest_id") != selected.bitpro_backtest_id
+                or receipt.get("validation_id") != selected.validation_id
+                or receipt.get("bitpro_strategy_id") != selected.bitpro_strategy_id
+                or receipt.get("code_sha256")
+                != hashlib.sha256(selected.strategy_code.encode()).hexdigest()
+                or not receipt.get("metrics")
+                or any(
+                    selected.observed_metrics.get(k) != v
+                    for k, v in receipt.get("metrics", {}).items()
+                )
+            ):
+                unknowns.append("missing_matching_final_validation_receipt")
         context = goal.evolution_context
         binding["evolution_source"] = {
             key: context.get(key)

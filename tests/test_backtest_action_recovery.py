@@ -460,3 +460,50 @@ def test_final_two_legs_recover_with_exactly_two_budget_charges(action):
     assert action.projection.goal.budget.backtests_used == 2
     assert action.projection.avo["pending"] is None
     assert client.created == 2
+
+
+def test_preflight_outage_keeps_bound_job_and_is_bounded(action):
+    from hypertrade.bitpro.mcp import BitProMcpError
+
+    runner = BacktestActionRunner(action)
+    client = Jobs()
+    with pytest.raises(BacktestDeferred):
+        runner.run(client, **REQUEST)
+    for _ in range(4):
+        with pytest.raises(BacktestDeferred):
+            runner.defer_prerequisite(BitProMcpError("connection refused"))
+    with pytest.raises(ValueError, match="recovery limit"):
+        runner.defer_prerequisite(BitProMcpError("connection refused"))
+    entry = next(iter(action.projection.avo["backtest_effects"].values()))
+    assert entry["job_id"] == "j" and entry["phase"] == "blocked"
+    assert client.created == 1
+
+
+def test_audited_bound_wait_recovery_never_overrides_operator_pause(action):
+    import runpy
+    from pathlib import Path
+
+    from hypertrade.arc.backtest_recovery import action_identity, digest
+
+    resume = runpy.run_path(str(Path(__file__).parents[1] / "scripts/recover_avo_backtests.py"))[
+        "resume_bound_wait"
+    ]
+    client = Jobs()
+    with pytest.raises(BacktestDeferred):
+        BacktestActionRunner(action).run(client, **REQUEST)
+    identity = action_identity(action.projection)
+    action.apply_event(
+        "avo_unknown_result",
+        {
+            "tool_call_id": identity["tool_call_id"],
+            "code_sha256": identity["code_sha256"],
+            "reasons": ["bitpro_strategy_create_failed:BitProMcpError"],
+            "message": "health Connection refused",
+        },
+    )
+    action.apply_event("operator_needed", {"reason": "avo_effect_unknown"})
+    audit = {"action_hash": digest(identity)}
+    assert resume(action, audit, client)["reason"] == "avo_backtest_pending"
+    action.apply_event("operator_needed", {"reason": "operator_paused"})
+    with pytest.raises(ValueError, match="only audited"):
+        resume(action, audit, client)

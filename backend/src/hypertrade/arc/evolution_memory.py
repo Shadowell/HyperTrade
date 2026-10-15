@@ -302,6 +302,16 @@ def bind_hypothesis(
         raise ValueError(
             "evolution_hypothesis requires evidence_refs, expected_metric and falsification"
         )
+    if (hypothesis.get("expected_metric"), hypothesis.get("expected_direction")) not in {
+        ("net_return", "increase"),
+        ("max_drawdown", "decrease"),
+    }:
+        raise ValueError("improvement objective must increase net_return or decrease max_drawdown")
+    falsification = hypothesis.get("falsification")
+    if not isinstance(falsification, str) or not 12 <= len(falsification.strip()) <= 400:
+        raise ValueError("evolution_hypothesis requires explicit falsification")
+    if not hypothesis.get("evidence_refs"):
+        raise ValueError("evolution_hypothesis requires evidence_refs")
     available = {
         entry["memory_id"] for entry in context.get("memory", []) if entry.get("memory_id")
     }

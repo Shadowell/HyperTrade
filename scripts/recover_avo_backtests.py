@@ -91,10 +91,61 @@ def binding(controller, audit, job):
     }
 
 
+def resume_bound_wait(controller, audit, client):
+    p = controller.projection
+    identity = action_identity(p)
+    if digest(identity) != audit["action_hash"]:
+        raise ValueError("pending action changed since audit")
+    reason = next(
+        (e.payload.get("reason") for e in reversed(p.events) if e.event_type == "operator_needed"),
+        None,
+    )
+    result = p.avo.get("unknown_result") or {}
+    if (
+        p.state != "needs_operator"
+        or reason != "avo_effect_unknown"
+        or result.get("tool_call_id") != identity["tool_call_id"]
+        or result.get("code_sha256") != identity["code_sha256"]
+        or result.get("reasons") != ["bitpro_strategy_create_failed:BitProMcpError"]
+        or "Connection refused" not in result.get("message", "")
+    ):
+        raise ValueError("only audited preflight connection refusal can resume a bound wait")
+    entries = [
+        e
+        for e in p.avo.get("backtest_effects", {}).values()
+        if e.get("action") == identity and e.get("phase") != "superseded"
+    ]
+    if not entries or any(e.get("phase") not in {"waiting", "submitted"} for e in entries):
+        raise ValueError("checkpoint is not a recoverable wait")
+    for entry in entries:
+        job = client.backtest_get_job(job_id=entry["job_id"])["job"]
+        if job.get("input_snapshot_hash") != entry.get("input_snapshot_hash") or job.get(
+            "status"
+        ) not in {
+            "pending",
+            "queued",
+            "preparing_data",
+            "running",
+            "interrupted",
+            "completed",
+            "failed",
+            "cancelled",
+        }:
+            raise ValueError("current bound job differs from checkpoint")
+    return {
+        "reason": "avo_backtest_pending",
+        "message": "已核验部署期间连接拒绝及原任务回执，恢复有界读取",
+        "audit_sha256": digest(audit),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("audit", type=Path)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument(
+        "--resume-bound", action="store_true", help="核验部署期间连接拒绝后恢复已有检查点"
+    )
     parser.add_argument("--backup-dir", type=Path, default=Path("/app/data/backups"))
     args = parser.parse_args()
     configure_store(Database(str(get_settings().database_url)))
@@ -107,22 +158,35 @@ def main():
             controller = get_controller(mid)
             if controller is None:
                 raise ValueError("mission missing")
-            if any(
+            already_bound = any(
                 e.get("job_id") == audit["job_id"]
                 and e.get("input_snapshot_hash") == audit["input_snapshot_hash"]
                 for e in controller.projection.avo.get("backtest_effects", {}).values()
-            ):
+            )
+            if already_bound and not args.resume_bound:
                 print(json.dumps({"mission": mid, "status": "already_bound"}))
+                continue
+            if args.resume_bound and any(
+                event.event_type == "avo_backtest_waiting"
+                and event.payload.get("audit_sha256") == digest(audit)
+                for event in controller.projection.events
+            ):
+                print(json.dumps({"mission": mid, "status": "already_resumed"}))
                 continue
             job = client.backtest_get_job(job_id=audit["job_id"])["job"]
             payload = binding(controller, audit, job)
+            event_type = "avo_backtest_recovery_bound"
+            if args.resume_bound:
+                if not already_bound:
+                    raise ValueError("original checkpoint is not bound")
+                if controller.projection.state == "validating":
+                    print(json.dumps({"mission": mid, "status": "already_waiting"}))
+                    continue
+                payload = resume_bound_wait(controller, audit, client)
+                event_type = "avo_backtest_waiting"
             probe = ARCController(mission_id=mid)
             probe.rebase(controller.projection.model_copy(deep=True), controller.revision)
-            probe.absorb(
-                ARCEventV1(
-                    mission_id=mid, event_type="avo_backtest_recovery_bound", payload=payload
-                )
-            )
+            probe.absorb(ARCEventV1(mission_id=mid, event_type=event_type, payload=payload))
             backup = None
             if args.apply:
                 args.backup_dir.mkdir(parents=True, exist_ok=True)
@@ -133,7 +197,7 @@ def main():
                 backup.touch(mode=0o600, exist_ok=False)
                 backup.write_text(controller.projection.model_dump_json())
                 owner()
-                controller.apply_event("avo_backtest_recovery_bound", payload)
+                controller.apply_event(event_type, payload)
             print(
                 json.dumps(
                     {
