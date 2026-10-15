@@ -156,3 +156,5 @@ ARC 默认使用 RemoteWindow，经 KlineDataProvider 获取 BitPro 的 market_h
 - 已确认告警在 24 小时内因单次扫描消失又以相同条件出现时保持已确认，不重新推送。
 - 旧规则自愈引擎 `SELF_HEALING_EVOLUTION_ENABLED` 默认关闭（其 BitPro 部署分支已无法通过不可变候选验证）。
 - 长窗口兜底与主路径使用同一份按周期自适应的最少成交门槛；`_memory` 收满200条后停止加载其余任务投影。
+
+2026-10-15：ARC 新增 `GET /api/v1/arc/variant-status?source_strategy_id=…&candidate_strategy_id=…` 只读摘要。限定 BitPro 目标并精确绑定母体/候选，只选取持久投影子字段与当前受阻任务最近一条阻塞事件，不重建控制器、不加载完整事件/模型对话；权限继续为 `arc:read`。最多检索母体最近100条任务，无匹配返回 `not_found`，不代表审核通过。
