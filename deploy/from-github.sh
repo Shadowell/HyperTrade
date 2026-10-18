@@ -34,7 +34,9 @@ if [ "$(cat "$root/deploy/last_deployed_sha" 2>/dev/null || true)" = "$sha" ]; t
   exit 0
 fi
 
-work="$(mktemp -d "$root/deploy/.github-$sha.XXXXXX")"
+work_root=/opt/hypertrade-hosted-work
+install -d -m 0700 "$work_root"
+work="$(mktemp -d "$work_root/$sha.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 git --git-dir="$mirror" archive --format=tar "$sha" | tar -C "$work" -xf -
 [ -f "$work/deploy/deploy.sh" ] || fail 'release is missing deploy/deploy.sh'
@@ -60,6 +62,8 @@ rsync -a --delete \
   --exclude '/backups/' \
   ./ "$root/"
 rsync -a --delete frontend/dist/ "$root/frontend/dist/"
+chmod 755 "$root"
+chmod -R a+rX "$root/frontend/dist"
 
 chmod +x "$root/deploy/deploy.sh"
 "$root/deploy/deploy.sh"
