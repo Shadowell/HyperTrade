@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from hypertrade.bitpro.mcp import BitProToolAdapter
 from hypertrade.paper.race_judge import (
     RaceJudgeDaemon,
@@ -442,3 +443,344 @@ def test_bitpro_tool_adapter_relay_methods() -> None:
             "proof_sha256": "abc" * 21 + "a",
         },
     )
+
+
+# --- Variant slots: who ended a lane, lane numbers, the per-slot pass line, slow polling ---
+
+
+def _lane_status(
+    cancellation: object = None, *, state: str = "cancelled", slot_no: int | None = 2
+) -> dict:
+    status: dict = {
+        "plan": {
+            "parent_id": 1,
+            "challenger_id": 2,
+            "state": state,
+            "generation": 2,
+            **({"slot_no": slot_no} if slot_no is not None else {}),
+        },
+        "proof": {"eligible": False, "reason": "超额、回撤或配对置信门禁未通过"},
+    }
+    if cancellation is not None:
+        status["cancellation"] = cancellation
+    return status
+
+
+def _futility_cancellation() -> dict:
+    return {
+        "actor": "system:futility",
+        "by_system": True,
+        "kind": "futility",
+        "state_before": "observing",
+        "reason": "系统淘汰（无望）：同窗超额-7.66个百分点；已连续24小时满足淘汰条件",
+        "cancelled_at": "2026-10-20T08:00:00+00:00",
+        "detail": {
+            "kind": "futility",
+            "metrics": {
+                "common_hours": 96,
+                "closed_fills": [30, 22],
+                "return_pct": [-1.78, -9.44],
+                "excess_pp": -7.66,
+                "drawdown_pct": [3.1, 11.2],
+                "window": ["2026-10-16", "2026-10-20"],
+            },
+            "thresholds": {"reenroll_cooldown_hours": 24},
+            "held_hours": 25.0,
+        },
+    }
+
+
+def _daemon(tmp_path: Path, adapter: MagicMock) -> RaceJudgeDaemon:
+    return RaceJudgeDaemon(
+        bitpro_adapter=adapter,
+        state_file=tmp_path / "state.json",
+        history_file=tmp_path / "missing-history.json",
+    )
+
+
+def _card_text(rec: RacePairRecord, milestone: str) -> tuple[str, str]:
+    card = build_race_feishu_card(rec, milestone, console_url="https://bitpro.test")
+    title = card["card"]["header"]["title"]["content"]
+    return title, card["card"]["elements"][0]["text"]["content"]
+
+
+def test_system_futility_cancel_gets_its_own_card_not_the_operator_wording(tmp_path: Path) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_status.return_value = _lane_status(_futility_cancellation())
+    daemon = _daemon(tmp_path, adapter)
+
+    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as dispatch:
+        dispatch.return_value = (True, "sent_interactive_card")
+        rec = daemon.evaluate_pair(1, 2, generation=2)
+        daemon.evaluate_pair(1, 2, generation=2)
+
+    dispatch.assert_called_once()  # one cancel-type card per race
+    assert dispatch.call_args.args[1] == "FUTILITY"
+    assert rec.feishu_notified_states == ["FUTILITY"]
+    assert rec.cancellation_kind == "futility" and rec.slot_no == 2
+    title, text = _card_text(rec, "FUTILITY")
+    card = build_race_feishu_card(rec, "FUTILITY")
+    assert card["card"]["header"]["template"] == "orange"
+    # It may tell the operator how to re-admit a candidate, but never claims they cancelled.
+    assert "系统淘汰" in title and "操作者终止" not in title + text
+    assert "操作者已在 BitPro 取消" not in text
+    assert "不是操作者取消" in text and "位2" in text
+    assert "共同运行 96 小时" in text and "-7.66 个百分点" in text and "-9.44%" in text
+    assert "冷却后" in text and "24" in text and "不会被自动放行" in text
+    adapter.paper_relay_control.assert_not_called()
+
+
+def test_exam_and_timeout_cancel_cards_carry_the_reason_and_refill_at_once() -> None:
+    for kind, milestone, label in (
+        ("exam", "EXAM_FAILED", "终考未过关"),
+        ("timeout", "TIMED_OUT", "超时"),
+    ):
+        rec = RacePairRecord(
+            parent_strategy_id=1,
+            challenger_strategy_id=2,
+            state="cancelled",
+            slot_no=3,
+            cancellation_kind=kind,
+            cancellation_reason=f"系统淘汰（{label}）：赢3/14天，及格线需赢12天",
+        )
+        title, text = _card_text(rec, milestone)
+        assert label in title and "操作者终止" not in title + text
+        assert "操作者已在 BitPro 取消" not in text and "不是操作者取消" in text
+        assert "及格线需赢12天" in text and "位3" in text
+        assert "立即补入" in text and "冷却" not in text
+
+
+def test_lane_that_lost_its_seat_to_an_adopted_sibling_is_recorded_without_a_card(
+    tmp_path: Path,
+) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_status.return_value = _lane_status(
+        {"actor": "system:superseded", "by_system": True, "kind": "superseded", "reason": "x"}
+    )
+    daemon = _daemon(tmp_path, adapter)
+    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as dispatch:
+        rec = daemon.evaluate_pair(1, 2, generation=2)
+        daemon.evaluate_pair(1, 2, generation=2)
+    dispatch.assert_not_called()
+    assert rec.feishu_notified_states == ["SUPERSEDED"] and rec.cancellation_kind == "superseded"
+
+
+def test_operator_cancellation_keeps_the_operator_wording(tmp_path: Path) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_status.return_value = _lane_status(
+        {"actor": "admin", "by_system": False, "kind": "operator", "reason": "手动取消"}
+    )
+    daemon = _daemon(tmp_path, adapter)
+    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as dispatch:
+        dispatch.return_value = (True, "sent_interactive_card")
+        rec = daemon.evaluate_pair(1, 2, generation=2)
+    assert dispatch.call_args.args[1] == "CANCELLED"
+    title, text = _card_text(rec, "CANCELLED")
+    assert "操作者终止赛马" in title
+    assert "操作者已在 BitPro 取消该场接力" in text and "再次赛马需操作者重新放行候选" in text
+    assert "淘汰" not in title + text
+
+
+def test_unknown_cancellation_source_gets_neutral_wording(tmp_path: Path) -> None:
+    for raw in (None, "garbage", {"kind": "from-a-newer-bitpro", "by_system": True}, {"kind": 7}):
+        adapter = MagicMock(spec=BitProToolAdapter)
+        adapter.paper_relay_status.return_value = _lane_status(raw)
+        daemon = _daemon(tmp_path / f"{abs(hash(str(raw)))}", adapter)
+        with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as dispatch:
+            dispatch.return_value = (True, "sent_interactive_card")
+            rec = daemon.evaluate_pair(1, 2, generation=2)
+        assert dispatch.call_args.args[1] == "CANCELLED"
+        assert rec.cancellation_kind is None
+        title, text = _card_text(rec, "CANCELLED")
+        assert "已取消" in title and "取消" in text
+        assert "操作者" not in title + text and "淘汰" not in title + text
+
+
+def test_state_file_saved_before_variant_slots_still_loads(tmp_path: Path) -> None:
+    state_file = tmp_path / "state.json"
+    legacy = RacePairRecord(parent_strategy_id=1, challenger_strategy_id=2, generation=2).to_dict()
+    for key in (
+        "slot_no",
+        "gate_alpha",
+        "plan_seen",
+        "cancellation_kind",
+        "cancellation_actor",
+        "cancellation_reason",
+        "cancellation_cooldown_hours",
+        "cancellation_metrics",
+        "next_poll_at",
+    ):
+        legacy.pop(key)
+    state_file.write_text(json.dumps([legacy]), encoding="utf-8")
+    daemon = RaceJudgeDaemon(
+        bitpro_adapter=MagicMock(spec=BitProToolAdapter), state_file=state_file
+    )
+    [loaded] = daemon._records.values()
+    assert loaded.slot_no is None and loaded.plan_seen is False and loaded.next_poll_at == 0.0
+    assert loaded.cancellation_kind is None and loaded.cancellation_metrics is None
+
+
+def test_cancel_card_sent_under_a_legacy_marker_is_not_repeated_for_system_kinds(
+    tmp_path: Path,
+) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_status.return_value = _lane_status(_futility_cancellation())
+    daemon = _daemon(tmp_path, adapter)
+    daemon._records[daemon._pair_key("bitpro", 1, 2)] = RacePairRecord(
+        parent_strategy_id=1,
+        challenger_strategy_id=2,
+        generation=2,
+        feishu_notified_states=["REJECTED"],
+    )
+    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as dispatch:
+        daemon.evaluate_pair(1, 2, generation=2)
+    dispatch.assert_not_called()
+
+
+def test_card_shows_the_lane_the_level_and_the_pass_line() -> None:
+    rec = RacePairRecord(
+        parent_strategy_id=1,
+        challenger_strategy_id=2,
+        generation=2,
+        slot_no=3,
+        gate_alpha=0.05 / 3,
+        sign_test_p=0.0065,
+        positive_days=12,
+        paired_non_tie_days=14,
+        state="observing",
+    )
+    _, text = _card_text(rec, "ELIGIBLE")
+    assert "Gen 2, 位3" in text
+    assert "<= 0.0167 显著" in text and "至少赢 12 天" in text
+    # A target without variant slots keeps the old wording: level 0.05, no lane, no pass line.
+    legacy = RacePairRecord(
+        parent_strategy_id=1, challenger_strategy_id=2, generation=2, sign_test_p=0.025
+    )
+    _, legacy_text = _card_text(legacy, "ELIGIBLE")
+    challenger_line = legacy_text.split("**挑战者 ID**")[1].split("\n")[0]
+    assert "<= 0.05 显著" in legacy_text and "位" not in challenger_line
+    assert "及格线" not in legacy_text
+
+
+def test_lane_that_vanished_from_the_target_is_ended_not_polled_forever(tmp_path: Path) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_status.return_value = _lane_status(None, state="observing")
+    adapter.paper_relay_plans.return_value = [
+        {"parent_id": 1, "challenger_id": 2, "state": "observing", "generation": 2}
+    ]
+    daemon = _daemon(tmp_path, adapter)
+    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as dispatch:
+        daemon.evaluate_pair(1, 2, generation=2)
+        # Its seat was refilled: the target keeps no plan for this challenger any more.
+        adapter.paper_relay_status.return_value = {
+            "plan": None,
+            "proof": {"eligible": True, "reason": "candidate evidence", "proof_sha256": "a" * 64},
+        }
+        adapter.paper_relay_plans.return_value = []
+        rec = daemon.evaluate_pair(1, 2, generation=2)
+    dispatch.assert_not_called()
+    assert rec.state == "ended" and "不再保留该赛道" in rec.reason
+    assert rec.eligible is False  # candidate evidence for a pair without a plan is not this race
+    assert daemon.discover_active_pairs() == []
+
+
+def test_pair_the_target_never_listed_is_not_declared_ended(tmp_path: Path) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_status.return_value = {"plan": None, "proof": {"eligible": False}}
+    daemon = _daemon(tmp_path, adapter)
+    rec = daemon.evaluate_pair(1, 2, generation=2)
+    assert rec.state == "observing" and rec.plan_seen is False
+
+
+def test_quiet_lanes_are_read_slowly_and_handovers_every_sweep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = [1_000_000.0]
+    monkeypatch.setattr("hypertrade.paper.race_judge.time.time", lambda: clock[0])
+    plans = [
+        {"parent_id": 1, "challenger_id": 11, "state": "observing", "generation": 2, "slot_no": 1},
+        {"parent_id": 1, "challenger_id": 12, "state": "observing", "generation": 2, "slot_no": 2},
+        {"parent_id": 2, "challenger_id": 21, "state": "draining", "generation": 2, "slot_no": 1},
+    ]
+    states = {11: "observing", 12: "observing", 21: "draining"}
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_plans.return_value = plans
+    adapter.paper_relay_status.side_effect = lambda parent_id, challenger_id=None: {
+        "plan": {
+            "parent_id": parent_id,
+            "challenger_id": challenger_id,
+            "state": states[challenger_id],
+            "generation": 2,
+        },
+        "proof": {"eligible": False, "reason": "观测小时桶不足"},
+    }
+    daemon = _daemon(tmp_path, adapter)
+    daemon.interval, daemon.observing_interval = 60.0, 900.0
+
+    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card", return_value=(True, "ok")):
+        assert len(daemon.scan_and_judge_all()) == 3  # first sight: everything is read
+        calls = adapter.paper_relay_status.call_count
+        clock[0] += 61
+        swept = daemon.scan_and_judge_all()
+        assert [r.challenger_strategy_id for r in swept] == [21]  # only the handover in motion
+        assert adapter.paper_relay_status.call_count == calls + 1
+        clock[0] += 900
+        assert len(daemon.scan_and_judge_all()) == 3  # quiet lanes are due again
+        assert len(daemon.scan_and_judge_all(force=True)) == 3  # "run now" ignores the schedule
+
+
+def test_a_cancelled_plan_in_the_listing_is_read_at_once_not_after_the_slow_poll(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = [2_000_000.0]
+    monkeypatch.setattr("hypertrade.paper.race_judge.time.time", lambda: clock[0])
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_plans.return_value = [
+        {"parent_id": 1, "challenger_id": 2, "state": "observing", "generation": 2}
+    ]
+    adapter.paper_relay_status.return_value = _lane_status(None, state="observing")
+    daemon = _daemon(tmp_path, adapter)
+    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as dispatch:
+        dispatch.return_value = (True, "sent_interactive_card")
+        daemon.scan_and_judge_all()
+        # BitPro eliminates the lane; the listing shows it cancelled well before the next slow poll.
+        adapter.paper_relay_plans.return_value = [
+            {"parent_id": 1, "challenger_id": 2, "state": "cancelled", "generation": 2}
+        ]
+        adapter.paper_relay_status.return_value = _lane_status(_futility_cancellation())
+        clock[0] += 120
+        swept = daemon.scan_and_judge_all()
+    assert [r.state for r in swept] == ["cancelled"]
+    assert dispatch.call_args.args[1] == "FUTILITY"
+
+
+def test_a_readmitted_challenger_can_be_announced_again(tmp_path: Path) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_status.return_value = _lane_status(_futility_cancellation())
+    daemon = _daemon(tmp_path, adapter)
+    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as dispatch:
+        dispatch.return_value = (True, "sent_interactive_card")
+        daemon.evaluate_pair(1, 2, generation=2)
+        # The operator re-admits the same challenger: a new race, a new plan.
+        adapter.paper_relay_status.return_value = _lane_status(None, state="observing")
+        rec = daemon.evaluate_pair(1, 2, generation=2)
+        assert rec.cancellation_kind is None and rec.feishu_notified_states == []
+        adapter.paper_relay_status.return_value = _lane_status(
+            {"actor": "admin", "by_system": False, "kind": "operator", "reason": "r"}
+        )
+        daemon.evaluate_pair(1, 2, generation=2)
+    assert [call.args[1] for call in dispatch.call_args_list] == ["FUTILITY", "CANCELLED"]
+
+
+def test_quantlab_target_without_a_cancellation_field_is_not_an_error(tmp_path: Path) -> None:
+    quantlab = MagicMock()
+    quantlab.paper_relay_status.return_value = _lane_status(None)
+    daemon = _daemon(tmp_path, MagicMock(spec=BitProToolAdapter))
+    with (
+        patch("hypertrade.targets.registry.adapter_for_target", return_value=quantlab),
+        patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as dispatch,
+    ):
+        dispatch.return_value = (True, "sent_interactive_card")
+        rec = daemon.evaluate_pair(1, 2, generation=2, target_id="quantlab")
+    assert rec.target_id == "quantlab" and rec.state == "cancelled"
+    assert rec.cancellation_kind is None and dispatch.call_args.args[1] == "CANCELLED"
