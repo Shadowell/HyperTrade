@@ -748,3 +748,83 @@ def test_source_proposal_requires_evidence_before_creating_candidate(source_vari
             ARCSelfTestService(),
         )
     assert source_variant_mission.projection.attempts == []
+
+
+def _tried(candidate_id, state, changes, *, kind=None, structural=None):
+    return {
+        "candidate_strategy_id": candidate_id,
+        "state": state,
+        "kind": kind,
+        "parameter_changes": changes,
+        "structural_changes": structural or {},
+    }
+
+
+def test_a_variant_bitpro_already_raced_or_queued_is_rejected_before_any_effect(
+    source_variant_mission,
+):
+    from hypertrade.arc.avo import _perform
+
+    policy = source_variant_mission.projection.goal.evolution_context["variant_policy"]
+    policy["relay"] = {
+        "blocks_evolution": False,
+        "slots": {"total": 3, "used": 1, "free": 2, "queued": 1},
+        "tried_variants": [
+            _tried(9003, "waiting", {"fast_window": 15}),
+            _tried(9002, "eliminated", {"fast_window": 20.0}, kind="futility"),
+            _tried(9001, "racing", {"fast_window": 25, "threshold": 0.05}),
+        ],
+    }
+    service = ARCSelfTestService()
+    for changes, expected in (
+        ({"fast_window": 15}, "variant #9003 is queued for a seat"),
+        ({"fast_window": 20}, "variant #9002 was eliminated (futility)"),
+        ({"threshold": 0.05, "fast_window": 25}, "variant #9001 is racing"),
+    ):
+        with pytest.raises(ValueError, match="identical variant already tried") as raised:
+            _perform(
+                source_variant_mission,
+                "propose",
+                {
+                    "hypothesis": "retry",
+                    "evolution_hypothesis": HYPOTHESIS,
+                    "parameter_changes": changes,
+                },
+                service,
+            )
+        assert expected in str(raised.value) and "never races the same changes twice" in str(
+            raised.value
+        )
+    assert source_variant_mission.projection.attempts == []  # nothing was proposed or created
+
+    # A different change set goes through, and so does the same one when BitPro lists nothing.
+    proposed = _perform(
+        source_variant_mission,
+        "propose",
+        {
+            "hypothesis": "new direction",
+            "evolution_hypothesis": HYPOTHESIS,
+            "parameter_changes": {"fast_window": 30},
+        },
+        service,
+    )
+    assert proposed["attempt_id"].startswith("att_avo_")
+    policy.pop("relay")
+    again = _perform(
+        source_variant_mission,
+        "propose",
+        {
+            "hypothesis": "older bitpro",
+            "evolution_hypothesis": HYPOTHESIS,
+            "parameter_changes": {"fast_window": 15},
+        },
+        service,
+    )
+    assert again["attempt_id"].startswith("att_avo_")
+
+
+def test_the_model_is_told_which_changes_were_tried_and_how_many_seats_are_open():
+    from hypertrade.arc.avo import _SYSTEM
+
+    assert "relay.tried_variants" in _SYSTEM and "never\nraces the same changes twice" in _SYSTEM
+    assert "open (free minus candidates already queued)" in _SYSTEM

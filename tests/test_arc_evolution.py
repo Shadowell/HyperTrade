@@ -645,3 +645,164 @@ def test_mid_relay_source_is_held_not_researched(service, monkeypatch):
     codes = [b["code"] for b in diagnostic["continuation"]["blockers"]]
     assert "relay_in_progress" in codes
     assert list_mission_ids() == []
+
+
+class Seated(VariantPaper):
+    """A source whose BitPro parent reports variant seats (and what it already raced)."""
+
+    def __init__(self, relay, *, parent=44):
+        self.relay, self.parent = relay, parent
+
+    def strategy_research_variant_policy(self, **kwargs):
+        policy = super().strategy_research_variant_policy(**kwargs)
+        policy["parent_strategy_id"] = kwargs.get("strategy_id", self.parent)
+        policy["relay"] = self.relay(kwargs.get("strategy_id", self.parent)) if callable(
+            self.relay
+        ) else self.relay
+        return policy
+
+
+def _seated_service(service, monkeypatch, relay):
+    now = _variant_service(service, monkeypatch, 100)
+    service.client = Seated(relay)
+    service.client.capital = 100
+    return now
+
+
+def test_parent_whose_free_seats_are_all_booked_by_queued_candidates_is_held(service, monkeypatch):
+    from hypertrade.arc.store import list_mission_ids
+
+    relay = {
+        "blocks_evolution": False,
+        "slots": {"total": 3, "used": 1, "free": 2, "queued": 2},
+        "tried_variants": [],
+    }
+    now = _seated_service(service, monkeypatch, relay)
+    result = service.tick(now)
+    diagnostic = result["payload"]["diagnostics"][0]
+    assert result["status"] == "no_action"
+    assert diagnostic["skip_reason"] == "seats_reserved"
+    assert diagnostic["relay_seats"] == {"total": 3, "used": 1, "free": 2, "queued": 2, "open": 0}
+    blockers = {b["code"]: b for b in diagnostic["continuation"]["blockers"]}
+    assert "排队等位" in blockers["relay_in_progress"]["condition"]
+    assert list_mission_ids() == []
+    demand = result["payload"]["relay_seat_demand"]
+    assert demand["seats_open"] == 0 and demand["candidates_queued"] == 2
+
+
+def test_parent_with_an_open_seat_is_researched_and_the_seat_facts_travel_with_the_mission(
+    service, monkeypatch
+):
+    from hypertrade.arc.store import get_controller
+
+    tried = [
+        {
+            "candidate_strategy_id": 7,
+            "state": "racing",
+            "kind": None,
+            "parameter_changes": {"fast_window": 7},
+            "structural_changes": {},
+        }
+    ]
+    relay = {
+        "blocks_evolution": False,
+        "slots": {"total": 3, "used": 1, "free": 2, "queued": 1},
+        "tried_variants": tried,
+    }
+    now = _seated_service(service, monkeypatch, relay)
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    context = get_controller(result["payload"]["mission_id"]).projection.goal.evolution_context
+    assert context["relay_seats"]["open"] == 1
+    # The model sees what BitPro already raced through the policy it inspects.
+    assert context["variant_policy"]["relay"]["tried_variants"] == tried
+    demand = result["payload"]["relay_seat_demand"]
+    assert demand == {
+        "parents_reporting_seats": 1,
+        "seats_total": 3,
+        "seats_used": 1,
+        "seats_free": 2,
+        "candidates_queued": 1,
+        "seats_open": 1,
+        "missions_left_today": 4,
+        "max_candidates_per_mission": 3,
+    }
+
+
+def test_a_bitpro_without_variant_seats_is_researched_as_before(service, monkeypatch):
+    from hypertrade.arc.store import get_controller
+
+    now = _variant_service(service, monkeypatch, 100)
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    assert "relay_seat_demand" not in result["payload"]
+    assert "relay_seats" not in result["payload"]["diagnostics"][0]
+    assert "relay_seats" not in get_controller(
+        result["payload"]["mission_id"]
+    ).projection.goal.evolution_context
+
+
+class TwoParents(Seated):
+    """Two running BitPro parents with different numbers of open seats."""
+
+    def paper_strategy_performance(self, **kwargs):
+        return {
+            "strategies": [
+                {
+                    "strategy_id": sid,
+                    "strategy_name": f"source-{sid}",
+                    "mode": "paper",
+                    "timeframe": "1H",
+                }
+                for sid in (44, 45)
+            ]
+        }
+
+    def paper_snapshot(self, **kwargs):
+        sid = kwargs["strategy_id"]
+        body = super().paper_snapshot(**kwargs)
+        return {**body, "strategy_id": sid, "instance_id": f"paper-source-{sid}"}
+
+    def strategy_trades(self, **kwargs):
+        rows = super().strategy_trades(**kwargs)
+        return [{**row, "strategy_id": kwargs["strategy_id"]} for row in rows]
+
+
+def test_among_equally_urgent_parents_the_one_with_more_open_seats_is_researched_first(
+    service, monkeypatch
+):
+    def relay(strategy_id):
+        free, queued = (1, 0) if strategy_id == 44 else (3, 0)
+        return {
+            "blocks_evolution": False,
+            "slots": {"total": 3, "used": 3 - free, "free": free, "queued": queued},
+            "tried_variants": [],
+        }
+
+    now = _variant_service(service, monkeypatch, 100)
+    service.client = TwoParents(relay)
+    service.client.capital = 100
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    assert result["payload"]["source_strategy_id"] == 45  # three open seats beat one
+    demand = result["payload"]["relay_seat_demand"]
+    assert demand["parents_reporting_seats"] == 2 and demand["seats_open"] == 4
+
+
+def test_a_parent_whose_seats_are_booked_gives_way_to_one_with_an_open_seat(service, monkeypatch):
+    def relay(strategy_id):
+        free, queued = (3, 3) if strategy_id == 44 else (1, 0)
+        return {
+            "blocks_evolution": False,
+            "slots": {"total": 3, "used": 3 - free, "free": free, "queued": queued},
+            "tried_variants": [],
+        }
+
+    now = _variant_service(service, monkeypatch, 100)
+    service.client = TwoParents(relay)
+    service.client.capital = 100
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    assert result["payload"]["source_strategy_id"] == 45
+    held = next(d for d in result["payload"]["diagnostics"] if d["strategy_id"] == 44)
+    assert held["skip_reason"] == "seats_reserved" and held["relay_seats"]["open"] == 0

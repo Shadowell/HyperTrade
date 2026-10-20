@@ -34,6 +34,7 @@ from hypertrade.arc.evolution_diagnostics import (
 )
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import collect_windows
+from hypertrade.arc.relay_seats import relay_seats
 from hypertrade.arc.runtime_journal import failure_text, record_runtime_error
 from hypertrade.arc.short_horizon import (
     LONG_MEASUREMENT,
@@ -115,6 +116,30 @@ class EvolutionConfig(BaseModel):
 
 def digest(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def relay_seat_demand(
+    diagnostics: list[dict[str, Any]], budget: dict[str, Any], config: EvolutionConfig
+) -> dict[str, Any] | None:
+    """How many BitPro variant seats wait for candidates, against what is left of today's budget.
+
+    Read-only visibility for the operator: if open seats keep exceeding what the daily research
+    budget can produce, the budget (a deliberate cost cap) is what limits evolution speed.
+    """
+    rows = [d["relay_seats"] for d in diagnostics if isinstance(d.get("relay_seats"), dict)]
+    if not rows:
+        return None
+    left = max(0, int(budget.get("period_limit", 0)) - int(budget.get("period_used", 0)))
+    return {
+        "parents_reporting_seats": len(rows),
+        "seats_total": sum(row["total"] for row in rows),
+        "seats_used": sum(row["used"] for row in rows),
+        "seats_free": sum(row["free"] for row in rows),
+        "candidates_queued": sum(row["queued"] for row in rows),
+        "seats_open": sum(row["open"] for row in rows),
+        "missions_left_today": left,
+        "max_candidates_per_mission": config.max_candidates,
+    }
 
 
 def source_capital(config: Any) -> Decimal:
@@ -363,6 +388,9 @@ class EvolutionService:
                 payload["diagnostics"] = diagnostics
                 owner()
                 latest = self.status()
+                seat_demand = relay_seat_demand(diagnostics, latest["budget"], config)
+                if seat_demand is not None:
+                    payload["relay_seat_demand"] = seat_demand
                 if payload["preview"]:
                     return self._save_cycle(cycle_id, "preview_complete", payload)
                 ContinuationLedger(self.db).record_check(cycle_id, diagnostics, latest["budget"])
@@ -605,10 +633,14 @@ class EvolutionService:
             ) + timedelta(hours=config.cooldown_hours)
             blocked = source.get("busy", False) or now < until
             preferred = "degradation"
+            # BitPro parents can race several challengers: among equally urgent sources, the one
+            # with the most seats still open (free minus candidates already queued) goes first.
+            open_seats = (context.get("relay_seats") or {}).get("open", 0)
             return (
                 blocked,
                 not context.get("short_term_emergency", False),
                 context["trigger_source"] != preferred,
+                -open_seats,
                 source.get("last_admitted_at", ""),
                 context["source_strategy_id"],
             )
@@ -813,11 +845,27 @@ class EvolutionService:
                 # (one plan per parent) or would nest a second race, so skip it now and
                 # let continuation re-check once the relay ends or is cancelled.
                 relay = (variant_policy or {}).get("relay") or {}
+                seats = relay_seats(relay)
+                if seats is not None:
+                    diagnostic["relay_seats"] = seats
                 if relay.get("blocks_evolution") is True:
                     diagnostic["relay_hold"] = {
                         key: relay.get(key) for key in ("role", "plan_state", "reason")
                     }
                     diagnostic["skip_reason"] = "relay_in_progress"
+                    continue
+                if seats is not None and seats["open"] <= 0:
+                    # Every free seat is already booked by a reviewed candidate that is about to
+                    # start: researching more of them would only pile up behind it.
+                    diagnostic["relay_hold"] = {
+                        "role": "parent",
+                        "plan_state": "queued",
+                        "reason": (
+                            f"{seats['queued']} 个已审核候选正在排队等位，"
+                            f"占满了 {seats['free']} 个空位，入位后再评估"
+                        ),
+                    }
+                    diagnostic["skip_reason"] = "seats_reserved"
                     continue
                 is_source_variant = False
                 parent_execution_identity_sha256 = None
@@ -894,6 +942,8 @@ class EvolutionService:
                 }
                 if is_source_variant and variant_policy:
                     context["variant_policy"] = variant_policy
+                if seats is not None:
+                    context["relay_seats"] = seats
                 diagnostic["order_sample_count"] = len(fills)
                 diagnostic["source_code_sha256"] = context["source_code_sha256"]
                 diagnostic["variant_creation_supported"] = is_source_variant
