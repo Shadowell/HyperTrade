@@ -1,3 +1,21 @@
+## 2026-10-20：研究侧跟上 BitPro 变体位（按空位扫描、参数去重、需求可见）
+
+- **背景**：BitPro #1286 让每个母体默认有三个变体位，研究侧还是按「一个母体一个挑战者」工作：空位已被排队候选预订时仍会继续造候选；同一改动换一天就绕过「已归档实验」检查（开发窗口随日期移动），BitPro 又不会让完全相同的变体赛两次，副本白白花掉模型调用与回测；也看不到空位需求与每日预算的差距。
+- **交付**（依赖 BitPro 同日 PR 在研究政策里新增的 `slots.queued` 与 `tried_variants`，字段缺失时退回原有行为）：新增 `arc/relay_seats.py`；`EvolutionService._scan` 在空位已被排队候选预订时让位（`skip_reason=seats_reserved`，续跑账本阻塞显示原因）、同等紧急时按空位数排序、把空位事实带入研究任务；AVO `propose` 在任何副作用前拒绝与 BitPro 已赛过、排队中或已淘汰的变体参数与结构改动完全相同的提案，系统提示同步；每轮扫描结果新增 `relay_seat_demand`（空位、排队候选、今日剩余研究轮数）。
+- **验证**：新增 `tests/test_arc_relay_seats.py` 与 `test_arc_evolution`／`test_source_variant_avo` 共 7 项用例，对 9 处关键守卫做过变异检验；整套 `./scripts/check.sh` 通过（2214 项后端测试）。GitNexus：`EvolutionService._scan` 与 `readiness` 的影响分析为 HIGH（研究主循环，涉及 `tick`、`observe_arc_missions_once`、`check_paper_feedback` 三条流程），改动均为只在 BitPro 报告变体位字段时生效的加法，字段缺失时行为不变；`_perform` 为 LOW。未线上实测。
+- **未改**：每日研究预算（`max_research_per_day`，默认4）与单策略冷却保持不变，生产配置由用户或管理员决定；是否上调可看 `relay_seat_demand`：空位长期多于剩余研究轮数时才是预算在限制进化速度。被中断的「赛马输赢回流研究记忆与输家逐项消融」（需要新表）不在本次范围。
+
+## 2026-10-20：赛马裁判适配 BitPro 变体位
+
+- **背景**：BitPro #1285（无望淘汰）与 #1286（每个母体默认三个变体位、14天终考只考一次、手动停止同步释放位置）上线后，裁判有三处不再适用：把系统结束的赛道一律写成「操作者已取消」；每分钟向 BitPro 读一次每个赛道的完整证据（赛道数可达母体数×3，每次读取都让 BitPro 重载14天小时权益）；赛道被新挑战者接管后查不到计划，记录却永远停在观察中并被反复轮询。
+- **交付**（只改 HyperTrade，裁判仍只读，不改任何门禁与判定）：
+  1. 取消卡片按 `cancellation.kind` 区分：`operator` 沿用原文案；`futility`／`exam`／`timeout` 使用新里程碑 `FUTILITY`／`EXAM_FAILED`／`TIMED_OUT`（橙色，写明系统淘汰而非操作者取消、BitPro 的原因与证据、释放哪个变体位，无望淘汰另写冷却小时数）；`superseded` 只记标记不发卡；缺失、格式异常或未知 kind 用不指名取消者的中性文案。每个赛道只发一张取消类卡片，旧标记 `CANCELLED`／`REJECTED` 视为已发过；挑战者被重新放行后清除取消标记。
+  2. `RacePairRecord` 新增可选字段 `slot_no`、`gate_alpha`、`plan_seen`、`cancellation_*`、`next_poll_at`，旧状态文件照常加载；卡片显示「位N」，p 值阈值与「及格线」按 `gate_alpha` 换算（缺失时按 0.05 且不显示及格线）。
+  3. 曾见过计划而后来查不到的赛道记为 `ended`：保留最后证据、不再轮询、不发卡。
+  4. 轮询降频：积累证据的赛道每 `RACE_JUDGE_OBSERVING_INTERVAL_SECONDS`（默认900秒，下限60）读一次；交接中与即将达标的赛道仍按 `RACE_JUDGE_INTERVAL_SECONDS`（默认60秒）每轮查看；`relay-plans` 列表里已跟踪赛道变成 `cancelled` 时立即读取；运营端 `POST /api/portfolio/race-judge/run-now` 忽略降频。
+- **验证**：`tests/test_race_judge.py` 新增 14 项（共32项），对11处关键守卫做过变异检验，去掉任一守卫都有用例失败；`tests/test_position_netting_relay.py`、`tests/test_quantlab_target_adapter.py` 通过；整套 `./scripts/check.sh`（前端 lint／15 项测试／构建、ruff、mypy、后端 `pytest` 2214 项，含同日研究侧改动）通过；GitNexus 重建索引后 `detect_changes`：6 个文件、无受影响流程、风险低（索引现已认识 `race_judge.py`，`impact` 为 LOW）。未启动服务，未线上实测，未读生产库。
+- **已知缺口**：一次系统淘汰用户仍会收到两条飞书（BitPro 自己的橙色「赛马淘汰」卡和本卡），是否抑制其一由用户决定，本次没有抑制；被接班而结束的赛道不发卡；裁判的 `ELIGIBLE` 卡最多晚到 15 分钟（BitPro 自己每小时才复核一次，不影响接班）。研究侧如何跟上三个变体位（扫描按空位排序、参数去重、需求显示）见同日后续条目。
+
 ## 2026-10-15：候选原因定向读取
 
 为 BitPro 卡片新增按身份查询的紧凑只读摘要，避免枚举47个任务及约9.4万事件。覆盖目标、母体、候选隔离与非阻塞状态清除旧阻塞。生产库只读函数测得0.15～0.37秒；完整 `scripts/check.sh` 通过（2181项后端测试及前端lint/test/build、ruff、mypy）。端到端HTTP耗时待部署验证。

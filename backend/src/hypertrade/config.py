@@ -378,6 +378,14 @@ class Settings(BaseSettings):
         default=60,
         alias="RACE_JUDGE_INTERVAL_SECONDS",
     )
+    # How often a lane that is only accumulating evidence is re-read. Each read makes BitPro
+    # reload fourteen days of hourly equity for that lane, and a parent may race several
+    # lanes at once; handovers in motion are still watched every sweep.
+    race_judge_observing_interval_seconds: int = Field(
+        default=900,
+        ge=60,
+        alias="RACE_JUDGE_OBSERVING_INTERVAL_SECONDS",
+    )
     # Deprecated no-op: the race judge only mirrors and notifies; BitPro's relay
     # controller (operator or its own auto-managed flag) is the single adopter.
     race_judge_auto_adopt: bool = Field(

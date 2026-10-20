@@ -27,6 +27,7 @@ from hypertrade.arc.evolution_memory import (
 )
 from hypertrade.arc.paper_review import request_paper_review
 from hypertrade.arc.provider_hypothesis import ProviderProposal, _bounded_spec
+from hypertrade.arc.relay_seats import describe_tried, tried_variant
 from hypertrade.arc.runtime_journal import record_model_exchange, record_runtime_error
 from hypertrade.arc.self_test import ARCSelfTestService
 from hypertrade.arc.store import get_controller, list_mission_ids, research_lock, save_avo_context
@@ -178,6 +179,10 @@ Evolution memory contains development observations, not established causal lesso
 Use both successful and failed experiments; match instrument, timeframe and window.
 For an identical archived experiment, provide repeat_reason explaining new evidence or
 why a controlled replication is needed; unchanged repetitions do not establish improvement.
+source_variant_policy.relay.tried_variants lists the changes BitPro already raced, queued or
+eliminated for this parent; a proposal identical to one of them is rejected because BitPro never
+races the same changes twice, so propose a different direction. relay.slots shows how many of the
+parent's seats are open (free minus candidates already queued).
 For autonomous_evolution, every propose must include evolution_hypothesis with evidence_refs
 (paper_feedback, order_sample, a memory_id or a developed attempt_id), expected_metric,
 expected_direction and falsification (what observation would refute the hypothesis).
@@ -523,6 +528,16 @@ def _perform(
                 for key, value in param_changes.items()
             ):
                 raise ValueError("parameter_changes must omit unchanged source parameters")
+            tried = tried_variant(variant_policy.get("relay"), param_changes, structural_changes)
+            if tried is not None:
+                # The window-dated experiment key below cannot see this: the same changes next
+                # week look like a new experiment. BitPro skips such a copy at enrollment, so it
+                # would cost model calls and backtests and then sit unraced.
+                raise ValueError(
+                    f"identical variant already tried for this parent: {describe_tried(tried)}; "
+                    "BitPro never races the same changes twice. Propose different "
+                    "parameter_changes or structural_changes"
+                )
             parent_manifest_sha256 = variant_policy["parent_manifest_sha256"]
             parent_execution_identity_sha256 = variant_policy.get(
                 "parent_execution_identity_sha256"

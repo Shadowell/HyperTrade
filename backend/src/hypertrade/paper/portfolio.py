@@ -139,7 +139,8 @@ class PortfolioCoordinatorService:
 
     def run_race_judge_now(self) -> list[dict[str, Any]]:
         """Trigger an immediate forward evidence check across all paper twin pairs."""
-        records = self.race_judge.scan_and_judge_all()
+        # "Run now" is an operator's explicit request: skip the slow-poll schedule.
+        records = self.race_judge.scan_and_judge_all(force=True)
         return [r.to_dict() for r in records]
 
     def get_relay_handover_plans(self) -> list[dict[str, Any]]:

@@ -338,7 +338,11 @@ def readiness(
                 "code": "relay_in_progress",
                 "role": relay.get("role"),
                 "plan_state": relay.get("plan_state"),
-                "condition": "BitPro relay must complete or be cancelled before evolving again",
+                "condition": (
+                    str(relay.get("reason") or "").strip()
+                    or "BitPro variant seats must free up (a relay completes, or a challenger "
+                    "is eliminated or cancelled) before evolving again"
+                ),
             }
         )
     # Poll unknown/trade/data conditions; a date is only the known minimum time gate.

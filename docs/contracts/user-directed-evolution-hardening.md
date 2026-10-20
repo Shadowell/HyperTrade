@@ -158,3 +158,26 @@ ARC 默认使用 RemoteWindow，经 KlineDataProvider 获取 BitPro 的 market_h
 - 长窗口兜底与主路径使用同一份按周期自适应的最少成交门槛；`_memory` 收满200条后停止加载其余任务投影。
 
 2026-10-15：ARC 新增 `GET /api/v1/arc/variant-status?source_strategy_id=…&candidate_strategy_id=…` 只读摘要。限定 BitPro 目标并精确绑定母体/候选，只选取持久投影子字段与当前受阻任务最近一条阻塞事件，不重建控制器、不加载完整事件/模型对话；权限继续为 `arc:read`。最多检索母体最近100条任务，无匹配返回 `not_found`，不代表审核通过。
+
+## 赛马裁判与变体位（2026-10-20）
+
+BitPro 的母体现在可以同时让多个挑战者各占一个变体位赛马（默认3个，见 BitPro 接力合同「变体位与终考」）。赛马裁判相应调整，仍然只读：不调用 `adopt` / `enable_auto` / `cancel`，不改变任何门禁与判定。
+
+- **逐赛道跟踪**：每个 (母体, 挑战者) 一条 `RacePairRecord`。新增可选字段：`slot_no`（位号）、`gate_alpha`（该位的符号检验水平，三个位时约 0.0167）、`plan_seen`、`cancellation_kind` / `cancellation_actor` / `cancellation_reason` / `cancellation_cooldown_hours` / `cancellation_metrics`、`next_poll_at`；缺这些字段的旧状态文件照常加载。卡片显示「位N」，p 值阈值与「及格线：N 个非平局日里至少赢 K 天」按 `gate_alpha` 换算；`gate_alpha` 缺失（旧 BitPro、QuantLab）时按 0.05 且不显示及格线。
+- **取消原因**：读取 `relay-control` / `relay-plans` 的 `cancellation.kind`。`operator` 沿用「已取消，操作者终止赛马」；`futility`／`exam`／`timeout` 分别触发里程碑 `FUTILITY`／`EXAM_FAILED`／`TIMED_OUT`（橙色卡片），写明是系统淘汰而非操作者取消、BitPro 给出的原因与证据、释放了哪个变体位，无望淘汰另写冷却小时数，被淘汰的候选不会被自动放行；`superseded`（同母体其他变体已接班）只记 `SUPERSEDED` 标记、不发卡，赢家的 ADOPTED / COMPLETED 卡片已经说明；缺失、格式异常或未知的 kind 一律使用不指名取消者的中性文案（不写「操作者」，也不写「淘汰」）。每个赛道只发一张取消类卡片，旧标记 `CANCELLED` / `REJECTED` 视为已发过；挑战者被重新放行进入新的赛马后清除取消标记，下一次取消可再通知。
+- **消失的赛道**：BitPro 在位置被新挑战者接管后会删除被取消的计划行。曾见过计划而后来查不到的赛道记为 `ended`：保留最后一次证据、不再轮询、不发卡（结束原因 BitPro 自己已推送）；从未见过计划的赛道（如历史文件里已部署但尚未入位的候选）不会被误记为结束。
+- **轮询降频**：读取一个观察中的赛道会让 BitPro 重载14天小时权益，而赛道数可达母体数×变体位数，因此只在积累证据的赛道每 `RACE_JUDGE_OBSERVING_INTERVAL_SECONDS`（默认900秒，下限60）读一次；交接中（draining / transferred）、即将达标或待宣布的赛道仍按 `RACE_JUDGE_INTERVAL_SECONDS`（默认60秒）每轮查看；`relay-plans` 列表（每轮一次廉价读取）里已跟踪赛道变成 `cancelled` 时立即读取，不等慢轮询；运营端 `POST /api/portfolio/race-judge/run-now` 忽略降频。
+- **重复通知**：一次系统淘汰用户仍会收到两条飞书：BitPro 自己的橙色「赛马淘汰」卡和本卡；是否抑制其一由用户决定，本次没有抑制。
+
+验证：`tests/test_race_judge.py` 新增 14 项（各取消原因的文案与里程碑、被接班的赛道不发卡、未知来源中性文案、旧状态文件、旧标记不重发、位号与及格线显示、消失赛道结束、慢轮询与立即读取、重新放行后再次通知、QuantLab 目标无该字段），对 11 处关键守卫做过变异检验，去掉任一守卫都有用例失败。
+
+## 研究侧供给与变体位（2026-10-20）
+
+BitPro 的母体现在默认有三个变体位（见 BitPro 接力合同「变体位与终考」）。BitPro 的 `research-variant-policy.relay` 新增 `slots.queued`（已审核并在等位的候选数）与 `tried_variants`（该母体已赛过、等位或被淘汰的变体及其参数/结构改动与状态）。ARC 研究侧据此调整，全部为可选信息：旧 BitPro 或其他目标不返回时，退回原有的「每个母体一个挑战者」行为。
+
+- **按空位扫描**：`relay_seats` 把策略的空位拆成 `free`（空位）、`queued`（已排队候选）与 `open = free − queued`。`blocks_evolution` 为真（位全满、挑战者本身、冠军交接中）仍跳过；位没满但空位已全被排队候选预订（`open = 0`）也跳过，诊断记录 `skip_reason=seats_reserved` 与 `relay_hold`（`plan_state=queued`），续跑账本的 `relay_in_progress` 阻塞改为显示 BitPro 给出的原因，因为再研究只会让候选堆在后面。
+- **排序**：同等紧急程度（非阻塞、短期紧急优先、退化优先）下，空位多（`open` 大）的母体先研究，再按最久未研究；不报告空位的母体排序与原来一致。选中的源把 `relay_seats` 记入研究任务的 `evolution_context`。
+- **参数去重**：窗口日期不同的同一改动会得到不同的 `experiment_key`（开发窗口随日期移动），旧的「已归档实验」检查看不到它；BitPro 自动纳管又不会让完全相同的变体赛两次，于是这种副本会花掉模型调用与回测、最后无人入位。AVO `propose` 现在在产生任何副作用前，拒绝与 `relay.tried_variants` 中任一项参数与结构改动完全相同的提案（数值按 8 与 8.0 视为相同，键序无关），错误信息指出是哪个变体、什么状态；这条没有 `repeat_reason` 例外，因为 BitPro 不会让它再赛，需要重赛某个变体时由操作者在 BitPro 重新放行。系统提示同步告知模型这条规则与空位含义。
+- **需求可见**：每轮扫描结果 `payload.relay_seat_demand` 汇总（报告空位的母体数、位总数、已占用、空位、排队候选、`seats_open`），并给出今日剩余研究轮数与每轮最多候选数。若 `seats_open` 长期大于「剩余轮数 × 每轮实际入位的候选数」，说明每日研究预算（`max_research_per_day`，默认4，是有意的成本上限）限制了进化速度；每一轮最多消耗 `max_model_calls` 次模型调用与 `max_backtests` 次回测。生产配置由用户或管理员调整，代码不改默认预算。
+
+验证：`tests/test_arc_relay_seats.py`（新增，空位与重复判定的单元测试）、`tests/test_arc_evolution.py` 新增 5 项（位被排队候选占满即跳过、有空位时研究并把空位事实带入任务、旧 BitPro 行为不变、空位多的母体先研究、被预订的母体让位）、`tests/test_source_variant_avo.py` 新增 2 项（已赛过／排队中／已淘汰的变体在任何副作用前被拒绝，提示词包含该规则）；对9处关键守卫做过变异检验，去掉任一守卫都有用例失败。
