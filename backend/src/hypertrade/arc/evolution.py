@@ -113,6 +113,11 @@ class EvolutionConfig(BaseModel):
     max_backtests: int = Field(default=8, ge=3, le=30)
     paper_capital: Decimal = Field(default=Decimal("100"), gt=0, le=10000)
     auto_approve_paper: bool = False
+    # Per-change ablation of forward losers (lost_futility / lost_exam): development-window
+    # backtests only, with their own daily cap that never uses the daily research quota.
+    ablation_enabled: bool = True
+    ablation_max_backtests_per_day: int = Field(default=6, ge=1, le=60)
+    ablation_max_backtests_per_loser: int = Field(default=6, ge=3, le=6)
 
 
 def digest(value: Any) -> str:

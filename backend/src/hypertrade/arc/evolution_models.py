@@ -119,3 +119,60 @@ class ArcForwardOutcome(Base, TimestampMixin):
     attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     changes_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     scope_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class ArcAblationRun(Base, TimestampMixin):
+    """Per-change ablation of one forward loser; development-window backtests only.
+
+    Status: ``pending | running | completed | failed | skipped``.
+    """
+
+    __tablename__ = "arc_ablation_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "target_id", "challenger_strategy_id", name="uq_arc_ablation_run_challenger"
+        ),
+        UniqueConstraint("outcome_id", name="uq_arc_ablation_run_outcome"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    outcome_id: Mapped[str] = mapped_column(String(64))
+    target_id: Mapped[str] = mapped_column(String(32))
+    parent_strategy_id: Mapped[str] = mapped_column(String(64), index=True)
+    challenger_strategy_id: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    reason: Mapped[str] = mapped_column(String(64), default="")
+    message: Mapped[str] = mapped_column(Text, default="")
+    research_id: Mapped[str] = mapped_column(String(64), default="")
+    window_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    plan_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    result_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    next_check_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ArcAblationStep(Base, TimestampMixin):
+    """One backtest of a run: the unchanged parent baseline, or the parent plus one change.
+
+    Status: ``pending | running | completed | failed``. ``charged_at`` marks the job
+    identity write (the billing point); steps reusing another step's job leave it empty.
+    """
+
+    __tablename__ = "arc_ablation_steps"
+    __table_args__ = (UniqueConstraint("run_id", "step_key", name="uq_arc_ablation_step"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    step_key: Mapped[str] = mapped_column(String(160))
+    ordinal: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[str] = mapped_column(String(16))
+    change_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    reason: Mapped[str] = mapped_column(String(128), default="")
+    request_hash: Mapped[str] = mapped_column(String(64), default="", index=True)
+    checkpoint_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    result_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    charged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
