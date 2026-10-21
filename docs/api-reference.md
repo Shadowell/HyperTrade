@@ -1494,6 +1494,6 @@ WebSocket support is not currently implemented. New natural-language clients use
 
 ## Versioning
 
-API version: `0.1.0`
+API version: `0.2.0`
 
 The API is in active development. Breaking changes will be announced in release notes.
