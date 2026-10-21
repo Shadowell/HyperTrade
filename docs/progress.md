@@ -1,3 +1,14 @@
+## 2026-10-21：开源就绪与 GitHub 社区工程治理（CI、模板与行为准则）
+
+- **背景**：对照 OpenAI Codex for OSS 计划与顶级开源项目治理标准，补齐项目在持续集成（CI）、版本管理、Issue 分类及社区准则等维度的工程规范。
+- **交付**：
+  1. 新增 `.github/workflows/ci.yml`：基于 GitHub Actions 自动化执行全套前端（Node 22 + pnpm 10: lint/test/build）与后端（Python 3.12 + uv: ruff/mypy/pytest 2200+ 用例）代码门禁；
+  2. 新增 `.github/pull_request_template.md`：建立规范的 PR 评审模板，内嵌安全边界、AST 门禁与核验清单自查表；
+  3. 新增 `.github/ISSUE_TEMPLATE/` 规范化表单：覆盖 Bug 报告（`bug_report.yml`）、功能需求（`feature_request.yml`）及 ARC 专属量化假说与策略提案（`research_hypothesis.yml`）；
+  4. 新增 `CODE_OF_CONDUCT.md`：引入 Contributor Covenant v2.1 国际开源行为准则；
+  5. 更新中英文 `README` 导航徽章：新增 GitHub Actions CI 真实动态徽章，更新测试徽章为 2200+ passed。
+- **验证**：本地全量门禁 `./scripts/check.sh` 2214 项测试与前端构建全部通过；YAML 语法校验无误。
+
 ## 2026-10-21：README 与 GitHub DESC 默认采用英文
 
 - **背景**：项目国际化与开源对齐，遵循惯例将根目录默认文档设为英文，并同步更新 GitHub 仓库简介（DESC）。

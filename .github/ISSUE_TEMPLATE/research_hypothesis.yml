@@ -1,0 +1,38 @@
+name: Research Hypothesis / Strategy Proposal
+description: Propose a new quantitative trading hypothesis or market adaptation for ARC
+title: "hypothesis: [Short hypothesis description]"
+labels: ["research", "hypothesis"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to propose a trading hypothesis or factor rationale for evaluation in the ARC Autonomous Research Core.
+  - type: textarea
+    id: core_hypothesis
+    attributes:
+      label: Core Trading Hypothesis
+      description: What market anomaly, statistical edge, or microstructure phenomenon does this hypothesis target?
+    validations:
+      required: true
+  - type: dropdown
+    id: market
+    attributes:
+      label: Target Market
+      options:
+        - BitPro (Crypto Futures / SWAP)
+        - QuantLab (A-Shares Multi-Asset)
+        - Cross-Market Generic
+    validations:
+      required: true
+  - type: textarea
+    id: metric_goals
+    attributes:
+      label: Targeted Performance Improvements
+      description: Specific target metrics (e.g., net Sharpe ratio improvement, max drawdown reduction, turnover cost reduction).
+    validations:
+      required: true
+  - type: textarea
+    id: falsification
+    attributes:
+      label: Counter-Evidence & Falsification Criteria
+      description: Under what market regime or backtest result should this hypothesis be pruned in the Hypothesis Evolution Tree (HET)?
