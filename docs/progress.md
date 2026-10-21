@@ -1,3 +1,11 @@
+## 2026-10-21：CLI 增加结构化 JSON 输出支持（--json）
+
+- **背景**：响应 Issue #68，为终端操作工具增加 `--json` 输出选项，支持外部 Agent 与自动化 CI 脚本直接通过 `jq` 解析。
+- **交付**：
+  1. `handle_regime_shadow_command` 适配 `--json` 参数，返回格式化 JSON 字符串；
+  2. 新增 `tests/test_cli_json_output.py`：测试普通文本格式与 JSON 结构化输出互斥性及正确性。
+- **验证**：`tests/test_cli_json_output.py` 2 项测试通过，ruff 检查通过。
+
 ## 2026-10-21：强化 ASTGatekeeper 边界语法与反射注入测试覆盖
 
 - **背景**：响应社区 Issue #60，针对 LLM 策略代码合成可能出现的复杂 Python AST 结构，增加全套参数化边界语法与反思注入测试。

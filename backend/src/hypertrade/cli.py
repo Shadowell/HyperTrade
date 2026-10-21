@@ -5586,9 +5586,14 @@ def handle_regime_shadow_command(
     output: TextIO,
 ) -> None:
     parts = command.split()
-    action = parts[1].lower() if len(parts) > 1 else "list"
+    is_json = "--json" in parts
+    cleaned_parts = [p for p in parts if p != "--json"]
+    action = cleaned_parts[1].lower() if len(cleaned_parts) > 1 else "list"
     if action == "list":
         rows = client.list_regime_shadow_targets()
+        if is_json:
+            print(json.dumps(rows, ensure_ascii=False, indent=2), file=output)
+            return
         print("Regime-aware Shadow V2 targets:", file=output)
         if not rows:
             print("- none", file=output)
