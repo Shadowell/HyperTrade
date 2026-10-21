@@ -1,3 +1,13 @@
+## 2026-10-21：README 与 GitHub DESC 默认采用英文
+
+- **背景**：项目国际化与开源对齐，遵循惯例将根目录默认文档设为英文，并同步更新 GitHub 仓库简介（DESC）。
+- **交付**：
+  1. `README.md` 与 `README.en.md` 设为完整英文主文档（补齐 2026-10-15 自进化质量门禁、有界恢复流程图及自愈边界说明的英文翻译，导航条置顶 English 并提供中文文档链接）；
+  2. `README.zh-CN.md` 保持为完整中文文档，导航条提供英文主文档链接；
+  3. GitHub 仓库简介（DESC）通过 GitHub CLI 更新为英文版本：`Production-grade, governed quantitative trading Agent Runtime powered by Autonomous Research Core (ARC): featuring MCTS search, red-blue adversarial game, attribution reflection, and automated paper-trading incubation.`，本地 `.git/description` 同步更新；
+  4. 同步更新 `AGENTS.md`、`docs/README.md` 与 `docs/architecture/00-overview.md` 中的中英文 README 维护约定。
+- **验证**：门禁 `./scripts/check.sh` 完整通过；`gh repo view` 确认 GitHub 描述已更新。
+
 ## 2026-10-20：研究侧跟上 BitPro 变体位（按空位扫描、参数去重、需求可见）
 
 - **背景**：BitPro #1286 让每个母体默认有三个变体位，研究侧还是按「一个母体一个挑战者」工作：空位已被排队候选预订时仍会继续造候选；同一改动换一天就绕过「已归档实验」检查（开发窗口随日期移动），BitPro 又不会让完全相同的变体赛两次，副本白白花掉模型调用与回测；也看不到空位需求与每日预算的差距。

@@ -21,7 +21,7 @@ HyperTrade 不复制交易平台的内部业务逻辑，不直接读取其内部
 
 ## Documentation maintenance / 文档维护规则
 
-- **架构变更同步强准则（Mandatory Rule）**：当整体架构有了新的变更（包括新增核心模块、扩展多市场适配层、调整数据/控制流拓扑、演进存储或执行模型等）时，必须及时同步更新所有相关的设计文档（如 `docs/architecture/` 目录下的架构设计文档、`docs/spec.md`、`docs/progress.md`、相关交付合同）以及中英文 `README`（`README.md`、`README.en.md` 等），严禁出现代码与架构演进但设计文档与 README 滞后或失步的情况。
+- **架构变更同步强准则（Mandatory Rule）**：当整体架构有了新的变更（包括新增核心模块、扩展多市场适配层、调整数据/控制流拓扑、演进存储或执行模型等）时，必须及时同步更新所有相关的设计文档（如 `docs/architecture/` 目录下的架构设计文档、`docs/spec.md`、`docs/progress.md`、相关交付合同）以及中英文 `README`（`README.md`、`README.zh-CN.md`、`README.en.md` 等），严禁出现代码与架构演进但设计文档与 README 滞后或失步的情况。
 - 产品范围与验收标准：[Product Spec](../spec.md)
 - 当前已验证状态与生产证据：[Progress Log](../progress.md)
 - 所有交付合同与 Sprint 规划：[Sprint Contracts](../contracts/)

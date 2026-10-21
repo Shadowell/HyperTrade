@@ -1,10 +1,26 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
-2026-10-15：来源变体强制证据引用、反证及收益/回撤改进目标；封存行情、成本和执行版本一致后才比较母体，终态执行失败单独结算。正式Paper审核须匹配最终通过回执，人工暂停不被恢复覆盖。已有回测检查点的部署健康检查断连采用5次/24小时有界恢复，审计恢复不增加预算、不改变Paper历史。
+2026-10-15 自进化质量门禁：来源参数提议也必须绑定可核验引用、明确反证及净收益提高/回撤降低目标；仅减少交易次数不算改进。已知执行失败单独结算为失败研究，不当作交易成绩继续突变。来源回测比较要求同执行环境、成本、封存行情及经济输入；Paper审核须与最终通过回执及源码一致。人工暂停不能被旧回执覆盖。部署健康检查断连仅对已有行动回执有界重试，五次失败或24小时上限停止；审计恢复脚本可复核原绑定后恢复部署断连等待，不补预算、不重置Paper。
 
-版本变化只能通过显式关联的新版本重验处理；原job与Paper历史保留，恢复次数不重置。
+同版本中断继续原job；旧执行环境/后端包已变化时，严格保留原冻结校验，通过明确前序关系创建同经济输入的新版本重验。旧job和快照不覆盖，整条恢复链仍受2次上限约束；已知等待显示为验证中而非要求人工处理。
 
-研究回测采用行动绑定检查点和原job有界恢复，冻结输入与Paper历史不可替换；详见[ARC架构](docs/architecture/37-arc-autonomous-research-core-architecture.md)。
+研究回测在外部副作用前后持久保存行动检查点：请求、attempt、源码、job与冻结输入绑定；断连后读取原job，interrupted最多恢复2次，失败/取消不重试。最多连续5次读取失败或等待24小时后明确要求对账，操作者停止不能被恢复器覆盖。部署顺序为BitPro持久幂等接口先行。
+
+```mermaid
+flowchart LR
+    A[研究行动] --> J[(持久行动检查点)]
+    J --> B[冻结回测job]
+    B --> S{真实状态}
+    S -->|运行中| J
+    S -->|中断| R[有界恢复原job]
+    R --> B
+    R -->|版本失效| V[关联版本重验]
+    V --> B
+    S -->|完成| Q[结果与母体比较]
+    S -->|失败或取消| F[失败证据]
+```
+
+部署从实际 Docker network 获取 BitPro 主机网关，并验证 API/worker 的 DNS 与认证健康请求。未知开发副作用只能凭精确外部对账回执收敛失败，不能盲目重试或宣称成功。
 
 <p align="center">
   <strong>自托管、受治理的多市场策略研究 Agent Runtime · 自主研究与自主进化闭环</strong>
@@ -23,8 +39,8 @@
 </p>
 
 <p align="center">
-  🌐 <strong>中文主文档</strong> ·
-  <a href="README.en.md">🇬🇧 English</a> ·
+  <a href="README.md">🌐 English</a> ·
+  🇨🇳 <strong>中文主文档</strong> ·
   <a href="docs/architecture/00-overview.md">架构总览</a> ·
   <a href="docs/architecture/33-system-architecture.md">系统架构</a> ·
   <a href="docs/architecture/62-pluggable-market-targets.md">可插拔市场目标</a> ·

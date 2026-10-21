@@ -53,7 +53,7 @@ runbooks, and sprint state. Chat history is not considered durable project state
    Whenever the overall architecture undergoes changes (such as new core modules, multi-market adapters,
    data/control flow updates, storage migrations, or execution model evolution), all related architecture
    design documents under `docs/architecture/`, `docs/spec.md`, `docs/progress.md`, sprint contracts,
-   and both Chinese and English README files (`README.md`, `README.en.md`) MUST be updated promptly.
+   and both Chinese and English README files (`README.md`, `README.zh-CN.md`, `README.en.md`) MUST be updated promptly.
    Code evolution without synchronized design documentation is strictly forbidden.
 2. Keep production behavior in docs, not only in chat.
 3. Do not document secrets, tokens, provider keys, or production `.env` values.
