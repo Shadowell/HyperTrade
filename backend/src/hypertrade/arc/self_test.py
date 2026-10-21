@@ -415,6 +415,7 @@ class ARCSelfTestService:
         goal: ARCGoalV1,
         *,
         purpose: Literal["development", "final"] = "final",
+        data_reference: dict[str, str] | None = None,
     ) -> SelfTestResult:
         client = self._client or BitProToolAdapter()
         try:
@@ -636,27 +637,38 @@ class ARCSelfTestService:
             backtest_key = _window_backtest_key(scope, purpose, start, end, goal)
         data_ref: dict[str, str] = {}
         if is_source_variant and not is_baseline_attempt and goal.paper_review_required:
-            # BitPro compares a candidate only on its baseline's sealed data. The baseline
-            # uses the exact create/backtest keys its own attempt would, so the later
-            # baseline self-test replays this job instead of running a second one.
-            baseline_ref = _baseline_data_reference(
-                client,
-                attempt,
-                goal,
-                symbols,
-                timeframe,
-                purpose,
-                start,
-                end,
-                backtest_start=lambda **kw: self._backtest(client, **kw),
-                prerequisite_error=self._backtest_runner.defer_prerequisite
-                if self._backtest_runner is not None
-                else None,
-            )
-            if isinstance(baseline_ref, SelfTestResult):
-                baseline_ref.bitpro_strategy_id = str(strategy_id)
-                return baseline_ref
-            data_ref = baseline_ref
+            # Ablation already obtained the sealed data reference from its own baseline
+            # backtest. Reusing it avoids an implicit baseline row and a second job per
+            # structural candidate; AVO keeps the original baseline path.
+            if data_reference is not None:
+                data_ref = {
+                    "verified_data_snapshot_id": str(data_reference["verified_data_snapshot_id"]),
+                    "verified_data_manifest_sha256": str(
+                        data_reference["verified_data_manifest_sha256"]
+                    ),
+                }
+            else:
+                # BitPro compares a candidate only on its baseline's sealed data. The baseline
+                # uses the exact create/backtest keys its own attempt would, so the later
+                # baseline self-test replays this job instead of running a second one.
+                baseline_ref = _baseline_data_reference(
+                    client,
+                    attempt,
+                    goal,
+                    symbols,
+                    timeframe,
+                    purpose,
+                    start,
+                    end,
+                    backtest_start=lambda **kw: self._backtest(client, **kw),
+                    prerequisite_error=self._backtest_runner.defer_prerequisite
+                    if self._backtest_runner is not None
+                    else None,
+                )
+                if isinstance(baseline_ref, SelfTestResult):
+                    baseline_ref.bitpro_strategy_id = str(strategy_id)
+                    return baseline_ref
+                data_ref = baseline_ref
         try:
             backtest = self._backtest(
                 client,
