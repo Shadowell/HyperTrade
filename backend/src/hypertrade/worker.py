@@ -752,6 +752,7 @@ async def arc_observation_loop(db: Database) -> None:
 
 
 async def arc_evolution_loop(db: Database) -> None:
+    from hypertrade.arc.ablation import ablation_once
     from hypertrade.arc.evolution import EvolutionService
     from hypertrade.arc.evolution_alerts import evolution_alerts_once
 
@@ -760,6 +761,7 @@ async def arc_evolution_loop(db: Database) -> None:
     while True:
         await _guarded(db, "worker.arc_evolution", service.tick)
         await _guarded(db, "worker.arc_evolution_alerts", lambda: evolution_alerts_once(db))
+        await _guarded(db, "worker.arc_ablation", lambda: ablation_once(db))
         await asyncio.sleep(60)
 
 

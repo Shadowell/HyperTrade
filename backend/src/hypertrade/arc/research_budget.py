@@ -19,6 +19,7 @@ from hypertrade.arc import store
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import _feedback_child_active, _pending_effect
+from hypertrade.arc.runtime_journal import failure_text
 from hypertrade.arc.store import insert_mission, load_projection
 from hypertrade.db import ArcMission, Database
 
@@ -209,7 +210,15 @@ def budget_status(db: Database, config: EvolutionConfig, now: datetime) -> dict[
                 .limit(20)
             )
         ]
-        return state
+    # A separate transaction: this runs on every scan, so an unreadable ablation ledger may
+    # only degrade its own section, never the daily research budget.
+    try:
+        from hypertrade.arc.ablation import ablation_budget_view
+
+        state["ablation"] = ablation_budget_view(db, config, now)
+    except Exception as exc:
+        state["ablation"] = {"status": "unavailable", "error": failure_text(exc)[:200]}
+    return state
 
 
 def admit(

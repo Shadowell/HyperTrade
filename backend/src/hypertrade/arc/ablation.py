@@ -1315,6 +1315,105 @@ def _due_run(db: Database, now: datetime) -> ArcAblationRun | None:
         ).one_or_none()
 
 
+def ablation_budget_view(db: Database, config: Any, now: datetime) -> dict[str, Any]:
+    """Read-only ledger view for budget status and the effectiveness report.
+
+    Counts are observations over persisted rows, not causal claims. It opens its own short
+    session and never writes, so the caller may degrade to an "unavailable" section.
+    """
+    moment = _utc(now)
+    assert moment is not None
+    start = moment.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    with db.session() as session:
+        period_used = int(
+            session.scalar(
+                select(func.count())
+                .select_from(ArcAblationStep)
+                .where(
+                    ArcAblationStep.charged_at.is_not(None),
+                    ArcAblationStep.charged_at >= start,
+                    ArcAblationStep.charged_at < end,
+                )
+            )
+            or 0
+        )
+        runs = {
+            str(status): int(count)
+            for status, count in session.execute(
+                select(ArcAblationRun.status, func.count()).group_by(ArcAblationRun.status)
+            ).all()
+        }
+        reasons = {
+            str(reason): int(count)
+            for reason, count in session.execute(
+                select(ArcAblationRun.reason, func.count())
+                .where(ArcAblationRun.reason.is_not(None), ArcAblationRun.reason != "")
+                .group_by(ArcAblationRun.reason)
+            ).all()
+        }
+        scheduled = {
+            (target_id, str(challenger))
+            for target_id, challenger in session.execute(
+                select(ArcAblationRun.target_id, ArcAblationRun.challenger_strategy_id)
+            ).all()
+        }
+        next_at = session.scalar(
+            select(func.min(ArcAblationRun.next_check_at)).where(
+                ArcAblationRun.status.in_(("pending", "running"))
+            )
+        )
+        losers = list(
+            session.scalars(
+                select(ArcForwardOutcome)
+                .where(
+                    ArcForwardOutcome.target_id == config.target_id,
+                    ArcForwardOutcome.verdict.in_(LOSER_VERDICTS),
+                )
+                .order_by(
+                    case((ArcForwardOutcome.ended_at.is_(None), 1), else_=0),
+                    ArcForwardOutcome.ended_at.desc(),
+                    ArcForwardOutcome.created_at.desc(),
+                )
+                .limit(500)
+            )
+        )
+    loser_counts = {"eligible": 0, "single_change": 0, "unlinked": 0, "scheduled": 0}
+    for row in losers:
+        if (row.target_id, str(row.challenger_strategy_id)) in scheduled:
+            loser_counts["scheduled"] += 1
+        if row.lineage_status != "linked":
+            loser_counts["unlinked"] += 1
+        elif change_count(row.changes_json) >= 2:
+            loser_counts["eligible"] += 1
+        else:
+            loser_counts["single_change"] += 1
+    enabled = bool(
+        config.enabled and config.ablation_enabled and config.target_id == "bitpro"
+    )
+    reason: str | None = None
+    if not enabled:
+        reason = "disabled"
+    elif period_used >= config.ablation_max_backtests_per_day:
+        reason = "period_budget_exhausted"
+    next_moment = _utc(next_at)
+    return {
+        "schema_version": "ablation_budget.v1",
+        "enabled": enabled,
+        "unit": "backtests",
+        "period": start.date().isoformat(),
+        "period_used": period_used,
+        "period_limit": config.ablation_max_backtests_per_day,
+        "per_loser_limit": config.ablation_max_backtests_per_loser,
+        "runs": runs,
+        "reasons": reasons,
+        "losers": loser_counts,
+        "next_run_at": next_moment.isoformat() if next_moment is not None else None,
+        "reason": reason,
+        "rule": "消融回测独立计账，不占用每日研究名额；只在开发窗口回测，不碰 Paper／实盘",
+    }
+
+
 def ablation_once(
     db: Database, *, now: datetime | None = None, client: Any = None
 ) -> dict[str, Any]:
