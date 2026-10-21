@@ -312,27 +312,78 @@ class ForwardOutcomeLedger:
             session.flush()
             return len(rows)
 
-    def evidence_for_parent(
+    def evidence_for_lineage(
         self,
         *,
         target_id: str,
-        parent_strategy_id: object,
-        limit: int = 10,
+        strategy_id: object,
+        ancestors: int = 3,
+        limit: int = 8,
     ) -> list[dict[str, Any]]:
-        """Concrete, lineage-linked outcomes for one parent; neutral records never qualify."""
-        rows = select(ArcForwardOutcome).where(
-            ArcForwardOutcome.target_id == target_id,
-            ArcForwardOutcome.parent_strategy_id == str(parent_strategy_id),
-            ArcForwardOutcome.verdict.in_(EVIDENCE_VERDICTS),
-            ArcForwardOutcome.lineage_status == "linked",
-        )
-        statement = rows.order_by(
+        """Concrete, lineage-linked races of this strategy and the champions it replaced.
+
+        A challenger that wins becomes the new champion under a new strategy id, while its
+        winning race (and its predecessors' races) stay recorded under the old id. Walking
+        the ``won`` rows backwards is the only way research on the current champion can see
+        the races that made it and its ancestors. Neutral records never qualify, and
+        ``ancestors=0`` reads only the races recorded under this id.
+        """
+        ordering = (
             case((ArcForwardOutcome.ended_at.is_(None), 1), else_=0),
             ArcForwardOutcome.ended_at.desc(),
             ArcForwardOutcome.created_at.desc(),
-        ).limit(max(0, limit))
+        )
+        chain = [str(strategy_id)]
         with self.db.session() as session:
-            return [self.view(row) for row in session.scalars(statement).all()]
+            for _ in range(max(0, ancestors)):
+                won = session.scalars(
+                    select(ArcForwardOutcome)
+                    .where(
+                        ArcForwardOutcome.target_id == target_id,
+                        ArcForwardOutcome.challenger_strategy_id == chain[-1],
+                        ArcForwardOutcome.verdict == "won",
+                    )
+                    .order_by(*ordering)
+                    .limit(1)
+                ).first()
+                if won is None:
+                    break
+                parent = str(won.parent_strategy_id)
+                if parent in chain:
+                    break  # A cycle is operator-visible corruption, not more history.
+                chain.append(parent)
+            statement = (
+                select(ArcForwardOutcome)
+                .where(
+                    ArcForwardOutcome.target_id == target_id,
+                    ArcForwardOutcome.parent_strategy_id.in_(chain),
+                    ArcForwardOutcome.verdict.in_(EVIDENCE_VERDICTS),
+                    ArcForwardOutcome.lineage_status == "linked",
+                )
+                .order_by(*ordering)
+                .limit(max(0, limit))
+            )
+            rows = list(session.scalars(statement).all())
+        results = []
+        for row in rows:
+            item = self.view(row)
+            generations_back = chain.index(row.parent_strategy_id)
+            item["generations_back"] = generations_back
+            item["relation"] = self._relation(row, chain, generations_back)
+            results.append(item)
+        return results
+
+    @staticmethod
+    def _relation(row: ArcForwardOutcome, chain: list[str], generations_back: int) -> str:
+        """Why this row matters to the strategy under research, never a causal claim."""
+        if row.verdict == "won":
+            if row.challenger_strategy_id == chain[0]:
+                return "made_current"
+            if row.challenger_strategy_id in chain:
+                return "made_ancestor"
+        if generations_back == 0:
+            return "variant_of_current"
+        return "variant_of_ancestor"
 
     def summary(self) -> dict[str, Any]:
         """Aggregate in the database: this is polled by pages that do not need the metrics."""

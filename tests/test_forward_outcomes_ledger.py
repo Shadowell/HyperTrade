@@ -433,7 +433,9 @@ def test_record_recovers_when_another_writer_inserted_first(
     assert rows[0].verdict == "lost_exam"
 
 
-def test_evidence_for_parent_filters_sorts_and_limits(ledger: ForwardOutcomeLedger) -> None:
+def test_evidence_for_lineage_ancestors_zero_filters_sorts_and_limits(
+    ledger: ForwardOutcomeLedger,
+) -> None:
     _save_mission("9001", "9002", "9003", "9004", "9006")
     _record(
         ledger,
@@ -469,15 +471,74 @@ def test_evidence_for_parent_filters_sorts_and_limits(ledger: ForwardOutcomeLedg
     )
     _record(ledger, challenger="9006", verdict="won", ended_at=None)
 
-    results = ledger.evidence_for_parent(target_id="bitpro", parent_strategy_id=107)
+    results = ledger.evidence_for_lineage(target_id="bitpro", strategy_id=107, ancestors=0)
     assert [row["challenger_strategy_id"] for row in results] == ["9002", "9001", "9006"]
     assert all(row["verdict"] in EVIDENCE_VERDICTS for row in results)
     assert all(row["lineage_status"] == "linked" for row in results)
+    # 9001 won, but it is not the id under research, so it is still a variant of it.
+    assert all(row["relation"] == "variant_of_current" for row in results)
+    assert all(row["generations_back"] == 0 for row in results)
 
-    limited = ledger.evidence_for_parent(
-        target_id="bitpro", parent_strategy_id=107, limit=2
+    limited = ledger.evidence_for_lineage(
+        target_id="bitpro", strategy_id=107, ancestors=0, limit=2
     )
     assert [row["challenger_strategy_id"] for row in limited] == ["9002", "9001"]
+
+
+def test_evidence_for_lineage_walks_the_champion_chain(ledger: ForwardOutcomeLedger) -> None:
+    _save_mission("101", "102", "1001", "1011", "1021", "9991", "1012")
+    races = (
+        (100, "1001", "lost_exam", datetime(2026, 1, 1)),
+        (100, "101", "won", datetime(2026, 1, 2)),
+        (101, "1011", "lost_futility", datetime(2026, 1, 3)),
+        (101, "102", "won", datetime(2026, 1, 4)),
+        (102, "1021", "lost_exam", datetime(2026, 1, 5)),
+        # Other lineage, neutral ending and unlinked loss: never evidence here.
+        (999, "9991", "won", datetime(2026, 1, 6)),
+        (101, "1012", "superseded", datetime(2026, 1, 7)),
+        (102, "1022", "lost_exam", datetime(2026, 1, 8)),
+    )
+    for parent, challenger, verdict, ended_at in races:
+        _record(
+            ledger,
+            parent=parent,
+            challenger=challenger,
+            verdict=verdict,
+            ended_at=ended_at,
+        )
+
+    results = ledger.evidence_for_lineage(target_id="bitpro", strategy_id="102", ancestors=3)
+    assert [row["challenger_strategy_id"] for row in results] == [
+        "1021",
+        "102",
+        "1011",
+        "101",
+        "1001",
+    ]
+    assert [
+        (row["challenger_strategy_id"], row["relation"], row["generations_back"])
+        for row in results
+    ] == [
+        ("1021", "variant_of_current", 0),
+        ("102", "made_current", 1),
+        ("1011", "variant_of_ancestor", 1),
+        ("101", "made_ancestor", 2),
+        ("1001", "variant_of_ancestor", 2),
+    ]
+
+    near = ledger.evidence_for_lineage(target_id="bitpro", strategy_id="102", ancestors=1)
+    assert [row["challenger_strategy_id"] for row in near] == ["1021", "102", "1011"]
+
+    # A corrupted won link back to the current champion must not loop forever.
+    _record(
+        ledger,
+        parent=102,
+        challenger="100",
+        verdict="won",
+        ended_at=datetime(2026, 1, 9),
+    )
+    cyclic = ledger.evidence_for_lineage(target_id="bitpro", strategy_id="102", ancestors=10)
+    assert len(cyclic) == len({row["id"] for row in cyclic}) == 5
 
 
 def test_summary_counts_verdicts_lineage_and_evidence(ledger: ForwardOutcomeLedger) -> None:

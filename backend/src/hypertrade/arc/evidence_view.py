@@ -77,6 +77,8 @@ def build_evidence_view(projection: ARCMissionProjection) -> dict[str, Any]:
         research["research"]["evolution"]["order_sample"] = {
             k: v for k, v in context.get("orders", {}).items() if k != "fills"
         }
+        # Forward races are not development references: they carry no backtest receipt,
+        # so mixing them in would read as development evidence without a backtest id.
         research["research"]["evolution"]["memory_references"] = [
             {
                 "mission_id": item.get("mission_id"),
@@ -84,6 +86,23 @@ def build_evidence_view(projection: ARCMissionProjection) -> dict[str, Any]:
                 "backtest_id": item.get("development", {}).get("backtest_id"),
             }
             for item in context.get("memory", [])
+            if item.get("type") != "forward_outcome"
+        ]
+        research["research"]["evolution"]["forward_outcome_references"] = [
+            {
+                key: item.get(key)
+                for key in (
+                    "memory_id",
+                    "verdict",
+                    "relation",
+                    "generations_back",
+                    "parent_strategy_id",
+                    "challenger_strategy_id",
+                    "ended_at",
+                )
+            }
+            for item in context.get("memory", [])
+            if item.get("type") == "forward_outcome"
         ]
     if projection.goal and projection.goal.paper_review_required:
         from hypertrade.arc.paper_review import build_paper_review

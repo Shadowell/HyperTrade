@@ -828,3 +828,48 @@ def test_the_model_is_told_which_changes_were_tried_and_how_many_seats_are_open(
 
     assert "relay.tried_variants" in _SYSTEM and "never\nraces the same changes twice" in _SYSTEM
     assert "open (free minus candidates already queued)" in _SYSTEM
+
+
+def test_outcome_memory_is_citable_evidence_and_unknown_outcomes_are_rejected(
+    source_variant_mission,
+):
+    from hypertrade.arc.avo import _SYSTEM, _perform
+
+    context = source_variant_mission.projection.goal.evolution_context
+    context["memory"] = [
+        {
+            "memory_id": "outcome:fo_xxx",
+            "type": "forward_outcome",
+            "evidence_status": "forward_paper_outcome",
+            "verdict": "won",
+            "relation": "made_current",
+            "generations_back": 1,
+        }
+    ]
+    proposed = _perform(
+        source_variant_mission,
+        "propose",
+        {
+            "hypothesis": "stay near the direction that won the seat",
+            "evolution_hypothesis": {**HYPOTHESIS, "evidence_refs": ["outcome:fo_xxx"]},
+            "parameter_changes": {"fast_window": 30},
+        },
+        ARCSelfTestService(),
+    )
+    assert proposed["attempt_id"].startswith("att_avo_")
+
+    with pytest.raises(ValueError, match="cites unavailable evidence"):
+        _perform(
+            source_variant_mission,
+            "propose",
+            {
+                "hypothesis": "cite a race that does not exist",
+                "evolution_hypothesis": {**HYPOTHESIS, "evidence_refs": ["outcome:fo_missing"]},
+                "parameter_changes": {"fast_window": 40},
+            },
+            ARCSelfTestService(),
+        )
+
+    assert "forward_outcome entries" in _SYSTEM
+    assert "made_current" in _SYSTEM
+    assert "noisy observation" in _SYSTEM

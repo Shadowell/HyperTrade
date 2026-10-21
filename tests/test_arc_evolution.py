@@ -806,3 +806,178 @@ def test_a_parent_whose_seats_are_booked_gives_way_to_one_with_an_open_seat(serv
     assert result["payload"]["source_strategy_id"] == 45
     held = next(d for d in result["payload"]["diagnostics"] if d["strategy_id"] == 44)
     assert held["skip_reason"] == "seats_reserved" and held["relay_seats"]["open"] == 0
+
+
+def _forward_outcome(
+    db,
+    *,
+    parent: str,
+    challenger: str,
+    verdict: str,
+    ended_at: str,
+    linked: bool = True,
+):
+    """Record one finished race; ARC lineage is stated explicitly instead of inferred."""
+    from datetime import datetime
+
+    from hypertrade.arc.evolution_models import ArcForwardOutcome
+    from hypertrade.arc.forward_outcomes import ForwardOutcomeLedger
+
+    row = ForwardOutcomeLedger(db).record(
+        target_id="bitpro",
+        parent_strategy_id=parent,
+        challenger_strategy_id=challenger,
+        verdict=verdict,
+        metrics={"excess_return_pct": 1.5},
+        ended_at=datetime.fromisoformat(ended_at),
+    )
+    if linked:
+        with db.session() as session:
+            stored = session.get(ArcForwardOutcome, row["id"])
+            assert stored is not None
+            stored.lineage_status = "linked"
+            stored.changes_json = {
+                "parameter_changes": {"fast_window": 20},
+                "structural_changes": {},
+            }
+    return row
+
+
+def test_memory_prepends_forward_outcomes_from_the_champion_chain(service, monkeypatch):
+    from hypertrade.arc.store import get_controller
+
+    # 44 won its way into the champion seat it is being evolved from.
+    _forward_outcome(
+        service.db, parent="43", challenger="44", verdict="won", ended_at="2026-01-01T00:00:00"
+    )
+    _forward_outcome(
+        service.db,
+        parent="43",
+        challenger="4301",
+        verdict="lost_exam",
+        ended_at="2026-01-02T00:00:00",
+    )
+    _forward_outcome(
+        service.db,
+        parent="44",
+        challenger="4401",
+        verdict="lost_futility",
+        ended_at="2026-01-03T00:00:00",
+    )
+    # Other lineage, neutral ending and unlinked loss: never memory for this strategy.
+    _forward_outcome(
+        service.db, parent="99", challenger="9901", verdict="won", ended_at="2026-01-04T00:00:00"
+    )
+    _forward_outcome(
+        service.db,
+        parent="44",
+        challenger="4402",
+        verdict="superseded",
+        ended_at="2026-01-05T00:00:00",
+    )
+    _forward_outcome(
+        service.db,
+        parent="44",
+        challenger="4403",
+        verdict="lost_exam",
+        ended_at="2026-01-06T00:00:00",
+        linked=False,
+    )
+
+    now = _variant_service(service, monkeypatch, 100)
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    context = get_controller(result["payload"]["mission_id"]).projection.goal.evolution_context
+    memory = context["memory"]
+    assert [entry["challenger_strategy_id"] for entry in memory] == ["4401", "4301", "44"]
+    assert [entry["memory_id"].split(":")[0] for entry in memory] == ["outcome"] * 3
+    assert [
+        (entry["relation"], entry["generations_back"], entry["verdict"]) for entry in memory
+    ] == [
+        ("variant_of_current", 0, "lost_futility"),
+        ("variant_of_ancestor", 1, "lost_exam"),
+        ("made_current", 1, "won"),
+    ]
+    assert [entry["type"] for entry in memory] == ["forward_outcome"] * 3
+    assert context["memory_manifest"]["forward_outcomes"] == {
+        "policy": "forward_outcome_v1",
+        "selected": 3,
+        "won": 1,
+        "lost": 2,
+    }
+
+
+def test_memory_continues_when_forward_outcomes_fail(service, monkeypatch):
+    from hypertrade.arc.forward_outcomes import ForwardOutcomeLedger
+    from hypertrade.arc.store import get_controller
+
+    def unavailable(self, **kwargs):
+        raise RuntimeError("ledger unavailable")
+
+    monkeypatch.setattr(ForwardOutcomeLedger, "evidence_for_lineage", unavailable)
+    now = _variant_service(service, monkeypatch, 100)
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    context = get_controller(result["payload"]["mission_id"]).projection.goal.evolution_context
+    assert context["memory"] == []
+    manifest = context["memory_manifest"]["forward_outcomes"]
+    assert manifest["policy"] == "forward_outcome_v1"
+    assert manifest["selected"] == 0
+    assert "ledger unavailable" in manifest["error"]
+
+
+def test_forward_outcomes_precede_development_memory_in_the_model_view(service, monkeypatch):
+    from hypertrade.arc.avo import _evolution_view
+    from hypertrade.arc.store import get_controller
+    from hypertrade.memory.service import MemoryService
+
+    # Enough development memory to exceed the 20-entry model window on its own.
+    dev = [
+        {
+            "memory_id": f"dev-{i}",
+            "mission_id": f"m-{i}",
+            "candidate_id": f"c-{i}",
+        }
+        for i in range(25)
+    ]
+
+    def project(self, records, **kwargs):
+        return dev, {"policy": "test"}
+
+    monkeypatch.setattr(MemoryService, "project_research", project)
+    # 44 won its way into the champion seat; 4401 raced under it and lost.
+    _forward_outcome(
+        service.db,
+        parent="44",
+        challenger="4401",
+        verdict="lost_futility",
+        ended_at="2026-01-03T00:00:00",
+    )
+    _forward_outcome(
+        service.db, parent="43", challenger="44", verdict="won", ended_at="2026-01-01T00:00:00"
+    )
+
+    now = _variant_service(service, monkeypatch, 100)
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    context = get_controller(result["payload"]["mission_id"]).projection.goal.evolution_context
+    memory = context["memory"]
+    assert len(memory) == 27
+    # Newest race first; the two outcomes stay ahead of all development entries.
+    assert [entry["type"] for entry in memory[:2]] == ["forward_outcome"] * 2
+    assert [entry["challenger_strategy_id"] for entry in memory[:2]] == ["4401", "44"]
+    assert [entry["memory_id"] for entry in memory[2:]] == [f"dev-{i}" for i in range(25)]
+    assert context["memory_manifest"]["policy"] == "test"
+    assert context["memory_manifest"]["forward_outcomes"] == {
+        "policy": "forward_outcome_v1",
+        "selected": 2,
+        "won": 1,
+        "lost": 1,
+    }
+
+    # The model only reads the first 20 entries, so ordering decides what it sees.
+    view = _evolution_view(context)
+    assert len(view["memory"]) == 20
+    assert [entry["type"] for entry in view["memory"][:2]] == ["forward_outcome"] * 2
+    assert view["memory"][2]["memory_id"] == "dev-0"
+    assert view["memory_in_view"] == {"shown": 20, "total": 27}

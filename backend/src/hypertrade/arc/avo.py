@@ -179,6 +179,18 @@ Evolution memory contains development observations, not established causal lesso
 Use both successful and failed experiments; match instrument, timeframe and window.
 For an identical archived experiment, provide repeat_reason explaining new evidence or
 why a controlled replication is needed; unchanged repetitions do not establish improvement.
+Evolution memory may start with forward_outcome entries: real BitPro Paper races in this
+strategy's lineage. relation says how each relates to the strategy you are evolving:
+made_current is the race this strategy itself won to become the champion (its changes are
+a direction that worked); variant_of_current is an earlier variant of this strategy;
+made_ancestor and variant_of_ancestor are races of the champions it replaced
+(generations_back counts how far back). Their changes are relative to that race's parent,
+not necessarily to this strategy. verdict: won = adopted after the forward gate;
+lost_futility = eliminated for lagging far behind; lost_exam = failed the one-time final
+exam. Cite them by memory_id (outcome:...). Do not repeat the direction of a lost variant
+of this strategy without new evidence and a repeat_reason; exploring near a winning
+direction is preferred. A single race is a noisy observation, not a causal conclusion,
+and never replaces development evidence.
 source_variant_policy.relay.tried_variants lists the changes BitPro already raced, queued or
 eliminated for this parent; a proposal identical to one of them is rejected because BitPro never
 races the same changes twice, so propose a different direction. relay.slots shows how many of the
