@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hypertrade.db import Base, TimestampMixin
@@ -88,3 +88,34 @@ class ArcModelExchange(Base, TimestampMixin):
     tool_calls_json: Mapped[list[Any]] = mapped_column(JSON, default=list)
     usage_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     truncated_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class ArcForwardOutcome(Base, TimestampMixin):
+    """One finished BitPro race lane: what happened to a challenger against its parent."""
+
+    __tablename__ = "arc_forward_outcomes"
+    __table_args__ = (
+        UniqueConstraint(
+            "target_id",
+            "parent_strategy_id",
+            "challenger_strategy_id",
+            name="uq_arc_forward_outcome_pair",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    target_id: Mapped[str] = mapped_column(String(32))
+    parent_strategy_id: Mapped[str] = mapped_column(String(64), index=True)
+    challenger_strategy_id: Mapped[str] = mapped_column(String(64), index=True)
+    slot_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    verdict: Mapped[str] = mapped_column(String(32), index=True)
+    verdict_source: Mapped[str] = mapped_column(String(32), default="race_judge")
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metrics_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    evidence_sha256: Mapped[str] = mapped_column(String(64), default="")
+    lineage_status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    mission_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    candidate_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    changes_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    scope_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
