@@ -1,34 +1,14 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
-2026-10-15 Self-Evolution Quality Gates: Source parameter proposals must bind verifiable citations, explicit counter-evidence, and net profit increase / drawdown reduction targets; merely decreasing trade count is not an improvement. Known execution failures settle separately as failed research and must not mutate further as trading performance. Source backtest comparisons require identical execution environments, costs, frozen market data, and economic inputs; formal Paper audits must match the final passing receipt and source code. Operator pauses cannot be overridden by stale receipts. Deployment health check disconnects perform bounded retries only for existing action receipts, halting after 5 failures or a 24-hour limit; audit recovery scripts can re-verify original bindings to resume deployment disconnect waits without replenishing budget or resetting Paper history.
-
-Same-version interruptions resume original jobs; when execution environments or backend packages have changed, original frozen verifications are strictly preserved, creating linked new-version revalidations with identical economic inputs. Existing jobs and snapshots are never overwritten, and the recovery chain remains bounded by a 2-retry limit; known waiting states display as validating rather than prompting manual operator handling.
-
-Research backtests durably save action checkpoints before and after external side effects: requests, attempts, source code, jobs, and frozen inputs are bound together; after disconnects, the original job is read, with interrupted jobs recovering up to 2 times, and failed/cancelled jobs never retried. After 5 consecutive read failures or a 24-hour wait, explicit reconciliation is demanded, and operator stops cannot be overwritten by recoverers. Deployment sequencing prioritizes BitPro durable idempotent interfaces.
-
-```mermaid
-flowchart LR
-    A[Research Action] --> J[(Durable Action Checkpoint)]
-    J --> B[Frozen Backtest Job]
-    B --> S{Real Status}
-    S -->|Running| J
-    S -->|Interrupted| R[Bounded Original Job Recovery]
-    R --> B
-    R -->|Version Invalidated| V[Linked Version Revalidation]
-    V --> B
-    S -->|Completed| Q[Compare Results with Parent]
-    S -->|Failed or Cancelled| F[Failure Evidence]
-```
-
-Deployments discover the BitPro host gateway from the active Docker network and verify DNS and authentication health requests for API/workers. Unknown development side effects converge only via exact external reconciliation receipts, never blindly retrying or falsely declaring success.
-
 <p align="center">
   <strong>Self-Hosted, Governed Multi-Market Strategy-Research Agent Runtime · Autonomous Research & Evolution Loop</strong>
 </p>
 
 <p align="center">
+  <a href="https://github.com/Shadowell/HyperTrade/releases"><img src="https://img.shields.io/github/v/release/Shadowell/HyperTrade?color=blue" alt="Latest Release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" /></a>
   <a href="https://github.com/Shadowell/HyperTrade/actions/workflows/ci.yml"><img src="https://github.com/Shadowell/HyperTrade/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/Shadowell/HyperTrade/discussions"><img src="https://img.shields.io/badge/discussions-active-blueviolet" alt="Discussions" /></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python" /></a>
   <a href="#"><img src="https://img.shields.io/badge/FastAPI-0.122+-009688.svg" alt="FastAPI" /></a>
   <a href="#"><img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" /></a>
@@ -126,6 +106,32 @@ Design docs: [63 Evolution Hardening](docs/architecture/63-evolution-effectivene
 - **Quantum Portfolio Dashboard**: React 19 UI with BitPro / QuantLab target switcher, dynamic A-share rule badges, interactive HET evolution tree visualization, and real-time relay handover slice stepping monitor.
 
 Design docs: [67 Production Probes & Token Rotation](docs/architecture/67-production-observability-probes-and-token-rotation.md)
+
+---
+
+## 🛡️ Bounded Recovery & Quality Gates
+
+Source parameter proposals must bind verifiable citations, explicit counter-evidence, and net profit increase / drawdown reduction targets; merely decreasing trade count is not an improvement. Known execution failures settle separately as failed research and must not mutate further as trading performance. Source backtest comparisons require identical execution environments, costs, frozen market data, and economic inputs; formal Paper audits must match the final passing receipt and source code. Operator pauses cannot be overridden by stale receipts. Deployment health check disconnects perform bounded retries only for existing action receipts, halting after 5 failures or a 24-hour limit; audit recovery scripts can re-verify original bindings to resume deployment disconnect waits without replenishing budget or resetting Paper history.
+
+Same-version interruptions resume original jobs; when execution environments or backend packages have changed, original frozen verifications are strictly preserved, creating linked new-version revalidations with identical economic inputs. Existing jobs and snapshots are never overwritten, and the recovery chain remains bounded by a 2-retry limit; known waiting states display as validating rather than prompting manual operator handling.
+
+Research backtests durably save action checkpoints before and after external side effects: requests, attempts, source code, jobs, and frozen inputs are bound together; after disconnects, the original job is read, with interrupted jobs recovering up to 2 times, and failed/cancelled jobs never retried. After 5 consecutive read failures or a 24-hour wait, explicit reconciliation is demanded, and operator stops cannot be overwritten by recoverers. Deployment sequencing prioritizes BitPro durable idempotent interfaces.
+
+```mermaid
+flowchart LR
+    A[Research Action] --> J[(Durable Action Checkpoint)]
+    J --> B[Frozen Backtest Job]
+    B --> S{Real Status}
+    S -->|Running| J
+    S -->|Interrupted| R[Bounded Original Job Recovery]
+    R --> B
+    R -->|Version Invalidated| V[Linked Version Revalidation]
+    V --> B
+    S -->|Completed| Q[Compare Results with Parent]
+    S -->|Failed or Cancelled| F[Failure Evidence]
+```
+
+Deployments discover the BitPro host gateway from the active Docker network and verify DNS and authentication health requests for API/workers. Unknown development side effects converge only via exact external reconciliation receipts, never blindly retrying or falsely declaring success.
 
 ---
 
@@ -240,6 +246,17 @@ Single command executes all quality gates: Frontend lint, Vitest, and production
 ## 🖥️ Terminal Research Stream
 
 `ht research start "research goal"` follows the research process with live events and activity panes. Use `--detach` to submit in background. Use `ht research watch <mission-id>` to reconnect.
+
+---
+
+## 🤝 Community & Contributing
+
+We welcome community feedback, feature proposals, and code contributions!
+
+- **Discussions**: Share ideas, research hypotheses, and questions in [GitHub Discussions](https://github.com/Shadowell/HyperTrade/discussions).
+- **Contributing Guide**: Please review [CONTRIBUTING.md](CONTRIBUTING.md) and our [Code of Conduct](CODE_OF_CONDUCT.md).
+- **Security Vulnerabilities**: For responsible disclosure, refer to [SECURITY.md](SECURITY.md).
+- **Roadmap**: Track upcoming milestones and good first issues in [Roadmap v0.2.0](https://github.com/Shadowell/HyperTrade/issues/59).
 
 ---
 

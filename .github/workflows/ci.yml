@@ -68,4 +68,9 @@ jobs:
         run: uv run mypy backend/src
 
       - name: Run unit and integration tests (pytest)
+        env:
+          OPENBLAS_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+          HYPERTRADE_SANDBOX_RLIMIT_NPROC: "512"
         run: uv run pytest -q
