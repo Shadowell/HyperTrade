@@ -28,6 +28,7 @@
   <a href="docs/architecture/65-rd-agent-evolution-and-finmem-layered-memory.md">RD-Agent演进</a> ·
   <a href="docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md">QuantLab与A股微观</a> ·
   <a href="docs/architecture/67-production-observability-probes-and-token-rotation.md">生产探活与令牌</a> ·
+  <a href="docs/architecture/68-external-ground-truth-stream-and-headline-arena.md">外部GroundTruth</a> ·
   <a href="docs/spec.md">产品规格</a>
 </p>
 
@@ -42,6 +43,7 @@
 - **受治理，不越权。** 模型只能提出受 schema 限制的计划或输入；权限、审批、预算和风险门禁在调用前后独立验证。主网实盘执行被治理禁用（`live_allowed=false`），外部写路径严格受限于已授权的模拟盘。
 - **多市场可插拔与制度硬约束内嵌。** 自进化核心与底层交易平台完全解耦（`market_target.v1` 档案与 `market-evolution.v1` MCP 契约）。系统原生支持 **BitPro（加密货币合约）** 与 **QuantLab（A 股多资产）** 双目标。针对 A 股现货市场，在 Prompt 与 ASTGatekeeper 双端内嵌 T+1 状态机、现货单向多头（禁止做空）、涨跌停截断、一手 100 股及精准印花税/佣金模型。
 - **科学演进与摩擦最小化。** 引入 RD-Agent 假设演进树（HET），实现假设系谱追踪与显式剪枝；在赛马晋升阶段采用两腿持仓交集对冲（$\Delta = C - P$），原地保留共有份额 $\min(P_i, C_i)$，消除重复换手摩擦。
+- **外生选择压力与外部 Ground Truth 流。** 支持接入 Headline Arena（AI Agent 预测竞技场）等第三方客观前向裁决流，基于真实价格机械结算与 Brier 评分，为 ARC 模拟盘孵化与因果反思层提供不受本地数据污染的客观外生评测信号。
 - **结论可追溯，企业级安全与探活。** 容器级分级探活矩阵（`/livez`, `/readyz`, `/healthz`）支持云原生编排；`TokenRotationService` 实现基于 SHA-256 单向散列的零信任令牌管理与 24 小时宽限期无缝热轮换。
 
 它不是"自动赚钱机器"，不承诺盈利，也不构成投资建议。

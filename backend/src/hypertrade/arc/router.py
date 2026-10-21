@@ -337,6 +337,83 @@ async def variant_status(
     )
 
 
+@router.get("/ground-truth/challenges", dependencies=[Depends(require_scope(ARCScope.READ))])
+async def list_ground_truth_challenges(
+    asset: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Discover active forward challenges from Headline Arena."""
+    from hypertrade.arc.ground_truth import HeadlineArenaClient
+
+    client = HeadlineArenaClient()
+    challenges = await run_in_threadpool(client.get_active_challenges, asset=asset)
+    return {
+        "status": "ok",
+        "provider": "headline_arena",
+        "configured": client.is_configured(),
+        "challenges": [c.model_dump(mode="json") for c in challenges],
+    }
+
+
+@router.get("/ground-truth/calibration", dependencies=[Depends(require_scope(ARCScope.READ))])
+async def get_ground_truth_calibration() -> dict[str, Any]:
+    """Retrieve agent calibration curve and third-party scoring from Headline Arena."""
+    from hypertrade.arc.ground_truth import HeadlineArenaClient
+
+    client = HeadlineArenaClient()
+    calibration = await run_in_threadpool(client.get_agent_calibration)
+    return {
+        "status": "ok",
+        "provider": "headline_arena",
+        "configured": client.is_configured(),
+        "calibration": calibration.model_dump(mode="json") if calibration else None,
+    }
+
+
+class GroundTruthEvaluationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mission_id: str
+    attempt_id: str | None = None
+
+
+@router.post("/ground-truth/evaluate", dependencies=[Depends(require_scope(ARCScope.READ))])
+async def evaluate_ground_truth(
+    payload: GroundTruthEvaluationRequest,
+) -> dict[str, Any]:
+    """Evaluate alignment between simulated strategy performance and third-party ground truth."""
+    from hypertrade.arc.ground_truth import HeadlineArenaClient
+    from hypertrade.arc.store import get_controller
+
+    controller = get_controller(payload.mission_id)
+    if controller is None:
+        raise HTTPException(status_code=404, detail="mission_not_found")
+
+    attempts = controller.projection.attempts
+    if payload.attempt_id:
+        attempt = next((a for a in attempts if a.attempt_id == payload.attempt_id), None)
+    else:
+        attempt = attempts[-1] if attempts else None
+
+    if attempt is None:
+        raise HTTPException(status_code=404, detail="attempt_not_found")
+
+    client = HeadlineArenaClient()
+    results = []
+    for pred in attempt.ground_truth_predictions:
+        cid = pred.get("challenge_id")
+        if cid:
+            res = await run_in_threadpool(client.get_challenge_result, cid)
+            if res:
+                results.append(res)
+
+    evaluation = await run_in_threadpool(client.evaluate_alignment, attempt, results)
+    return {
+        "status": "ok",
+        "mission_id": payload.mission_id,
+        "attempt_id": attempt.attempt_id,
+        "evaluation": evaluation.model_dump(mode="json"),
+    }
+
+
 @router.get("/missions", dependencies=[Depends(require_scope(ARCScope.READ))])
 async def list_arc_missions(
     state: str | None = Query(default=None),

@@ -147,6 +147,7 @@ def paper_attempt(controller: ARCController) -> ARCCandidateAttemptV1 | None:
 def observe_mission(
     controller: ARCController,
     client: PaperObservationClient | None = None,
+    gt_client: Any = None,
 ) -> dict[str, Any]:
     """Record one observation. Window complete → live_approval_ready; timeout → operator."""
     if controller.projection.state != "paper_observing":
@@ -165,8 +166,15 @@ def observe_mission(
         {"attempt_id": attempt.attempt_id, "observation": observation},
     )
     goal = controller.projection.goal
+    gt_sync = None
+    if goal is not None and getattr(goal, "ground_truth", None) and goal.ground_truth.enabled:
+        gt_sync = sync_external_ground_truth(controller, attempt, gt_client=gt_client)
+
     if goal is not None and goal.paper_review_required:
-        return {"status": "paper_observing", "observation": observation}
+        res: dict[str, Any] = {"status": "paper_observing", "observation": observation}
+        if gt_sync:
+            res["ground_truth"] = gt_sync
+        return res
     policy = goal.observation if goal is not None else PaperObservationPolicyV1()
     complete, missing = observation_window_complete(
         policy=policy,
@@ -178,7 +186,10 @@ def observe_mission(
 
         package = build_live_approval_package(controller.projection)
         controller.apply_event("live_approval_ready", {"package": package.model_dump(mode="json")})
-        return {"status": controller.projection.state, "observation": observation}
+        res = {"status": controller.projection.state, "observation": observation}
+        if gt_sync:
+            res["ground_truth"] = gt_sync
+        return res
     if observation_timed_out(policy=policy, started_at=controller.projection.paper_started_at):
         controller.apply_event(
             "operator_needed",
@@ -188,8 +199,92 @@ def observe_mission(
                 "observation": observation,
             },
         )
-        return {"status": "needs_operator", "reason": "paper_sample_insufficient"}
-    return {"status": "paper_observing", "missing": missing, "observation": observation}
+        res = {"status": "needs_operator", "reason": "paper_sample_insufficient"}
+        if gt_sync:
+            res["ground_truth"] = gt_sync
+        return res
+    res = {"status": "paper_observing", "missing": missing, "observation": observation}
+    if gt_sync:
+        res["ground_truth"] = gt_sync
+    return res
+
+
+def sync_external_ground_truth(
+    controller: ARCController,
+    attempt: ARCCandidateAttemptV1,
+    gt_client: Any = None,
+) -> dict[str, Any]:
+    """Sync third-party ground truth (Headline Arena) challenges and evaluate alignment."""
+    from hypertrade.arc.ground_truth import HeadlineArenaClient
+
+    client = gt_client or HeadlineArenaClient()
+    goal = controller.projection.goal
+    if goal is None or not getattr(goal, "ground_truth", None) or not goal.ground_truth.enabled:
+        return {"enabled": False, "status": "skipped"}
+
+    symbols = goal.symbols or ["BTC"]
+    raw_sym = symbols[0]
+    asset = raw_sym.split("-")[0].split("/")[0]
+
+    try:
+        challenges = client.get_active_challenges(asset=asset)
+    except Exception as exc:
+        return {"enabled": True, "status": "error", "reason": str(exc)}
+
+    submitted_ids = {p.get("challenge_id") for p in attempt.ground_truth_predictions}
+    new_receipts = []
+    for ch in challenges:
+        if ch.challenge_id not in submitted_ids and ch.status == "open":
+            try:
+                pred = client.synthesize_prediction(attempt, ch)
+                receipt = client.submit_prediction(
+                    ch.challenge_id,
+                    pred,
+                    idempotency_key=f"arc-gt-{attempt.candidate_id}-{ch.challenge_id}",
+                )
+                pred_dict = {
+                    "challenge_id": ch.challenge_id,
+                    "asset": ch.asset,
+                    "direction": pred.direction,
+                    "confidence": pred.confidence,
+                    "receipt_hash": receipt.receipt_hash,
+                    "status": receipt.status,
+                    "submitted_at": receipt.submitted_at.isoformat(),
+                }
+                attempt.ground_truth_predictions.append(pred_dict)
+                new_receipts.append(pred_dict)
+            except Exception:
+                continue
+
+    results = []
+    for pred in attempt.ground_truth_predictions:
+        cid = pred.get("challenge_id")
+        if cid:
+            try:
+                res = client.get_challenge_result(cid)
+                if res and res.settled:
+                    results.append(res)
+            except Exception:
+                continue
+
+    eval_result = client.evaluate_alignment(attempt, results)
+    attempt.ground_truth_metrics = {
+        "alignment": eval_result.alignment,
+        "brier_score": eval_result.brier_score,
+        "accuracy": eval_result.accuracy,
+        "sample_count": eval_result.sample_count,
+        "details": eval_result.details,
+        "divergence_reason": eval_result.divergence_reason,
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+
+    return {
+        "enabled": True,
+        "status": "synced",
+        "new_submissions": len(new_receipts),
+        "settled_count": len(results),
+        "evaluation": attempt.ground_truth_metrics,
+    }
 
 
 def observe_arc_missions_once(client: PaperObservationClient | None = None) -> dict[str, Any]:
