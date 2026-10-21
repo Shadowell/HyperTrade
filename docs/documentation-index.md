@@ -32,6 +32,10 @@
 - [Progress Log](progress.md) - 开发进度记录
 - [Deployment Guide](deployment.md) - 部署指南
 
+### 核心架构与学习指南
+- [Agent 架构设计与面试通关手册 (Markdown)](agent_architecture_and_interview_handbook.md) - 企业级全自主 Agent 架构设计、核心技术剖析（65 工具链、Co-STEER、FinMem、零信任治理）与面试题库
+- [Agent 架构设计与面试通关手册 (PDF 下载)](agent_architecture_and_interview_handbook.pdf) - 25 页完整排版与高保真代码级手册，适合系统学习与离线阅读
+
 ### 架构文档
 详细的系统架构和设计文档：
 - [ARC Autonomous Research Core Architecture](architecture/37-arc-autonomous-research-core-architecture.md) - 通用自主进化控制内核设计：六边形解耦架构、闭环控制器与解耦适配器
