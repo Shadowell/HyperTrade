@@ -28,12 +28,13 @@ Deployments discover the BitPro host gateway from the active Docker network and 
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" /></a>
+  <a href="https://github.com/Shadowell/HyperTrade/actions/workflows/ci.yml"><img src="https://github.com/Shadowell/HyperTrade/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python" /></a>
   <a href="#"><img src="https://img.shields.io/badge/FastAPI-0.122+-009688.svg" alt="FastAPI" /></a>
   <a href="#"><img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.9-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14%2B_pgvector-4169E1.svg" alt="PostgreSQL" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-2100%2B%20passed-success.svg" alt="Tests" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-2200%2B%20passed-success.svg" alt="Tests" /></a>
   <a href="docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md"><img src="https://img.shields.io/badge/evolution-default_on-brightgreen.svg" alt="Evolution" /></a>
   <a href="docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md"><img src="https://img.shields.io/badge/markets-BitPro_%7C_QuantLab-orange.svg" alt="Markets" /></a>
 </p>
