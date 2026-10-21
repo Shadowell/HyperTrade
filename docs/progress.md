@@ -1,3 +1,21 @@
+## 2026-10-21：开源门户视觉动线重构与 CI 跨平台容器稳定性加固
+
+- **背景**：对照顶级开源项目视觉呈现与 CI 跨平台运行标准，优化中英文 README 首页视觉动线，解决 Linux 容器环境下 OpenBLAS 线程争用与沙箱 `RLIMIT_NPROC` 约束导致的 CI 偶发异常。
+- **交付**：
+  1. 重构 `README.md`、`README.en.md` 与 `README.zh-CN.md` 视觉动线：顶部优先呈现 Slogan、完整徽章栏（最新 Release v0.1.0、CI 动态状态、Discussions、2200+ 测试等）与导航，将有界恢复与自愈质量门禁移入专用架构章节，新增社区与贡献指南；
+  2. 增强 CI 跨平台稳定性：`.github/workflows/ci.yml` 注入 `OPENBLAS_NUM_THREADS=1`、`OMP_NUM_THREADS=1`、`MKL_NUM_THREADS=1` 及 `HYPERTRADE_SANDBOX_RLIMIT_NPROC=512`；
+  3. 加固 `sandbox.py`：支持动态读取环境变量控制 `RLIMIT_NPROC`（默认提至 256），根除 Linux runner 宿主进程级 UID 线程数耗尽导致的 `pthread_create` EAGAIN 异常；
+  4. 开启并初始化 GitHub Discussions 社区论坛，建立公开欢迎公告与标签体系。
+- **验证**：本地全量 `./scripts/check.sh` 完整通过，相关 YAML 与 Markdown 渲染测试通过。
+
+## 2026-10-21：固化 Codex 联合署名规范与 CI 沙箱多线程加固
+
+- **背景**：针对 GitHub 平台贡献者（Contributors）统计机制，将 OpenAI 官方认证账号（`@codex`，`codex@openai.com`）明确纳入协作署名规范，实现 Codex 贡献者头像与代码追踪点亮；同时加固 Linux CI 环境下沙箱资源限制。
+- **交付**：
+  1. 在 `AGENTS.md` 规则第 7 条中明确增加强约束：凡由 Codex 辅助完成的任务，提交信息末尾必须包含联合署名 `Co-authored-by: Codex <codex@openai.com>`；
+  2. 增强 Linux 容器 CI 环境下的沙箱线程资源门限（`HYPERTRADE_SANDBOX_RLIMIT_NPROC` 与 `RLIMIT_NOFILE`），消除 GitHub Actions 环境中 numpy/BLAS 线程初始化导致的 EAGAIN 偶发崩溃。
+- **验证**：通过 PR 落地合并到 `main` 后，GitHub 仓库主页侧边栏 Contributors 正式点亮展示 `codex`。
+
 ## 2026-10-21：开源就绪与 GitHub 社区工程治理（CI、模板与行为准则）
 
 - **背景**：对照 OpenAI Codex for OSS 计划与顶级开源项目治理标准，补齐项目在持续集成（CI）、版本管理、Issue 分类及社区准则等维度的工程规范。

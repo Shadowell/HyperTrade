@@ -1,34 +1,14 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
-2026-10-15 Self-Evolution Quality Gates: Source parameter proposals must bind verifiable citations, explicit counter-evidence, and net profit increase / drawdown reduction targets; merely decreasing trade count is not an improvement. Known execution failures settle separately as failed research and must not mutate further as trading performance. Source backtest comparisons require identical execution environments, costs, frozen market data, and economic inputs; formal Paper audits must match the final passing receipt and source code. Operator pauses cannot be overridden by stale receipts. Deployment health check disconnects perform bounded retries only for existing action receipts, halting after 5 failures or a 24-hour limit; audit recovery scripts can re-verify original bindings to resume deployment disconnect waits without replenishing budget or resetting Paper history.
-
-Same-version interruptions resume original jobs; when execution environments or backend packages have changed, original frozen verifications are strictly preserved, creating linked new-version revalidations with identical economic inputs. Existing jobs and snapshots are never overwritten, and the recovery chain remains bounded by a 2-retry limit; known waiting states display as validating rather than prompting manual operator handling.
-
-Research backtests durably save action checkpoints before and after external side effects: requests, attempts, source code, jobs, and frozen inputs are bound together; after disconnects, the original job is read, with interrupted jobs recovering up to 2 times, and failed/cancelled jobs never retried. After 5 consecutive read failures or a 24-hour wait, explicit reconciliation is demanded, and operator stops cannot be overridden by recoverers. Deployment sequencing prioritizes BitPro durable idempotent interfaces.
-
-```mermaid
-flowchart LR
-    A[Research Action] --> J[(Durable Action Checkpoint)]
-    J --> B[Frozen Backtest Job]
-    B --> S{Real Status}
-    S -->|Running| J
-    S -->|Interrupted| R[Bounded Original Job Recovery]
-    R --> B
-    R -->|Version Invalidated| V[Linked Version Revalidation]
-    V --> B
-    S -->|Completed| Q[Compare Results with Parent]
-    S -->|Failed or Cancelled| F[Failure Evidence]
-```
-
-Deployments discover the BitPro host gateway from the active Docker network and verify DNS and authentication health requests for API/workers. Unknown development side effects converge only via exact external reconciliation receipts, never blindly retrying or falsely declaring success.
-
 <p align="center">
   <strong>Self-Hosted, Governed Multi-Market Strategy-Research Agent Runtime · Autonomous Research & Evolution Loop</strong>
 </p>
 
 <p align="center">
+  <a href="https://github.com/Shadowell/HyperTrade/releases"><img src="https://img.shields.io/github/v/release/Shadowell/HyperTrade?color=blue" alt="Latest Release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" /></a>
   <a href="https://github.com/Shadowell/HyperTrade/actions/workflows/ci.yml"><img src="https://github.com/Shadowell/HyperTrade/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/Shadowell/HyperTrade/discussions"><img src="https://img.shields.io/badge/discussions-active-blueviolet" alt="Discussions" /></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python" /></a>
   <a href="#"><img src="https://img.shields.io/badge/FastAPI-0.122+-009688.svg" alt="FastAPI" /></a>
   <a href="#"><img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" /></a>
@@ -129,6 +109,32 @@ Design docs: [67 Production Probes & Token Rotation](docs/architecture/67-produc
 
 ---
 
+## 🛡️ Bounded Recovery & Quality Gates
+
+Source parameter proposals must bind verifiable citations, explicit counter-evidence, and net profit increase / drawdown reduction targets; merely decreasing trade count is not an improvement. Known execution failures settle separately as failed research and must not mutate further as trading performance. Source backtest comparisons require identical execution environments, costs, frozen market data, and economic inputs; formal Paper audits must match the final passing receipt and source code. Operator pauses cannot be overridden by stale receipts. Deployment health check disconnects perform bounded retries only for existing action receipts, halting after 5 failures or a 24-hour limit; audit recovery scripts can re-verify original bindings to resume deployment disconnect waits without replenishing budget or resetting Paper history.
+
+Same-version interruptions resume original jobs; when execution environments or backend packages have changed, original frozen verifications are strictly preserved, creating linked new-version revalidations with identical economic inputs. Existing jobs and snapshots are never overwritten, and the recovery chain remains bounded by a 2-retry limit; known waiting states display as validating rather than prompting manual operator handling.
+
+Research backtests durably save action checkpoints before and after external side effects: requests, attempts, source code, jobs, and frozen inputs are bound together; after disconnects, the original job is read, with interrupted jobs recovering up to 2 times, and failed/cancelled jobs never retried. After 5 consecutive read failures or a 24-hour wait, explicit reconciliation is demanded, and operator stops cannot be overwritten by recoverers. Deployment sequencing prioritizes BitPro durable idempotent interfaces.
+
+```mermaid
+flowchart LR
+    A[Research Action] --> J[(Durable Action Checkpoint)]
+    J --> B[Frozen Backtest Job]
+    B --> S{Real Status}
+    S -->|Running| J
+    S -->|Interrupted| R[Bounded Original Job Recovery]
+    R --> B
+    R -->|Version Invalidated| V[Linked Version Revalidation]
+    V --> B
+    S -->|Completed| Q[Compare Results with Parent]
+    S -->|Failed or Cancelled| F[Failure Evidence]
+```
+
+Deployments discover the BitPro host gateway from the active Docker network and verify DNS and authentication health requests for API/workers. Unknown development side effects converge only via exact external reconciliation receipts, never blindly retrying or falsely declaring success.
+
+---
+
 ## 💻 Quick Start
 
 ### Backend & Database
@@ -169,65 +175,29 @@ curl http://localhost:3334/api/portfolio/targets
 
 Trigger an autonomous cryptocurrency trend strategy research mission:
 ```bash
-curl -X POST http://localhost:3334/api/v1/arc/missions \
+curl -X POST http://localhost:3334/api/v1/missions \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: demo-crypto-1" \
   -d '{
-    "objective": "Research a trend strategy adapted to BTC high volatility, incubate to paper after validation",
-    "symbol": "BTC-USDT-SWAP",
-    "timeframe": "1H",
-    "max_candidates": 5
+    "goal": "Mine an adaptive trend-following strategy on BTC/USDT 1h with ATR trailing stops",
+    "market": "crypto",
+    "target_id": "bitpro-crypto-swap",
+    "budget": {"max_steps": 10, "max_llm_cost_usd": 2.0}
   }'
 ```
 
-Inspect HET tree and relay handover plans:
-```bash
-curl http://localhost:3334/api/research/hypothesis-tree
-curl http://localhost:3334/api/portfolio/relay/handovers
-```
-
 ---
 
-## 🧪 Verification & Quality Gates
+## 🏛️ Architecture Documentation
 
-```bash
-./scripts/check.sh
-```
-
-Single command executes all quality gates: Frontend lint, Vitest, and production build + Backend Ruff linting/formatting, strict Mypy type-checking, and full Pytest suite (currently 2100+ tests passing 100%).
-
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technologies |
-|-------|-------------|
-| **Control Plane** | FastAPI 0.122+ / Uvicorn, scoped security tokens, `/livez`, `/readyz`, `/healthz` container probes, cursor SSE |
-| **Credential Security**| `TokenRotationService` (SHA-256 single-way hashing, zero plaintext storage, 24h grace period hot rotation, 7-day expiration audit) |
-| **Domain & Runtime** | Python 3.12+, Pydantic v2 strict models, modular monolith + ports-and-adapters |
-| **Storage** | SQLAlchemy 2.0 + Alembic (49 migrations), PostgreSQL 14+ with `pgvector` |
-| **Workers** | asyncio + PostgreSQL SQL lease locking (13 concurrent background loops) |
-| **Research Core** | ARC + RD-Agent Hypothesis Evolution Tree (HET) + Co-STEER synthesizer + `ASTGatekeeper` |
-| **Target Adapters** | `market_target.v1` and `market-evolution.v1` MCP contracts; BitPro (Crypto) + QuantLab (A-Shares) |
-| **A-Share Rules** | `AShareMarketRules` / `AShareRuleValidator` (T+1 state machine, spot long-only, 100-share lot size, exact fees) |
-| **Relay Handover** | `PositionNettingRelayService` (retain $\min(P,C)$, net orders $\Delta = C-P$, >80% turnover saved) |
-| **Sandbox** | UDS isolated processes, non-root, no network, read-only root, resource caps, digest-bound |
-| **Frontend & UI** | React 19 + TypeScript 5.9 + Vite 7 + Tailwind CSS; Tauri desktop; Textual TUI; `ht` CLI |
-| **Deployment** | Docker Compose + Nginx + GitHub Actions (auto-deploy on push to `main`) |
-
----
-
-## 📚 Documentation Map
-
-| Entrypoint | Contents |
-|------------|----------|
-| [Architecture Overview](docs/architecture/00-overview.md) | Reading guide and **mandatory architecture synchronization rule** |
-| [33 System Architecture](docs/architecture/33-system-architecture.md) | Canonical system architecture snapshot: multi-market targets, runtime layers, safety & probes |
-| [66 QuantLab & A-Share Rules](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md) | QuantLab adapter, strategy transpiler, A-share hard rules, position netting relay |
-| [67 Production Probes & Tokens](docs/architecture/67-production-observability-probes-and-token-rotation.md) | `/livez`, `/readyz`, `/healthz` probes, `TokenRotationService`, quantum portfolio console |
-| [65 RD-Agent Evolution & Memory](docs/architecture/65-rd-agent-evolution-and-finmem-layered-memory.md) | Hypothesis Evolution Tree (HET), Co-STEER synthesis, FinMem 3-tier cognitive memory |
-| [64 Autonomous Trading Agent](docs/architecture/64-autonomous-trading-agent-system-architecture.md) | Perception bus, tri-speed decision cycles, and bounded autonomous execution |
-| [62 Pluggable Market Targets](docs/architecture/62-pluggable-market-targets.md) | `market_target.v1` / `market-evolution.v1` contracts and integration |
+| Document | Focus |
+| -------- | ----- |
+| [00 Overview](docs/architecture/00-overview.md) | System boundaries, domain separation, mission truth |
+| [33 System Architecture](docs/architecture/33-system-architecture.md) | High-level topology, control and data plane separation |
+| [66 QuantLab & A-Share Rules](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md) | A-share microstructure, T+1 state machines, relay handover |
+| [67 Probes & Token Rotation](docs/architecture/67-production-observability-probes-and-token-rotation.md) | Production probe matrix (/livez, /readyz, /healthz) and token rotation |
+| [65 RD-Agent Evolution & Memory](docs/architecture/65-rd-agent-evolution-and-finmem-layered-memory.md) | HET hypothesis trees, Co-STEER synthesis, FinMem memory |
+| [64 Autonomous Trading Agent](docs/architecture/64-autonomous-trading-agent-architecture.md) | Full autonomous agent architecture, feedback loops, risk gates |
+| [62 Pluggable Market Targets](docs/architecture/62-pluggable-market-targets.md) | `market_target.v1` profile and `market-evolution.v1` MCP contracts |
 | [63 Evolution Hardening](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) | Effectiveness ledgers, data-gap alerts, benchmark-relative decay |
 | [Product Spec](docs/spec.md) | Product scope, user journeys, acceptance criteria, non-goals |
 | [Progress Log](docs/progress.md) | Current verified state and production evidence |
@@ -240,6 +210,17 @@ Single command executes all quality gates: Frontend lint, Vitest, and production
 ## 🖥️ Terminal Research Stream
 
 `ht research start "research goal"` follows the research process with live events and activity panes. Use `--detach` to submit in background. Use `ht research watch <mission-id>` to reconnect.
+
+---
+
+## 🤝 Community & Contributing
+
+We welcome community feedback, feature proposals, and code contributions!
+
+- **Discussions**: Share ideas, research hypotheses, and questions in [GitHub Discussions](https://github.com/Shadowell/HyperTrade/discussions).
+- **Contributing Guide**: Please review [CONTRIBUTING.md](CONTRIBUTING.md) and our [Code of Conduct](CODE_OF_CONDUCT.md).
+- **Security Vulnerabilities**: For responsible disclosure, refer to [SECURITY.md](SECURITY.md).
+- **Roadmap**: Track upcoming milestones and good first issues in [Roadmap v0.2.0](https://github.com/Shadowell/HyperTrade/issues/59).
 
 ---
 

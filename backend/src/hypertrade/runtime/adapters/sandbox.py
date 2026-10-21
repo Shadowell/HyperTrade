@@ -746,10 +746,13 @@ def _resource_limits() -> None:
     limits: tuple[tuple[int, int], ...] = (
         (resource.RLIMIT_CPU, 10),
         (resource.RLIMIT_FSIZE, 1_048_576),
-        (resource.RLIMIT_NOFILE, 32),
+        (resource.RLIMIT_NOFILE, 64),
     )
     if hasattr(resource, "RLIMIT_NPROC"):
-        limits += ((resource.RLIMIT_NPROC, 32),)
+        # On Linux, RLIMIT_NPROC counts all threads for the real UID across the system/container.
+        # In CI/numpy envs, 32 causes EAGAIN on thread init; default to 256.
+        nproc_limit = int(os.environ.get("HYPERTRADE_SANDBOX_RLIMIT_NPROC", "256"))
+        limits += ((resource.RLIMIT_NPROC, nproc_limit),)
     for kind, requested in limits:
         try:
             _, hard = resource.getrlimit(kind)
