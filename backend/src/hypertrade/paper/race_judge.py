@@ -25,6 +25,11 @@ from typing import Any
 
 import httpx
 
+from hypertrade.arc.forward_outcomes import (
+    ForwardOutcomeLedger,
+    metrics_from_record,
+    verdict_for,
+)
 from hypertrade.bitpro.mcp import BitProToolAdapter
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import Database
@@ -78,6 +83,17 @@ def _opt_text(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
     return value.strip()[:400] or None
+
+
+def _opt_datetime(value: Any) -> datetime | None:
+    """BitPro timestamps are ISO strings; a naive one is UTC, anything else is unknown."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def _pct(value: float | None, signed: bool = True) -> str:
@@ -179,6 +195,8 @@ class RacePairRecord:
     gate_alpha: float | None = None
     # True once the target listed this pair as a plan; if it later disappears the lane "ended".
     plan_seen: bool = False
+    # True once the finished race was written to the forward outcome ledger.
+    outcome_recorded: bool = False
     # Who ended a cancelled lane and what BitPro attached; all None while racing or unknown.
     cancellation_kind: str | None = None
     cancellation_actor: str | None = None
@@ -244,6 +262,7 @@ class RacePairRecord:
             slot_no=_slot_no(data.get("slot_no")),
             gate_alpha=_opt_float(data.get("gate_alpha")),
             plan_seen=bool(data.get("plan_seen", False)),
+            outcome_recorded=bool(data.get("outcome_recorded", False)),
             cancellation_kind=_cancellation_kind(data.get("cancellation_kind")),
             cancellation_actor=_opt_text(data.get("cancellation_actor")),
             cancellation_reason=_opt_text(data.get("cancellation_reason")),
@@ -528,6 +547,8 @@ class RaceJudgeDaemon:
             float(getattr(self.settings, "race_judge_observing_interval_seconds", 900)),
         )
         self._records: dict[str, RacePairRecord] = {}
+        # Finished lanes saved before the ledger existed are backfilled once per process.
+        self._outcomes_backfilled = False
         self._load_state()
 
     def _pair_key(
@@ -648,6 +669,8 @@ class RaceJudgeDaemon:
         lookup_target = target_id or "bitpro"
         key = self._pair_key(lookup_target, parent_id, challenger_id)
         record = self._records.get(key)
+        # A finished pair that becomes live again is a new race on the same challenger.
+        previous_state = record.state if record is not None else None
         resolved_target = (
             target_id
             or (record.target_id if record is not None else None)
@@ -698,12 +721,30 @@ class RaceJudgeDaemon:
 
         plan = status_data.get("plan")
         if plan is None and record.plan_seen and record.state in _LIVE_PLAN_STATES:
+            archived = status_data.get("cancellation")
+            if isinstance(archived, dict):
+                # BitPro eliminated or cancelled this lane and its seat was refilled before the
+                # next poll, so the cancelled plan row is already gone. The archive is what the
+                # race actually ended with: mirror it and announce the elimination the judge
+                # would have seen one step earlier. Never read this response's proof: with no
+                # plan BitPro evaluates the pair as a fresh candidate, not as this race, so the
+                # last mirrored numbers stay.
+                record.state = "cancelled"
+                record.action_taken = None
+                self._mirror_cancellation(record, archived)
+                self._announce(record, auto_enabled=False)
+                if not record.outcome_recorded:
+                    self._record_outcome(record, ended_at=archived.get("cancelled_at"))
+                return self._finish_evaluation(record)
+
             # The target no longer keeps this lane (its seat went to a new challenger, or the
             # plan was cleaned up). Fresh evidence for a pair with no plan would be a
             # candidate evaluation, not this race, so keep the last mirrored evidence and
             # stop polling. Whatever ended the lane was announced by BitPro itself.
             record.state = "ended"
             record.reason = "BitPro 已不再保留该赛道（位置已被新的挑战者接管，或计划已被清理）"
+            if not record.outcome_recorded:
+                self._record_outcome(record, ended_at=None)
             return self._finish_evaluation(record)
 
         proof = status_data.get("proof") or (plan or {}).get("proof") or {}
@@ -753,17 +794,46 @@ class RaceJudgeDaemon:
             auto_enabled = False
         record.action_taken = None
 
+        if previous_state in _TERMINAL_STATES and record.state in _LIVE_PLAN_STATES:
+            # The ledger keeps the first concrete verdict for a (parent, challenger) pair, so a
+            # second race by the same challenger cannot overwrite the first: a known limitation.
+            record.outcome_recorded = False
+
         if record.state in _LIVE_PLAN_STATES:
             self._reset_finished_race(record)
         elif record.state == "cancelled":
             raw = status_data.get("cancellation") or (plan or {}).get("cancellation")
-            fields = raw if isinstance(raw, dict) else {}
-            record.cancellation_kind = _cancellation_kind(raw)
-            record.cancellation_actor = _opt_text(fields.get("actor"))
-            record.cancellation_reason = _opt_text(fields.get("reason"))
-            record.cancellation_metrics = _cancellation_metrics(raw)
-            record.cancellation_cooldown_hours = _cancellation_cooldown_hours(raw)
+            self._mirror_cancellation(record, raw)
 
+        self._announce(record, auto_enabled=auto_enabled)
+
+        if not record.outcome_recorded:
+            if record.state == "cancelled":
+                cancellation = status_data.get("cancellation")
+                if not isinstance(cancellation, dict):
+                    cancellation = (plan or {}).get("cancellation")
+                ended_at = (
+                    cancellation.get("cancelled_at") if isinstance(cancellation, dict) else None
+                )
+                self._record_outcome(record, ended_at=ended_at)
+            elif record.state == "completed":
+                self._record_outcome(
+                    record, ended_at=plan.get("updated_at") if isinstance(plan, dict) else None
+                )
+
+        return self._finish_evaluation(record)
+
+    def _mirror_cancellation(self, record: RacePairRecord, raw: Any) -> None:
+        """Mirror who ended the lane; missing or malformed fields stay unknown."""
+        fields = raw if isinstance(raw, dict) else {}
+        record.cancellation_kind = _cancellation_kind(raw)
+        record.cancellation_actor = _opt_text(fields.get("actor"))
+        record.cancellation_reason = _opt_text(fields.get("reason"))
+        record.cancellation_metrics = _cancellation_metrics(raw)
+        record.cancellation_cooldown_hours = _cancellation_cooldown_hours(raw)
+
+    def _announce(self, record: RacePairRecord, *, auto_enabled: bool) -> None:
+        """Send the one lifecycle card this state earns; never adopt or mutate the target."""
         if record.state == "observing" and record.eligible and record.proof_sha256:
             milestone = "ELIGIBLE" if auto_enabled else "REQUIRES_ADMIN"
             record.requires_admin_authorization = not auto_enabled
@@ -796,7 +866,74 @@ class RaceJudgeDaemon:
                 if ok:
                     record.feishu_notified_states.append(milestone)
 
-        return self._finish_evaluation(record)
+    def _record_outcome(
+        self,
+        record: RacePairRecord,
+        *,
+        ended_at: str | None,
+        source: str = "race_judge",
+        link: bool = True,
+    ) -> bool:
+        """Best-effort ledger write.
+
+        The judge only reads target state and notifies, so a missing or failing ledger must
+        never break the card, the state file or the poll: on failure ``outcome_recorded``
+        stays False and the next evaluation retries.
+        """
+        if self.db is None:
+            return False
+        verdict = verdict_for(record.state, record.cancellation_kind)
+        if verdict is None:
+            return False
+        try:
+            ForwardOutcomeLedger(self.db).record(
+                target_id=record.target_id,
+                parent_strategy_id=record.parent_strategy_id,
+                challenger_strategy_id=record.challenger_strategy_id,
+                verdict=verdict,
+                metrics=metrics_from_record(record.to_dict()),
+                ended_at=_opt_datetime(ended_at),
+                slot_no=record.slot_no,
+                generation=record.generation,
+                source=source,
+                link=link,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to record forward outcome for (%s, %s): %s",
+                record.parent_strategy_id,
+                record.challenger_strategy_id,
+                verdict,
+                exc_info=True,
+            )
+            return False
+        record.outcome_recorded = True
+        return True
+
+    def backfill_outcomes(self) -> int:
+        """Record finished lanes saved before the ledger existed; called once per process."""
+        if self.db is None:
+            return 0
+        recorded = 0
+        try:
+            for record in self._records.values():
+                if record.outcome_recorded or record.state not in (
+                    "completed",
+                    "cancelled",
+                    "ended",
+                ):
+                    continue
+                if self._record_outcome(record, ended_at=None, source="backfill", link=False):
+                    recorded += 1
+            if recorded:
+                try:
+                    ForwardOutcomeLedger(self.db).link_pending(limit=recorded)
+                except Exception:
+                    logger.warning("Forward outcome backfill lineage link failed", exc_info=True)
+                self._persist_state()
+        except Exception:
+            logger.warning("Forward outcome backfill failed", exc_info=True)
+        return recorded
 
     def _reset_finished_race(self, record: RacePairRecord) -> None:
         """A re-admitted challenger races again: the earlier cancellation no longer holds."""
@@ -836,6 +973,12 @@ class RaceJudgeDaemon:
         Lanes that are only accumulating evidence are skipped until their next poll time;
         `force` (the operator's "run now") looks at every pair.
         """
+        if not self._outcomes_backfilled:
+            self._outcomes_backfilled = True
+            try:
+                self.backfill_outcomes()
+            except Exception:
+                logger.warning("Forward outcome backfill failed", exc_info=True)
         plans = self._list_plans()
         # The plan listing already says which lanes BitPro cancelled: look at those now
         # instead of waiting out their slow poll, so the card arrives promptly.
