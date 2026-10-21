@@ -1,3 +1,13 @@
+## 2026-10-21：发布《企业级全自主 Agent 架构设计、核心技术剖析与面试通关指南》（Markdown + 25页 PDF）
+
+- **背景**：针对高阶 Agent 架构学习与大模型算法/工程面试需求，以 HyperTrade 生产系统（11.7 万行 Python 代码、2100+ 测试）为真实解构母本，输出深度架构拆解与实战通关手册。
+- **交付**：
+  1. **架构全景解构**：编写 `docs/agent_architecture_and_interview_handbook.md`，深度拆解 AgentKernel 五阶段状态图机、Harness 2.0 上下文工程（Compaction/WaterCooler/Parallel Dispatcher）、全量 65 个工具链与零信任 Policy 治理、Co-STEER 自由代码合成与 AST 编译期门禁、FinMem 三层认知记忆与因果蒸馏、ARC 红蓝对抗博弈，以及持仓净额平滑换仓算法；
+  2. **高保真 PDF 编译**：利用 Playwright Chromium 高保真排版生成 `docs/agent_architecture_and_interview_handbook.pdf`（共 25 页，排版优美，含全量代码与图元）；
+  3. **面试通关题库**：整理 6 大维度 14 道高频深度面试题与标准回答模型、一分钟电梯演讲话术、简历 STAR 书写模板，以及 3 个实战深水区面试官连环追问应答策略；
+  4. 同步更新 `docs/documentation-index.md` 索引导航。
+- **验证**：`./scripts/check.sh` 门禁全量通过（前端 lint/test/build、python ruff/mypy、2230 项 pytest 全部绿灯）。
+
 ## 2026-10-21：版本演进与发布（v0.1.1 与 v0.2.0）
 
 - **背景**：在 v0.1.0 初始开源版本之后，持续推进项目版本演进：正式发布 v0.1.1 维护版本，并为 Headline Arena 外部 Ground Truth 闭环升级核心版本至 v0.2.0。
