@@ -37,9 +37,7 @@ _CONSTRAINT_BY_REASON_CODE: dict[ARCReasonCode, str] = {
     ARCReasonCode.FRICTION_NEGATIVE_NET_RETURN: (
         "换手率在滑点与手续费压力下产生负净收益，必须降低交易频率"
     ),
-    ARCReasonCode.DRAWDOWN_EXCEEDED: (
-        f"最大回撤必须控制在 {MAX_ADMISSIBLE_DRAWDOWN:.0%} 以内"
-    ),
+    ARCReasonCode.DRAWDOWN_EXCEEDED: (f"最大回撤必须控制在 {MAX_ADMISSIBLE_DRAWDOWN:.0%} 以内"),
     ARCReasonCode.SHARPE_TOO_LOW: "夏普比率不足，必须提升信号质量而非放大杠杆",
     ARCReasonCode.INERT_NO_TRADES: (
         "样本外窗口内从未开仓，入场条件过严或信号跨度超过窗口长度，必须放宽入场或缩短跨度"
@@ -53,9 +51,7 @@ _CONSTRAINT_BY_REASON_CODE: dict[ARCReasonCode, str] = {
     ARCReasonCode.IS_OOS_DEGRADATION: (
         "样本内表现无法延续到样本外，属选择偏差，必须减少参数自由度而非继续调参"
     ),
-    ARCReasonCode.PERMANENT_EXPOSURE: (
-        "几乎全窗口持仓，等同方向性押注，必须引入明确的离场条件"
-    ),
+    ARCReasonCode.PERMANENT_EXPOSURE: ("几乎全窗口持仓，等同方向性押注，必须引入明确的离场条件"),
     ARCReasonCode.OOS_SAMPLE_TOO_SMALL: (
         "样本外成交笔数太少，夏普由个别几笔决定，不构成度量；必须缩短信号周期或放宽触发条件，"
         "让候选在留出窗口里产生可统计的成交量"
@@ -72,6 +68,13 @@ _CONSTRAINT_BY_REASON_CODE: dict[ARCReasonCode, str] = {
     ARCReasonCode.BITPRO_SELF_TEST_UNAVAILABLE: (
         "BitPro 自检调用未能完成，这是平台侧故障而非候选缺陷；不要据此改写策略，"
         "应检查 BitPro 连通性与凭据后重跑自检"
+    ),
+    ARCReasonCode.EXTERNAL_GROUND_TRUTH_DIVERGENCE: (
+        "候选策略在外部第三方真实价格前向盲测中方向准确度或Brier评分低下，存在内部数据过拟合或因果偏差，"
+        "必须优化信号源或降低置信度"
+    ),
+    ARCReasonCode.EXTERNAL_GROUND_TRUTH_UNAVAILABLE: (
+        "外部第三方 Ground Truth 数据源暂不可用，保持显式未知，不编造评测事实"
     ),
 }
 
@@ -171,6 +174,36 @@ class ARCReflexionLedger:
             failed_gates=["paper_trading_observation"],
             observed_metrics={},
             negative_constraints=[constraint],
+        )
+        self._records.append(event)
+        return event
+
+    def record_ground_truth_divergence(
+        self,
+        attempt: ARCCandidateAttemptV1,
+        evaluation: Any,
+    ) -> ARCReflexionEventV1:
+        """Record external ground truth divergence into Reflexion memory."""
+        constraint = _CONSTRAINT_BY_REASON_CODE[ARCReasonCode.EXTERNAL_GROUND_TRUTH_DIVERGENCE]
+        brier = getattr(evaluation, "brier_score", None)
+        acc = getattr(evaluation, "accuracy", None)
+        samples = getattr(evaluation, "sample_count", 0)
+        details = getattr(evaluation, "details", "")
+
+        event = ARCReflexionEventV1(
+            candidate_id=attempt.candidate_id,
+            failure_class="external_ground_truth_divergence",
+            reason_codes=[ARCReasonCode.EXTERNAL_GROUND_TRUTH_DIVERGENCE.value],
+            failed_gates=["external_ground_truth"],
+            observed_metrics={
+                "brier_score": brier,
+                "accuracy": acc,
+                "sample_count": samples,
+            },
+            negative_constraints=[constraint],
+            reason_details={
+                ARCReasonCode.EXTERNAL_GROUND_TRUTH_DIVERGENCE.value: details,
+            },
         )
         self._records.append(event)
         return event

@@ -3566,3 +3566,6 @@
 # Paper 清单周期与市场基准修复（独立任务分支）— 2026-09-22
 
 BitPro运行清单顶层timeframe缺失会跳过相对基准；本切片从已有身份匹配dashboard/配置投影原周期，并用337根有界1h闭合K线建立同窗基准。缺失、冲突、重复、越窗或缺口保留显式absolute fallback；原Paper、预算与生产scope未变。定向104项通过，`./scripts/check.sh`（含全量1689项）通过；独立分支尚未发布。
+
+- 2026-10-21 ARC 接入 Headline Arena 外部 Ground Truth 流（解决 Issue #1）：为自主进化闭环引入完全外生的第三方真实价格预测竞技场选择压力。落点：① 核心连接器 `arc/ground_truth.py`（`ExternalGroundTruthPort`、`HeadlineArenaClient`、`InMemoryGroundTruthClient`），支持多标的挑战发现、前向盲测方向预测提取（`synthesize_prediction`）、带 SHA-256 幂等收据提交、机械结算与 Brier/校准曲线同步；② `contracts.py` 增加 `ExternalGroundTruthPolicyV1`，`ARCGoalV1` 扩展 `ground_truth` 策略，`ARCCandidateAttemptV1` 增加预测与指标容器；③ `findings.py` 与 `reflexion.py` 增加 `EXTERNAL_GROUND_TRUTH_DIVERGENCE` 与 `EXTERNAL_GROUND_TRUTH_UNAVAILABLE` 审查码与约束提取（当模拟盘高收益但外部盲测命中率 <40% 或 Brier 偏大时触发过拟合约束）；④ `attribution.py` 扩展 `external_ground_truth` 归因维度并支持报告投影；⑤ `observation.py` 模拟盘观察期支持自动同步外部挑战与对齐评估；⑥ API 暴露 `GET /ground-truth/challenges`、`GET /ground-truth/calibration`、`POST /ground-truth/evaluate`。测试：新增 `tests/test_headline_arena_ground_truth.py` 9 项（覆盖策略合同、客户端生命周期、方向合成、分歧/对齐评估、反思事件、归因投影、观察同步与鉴权端点），相关 ARC 77 项全绿。
+

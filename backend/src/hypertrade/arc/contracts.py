@@ -76,6 +76,17 @@ class PaperFeedbackPolicyV1(BaseModel):
     research_max_backtests: int = Field(default=8, ge=3, le=50)
 
 
+class ExternalGroundTruthPolicyV1(BaseModel):
+    """Configuration for third-party forward-only Ground Truth validation (Headline Arena)."""
+
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = False
+    provider: Literal["headline_arena"] = "headline_arena"
+    min_brier_score: Decimal | None = None
+    require_alignment: bool = False
+    sync_interval_hours: int = Field(default=24, ge=1, le=168)
+
+
 class PaperPreauthorizationV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -130,6 +141,7 @@ class ARCGoalV1(BaseModel):
     feedback: PaperFeedbackPolicyV1 = Field(default_factory=PaperFeedbackPolicyV1)
     feedback_parent: dict[str, Any] | None = None
     evolution_context: dict[str, Any] | None = None
+    ground_truth: ExternalGroundTruthPolicyV1 = Field(default_factory=ExternalGroundTruthPolicyV1)
     budget: ARCBudgetV1 = Field(default_factory=ARCBudgetV1)
     paper_authorization: PaperPreauthorizationV1 | None = None
     # False only preserves decoding of historical missions; the HTTP creation path
@@ -194,6 +206,8 @@ class ARCCandidateAttemptV1(BaseModel):
     paper_instance_id: str | None = None
     live_instance_id: str | None = None
     observed_metrics: dict[str, Any] = Field(default_factory=dict)
+    ground_truth_predictions: list[dict[str, Any]] = Field(default_factory=list)
+    ground_truth_metrics: dict[str, Any] = Field(default_factory=dict)
     reflexion_events: list[ARCReflexionEventV1] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
