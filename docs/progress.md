@@ -1,3 +1,12 @@
+## 2026-10-21：强化 ASTGatekeeper 边界语法与反射注入测试覆盖
+
+- **背景**：响应社区 Issue #60，针对 LLM 策略代码合成可能出现的复杂 Python AST 结构，增加全套参数化边界语法与反思注入测试。
+- **交付**：
+  1. 新增 `tests/test_ast_gatekeeper_edge_cases.py`：覆盖海象运算符（`:=`）、多变量连续赋值、变量类型注解、Python 3.12 模式匹配（`match-case`）；
+  2. 强化安全边界校验：针对 `__subclasses__`、`__bases__` 反射爬取以及 `getattr(__builtins__)` 动态调用注入进行断言拦截；
+  3. 验证多市场差异：严格回归全局合约允许空头 vs A 股市场（`cn`）裸空拦截。
+- **验证**：`tests/test_ast_gatekeeper_edge_cases.py` 7 项用例全部通过，ruff 校验无告警。
+
 ## 2026-10-21：开源门户视觉动线重构与 CI 跨平台容器稳定性加固
 
 - **背景**：对照顶级开源项目视觉呈现与 CI 跨平台运行标准，优化中英文 README 首页视觉动线，解决 Linux 容器环境下 OpenBLAS 线程争用与沙箱 `RLIMIT_NPROC` 约束导致的 CI 偶发异常。
