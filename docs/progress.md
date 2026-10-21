@@ -1,3 +1,12 @@
+## 2026-10-21：版本演进与发布（v0.1.1 与 v0.2.0）
+
+- **背景**：在 v0.1.0 初始开源版本之后，持续推进项目版本演进：正式发布 v0.1.1 维护版本，并为 Headline Arena 外部 Ground Truth 闭环升级核心版本至 v0.2.0。
+- **交付**：
+  1. **v0.1.1 发布**：以 commit `5d892eb` 为基准发布 GitHub Release v0.1.1，固化 ASTGatekeeper 边界测试强化、CI 沙箱多线程并发稳定性加固与开源门户视觉动线优化；
+  2. **项目版本升级至 v0.2.0**：更新 `pyproject.toml`、`frontend/package.json` 及 API 文档版本号至 `0.2.0`；
+  3. **v0.2.0 发布准备**：为基于 Headline Arena 外部真实验证流（解决 Issue #1）的 ARC 前向盲测、Brier 评分与因果反思闭环发布正式版本，生成 Python wheel/sdist 分发包并完成校验。
+- **验证**：`./scripts/check.sh` 全量门禁校验通过，构建产物签名生成。
+
 ## 2026-10-21：强化 ASTGatekeeper 边界语法与反射注入测试覆盖
 
 - **背景**：响应社区 Issue #60，针对 LLM 策略代码合成可能出现的复杂 Python AST 结构，增加全套参数化边界语法与反思注入测试。
