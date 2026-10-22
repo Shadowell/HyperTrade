@@ -1191,4 +1191,39 @@ class EvolutionService:
                 "won": sum(1 for row in rows if row["verdict"] == "won"),
                 "lost": sum(1 for row in rows if row["verdict"] in ("lost_futility", "lost_exam")),
             }
-        return [*outcomes, *memory]
+
+        # Ablations of the losers shown above share the slots ahead of development memory:
+        # outcomes and ablations together stay within 8 entries, so at least 12 development
+        # entries remain inside the model's 20-entry view.
+        ablations: list[dict[str, Any]] = []
+        loser_ids = [
+            entry["outcome_id"]
+            for entry in outcomes
+            if entry["verdict"] in ("lost_futility", "lost_exam")
+        ]
+        try:
+            from hypertrade.arc.ablation import ablation_memory
+
+            ablations, manifest["ablations"] = ablation_memory(
+                self.db,
+                target_id=context["target_id"],
+                outcome_ids=loser_ids,
+                development_end=windows.window("development")[1],
+                limit=max(0, min(4, 8 - len(outcomes))),
+            )
+        except Exception as exc:  # Research continues without ablation context.
+            record_runtime_error(
+                "evolution.ablation_memory",
+                exc,
+                context={
+                    "source_strategy_id": str(context["source_strategy_id"]),
+                    "target_id": context["target_id"],
+                },
+                db=self.db,
+            )
+            manifest["ablations"] = {
+                "policy": "ablation_memory_v1",
+                "selected": 0,
+                "error": failure_text(exc)[:200],
+            }
+        return [*outcomes, *ablations, *memory]

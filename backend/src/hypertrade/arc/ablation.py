@@ -1420,6 +1420,92 @@ def ablation_budget_view(db: Database, config: Any, now: datetime) -> dict[str, 
     }
 
 
+def list_ablation_runs(db: Database, *, limit: int = 100) -> list[dict[str, Any]]:
+    """Operator view of ablation runs, newest first; read-only and without raw metrics."""
+    bounded = max(1, min(limit, 200))
+    with db.session() as session:
+        runs = list(
+            session.scalars(
+                select(ArcAblationRun)
+                .order_by(ArcAblationRun.updated_at.desc())
+                .limit(bounded)
+            )
+        )
+        run_ids = [run.id for run in runs]
+        steps: dict[str, list[ArcAblationStep]] = {}
+        if run_ids:
+            for step in session.scalars(
+                select(ArcAblationStep)
+                .where(ArcAblationStep.run_id.in_(run_ids))
+                .order_by(ArcAblationStep.ordinal.asc())
+            ):
+                steps.setdefault(step.run_id, []).append(step)
+
+    def iso(value: datetime | None) -> str | None:
+        moment = _utc(value)
+        return moment.isoformat() if moment is not None else None
+
+    rows: list[dict[str, Any]] = []
+    for run in runs:
+        result = dict(run.result_json) if isinstance(run.result_json, dict) else {}
+        window = dict(run.window_json) if isinstance(run.window_json, dict) else {}
+        rows.append(
+            {
+                "id": run.id,
+                "outcome_id": run.outcome_id,
+                "target_id": run.target_id,
+                "parent_strategy_id": run.parent_strategy_id,
+                "challenger_strategy_id": run.challenger_strategy_id,
+                "status": run.status,
+                "reason": run.reason,
+                "message": (run.message or "")[:500],
+                "window": window.get("development"),
+                "created_at": iso(run.created_at),
+                "updated_at": iso(run.updated_at),
+                "started_at": iso(run.started_at),
+                "finished_at": iso(run.finished_at),
+                "next_check_at": iso(run.next_check_at),
+                # Summary labels only: raw metrics, plan and checkpoints stay server-side.
+                "result": (
+                    {
+                        key: result.get(key)
+                        for key in (
+                            "harmful",
+                            "helpful",
+                            "neutral",
+                            "unknown",
+                            "incomparable",
+                            "note",
+                        )
+                    }
+                    if run.status in ("completed", "failed") and result
+                    else None
+                ),
+                "steps": [
+                    {
+                        "step_key": step.step_key,
+                        "kind": step.kind,
+                        "status": step.status,
+                        "reason": step.reason,
+                        "charged_at": iso(step.charged_at),
+                        "reused_from": (
+                            dict(step.checkpoint_json).get("reused_from")
+                            if isinstance(step.checkpoint_json, dict)
+                            else None
+                        ),
+                        "backtest_id": (
+                            dict(step.result_json).get("backtest_id")
+                            if isinstance(step.result_json, dict)
+                            else None
+                        ),
+                    }
+                    for step in steps.get(run.id, [])
+                ],
+            }
+        )
+    return rows
+
+
 def _window_span(result: Any) -> tuple[date, date] | None:
     window = result.get("window") if isinstance(result, dict) else None
     if (

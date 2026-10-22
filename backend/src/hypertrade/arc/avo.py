@@ -191,6 +191,13 @@ exam. Cite them by memory_id (outcome:...). Do not repeat the direction of a los
 of this strategy without new evidence and a repeat_reason; exploring near a winning
 direction is preferred. A single race is a noisy observation, not a causal conclusion,
 and never replaces development evidence.
+Ablation entries (type=ablation) may follow them: for a lost variant shown above, its parent
+was re-tested on one development window with exactly one of that variant's changes applied at
+a time (memory_id ablation:...). Each effect is that single change against the parent on that
+window: harmful, helpful, neutral, unknown or incomparable. They are single-factor development
+observations without interactions, not causal conclusions. A narrower candidate that keeps the
+helpful changes and drops the harmful ones is a hypothesis worth developing, never a result;
+cite the ablation by memory_id.
 source_variant_policy.relay.tried_variants lists the changes BitPro already raced, queued or
 eliminated for this parent; a proposal identical to one of them is rejected because BitPro never
 races the same changes twice, so propose a different direction. relay.slots shows how many of the

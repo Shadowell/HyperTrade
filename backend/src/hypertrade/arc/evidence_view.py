@@ -77,8 +77,8 @@ def build_evidence_view(projection: ARCMissionProjection) -> dict[str, Any]:
         research["research"]["evolution"]["order_sample"] = {
             k: v for k, v in context.get("orders", {}).items() if k != "fills"
         }
-        # Forward races are not development references: they carry no backtest receipt,
-        # so mixing them in would read as development evidence without a backtest id.
+        # Forward races and per-change ablations are not development references: they carry
+        # no development receipt, so mixing them in would read as ARC development evidence.
         research["research"]["evolution"]["memory_references"] = [
             {
                 "mission_id": item.get("mission_id"),
@@ -86,7 +86,7 @@ def build_evidence_view(projection: ARCMissionProjection) -> dict[str, Any]:
                 "backtest_id": item.get("development", {}).get("backtest_id"),
             }
             for item in context.get("memory", [])
-            if item.get("type") != "forward_outcome"
+            if item.get("type") not in ("forward_outcome", "ablation")
         ]
         research["research"]["evolution"]["forward_outcome_references"] = [
             {
@@ -103,6 +103,23 @@ def build_evidence_view(projection: ARCMissionProjection) -> dict[str, Any]:
             }
             for item in context.get("memory", [])
             if item.get("type") == "forward_outcome"
+        ]
+        research["research"]["evolution"]["ablation_references"] = [
+            {
+                key: item.get(key)
+                for key in (
+                    "memory_id",
+                    "outcome_id",
+                    "verdict",
+                    "parent_strategy_id",
+                    "challenger_strategy_id",
+                    "window",
+                    "harmful",
+                    "helpful",
+                )
+            }
+            for item in context.get("memory", [])
+            if item.get("type") == "ablation"
         ]
     if projection.goal and projection.goal.paper_review_required:
         from hypertrade.arc.paper_review import build_paper_review

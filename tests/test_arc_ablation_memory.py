@@ -287,3 +287,112 @@ def test_oversized_entry_is_excluded(db: Database) -> None:
 
     assert entries == []
     assert manifest["excluded"] == {"entry_too_large": 1}
+
+
+def test_list_ablation_runs_is_newest_first_and_hides_raw_payloads(db: Database) -> None:
+    from datetime import UTC, datetime
+
+    from hypertrade.arc.ablation import list_ablation_runs
+    from hypertrade.arc.evolution_models import ArcAblationStep
+
+    def add_run(run_id: str, status: str, updated_at: datetime, result: dict | None) -> None:
+        with db.session() as session:
+            session.add(
+                ArcAblationRun(
+                    id=run_id,
+                    outcome_id=f"out_{run_id}",
+                    target_id="bitpro",
+                    parent_strategy_id="443",
+                    challenger_strategy_id=run_id,
+                    status=status,
+                    reason="",
+                    message="m",
+                    window_json={"development": ["2026-03-15", "2026-07-12"]},
+                    plan_json={"steps": ["internal"]},
+                    result_json=result or {},
+                    created_at=updated_at,
+                    updated_at=updated_at,
+                )
+            )
+
+    def add_step(
+        step_id: str,
+        run_id: str,
+        ordinal: int,
+        *,
+        flagged: bool = False,
+    ) -> None:
+        with db.session() as session:
+            session.add(
+                ArcAblationStep(
+                    id=step_id,
+                    run_id=run_id,
+                    step_key=f"step-{ordinal}",
+                    ordinal=ordinal,
+                    kind="baseline" if ordinal == 0 else "parameter",
+                    status="completed",
+                    reason="",
+                    checkpoint_json={"reused_from": "abs_source"} if flagged else {},
+                    result_json={"backtest_id": 10 + ordinal},
+                    charged_at=datetime(2026, 1, 2, tzinfo=UTC) if ordinal == 0 else None,
+                )
+            )
+
+    add_run(
+        "run_skipped",
+        "skipped",
+        datetime(2026, 1, 1, tzinfo=UTC),
+        None,
+    )
+    add_run(
+        "run_running",
+        "running",
+        datetime(2026, 1, 2, tzinfo=UTC),
+        {"harmful": ["not-a-summary-yet"], "metrics": {"net_return": 1}},
+    )
+    add_run(
+        "run_completed",
+        "completed",
+        datetime(2026, 1, 3, tzinfo=UTC),
+        {
+            "harmful": ["fast=12"],
+            "helpful": ["slow=40"],
+            "neutral": [],
+            "unknown": [],
+            "incomparable": [],
+            "note": "dev-only single-factor observation",
+            "metrics": {"net_return": 1},
+        },
+    )
+    # Insertion order differs from ordinal order on purpose.
+    add_step("abs_1", "run_completed", 1, flagged=True)
+    add_step("abs_0", "run_completed", 0)
+
+    runs = list_ablation_runs(db)
+
+    assert [run["id"] for run in runs] == ["run_completed", "run_running", "run_skipped"]
+    completed, running, skipped = runs
+    assert completed["window"] == ["2026-03-15", "2026-07-12"]
+    assert completed["result"] == {
+        "harmful": ["fast=12"],
+        "helpful": ["slow=40"],
+        "neutral": [],
+        "unknown": [],
+        "incomparable": [],
+        "note": "dev-only single-factor observation",
+    }
+    assert running["result"] is None
+    assert skipped["result"] is None
+    assert [step["step_key"] for step in completed["steps"]] == ["step-0", "step-1"]
+    assert completed["steps"][0]["charged_at"] is not None
+    assert completed["steps"][1]["reused_from"] == "abs_source"
+    assert completed["steps"][1]["backtest_id"] == 11
+    for run in runs:
+        assert not {"metrics", "checkpoint_json", "plan_json"} & set(run)
+        for step in run["steps"]:
+            assert not {"metrics", "checkpoint_json", "plan_json"} & set(step)
+    assert [run["id"] for run in list_ablation_runs(db, limit=2)] == [
+        "run_completed",
+        "run_running",
+    ]
+    assert [run["id"] for run in list_ablation_runs(db, limit=0)] == ["run_completed"]

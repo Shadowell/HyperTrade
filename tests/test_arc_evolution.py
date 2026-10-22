@@ -983,3 +983,184 @@ def test_forward_outcomes_precede_development_memory_in_the_model_view(service, 
     assert [entry["type"] for entry in view["memory"][:2]] == ["forward_outcome"] * 2
     assert view["memory"][2]["memory_id"] == "dev-0"
     assert view["memory_in_view"] == {"shown": 20, "total": 27}
+
+
+def _ablation_run(
+    db,
+    *,
+    run_id: str,
+    outcome_id: str,
+    challenger: str,
+    ended_on: str = "2026-07-11",
+):
+    """A completed single-factor ablation whose window ends inside the dev window."""
+    from hypertrade.arc.evolution_models import ArcAblationRun
+
+    result = {
+        "schema_version": "ablation_result.v1",
+        "outcome_id": outcome_id,
+        "verdict": "lost_futility",
+        "parent_strategy_id": "44",
+        "challenger_strategy_id": challenger,
+        "window": ["2026-03-15", ended_on],
+        "capital": "10000",
+        "baseline": {
+            "backtest_id": 11,
+            "net_return": 0.1,
+            "max_drawdown": 0.05,
+            "trade_count": 42,
+        },
+        "effects": [
+            {
+                "step_key": "param:fast_window",
+                "label": "fast_window=20",
+                "status": "completed",
+                "backtest_id": 12,
+                "delta_net_return": -0.02,
+                "delta_max_drawdown": 0.01,
+                "delta_trade_count": 3.0,
+                "class": "harmful",
+            }
+        ],
+        "harmful": ["fast_window=20"],
+        "helpful": [],
+        "neutral": [],
+        "unknown": [],
+        "incomparable": [],
+        "note": "dev-only single-factor observation",
+    }
+    with db.session() as session:
+        session.add(
+            ArcAblationRun(
+                id=run_id,
+                outcome_id=outcome_id,
+                target_id="bitpro",
+                parent_strategy_id="44",
+                challenger_strategy_id=challenger,
+                status="completed",
+                result_json=result,
+            )
+        )
+
+
+def test_memory_places_ablations_after_outcomes_and_before_development(service, monkeypatch):
+    from hypertrade.arc.avo import _evolution_view
+    from hypertrade.arc.store import get_controller
+    from hypertrade.memory.service import MemoryService
+
+    dev = [
+        {"memory_id": f"dev-{i}", "mission_id": f"m-{i}", "candidate_id": f"c-{i}"}
+        for i in range(25)
+    ]
+
+    def project(self, records, **kwargs):
+        return dev, {"policy": "test"}
+
+    monkeypatch.setattr(MemoryService, "project_research", project)
+    _forward_outcome(
+        service.db, parent="43", challenger="44", verdict="won", ended_at="2026-01-01T00:00:00"
+    )
+    lost = _forward_outcome(
+        service.db,
+        parent="44",
+        challenger="4401",
+        verdict="lost_futility",
+        ended_at="2026-01-03T00:00:00",
+    )
+    _ablation_run(service.db, run_id="run_4401", outcome_id=lost["id"], challenger="4401")
+
+    now = _variant_service(service, monkeypatch, 100)
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    context = get_controller(result["payload"]["mission_id"]).projection.goal.evolution_context
+    memory = context["memory"]
+    assert [entry["type"] for entry in memory[:3]] == [
+        "forward_outcome",
+        "forward_outcome",
+        "ablation",
+    ]
+    assert memory[2]["memory_id"] == "ablation:run_4401"
+    assert [entry["memory_id"] for entry in memory[3:]] == [f"dev-{i}" for i in range(25)]
+    assert context["memory_manifest"]["ablations"] == {
+        "policy": "ablation_memory_v1",
+        "selected": 1,
+        "excluded": {},
+    }
+
+    view = _evolution_view(context)
+    assert len(view["memory"]) == 20
+    assert sum(1 for entry in view["memory"] if entry["memory_id"].startswith("dev-")) >= 12
+
+
+def test_ablations_never_push_development_memory_below_twelve_visible(service, monkeypatch):
+    from hypertrade.arc.store import get_controller
+    from hypertrade.memory.service import MemoryService
+
+    dev = [
+        {"memory_id": f"dev-{i}", "mission_id": f"m-{i}", "candidate_id": f"c-{i}"}
+        for i in range(25)
+    ]
+    monkeypatch.setattr(
+        MemoryService, "project_research", lambda self, records, **kwargs: (dev, {"policy": "test"})
+    )
+    for index in range(8):
+        row = _forward_outcome(
+            service.db,
+            parent="44",
+            challenger=f"44{index:02d}",
+            verdict="lost_futility",
+            ended_at=f"2026-01-{index + 1:02d}T00:00:00",
+        )
+        _ablation_run(
+            service.db,
+            run_id=f"run_{index}",
+            outcome_id=row["id"],
+            challenger=f"44{index:02d}",
+        )
+
+    now = _variant_service(service, monkeypatch, 100)
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    context = get_controller(result["payload"]["mission_id"]).projection.goal.evolution_context
+    memory = context["memory"]
+    assert len(memory) == 33
+    assert [entry["type"] for entry in memory[:8]] == ["forward_outcome"] * 8
+    assert memory[8]["memory_id"] == "dev-0"
+    assert context["memory_manifest"]["ablations"] == {
+        "policy": "ablation_memory_v1",
+        "selected": 0,
+        "excluded": {"context_budget": 8},
+    }
+
+
+def test_memory_continues_when_ablation_memory_fails(service, monkeypatch):
+    import hypertrade.arc.ablation as ablation_module
+    from hypertrade.arc.store import get_controller
+
+    def down(*args, **kwargs):
+        raise RuntimeError("ablation down")
+
+    monkeypatch.setattr(ablation_module, "ablation_memory", down)
+    _forward_outcome(
+        service.db,
+        parent="44",
+        challenger="4401",
+        verdict="lost_futility",
+        ended_at="2026-01-03T00:00:00",
+    )
+
+    now = _variant_service(service, monkeypatch, 100)
+    result = service.tick(now)
+    assert result["status"] == "research_created"
+    context = get_controller(result["payload"]["mission_id"]).projection.goal.evolution_context
+    assert [entry["type"] for entry in context["memory"]] == ["forward_outcome"]
+    ablations = context["memory_manifest"]["ablations"]
+    assert ablations["selected"] == 0
+    assert "ablation down" in ablations["error"]
+
+    from hypertrade.arc.evolution_models import ArcRuntimeError
+    from sqlalchemy import select
+
+    with service.db.session() as session:
+        components = list(session.scalars(select(ArcRuntimeError.component)))
+    assert "evolution.ablation_memory" in components
