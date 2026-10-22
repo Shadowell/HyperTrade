@@ -637,6 +637,25 @@ def _collect_session_windows(
     }
 
 
+def _settled_rejection(reason: str, metrics: dict[str, Any]) -> bool:
+    # A numeric gate miss, or a deflated-Sharpe probability below the 0.95 gate computed from
+    # observed server-side trial evidence, is a verdict. Missing or malformed evidence needs an
+    # operator.
+    if "success_criteria." in reason:
+        return True
+    if reason != "deflated_sharpe_probability_below_0.95":
+        return False
+    selection = metrics.get("selection_bias")
+    if not isinstance(selection, dict) or selection.get("status") != "observed":
+        return False
+    probability = selection.get("probability")
+    return (
+        isinstance(probability, (int, float))
+        and not isinstance(probability, bool)
+        and 0 <= probability < 0.95
+    )
+
+
 def _negative_experiment_finished(record: dict[str, Any], goal: ARCGoalV1) -> bool:
     from hypertrade.arc.self_test import apply_success_criteria
 
@@ -646,7 +665,7 @@ def _negative_experiment_finished(record: dict[str, Any], goal: ARCGoalV1) -> bo
     passed, reasons = apply_success_criteria(metrics, goal.success_criteria)
     if not passed:
         # Missing or invalid evidence is an operator problem, not a settled rejection.
-        return bool(reasons) and all("success_criteria." in reason for reason in reasons)
+        return bool(reasons) and all(_settled_rejection(reason, metrics) for reason in reasons)
     comparison = metrics.get("baseline_comparison") or {}
     return (
         comparison.get("passed") is False
