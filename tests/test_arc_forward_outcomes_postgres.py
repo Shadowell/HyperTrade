@@ -76,3 +76,48 @@ def test_postgres_upgrade_write_unique_pair_and_downgrade(tmp_path) -> None:
             assert version == "0049_arc_cognitive_memory"
             assert "arc_forward_outcomes" not in inspect(connection).get_table_names()
         downgraded.engine.dispose()
+
+
+def test_postgres_lineage_event_index_normalizes_json_ids(tmp_path) -> None:
+    with _cluster(tmp_path) as url:
+        from hypertrade.arc.forward_outcomes import ForwardOutcomeLedger
+        from hypertrade.db import ArcMissionEvent, Database
+
+        db = Database(url)
+        db.create_all()
+        events = [
+            ("m-old", "evt_old", "bitpro_self_tested", {"payload": {"bitpro_strategy_id": "9501"}}),
+            ("m-new", "evt_new", "candidate_validated", {"payload": {"bitpro_strategy_id": 9501}}),
+            (
+                "m-prop",
+                "evt_prop",
+                "candidate_proposed",
+                {"payload": {"attempt": {"bitpro_strategy_id": "9502"}}},
+            ),
+            ("m-bad", "evt_bad", "bitpro_self_tested", {"payload": "not a dict"}),
+            (
+                "m-ignored",
+                "evt_ignored",
+                "paper_feedback_checked",
+                {"payload": {"bitpro_strategy_id": "9503"}},
+            ),
+        ]
+        with db.session() as session:
+            for seq, (mission_id, event_id, event_type, event_json) in enumerate(
+                events, start=1
+            ):
+                session.add(
+                    ArcMissionEvent(
+                        mission_id=mission_id,
+                        seq=seq,
+                        event_id=event_id,
+                        event_type=event_type,
+                        event_json=event_json,
+                    )
+                )
+            session.flush()
+            located = ForwardOutcomeLedger(db)._locate_by_events(
+                session, {"9501", "9502", "9503"}
+            )
+        assert located == {"9501": "m-new", "9502": "m-prop"}
+        db.engine.dispose()

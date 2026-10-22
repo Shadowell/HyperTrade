@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from hypertrade.arc.contracts import ARCCandidateAttemptV1
 from hypertrade.arc.evolution_models import ArcForwardOutcome
 from hypertrade.arc.store import load_projection
-from hypertrade.db import ArcMission, Database
+from hypertrade.db import ArcMission, ArcMissionEvent, Database
 
 logger = logging.getLogger("hypertrade.arc.forward_outcomes")
 
@@ -39,6 +39,10 @@ NEUTRAL_VERDICTS = (
 # Only these two mean "the lane ended, but we do not know why"; a concrete verdict may
 # replace them. Every other verdict is final so a later noisy observation cannot rewrite it.
 UPGRADABLE_VERDICTS = ("cancelled_unknown", "ended_unknown")
+
+# The only events that can bind a BitPro strategy id to an ARC attempt, so scoping the
+# lineage query to them keeps the scan small even on a busy research mission.
+_BITPRO_ID_EVENTS = ("candidate_proposed", "bitpro_self_tested", "candidate_validated")
 
 _NUMERIC_METRIC_KEYS = (
     "excess_return_pct",
@@ -154,12 +158,25 @@ def _apply_lineage(
     }
 
 
+def _event_bitpro_id(event_type: str, payload_id: Any, attempt_id: Any) -> str | None:
+    """The BitPro id an event bound, taken from the JSON paths the query projected."""
+    value = attempt_id if event_type == "candidate_proposed" else payload_id
+    return None if value is None else str(value)
+
+
 class ForwardOutcomeLedger:
     """Write-once outcome rows plus best-effort lineage back to the research attempt."""
 
-    def __init__(self, db: Database, *, mission_scan_limit: int = 500) -> None:
+    def __init__(
+        self,
+        db: Database,
+        *,
+        mission_scan_limit: int = 500,
+        event_scan_limit: int = 50000,
+    ) -> None:
         self.db = db
         self.mission_scan_limit = mission_scan_limit
+        self.event_scan_limit = event_scan_limit
 
     def record(
         self,
@@ -253,25 +270,96 @@ class ForwardOutcomeLedger:
             row.ended_at = ended_at
             row.verdict_source = source
 
+    def _locate_by_events(
+        self,
+        session: Session,
+        wanted: set[str],
+    ) -> dict[str, str]:
+        """Newest mission id per wanted challenger, read through the event index only.
+
+        Only the two scalar JSON paths are selected: ``candidate_proposed`` payloads carry
+        the whole strategy code, and fetching those rows would put megabytes through the
+        driver on every lineage pass. ``yield_per`` is an execution option so PostgreSQL
+        streams the scan instead of buffering every matching event in the driver.
+        """
+        located: dict[str, str] = {}
+        if not wanted:
+            return located
+        payload_id = ArcMissionEvent.event_json[("payload", "bitpro_strategy_id")].as_string()
+        attempt_id = ArcMissionEvent.event_json[
+            ("payload", "attempt", "bitpro_strategy_id")
+        ].as_string()
+        statement = (
+            select(ArcMissionEvent.mission_id, ArcMissionEvent.event_type, payload_id, attempt_id)
+            .where(ArcMissionEvent.event_type.in_(_BITPRO_ID_EVENTS))
+            .order_by(ArcMissionEvent.id.desc())
+            .limit(self.event_scan_limit)
+            .execution_options(yield_per=500)
+        )
+        with session.execute(statement) as result:
+            for mission_id, event_type, payload_value, attempt_value in result:
+                challenger = _event_bitpro_id(event_type, payload_value, attempt_value)
+                if challenger is None or challenger not in wanted or challenger in located:
+                    continue
+                located[challenger] = str(mission_id)
+                if len(located) == len(wanted):
+                    break
+        return located
+
     def _lineage_index(
         self,
         session: Session,
         wanted: set[str],
     ) -> dict[str, tuple[ArcMission, ARCCandidateAttemptV1]]:
-        """Newest mission per wanted challenger; stop loading projections once all are found."""
+        """Newest mission per wanted challenger, located by event before scanning missions.
+
+        Research now runs many rounds a day, so the mission that launched a variant can
+        fall out of the recent-mission window before its race ends. The event journal
+        still points at it, so it is queried first; the mission scan remains only for
+        early missions whose events live inline in ``projection_json``.
+        """
         found: dict[str, tuple[ArcMission, ARCCandidateAttemptV1]] = {}
         if not wanted:
             return found
+
+        # Step 1: newest event per challenger.
+        located = self._locate_by_events(session, wanted)
+
+        # Step 2: load each hit mission once; the last matching attempt is the newest one.
+        wanted_by_mission: dict[str, list[str]] = {}
+        for challenger, mission_id in located.items():
+            wanted_by_mission.setdefault(mission_id, []).append(challenger)
+        indexed: set[str] = set()
+        for mission_id, challengers in wanted_by_mission.items():
+            mission = session.get(ArcMission, mission_id)
+            if mission is None:
+                continue
+            indexed.add(mission_id)
+            projection = load_projection(session, mission)
+            attempts: dict[str, ARCCandidateAttemptV1] = {}
+            for attempt in projection.attempts:
+                attempts[str(attempt.bitpro_strategy_id)] = attempt
+            for challenger in challengers:
+                matched = attempts.get(challenger)
+                if matched is not None:
+                    found[challenger] = (mission, matched)
+        if len(found) == len(wanted):
+            return found
+
+        # Step 3: fall back to the recent-mission scan for ids only present inline.
+        missing = wanted - found.keys()
         missions = session.scalars(
             select(ArcMission)
             .order_by(ArcMission.updated_at.desc())
             .limit(self.mission_scan_limit)
         ).yield_per(20)
         for mission in missions:
+            if mission.mission_id in indexed:
+                continue
             projection = load_projection(session, mission)
             for attempt in projection.attempts:
                 challenger = str(attempt.bitpro_strategy_id)
-                if challenger in wanted and challenger not in found:
+                if challenger in missing and challenger not in found:
                     found[challenger] = (mission, attempt)
                     if len(found) == len(wanted):
                         return found

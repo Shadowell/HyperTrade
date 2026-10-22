@@ -16,7 +16,7 @@ from hypertrade.arc.forward_outcomes import (
     verdict_for,
 )
 from hypertrade.arc.store import configure_store, reset_store, save_mission
-from hypertrade.db import ArcMission, Database
+from hypertrade.db import ArcMission, ArcMissionEvent, Database
 from hypertrade.paper.race_judge import RacePairRecord
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -569,3 +569,138 @@ def test_summary_of_empty_ledger(ledger: ForwardOutcomeLedger) -> None:
         "evidence": 0,
         "last_recorded_at": None,
     }
+
+
+def _event_mission(db: Database, *challengers: str) -> ARCController:
+    """A mission whose BitPro ids are bound by journalled events, not inline projection."""
+    ctrl = ARCController(goal=ARCGoalV1(objective="race outcomes", symbols=["BTC-USDT"]))
+    save_mission(ctrl)
+    for index, challenger in enumerate(challengers):
+        attempt = ARCCandidateAttemptV1(
+            attempt_id=f"attempt-{challenger}",
+            candidate_id=f"candidate-{challenger}",
+            hypothesis=f"variant {challenger}",
+            strategy_code="class Variant: pass\n",
+            strategy_spec={
+                "parameter_changes": {"fast_window": 10 + index},
+                "structural_changes": {},
+                "symbol": "BTC-USDT",
+                "symbols": ["BTC-USDT"],
+                "timeframe": "1H",
+                "parent_strategy_id": 107,
+            },
+        )
+        ctrl.apply_event("candidate_proposed", {"attempt": attempt.model_dump(mode="json")})
+        ctrl.apply_event(
+            "bitpro_self_tested",
+            {
+                "attempt_id": attempt.attempt_id,
+                "bitpro_strategy_id": challenger,
+                "backtest_id": "bt-1",
+                "passed": False,
+            },
+        )
+    with db.session() as session:
+        event_types = set(
+            session.scalars(
+                select(ArcMissionEvent.event_type).where(
+                    ArcMissionEvent.mission_id == ctrl.mission_id
+                )
+            ).all()
+        )
+    assert {"candidate_proposed", "bitpro_self_tested"} <= event_types
+    return ctrl
+
+
+def test_lineage_finds_a_mission_that_fell_out_of_the_scan_window(
+    ledger: ForwardOutcomeLedger, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old = _event_mission(ledger.db, "9301")
+    newer = [_save_mission("9401"), _save_mission("9402"), _save_mission("9403")]
+    with ledger.db.session() as session:
+        stored = session.get(ArcMission, old.mission_id)
+        assert stored is not None
+        stored.updated_at = datetime(2026, 1, 1)
+        for hour, mission in enumerate(newer, start=1):
+            row = session.get(ArcMission, mission.mission_id)
+            assert row is not None
+            row.updated_at = datetime(2026, 2, 1, hour)
+
+    loads: list[str] = []
+    real_load = forward_outcomes.load_projection
+
+    def counting_load(session: Session, mission: ArcMission):
+        loads.append(mission.mission_id)
+        return real_load(session, mission)
+
+    monkeypatch.setattr(forward_outcomes, "load_projection", counting_load)
+
+    narrow = ForwardOutcomeLedger(ledger.db, mission_scan_limit=2)
+    row = _record(narrow, challenger="9301", verdict="won")
+    assert row["lineage_status"] == "linked"
+    assert row["mission_id"] == old.mission_id
+    assert row["changes"] == {
+        "parameter_changes": {"fast_window": 10},
+        "structural_changes": {},
+    }
+    assert loads == [old.mission_id]
+
+
+def test_lineage_prefers_the_newest_mission_for_a_reused_challenger_id(
+    ledger: ForwardOutcomeLedger,
+) -> None:
+    _event_mission(ledger.db, "9302")
+    newest = _event_mission(ledger.db, "9302")
+
+    row = _record(ledger, challenger="9302", verdict="won")
+    assert row["lineage_status"] == "linked"
+    assert row["mission_id"] == newest.mission_id
+    assert row["attempt_id"] == "attempt-9302"
+
+
+def test_event_scan_can_be_disabled_and_falls_back_to_mission_scan(
+    ledger: ForwardOutcomeLedger,
+) -> None:
+    mission = _event_mission(ledger.db, "9303")
+    blind = ForwardOutcomeLedger(ledger.db, event_scan_limit=0)
+
+    row = _record(blind, challenger="9303", verdict="won")
+    assert row["lineage_status"] == "linked"
+    assert row["mission_id"] == mission.mission_id
+
+
+def test_malformed_event_payload_never_breaks_lineage(
+    ledger: ForwardOutcomeLedger,
+) -> None:
+    with ledger.db.session() as session:
+        session.add(
+            ArcMissionEvent(
+                mission_id="arc_malformed",
+                seq=1,
+                event_id="evt_malformed",
+                event_type="bitpro_self_tested",
+                event_json={"payload": "not a dict"},
+            )
+        )
+
+    row = _record(ledger, challenger="9399", verdict="won")
+    assert row["lineage_status"] == "no_lineage"
+
+
+def test_lineage_links_a_numeric_event_challenger_id(
+    ledger: ForwardOutcomeLedger,
+) -> None:
+    # Some payloads carry BitPro ids as JSON numbers. The attempt projection only accepts
+    # strings, so it is persisted inline and the number exists only in the event journal.
+    ctrl = _save_mission("9401")
+    ctrl.apply_event(
+        "bitpro_self_tested",
+        {"bitpro_strategy_id": 9401, "backtest_id": "bt-1", "passed": False},
+    )
+
+    # Disable the fallback mission scan so only the event-index lookup can match.
+    event_only = ForwardOutcomeLedger(ledger.db, mission_scan_limit=0)
+    row = _record(event_only, challenger="9401", verdict="won")
+    assert row["lineage_status"] == "linked"
+    assert row["mission_id"] == ctrl.mission_id
+    assert row["attempt_id"] == "attempt-9401"
