@@ -17,6 +17,8 @@ def test_defaults_are_hourly_and_enabled(service):
     state = service.status()
     assert state["config"]["enabled"] is True
     assert state["config"]["target_id"] == "bitpro"
+    # The scan calls status() repeatedly; the ledger aggregate belongs to the page only.
+    assert "forward_outcomes" not in state
     assert state["config"]["interval_minutes"] == 60
     assert state["config"]["threshold_pp"] == "10"
     service.configure(EvolutionConfig(enabled=False), revision=0, actor="test")

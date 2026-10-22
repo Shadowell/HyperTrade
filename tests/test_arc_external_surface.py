@@ -588,3 +588,43 @@ def test_research_token_cannot_enable_automatic_paper_policy(client):
         ).status_code
         == 403
     )
+
+
+def _record_forward_outcome(client: TestClient, challenger: int, verdict: str) -> None:
+    from hypertrade.arc.forward_outcomes import ForwardOutcomeLedger
+
+    ForwardOutcomeLedger(client.app.state.db).record(
+        target_id="bitpro",
+        parent_strategy_id=107,
+        challenger_strategy_id=challenger,
+        verdict=verdict,
+        metrics={},
+        link=False,
+    )
+
+
+def test_evolution_status_carries_forward_outcome_summary(client: TestClient) -> None:
+    _record_forward_outcome(client, 9001, "won")
+    _record_forward_outcome(client, 9002, "superseded")
+
+    response = client.get("/api/v1/arc/evolution", headers=_headers(READ_TOKEN))
+
+    assert response.status_code == 200
+    outcomes = response.json()["forward_outcomes"]
+    assert outcomes["total"] == 2
+    assert outcomes["evidence"] == 1
+    assert outcomes["by_verdict"] == {"superseded": 1, "won": 1}
+
+
+def test_evolution_status_survives_forward_outcome_failure(client: TestClient, monkeypatch) -> None:
+    from hypertrade.arc.forward_outcomes import ForwardOutcomeLedger
+
+    def fail(_self) -> dict:
+        raise RuntimeError("ledger unavailable")
+
+    monkeypatch.setattr(ForwardOutcomeLedger, "summary", fail)
+
+    response = client.get("/api/v1/arc/evolution", headers=_headers(READ_TOKEN))
+
+    assert response.status_code == 200
+    assert "error" in response.json()["forward_outcomes"]

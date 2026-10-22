@@ -273,6 +273,17 @@ class EvolutionService:
                 "continuations": ContinuationLedger(self.db).view(),
             }
 
+    def forward_outcomes_summary(self) -> dict[str, Any]:
+        """Ledger aggregate for the evolution page; failures stay on the page, not raised.
+
+        Kept out of ``status()`` because the research scan calls that several times per
+        cycle and never reads this telemetry.
+        """
+        try:
+            return ForwardOutcomeLedger(self.db).summary()
+        except Exception as exc:  # Read-only telemetry must never take the page down.
+            return {"error": failure_text(exc)[:200]}
+
     def configure(self, config: EvolutionConfig, *, revision: int, actor: str) -> dict[str, Any]:
         try:
             profile = get_market_target(config.target_id).profile

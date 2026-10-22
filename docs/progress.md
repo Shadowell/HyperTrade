@@ -1,3 +1,10 @@
+## 2026-10-21：赛马前向结果回流研究记忆
+
+- **背景**：赛马结束的结论此前只留在裁判状态文件里，研究侧看不到自己提的改动实际赛成什么样；研究提速到每天最多 32 轮后，旧任务会滑出「最近 500 个任务」的扫描窗口，血缘更容易对不上。
+- **交付**：迁移 0050 新增 `arc_forward_outcomes`（每个 目标／母体／挑战者 一行）；裁判在完成、取消、结束时记账，位置被补走时按 BitPro 淘汰归档处理，启动时补录已结束赛道；只有 `won`／`lost_futility`／`lost_exam` 是输赢证据，其余只记录不当负面证据；按 BitPro 策略编号经事件索引找回研究血缘（失败再回退任务扫描），对不上记 `no_lineage`；研究时沿接班链回溯最多 3 代、取最多 8 条有效证据作为 `type=forward_outcome` 记忆放在开发记忆之前，manifest 记计数，读取失败不阻断研究；系统提示写明改动相对那场比赛的母体、输家方向无新证据不重复、赢的方向附近优先、单场是噪声不是因果；`GET /api/v1/arc/evolution` 新增 `forward_outcomes` 汇总且失败只带 `error`，研究证据视图新增 `forward_outcome_references`。
+- **验证**：`LC_ALL=en_US.UTF-8 uv run pytest tests/test_arc_evolution.py tests/test_forward_outcomes_ledger.py tests/test_evolution_budget.py tests/test_arc_external_surface.py -q` → 147 passed；`uv run ruff check backend tests` → All checks passed；`uv run mypy backend/src` → Success: no issues found in 317 source files。未运行 `./scripts/check.sh`（由审查方执行）。
+- **未做**：输家逐项消融为第二期；未线上实测。
+
 ## 2026-10-20：研究侧跟上 BitPro 变体位（按空位扫描、参数去重、需求可见）
 
 - **背景**：BitPro #1286 让每个母体默认有三个变体位，研究侧还是按「一个母体一个挑战者」工作：空位已被排队候选预订时仍会继续造候选；同一改动换一天就绕过「已归档实验」检查（开发窗口随日期移动），BitPro 又不会让完全相同的变体赛两次，副本白白花掉模型调用与回测；也看不到空位需求与每日预算的差距。
