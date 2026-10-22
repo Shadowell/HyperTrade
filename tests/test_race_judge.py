@@ -3,17 +3,23 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from hypertrade.arc.evolution_models import ArcForwardOutcome
+from hypertrade.arc.forward_outcomes import ForwardOutcomeLedger
 from hypertrade.bitpro.mcp import BitProToolAdapter
+from hypertrade.db import Database
 from hypertrade.paper.race_judge import (
     RaceJudgeDaemon,
     RacePairRecord,
     build_race_feishu_card,
     dispatch_race_feishu_card,
 )
+from sqlalchemy import select
 
 
 def test_race_pair_record_serialization() -> None:
@@ -784,3 +790,235 @@ def test_quantlab_target_without_a_cancellation_field_is_not_an_error(tmp_path: 
         rec = daemon.evaluate_pair(1, 2, generation=2, target_id="quantlab")
     assert rec.target_id == "quantlab" and rec.state == "cancelled"
     assert rec.cancellation_kind is None and dispatch.call_args.args[1] == "CANCELLED"
+
+
+# --- Forward outcome ledger: every finished lane is booked exactly once ---
+
+
+def _ledger_daemon(tmp_path: Path, adapter: MagicMock) -> RaceJudgeDaemon:
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    return RaceJudgeDaemon(
+        db=db,
+        bitpro_adapter=adapter,
+        state_file=tmp_path / "state.json",
+        history_file=tmp_path / "missing-history.json",
+    )
+
+
+def _outcome_rows(daemon: RaceJudgeDaemon) -> list[ArcForwardOutcome]:
+    assert daemon.db is not None
+    with daemon.db.session() as session:
+        return list(session.scalars(select(ArcForwardOutcome)))
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    """SQLite drops tzinfo; the judge always stores UTC."""
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=UTC)
+
+
+_ARCHIVED_EXAM = {
+    "actor": "system:exam",
+    "by_system": True,
+    "kind": "exam",
+    "reason": "终考未过关",
+    "cancelled_at": "2026-10-20T08:00:00+00:00",
+    "detail": {"kind": "exam", "positive_days": 3},
+}
+
+
+def test_futility_elimination_is_recorded_once_in_the_outcome_ledger(tmp_path: Path) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_status.return_value = _lane_status(_futility_cancellation())
+    daemon = _ledger_daemon(tmp_path, adapter)
+
+    with patch(
+        "hypertrade.paper.race_judge.dispatch_race_feishu_card", return_value=(True, "ok")
+    ):
+        rec = daemon.evaluate_pair(1, 2, generation=2)
+        assert rec.outcome_recorded is True
+        again = daemon.evaluate_pair(1, 2, generation=2)
+
+    [row] = _outcome_rows(daemon)  # a second poll does not add a row
+    assert row.verdict == "lost_futility"
+    assert row.metrics_json["cancellation_metrics"]
+    assert _utc(row.ended_at) == datetime(2026, 10, 20, 8, 0, tzinfo=UTC)
+    assert again.outcome_recorded is True
+
+
+def test_completed_lane_is_recorded_as_a_win_when_the_plan_updates(tmp_path: Path) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    status = _lane_status(None, state="completed")
+    status["plan"]["updated_at"] = "2026-10-19T12:00:00+00:00"
+    adapter.paper_relay_status.return_value = status
+    daemon = _ledger_daemon(tmp_path, adapter)
+
+    with patch(
+        "hypertrade.paper.race_judge.dispatch_race_feishu_card", return_value=(True, "ok")
+    ):
+        daemon.evaluate_pair(1, 2, generation=2)
+
+    [row] = _outcome_rows(daemon)
+    assert row.verdict == "won" and row.verdict_source == "race_judge"
+    assert _utc(row.ended_at) == datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
+
+
+def test_refilled_seat_with_an_archive_is_mirrored_and_recorded(tmp_path: Path) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    observing = _lane_status(None, state="observing")
+    observing["proof"] = {"eligible": False, "reason": "观测中", "excess_return_pct": -1.5}
+    adapter.paper_relay_status.return_value = observing
+    daemon = _ledger_daemon(tmp_path, adapter)
+
+    with patch(
+        "hypertrade.paper.race_judge.dispatch_race_feishu_card", return_value=(True, "ok")
+    ) as dispatch:
+        daemon.evaluate_pair(1, 2, generation=2)
+        # BitPro eliminated the lane and refilled its seat before the next poll.
+        adapter.paper_relay_status.return_value = {
+            "plan": None,
+            "proof": {"eligible": True, "excess_return_pct": 9.9, "proof_sha256": "b" * 64},
+            "cancellation": _ARCHIVED_EXAM,
+        }
+        rec = daemon.evaluate_pair(1, 2, generation=2)
+
+    assert rec.state == "cancelled" and rec.cancellation_kind == "exam"
+    dispatch.assert_called_once()
+    assert dispatch.call_args.args[1] == "EXAM_FAILED"
+    [row] = _outcome_rows(daemon)
+    assert row.verdict == "lost_exam"
+    assert _utc(row.ended_at) == datetime(2026, 10, 20, 8, 0, tzinfo=UTC)
+    # The no-plan proof is a fresh candidate evaluation, not this race's evidence.
+    assert row.metrics_json["excess_return_pct"] == -1.5
+    assert row.metrics_json["cancellation_reason"] == "终考未过关"
+
+
+def test_refilled_seat_without_an_archive_ends_neutrally_without_a_card(tmp_path: Path) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_status.return_value = _lane_status(None, state="observing")
+    daemon = _ledger_daemon(tmp_path, adapter)
+
+    with patch("hypertrade.paper.race_judge.dispatch_race_feishu_card") as dispatch:
+        daemon.evaluate_pair(1, 2, generation=2)
+        adapter.paper_relay_status.return_value = {
+            "plan": None,
+            "proof": {},
+            "cancellation": None,
+        }
+        rec = daemon.evaluate_pair(1, 2, generation=2)
+
+    dispatch.assert_not_called()
+    assert rec.state == "ended" and rec.outcome_recorded is True
+    [row] = _outcome_rows(daemon)
+    assert row.verdict == "ended_unknown" and row.ended_at is None
+
+
+def test_judge_without_a_database_announces_but_records_nothing(tmp_path: Path) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_status.return_value = _lane_status(_futility_cancellation())
+    daemon = _daemon(tmp_path, adapter)
+
+    with patch(
+        "hypertrade.paper.race_judge.dispatch_race_feishu_card", return_value=(True, "ok")
+    ) as dispatch:
+        rec = daemon.evaluate_pair(1, 2, generation=2)
+
+    assert dispatch.call_args.args[1] == "FUTILITY"
+    assert rec.outcome_recorded is False
+    assert daemon.backfill_outcomes() == 0
+
+
+def test_a_failing_ledger_never_blocks_the_card_or_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_status.return_value = _lane_status(_futility_cancellation())
+    daemon = _ledger_daemon(tmp_path, adapter)
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("ledger down")
+
+    original = ForwardOutcomeLedger.record
+    monkeypatch.setattr(ForwardOutcomeLedger, "record", _boom)
+    with patch(
+        "hypertrade.paper.race_judge.dispatch_race_feishu_card", return_value=(True, "ok")
+    ) as dispatch:
+        rec = daemon.evaluate_pair(1, 2, generation=2)
+
+    assert dispatch.call_count == 1 and rec.outcome_recorded is False
+    persisted = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert persisted[0]["state"] == "cancelled"
+
+    # The next evaluation retries once the ledger recovers.
+    monkeypatch.setattr(ForwardOutcomeLedger, "record", original)
+    reloaded = RaceJudgeDaemon(
+        db=daemon.db,
+        bitpro_adapter=adapter,
+        state_file=tmp_path / "state.json",
+        history_file=tmp_path / "missing-history.json",
+    )
+    with patch(
+        "hypertrade.paper.race_judge.dispatch_race_feishu_card", return_value=(True, "ok")
+    ):
+        retried = reloaded.evaluate_pair(1, 2, generation=2)
+
+    assert retried.outcome_recorded is True
+    [row] = _outcome_rows(reloaded)
+    assert row.verdict == "lost_futility"
+
+
+def test_legacy_finished_lanes_are_backfilled_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state_file = tmp_path / "state.json"
+    legacy = RacePairRecord(
+        parent_strategy_id=1, challenger_strategy_id=2, generation=2, state="completed"
+    ).to_dict()
+    legacy.pop("outcome_recorded")  # a state file written before the ledger existed
+    state_file.write_text(json.dumps([legacy]), encoding="utf-8")
+    db = Database("sqlite:///:memory:")
+    db.create_all()
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_plans.return_value = []
+    daemon = RaceJudgeDaemon(
+        db=db,
+        bitpro_adapter=adapter,
+        state_file=state_file,
+        history_file=tmp_path / "missing-history.json",
+    )
+
+    calls: list[dict[str, Any]] = []
+    original = ForwardOutcomeLedger.record
+
+    def _counting(self: ForwardOutcomeLedger, **kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        return original(self, **kwargs)
+
+    monkeypatch.setattr(ForwardOutcomeLedger, "record", _counting)
+    daemon.scan_and_judge_all()
+    daemon.scan_and_judge_all()  # backfill runs once per process
+
+    assert len(calls) == 1 and calls[0]["source"] == "backfill"
+    [row] = _outcome_rows(daemon)
+    assert row.verdict == "won" and row.verdict_source == "backfill"
+
+
+def test_a_readmitted_challenger_clears_the_recorded_outcome(tmp_path: Path) -> None:
+    adapter = MagicMock(spec=BitProToolAdapter)
+    adapter.paper_relay_status.return_value = _lane_status(_futility_cancellation())
+    daemon = _ledger_daemon(tmp_path, adapter)
+
+    with patch(
+        "hypertrade.paper.race_judge.dispatch_race_feishu_card", return_value=(True, "ok")
+    ):
+        first = daemon.evaluate_pair(1, 2, generation=2)
+        assert first.outcome_recorded is True
+        # The operator re-admits the same challenger: a new race on the same pair.
+        adapter.paper_relay_status.return_value = _lane_status(None, state="observing")
+        again = daemon.evaluate_pair(1, 2, generation=2)
+
+    assert again.state == "observing" and again.outcome_recorded is False
+    [row] = _outcome_rows(daemon)
+    assert row.verdict == "lost_futility"  # the ledger keeps the earlier race's verdict

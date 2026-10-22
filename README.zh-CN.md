@@ -55,7 +55,7 @@
 ```mermaid
 flowchart LR
   Op["操作员 / 外部 Agent<br/>Web · ht CLI · TUI · Desktop"] --> API["FastAPI 控制面<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
-  API --> DB[("PostgreSQL + pgvector<br/>49 项迁移 · Mission 投影 · 演进树 · 记忆库")]
+  API --> DB[("PostgreSQL + pgvector<br/>50 项迁移 · Mission 投影 · 演进树 · 记忆库")]
   Worker["Worker 循环 (13 个 Loop)<br/>Mission · AVO 研究 · 进化扫描 · 自动评审 · 元学习"] --> DB
   Worker --> Research["ARC 自主研究循环 (AVO + RD-Agent)<br/>HET 假设树 → Co-STEER 合成 → AST 门禁 → 沙箱自测 → 基线对比"]
   Worker --> Evolution["自主进化引擎（默认开启）<br/>退化扫描 → 预算准入 → 再研究 → 赛马对决 → 效果账本"]
@@ -213,7 +213,7 @@ curl http://localhost:3334/api/portfolio/relay/handovers
 | **控制面** | FastAPI 0.122+ / Uvicorn，作用域安全令牌，`/livez`, `/readyz`, `/healthz` 容器探活矩阵，游标可续传 SSE |
 | **凭据安全** | `TokenRotationService`（SHA-256 单向散列，零明文存储，24h 宽限期热轮换，7天临期审计） |
 | **运行时与领域** | Python 3.12+、Pydantic v2 严格合同，模块化单体 + ports-and-adapters |
-| **存储** | SQLAlchemy 2.0 + Alembic（49 个迁移），PostgreSQL 14+ 带 `pgvector` |
+| **存储** | SQLAlchemy 2.0 + Alembic（50 个迁移），PostgreSQL 14+ 带 `pgvector` |
 | **Worker 集群** | asyncio + PostgreSQL SQL lease 租约（13 个并发后台循环） |
 | **研究与演进中枢** | ARC + RD-Agent 假设演进树 (HET) + Co-STEER 代码合成器 + `ASTGatekeeper` 语法守卫 |
 | **多市场目标适配** | `market_target.v1` 与 `market-evolution.v1` MCP 契约；BitPro (Crypto) + QuantLab (A股) |

@@ -87,7 +87,7 @@ flowchart TB
   end
 
   subgraph Persistence["持久化与审计账本"]
-    PG[("PostgreSQL 14+ / pgvector<br/>49 项 Alembic 迁移 · 投影 · 演进树 · 记忆库")]
+    PG[("PostgreSQL 14+ / pgvector<br/>50 项 Alembic 迁移 · 投影 · 演进树 · 记忆库")]
   end
 
   Web --> API
@@ -113,9 +113,9 @@ flowchart TB
 | **Control Plane** | `hypertrade/main.py`, `hypertrade/security/token_manager.py` | 暴露 REST/SSE 控制端点，分级探活（`/livez`, `/readyz`, `/healthz`），零信任令牌签发/轮换/鉴权 |
 | **Domain Core** | `hypertrade/runtime/domain/`, `hypertrade/arc/contracts.py` | 严格定义 Mission、Plan、Step、Capability、HET 假设、NettingPlan 等不可变 Pydantic 模型 |
 | **Research Engine** | `hypertrade/arc/`, `hypertrade/research/` | RD-Agent 假设演进、Co-STEER 代码生成、`ASTGatekeeper` 语法守卫、`QuantLabStrategyTranspiler` 转译 |
-| **Paper & Evolution** | `hypertrade/arc/evolution.py`, `hypertrade/paper/relay_netting.py` | 小时级基准相对退化扫描、预算准入、延续账本（遵守 BitPro `relay.blocks_evolution` 跳过接力中的策略；按变体位空位排序、空位已被排队候选预订时让位、AVO 拒绝与 BitPro 已赛过变体完全相同的提案）、赛马裁判只读通知（按变体位逐赛道跟踪、按取消原因区分系统淘汰与人工取消、观察中的赛道慢轮询；BitPro 是唯一接力控制者）、两腿持仓净额平滑换仓（仅限有真实持仓的目标） |
+| **Paper & Evolution** | `hypertrade/arc/evolution.py`, `hypertrade/paper/relay_netting.py` | 小时级基准相对退化扫描、预算准入、延续账本（遵守 BitPro `relay.blocks_evolution` 跳过接力中的策略；按变体位空位排序、空位已被排队候选预订时让位、AVO 拒绝与 BitPro 已赛过变体完全相同的提案）、赛马裁判只读通知（按变体位逐赛道跟踪、按取消原因区分系统淘汰与人工取消、观察中的赛道慢轮询；BitPro 是唯一接力控制者）、赛道结束时记入前向结果表且结果回流研究记忆、两腿持仓净额平滑换仓（仅限有真实持仓的目标） |
 | **Target Adapters** | `hypertrade/targets/bitpro.py`, `hypertrade/targets/quantlab.py` | 实现 `market_target.v1` 档案与 `market-evolution.v1` 契约，提供标准化行情、回测、部署与心跳探测 |
-| **Data & Storage** | PostgreSQL 14+, pgvector, 49 项 Alembic 迁移 | 保存规范 Mission 投影、策略资产卡片、实验记录、认知记忆表及飞书告警台账 |
+| **Data & Storage** | PostgreSQL 14+, pgvector, 50 项 Alembic 迁移 | 保存规范 Mission 投影、策略资产卡片、实验记录、认知记忆表及飞书告警台账 |
 | **Safety & Ops** | UDS 沙箱, GitHub Actions, Docker Compose, `./scripts/check.sh` | 进程资源限制、网络隔离、静态代码检查（Ruff/Mypy）与 2100+ 项全量自动化测试 |
 
 ---
@@ -155,7 +155,7 @@ flowchart TB
 
 ## 7. 部署模型与质量门禁
 
-1. **部署拓扑**：Docker Compose / K8s + Nginx + PostgreSQL (pgvector)。所有服务启动前自动执行 49 项 Alembic 迁移。
+1. **部署拓扑**：Docker Compose / K8s + Nginx + PostgreSQL (pgvector)。所有服务启动前自动执行 50 项 Alembic 迁移。
 2. **质量门禁**：通过 `./scripts/check.sh` 实行一票否决制：
    - 前端代码检查与 Vitest 测试全绿；
    - 前端 Vite 生产构建成功；

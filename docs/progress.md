@@ -7,6 +7,13 @@
 - **影响分析与风险**：GitNexus 把 `_negative_experiment_finished` 评为 HIGH（唯一直接调用方 `_feedback_child_active`，经预算统计 `usage`/`budget_status`/`admit` 与 `check_paper_feedback`，牵涉进化扫描 `tick`、模拟盘反馈 `check_paper_feedback`、研究观察 `observe_arc_missions_once` 三条流程）；改动只放宽“终验已用掉、数字全过、仅因去偏夏普概率不足被否”这一个窄条件，其余输入判定不变。反馈子任务被去偏夏普否决后同样按“次日再检查”规则释放，不再永久卡住父任务的调优槽位。
 - **部署后预期与未做**：合并部署后 509、513 不再 `source_active`，下一轮扫描（每 30 分钟一轮、每轮最多创建一个研究）依次为它们创建研究。333 是挂起的未确认副作用（BitPro 回“幂等键同键不同请求”），需经审计对账工具另行处理，本改动不涉及；443 冷却到 10-22 02:15Z 自然恢复。
 
+## 2026-10-21：赛马前向结果回流研究记忆
+
+- **背景**：赛马结束的结论此前只留在裁判状态文件里，研究侧看不到自己提的改动实际赛成什么样；研究提速到每天最多 32 轮后，旧任务会滑出「最近 500 个任务」的扫描窗口，血缘更容易对不上。
+- **交付**：迁移 0050 新增 `arc_forward_outcomes`（每个 目标／母体／挑战者 一行）；裁判在完成、取消、结束时记账，位置被补走时按 BitPro 淘汰归档处理，启动时补录已结束赛道；只有 `won`／`lost_futility`／`lost_exam` 是输赢证据，其余只记录不当负面证据；按 BitPro 策略编号经事件索引找回研究血缘（失败再回退任务扫描），对不上记 `no_lineage`；研究时沿接班链回溯最多 3 代、取最多 8 条有效证据作为 `type=forward_outcome` 记忆放在开发记忆之前，manifest 记计数，读取失败不阻断研究；系统提示写明改动相对那场比赛的母体、输家方向无新证据不重复、赢的方向附近优先、单场是噪声不是因果；`GET /api/v1/arc/evolution` 新增 `forward_outcomes` 汇总且失败只带 `error`，研究证据视图新增 `forward_outcome_references`。
+- **验证**：新增 `tests/test_forward_outcomes_ledger.py`、`tests/test_arc_forward_outcomes.py`、`tests/test_arc_forward_outcomes_postgres.py`（PostgreSQL 真库），并在 `test_race_judge`／`test_arc_evolution`／`test_source_variant_avo`／`test_avo_evidence`／`test_arc_external_surface` 中补充用例；对裁判记账、记忆排序与过滤、血缘事件定位等 12 处关键守卫做过变异检验，去掉任一守卫都有用例失败；合入最新 main 后整套 `./scripts/check.sh` 通过（前端 15 项、ruff、mypy、2277 项后端测试）。GitNexus：`EvolutionService._memory` 与血缘查找的影响分析为 HIGH（研究主循环 `tick` 与模拟盘反馈 `check_paper_feedback`），改动为加法、出错降级；`race_judge.py` 的索引映射不可靠（报告为 critical，但所列流程并不调用裁判），已用文本检索核对真实调用方只有 worker 循环与运营端立即运行。未线上实测。
+- **未做**：输家逐项消融为第二期；未线上实测。
+
 ## 2026-10-21：发布《企业级全自主 Agent 架构设计、核心技术剖析与面试通关指南》（Markdown + 25页 PDF）
 
 - **背景**：针对高阶 Agent 架构学习与大模型算法/工程面试需求，以 HyperTrade 生产系统（11.7 万行 Python 代码、2100+ 测试）为真实解构母本，输出深度架构拆解与实战通关手册。

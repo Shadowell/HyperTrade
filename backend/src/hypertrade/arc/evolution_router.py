@@ -21,7 +21,14 @@ class EvolutionUpdate(BaseModel):
 
 @router.get("/evolution", dependencies=[Depends(require_scope(ARCScope.READ))])
 async def evolution_status(request: Request) -> dict[str, Any]:
-    return await run_in_threadpool(EvolutionService(request.app.state.db).status)
+    def _status() -> dict[str, Any]:
+        service = EvolutionService(request.app.state.db)
+        state = service.status()
+        # Page-level telemetry only; the research scan keeps calling status() directly.
+        state["forward_outcomes"] = service.forward_outcomes_summary()
+        return state
+
+    return await run_in_threadpool(_status)
 
 
 @router.put("/evolution", dependencies=[Depends(require_scope(ARCScope.POLICY))])

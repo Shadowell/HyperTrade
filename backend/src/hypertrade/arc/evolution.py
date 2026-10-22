@@ -34,6 +34,7 @@ from hypertrade.arc.evolution_diagnostics import (
 )
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import collect_windows
+from hypertrade.arc.forward_outcomes import ForwardOutcomeLedger
 from hypertrade.arc.relay_seats import relay_seats
 from hypertrade.arc.runtime_journal import failure_text, record_runtime_error
 from hypertrade.arc.short_horizon import (
@@ -271,6 +272,17 @@ class EvolutionService:
                 "cycles": [cycle_view(c) for c in cycles],
                 "continuations": ContinuationLedger(self.db).view(),
             }
+
+    def forward_outcomes_summary(self) -> dict[str, Any]:
+        """Ledger aggregate for the evolution page; failures stay on the page, not raised.
+
+        Kept out of ``status()`` because the research scan calls that several times per
+        cycle and never reads this telemetry.
+        """
+        try:
+            return ForwardOutcomeLedger(self.db).summary()
+        except Exception as exc:  # Read-only telemetry must never take the page down.
+            return {"error": failure_text(exc)[:200]}
 
     def configure(self, config: EvolutionConfig, *, revision: int, actor: str) -> dict[str, Any]:
         try:
@@ -1100,4 +1112,78 @@ class EvolutionService:
         )
         context["memory_manifest"] = manifest
         context["research_windows"] = windows.model_dump(mode="json")
-        return memory
+
+        def forward_outcome_memory(row: dict[str, Any]) -> dict[str, Any]:
+            # One race is evidence about a direction, never a causal conclusion; the
+            # prompt tells the model to treat these as noisy and cite them by memory_id.
+            return {
+                "memory_id": f"outcome:{row['id']}",
+                "type": "forward_outcome",
+                "evidence_status": "forward_paper_outcome",
+                "outcome_id": row["id"],
+                "verdict": row["verdict"],
+                "relation": row["relation"],
+                "generations_back": row["generations_back"],
+                "parent_strategy_id": row["parent_strategy_id"],
+                "challenger_strategy_id": row["challenger_strategy_id"],
+                "mission_id": row["mission_id"],
+                "candidate_id": row["candidate_id"],
+                "changes": row["changes"],
+                "metrics": {
+                    key: row["metrics"].get(key)
+                    for key in (
+                        "excess_return_pct",
+                        "parent_net_return_pct",
+                        "challenger_net_return_pct",
+                        "parent_max_drawdown_pct",
+                        "challenger_max_drawdown_pct",
+                        "positive_days",
+                        "paired_non_tie_days",
+                        "observed_hours",
+                        "cancellation_reason",
+                    )
+                },
+                "ended_at": row["ended_at"],
+                "rule": (
+                    "One forward Paper race; changes are relative to that race's parent. "
+                    "A noisy observation, not a causal conclusion."
+                ),
+            }
+
+        # Forward results live under the champion-to-champion chain, so they are only
+        # visible after linking and only from the lineage walk. Prepend them: the model
+        # sees the first entries of memory, and the newest races are the most relevant.
+        outcomes: list[dict[str, Any]] = []
+        try:
+            ledger = ForwardOutcomeLedger(self.db)
+            ledger.link_pending(limit=10)
+            rows = ledger.evidence_for_lineage(
+                target_id=context["target_id"],
+                strategy_id=context["source_strategy_id"],
+                ancestors=3,
+                limit=8,
+            )
+        except Exception as exc:  # Research continues on development evidence alone.
+            record_runtime_error(
+                "evolution.forward_outcomes",
+                exc,
+                context={
+                    "source_strategy_id": str(context["source_strategy_id"]),
+                    "target_id": context["target_id"],
+                },
+                db=self.db,
+            )
+            manifest["forward_outcomes"] = {
+                "policy": "forward_outcome_v1",
+                "selected": 0,
+                "error": failure_text(exc)[:200],
+            }
+        else:
+            outcomes = [forward_outcome_memory(row) for row in rows]
+            manifest["forward_outcomes"] = {
+                "policy": "forward_outcome_v1",
+                "selected": len(outcomes),
+                "won": sum(1 for row in rows if row["verdict"] == "won"),
+                "lost": sum(1 for row in rows if row["verdict"] in ("lost_futility", "lost_exam")),
+            }
+        return [*outcomes, *memory]
