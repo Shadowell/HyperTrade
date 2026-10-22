@@ -130,6 +130,22 @@ def attribution_report(
         from hypertrade.arc.provenance import project_provenance
 
         report["provenance"] = project_provenance(provenance, snapshot)
+    gt_data = snapshot.get("external_ground_truth") or (
+        evidence.get("external_ground_truth") if isinstance(evidence, dict) else None
+    )
+    if isinstance(gt_data, dict):
+        report["dimensions"]["external_ground_truth"] = {
+            "state": "observed",
+            "reason": "external_ground_truth_recorded",
+            "required_fields": ["calibration_score", "brier_score", "external_ref"],
+            "metrics": {
+                "brier_score": gt_data.get("brier_score"),
+                "accuracy": gt_data.get("accuracy"),
+                "sample_count": gt_data.get("sample_count", 0),
+                "alignment": gt_data.get("alignment", "indeterminate"),
+                "provider": gt_data.get("provider", "headline_arena"),
+            },
+        }
     digest = hashlib.sha256(json.dumps(report, sort_keys=True).encode()).hexdigest()
     return {**report, "report_id": digest}
 

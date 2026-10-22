@@ -58,6 +58,9 @@ class ARCReasonCode(StrEnum):
     # was recorded as "this strategy cannot execute, regenerate it": a sound candidate
     # was discarded and the ledger learned a lesson that was not true.
     BITPRO_SELF_TEST_UNAVAILABLE = "BITPRO_SELF_TEST_UNAVAILABLE"
+    # External third-party ground truth (Headline Arena) divergence or unavailable
+    EXTERNAL_GROUND_TRUTH_DIVERGENCE = "EXTERNAL_GROUND_TRUTH_DIVERGENCE"
+    EXTERNAL_GROUND_TRUTH_UNAVAILABLE = "EXTERNAL_GROUND_TRUTH_UNAVAILABLE"
 
 
 class FindingSeverity(StrEnum):
@@ -110,9 +113,7 @@ def declared_span(parameters: Mapping[str, float]) -> float | None:
     the longest window is the turnover proxy as well as the memory requirement.
     """
     spans = [
-        value
-        for name, value in parameters.items()
-        if name in SPAN_PARAMETER_NAMES and value > 0
+        value for name, value in parameters.items() if name in SPAN_PARAMETER_NAMES and value > 0
     ]
     return max(spans) if spans else None
 

@@ -1223,3 +1223,18 @@ Phase 2 读取切片要求 sessions 日历提供前一交易日收盘基准与�
 旧自愈参数建议不代表已验证候选。缺少不可变候选回测回执时验证失败，不借用母策略结果，不发送成功通知或启动 Paper；正常 ARC 来源变体、同窗验证与审核流程仍负责自动研发。7 维归因复用执行证据合同，汇总回测指标不能推出交易路径或因果结论；数据缺口扫描保持 unavailable，不生成伪候选。
 
 2026-10-15：ARC 新增 `GET /api/v1/arc/variant-status?source_strategy_id=…&candidate_strategy_id=…` 只读摘要。限定 BitPro 目标并精确绑定母体/候选，只选取持久投影子字段与当前受阻任务最近一条阻塞事件，不重建控制器、不加载完整事件/模型对话；权限继续为 `arc:read`。最多检索母体最近100条任务，无匹配返回 `not_found`，不代表审核通过。
+
+### 外部 Ground Truth 流与 Headline Arena 接入（2026-10-21，Issue #1）
+
+为 ARC 自主研究与模拟盘孵化闭环接入完全外生的第三方真实价格评测流（Headline Arena），打破红蓝博弈双方共享同源内部数据的盲点，提供前向不可伪造的选择压力。
+
+1. **核心连接器与协议**（`hypertrade.arc.ground_truth`）：定义 `ExternalGroundTruthPort`，实现 `HeadlineArenaClient` 与离线测试 `InMemoryGroundTruthClient`。支持标的挑战发现（`get_active_challenges`）、前向盲测方向预测提取（`synthesize_prediction`）、带 SHA-256 幂等收据提交、真实价格机械结算与 Brier/校准曲线同步。
+2. **合同与数据模型**：`contracts.py` 增加 `ExternalGroundTruthPolicyV1`（`enabled` 默认 False、`provider="headline_arena"`、`min_brier_score`、`sync_interval_hours`），`ARCGoalV1` 扩展 `ground_truth` 字段，`ARCCandidateAttemptV1` 扩展 `ground_truth_predictions` 与 `ground_truth_metrics`。
+3. **归因与反思层外生选择压力**：
+   - `attribution.py` 扩展 `external_ground_truth` 归因维度，包含 `brier_score`, `accuracy`, `sample_count`, `alignment`。
+   - `findings.py` 与 `reflexion.py` 增加 `EXTERNAL_GROUND_TRUTH_DIVERGENCE` 与 `EXTERNAL_GROUND_TRUTH_UNAVAILABLE` 审查码与纠偏指引。当策略模拟盘收益良好（>5%）但外部前向测试命中率低下（<40%）或 Brier 误差偏大（>0.35）时，判定为数据过拟合或因果偏差，将约束写入反思账本。
+4. **观测与 API 暴露**：
+   - `observation.py` 在模拟盘观察阶段支持自动同步外部挑战与对齐评估。
+   - 暴露只读 API：`GET /api/v1/arc/ground-truth/challenges`、`GET /api/v1/arc/ground-truth/calibration`、`POST /api/v1/arc/ground-truth/evaluate`。
+5. **安全与治理**：外部服务故障或未配置凭据时优雅降级，未观测数据显式保留为未知，绝不伪造评测事实，绝不暴露敏感密钥。细则见架构 68 与合同《ARC Headline Arena 外部 Ground Truth 流闭环》。
+

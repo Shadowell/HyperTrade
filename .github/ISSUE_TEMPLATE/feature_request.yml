@@ -1,0 +1,28 @@
+name: Feature Request
+description: Suggest an idea or enhancement for HyperTrade
+title: "feat: [Short feature description]"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a new feature or improvement!
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Motivation
+      description: Is your feature request related to a problem or limitation?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe how you envision this feature working.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: A clear description of any alternative solutions or features you've considered.

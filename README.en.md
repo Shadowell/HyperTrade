@@ -1,36 +1,34 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
-2026-10-15：来源变体强制证据引用、反证及收益/回撤改进目标；封存行情、成本和执行版本一致后才比较母体，终态执行失败单独结算。正式Paper审核须匹配最终通过回执，人工暂停不被恢复覆盖。已有回测检查点的部署健康检查断连采用5次/24小时有界恢复，审计恢复不增加预算、不改变Paper历史。
-
-版本变化只能通过显式关联的新版本重验处理；原job与Paper历史保留，恢复次数不重置。
-
-研究回测采用行动绑定检查点和原job有界恢复，冻结输入与Paper历史不可替换；详见[ARC架构](docs/architecture/37-arc-autonomous-research-core-architecture.md)。
-
 <p align="center">
   <strong>Self-Hosted, Governed Multi-Market Strategy-Research Agent Runtime · Autonomous Research & Evolution Loop</strong>
 </p>
 
 <p align="center">
+  <a href="https://github.com/Shadowell/HyperTrade/releases"><img src="https://img.shields.io/github/v/release/Shadowell/HyperTrade?color=blue" alt="Latest Release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" /></a>
+  <a href="https://github.com/Shadowell/HyperTrade/actions/workflows/ci.yml"><img src="https://github.com/Shadowell/HyperTrade/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/Shadowell/HyperTrade/discussions"><img src="https://img.shields.io/badge/discussions-active-blueviolet" alt="Discussions" /></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python" /></a>
   <a href="#"><img src="https://img.shields.io/badge/FastAPI-0.122+-009688.svg" alt="FastAPI" /></a>
   <a href="#"><img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.9-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14%2B_pgvector-4169E1.svg" alt="PostgreSQL" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-2100%2B%20passed-success.svg" alt="Tests" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-2200%2B%20passed-success.svg" alt="Tests" /></a>
   <a href="docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md"><img src="https://img.shields.io/badge/evolution-default_on-brightgreen.svg" alt="Evolution" /></a>
   <a href="docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md"><img src="https://img.shields.io/badge/markets-BitPro_%7C_QuantLab-orange.svg" alt="Markets" /></a>
 </p>
 
 <p align="center">
-  <a href="README.md">🇨🇳 中文主文档</a> ·
-  🌐 <strong>English Documentation</strong> ·
+  🌐 <strong>English</strong> ·
+  <a href="README.zh-CN.md">🇨🇳 中文说明</a> ·
   <a href="docs/architecture/00-overview.md">Architecture Overview</a> ·
   <a href="docs/architecture/33-system-architecture.md">System Architecture</a> ·
   <a href="docs/architecture/62-pluggable-market-targets.md">Pluggable Market Targets</a> ·
   <a href="docs/architecture/65-rd-agent-evolution-and-finmem-layered-memory.md">RD-Agent Evolution</a> ·
   <a href="docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md">QuantLab & A-Share Rules</a> ·
   <a href="docs/architecture/67-production-observability-probes-and-token-rotation.md">Production Probes & Tokens</a> ·
+  <a href="docs/architecture/68-external-ground-truth-stream-and-headline-arena.md">External Ground Truth</a> ·
   <a href="docs/spec.md">Product Spec</a>
 </p>
 
@@ -45,6 +43,7 @@ Four core principles:
 - **Governed, never self-authorizing.** The model only produces schema-bounded plans and code; permissions, approvals, budgets, and risk gates are validated independently before and after execution. Mainnet live trading is hard-blocked (`live_allowed=false`); external writes target only authorized paper trading instances.
 - **Pluggable markets with native microstructure enforcement.** The core evolution engine is completely decoupled from underlying trading platforms via `market_target.v1` profiles and `market-evolution.v1` MCP contracts. For Chinese A-shares, hard institutional rules are strictly enforced across Prompt and ASTGatekeeper levels: T+1 settlement state machine, spot long-only enforcement (no naked shorting), price limit band liquidity cutoffs, 100-share lot size constraints, and institutional friction models (0.05% stamp duty, transfer fees, commissions, and slippage).
 - **Hypothesis-driven scientific evolution with minimal friction.** Integrates RD-Agent's Hypothesis Evolution Tree (HET) for genealogical tracking and explicit hypothesis pruning. During champion-challenger promotions, two-leg position netting ($\Delta = C - P$) preserves common holdings $\min(P_i, C_i)$, cutting turnover costs by over 80%.
+- **External selection pressure with third-party Ground Truth.** Integrates external forward-only prediction arenas (Headline Arena) for objective real-price settlement and Brier scoring, supplying ARC simulation incubation and causal attribution with unpolluted external truth signals.
 - **Zero-trust credential governance and cloud-native observability.** Production container health probes (`/livez`, `/readyz`, `/healthz`) provide granular diagnostics for Kubernetes and load balancers. `TokenRotationService` provides SHA-256 hashed credentials, zero plaintext persistence, granular scopes, and zero-downtime 24-hour grace period hot rotation.
 
 It is not an automated money maker, promises no profitability, and does not provide investment advice.
@@ -109,6 +108,32 @@ Design docs: [63 Evolution Hardening](docs/architecture/63-evolution-effectivene
 - **Quantum Portfolio Dashboard**: React 19 UI with BitPro / QuantLab target switcher, dynamic A-share rule badges, interactive HET evolution tree visualization, and real-time relay handover slice stepping monitor.
 
 Design docs: [67 Production Probes & Token Rotation](docs/architecture/67-production-observability-probes-and-token-rotation.md)
+
+---
+
+## 🛡️ Bounded Recovery & Quality Gates
+
+Source parameter proposals must bind verifiable citations, explicit counter-evidence, and net profit increase / drawdown reduction targets; merely decreasing trade count is not an improvement. Known execution failures settle separately as failed research and must not mutate further as trading performance. Source backtest comparisons require identical execution environments, costs, frozen market data, and economic inputs; formal Paper audits must match the final passing receipt and source code. Operator pauses cannot be overridden by stale receipts. Deployment health check disconnects perform bounded retries only for existing action receipts, halting after 5 failures or a 24-hour limit; audit recovery scripts can re-verify original bindings to resume deployment disconnect waits without replenishing budget or resetting Paper history.
+
+Same-version interruptions resume original jobs; when execution environments or backend packages have changed, original frozen verifications are strictly preserved, creating linked new-version revalidations with identical economic inputs. Existing jobs and snapshots are never overwritten, and the recovery chain remains bounded by a 2-retry limit; known waiting states display as validating rather than prompting manual operator handling.
+
+Research backtests durably save action checkpoints before and after external side effects: requests, attempts, source code, jobs, and frozen inputs are bound together; after disconnects, the original job is read, with interrupted jobs recovering up to 2 times, and failed/cancelled jobs never retried. After 5 consecutive read failures or a 24-hour wait, explicit reconciliation is demanded, and operator stops cannot be overwritten by recoverers. Deployment sequencing prioritizes BitPro durable idempotent interfaces.
+
+```mermaid
+flowchart LR
+    A[Research Action] --> J[(Durable Action Checkpoint)]
+    J --> B[Frozen Backtest Job]
+    B --> S{Real Status}
+    S -->|Running| J
+    S -->|Interrupted| R[Bounded Original Job Recovery]
+    R --> B
+    R -->|Version Invalidated| V[Linked Version Revalidation]
+    V --> B
+    S -->|Completed| Q[Compare Results with Parent]
+    S -->|Failed or Cancelled| F[Failure Evidence]
+```
+
+Deployments discover the BitPro host gateway from the active Docker network and verify DNS and authentication health requests for API/workers. Unknown development side effects converge only via exact external reconciliation receipts, never blindly retrying or falsely declaring success.
 
 ---
 
@@ -226,14 +251,25 @@ Single command executes all quality gates: Frontend lint, Vitest, and production
 
 ---
 
+## 🤝 Community & Contributing
+
+We welcome community feedback, feature proposals, and code contributions!
+
+- **Discussions**: Share ideas, research hypotheses, and questions in [GitHub Discussions](https://github.com/Shadowell/HyperTrade/discussions).
+- **Contributing Guide**: Please review [CONTRIBUTING.md](CONTRIBUTING.md) and our [Code of Conduct](CODE_OF_CONDUCT.md).
+- **Security Vulnerabilities**: For responsible disclosure, refer to [SECURITY.md](SECURITY.md).
+- **Roadmap**: Track upcoming milestones and good first issues in [Roadmap v0.2.0](https://github.com/Shadowell/HyperTrade/issues/59).
+
+---
+
 ## 📄 License & Disclaimer
 
 Open-source under MIT License. See `LICENSE`.
 
 > **Disclaimer**: Nothing in this repository constitutes investment advice. Mainnet live trading is strictly forbidden by risk governance (`live_allowed=false`).
 
-## 自愈证据边界（2026-10-11）
+## Self-Healing Evidence Boundaries (2026-10-11)
 
-旧自愈参数建议不代表已验证候选。缺少不可变候选回测回执时验证失败，不借用母策略结果，不发送成功通知或启动 Paper；正常 ARC 来源变体、同窗验证与审核流程仍负责自动研发。7 维归因复用执行证据合同，汇总回测指标不能推出交易路径或因果结论；数据缺口扫描保持 unavailable，不生成伪候选。
+Legacy self-healing parameter proposals do not represent verified candidates. Verification fails when an immutable candidate backtest receipt is missing—parent strategy results are never borrowed, and neither success notifications nor Paper trading are initiated; standard ARC source variants, same-window verifications, and audit workflows remain responsible for automated R&D. The 7-dimensional attribution reuses execution evidence contracts; aggregated backtest metrics cannot deduce execution paths or causal conclusions; data-gap scans remain unavailable without generating synthetic candidates.
 
-2026-10-15：ARC 新增 `GET /api/v1/arc/variant-status?source_strategy_id=…&candidate_strategy_id=…` 只读摘要。限定 BitPro 目标并精确绑定母体/候选，只选取持久投影子字段与当前受阻任务最近一条阻塞事件，不重建控制器、不加载完整事件/模型对话；权限继续为 `arc:read`。最多检索母体最近100条任务，无匹配返回 `not_found`，不代表审核通过。
+2026-10-15: ARC added a read-only summary endpoint `GET /api/v1/arc/variant-status?source_strategy_id=…&candidate_strategy_id=…`. Scoped to the BitPro target with exact parent/candidate binding, it projects only durable subfields and the most recent blocking event of currently impeded missions without reconstructing controllers or hydrating full events/model dialogs; permission remains `arc:read`. Queries search up to the parent's 100 most recent missions, returning `not_found` when unmatched (which does not represent audit approval).

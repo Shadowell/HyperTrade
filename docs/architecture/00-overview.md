@@ -3,6 +3,7 @@
 ## Start here / 从这里开始
 
 - [33 System Architecture](33-system-architecture.md) 是核心实现快照（已全面刷新至多市场与企业级生产态）。系统性阐述 Mission Runtime、ARC 自主研究循环（AVO）、默认开启的自主进化引擎、BitPro / QuantLab 双目标适配层与企业级安全治理边界。
+- [68 外部 Ground Truth 流与 Headline Arena 接入](68-external-ground-truth-stream-and-headline-arena.md) 规定了外部真实价格预测竞技场（Headline Arena）协议接入、前向盲测方向预测合成与提交、第三方 Brier 评分/校准曲线同步，以及注入 ARC 因果归因与反思记忆账本的外生选择压力闭环。
 - [66 QuantLab 适配器、A 股微观结构与平滑换仓](66-quantlab-adapter-a-share-microstructure-and-relay-handover.md) 规定了 A 股现货市场的硬约束机制（T+1 状态机、现货单向多头、涨跌停阻断、万2.5/5bps 印花税）、Co-STEER 到 QuantLab 原生向量化矩阵策略的转译器，以及赛马接力阶段节省换手摩擦超 80% 的持仓净额对冲与切片执行调度器。
 - [67 生产级探活、令牌轮换与指挥台设计](67-production-observability-probes-and-token-rotation.md) 规定了容器级分级探活矩阵（`/livez`, `/readyz`, `/healthz`）、适配器心跳检测、零信任动态安全令牌热轮换引擎（`TokenRotationService`，支持无缝宽限期过渡），以及集成 RD-Agent 假设演进树（HET）的前端多目标指挥台。
 - [65 RD-Agent 演进与 FinMem 分层认知记忆](65-rd-agent-evolution-and-finmem-layered-memory.md) 规范了基于假设演进树（HET）的策略衍生系谱、Co-STEER 结构化策略代码合成器与 AST 静态安全穿越门禁，以及 FinMem 风格的三层认知记忆（工作记忆、情景记忆、语义记忆）与经验蒸馏算法。
@@ -21,7 +22,7 @@ HyperTrade 不复制交易平台的内部业务逻辑，不直接读取其内部
 
 ## Documentation maintenance / 文档维护规则
 
-- **架构变更同步强准则（Mandatory Rule）**：当整体架构有了新的变更（包括新增核心模块、扩展多市场适配层、调整数据/控制流拓扑、演进存储或执行模型等）时，必须及时同步更新所有相关的设计文档（如 `docs/architecture/` 目录下的架构设计文档、`docs/spec.md`、`docs/progress.md`、相关交付合同）以及中英文 `README`（`README.md`、`README.en.md` 等），严禁出现代码与架构演进但设计文档与 README 滞后或失步的情况。
+- **架构变更同步强准则（Mandatory Rule）**：当整体架构有了新的变更（包括新增核心模块、扩展多市场适配层、调整数据/控制流拓扑、演进存储或执行模型等）时，必须及时同步更新所有相关的设计文档（如 `docs/architecture/` 目录下的架构设计文档、`docs/spec.md`、`docs/progress.md`、相关交付合同）以及中英文 `README`（`README.md`、`README.zh-CN.md`、`README.en.md` 等），严禁出现代码与架构演进但设计文档与 README 滞后或失步的情况。
 - 产品范围与验收标准：[Product Spec](../spec.md)
 - 当前已验证状态与生产证据：[Progress Log](../progress.md)
 - 所有交付合同与 Sprint 规划：[Sprint Contracts](../contracts/)

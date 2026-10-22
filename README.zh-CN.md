@@ -1,36 +1,34 @@
 # HyperTrade & ARC (Autonomous Research Core)
 
-2026-10-15：来源变体强制证据引用、反证及收益/回撤改进目标；封存行情、成本和执行版本一致后才比较母体，终态执行失败单独结算。正式Paper审核须匹配最终通过回执，人工暂停不被恢复覆盖。已有回测检查点的部署健康检查断连采用5次/24小时有界恢复，审计恢复不增加预算、不改变Paper历史。
-
-版本变化只能通过显式关联的新版本重验处理；原job与Paper历史保留，恢复次数不重置。
-
-研究回测采用行动绑定检查点和原job有界恢复，冻结输入与Paper历史不可替换；详见[ARC架构](docs/architecture/37-arc-autonomous-research-core-architecture.md)。
-
 <p align="center">
   <strong>自托管、受治理的多市场策略研究 Agent Runtime · 自主研究与自主进化闭环</strong>
 </p>
 
 <p align="center">
+  <a href="https://github.com/Shadowell/HyperTrade/releases"><img src="https://img.shields.io/github/v/release/Shadowell/HyperTrade?color=blue" alt="最新版本" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" /></a>
+  <a href="https://github.com/Shadowell/HyperTrade/actions/workflows/ci.yml"><img src="https://github.com/Shadowell/HyperTrade/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/Shadowell/HyperTrade/discussions"><img src="https://img.shields.io/badge/discussions-active-blueviolet" alt="Discussions" /></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python" /></a>
   <a href="#"><img src="https://img.shields.io/badge/FastAPI-0.122+-009688.svg" alt="FastAPI" /></a>
   <a href="#"><img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.9-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14%2B_pgvector-4169E1.svg" alt="PostgreSQL" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-2100%2B%20passed-success.svg" alt="Tests" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-2200%2B%20passed-success.svg" alt="Tests" /></a>
   <a href="docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md"><img src="https://img.shields.io/badge/%E8%87%AA%E4%B8%BB%E8%BF%9B%E5%8C%96-%E9%BB%98%E8%AE%A4%E5%BC%80%E5%90%AF-brightgreen.svg" alt="Evolution" /></a>
   <a href="docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md"><img src="https://img.shields.io/badge/markets-BitPro_%7C_QuantLab-orange.svg" alt="Markets" /></a>
 </p>
 
 <p align="center">
-  🌐 <strong>中文主文档</strong> ·
-  <a href="README.en.md">🇬🇧 English</a> ·
+  <a href="README.md">🌐 English</a> ·
+  🇨🇳 <strong>中文主文档</strong> ·
   <a href="docs/architecture/00-overview.md">架构总览</a> ·
   <a href="docs/architecture/33-system-architecture.md">系统架构</a> ·
   <a href="docs/architecture/62-pluggable-market-targets.md">可插拔市场目标</a> ·
   <a href="docs/architecture/65-rd-agent-evolution-and-finmem-layered-memory.md">RD-Agent演进</a> ·
   <a href="docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md">QuantLab与A股微观</a> ·
   <a href="docs/architecture/67-production-observability-probes-and-token-rotation.md">生产探活与令牌</a> ·
+  <a href="docs/architecture/68-external-ground-truth-stream-and-headline-arena.md">外部GroundTruth</a> ·
   <a href="docs/spec.md">产品规格</a>
 </p>
 
@@ -45,6 +43,7 @@
 - **受治理，不越权。** 模型只能提出受 schema 限制的计划或输入；权限、审批、预算和风险门禁在调用前后独立验证。主网实盘执行被治理禁用（`live_allowed=false`），外部写路径严格受限于已授权的模拟盘。
 - **多市场可插拔与制度硬约束内嵌。** 自进化核心与底层交易平台完全解耦（`market_target.v1` 档案与 `market-evolution.v1` MCP 契约）。系统原生支持 **BitPro（加密货币合约）** 与 **QuantLab（A 股多资产）** 双目标。针对 A 股现货市场，在 Prompt 与 ASTGatekeeper 双端内嵌 T+1 状态机、现货单向多头（禁止做空）、涨跌停截断、一手 100 股及精准印花税/佣金模型。
 - **科学演进与摩擦最小化。** 引入 RD-Agent 假设演进树（HET），实现假设系谱追踪与显式剪枝；在赛马晋升阶段采用两腿持仓交集对冲（$\Delta = C - P$），原地保留共有份额 $\min(P_i, C_i)$，消除重复换手摩擦。
+- **外生选择压力与外部 Ground Truth 流。** 支持接入 Headline Arena（AI Agent 预测竞技场）等第三方客观前向裁决流，基于真实价格机械结算与 Brier 评分，为 ARC 模拟盘孵化与因果反思层提供不受本地数据污染的客观外生评测信号。
 - **结论可追溯，企业级安全与探活。** 容器级分级探活矩阵（`/livez`, `/readyz`, `/healthz`）支持云原生编排；`TokenRotationService` 实现基于 SHA-256 单向散列的零信任令牌管理与 24 小时宽限期无缝热轮换。
 
 它不是"自动赚钱机器"，不承诺盈利，也不构成投资建议。
@@ -109,6 +108,32 @@ flowchart LR
 - **量子指挥台 (QuantumPortfolioDashboard)**：React 19 现代化界面，支持 BitPro / QuantLab 一键切换、动态 A 股微观规则警示徽章、HET 假设演进树可视化渲染与净额换仓切片步进监视器。
 
 设计文档：[67 生产级探活与令牌轮换](docs/architecture/67-production-observability-probes-and-token-rotation.md)
+
+---
+
+## 🛡️ 有界恢复与质量门禁
+
+自进化质量门禁：来源参数提议也必须绑定可核验引用、明确反证及净收益提高/回撤降低目标；仅减少交易次数不算改进。已知执行失败单独结算为失败研究，不当作交易成绩继续突变。来源回测比较要求同执行环境、成本、封存行情及经济输入；Paper审核须与最终通过回执及源码一致。人工暂停不能被旧回执覆盖。部署健康检查断连仅对已有行动回执有界重试，五次失败或24小时上限停止；审计恢复脚本可复核原绑定后恢复部署断连等待，不补预算、不重置Paper。
+
+同版本中断继续原job；旧执行环境/后端包已变化时，严格保留原冻结校验，通过明确前序关系创建同经济输入的新版本重验。旧job和快照不覆盖，整条恢复链仍受2次上限约束；已知等待显示为验证中而非要求人工处理。
+
+研究回测在外部副作用前后持久保存行动检查点：请求、attempt、源码、job与冻结输入绑定；断连后读取原job，interrupted最多恢复2次，失败/取消不重试。最多连续5次读取失败或等待24小时后明确要求对账，操作者停止不能被恢复器覆盖。部署顺序为BitPro持久幂等接口先行。
+
+```mermaid
+flowchart LR
+    A[研究行动] --> J[(持久行动检查点)]
+    J --> B[冻结回测job]
+    B --> S{真实状态}
+    S -->|运行中| J
+    S -->|中断| R[有界恢复原job]
+    R --> B
+    R -->|版本失效| V[关联版本重验]
+    V --> B
+    S -->|完成| Q[结果与母体比较]
+    S -->|失败或取消| F[失败证据]
+```
+
+部署从实际 Docker network 获取 BitPro 主机网关，并验证 API/worker 的 DNS 与认证健康请求。未知开发副作用只能凭精确外部对账回执收敛失败，不能盲目重试或宣称成功。
 
 ---
 
@@ -223,6 +248,17 @@ curl http://localhost:3334/api/portfolio/relay/handovers
 ## 🖥️ 终端流式研究与交互
 
 `ht research start "研究目标"` 默认跟进整个研究过程：交互终端显示工作流、活动和详细日志，管道输出为逐行事件流。`--detach` 仅提交，`--plain` 强制逐行输出。已有任务使用 `ht research watch <任务ID>` 重新连接。
+
+---
+
+## 🤝 社区与贡献指南
+
+我们非常欢迎来自开源社区与量化研究者的反馈、议题讨论与代码贡献！
+
+- **社区讨论区**：欢迎在 [GitHub Discussions](https://github.com/Shadowell/HyperTrade/discussions) 中交流前沿策略假说、Agent 架构设计与本地部署问答。
+- **贡献规范**：参与开发请查阅 [CONTRIBUTING.md](CONTRIBUTING.md) 与社区行为准则 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
+- **安全漏洞披露**：遵循负责任的安全披露准则，漏洞请参阅 [SECURITY.md](SECURITY.md) 私下联络。
+- **项目路线图**：关注与参与进行中的里程碑与新手友好任务 [Roadmap v0.2.0](https://github.com/Shadowell/HyperTrade/issues/59)。
 
 ---
 

@@ -4,6 +4,72 @@
 - **交付**：迁移 0050 新增 `arc_forward_outcomes`（每个 目标／母体／挑战者 一行）；裁判在完成、取消、结束时记账，位置被补走时按 BitPro 淘汰归档处理，启动时补录已结束赛道；只有 `won`／`lost_futility`／`lost_exam` 是输赢证据，其余只记录不当负面证据；按 BitPro 策略编号经事件索引找回研究血缘（失败再回退任务扫描），对不上记 `no_lineage`；研究时沿接班链回溯最多 3 代、取最多 8 条有效证据作为 `type=forward_outcome` 记忆放在开发记忆之前，manifest 记计数，读取失败不阻断研究；系统提示写明改动相对那场比赛的母体、输家方向无新证据不重复、赢的方向附近优先、单场是噪声不是因果；`GET /api/v1/arc/evolution` 新增 `forward_outcomes` 汇总且失败只带 `error`，研究证据视图新增 `forward_outcome_references`。
 - **验证**：`LC_ALL=en_US.UTF-8 uv run pytest tests/test_arc_evolution.py tests/test_forward_outcomes_ledger.py tests/test_evolution_budget.py tests/test_arc_external_surface.py -q` → 147 passed；`uv run ruff check backend tests` → All checks passed；`uv run mypy backend/src` → Success: no issues found in 317 source files。未运行 `./scripts/check.sh`（由审查方执行）。
 - **未做**：输家逐项消融为第二期；未线上实测。
+## 2026-10-21：发布《企业级全自主 Agent 架构设计、核心技术剖析与面试通关指南》（Markdown + 25页 PDF）
+
+- **背景**：针对高阶 Agent 架构学习与大模型算法/工程面试需求，以 HyperTrade 生产系统（11.7 万行 Python 代码、2100+ 测试）为真实解构母本，输出深度架构拆解与实战通关手册。
+- **交付**：
+  1. **架构全景解构**：编写 `docs/agent_architecture_and_interview_handbook.md`，深度拆解 AgentKernel 五阶段状态图机、Harness 2.0 上下文工程（Compaction/WaterCooler/Parallel Dispatcher）、全量 65 个工具链与零信任 Policy 治理、Co-STEER 自由代码合成与 AST 编译期门禁、FinMem 三层认知记忆与因果蒸馏、ARC 红蓝对抗博弈，以及持仓净额平滑换仓算法；
+  2. **高保真 PDF 编译**：利用 Playwright Chromium 高保真排版生成 `docs/agent_architecture_and_interview_handbook.pdf`（共 25 页，排版优美，含全量代码与图元）；
+  3. **面试通关题库**：整理 6 大维度 14 道高频深度面试题与标准回答模型、一分钟电梯演讲话术、简历 STAR 书写模板，以及 3 个实战深水区面试官连环追问应答策略；
+  4. 同步更新 `docs/documentation-index.md` 索引导航。
+- **验证**：`./scripts/check.sh` 门禁全量通过（前端 lint/test/build、python ruff/mypy、2230 项 pytest 全部绿灯）。
+
+## 2026-10-21：版本演进与发布（v0.1.1 与 v0.2.0）
+
+- **背景**：在 v0.1.0 初始开源版本之后，持续推进项目版本演进：正式发布 v0.1.1 维护版本，并为 Headline Arena 外部 Ground Truth 闭环升级核心版本至 v0.2.0。
+- **交付**：
+  1. **v0.1.1 发布**：以 commit `5d892eb` 为基准发布 GitHub Release v0.1.1，固化 ASTGatekeeper 边界测试强化、CI 沙箱多线程并发稳定性加固与开源门户视觉动线优化；
+  2. **项目版本升级至 v0.2.0**：更新 `pyproject.toml`、`frontend/package.json` 及 API 文档版本号至 `0.2.0`；
+  3. **v0.2.0 发布准备**：为基于 Headline Arena 外部真实验证流（解决 Issue #1）的 ARC 前向盲测、Brier 评分与因果反思闭环发布正式版本，生成 Python wheel/sdist 分发包并完成校验。
+- **验证**：`./scripts/check.sh` 全量门禁校验通过，构建产物签名生成。
+
+## 2026-10-21：强化 ASTGatekeeper 边界语法与反射注入测试覆盖
+
+- **背景**：响应社区 Issue #60，针对 LLM 策略代码合成可能出现的复杂 Python AST 结构，增加全套参数化边界语法与反思注入测试。
+- **交付**：
+  1. 新增 `tests/test_ast_gatekeeper_edge_cases.py`：覆盖海象运算符（`:=`）、多变量连续赋值、变量类型注解、Python 3.12 模式匹配（`match-case`）；
+  2. 强化安全边界校验：针对 `__subclasses__`、`__bases__` 反射爬取以及 `getattr(__builtins__)` 动态调用注入进行断言拦截；
+  3. 验证多市场差异：严格回归全局合约允许空头 vs A 股市场（`cn`）裸空拦截。
+- **验证**：`tests/test_ast_gatekeeper_edge_cases.py` 7 项用例全部通过，ruff 校验无告警。
+
+## 2026-10-21：开源门户视觉动线重构与 CI 跨平台容器稳定性加固
+
+- **背景**：对照顶级开源项目视觉呈现与 CI 跨平台运行标准，优化中英文 README 首页视觉动线，解决 Linux 容器环境下 OpenBLAS 线程争用与沙箱 `RLIMIT_NPROC` 约束导致的 CI 偶发异常。
+- **交付**：
+  1. 重构 `README.md`、`README.en.md` 与 `README.zh-CN.md` 视觉动线：顶部优先呈现 Slogan、完整徽章栏（最新 Release v0.1.0、CI 动态状态、Discussions、2200+ 测试等）与导航，将有界恢复与自愈质量门禁移入专用架构章节，新增社区与贡献指南；
+  2. 增强 CI 跨平台稳定性：`.github/workflows/ci.yml` 注入 `OPENBLAS_NUM_THREADS=1`、`OMP_NUM_THREADS=1`、`MKL_NUM_THREADS=1` 及 `HYPERTRADE_SANDBOX_RLIMIT_NPROC=512`；
+  3. 加固 `sandbox.py`：支持动态读取环境变量控制 `RLIMIT_NPROC`（默认提至 256），根除 Linux runner 宿主进程级 UID 线程数耗尽导致的 `pthread_create` EAGAIN 异常；
+  4. 开启并初始化 GitHub Discussions 社区论坛，建立公开欢迎公告与标签体系。
+- **验证**：本地全量 `./scripts/check.sh` 完整通过，相关 YAML 与 Markdown 渲染测试通过。
+
+## 2026-10-21：固化 Codex 联合署名规范与 CI 沙箱多线程加固
+
+- **背景**：针对 GitHub 平台贡献者（Contributors）统计机制，将 OpenAI 官方认证账号（`@codex`，`codex@openai.com`）明确纳入协作署名规范，实现 Codex 贡献者头像与代码追踪点亮；同时加固 Linux CI 环境下沙箱资源限制。
+- **交付**：
+  1. 在 `AGENTS.md` 规则第 7 条中明确增加强约束：凡由 Codex 辅助完成的任务，提交信息末尾必须包含联合署名 `Co-authored-by: Codex <codex@openai.com>`；
+  2. 增强 Linux 容器 CI 环境下的沙箱线程资源门限（`HYPERTRADE_SANDBOX_RLIMIT_NPROC` 与 `RLIMIT_NOFILE`），消除 GitHub Actions 环境中 numpy/BLAS 线程初始化导致的 EAGAIN 偶发崩溃。
+- **验证**：通过 PR 落地合并到 `main` 后，GitHub 仓库主页侧边栏 Contributors 正式点亮展示 `codex`。
+
+## 2026-10-21：开源就绪与 GitHub 社区工程治理（CI、模板与行为准则）
+
+- **背景**：对照 OpenAI Codex for OSS 计划与顶级开源项目治理标准，补齐项目在持续集成（CI）、版本管理、Issue 分类及社区准则等维度的工程规范。
+- **交付**：
+  1. 新增 `.github/workflows/ci.yml`：基于 GitHub Actions 自动化执行全套前端（Node 22 + pnpm 10: lint/test/build）与后端（Python 3.12 + uv: ruff/mypy/pytest 2200+ 用例）代码门禁；
+  2. 新增 `.github/pull_request_template.md`：建立规范的 PR 评审模板，内嵌安全边界、AST 门禁与核验清单自查表；
+  3. 新增 `.github/ISSUE_TEMPLATE/` 规范化表单：覆盖 Bug 报告（`bug_report.yml`）、功能需求（`feature_request.yml`）及 ARC 专属量化假说与策略提案（`research_hypothesis.yml`）；
+  4. 新增 `CODE_OF_CONDUCT.md`：引入 Contributor Covenant v2.1 国际开源行为准则；
+  5. 更新中英文 `README` 导航徽章：新增 GitHub Actions CI 真实动态徽章，更新测试徽章为 2200+ passed。
+- **验证**：本地全量门禁 `./scripts/check.sh` 2214 项测试与前端构建全部通过；YAML 语法校验无误。
+
+## 2026-10-21：README 与 GitHub DESC 默认采用英文
+
+- **背景**：项目国际化与开源对齐，遵循惯例将根目录默认文档设为英文，并同步更新 GitHub 仓库简介（DESC）。
+- **交付**：
+  1. `README.md` 与 `README.en.md` 设为完整英文主文档（补齐 2026-10-15 自进化质量门禁、有界恢复流程图及自愈边界说明的英文翻译，导航条置顶 English 并提供中文文档链接）；
+  2. `README.zh-CN.md` 保持为完整中文文档，导航条提供英文主文档链接；
+  3. GitHub 仓库简介（DESC）通过 GitHub CLI 更新为英文版本：`Production-grade, governed quantitative trading Agent Runtime powered by Autonomous Research Core (ARC): featuring MCTS search, red-blue adversarial game, attribution reflection, and automated paper-trading incubation.`，本地 `.git/description` 同步更新；
+  4. 同步更新 `AGENTS.md`、`docs/README.md` 与 `docs/architecture/00-overview.md` 中的中英文 README 维护约定。
+- **验证**：门禁 `./scripts/check.sh` 完整通过；`gh repo view` 确认 GitHub 描述已更新。
 
 ## 2026-10-20：研究侧跟上 BitPro 变体位（按空位扫描、参数去重、需求可见）
 
@@ -3525,3 +3591,6 @@
 # Paper 清单周期与市场基准修复（独立任务分支）— 2026-09-22
 
 BitPro运行清单顶层timeframe缺失会跳过相对基准；本切片从已有身份匹配dashboard/配置投影原周期，并用337根有界1h闭合K线建立同窗基准。缺失、冲突、重复、越窗或缺口保留显式absolute fallback；原Paper、预算与生产scope未变。定向104项通过，`./scripts/check.sh`（含全量1689项）通过；独立分支尚未发布。
+
+- 2026-10-21 ARC 接入 Headline Arena 外部 Ground Truth 流（解决 Issue #1）：为自主进化闭环引入完全外生的第三方真实价格预测竞技场选择压力。落点：① 核心连接器 `arc/ground_truth.py`（`ExternalGroundTruthPort`、`HeadlineArenaClient`、`InMemoryGroundTruthClient`），支持多标的挑战发现、前向盲测方向预测提取（`synthesize_prediction`）、带 SHA-256 幂等收据提交、机械结算与 Brier/校准曲线同步；② `contracts.py` 增加 `ExternalGroundTruthPolicyV1`，`ARCGoalV1` 扩展 `ground_truth` 策略，`ARCCandidateAttemptV1` 增加预测与指标容器；③ `findings.py` 与 `reflexion.py` 增加 `EXTERNAL_GROUND_TRUTH_DIVERGENCE` 与 `EXTERNAL_GROUND_TRUTH_UNAVAILABLE` 审查码与约束提取（当模拟盘高收益但外部盲测命中率 <40% 或 Brier 偏大时触发过拟合约束）；④ `attribution.py` 扩展 `external_ground_truth` 归因维度并支持报告投影；⑤ `observation.py` 模拟盘观察期支持自动同步外部挑战与对齐评估；⑥ API 暴露 `GET /ground-truth/challenges`、`GET /ground-truth/calibration`、`POST /ground-truth/evaluate`。测试：新增 `tests/test_headline_arena_ground_truth.py` 9 项（覆盖策略合同、客户端生命周期、方向合成、分歧/对齐评估、反思事件、归因投影、观察同步与鉴权端点），相关 ARC 77 项全绿。
+
