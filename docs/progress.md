@@ -1,3 +1,12 @@
+## 2026-10-22：终验被去偏夏普否决的研究任务不再永久占用来源名额
+
+- **背景**：生产研究预算上调后（每天 32 轮、检查间隔 30 分钟），连续多轮扫描仍全部 `deferred(source_active)`。只读核对线上任务投影：母体 509、513 各有一个 `needs_operator` 研究任务（终止原因 `avo_final_validation_failed`，终验窗口已用掉）占着来源名额五天以上；它们的数字门槛全过（夏普 0.21/0.57、回撤 3.9%/2.9%、成交 32/142 笔），被去偏夏普概率不足（0.65/0.85，门槛 0.95）和基线对比未改善否决，是明确的负向定论。
+- **根因**：`feedback._negative_experiment_finished` 在成功标准不通过时，只把原因串含 `success_criteria.`（数字门槛未过）的算已定论；去偏夏普被否的原因串 `deflated_sharpe_probability_below_0.95` 不含这个前缀，被当成“证据缺失或无效”，于是 `_feedback_child_active` 永远判它占着名额，而这类任务没有任何运营接口可以关闭。原有回归只覆盖数字不过门槛的否决。
+- **交付**：新增 `feedback._settled_rejection`，`_negative_experiment_finished` 改用它。已定论：数字门槛未过，或由已观察到的服务端试验证据（`selection_bias.status == "observed"`）算出的去偏夏普概率落在 [0, 0.95) 内。仍继续占着：`deflated_sharpe_unknown:*`（证据缺失）、概率缺失/非数/布尔/非有限/小于 0/大于 1、任何一条原因不是定论、数字缺失；挂起的未确认副作用仍优先于一切。不放宽任何接班或上线门槛，只让已被明确否决的研究不再占名额。`docs/contracts/user-directed-research-loop-consolidation.md` 补了一句规则。
+- **验证**：`tests/test_paper_feedback.py` 由 17 项增至 49 项：反馈子任务端到端新增 4 种去偏夏普场景（被否释放；证据缺失、概率无效、挂起副作用继续占着）、分类表 17 条（含线上 509、513 的真实形状）、`_settled_rejection` 直测 11 条。对 9 处守卫做了变异检验（回退旧规则、概率去掉上界、去掉下界、只判有限、放过布尔、`all` 改 `any`、去掉 observed 检查、所有去偏夏普否决一律放行、忽略挂起副作用），全部被用例抓住（其中前 8 项靠新增用例抓住、最后一项靠新增的挂起副作用端到端用例）。线上真实形状演算：在容器内用已部署版本的 `_feedback_child_active` 对 509、513、333 的任务投影做内存演算（不碰库），换成新规则后 509、513 释放，333 仍占着。完整 `./scripts/check.sh` 通过（前端 lint/test/build、ruff、mypy 317 个源文件、pytest 2262 项）。
+- **影响分析与风险**：GitNexus 把 `_negative_experiment_finished` 评为 HIGH（唯一直接调用方 `_feedback_child_active`，经预算统计 `usage`/`budget_status`/`admit` 与 `check_paper_feedback`，牵涉进化扫描 `tick`、模拟盘反馈 `check_paper_feedback`、研究观察 `observe_arc_missions_once` 三条流程）；改动只放宽“终验已用掉、数字全过、仅因去偏夏普概率不足被否”这一个窄条件，其余输入判定不变。反馈子任务被去偏夏普否决后同样按“次日再检查”规则释放，不再永久卡住父任务的调优槽位。
+- **部署后预期与未做**：合并部署后 509、513 不再 `source_active`，下一轮扫描（每 30 分钟一轮、每轮最多创建一个研究）依次为它们创建研究。333 是挂起的未确认副作用（BitPro 回“幂等键同键不同请求”），需经审计对账工具另行处理，本改动不涉及；443 冷却到 10-22 02:15Z 自然恢复。
+
 ## 2026-10-21：发布《企业级全自主 Agent 架构设计、核心技术剖析与面试通关指南》（Markdown + 25页 PDF）
 
 - **背景**：针对高阶 Agent 架构学习与大模型算法/工程面试需求，以 HyperTrade 生产系统（11.7 万行 Python 代码、2100+ 测试）为真实解构母本，输出深度架构拆解与实战通关手册。
