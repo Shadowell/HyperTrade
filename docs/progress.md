@@ -1,3 +1,10 @@
+## 2026-10-22：赛马输家逐项消融
+
+- **背景**：被系统判负的挑战者只留下「整体输了」的结论，看不出是哪一处改动拖累；研究侧需要一个中性的单因素观察，避免把整份提案连坐。
+- **交付**：迁移 0051 新增 `arc_ablation_runs`／`arc_ablation_steps`（每个 目标／挑战者 一行，每项改动一步）；引擎只对已对接血缘且改动 ≥ 2 的输家，在冻结开发窗口上先测母体基线、再逐项把单处改动加到母体回测（复用 `ARCSelfTestService.run(purpose="development")`，候选复用基线的封存数据引用，从不请求最终窗口）；幂等键不含输家身份，同一母体同一窗口的同一改动复用变体行与回测作业且不计费；`ablation_enabled` 默认开启、每日独立额度默认 6 次、单输家上限默认 6 次，「改动数 + 1」超出记 `too_many_changes`；检查点续跑、读失败有界重试、单作业最长等待 24 小时；每项改动分类为 helpful／harmful／neutral／unknown／incomparable（±0.5pp 描述性噪声带，不是显著性检验）；`_memory` 在前向结果之后加入 `type=ablation` 条目，与前向结果合计最多 8 条、开发记忆至少保留 12 条可见；`GET /api/v1/arc/evolution` 新增 `budget.ablation`，效果报告新增 `ablation_*` 计数，只读 `GET /api/v1/arc/evolution/ablations` 只给状态与标签；AVO 系统提示与研究证据视图同步（`ablation_references`）。
+- **验证**：`git diff --stat` 只有本任务列出的 8 个文档；迁移数旧写法（`50 项 Alembic`／`50 migrations`／`50 项迁移`／`50 个迁移`）grep 无输出；`LC_ALL=en_US.UTF-8 uv run ruff check backend tests` 输出 `All checks passed!`；完整 `./scripts/check.sh` 由审查方运行。
+- **未做**：未线上实测；PR 待用户确认后合并，排在 #79 之后。
+
 ## 2026-10-21：赛马前向结果回流研究记忆
 
 - **背景**：赛马结束的结论此前只留在裁判状态文件里，研究侧看不到自己提的改动实际赛成什么样；研究提速到每天最多 32 轮后，旧任务会滑出「最近 500 个任务」的扫描窗口，血缘更容易对不上。

@@ -55,7 +55,7 @@ It is not an automated money maker, promises no profitability, and does not prov
 ```mermaid
 flowchart LR
   Op["Operator / External Agent<br/>Web · ht CLI · TUI · Desktop"] --> API["FastAPI Control Plane<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
-  API --> DB[("PostgreSQL + pgvector<br/>50 migrations · Mission projections · HET tree · Memory")]
+  API --> DB[("PostgreSQL + pgvector<br/>51 migrations · Mission projections · HET tree · Memory")]
   Worker["Worker Loops (13 Loops)<br/>Mission · AVO research · evolution · auto-review · meta-tuning"] --> DB
   Worker --> Research["ARC Autonomous Research Loop (AVO + RD-Agent)<br/>HET tree → Co-STEER synthesis → AST gatekeeper → sandbox → baseline"]
   Worker --> Evolution["Evolution Engine (default on)<br/>decay scan → budget admission → re-research → race duel → ledger"]
@@ -213,7 +213,7 @@ Single command executes all quality gates: Frontend lint, Vitest, and production
 | **Control Plane** | FastAPI 0.122+ / Uvicorn, scoped security tokens, `/livez`, `/readyz`, `/healthz` container probes, cursor SSE |
 | **Credential Security**| `TokenRotationService` (SHA-256 single-way hashing, zero plaintext storage, 24h grace period hot rotation, 7-day expiration audit) |
 | **Domain & Runtime** | Python 3.12+, Pydantic v2 strict models, modular monolith + ports-and-adapters |
-| **Storage** | SQLAlchemy 2.0 + Alembic (50 migrations), PostgreSQL 14+ with `pgvector` |
+| **Storage** | SQLAlchemy 2.0 + Alembic (51 migrations), PostgreSQL 14+ with `pgvector` |
 | **Workers** | asyncio + PostgreSQL SQL lease locking (13 concurrent background loops) |
 | **Research Core** | ARC + RD-Agent Hypothesis Evolution Tree (HET) + Co-STEER synthesizer + `ASTGatekeeper` |
 | **Target Adapters** | `market_target.v1` and `market-evolution.v1` MCP contracts; BitPro (Crypto) + QuantLab (A-Shares) |

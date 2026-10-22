@@ -55,7 +55,7 @@ It is not an automated money maker, promises no profitability, and does not prov
 ```mermaid
 flowchart LR
   Op["Operator / External Agent<br/>Web · ht CLI · TUI · Desktop"] --> API["FastAPI Control Plane<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
-  API --> DB[("PostgreSQL + pgvector<br/>50 migrations · Mission projections · HET tree · Memory")]
+  API --> DB[("PostgreSQL + pgvector<br/>51 migrations · Mission projections · HET tree · Memory")]
   Worker["Worker Loops (13 Loops)<br/>Mission · AVO research · evolution · auto-review · meta-tuning"] --> DB
   Worker --> Research["ARC Autonomous Research Loop (AVO + RD-Agent)<br/>HET tree → Co-STEER synthesis → AST gatekeeper → sandbox → baseline"]
   Worker --> Evolution["Evolution Engine (default on)<br/>decay scan → budget admission → re-research → race duel → ledger"]
