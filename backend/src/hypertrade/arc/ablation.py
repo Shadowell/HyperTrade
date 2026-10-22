@@ -21,8 +21,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable, Sequence
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, NoReturn
 
@@ -70,6 +70,12 @@ HARMFUL_DRAWDOWN = 0.01
 NOTE = (
     "开发窗口内单因素效应：每次只把一处改动单独加到母体上测，"
     "不含改动之间的交互，不是因果结论"
+)
+ABLATION_MEMORY_POLICY = "ablation_memory_v1"
+ABLATION_MEMORY_ENTRY_CHARS = 4000  # one projected row must stay a bounded context entry
+ABLATION_MEMORY_RULE = (
+    "Parent re-tested on one development window with exactly one of this loser's changes "
+    "at a time; single-factor observations without interactions, not causal conclusions."
 )
 
 
@@ -1411,6 +1417,138 @@ def ablation_budget_view(db: Database, config: Any, now: datetime) -> dict[str, 
         "next_run_at": next_moment.isoformat() if next_moment is not None else None,
         "reason": reason,
         "rule": "消融回测独立计账，不占用每日研究名额；只在开发窗口回测，不碰 Paper／实盘",
+    }
+
+
+def _window_span(result: Any) -> tuple[date, date] | None:
+    window = result.get("window") if isinstance(result, dict) else None
+    if (
+        not isinstance(window, list)
+        or len(window) != 2
+        or not all(isinstance(value, str) for value in window)
+    ):
+        return None
+    try:
+        return date.fromisoformat(window[0]), date.fromisoformat(window[1])
+    except ValueError:
+        return None
+
+
+def _ablation_entry(run: ArcAblationRun, result: dict[str, Any]) -> dict[str, Any]:
+    baseline = result["baseline"]
+    return {
+        "memory_id": f"ablation:{run.id}",
+        "type": "ablation",
+        "evidence_status": "development_window_ablation",
+        "ablation_id": run.id,
+        "outcome_id": run.outcome_id,
+        "verdict": result.get("verdict"),
+        "parent_strategy_id": run.parent_strategy_id,
+        "challenger_strategy_id": run.challenger_strategy_id,
+        "window": list(result["window"]),
+        "capital": result.get("capital"),
+        "baseline": {
+            key: baseline.get(key)
+            for key in ("backtest_id", "net_return", "max_drawdown", "trade_count")
+        },
+        "effects": [
+            {
+                key: effect.get(key)
+                for key in (
+                    "label",
+                    "class",
+                    "delta_net_return",
+                    "delta_max_drawdown",
+                    "delta_trade_count",
+                    "backtest_id",
+                    "reason",
+                )
+            }
+            for effect in result["effects"]
+            if isinstance(effect, dict)
+        ],
+        "harmful": list(result.get("harmful") or []),
+        "helpful": list(result.get("helpful") or []),
+        "scope": "development_window_single_factor",
+        "causal_claim_verified": False,
+        "rule": ABLATION_MEMORY_RULE,
+    }
+
+
+def ablation_memory(
+    db: Database,
+    *,
+    target_id: str,
+    outcome_ids: Sequence[str],
+    development_end: date,
+    limit: int = 4,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Completed per-change ablations of the forward losers this research context already shows.
+
+    Only rows whose outcome the caller already displayed are projected; lineage and scope
+    filtering stay on the forward-outcome side, so this never widens what the model sees.
+    """
+    ordered = list(dict.fromkeys(outcome_ids))
+    entries: list[dict[str, Any]] = []
+    excluded: dict[str, int] = {}
+    if not ordered:
+        return entries, {
+            "policy": ABLATION_MEMORY_POLICY,
+            "selected": 0,
+            "excluded": excluded,
+        }
+
+    with db.session() as session:
+        runs = {
+            row.outcome_id: row
+            for row in session.scalars(
+                select(ArcAblationRun).where(
+                    ArcAblationRun.target_id == target_id,
+                    ArcAblationRun.outcome_id.in_(ordered),
+                )
+            )
+        }
+
+    def exclude(reason: str) -> None:
+        excluded[reason] = excluded.get(reason, 0) + 1
+
+    for outcome_id in ordered:
+        run = runs.get(outcome_id)
+        if run is None:
+            continue  # Not ablated yet is not an exclusion.
+        if run.status != "completed":
+            exclude("not_completed")
+            continue
+        result = run.result_json
+        span = _window_span(result)
+        if (
+            not isinstance(result, dict)
+            or not isinstance(result.get("effects"), list)
+            or not isinstance(result.get("baseline"), dict)
+            or span is None
+        ):
+            exclude("malformed_result")
+            continue
+        if span[1] > development_end:
+            # Same leak guard as development memory: later observations stay out.
+            exclude("outside_development_horizon")
+            continue
+        if len(entries) >= limit:
+            exclude("context_budget")
+            continue
+        entry = _ablation_entry(run, result)
+        if (
+            len(json.dumps(entry, ensure_ascii=False, default=str))
+            > ABLATION_MEMORY_ENTRY_CHARS
+        ):
+            exclude("entry_too_large")
+            continue
+        entries.append(entry)
+
+    return entries, {
+        "policy": ABLATION_MEMORY_POLICY,
+        "selected": len(entries),
+        "excluded": excluded,
     }
 
 
