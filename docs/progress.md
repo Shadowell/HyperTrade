@@ -2,7 +2,7 @@
 
 - **背景**：赛马结束的结论此前只留在裁判状态文件里，研究侧看不到自己提的改动实际赛成什么样；研究提速到每天最多 32 轮后，旧任务会滑出「最近 500 个任务」的扫描窗口，血缘更容易对不上。
 - **交付**：迁移 0050 新增 `arc_forward_outcomes`（每个 目标／母体／挑战者 一行）；裁判在完成、取消、结束时记账，位置被补走时按 BitPro 淘汰归档处理，启动时补录已结束赛道；只有 `won`／`lost_futility`／`lost_exam` 是输赢证据，其余只记录不当负面证据；按 BitPro 策略编号经事件索引找回研究血缘（失败再回退任务扫描），对不上记 `no_lineage`；研究时沿接班链回溯最多 3 代、取最多 8 条有效证据作为 `type=forward_outcome` 记忆放在开发记忆之前，manifest 记计数，读取失败不阻断研究；系统提示写明改动相对那场比赛的母体、输家方向无新证据不重复、赢的方向附近优先、单场是噪声不是因果；`GET /api/v1/arc/evolution` 新增 `forward_outcomes` 汇总且失败只带 `error`，研究证据视图新增 `forward_outcome_references`。
-- **验证**：`LC_ALL=en_US.UTF-8 uv run pytest tests/test_arc_evolution.py tests/test_forward_outcomes_ledger.py tests/test_evolution_budget.py tests/test_arc_external_surface.py -q` → 147 passed；`uv run ruff check backend tests` → All checks passed；`uv run mypy backend/src` → Success: no issues found in 317 source files。未运行 `./scripts/check.sh`（由审查方执行）。
+- **验证**：新增 `tests/test_forward_outcomes_ledger.py`、`tests/test_arc_forward_outcomes.py`、`tests/test_arc_forward_outcomes_postgres.py`（PostgreSQL 真库），并在 `test_race_judge`／`test_arc_evolution`／`test_source_variant_avo`／`test_avo_evidence`／`test_arc_external_surface` 中补充用例；对裁判记账、记忆排序与过滤、血缘事件定位等 12 处关键守卫做过变异检验，去掉任一守卫都有用例失败；合入最新 main 后整套 `./scripts/check.sh` 通过（前端 15 项、ruff、mypy、2277 项后端测试）。GitNexus：`EvolutionService._memory` 与血缘查找的影响分析为 HIGH（研究主循环 `tick` 与模拟盘反馈 `check_paper_feedback`），改动为加法、出错降级；`race_judge.py` 的索引映射不可靠（报告为 critical，但所列流程并不调用裁判），已用文本检索核对真实调用方只有 worker 循环与运营端立即运行。未线上实测。
 - **未做**：输家逐项消融为第二期；未线上实测。
 ## 2026-10-21：发布《企业级全自主 Agent 架构设计、核心技术剖析与面试通关指南》（Markdown + 25页 PDF）
 
