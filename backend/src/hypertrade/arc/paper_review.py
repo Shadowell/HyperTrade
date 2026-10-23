@@ -6,6 +6,7 @@ import hashlib
 import json
 from typing import TYPE_CHECKING, Any
 
+from hypertrade.arc.admission import basic_admitted
 from hypertrade.arc.contracts import PaperPreauthorizationV1
 from hypertrade.arc.incubation import ARCPaperIncubationResolver
 from hypertrade.arc.universe import candidate_symbols
@@ -78,6 +79,8 @@ def build_paper_review(
     if goal is not None and goal.research_windows is not None:
         binding["research_windows"] = goal.research_windows.model_dump(mode="json")
     if goal is not None and goal.evolution_context:
+        admitted = False
+        receipt: dict[str, Any] = {}
         if selected is not None:
             receipt = next(
                 (
@@ -87,8 +90,9 @@ def build_paper_review(
                 ),
                 {},
             )
+            admitted = basic_admitted(goal, receipt)
             if (
-                receipt.get("passed") is not True
+                (receipt.get("passed") is not True and not admitted)
                 or receipt.get("purpose") != "final"
                 or receipt.get("terminal_failure")
                 or receipt.get("backtest_id") != selected.bitpro_backtest_id
@@ -116,8 +120,19 @@ def build_paper_review(
         binding["evolution_source"]["context_sha256"] = hashlib.sha256(
             json.dumps(context, sort_keys=True, ensure_ascii=False).encode()
         ).hexdigest()
+        if admitted:
+            # Strict missions never add this key: their review package hash is unchanged.
+            binding["admission"] = {
+                "policy": "basic",
+                "strict_passed": False,
+                "strict_reasons": list(receipt.get("reasons") or []),
+                **receipt["admission"],
+            }
         comparison = (selected.observed_metrics if selected else {}).get("baseline_comparison", {})
-        if comparison.get("passed") is not True or not comparison.get("backtest_id"):
+        if admitted:
+            if not comparison.get("backtest_id") or comparison.get("reason"):
+                unknowns.append("missing_or_failed_baseline_comparison")
+        elif comparison.get("passed") is not True or not comparison.get("backtest_id"):
             unknowns.append("missing_or_failed_baseline_comparison")
     if goal is not None and goal.feedback_parent:
         binding["feedback_parent"] = goal.feedback_parent

@@ -16,6 +16,11 @@ from typing import Any
 from jsonschema import ValidationError, validate
 
 from hypertrade.agent.compaction import ContextBlocked, compact_request, sanitize_context
+from hypertrade.arc.admission import (
+    basic_admission,
+    basic_admitted,
+    basic_validation_id,
+)
 from hypertrade.arc.adversarial import BlueTeamQuant
 from hypertrade.arc.backtest_recovery import BacktestActionRunner, BacktestDeferred, recoverable
 from hypertrade.arc.contracts import SIDE_EFFECT_FREE_TOOLS, ARCCandidateAttemptV1
@@ -862,8 +867,32 @@ def _perform(
             "avo_development_result", {"attempt_id": candidate.attempt_id, "result": payload}
         )
         return payload
+    if final and not result.passed and goal.paper_admission == "basic" and comparison_context:
+        admission = basic_admission(
+            result.metrics,
+            controller.projection.avo.get("baseline_final") or {},
+        )
+        payload["admission"] = admission
+        if admission["passed"]:
+            payload["admitted"] = True
+            # The id is bound after admission and admitted are in the receipt.
+            payload["validation_id"] = basic_validation_id(payload)
     controller.apply_event("bitpro_self_tested", payload)
     if result.passed:
+        request_paper_review(controller)
+    elif payload.get("admitted") is True:
+        # Basic admission: strict gate failed (recorded above); the parent comparison
+        # did not show it clearly worse, so the Paper race decides. Succession is unchanged.
+        controller.apply_event(
+            "candidate_validated",
+            {
+                "attempt_id": candidate.attempt_id,
+                "validation_id": payload["validation_id"],
+                "bitpro_strategy_id": payload.get("bitpro_strategy_id"),
+                "backtest_id": payload.get("backtest_id"),
+                "admission": "basic",
+            },
+        )
         request_paper_review(controller)
     else:
         controller.apply_event("operator_needed", {"reason": "avo_final_validation_failed"})
@@ -1395,7 +1424,7 @@ def _recover_receipt(controller: ARCController) -> None:
         return
     pending = controller.projection.avo["pending"]
     if pending["name"] == "finish":
-        if result.get("passed"):
+        if result.get("passed") or basic_admitted(controller.projection.goal, result):
             if controller.projection.state != "paper_review_ready":
                 controller.apply_event("candidate_validated", result)
                 request_paper_review(controller)

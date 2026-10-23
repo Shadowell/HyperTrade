@@ -71,6 +71,9 @@ class EvolutionConfig(BaseModel):
     max_research_per_day: int = Field(default=4, ge=1, le=100)
     max_research_total: int | None = Field(default=None, ge=1)
     paper_review_mode: Literal["human", "agent"] = "human"
+    # "basic" lets a candidate that fails the strict final gate reach Paper review when
+    # it is not clearly worse than its same-window parent; "strict" keeps the full gate.
+    paper_admission: Literal["strict", "basic"] = "strict"
     # Provider for loop-created research; tasks freeze it at creation.
     research_provider: ChatProviderName = "codex"
     paper_criteria: ARCSuccessCriteriaV1 = Field(
@@ -446,6 +449,7 @@ class EvolutionService:
                     provider_name=config.research_provider,
                     paper_review_required=True,
                     paper_review_mode=config.paper_review_mode,
+                    paper_admission=config.paper_admission,
                     paper_initial_equity=research_capital,
                     evolution_context=context,
                     research_windows=ResearchWindowsV1.model_validate(context["research_windows"]),
