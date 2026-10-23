@@ -23,7 +23,11 @@ from hypertrade.arc.admission import (
 )
 from hypertrade.arc.adversarial import BlueTeamQuant
 from hypertrade.arc.backtest_recovery import BacktestActionRunner, BacktestDeferred, recoverable
-from hypertrade.arc.contracts import SIDE_EFFECT_FREE_TOOLS, ARCCandidateAttemptV1
+from hypertrade.arc.contracts import (
+    RULE_TWEAK_PROVIDER,
+    SIDE_EFFECT_FREE_TOOLS,
+    ARCCandidateAttemptV1,
+)
 from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProjection
 from hypertrade.arc.evolution_memory import (
     assess_development,
@@ -967,7 +971,7 @@ def run_avo_research(
 # shared with output, leaving >=100K output headroom and keeping the recovery
 # snapshot under its 2MB limit. Other providers keep the conservative default.
 _DEFAULT_CONTEXT_BUDGET = 64_000
-_PROVIDER_CONTEXT_BUDGET = {"deepseek": 900_000}
+_PROVIDER_CONTEXT_BUDGET = {"deepseek": 900_000, RULE_TWEAK_PROVIDER: 900_000}
 
 
 def _context_budget(provider: Any) -> int:
@@ -1119,6 +1123,10 @@ def _run(
         controller.apply_event("avo_model_abandoned", {"reason": "unacknowledged_model_call"})
     if goal.model_name and goal.provider_name not in {"codex", "vide_coding"}:
         raise ResearchStopped("avo_provider_unavailable")
+    if provider is None and goal.provider_name == RULE_TWEAK_PROVIDER:
+        from hypertrade.arc.rule_tweak import RuleTweakProvider
+
+        provider = RuleTweakProvider(controller)
     if provider is None:
         try:
             provider = ProviderRuntime(get_settings()).get_chat_provider(
