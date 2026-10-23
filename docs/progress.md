@@ -1,3 +1,16 @@
+## 2026-10-23：母体上线满 7 天就生成变体、参数微调研究员与基本入场
+
+- **背景**：BitPro 每个母体有 3 个变体位（BitPro #1286），但生产上这些位长期空着（系统统计 12 个位、占用 0）。只读核对生产：34 个在役模拟盘里只有 4 个满足研究报名条件，其余 30 个卡在同一会话成交满 30 笔、满 14 天以及成本元数据与权益采样核验上；这 4 个里 333 被挂起副作用占着，443 每天在开发回测报 `snapshot_range_exceeds_bound`（120 个标的 15m 的 119 天开发窗口超过 BitPro 封存回测 100 万根上限），509、513 的候选在终验同窗都比母体差。10-11 起 25 个候选 0 个通过严格终验（60 天窗口上要求去偏夏普概率 ≥0.95，约等于年化夏普 4 以上，且必须优于母体）。用户要求所有策略上线后或表现差时都能自动产生变体，并逐项拍板：母体满 7 天、满 20 笔后生成，7 天不到 20 笔的低频策略满 7 天也生成；变体上模拟盘前的考试改为基本检查，接班标准不降；变体来源为参数微调加 AI 研究；全站同时赛马上限保持 60。
+- **交付**（三项都由配置开关控制，默认关闭；代码合入本身不改变线上行为）：
+  1. 基本入场 `paper_admission`（strict|basic，任务创建时冻结）：严格终验未过的候选，若在同一终验窗口对母体满足基本检查——成交至少 1 笔且不少于母体三成；收益落后不超过 max(2 个百分点, 母体最大回撤的一半)；最大回撤不超过母体 +5 个百分点且不超过 30%——以内容绑定的 `val_basic_` 编号走原有 `candidate_validated` 与 Paper 评审路径。严格结果如实保留（`passed=false` 与原因），评审包只在基本入场时增加 `admission` 段（严格任务的包与哈希不变），自动评审按存档数字重算、不信任标记；崩溃恢复同样识别。状态机未改。
+  2. 上线探索 `launch_enabled`/`launch_days`（默认 7）：7+7 证据缺失但会话已满 N 个完整 UTC 日、且支持来源变体的 BitPro 母体以 `launch` 触发研究，不声称退化，零成交母体也可研究；readiness 不再对其挂成交与 14 天阻断；预算准入识别 `launch`（未开启时 `launch_disabled`）。
+  3. 参数微调研究员 `exploration_provider=rule_tweak`：launch/proactive 探索任务由确定性的 `RuleTweakProvider` 驱动——只提单参数约 ±20% 的一步邻居，按授权范围、BitPro 全部参数规则（8 对快慢周期严格递增、动量出场阈值不超过入场阈值、整数类型）过滤，跳过 BitPro 已赛过或排队的组合，按任务编号轮换起点；开发后对成交过的候选中净收益最高者做终验，不调用模型，走与模型研究相同的工具、预算、记账与评审。退化与紧急任务始终用 `research_provider`。来源最近一次任务是 rule_tweak 时冷却用 `exploration_cooldown_hours`。
+  4. 研究窗口适配：开发与终验窗口按标的数与周期压进 BitPro 封存回测上限（单快照 100 万根、单标的 10 万根、固定 500 根预热）；120 个标的 15m 的开发窗口 119→81 天，修复 443。
+- **验证**：新增 `tests/test_arc_basic_admission.py`、`tests/test_evolution_launch.py`、`tests/test_rule_tweak.py`。变异检验共 38 处守卫（基本入场 13、上线探索与冷却 14、参数微调 11），去掉任一守卫都有用例失败（首轮未被抓住的 8 处已补用例）。完整 `./scripts/check.sh` 通过（前端 lint／15 项测试／构建、ruff、mypy 320 个源文件、pytest 2369 项）。合并前未在生产实测。
+- **影响分析与风险**：GitNexus 把 `build_paper_review` 与 `ARCController._reduce` 评为 CRITICAL，`_scan`、`readiness`、`usage`、`admit` 评为 HIGH，`_perform`、`evaluate_auto_review` 评为 LOW。应对：状态机不改（复用已有 `candidate_validated` 事件）；评审包只在任务明确为 basic 时多一段；所有新路径由默认关闭的配置开关控制。另：BitPro 在变体创建时拒绝参数会被记为未知效果并卡住任务，所以参数微调研究员完整镜像了 BitPro 的参数规则。
+- **生产启用（另行执行，按用户已拍板的规则）**：`launch_enabled=true`、`launch_days=7`、`min_trades` 30→20、`exploration_provider=rule_tweak`、`exploration_cooldown_hours=2`、`paper_admission=basic`；全站赛马上限（BitPro `PAPER_RELAY_MAX_RACING_TOTAL=60`）不动。333 的挂起任务已用 `scripts/reconcile_avo_effects.py` 审计对账关闭（用户同意，备份在容器 `/app/data/backups/`）。
+- **已知限制**：9 月遗留、仍在运行的旧研究副本（#529、#531 为对照副本，#532、#533 为候选）满 7 天后也会被当作母体研究，旧规则下 10-25 本来也会；是否停掉它们由用户决定。变体数量上来后，BitPro 修改策略共用文件会让已审核变体重启后被拒绝加载（源码漂移），影响面随之变大。
+
 ## 2026-10-22：终验被去偏夏普否决的研究任务不再永久占用来源名额
 
 - **背景**：生产研究预算上调后（每天 32 轮、检查间隔 30 分钟），连续多轮扫描仍全部 `deferred(source_active)`。只读核对线上任务投影：母体 509、513 各有一个 `needs_operator` 研究任务（终止原因 `avo_final_validation_failed`，终验窗口已用掉）占着来源名额五天以上；它们的数字门槛全过（夏普 0.21/0.57、回撤 3.9%/2.9%、成交 32/142 笔），被去偏夏普概率不足（0.65/0.85，门槛 0.95）和基线对比未改善否决，是明确的负向定论。

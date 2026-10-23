@@ -58,7 +58,7 @@ flowchart LR
   API --> DB[("PostgreSQL + pgvector<br/>50 项迁移 · Mission 投影 · 演进树 · 记忆库")]
   Worker["Worker 循环 (13 个 Loop)<br/>Mission · AVO 研究 · 进化扫描 · 自动评审 · 元学习"] --> DB
   Worker --> Research["ARC 自主研究循环 (AVO + RD-Agent)<br/>HET 假设树 → Co-STEER 合成 → AST 门禁 → 沙箱自测 → 基线对比"]
-  Worker --> Evolution["自主进化引擎（默认开启）<br/>退化扫描 → 预算准入 → 再研究 → 赛马对决 → 效果账本"]
+  Worker --> Evolution["自主进化引擎（默认开启）<br/>退化 / 上线扫描 → 预算准入 → 再研究或参数微调 → 入场检查 → 赛马对决 → 效果账本"]
   Research --> Sandbox["隔离策略沙箱<br/>UDS · 非 root · 无网络 · digest 绑定"]
   Research --> Targets["多市场目标适配层<br/>market_target.v1 · market-evolution.v1"]
   Evolution --> Relay["持仓净额平滑换仓 (Relay Netting)<br/>交集保留 min(P,C) · 换手节约 >80% · K 期切片"]
@@ -100,6 +100,7 @@ flowchart LR
 - **基准相对退化判定**：前后各 7 天策略表现扣除标的同期买入持有变化，大盘普跌不冒充策略退化；
 - **持仓净额对冲平滑接力 (Position Netting Relay)**：赛马优胜换仓时，`PositionNettingRelayService` 计算母子策略持仓交集并原地保留共有份额 $\min(P_i, C_i)$，仅对净额差量 $\Delta = C - P$ 切分为 $K$ 期平滑切片执行，重合资产换手节约率超 80%，极大减少摩擦滑点；
 - **效果账本与告警**：汇总周期、任务、证据与胜出率；数据缺口停摆与严重报错自动触发告警，直连飞书 Webhook 交互卡片。
+- **每个母体都有变体（可选开启）**：模拟盘母体运行满 7 天，即使退化证据不全也能生成变体；探索任务可交给确定性的一步参数微调研究员；严格终验未过、但同窗不明显差于母体的候选也能进入赛马。接班仍须在前向赛马中胜出。
 
 设计文档：[63 进化加固](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) · [66 赛马平滑换仓](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md)
 

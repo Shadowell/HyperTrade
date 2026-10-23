@@ -58,7 +58,7 @@ flowchart LR
   API --> DB[("PostgreSQL + pgvector<br/>50 migrations · Mission projections · HET tree · Memory")]
   Worker["Worker Loops (13 Loops)<br/>Mission · AVO research · evolution · auto-review · meta-tuning"] --> DB
   Worker --> Research["ARC Autonomous Research Loop (AVO + RD-Agent)<br/>HET tree → Co-STEER synthesis → AST gatekeeper → sandbox → baseline"]
-  Worker --> Evolution["Evolution Engine (default on)<br/>decay scan → budget admission → re-research → race duel → ledger"]
+  Worker --> Evolution["Evolution Engine (default on)<br/>decay / launch scan → budget admission → re-research or rule tweak → admission → race duel → ledger"]
   Research --> Sandbox["Isolated Strategy Sandbox<br/>UDS · non-root · no network · digest-bound"]
   Research --> Targets["Multi-Market Target Layer<br/>market_target.v1 · market-evolution.v1"]
   Evolution --> Relay["Position Netting Relay Handover<br/>retain min(P,C) · >80% turnover saved · K slices"]
@@ -100,6 +100,7 @@ Scans active incubating paper strategies hourly:
 - **Benchmark-Relative Decay Detection**: Strategy performance change over 14 days minus benchmark buy-and-hold change prevents broader market drops from falsely flagging strategy decay.
 - **Position Netting Relay Service**: During strategy turnover, intersecting holdings $\min(P_i, C_i)$ are preserved in place. Only net differences $\Delta = C - P$ are sliced and executed over $K$ periods with 100-share constraints, slashing turnover friction by >80%.
 - **Effectiveness Ledger & Feishu Alerts**: Full ledger accounting with automatic Feishu webhook card alerts for stalled data gaps and error streaks.
+- **Variant Supply for Every Parent (opt-in)**: once a paper parent has run 7 complete days it can receive variants before full decay evidence exists; exploration missions can use a deterministic one-step parameter-neighbour researcher, and a candidate that fails the strict final gate may still race if it is not clearly worse than its parent on the same window. Succession still requires winning the forward race.
 
 Design docs: [63 Evolution Hardening](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) · [66 Smooth Relay Handover](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md)
 
