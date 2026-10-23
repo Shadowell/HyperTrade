@@ -229,6 +229,10 @@ def readiness(
             and diagnostic.get("candidate_id") is not None
         )
     )
+    launch_ready = (
+        diagnostic.get("status") == "opportunity"
+        and diagnostic.get("trigger_source") == "launch"
+    )
     is_organic = bool(
         snapshot.get("is_organic")
         or snapshot.get("source_type") in ("seed", "manual", "organic")
@@ -245,7 +249,7 @@ def readiness(
                 "condition": "original Paper must be running; do not restart or reconfigure",
             }
         )
-    if snapshot and not short_ready and not self_healed:
+    if snapshot and not short_ready and not self_healed and not launch_ready:
         trades = snapshot.get("trade_count")
         try:
             observed = int(trades) if trades is not None and not isinstance(trades, bool) else None
@@ -260,7 +264,7 @@ def readiness(
                     "condition": "same-session trade_count >= required",
                 }
             )
-    if snapshot_read and not short_ready and not self_healed:
+    if snapshot_read and not short_ready and not self_healed and not launch_ready:
         try:
             if not start:
                 raise ValueError("missing start")

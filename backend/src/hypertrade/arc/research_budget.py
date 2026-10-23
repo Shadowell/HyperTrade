@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 
 from hypertrade.arc import store
+from hypertrade.arc.contracts import RULE_TWEAK_PROVIDER
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import _feedback_child_active, _pending_effect
@@ -93,8 +94,15 @@ def _source_identity(goal: Any) -> tuple[str | None, str | None, int | str | Non
         and len(strategy_value) <= 128
     ):
         strategy_id = strategy_value
-    trigger = trigger_value if trigger_value in {"degradation", "proactive"} else None
+    trigger = trigger_value if trigger_value in {"degradation", "proactive", "launch"} else None
     return target_id, source, strategy_id, trigger
+
+
+def source_cooldown_hours(source: dict[str, Any], config: EvolutionConfig) -> int:
+    """A cheap rule_tweak mission may be followed sooner; anything else keeps cooldown_hours."""
+    if source.get("last_provider") == RULE_TWEAK_PROVIDER:
+        return config.exploration_cooldown_hours
+    return config.cooldown_hours
 
 
 def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str, Any]:
@@ -149,8 +157,11 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
                 "last_admitted_at": when.isoformat(),
                 "busy": False,
                 "cooldown_at": cooldown_at.isoformat(),
+                "last_provider": goal.provider_name,
             },
         )
+        if cooldown_at.isoformat() >= prior["cooldown_at"]:
+            prior["last_provider"] = goal.provider_name
         prior["cooldown_at"] = max(prior["cooldown_at"], cooldown_at.isoformat())
         prior["last_admitted_at"] = max(prior["last_admitted_at"], when.isoformat())
         prior["busy"] = prior["busy"] or busy
@@ -194,7 +205,7 @@ def budget_status(db: Database, config: EvolutionConfig, now: datetime) -> dict[
         state.update(reason=reason, next_run_at=next_run)
         for source in state["sources"].values():
             until = datetime.fromisoformat(source["cooldown_at"]) + timedelta(
-                hours=config.cooldown_hours
+                hours=source_cooldown_hours(source, config)
             )
             source["reason"] = (
                 "source_active" if source["busy"] else ("source_cooldown" if now < until else None)
@@ -277,6 +288,8 @@ def admit(
                 reason = "invalid_trigger_source"
             elif trigger == "proactive" and not config.proactive_enabled:
                 reason = "proactive_disabled"
+            elif trigger == "launch" and not config.launch_enabled:
+                reason = "launch_disabled"
             elif config.strategy_ids and source_strategy_id not in config.strategy_ids:
                 reason = "outside_strategy_scope"
             elif (
@@ -291,7 +304,7 @@ def admit(
             elif identity_key in state["sources"]:
                 previous = state["sources"][identity_key]
                 until = datetime.fromisoformat(previous["cooldown_at"]) + timedelta(
-                    hours=config.cooldown_hours
+                    hours=source_cooldown_hours(previous, config)
                 )
                 if previous["busy"]:
                     reason = "source_active"

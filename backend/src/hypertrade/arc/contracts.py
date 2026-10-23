@@ -12,6 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 # the model, and a pending call left by a crash is not an unresolved side effect.
 SIDE_EFFECT_FREE_TOOLS = frozenset({"inspect", "propose", "stop"})
 ChatProviderName = Literal["deepseek", "openai", "codex", "qwen", "openrouter", "vide_coding"]
+# Deterministic researcher for exploration missions: one-step parameter neighbours of the
+# source, no model call. Not a ChatProviderName: it never reaches ProviderRuntime.
+RULE_TWEAK_PROVIDER = "rule_tweak"
 
 
 class ARCSuccessCriteriaV1(BaseModel):
