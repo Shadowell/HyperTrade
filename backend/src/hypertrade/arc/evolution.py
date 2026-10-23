@@ -7,7 +7,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 from uuid import uuid4
@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 from hypertrade.arc.attribution import attribution_report, collect_attribution
 from hypertrade.arc.contracts import (
+    RULE_TWEAK_PROVIDER,
     ARCBudgetV1,
     ARCCandidateAttemptV1,
     ARCGoalV1,
@@ -33,7 +34,7 @@ from hypertrade.arc.evolution_diagnostics import (
     upstream_read_unavailable,
 )
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
-from hypertrade.arc.feedback import collect_windows
+from hypertrade.arc.feedback import _timeframe_seconds, collect_windows
 from hypertrade.arc.forward_outcomes import ForwardOutcomeLedger
 from hypertrade.arc.relay_seats import relay_seats
 from hypertrade.arc.runtime_journal import failure_text, record_runtime_error
@@ -60,6 +61,13 @@ class EvolutionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool = True
     proactive_enabled: bool = False
+    # Launch exploration: a parent with launch_days complete days may receive variants even
+    # when the full 7+7 evidence is missing. Off by default, so scans behave as before.
+    launch_enabled: bool = False
+    launch_days: int = Field(default=7, ge=3, le=14)
+    # Cheap deterministic researcher for launch/proactive exploration missions.
+    exploration_provider: Literal["research", "rule_tweak"] = "research"
+    exploration_cooldown_hours: int = Field(default=24, ge=1, le=720)
     emergency_enabled: bool = True
     observed_gap_fallback_enabled: bool = True
     emergency_days: int = Field(default=3, ge=3, le=5)
@@ -71,6 +79,9 @@ class EvolutionConfig(BaseModel):
     max_research_per_day: int = Field(default=4, ge=1, le=100)
     max_research_total: int | None = Field(default=None, ge=1)
     paper_review_mode: Literal["human", "agent"] = "human"
+    # "basic" lets a candidate that fails the strict final gate reach Paper review when
+    # it is not clearly worse than its same-window parent; "strict" keeps the full gate.
+    paper_admission: Literal["strict", "basic"] = "strict"
     # Provider for loop-created research; tasks freeze it at creation.
     research_provider: ChatProviderName = "codex"
     paper_criteria: ARCSuccessCriteriaV1 = Field(
@@ -113,6 +124,69 @@ class EvolutionConfig(BaseModel):
     max_backtests: int = Field(default=8, ge=3, le=30)
     paper_capital: Decimal = Field(default=Decimal("100"), gt=0, le=10000)
     auto_approve_paper: bool = False
+
+
+LAUNCH_MEASUREMENT = "launch_exploration"
+
+# BitPro's verified-backtest contract: at most 1,000,000 bars per snapshot, 100,000 per
+# symbol, plus a fixed 500-bar warmup.
+BITPRO_MAX_TOTAL_BARS = 1_000_000
+BITPRO_MAX_BARS_PER_SYMBOL = 100_000
+BITPRO_WARMUP_BARS = 500
+MIN_RESEARCH_WINDOW_DAYS = 14
+
+
+def launch_observation(
+    config: EvolutionConfig, snapshot: dict[str, Any], now: datetime
+) -> dict[str, Any] | None:
+    """Exploration evidence for a long-running parent whose full window is unavailable."""
+    if not config.launch_enabled:
+        return None
+    session = snapshot.get("session")
+    started_at = session.get("started_at") if isinstance(session, dict) else None
+    if not isinstance(started_at, str) or not started_at.strip():
+        return None
+    try:
+        started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=UTC)
+    day_start = now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    if day_start < started + timedelta(days=config.launch_days):
+        return None
+    return {
+        "triggered": False,
+        "measurement": LAUNCH_MEASUREMENT,
+        "launch_days": config.launch_days,
+        "session_started_at": started.isoformat(),
+        "session_complete_days": (day_start - started).days,
+        "trade_count": snapshot.get("trade_count"),
+        "receipts": [],
+    }
+
+
+def research_windows_for(
+    symbol_count: int, timeframe: str, *, as_of: date
+) -> ResearchWindowsV1:
+    """Fit research windows inside BitPro's sealed-backtest bounds."""
+    default = ResearchWindowsV1(as_of=as_of)
+    seconds = _timeframe_seconds(timeframe)
+    if seconds is None or seconds >= 86400:
+        return default
+    bars_per_day = 86400 // seconds
+    per_symbol = min(BITPRO_MAX_BARS_PER_SYMBOL, BITPRO_MAX_TOTAL_BARS // max(1, symbol_count))
+    # One extra bar covers the inclusive window boundary.
+    max_days = (per_symbol - BITPRO_WARMUP_BARS - 1) // bars_per_day
+    if max_days >= default.development_days and max_days >= default.validation_days:
+        return default
+    if max_days < MIN_RESEARCH_WINDOW_DAYS:
+        raise ValueError("research_window_exceeds_backtest_bounds")
+    return ResearchWindowsV1(
+        as_of=as_of,
+        development_days=min(default.development_days, max_days),
+        validation_days=min(default.validation_days, max_days),
+    )
 
 
 def digest(value: Any) -> str:
@@ -434,6 +508,15 @@ class EvolutionService:
                 research_capital = Decimal(
                     str(context.get("research_capital") or config.paper_capital)
                 )
+                exploration = context["trigger_source"] in (
+                    "launch",
+                    "proactive",
+                ) and not context.get("short_term_emergency")
+                provider_name = (
+                    RULE_TWEAK_PROVIDER
+                    if exploration and config.exploration_provider == "rule_tweak"
+                    else config.research_provider
+                )
                 goal = ARCGoalV1(
                     objective=(
                         "依据有来源的原Paper观察、历史成交样本和开发实验提出可证伪优化方向；"
@@ -443,9 +526,10 @@ class EvolutionService:
                     symbols=declared_symbols(context["baseline"]["strategy_spec"]),
                     timeframes=[context["baseline"]["strategy_spec"]["timeframe"]],
                     research_mode="avo",
-                    provider_name=config.research_provider,
+                    provider_name=provider_name,
                     paper_review_required=True,
                     paper_review_mode=config.paper_review_mode,
+                    paper_admission=config.paper_admission,
                     paper_initial_equity=research_capital,
                     evolution_context=context,
                     research_windows=ResearchWindowsV1.model_validate(context["research_windows"]),
@@ -536,6 +620,7 @@ class EvolutionService:
                     db=self.db,
                 )
                 payload["trigger_source"] = context["trigger_source"]
+                payload["provider_name"] = provider_name
                 if not payload["budget"]["accepted"]:
                     return self._save_cycle(cycle_id, "deferred", payload)
                 payload["mission_id"] = mission_id
@@ -624,7 +709,11 @@ class EvolutionService:
                 }
             )
         chosen = None
-        from hypertrade.arc.research_budget import budget_status, source_key
+        from hypertrade.arc.research_budget import (
+            budget_status,
+            source_cooldown_hours,
+            source_key,
+        )
 
         budget: dict[str, Any] | None = None
 
@@ -642,7 +731,7 @@ class EvolutionService:
             )
             until = datetime.fromisoformat(
                 source.get("cooldown_at", "1970-01-01T00:00:00+00:00")
-            ) + timedelta(hours=config.cooldown_hours)
+            ) + timedelta(hours=source_cooldown_hours(source, config))
             blocked = source.get("busy", False) or now < until
             preferred = "degradation"
             # BitPro parents can race several challengers: among equally urgent sources, the one
@@ -728,51 +817,62 @@ class EvolutionService:
                 if emergency:
                     feedback = short
                 else:
-                    trade_count = int(snapshot.get("trade_count") or 0)
-                    timeframe = str(row.timeframe or snapshot.get("timeframe") or "1D").upper()
-                    # 自适应不同 K 线周期的成交门槛 (低频日线/周线策略成交频率较低)
-                    effective_min_trades = config.min_trades
-                    if timeframe in ("1D", "1W", "1MONTH") and config.min_trades > 10:
-                        effective_min_trades = max(5, config.min_trades // 3)
-
-                    if trade_count < effective_min_trades:
-                        raise ValueError("成交样本不足")
-                    benchmark_symbols = (
-                        target_symbols(snapshot, bitpro=profile.transport == "bitpro_mcp_v1")
-                        or None
-                    )
                     try:
-                        feedback = collect_windows(
-                            ports,
-                            str(snapshot["instance_id"]),
-                            str(sid),
-                            end,
-                            PaperFeedbackPolicyV1(
-                                enabled=True,
-                                threshold_pp=config.threshold_pp,
-                                benchmark_relative=config.degradation_basis == "benchmark_relative",
-                            ),
-                            benchmark_symbols=benchmark_symbols,
-                            timeframe=row.timeframe or None,
-                            calendar=profile.calendar,
+                        trade_count = int(snapshot.get("trade_count") or 0)
+                        timeframe = str(row.timeframe or snapshot.get("timeframe") or "1D").upper()
+                        # 自适应不同 K 线周期的成交门槛 (低频日线/周线策略成交频率较低)
+                        effective_min_trades = config.min_trades
+                        if timeframe in ("1D", "1W", "1MONTH") and config.min_trades > 10:
+                            effective_min_trades = max(5, config.min_trades // 3)
+
+                        if trade_count < effective_min_trades:
+                            raise ValueError("成交样本不足")
+                        benchmark_symbols = (
+                            target_symbols(snapshot, bitpro=profile.transport == "bitpro_mcp_v1")
+                            or None
                         )
-                    except Exception:
-                        if (
-                            not config.observed_gap_fallback_enabled
-                            or profile.transport != "bitpro_mcp_v1"
-                        ):
+                        try:
+                            feedback = collect_windows(
+                                ports,
+                                str(snapshot["instance_id"]),
+                                str(sid),
+                                end,
+                                PaperFeedbackPolicyV1(
+                                    enabled=True,
+                                    threshold_pp=config.threshold_pp,
+                                    benchmark_relative=(
+                                        config.degradation_basis == "benchmark_relative"
+                                    ),
+                                ),
+                                benchmark_symbols=benchmark_symbols,
+                                timeframe=row.timeframe or None,
+                                calendar=profile.calendar,
+                            )
+                        except Exception:
+                            if (
+                                not config.observed_gap_fallback_enabled
+                                or profile.transport != "bitpro_mcp_v1"
+                            ):
+                                raise
+                            observed = collect_observed_long_window(
+                                ports,
+                                snapshot,
+                                end,
+                                min_trades=effective_min_trades,
+                                threshold_pp=float(config.threshold_pp),
+                            )
+                            if observed.get("status") != "observed":
+                                raise
+                            feedback = observed
+                            diagnostic["long_horizon"] = observed
+                    except Exception as exc:
+                        if profile.transport != "bitpro_mcp_v1":
                             raise
-                        observed = collect_observed_long_window(
-                            ports,
-                            snapshot,
-                            end,
-                            min_trades=effective_min_trades,
-                            threshold_pp=float(config.threshold_pp),
-                        )
-                        if observed.get("status") != "observed":
+                        launch: Any = launch_observation(config, snapshot, now)
+                        if launch is None:
                             raise
-                        feedback = observed
-                        diagnostic["long_horizon"] = observed
+                        feedback = launch
+                        diagnostic["launch_evidence_gap"] = failure_text(exc)
                 diagnostic["window_receipt_hash"] = digest(
                     {
                         "baseline": feedback.get("baseline_receipt"),
@@ -792,9 +892,16 @@ class EvolutionService:
                         else {k: v for k, v in feedback.items() if k != "receipts"}
                     ),
                 )
-                if not feedback["triggered"] and not config.proactive_enabled:
+                launch = feedback.get("measurement") == LAUNCH_MEASUREMENT
+                if not feedback["triggered"] and not launch and not config.proactive_enabled:
                     continue
-                trigger = "degradation" if feedback["triggered"] else "proactive"
+                trigger = (
+                    "degradation"
+                    if feedback["triggered"]
+                    else "launch"
+                    if launch
+                    else "proactive"
+                )
                 diagnostic.update(status="opportunity", trigger_source=trigger)
                 symbols = target_symbols(snapshot, bitpro=profile.transport == "bitpro_mcp_v1")
                 if not symbols:
@@ -827,7 +934,7 @@ class EvolutionService:
                                 "pnl": trade.pnl,
                             }
                         )
-                if not fills:
+                if not fills and not launch:
                     raise ValueError("当前模拟会话没有可读取的历史成交样本")
                 timeframe = str(source_record.timeframe or row.timeframe or "")
                 if not timeframe:
@@ -892,6 +999,8 @@ class EvolutionService:
                         raise ValueError("parent execution identity missing")
                 if emergency and not is_source_variant:
                     raise ValueError("short_emergency_requires_bound_variant_policy")
+                if launch and not is_source_variant:
+                    raise ValueError("launch_requires_source_variant_policy")
                 # BitPro binds a variant to its parent's capital; any other research
                 # capital makes every bound backtest fail its capital receipt.
                 research_capital = (
@@ -947,6 +1056,11 @@ class EvolutionService:
                             if emergency
                             else "收益下降或回撤扩大达到阈值；"
                             if feedback["triggered"]
+                            else (
+                                f"母体模拟盘已运行满{config.launch_days}天，"
+                                "按空出的变体位主动生成同窗比较候选，不声称退化；"
+                            )
+                            if launch
                             else "完整观察未达到退化阈值，主动探索可证伪方向；"
                         )
                         + "用成交与研究记忆判断信号、退出和成本方面的改进方向。"
@@ -1102,7 +1216,11 @@ class EvolutionService:
                                 "development": receipt,
                             }
                         )
-        windows = ResearchWindowsV1(as_of=now.astimezone(UTC).date() - timedelta(days=1))
+        windows = research_windows_for(
+            len(scope_symbols),
+            context["baseline"]["strategy_spec"]["timeframe"],
+            as_of=now.astimezone(UTC).date() - timedelta(days=1),
+        )
         memory, manifest = MemoryService(self.db).project_research(
             memory,
             symbol=sorted(scope_symbols)[0] if scope_symbols else "",

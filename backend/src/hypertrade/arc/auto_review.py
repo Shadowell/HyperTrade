@@ -8,6 +8,7 @@ import math
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from hypertrade.arc.admission import basic_admission, basic_admitted
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.evolution import EvolutionConfig
 from hypertrade.arc.evolution_models import EvolutionControl
@@ -49,38 +50,47 @@ def evaluate_auto_review(controller: ARCController, config: EvolutionConfig) -> 
         ),
         {},
     )
+    admitted = basic_admitted(goal, proof)
     if (
         not proof
-        or proof.get("passed") is not True
+        or (proof.get("passed") is not True and not admitted)
         or proof.get("validation_id") != attempt.validation_id
         or proof.get("code_sha256") != hashlib.sha256(attempt.strategy_code.encode()).hexdigest()
         or str(proof.get("backtest_id")) != str(attempt.bitpro_backtest_id)
     ):
         reasons.append("missing_version_bound_final_receipt")
     metrics = proof.get("metrics") or {}
-    checked = enforce_selection_gate(
-        controller,
-        attempt,
-        SelfTestResult(
-            True,
-            attempt.validation_id,
-            attempt.bitpro_strategy_id,
-            attempt.bitpro_backtest_id,
-            metrics=metrics,
-        ),
-    )
-    reasons.extend(checked.reasons)
-    metrics = checked.metrics
-    passed, failed = apply_success_criteria(
-        metrics, goal.success_criteria, require_selection_evidence=True
-    )
-    if not passed:
-        reasons.extend(failed)
-    policy_passed, policy_failed = apply_success_criteria(
-        metrics, config.paper_criteria, require_selection_evidence=True
-    )
-    if not policy_passed:
-        reasons.extend("policy: " + reason for reason in policy_failed)
+    if admitted:
+        # Re-derive admission from the stored numbers rather than trusting the receipt's flag.
+        recheck = basic_admission(metrics, projection.avo.get("baseline_final", {}))
+        if not recheck["passed"]:
+            reasons.extend("basic: " + reason for reason in recheck["reasons"])
+        if recheck != proof.get("admission"):
+            reasons.append("basic_admission_receipt_mismatch")
+    else:
+        checked = enforce_selection_gate(
+            controller,
+            attempt,
+            SelfTestResult(
+                True,
+                attempt.validation_id,
+                attempt.bitpro_strategy_id,
+                attempt.bitpro_backtest_id,
+                metrics=metrics,
+            ),
+        )
+        reasons.extend(checked.reasons)
+        metrics = checked.metrics
+        passed, failed = apply_success_criteria(
+            metrics, goal.success_criteria, require_selection_evidence=True
+        )
+        if not passed:
+            reasons.extend(failed)
+        policy_passed, policy_failed = apply_success_criteria(
+            metrics, config.paper_criteria, require_selection_evidence=True
+        )
+        if not policy_passed:
+            reasons.extend("policy: " + reason for reason in policy_failed)
     if config.paper_criteria.required_validation_policy != "arc_windowed_v1":
         reasons.append("unsupported_automatic_validation_policy")
     window = metrics.get("evaluation_window") or {}
@@ -91,7 +101,7 @@ def evaluate_auto_review(controller: ARCController, config: EvolutionConfig) -> 
         or [window.get("start_date"), window.get("end_date")] != [str(d) for d in dates]
     ):
         reasons.append("final_window_unverified")
-    if goal.evolution_context or goal.feedback_parent:
+    if (goal.evolution_context or goal.feedback_parent) and not admitted:
         comparison = compare_backtests(metrics, projection.avo.get("baseline_final", {}))
         if not comparison["passed"] or not comparison.get("backtest_id"):
             reasons.append("baseline_comparison_failed")
@@ -99,10 +109,10 @@ def evaluate_auto_review(controller: ARCController, config: EvolutionConfig) -> 
         reasons.append("automatic_paper_capital_limit")
     if goal.live_allowed:
         reasons.append("paper_only_policy")
-    return {
+    result: dict[str, Any] = {
         "decision": (
             "block"
-            if metrics["selection_bias"]["status"] == "unknown"
+            if (not admitted and metrics["selection_bias"]["status"] == "unknown")
             else "reject"
             if reasons
             else "approve"
@@ -112,6 +122,9 @@ def evaluate_auto_review(controller: ARCController, config: EvolutionConfig) -> 
         "policy": "autonomous_paper_referee_v1",
         "live_authorized": False,
     }
+    if admitted:
+        result["admission"] = "basic"
+    return result
 
 
 def configured_review_mode(db: Database) -> Any:
