@@ -20,7 +20,9 @@ def test_docker_compose_maps_host_gateway_for_bitpro_mcp() -> None:
         assert mapping in section
     deploy = Path("deploy/deploy.sh").read_text()
     assert deploy.index("--write-env") < deploy.index("docker compose run --rm api")
-    assert deploy.index("docker compose up -d sandbox api worker") < deploy.index("--check-running")
+    # api 走 `--wait` 健康门控（sandbox/worker 先起），两者都必须早于 --check-running。
+    assert deploy.index("docker compose up -d sandbox worker") < deploy.index("--check-running")
+    assert deploy.index("docker compose up -d --wait --wait-timeout 90 api") < deploy.index("--check-running")
 
 
 def test_production_trigger_feature_is_disabled_by_default() -> None:
