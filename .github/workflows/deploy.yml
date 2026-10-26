@@ -155,7 +155,7 @@ jobs:
             -o IdentitiesOnly=yes -o BatchMode=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/hypertrade_known_hosts \
             -o ServerAliveInterval=30 -o ServerAliveCountMax=60 \
-            "root@${HOST}" "$GITHUB_SHA"
+            "root@${HOST}" "bash /opt/hypertrade/deploy/from-github.sh $GITHUB_SHA"
       - name: Verify public health
         run: |
           set -euo pipefail
