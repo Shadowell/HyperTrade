@@ -337,7 +337,6 @@ class ARCPaperIncubationResolver:
                     instance_id=instance_id,
                     code_sha256=code_sha256,
                     review_hash=preauth.policy_hash,
-                    strategy_version=receipt["strategy_version"],
                     config_version=receipt["config_version"],
                     idempotency_key=start_key,
                 )
@@ -366,20 +365,21 @@ class ARCPaperIncubationResolver:
             or _instance_id(started) != instance_id
         ):
             return False, None, bitpro_strategy_name, "bitpro_paper_start_identity_unconfirmed"
-        if reviewed and any(
-            started_receipt.get(key) != receipt.get(key)
-            for key in (
-                "guard_version",
-                "review_hash",
-                "code_sha256",
-                "strategy_version",
-                "config_version",
-            )
-        ):
+        # BitPro echoes the request it verified (guard_version, review_hash, code_sha256,
+        # config_version). strategy_version is checked by BitPro itself against the configured
+        # session; compare it here only when BitPro echoes it as well.
+        echoed_keys = ["guard_version", "review_hash", "code_sha256", "config_version"]
+        if started_receipt.get("strategy_version") is not None:
+            echoed_keys.append("strategy_version")
+        if reviewed and any(started_receipt.get(key) != receipt.get(key) for key in echoed_keys):
             return False, None, bitpro_strategy_name, "bitpro_started_review_binding_unconfirmed"
         if self._on_receipt:
             self._on_receipt(
-                "paper_review_started", audit_receipt(started_receipt, preauth.policy_hash)
+                "paper_review_started",
+                audit_receipt(
+                    {**started_receipt, "strategy_version": receipt["strategy_version"]},
+                    preauth.policy_hash,
+                ),
             )
         paper_instance_id = instance_id
         msg = (
