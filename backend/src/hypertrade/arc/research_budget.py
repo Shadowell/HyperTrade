@@ -16,6 +16,11 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 
 from hypertrade.arc import store
+from hypertrade.arc.baseline_feasibility import (
+    backoff_hours,
+    baseline_failure,
+    failure_fingerprint,
+)
 from hypertrade.arc.contracts import RULE_TWEAK_PROVIDER
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
@@ -98,11 +103,25 @@ def _source_identity(goal: Any) -> tuple[str | None, str | None, int | str | Non
     return target_id, source, strategy_id, trigger
 
 
-def source_cooldown_hours(source: dict[str, Any], config: EvolutionConfig) -> int:
-    """A cheap rule_tweak mission may be followed sooner; anything else keeps cooldown_hours."""
-    if source.get("last_provider") == RULE_TWEAK_PROVIDER:
-        return config.exploration_cooldown_hours
-    return config.cooldown_hours
+def source_cooldown_hours(
+    source: dict[str, Any], config: EvolutionConfig, fingerprint: str | None = None
+) -> int:
+    """A cheap rule_tweak mission may be followed sooner; anything else keeps cooldown_hours.
+
+    A parent whose same-window baseline could not be sealed waits longer after each such failure
+    (24h, doubling to a week). `fingerprint` is what the caller is about to ask BitPro; the wait
+    only applies while it still equals what failed, so a new BitPro policy or an edited parent is
+    asked again at once. Without one (status views) the standing wait is shown.
+    """
+    base = (
+        config.exploration_cooldown_hours
+        if source.get("last_provider") == RULE_TWEAK_PROVIDER
+        else config.cooldown_hours
+    )
+    streak = int(source.get("failure_streak") or 0)
+    if streak and (fingerprint is None or fingerprint == source.get("failure_fingerprint")):
+        return max(base, backoff_hours(streak))
+    return base
 
 
 def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str, Any]:
@@ -115,6 +134,10 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
     }
     active = 0
     sources: dict[str, Any] = {}
+    # Missions that died because the parent's baseline cannot be sealed produced nothing and are
+    # not charged to the day; `attempts` keeps each parent's outcomes for the failure streak.
+    refunded: set[str] = set()
+    attempts: dict[str, list[tuple[datetime, str | None, str]]] = {}
     for row in session.scalars(select(ArcMission)):
         projection = load_projection(session, row)
         goal = projection.goal
@@ -147,6 +170,12 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
         busy = _pending_effect(projection) or _feedback_child_active(ctrl)
         if busy and (projection.state != "paper_observing" or _pending_effect(projection)):
             active += 1
+        failure = baseline_failure(projection)
+        if failure:
+            refunded.add(row.mission_id)
+        attempts.setdefault(key, []).append(
+            (when, failure, failure_fingerprint(goal.evolution_context or {}))
+        )
         cooldown_at = max(when, _utc(row.updated_at)) if not busy else when
         prior = sources.get(
             key,
@@ -166,6 +195,18 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
         prior["last_admitted_at"] = max(prior["last_admitted_at"], when.isoformat())
         prior["busy"] = prior["busy"] or busy
         sources[key] = prior
+    for key, source_state in sources.items():
+        history = sorted(attempts.get(key, []), key=lambda item: item[0])
+        streak = 0
+        if history and history[-1][1]:
+            fingerprint = history[-1][2]
+            for _when, failure, step in reversed(history):
+                if not failure or step != fingerprint:
+                    break
+                streak += 1
+        source_state["failure_streak"] = streak
+        source_state["failure_reason"] = history[-1][1] if streak else None
+        source_state["failure_fingerprint"] = history[-1][2] if streak else None
     ordered = sorted(entries.values(), key=lambda r: (r["admitted_at"], r["mission_id"]))
     return {
         "schema_version": "research_budget.v1",
@@ -173,7 +214,14 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
         "period": start.date().isoformat(),
         "period_end": (start + timedelta(days=1)).isoformat(),
         "period_used": sum(
-            start <= _stored_time(r["admitted_at"]) < start + timedelta(days=1) for r in ordered
+            start <= _stored_time(r["admitted_at"]) < start + timedelta(days=1)
+            and r["mission_id"] not in refunded
+            for r in ordered
+        ),
+        "period_refunded": sum(
+            start <= _stored_time(r["admitted_at"]) < start + timedelta(days=1)
+            and r["mission_id"] in refunded
+            for r in ordered
         ),
         "total_used": len(ordered),
         "active": active,
@@ -204,8 +252,9 @@ def budget_status(db: Database, config: EvolutionConfig, now: datetime) -> dict[
             reason, next_run = "concurrency_limit", None
         state.update(reason=reason, next_run_at=next_run)
         for source in state["sources"].values():
+            source["cooldown_hours"] = source_cooldown_hours(source, config)
             until = datetime.fromisoformat(source["cooldown_at"]) + timedelta(
-                hours=source_cooldown_hours(source, config)
+                hours=source["cooldown_hours"]
             )
             source["reason"] = (
                 "source_active" if source["busy"] else ("source_cooldown" if now < until else None)
@@ -304,7 +353,9 @@ def admit(
             elif identity_key in state["sources"]:
                 previous = state["sources"][identity_key]
                 until = datetime.fromisoformat(previous["cooldown_at"]) + timedelta(
-                    hours=source_cooldown_hours(previous, config)
+                    hours=source_cooldown_hours(
+                        previous, config, failure_fingerprint(goal.evolution_context or {})
+                    )
                 )
                 if previous["busy"]:
                     reason = "source_active"

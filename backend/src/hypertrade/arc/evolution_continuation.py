@@ -349,6 +349,19 @@ def readiness(
                 ),
             }
         )
+    infeasible = diagnostic.get("baseline_infeasible")
+    if isinstance(infeasible, dict):
+        blockers.append(
+            {
+                "code": "baseline_infeasible",
+                "reason": str(infeasible.get("message") or ""),
+                "reason_code": infeasible.get("reason_code"),
+                "condition": (
+                    "BitPro must be able to seal this parent's data for the research window "
+                    "(a new BitPro policy, an edited parent, or more listing history)"
+                ),
+            }
+        )
     # Poll unknown/trade/data conditions; a date is only the known minimum time gate.
     sampling_reason = (cursor.get("sampling") or {}).get("reason_code")
     for blocker in blockers:
