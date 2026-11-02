@@ -255,6 +255,15 @@ ref、paper instance、观察窗或对账时包状态为 `incomplete`，`POST ..
 拒绝批准。操作员批准后才走审批绑定的 `authorized_live_promote`；`call_tool("live_promote")`
 和现货/合约下单、划转仍然拦截。Mission 投影落在 `arc_missions`，重启可恢复。
 
+观察收尾与降频（2026-11-02）：`paper_observing` 的评审任务（`paper_review_required`）在它观察的东西结束时自行落到
+`completed`，由新事件 `paper_observation_ended` 完成，不使用 `mission_completed`：①进化循环建的任务，按「目标 + 母体
+策略号 + 挑战者策略号」读前向结果表那一行（赛马裁判在赛道结束时写入，早于这次模拟盘开始的行不算），有结论即收尾
+（`reason=race_finished`，带结论与赛道指标）；②没有账本行时，最近一次确认是本实例的观察显示 BitPro 会话 `ended_at`
+已超过 1 小时，则 `reason=paper_session_ended`。归约守卫：只能从 `paper_observing` 进入、必须对上持有该 Paper 实例的候选，
+结果存入投影字段 `paper_outcome`，候选与 `paper_review` 状态不变。关闭后母体不再被算「忙」。观察循环每分钟只做这次不碰
+BitPro 的检查；读 BitPro 并写一条 `paper_observed` 的间隔由 `ARC_OBSERVATION_RECORD_SECONDS` 决定（默认 3600 秒，上次
+时间存在观察记录的 `observed_at` 里）。`ARC_OBSERVATION_EXIT_ENABLED=false` 停用收尾。
+
 证据窗口带来源合同（2026-08-23）：preflight 与每个 attempt 的证据记录携带
 `source_origin`（`okx_swap` / `alternative_exchange` / `archive_unknown`）、`window_as_of`
 与 `window_source_hash`。归档文件自身无溯源，来源由部署通过 `ARC_EVIDENCE_ARCHIVE_ORIGIN`

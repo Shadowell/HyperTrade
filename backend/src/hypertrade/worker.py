@@ -748,8 +748,12 @@ async def arc_observation_loop(db: Database) -> None:
     configure_store(db)
     while True:
         result = await _guarded(db, "worker.arc_observation", observe_arc_missions_once)
-        if result and result.get("observed"):
-            logger.info("arc_observation observed=%s", result.get("observed"))
+        if result and (result.get("observed") or result.get("closed")):
+            logger.info(
+                "arc_observation observed=%s closed=%s",
+                result.get("observed"),
+                result.get("closed"),
+            )
         await asyncio.sleep(60)
 
 

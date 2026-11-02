@@ -868,7 +868,13 @@ def acceptance_entries(projection: ARCMissionProjection, now: datetime) -> list[
                     )
                 )
             result = "passed" if valid else "unknown"
-        elif event.event_type in {"operator_needed", "mission_failed", "mission_completed"}:
+        elif event.event_type in {
+            "operator_needed",
+            "mission_failed",
+            "mission_completed",
+            # The observed race lane (or Paper session) ended; the mission closes with its outcome.
+            "paper_observation_ended",
+        }:
             stage = "terminal"
         elif event.event_type in {"avo_unknown_result", "paper_review_effect"}:
             stage = "external_effect"

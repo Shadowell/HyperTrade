@@ -37,6 +37,11 @@ ARCMissionState = Literal[
 ]
 
 
+# Why an observing mission may close: the race lane it observed finished, or BitPro reports
+# its Paper session over.
+PAPER_OBSERVATION_END_REASONS = ("race_finished", "paper_session_ended")
+
+
 class ARCEventV1(BaseModel):
     event_id: str = Field(default_factory=lambda: f"evt_{uuid.uuid4().hex[:12]}")
     mission_id: str
@@ -58,6 +63,8 @@ class ARCMissionProjection(BaseModel):
     avo: dict[str, Any] = Field(default_factory=dict)
     paper_observation: dict[str, Any] = Field(default_factory=dict)
     paper_feedback: dict[str, Any] = Field(default_factory=dict)
+    # How the observation ended (see paper_observation_ended); empty while the mission observes.
+    paper_outcome: dict[str, Any] = Field(default_factory=dict)
     paper_started_at: datetime | None = None
     self_test_records: list[dict[str, Any]] = Field(default_factory=list)
     created_by: str = "operator"
@@ -299,6 +306,24 @@ class ARCController:
         elif et == "paper_observed":
             p.paper_observation = dict(payload.get("observation") or {})
             p.state = "paper_observing"
+
+        elif et == "paper_observation_ended":
+            # What the mission observes has ended: its race lane finished in BitPro, or BitPro
+            # reports the Paper session over. Only an observing mission closes this way, and
+            # only for the attempt that holds the Paper instance it observed.
+            ended = next(
+                (a for a in p.attempts if a.attempt_id == payload.get("attempt_id")), None
+            )
+            if (
+                p.state != "paper_observing"
+                or ended is None
+                or not ended.paper_instance_id
+                or ended.paper_instance_id != payload.get("paper_instance_id")
+                or payload.get("reason") not in PAPER_OBSERVATION_END_REASONS
+            ):
+                raise PermissionError("observation end is not bound to the observed attempt")
+            p.paper_outcome = dict(payload)
+            p.state = "completed"
 
         elif et == "live_approval_ready":
             package = LiveApprovalPackageV1(**payload["package"])
