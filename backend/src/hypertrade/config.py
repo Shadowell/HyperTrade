@@ -194,6 +194,20 @@ class Settings(BaseSettings):
         le=86400,
         alias="ARC_MEMORY_DISTILLATION_POLL_INTERVAL_SECONDS",
     )
+    # A mission in paper_observing is read from BitPro and journals one paper_observed event at
+    # most once per this many seconds (every journal write re-serializes the whole mission).
+    arc_observation_record_seconds: int = Field(
+        default=3600,
+        ge=60,
+        le=86400,
+        alias="ARC_OBSERVATION_RECORD_SECONDS",
+    )
+    # Close an observing mission once the lane it observes has ended (forward outcome ledger) or
+    # BitPro reports its Paper session over. Off leaves every mission observing forever.
+    arc_observation_exit_enabled: bool = Field(
+        default=True,
+        alias="ARC_OBSERVATION_EXIT_ENABLED",
+    )
     # Hashed service principals only. Format: label:arc:read+arc:start:sha256hex, comma-separated.
     # No token value can carry an approve capability; approval is not a token scope.
     arc_service_tokens: str = Field(default="", alias="ARC_SERVICE_TOKENS")
