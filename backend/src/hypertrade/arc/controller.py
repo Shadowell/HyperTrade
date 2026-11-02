@@ -258,6 +258,30 @@ class ARCController:
                         att.state = "paper_observing"
                 p.paper_started_at = evt.timestamp
 
+        elif et == "paper_review_effect_reconciled":
+            # The start receipt was lost or unconfirmed (`effect_unknown`) but BitPro's own session
+            # state shows the exact configured instance running. Only that unknown effect, bound
+            # to the approved review, can be adopted; every other state keeps the mission parked.
+            if (
+                p.state != "needs_operator"
+                or p.paper_review.get("status") != "effect_unknown"
+                or p.paper_review.get("package_hash") != payload["package_hash"]
+                or payload.get("ok") is not True
+                or not payload.get("paper_instance_id")
+            ):
+                raise PermissionError("reconciliation is not bound to an unknown paper effect")
+            p.paper_review.update(payload)
+            p.paper_review["status"] = "paper_observing"
+            p.state = "paper_observing"
+            for att in p.attempts:
+                if att.attempt_id == p.paper_review["attempt_id"]:
+                    att.paper_instance_id = payload["paper_instance_id"]
+                    att.state = "paper_observing"
+            started = payload.get("session_started_at")
+            p.paper_started_at = (
+                datetime.fromisoformat(started) if isinstance(started, str) else evt.timestamp
+            )
+
         elif et == "paper_started":
             attempt_id = payload["attempt_id"]
             paper_instance_id = payload.get("paper_instance_id")

@@ -11,6 +11,19 @@
 - **部署顺序与预期**：先部署 BitPro 配套 PR（放宽预热并返回 `baseline_backtest`），再部署本 PR；单独部署本 PR 也安全（没有结论就放行，退避照常生效，已有 200 个失败任务会立刻让必败母体各进入一周以内的退避）。预期：必败母体不再每天烧掉全部额度，额度留给能做基线的母体。
 - **未做**：标的上线时间晚于窗口起点的篮子（大宗宏观、TradFi 系列、年轻币）本质上建不出基线，现在只是提前知道并停止重试；`paper_observing` 任务永不结束、母体「忙」按母体而不是按位加锁的问题不在本次范围。
 
+## 2026-11-02：通过评审的候选启动不再卡死在 effect_unknown（HyperTrade ↔ BitPro 启动契约修复与对账）
+
+- **背景**：线上只读核对（2026-11-01）：10-23 起 9 个通过 Agent 自动评审的研究任务全部停在 `needs_operator`/`effect_unknown`，`paper_review_effect` 回执为 `bitpro_paper_start_failed:BitProMcpError`；HyperTrade 容器日志显示 `POST /api/v2/live/reviewed/configure` 返回 200、随后 `POST /api/v2/live/reviewed/start` 返回 422。这些任务让对应母体长期 `source_active`（占 14/20 个并发名额），其余变体位空着也不再研究。变体本身是靠 BitPro 接力服务自己启动的，HyperTrade 并不知情。
+- **根因（两处契约不一致，两边测试都用假对象所以没抓到）**：①请求：`incubation.py` 给 `paper_start_reviewed` 多传了 `strategy_version`，BitPro 的 `ReviewedPaperStart` 是 `extra="forbid"`，只认 `strategy_id/instance_id/code_sha256/review_hash/config_version/idempotency_key`；②响应：BitPro 的 start 响应只回显请求体，不含 `strategy_version`，而 HyperTrade 要求它与 configure 回执一致，即使请求被接受也会判 `bitpro_started_review_binding_unconfirmed`。
+- **交付**：
+  1. 契约：`incubation.py` 不再发送 `strategy_version`；start 回执核对 `guard_version/review_hash/code_sha256/config_version`，响应里若带 `strategy_version`（BitPro 之后会回显）则必须与 configure 回执一致；`paper_review_started` 审计回执用已核对的 configure 回执补上 `strategy_version`。`bitpro/mcp.py` 新增 `REVIEWED_CONFIGURE_FIELDS/REVIEWED_START_FIELDS`，适配器在发任何网络请求前拒绝 BitPro 不认识的字段（`*_contract_mismatch`）。
+  2. 对账：新增 `arc/paper_effect_reconcile.py` 与 worker 循环 `arc_paper_effect_reconcile_loop`（默认开启，`ARC_PAPER_EFFECT_RECONCILE_ENABLED`，每 120 秒一轮）。只处理「失败发生在 start 阶段、且已有 configure 回执」的 `effect_unknown` 任务：只读取 BitPro 的 `paper_snapshot`，实例号、策略号、`strategy_version`、`config_version` 与 configure 回执逐项一致，且会话 `running`、有启动时间、未结束、`error_level` 不是 `critical`，才写一条 `paper_review_effect_reconciled` 事件；归约器只在「needs_operator + effect_unknown + 同一评审包」下接受，任务转 `paper_observing` 并以 BitPro 会话启动时间作观察起点。不一致一律保持挂起，10 分钟后再看；从不重发写请求。
+  3. 续跑账本把该事件记作 `reviewed_start` 阶段，流水线视图加了对应标签。
+- **验证**：新增 `tests/test_bitpro_reviewed_contract.py`（真实适配器 + 与 BitPro 相同的 pydantic 镜像模型做假 BitPro，端到端 configure→start）和 `tests/test_arc_paper_effect_reconcile.py`（24 项：采纳、重放一致、账本阶段、会话不一致 7 种、他人实例、BitPro 读失败、非 start 阶段失败、缺 configure 回执、只验证不写、只采纳一次、归约器守卫、被拒评审不可采纳、清扫节流、worker 循环）；`tests/test_arc_incubation.py` 去掉了对 `strategy_version` 请求参数的错误断言。变异检验 20 处守卫全部被抓（含一处存活后补的「被拒评审」用例）。线上只读演练：用线上 9 个卡死任务的真实投影和 BitPro 实时快照跑新校验（不写入），8 个核验通过，第 9 个（#972 的任务）因 BitPro 把该会话标为 `critical`（源码漂移恢复失败）被正确拒绝。
+- **影响分析与风险**：GitNexus 把 `ARCController._reduce` 评为 CRITICAL（所有任务事件都经过它）。改动只新增一个事件分支，不改任何既有分支；未知事件类型在旧代码里被归约器忽略，回滚后任务回到挂起而不是出错。`acceptance_entries` 为 LOW。
+- **部署后预期**：合并部署后约两分钟内，8 个已在 BitPro 运行的卡死任务会各追加一条对账事件、转为 `paper_observing`（只写 HyperTrade 任务记录，不动 BitPro 和模拟盘）；它们不再占并发名额，但仍是「母体忙」直到变体赛完，所以这些母体的 2 个空位暂时不会被研究。已知后果：每个观察中的任务每分钟追加一条 `paper_observed` 事件、每天读一次 14 天窗口，这是既有行为（两个 9 月任务已各积累 6.7 万条事件），观察任务不会自行结束的问题不在本次范围。
+- **未做**：BitPro 侧让 start 响应回显 `strategy_version` 与契约测试在 BitPro 仓库的 PR；`paper_observing` 的结束条件与按位而不是按母体加锁。
+
 ## 2026-10-23：母体上线满 7 天就生成变体、参数微调研究员与基本入场
 
 - **背景**：BitPro 每个母体有 3 个变体位（BitPro #1286），但生产上这些位长期空着（系统统计 12 个位、占用 0）。只读核对生产：34 个在役模拟盘里只有 4 个满足研究报名条件，其余 30 个卡在同一会话成交满 30 笔、满 14 天以及成本元数据与权益采样核验上；这 4 个里 333 被挂起副作用占着，443 每天在开发回测报 `snapshot_range_exceeds_bound`（120 个标的 15m 的 119 天开发窗口超过 BitPro 封存回测 100 万根上限），509、513 的候选在终验同窗都比母体差。10-11 起 25 个候选 0 个通过严格终验（60 天窗口上要求去偏夏普概率 ≥0.95，约等于年化夏普 4 以上，且必须优于母体）。用户要求所有策略上线后或表现差时都能自动产生变体，并逐项拍板：母体满 7 天、满 20 笔后生成，7 天不到 20 笔的低频策略满 7 天也生成；变体上模拟盘前的考试改为基本检查，接班标准不降；变体来源为参数微调加 AI 研究；全站同时赛马上限保持 60。

@@ -816,7 +816,12 @@ def acceptance_entries(projection: ARCMissionProjection, now: datetime) -> list[
                 )
                 else "rejected"
             )
-        elif event.event_type in {"paper_review_configured", "paper_review_started"}:
+        elif event.event_type in {
+            "paper_review_configured",
+            "paper_review_started",
+            # A start adopted from BitPro's live session carries the same configured identity.
+            "paper_review_effect_reconciled",
+        }:
             stage = (
                 "reviewed_configure"
                 if event.event_type.endswith("configured")

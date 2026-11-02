@@ -511,6 +511,8 @@ async def main() -> None:
     tasks.append(arc_observation_loop(db))
     tasks.append(arc_evolution_loop(db))
     tasks.append(arc_auto_review_loop(db))
+    if settings.arc_paper_effect_reconcile_enabled:
+        tasks.append(arc_paper_effect_reconcile_loop(db, settings=settings))
     tasks.append(arc_meta_tuning_loop(db))
     tasks.append(cognitive_memory_replay_loop(db))
     if settings.mission_runtime_worker_enabled:
@@ -770,6 +772,22 @@ async def arc_auto_review_loop(db: Database) -> None:
     while True:
         await _guarded(db, "worker.arc_auto_review", lambda: auto_review_once(db))
         await asyncio.sleep(15)
+
+
+async def arc_paper_effect_reconcile_loop(db: Database, settings: Settings | None = None) -> None:
+    """Adopt Paper sessions BitPro started although the start receipt was lost (effect_unknown)."""
+    from hypertrade.arc.paper_effect_reconcile import reconcile_paper_effects_once
+
+    active_settings = settings or get_settings()
+    configure_store(db)
+    interval = max(30, active_settings.arc_paper_effect_reconcile_interval_seconds)
+    while True:
+        result = await _guarded(
+            db, "worker.arc_paper_effect_reconcile", reconcile_paper_effects_once
+        )
+        if result and result.get("reconciled"):
+            logger.info("arc_paper_effect_reconcile reconciled=%s", result["reconciled"])
+        await asyncio.sleep(interval)
 
 
 async def avo_research_loop(db: Database) -> None:
