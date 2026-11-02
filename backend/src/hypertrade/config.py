@@ -392,6 +392,17 @@ class Settings(BaseSettings):
         default=False,
         alias="RACE_JUDGE_AUTO_ADOPT",
     )
+    # Adopt a Paper session BitPro started although the start receipt was lost or unconfirmed
+    # (mission parked in effect_unknown). Reads BitPro only; writes one ARC event per adoption.
+    arc_paper_effect_reconcile_enabled: bool = Field(
+        default=True,
+        alias="ARC_PAPER_EFFECT_RECONCILE_ENABLED",
+    )
+    arc_paper_effect_reconcile_interval_seconds: int = Field(
+        default=120,
+        ge=30,
+        alias="ARC_PAPER_EFFECT_RECONCILE_INTERVAL_SECONDS",
+    )
     bitpro_admin_cookie: str = Field(
         default="",
         alias="BITPRO_ADMIN_COOKIE",
