@@ -60,6 +60,7 @@ _EVENT_LABELS = {
     "paper_auto_review_evaluated": "Agent 自动评审结果",
     "paper_review_decided": "模拟盘审核决定",
     "paper_review_effect": "模拟盘执行回执",
+    "paper_review_effect_reconciled": "模拟盘执行对账（BitPro 已在运行）",
     "paper_started": "模拟盘启动",
     "paper_observed": "模拟盘观察",
     "paper_observation_ended": "模拟盘观察结束",

@@ -116,6 +116,42 @@ RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     },
 }
 
+# Bodies BitPro accepts on the reviewed Paper endpoints. They mirror BitPro's
+# `ReviewedPaperConfiguration` / `ReviewedPaperStart`, both `extra="forbid"`: a field BitPro does
+# not declare is answered with HTTP 422, which for the start call strands an approved candidate
+# in `effect_unknown`. Change these together with BitPro's models.
+REVIEWED_CONFIGURE_FIELDS = frozenset(
+    {
+        "strategy_id",
+        "code_sha256",
+        "review_hash",
+        "initial_equity",
+        "exchange",
+        "symbols",
+        "timeframe",
+        "parameters",
+        "execution_policy",
+        "idempotency_key",
+    }
+)
+REVIEWED_START_FIELDS = frozenset(
+    {
+        "strategy_id",
+        "instance_id",
+        "code_sha256",
+        "review_hash",
+        "config_version",
+        "idempotency_key",
+    }
+)
+
+
+def _reject_unknown_fields(tool: str, parameters: dict[str, Any], allowed: frozenset[str]) -> None:
+    unexpected = sorted(set(parameters) - allowed)
+    if unexpected:
+        raise BitProMcpError(f"{tool}_contract_mismatch:unexpected_fields={','.join(unexpected)}")
+
+
 RESEARCH_MUTATION_TOOLS = {
     "sync_start_history",
     "sync_one",
@@ -1154,11 +1190,13 @@ class BitProToolAdapter:
                 row["strategy_name"] = strategy_names[strategy_id]
 
     def paper_configure_reviewed(self, **parameters: Any) -> dict[str, Any]:
+        _reject_unknown_fields("paper_configure_reviewed", parameters, REVIEWED_CONFIGURE_FIELDS)
         self.last_tool_calls = []
         self._preflight()
         return {"status": "ok", "paper": self._call("paper_configure_reviewed", parameters)}
 
     def paper_start_reviewed(self, **parameters: Any) -> dict[str, Any]:
+        _reject_unknown_fields("paper_start_reviewed", parameters, REVIEWED_START_FIELDS)
         self.last_tool_calls = []
         self._preflight()
         return {"status": "ok", "paper": self._call("paper_start_reviewed", parameters)}

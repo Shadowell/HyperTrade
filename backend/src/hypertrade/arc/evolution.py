@@ -16,6 +16,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 
 from hypertrade.arc.attribution import attribution_report, collect_attribution
+from hypertrade.arc.baseline_feasibility import (
+    baseline_verdict,
+    failure_fingerprint,
+    infeasibility,
+    policy_warmup_bars,
+)
 from hypertrade.arc.contracts import (
     RULE_TWEAK_PROVIDER,
     ARCBudgetV1,
@@ -167,9 +173,13 @@ def launch_observation(
 
 
 def research_windows_for(
-    symbol_count: int, timeframe: str, *, as_of: date
+    symbol_count: int, timeframe: str, *, as_of: date, warmup_bars: int | None = None
 ) -> ResearchWindowsV1:
-    """Fit research windows inside BitPro's sealed-backtest bounds."""
+    """Fit research windows inside BitPro's sealed-backtest bounds.
+
+    `warmup_bars` is what a sealed snapshot of the parent carries before the window (BitPro's
+    `baseline_backtest.warmup_policy_bars`); without it the 500-bar floor is assumed.
+    """
     default = ResearchWindowsV1(as_of=as_of)
     seconds = _timeframe_seconds(timeframe)
     if seconds is None or seconds >= 86400:
@@ -177,7 +187,7 @@ def research_windows_for(
     bars_per_day = 86400 // seconds
     per_symbol = min(BITPRO_MAX_BARS_PER_SYMBOL, BITPRO_MAX_TOTAL_BARS // max(1, symbol_count))
     # One extra bar covers the inclusive window boundary.
-    max_days = (per_symbol - BITPRO_WARMUP_BARS - 1) // bars_per_day
+    max_days = (per_symbol - (warmup_bars or BITPRO_WARMUP_BARS) - 1) // bars_per_day
     if max_days >= default.development_days and max_days >= default.validation_days:
         return default
     if max_days < MIN_RESEARCH_WINDOW_DAYS:
@@ -731,7 +741,7 @@ class EvolutionService:
             )
             until = datetime.fromisoformat(
                 source.get("cooldown_at", "1970-01-01T00:00:00+00:00")
-            ) + timedelta(hours=source_cooldown_hours(source, config))
+            ) + timedelta(hours=source_cooldown_hours(source, config, failure_fingerprint(context)))
             blocked = source.get("busy", False) or now < until
             preferred = "degradation"
             # BitPro parents can race several challengers: among equally urgent sources, the one
@@ -986,6 +996,26 @@ class EvolutionService:
                     }
                     diagnostic["skip_reason"] = "seats_reserved"
                     continue
+                # A parent BitPro cannot seal a same-window baseline for fails the same way every
+                # time; say so now instead of spending a research slot to find out.
+                verdict = baseline_verdict(variant_policy)
+                try:
+                    blocked = infeasibility(
+                        verdict,
+                        timeframe=timeframe,
+                        windows=research_windows_for(
+                            len(symbols),
+                            timeframe,
+                            as_of=now.astimezone(UTC).date() - timedelta(days=1),
+                            warmup_bars=policy_warmup_bars(variant_policy),
+                        ),
+                    )
+                except ValueError as exc:
+                    blocked = {"reason_code": str(exc), "message": "研究窗口放不进回测基准数据上限"}
+                if blocked is not None:
+                    diagnostic["baseline_infeasible"] = blocked
+                    diagnostic["skip_reason"] = "baseline_infeasible"
+                    continue
                 is_source_variant = False
                 parent_execution_identity_sha256 = None
                 if variant_policy is not None and variant_policy.get("variant_creation_supported"):
@@ -1220,6 +1250,7 @@ class EvolutionService:
             len(scope_symbols),
             context["baseline"]["strategy_spec"]["timeframe"],
             as_of=now.astimezone(UTC).date() - timedelta(days=1),
+            warmup_bars=policy_warmup_bars(context.get("variant_policy")),
         )
         memory, manifest = MemoryService(self.db).project_research(
             memory,

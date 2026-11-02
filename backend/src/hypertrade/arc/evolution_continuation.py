@@ -349,6 +349,19 @@ def readiness(
                 ),
             }
         )
+    infeasible = diagnostic.get("baseline_infeasible")
+    if isinstance(infeasible, dict):
+        blockers.append(
+            {
+                "code": "baseline_infeasible",
+                "reason": str(infeasible.get("message") or ""),
+                "reason_code": infeasible.get("reason_code"),
+                "condition": (
+                    "BitPro must be able to seal this parent's data for the research window "
+                    "(a new BitPro policy, an edited parent, or more listing history)"
+                ),
+            }
+        )
     # Poll unknown/trade/data conditions; a date is only the known minimum time gate.
     sampling_reason = (cursor.get("sampling") or {}).get("reason_code")
     for blocker in blockers:
@@ -803,7 +816,12 @@ def acceptance_entries(projection: ARCMissionProjection, now: datetime) -> list[
                 )
                 else "rejected"
             )
-        elif event.event_type in {"paper_review_configured", "paper_review_started"}:
+        elif event.event_type in {
+            "paper_review_configured",
+            "paper_review_started",
+            # A start adopted from BitPro's live session carries the same configured identity.
+            "paper_review_effect_reconciled",
+        }:
             stage = (
                 "reviewed_configure"
                 if event.event_type.endswith("configured")
