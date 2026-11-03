@@ -418,3 +418,77 @@ def test_a_basket_whose_window_cannot_fit_is_skipped_instead_of_failing_the_cycl
     infeasible = diagnostic["baseline_infeasible"]
     assert infeasible["reason_code"] == "research_window_exceeds_backtest_bounds"
     assert list_mission_ids() == []
+
+
+def young_verdict(listed_days_ago: int) -> dict:
+    listed = int((NOW - timedelta(days=listed_days_ago)).timestamp() * 1000)
+    return {
+        "policy": "strategy_bars_v3",
+        "supported": True,
+        "warmup_policy_bars": 500,
+        "warmup_min_bars": 30,
+        "history_start_ms": listed,
+    }
+
+
+def test_a_recently_listed_parent_is_researched_on_the_history_it_has(service, monkeypatch):
+    # Listed 100 days ago: far too young for 500 bars before a 180-day window, but BitPro seals
+    # the history it has. The windows start the first day 30 hourly bars exist (2026-06-07).
+    result = scan_with(service, monkeypatch, young_verdict(100))
+
+    assert result["status"] == "research_created", result
+    assert "baseline_infeasible" not in result["payload"]["diagnostics"][0]
+    goal = get_controller(result["payload"]["mission_id"]).projection.goal
+    windows = goal.research_windows
+    assert windows is not None
+    assert (windows.development_days, windows.validation_days) == (63, 32)
+    assert windows.window("development")[0].isoformat() == "2026-06-07"
+    assert windows.window("final")[1].isoformat() == "2026-09-11"
+    # The mission carries BitPro's answer, so the windows can be re-derived from the context.
+    assert goal.evolution_context["variant_policy"]["baseline_backtest"]["warmup_min_bars"] == 30
+
+
+def test_a_parent_too_young_for_two_windows_is_skipped_with_the_day_it_becomes_researchable(
+    service, monkeypatch
+):
+    result = scan_with(service, monkeypatch, young_verdict(20))
+
+    assert result["status"] == "no_action", result
+    diagnostic = result["payload"]["diagnostics"][0]
+    assert diagnostic["skip_reason"] == "baseline_infeasible"
+    infeasible = diagnostic["baseline_infeasible"]
+    assert infeasible["reason_code"] == "history_shorter_than_window"
+    assert "2026-09-25" in infeasible["message"]
+    assert list_mission_ids() == []
+
+
+def test_the_scan_and_the_mission_agree_on_the_windows_of_a_young_parent(service, monkeypatch):
+    # 285 symbols of 1H leave room for a 104-day development window (the bar bound); the history
+    # of a parent listed 100 days ago leaves 95 usable days, split like the 104:60 it replaces.
+    symbols = [f"C{index}/USDT:USDT" for index in range(285)]
+    verdict = {**young_verdict(100), "warmup_policy_bars": 1000}
+
+    result = scan_with(service, monkeypatch, verdict, symbols=symbols)
+
+    assert result["status"] == "research_created", result
+    windows = get_controller(result["payload"]["mission_id"]).projection.goal.research_windows
+    assert windows is not None
+    assert (windows.development_days, windows.validation_days) == (60, 35)
+    assert windows.window("development")[0].isoformat() == "2026-06-07"
+
+
+def test_an_older_bitpro_that_seals_the_full_warmup_gets_windows_that_start_after_it(
+    service, monkeypatch
+):
+    # No warmup_min_bars: BitPro seals all 500 hourly bars, so the windows start once the symbol
+    # (listed 100 days ago) has them: 2026-06-04 12:00 + 1 day + 500 hours -> 2026-06-27.
+    verdict = young_verdict(100)
+    del verdict["warmup_min_bars"]
+
+    result = scan_with(service, monkeypatch, verdict)
+
+    assert result["status"] == "research_created", result
+    windows = get_controller(result["payload"]["mission_id"]).projection.goal.research_windows
+    assert windows is not None
+    assert windows.window("development")[0].isoformat() == "2026-06-27"
+    assert (windows.development_days, windows.validation_days) == (50, 25)

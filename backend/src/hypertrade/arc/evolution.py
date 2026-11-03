@@ -17,8 +17,10 @@ from sqlalchemy import select
 
 from hypertrade.arc.attribution import attribution_report, collect_attribution
 from hypertrade.arc.baseline_feasibility import (
+    MIN_WINDOW_DAYS,
     baseline_verdict,
     failure_fingerprint,
+    fit_windows_to_history,
     infeasibility,
     policy_warmup_bars,
 )
@@ -139,7 +141,7 @@ LAUNCH_MEASUREMENT = "launch_exploration"
 BITPRO_MAX_TOTAL_BARS = 1_000_000
 BITPRO_MAX_BARS_PER_SYMBOL = 100_000
 BITPRO_WARMUP_BARS = 500
-MIN_RESEARCH_WINDOW_DAYS = 14
+MIN_RESEARCH_WINDOW_DAYS = MIN_WINDOW_DAYS
 
 
 def launch_observation(
@@ -197,6 +199,21 @@ def research_windows_for(
         development_days=min(default.development_days, max_days),
         validation_days=min(default.validation_days, max_days),
     )
+
+
+def research_windows_for_parent(
+    symbol_count: int, timeframe: str, *, as_of: date, variant_policy: Any
+) -> ResearchWindowsV1:
+    """The research windows of one parent: inside BitPro's bar bounds, and no longer than the
+    history of its youngest symbol allows (a recently listed symbol gets shorter windows).
+
+    The scan and the mission context both call this with the same variant policy, so the parent
+    that passed the scan is researched on exactly the windows the scan judged.
+    """
+    windows = research_windows_for(
+        symbol_count, timeframe, as_of=as_of, warmup_bars=policy_warmup_bars(variant_policy)
+    )
+    return fit_windows_to_history(windows, baseline_verdict(variant_policy), timeframe=timeframe)
 
 
 def digest(value: Any) -> str:
@@ -1003,11 +1020,11 @@ class EvolutionService:
                     blocked = infeasibility(
                         verdict,
                         timeframe=timeframe,
-                        windows=research_windows_for(
+                        windows=research_windows_for_parent(
                             len(symbols),
                             timeframe,
                             as_of=now.astimezone(UTC).date() - timedelta(days=1),
-                            warmup_bars=policy_warmup_bars(variant_policy),
+                            variant_policy=variant_policy,
                         ),
                     )
                 except ValueError as exc:
@@ -1246,11 +1263,11 @@ class EvolutionService:
                                 "development": receipt,
                             }
                         )
-        windows = research_windows_for(
+        windows = research_windows_for_parent(
             len(scope_symbols),
             context["baseline"]["strategy_spec"]["timeframe"],
             as_of=now.astimezone(UTC).date() - timedelta(days=1),
-            warmup_bars=policy_warmup_bars(context.get("variant_policy")),
+            variant_policy=context.get("variant_policy"),
         )
         memory, manifest = MemoryService(self.db).project_research(
             memory,
