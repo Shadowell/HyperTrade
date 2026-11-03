@@ -26,6 +26,7 @@ def service():
     yield EvolutionService(db)
     reset_store()
 
+
 NOW = datetime(2026, 9, 12, 12, tzinfo=UTC)
 
 
@@ -66,17 +67,13 @@ def evidence_unavailable(*args, **kwargs):
 def launch_service(service, monkeypatch, *, client=None, **overrides):
     service.client = client if client is not None else LaunchPaper()
     service.client.capital = 100
-    monkeypatch.setattr(
-        "hypertrade.arc.evolution.collect_windows", evidence_unavailable
-    )
+    monkeypatch.setattr("hypertrade.arc.evolution.collect_windows", evidence_unavailable)
     monkeypatch.setattr(
         "hypertrade.arc.evolution.collect_observed_long_window", evidence_unavailable
     )
     state = service.status()
     service.configure(
-        EvolutionConfig.model_validate(
-            {**state["config"], "paper_capital": "10000", **overrides}
-        ),
+        EvolutionConfig.model_validate({**state["config"], "paper_capital": "10000", **overrides}),
         revision=state["revision"],
         actor="test",
     )
@@ -143,9 +140,7 @@ def test_parent_younger_than_launch_days_is_not_launched(service, monkeypatch):
 
 
 def test_launch_requires_bound_source_variant_policy(service, monkeypatch):
-    now = launch_service(
-        service, monkeypatch, client=LaunchPlainPaper(), launch_enabled=True
-    )
+    now = launch_service(service, monkeypatch, client=LaunchPlainPaper(), launch_enabled=True)
     result = service.tick(now)
     assert result["status"] == "no_action"
     diagnostic = result["payload"]["diagnostics"][0]
@@ -207,9 +202,7 @@ def test_degradation_keeps_the_configured_research_provider(service, monkeypatch
     now = prepare(service, monkeypatch)
     state = service.status()
     service.configure(
-        EvolutionConfig.model_validate(
-            {**state["config"], "exploration_provider": "rule_tweak"}
-        ),
+        EvolutionConfig.model_validate({**state["config"], "exploration_provider": "rule_tweak"}),
         revision=state["revision"],
         actor="test",
     )
@@ -220,9 +213,7 @@ def test_degradation_keeps_the_configured_research_provider(service, monkeypatch
     assert goal.provider_name == EvolutionConfig().research_provider
 
 
-def test_launch_keeps_research_provider_when_exploration_is_not_rule_tweak(
-    service, monkeypatch
-):
+def test_launch_keeps_research_provider_when_exploration_is_not_rule_tweak(service, monkeypatch):
     now = launch_service(
         service,
         monkeypatch,
@@ -258,9 +249,7 @@ def test_rule_tweak_mission_uses_the_short_exploration_cooldown(service):
     end_mission(service, first, NOW - timedelta(hours=3))
     state = service.status()
     service.configure(
-        EvolutionConfig.model_validate(
-            {**state["config"], "exploration_cooldown_hours": 2}
-        ),
+        EvolutionConfig.model_validate({**state["config"], "exploration_cooldown_hours": 2}),
         revision=state["revision"],
         actor="test",
     )
@@ -311,9 +300,7 @@ def test_other_providers_keep_the_configured_cooldown(service):
     end_mission(service, first, NOW - timedelta(hours=3))
     state = service.status()
     service.configure(
-        EvolutionConfig.model_validate(
-            {**state["config"], "exploration_cooldown_hours": 2}
-        ),
+        EvolutionConfig.model_validate({**state["config"], "exploration_cooldown_hours": 2}),
         revision=state["revision"],
         actor="test",
     )
@@ -431,9 +418,7 @@ def _two_finished_missions(service, *, older_provider, newer_provider):
 
 
 def test_source_cooldown_follows_the_latest_mission_provider(service):
-    config = _two_finished_missions(
-        service, older_provider="rule_tweak", newer_provider="deepseek"
-    )
+    config = _two_finished_missions(service, older_provider="rule_tweak", newer_provider="deepseek")
     sources = budget_status(service.db, config, NOW)["sources"]
     assert [source["last_provider"] for source in sources.values()] == ["deepseek"]
     result = admit(_launch_ctrl(), now=NOW, db=service.db)
@@ -442,10 +427,136 @@ def test_source_cooldown_follows_the_latest_mission_provider(service):
 
 
 def test_rule_tweak_short_cooldown_applies_when_it_is_the_latest_provider(service):
-    config = _two_finished_missions(
-        service, older_provider="deepseek", newer_provider="rule_tweak"
-    )
+    config = _two_finished_missions(service, older_provider="deepseek", newer_provider="rule_tweak")
     sources = budget_status(service.db, config, NOW)["sources"]
     assert [source["last_provider"] for source in sources.values()] == ["rule_tweak"]
     result = admit(_launch_ctrl(), now=NOW, db=service.db)
     assert result["accepted"] is True, result
+
+
+def _variant_slot_ctrl(changes: dict[str, int | float]):
+    from hypertrade.arc.contracts import ARCCandidateAttemptV1
+
+    ctrl = ARCController(
+        goal=ARCGoalV1(
+            objective="variant slot probe",
+            provider_name="rule_tweak",
+            evolution_context={
+                "source_instance_id": "paper-source",
+                "source_strategy_id": 44,
+                "trigger_source": "launch",
+                "variant_policy": {"variant_creation_supported": True},
+                "relay_seats": {"total": 3, "used": 0, "free": 3, "queued": 0, "open": 3},
+            },
+        )
+    )
+    ctrl.projection.attempts.append(
+        ARCCandidateAttemptV1(
+            attempt_id="att_slot",
+            candidate_id="cand_slot",
+            hypothesis="slot test",
+            strategy_code="pass",
+            strategy_spec={"is_source_variant": True, "parameter_changes": changes},
+        )
+    )
+    ctrl.projection.current_attempt_id = "att_slot"
+    return ctrl
+
+
+def _enter_paper_observing(service, ctrl, started_at):
+    live = get_controller(ctrl.mission_id)
+    live.projection.state = "paper_observing"
+    live.projection.paper_started_at = started_at
+    save_mission(live)
+
+
+def test_three_slot_parent_admits_three_concurrent_observing_variants_and_blocks_fourth(
+    service,
+):
+    config = EvolutionConfig(
+        enabled=True,
+        launch_enabled=True,
+        max_research_per_day=10,
+        exploration_cooldown_hours=24,
+    )
+    service.configure(config, revision=0, actor="test")
+
+    slot_changes = [
+        {"fast_window": 12},
+        {"stop_loss_pct": 0.024},
+        {"threshold": 0.024},
+    ]
+    missions = []
+    for idx, changes in enumerate(slot_changes):
+        ctrl = _variant_slot_ctrl(changes)
+        step_now = NOW + timedelta(minutes=idx * 5)
+        res = admit(ctrl, now=step_now, db=service.db)
+        assert res["accepted"] is True, res
+        _enter_paper_observing(service, ctrl, step_now)
+        missions.append(ctrl)
+        source_state = next(iter(budget_status(service.db, config, step_now)["sources"].values()))
+        assert source_state["observing_slots"] == idx + 1
+        assert source_state["slot_limit"] == 3
+        assert source_state["slots_open"] == 3 - (idx + 1)
+        if idx < 2:
+            assert source_state["busy"] is False
+            assert source_state["cooldown_hours"] == 0
+            assert source_state["reason"] is None
+        else:
+            assert source_state["busy"] is True
+            assert source_state["reason"] == "source_active"
+
+    assert source_state["active_slot_variants"] == slot_changes
+
+    fourth = _variant_slot_ctrl({"fast_window": 8})
+    denied = admit(fourth, now=NOW + timedelta(minutes=20), db=service.db)
+    assert denied["accepted"] is False
+    assert denied["reason"] == "source_active"
+
+    # Closing one observing slot frees the seat immediately.
+    first_live = get_controller(missions[0].mission_id)
+    first_live.projection.state = "completed"
+    save_mission(first_live)
+    reopened = next(
+        iter(budget_status(service.db, config, NOW + timedelta(minutes=25))["sources"].values())
+    )
+    assert reopened["observing_slots"] == 2
+    assert reopened["slots_open"] == 1
+    assert reopened["busy"] is False
+
+
+def test_stable_variant_strategy_card_is_covered_when_launch_enabled(service, monkeypatch):
+    now = prepare(service, monkeypatch)
+    service.client = LaunchPaper()
+    service.client.capital = 100
+    service.client.trade_count = 40
+    monkeypatch.setattr(
+        "hypertrade.arc.evolution.collect_windows",
+        lambda *a, **k: {
+            "triggered": False,
+            "reasons": [],
+            "end_at": "2026-09-12T00:00:00Z",
+        },
+    )
+    state = service.status()
+    service.configure(
+        EvolutionConfig.model_validate(
+            {
+                **state["config"],
+                "launch_enabled": True,
+                "launch_days": 0,
+                "proactive_enabled": False,
+                "exploration_provider": "rule_tweak",
+            }
+        ),
+        revision=state["revision"],
+        actor="test",
+    )
+    result = service.tick(now)
+    assert result["status"] == "research_created", result
+    goal = get_controller(result["payload"]["mission_id"]).projection.goal
+    assert goal.evolution_context["trigger_source"] == "launch"
+    assert goal.provider_name == "rule_tweak"
+    plan = goal.evolution_context["exploration_plan"]
+    assert set(plan["dimensions"]) == {"signal_period", "risk_exit", "filter_sizing"}
+    assert result["payload"]["diagnostics"][0]["exploration_plan"] == plan

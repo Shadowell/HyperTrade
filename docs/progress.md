@@ -1,3 +1,13 @@
+## 2026-11-03：开放母体三变体槽位并发锁、按三大参数功能维度正交探索与策略卡全覆盖
+
+- **背景**：每个母体策略卡在 BitPro 上拥有 3 个并发变体槽位（Slot 1 / Slot 2 / Slot 3），但此前：①`research_budget.py` 按整张母体加并发锁，只要 1 个任务进入 `paper_observing`，整张母体在 14 天赛马期内一直被判为 `busy=True`（`source_active`），其余 2 个槽位无法继续发起研究；②`RuleTweakProvider` 按参数名字母顺序平铺生成候选，单任务 3 个候选与跨任务的多槽位候选容易挤在同一个参数维度上；③`EvolutionService._scan` 在 `proactive_enabled=False`（默认）且 `launch_enabled=True` 时，满 14 天且表现稳定的策略卡未被纳入 `launch` 探索，且 `launch_days` 最低限制为 3 天。
+- **交付**：
+  1. **开放三槽位并发锁（按槽位计数而非整母体封锁）**：`arc/research_budget.py` 新增 `source_slot_limit` 与 `_observing_parameter_changes`，区分「正在执行 AVO 回测研究（`in_research`）」与「已在 Paper 赛道观察（`in_observation`）」。支持来源变体的母体默认拥有 3 个并发观察槽位（或取 `relay_seats.total`），仅当 `in_research` 为真或 `observing_slots >= slot_limit` 时才将母体标记为 `busy=True`；当母体已有变体在跑且仍有空余槽位（`0 < observing_slots < slot_limit`）且最近一次任务正常进入 `paper_observing` 时，补位冷却 `source_cooldown_hours` 为 `0` 小时，使母体可连续补齐全部 3 个变体槽位；同时 `in_observation` 的冷却基准使用 `paper_started_at` 而非每小时追加 `paper_observed` 刷新的 `updated_at`。传统非变体单槽位任务保持 `slot_limit=1` 向后兼容。
+  2. **按参数功能维度划分三个正交探索方向**：`arc/rule_tweak.py` 新增 `PARAMETER_DIMENSIONS = ("signal_period", "risk_exit", "filter_sizing")`（信号与趋势周期、风控与退出边界、阈值过滤与仓位）、`parameter_dimension`、`active_slot_changes`、`occupied_slot_dimensions` 与 `exploration_plan_for_policy`。`parameter_neighbours` 先在各功能维度内部跨参数交错，再在三大功能维度间轮转交错，并剔除已在在役槽位中赛马的变体组合（`active_slot_variants`）；`RuleTweakProvider` 在单任务内优先提议尚未覆盖的功能维度（保证单次任务 3 个候选覆盖 3 个不同功能方向），在 `finish` 选优与跨任务补位时优先选择母体尚未占用的功能维度（保证母体的 3 个槽位分别探索 3 个不同功能方向）。`arc/avo.py` 同步注入 `exploration_plan` 提示与在役槽位去重守卫。
+  3. **策略卡覆盖**：`arc/evolution.py` 将 `EvolutionConfig.launch_days` 下限放宽至 `0`（`ge=0, le=14`），并在 `launch_enabled=True` 时允许满 14 天但未触发退化的稳定变体母体以 `launch` 触发补位探索（非变体普通模拟盘仍保持 `stable` 跳过），同时在 `context` 与 `diagnostic` 中附上 `exploration_plan` 与 `active_slot_variants`。
+- **验证**：`tests/test_rule_tweak.py` 与 `tests/test_evolution_launch.py` 新增参数功能维度分类、三维度交错生成、在役槽位维度去重与跨三轮任务填满三个正交功能维度槽位、三槽位并发准入与第四槽位阻断及关单释放、稳定策略卡 `launch` 覆盖等测试，全部通过。
+- **影响分析与风险**：GitNexus 评 `usage`、`budget_status`、`admit`、`_scan` 为 HIGH（涉及 `tick`、`observe_arc_missions_once`、`check_paper_feedback`）。通过保留非变体任务的 `slot_limit=1` 以及仅在 `last_state == "paper_observing"` 且无连败时启用 0h 补位冷却，避免失败任务死循环重试，且完全兼容既有契约测试。
+
 ## 2026-11-03：标的上线晚时按可用历史缩短研究窗口，不再要求凑满 500 根预热
 
 - **背景**：线上只读核对（2026-11-02）：大宗宏观 #583、半导体日线 #524 等 8 个母体，因为标的上线太晚（OKX 的 TradFi/大宗永续多数 2026-03 之后才上线），「窗口起点前 500 根预热」要追到上线之前，研究被预检拦下（文案「部分标的 2026-07-30 才上线，晚于研究窗口前 500 根预热所需的起点 2025-08-29，回测基准数据建不出来」）。用户的要求：最近才上线的标的，只要有最近日期的数据就可以研究。
