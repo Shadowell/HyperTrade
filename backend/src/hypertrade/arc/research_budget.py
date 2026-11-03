@@ -43,11 +43,65 @@ def _stored_time(value: str) -> datetime:
 
 
 _TARGET_ID = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
+DEFAULT_VARIANT_SLOTS = 3
 
 
 def source_key(target_id: str, strategy_id: int | str, instance_id: str) -> str:
     """A collision-free source index shared with the evolution status reader."""
     return json.dumps([target_id, str(strategy_id), instance_id], separators=(",", ":"))
+
+
+def source_slot_limit(goal: Any) -> int:
+    """Concurrent Paper variant slots supported by the mission's parent strategy."""
+    context = (goal.evolution_context if goal is not None else None) or {}
+    if not isinstance(context, dict):
+        return 1
+    seats = context.get("relay_seats")
+    if isinstance(seats, dict):
+        total = seats.get("total")
+        if isinstance(total, int) and not isinstance(total, bool) and total > 0:
+            return total
+    policy = context.get("variant_policy")
+    if isinstance(policy, dict) and policy.get("variant_creation_supported") is True:
+        relay = policy.get("relay")
+        if isinstance(relay, dict) and isinstance(relay.get("slots"), list):
+            total = len(relay["slots"])
+            if total > 0:
+                return total
+        return DEFAULT_VARIANT_SLOTS
+    baseline = context.get("baseline")
+    spec = baseline.get("strategy_spec") if isinstance(baseline, dict) else None
+    if isinstance(spec, dict) and spec.get("is_source_variant") is True:
+        return DEFAULT_VARIANT_SLOTS
+    return 1
+
+
+def _observing_parameter_changes(projection: Any) -> dict[str, Any] | None:
+    """Extract the parameter_changes of the attempt currently observing in Paper."""
+    review_attempt_id = (
+        projection.paper_review.get("attempt_id")
+        if isinstance(projection.paper_review, dict)
+        else None
+    )
+    final_attempt_id = (
+        (projection.avo.get("final") or {}).get("attempt_id")
+        if isinstance(projection.avo, dict) and isinstance(projection.avo.get("final"), dict)
+        else None
+    )
+    target_id = review_attempt_id or final_attempt_id or projection.current_attempt_id
+    chosen = None
+    for attempt in projection.attempts:
+        if target_id and attempt.attempt_id == target_id:
+            chosen = attempt
+            break
+    if chosen is None and projection.attempts:
+        chosen = projection.attempts[-1]
+    if chosen is None or not isinstance(chosen.strategy_spec, dict):
+        return None
+    changes = chosen.strategy_spec.get("parameter_changes")
+    if isinstance(changes, dict) and changes:
+        return dict(changes)
+    return None
 
 
 def _source_identity(goal: Any) -> tuple[str | None, str | None, int | str | None, str | None]:
@@ -112,6 +166,11 @@ def source_cooldown_hours(
     (24h, doubling to a week). `fingerprint` is what the caller is about to ask BitPro; the wait
     only applies while it still equals what failed, so a new BitPro policy or an edited parent is
     asked again at once. Without one (status views) the standing wait is shown.
+
+    When a multi-slot variant parent already has at least one variant observing in Paper and still
+    has open variant slots (`0 < observing_slots < slot_limit`), and its latest mission entered
+    `paper_observing` without failing, slot-fill cooldown is 0h so all 3 variant slots can be
+    populated across orthogonal directions without waiting 24h between slots.
     """
     base = (
         config.exploration_cooldown_hours
@@ -121,6 +180,15 @@ def source_cooldown_hours(
     streak = int(source.get("failure_streak") or 0)
     if streak and (fingerprint is None or fingerprint == source.get("failure_fingerprint")):
         return max(base, backoff_hours(streak))
+    slot_limit = int(source.get("slot_limit") or 1)
+    observing_slots = int(source.get("observing_slots") or 0)
+    if (
+        slot_limit > 1
+        and 0 < observing_slots < slot_limit
+        and not source.get("in_research")
+        and source.get("last_state") == "paper_observing"
+    ):
+        return 0
     return base
 
 
@@ -167,8 +235,14 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
         when = _stored_time(entry["admitted_at"])
         ctrl = ARCController(mission_id=row.mission_id)
         ctrl.rebase(projection, row.revision)
-        busy = _pending_effect(projection) or _feedback_child_active(ctrl)
-        if busy and (projection.state != "paper_observing" or _pending_effect(projection)):
+        busy_mission = _pending_effect(projection) or _feedback_child_active(ctrl)
+        in_observation = (
+            busy_mission
+            and projection.state == "paper_observing"
+            and not _pending_effect(projection)
+        )
+        in_research = busy_mission and not in_observation
+        if in_research:
             active += 1
         failure = baseline_failure(projection)
         if failure:
@@ -176,7 +250,17 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
         attempts.setdefault(key, []).append(
             (when, failure, failure_fingerprint(goal.evolution_context or {}))
         )
-        cooldown_at = max(when, _utc(row.updated_at)) if not busy else when
+        if not busy_mission:
+            cooldown_at = max(when, _utc(row.updated_at))
+        elif in_observation:
+            cooldown_at = (
+                max(when, _utc(projection.paper_started_at))
+                if projection.paper_started_at is not None
+                else when
+            )
+        else:
+            cooldown_at = when
+        slot_limit = source_slot_limit(goal)
         prior = sources.get(
             key,
             {
@@ -185,15 +269,35 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
                 "source_instance_id": entry_source,
                 "last_admitted_at": when.isoformat(),
                 "busy": False,
+                "in_research": False,
+                "observing_slots": 0,
+                "slot_limit": slot_limit,
+                "slots_open": slot_limit,
+                "active_slot_variants": [],
+                "last_state": projection.state,
                 "cooldown_at": cooldown_at.isoformat(),
                 "last_provider": goal.provider_name,
             },
         )
-        if cooldown_at.isoformat() >= prior["cooldown_at"]:
+        prior["slot_limit"] = max(int(prior.get("slot_limit") or 1), slot_limit)
+        if (cooldown_at.isoformat(), when.isoformat()) >= (
+            prior["cooldown_at"],
+            prior["last_admitted_at"],
+        ):
             prior["last_provider"] = goal.provider_name
+            prior["last_state"] = projection.state
         prior["cooldown_at"] = max(prior["cooldown_at"], cooldown_at.isoformat())
         prior["last_admitted_at"] = max(prior["last_admitted_at"], when.isoformat())
-        prior["busy"] = prior["busy"] or busy
+        prior["in_research"] = bool(prior.get("in_research") or in_research)
+        if in_observation:
+            prior["observing_slots"] = int(prior.get("observing_slots") or 0) + 1
+            obs_changes = _observing_parameter_changes(projection)
+            if obs_changes is not None and obs_changes not in prior["active_slot_variants"]:
+                prior["active_slot_variants"].append(obs_changes)
+        prior["slots_open"] = max(0, prior["slot_limit"] - prior["observing_slots"])
+        prior["busy"] = bool(
+            prior["in_research"] or prior["observing_slots"] >= prior["slot_limit"]
+        )
         sources[key] = prior
     for key, source_state in sources.items():
         history = sorted(attempts.get(key, []), key=lambda item: item[0])
@@ -351,7 +455,17 @@ def admit(
             elif state["active"] >= config.max_active_research:
                 reason = "concurrency_limit"
             elif identity_key in state["sources"]:
-                previous = state["sources"][identity_key]
+                previous = dict(state["sources"][identity_key])
+                effective_slot_limit = max(
+                    int(previous.get("slot_limit") or 1),
+                    source_slot_limit(goal),
+                )
+                observing_slots = int(previous.get("observing_slots") or 0)
+                previous["slot_limit"] = effective_slot_limit
+                previous["slots_open"] = max(0, effective_slot_limit - observing_slots)
+                previous["busy"] = bool(
+                    previous.get("in_research") or observing_slots >= effective_slot_limit
+                )
                 until = datetime.fromisoformat(previous["cooldown_at"]) + timedelta(
                     hours=source_cooldown_hours(
                         previous, config, failure_fingerprint(goal.evolution_context or {})

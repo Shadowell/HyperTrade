@@ -36,7 +36,7 @@ from hypertrade.arc.evolution_memory import (
 )
 from hypertrade.arc.paper_review import request_paper_review
 from hypertrade.arc.provider_hypothesis import ProviderProposal, _bounded_spec
-from hypertrade.arc.relay_seats import describe_tried, tried_variant
+from hypertrade.arc.relay_seats import describe_tried, tried_variant, variant_identity
 from hypertrade.arc.runtime_journal import record_model_exchange, record_runtime_error
 from hypertrade.arc.self_test import ARCSelfTestService
 from hypertrade.arc.store import get_controller, list_mission_ids, research_lock, save_avo_context
@@ -204,6 +204,10 @@ source_variant_policy.relay.tried_variants lists the changes BitPro already race
 eliminated for this parent; a proposal identical to one of them is rejected because BitPro never
 races the same changes twice, so propose a different direction. relay.slots shows how many of the
 parent's seats are open (free minus candidates already queued).
+When exploration_plan is present, parameters are partitioned into 3 orthogonal functional
+dimensions (signal_period, risk_exit, filter_sizing); explore across distinct functional
+dimensions and prioritize unoccupied_dimensions / preferred_dimension so the parent's 3 variant
+slots cover 3 different functional directions rather than clustering on the same parameter.
 For autonomous_evolution, every propose must include evolution_hypothesis with evidence_refs
 (paper_feedback, order_sample, a memory_id or a developed attempt_id), expected_metric,
 expected_direction and falsification (what observation would refute the hypothesis).
@@ -559,6 +563,18 @@ def _perform(
                     "BitPro never races the same changes twice. Propose different "
                     "parameter_changes or structural_changes"
                 )
+            active_slots = (goal.evolution_context or {}).get("active_slot_variants")
+            if isinstance(active_slots, list) and not structural_changes:
+                proposed_id = variant_identity(param_changes, {})
+                if any(
+                    isinstance(slot_changes, dict)
+                    and variant_identity(slot_changes, {}) == proposed_id
+                    for slot_changes in active_slots
+                ):
+                    raise ValueError(
+                        "identical variant is already observing in an active parent slot; "
+                        "propose a different parameter or functional direction"
+                    )
             parent_manifest_sha256 = variant_policy["parent_manifest_sha256"]
             parent_execution_identity_sha256 = variant_policy.get(
                 "parent_execution_identity_sha256"

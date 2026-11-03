@@ -45,6 +45,7 @@ from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import _timeframe_seconds, collect_windows
 from hypertrade.arc.forward_outcomes import ForwardOutcomeLedger
 from hypertrade.arc.relay_seats import relay_seats
+from hypertrade.arc.rule_tweak import exploration_plan_for_policy
 from hypertrade.arc.runtime_journal import failure_text, record_runtime_error
 from hypertrade.arc.short_horizon import (
     LONG_MEASUREMENT,
@@ -72,7 +73,7 @@ class EvolutionConfig(BaseModel):
     # Launch exploration: a parent with launch_days complete days may receive variants even
     # when the full 7+7 evidence is missing. Off by default, so scans behave as before.
     launch_enabled: bool = False
-    launch_days: int = Field(default=7, ge=3, le=14)
+    launch_days: int = Field(default=7, ge=0, le=14)
     # Cheap deterministic researcher for launch/proactive exploration missions.
     exploration_provider: Literal["research", "rule_tweak"] = "research"
     exploration_cooldown_hours: int = Field(default=24, ge=1, le=720)
@@ -161,14 +162,16 @@ def launch_observation(
     if started.tzinfo is None:
         started = started.replace(tzinfo=UTC)
     day_start = now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-    if day_start < started + timedelta(days=config.launch_days):
+    if config.launch_days > 0 and day_start < started + timedelta(days=config.launch_days):
+        return None
+    if now.astimezone(UTC) < started:
         return None
     return {
         "triggered": False,
         "measurement": LAUNCH_MEASUREMENT,
         "launch_days": config.launch_days,
         "session_started_at": started.isoformat(),
-        "session_complete_days": (day_start - started).days,
+        "session_complete_days": max(0, (day_start - started).days),
         "trade_count": snapshot.get("trade_count"),
         "receipts": [],
     }
@@ -526,6 +529,7 @@ class EvolutionService:
                     payload["skip_reason"] = "target_paper_write_port_not_migrated"
                     return self._save_cycle(cycle_id, "deferred_target_write_port", payload)
                 from hypertrade.arc.regime import collect_regime
+
                 memory = self._memory(context, now)
                 context["market_regime"] = collect_regime(self._client(config), context)
                 payload["memory_count"] = len(memory)
@@ -763,7 +767,7 @@ class EvolutionService:
             preferred = "degradation"
             # BitPro parents can race several challengers: among equally urgent sources, the one
             # with the most seats still open (free minus candidates already queued) goes first.
-            open_seats = (context.get("relay_seats") or {}).get("open", 0)
+            open_seats = (context.get("relay_seats") or {}).get("open", source.get("slots_open", 0))
             return (
                 blocked,
                 not context.get("short_term_emergency", False),
@@ -920,14 +924,21 @@ class EvolutionService:
                     ),
                 )
                 launch = feedback.get("measurement") == LAUNCH_MEASUREMENT
+                launch_from_stable = False
+                if (
+                    not feedback["triggered"]
+                    and not launch
+                    and not config.proactive_enabled
+                    and profile.transport == "bitpro_mcp_v1"
+                ):
+                    stable_launch = launch_observation(config, snapshot, now)
+                    if stable_launch is not None:
+                        launch = True
+                        launch_from_stable = True
                 if not feedback["triggered"] and not launch and not config.proactive_enabled:
                     continue
                 trigger = (
-                    "degradation"
-                    if feedback["triggered"]
-                    else "launch"
-                    if launch
-                    else "proactive"
+                    "degradation" if feedback["triggered"] else "launch" if launch else "proactive"
                 )
                 diagnostic.update(status="opportunity", trigger_source=trigger)
                 symbols = target_symbols(snapshot, bitpro=profile.transport == "bitpro_mcp_v1")
@@ -1047,7 +1058,18 @@ class EvolutionService:
                 if emergency and not is_source_variant:
                     raise ValueError("short_emergency_requires_bound_variant_policy")
                 if launch and not is_source_variant:
+                    if launch_from_stable:
+                        diagnostic["status"] = "stable"
+                        diagnostic.pop("trigger_source", None)
+                        continue
                     raise ValueError("launch_requires_source_variant_policy")
+                if budget is None:
+                    budget = budget_status(self.db, config, now)
+                source_budget = budget["sources"].get(
+                    source_key(config.target_id, sid, str(snapshot["instance_id"])),
+                    {},
+                )
+                active_slot_variants = list(source_budget.get("active_slot_variants") or [])
                 # BitPro binds a variant to its parent's capital; any other research
                 # capital makes every bound backtest fail its capital receipt.
                 research_capital = (
@@ -1115,6 +1137,15 @@ class EvolutionService:
                 }
                 if is_source_variant and variant_policy:
                     context["variant_policy"] = variant_policy
+                    if active_slot_variants:
+                        context["active_slot_variants"] = active_slot_variants
+                    plan = exploration_plan_for_policy(
+                        variant_policy,
+                        baseline.strategy_spec.get("baseline_config") or {},
+                        extra_active_changes=active_slot_variants,
+                    )
+                    context["exploration_plan"] = plan
+                    diagnostic["exploration_plan"] = plan
                 if seats is not None:
                     context["relay_seats"] = seats
                 diagnostic["order_sample_count"] = len(fills)
