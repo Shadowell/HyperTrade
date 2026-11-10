@@ -77,6 +77,14 @@ async def evolution_effectiveness(request: Request) -> dict[str, Any]:
     return await run_in_threadpool(_report)
 
 
+@router.get("/evolution/ablations", dependencies=[Depends(require_scope(ARCScope.READ))])
+async def evolution_ablations(request: Request) -> dict[str, Any]:
+    """Per-change ablation runs of forward losers; development-window backtests only."""
+    from hypertrade.arc.ablation import list_ablation_runs
+
+    return {"runs": await run_in_threadpool(list_ablation_runs, request.app.state.db)}
+
+
 @router.get("/evolution/alerts", dependencies=[Depends(require_scope(ARCScope.READ))])
 async def evolution_alerts(request: Request) -> dict[str, Any]:
     """Operator-visible evolution alerts; silent stalls are defects."""

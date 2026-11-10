@@ -72,6 +72,13 @@
 - **生产启用（另行执行，按用户已拍板的规则）**：`launch_enabled=true`、`launch_days=7`、`min_trades` 30→20、`exploration_provider=rule_tweak`、`exploration_cooldown_hours=2`、`paper_admission=basic`；全站赛马上限（BitPro `PAPER_RELAY_MAX_RACING_TOTAL=60`）不动。333 的挂起任务已用 `scripts/reconcile_avo_effects.py` 审计对账关闭（用户同意，备份在容器 `/app/data/backups/`）。
 - **已知限制**：9 月遗留、仍在运行的旧研究副本（#529、#531 为对照副本，#532、#533 为候选）满 7 天后也会被当作母体研究，旧规则下 10-25 本来也会；是否停掉它们由用户决定。变体数量上来后，BitPro 修改策略共用文件会让已审核变体重启后被拒绝加载（源码漂移），影响面随之变大。
 
+## 2026-10-22：赛马输家逐项消融
+
+- **背景**：被系统判负的挑战者只留下「整体输了」的结论，看不出是哪一处改动拖累；研究侧需要一个中性的单因素观察，避免把整份提案连坐。
+- **交付**：迁移 0051 新增 `arc_ablation_runs`／`arc_ablation_steps`（每个 目标／挑战者 一行，每项改动一步）；引擎只对已对接血缘且改动 ≥ 2 的输家，在冻结开发窗口上先测母体基线、再逐项把单处改动加到母体回测（复用 `ARCSelfTestService.run(purpose="development")`，候选复用基线的封存数据引用，从不请求最终窗口）；幂等键不含输家身份，同一母体同一窗口的同一改动复用变体行与回测作业且不计费；`ablation_enabled` 默认开启、每日独立额度默认 6 次、单输家上限默认 6 次，「改动数 + 1」超出记 `too_many_changes`；检查点续跑、读失败有界重试、单作业最长等待 24 小时；每项改动分类为 helpful／harmful／neutral／unknown／incomparable（±0.5pp 描述性噪声带，不是显著性检验）；`_memory` 在前向结果之后加入 `type=ablation` 条目，与前向结果合计最多 8 条、开发记忆至少保留 12 条可见；`GET /api/v1/arc/evolution` 新增 `budget.ablation`，效果报告新增 `ablation_*` 计数，只读 `GET /api/v1/arc/evolution/ablations` 只给状态与标签；AVO 系统提示与研究证据视图同步（`ablation_references`）。
+- **验证**：新增 `tests/test_arc_ablation.py`、`tests/test_arc_ablation_schema.py`、`tests/test_arc_ablation_postgres.py`（PostgreSQL 真库）、`tests/test_arc_ablation_observability.py`、`tests/test_arc_ablation_memory.py`，并在 `tests/test_arc_self_test.py`、`tests/test_arc_evolution.py`、`tests/test_arc_external_surface.py`、`tests/test_avo_evidence.py` 补充用例；对 9 处关键守卫做过变异检验，去掉任一处都有用例失败（每日上限有两道检查，同时去掉才失败，属有意冗余）；完整检查通过：前端 lint、15 项测试与构建，`ruff`、`mypy`（319 个文件）、`pytest` 2325 项（前端复用主工作区依赖，未重新安装）。合并最新 main（含迁移 0050 之后的全部改动）后复检：前端 lint、15 项测试与构建，`ruff`、`mypy`（324 个文件）、`pytest` 2654 项全部通过，迁移链保持单一 head `0051_arc_ablation_runs`；期间修掉 `test_parent_change_skips_and_seat_hold_waits_with_visible_reasons` 对真实时钟的依赖（`created_at` 取数据库时钟、7 天超时判断取注入时钟，2026-10-23 起必然失败），测试里改为把 `created_at` 固定到注入时钟，被测代码未改动。
+- **未做**：未线上实测；已于 2026-11-10 经用户确认合并入 main（#79 此前已合并）。首次运行会对已有的已关联输家逐个排队，每天最多 6 次回测；如需停用，把 `ablation_enabled` 设为 false。
+
 ## 2026-10-22：终验被去偏夏普否决的研究任务不再永久占用来源名额
 
 - **背景**：生产研究预算上调后（每天 32 轮、检查间隔 30 分钟），连续多轮扫描仍全部 `deferred(source_active)`。只读核对线上任务投影：母体 509、513 各有一个 `needs_operator` 研究任务（终止原因 `avo_final_validation_failed`，终验窗口已用掉）占着来源名额五天以上；它们的数字门槛全过（夏普 0.21/0.57、回撤 3.9%/2.9%、成交 32/142 笔），被去偏夏普概率不足（0.65/0.85，门槛 0.95）和基线对比未改善否决，是明确的负向定论。
