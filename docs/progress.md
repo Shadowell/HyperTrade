@@ -1,3 +1,16 @@
+## 2026-11-11：BitPro 暂时不可用不再让已上线的发布失败——部署后的 BitPro 检查降级为告警，路由别名检查仍然硬失败
+
+- **背景**：PR #92–#94 的部署排查中确认（2026-11-10 14:56 UTC 的托管发布日志）：`deploy/deploy.sh` 在新容器已切换、API 已健康之后运行 `bitpro_host_route.py --check-running`；此时 BitPro 正在重启（先 `Connection refused`，之后约一分钟预热），容器内探针重试约 33 秒后抛出 `RuntimeError: BitPro authenticated health unavailable`，`set -e` 让脚本 `exit 1`。新版本已经在对外服务，但安装 host CLI、重载 Nginx、最终健康等待以及 `from-github.sh` 记录 `last_deployed_sha` 全部被跳过，工作流变红；BitPro 恢复后重跑（幂等）才补完。
+- **分析**：这个检查把两件分量不同的事绑成同一个硬失败。①容器内 `host.docker.internal` 必须等于真实 Docker 网关：确定性、纯本地，是 PR #41 事故（hosts 里变成 `invalid IP`）的真实防线；②带 token 请求 BitPro `/system/health`：外部服务可用性，BitPro 自己重启就会失败，与本次发布无关。而且检查在容器切换之后，`deploy.sh` 没有回滚，失败既保护不了已切换的新版本，只会跳过后面的步骤。应用本身把 BitPro 当软依赖：`/api/health` 不碰 BitPro，`/api/healthz` 把它标成 `degraded`，BitPro 读取接口按请求返回 502，worker 各循环捕获异常后按间隔重试。
+- **方案取舍（已与用户确认，采用 A）**：A 就地降级——保留别名检查为硬失败，BitPro 无应答改为告警（采用，只改 `deploy/` 下两个随发布同步的文件，回退提交即回滚）；B 切换前预检——BitPro 重启期间任何发布都发不出去，要在生产主机新增一次性容器，本地无法验证，且切换后仍需保留别名检查；C 工作流层独立「BitPro readiness」步骤——可见性最好，但要改 `deploy.yml` 两个 job，合并后的第一次发布才会真正运行，可作为后续。
+- **交付**：
+  1. 容器内探针（`CONTAINER_PROBE`）：别名断言不变（不重试，失败即 `AssertionError`）；BitPro 认证健康 15 次重试耗尽后不再抛异常，而是带着最后一次错误退出码 75（`EXIT_BITPRO_UNAVAILABLE`，EX_TEMPFAIL）。
+  2. `bitpro_host_route.py --check-running`：逐个容器探测，软失败累积到两个容器都检查完才以 75 退出（worker 的别名检查不会因 api 的软失败被跳过）；任何其他非零（别名不一致、docker 失败）仍立即抛出、退出码 1；每个容器的 JSON 行新增 `bitpro: ok|unavailable`。
+  3. `deploy.sh`：`--check-running || bitpro_status=$?`，75 打印 `[deploy]` 提示与 `::warning title=BitPro not ready after deploy::`（预期在两种发布引擎的步骤日志里渲染成注解，见下方未验证项）并继续；其余非零状态原样 `exit`。`from-github.sh` 与 `deploy.yml` 未改。
+  4. 测试：`tests/test_bitpro_host_route.py` 新增 11 个用例（探针在进程内对假网络/假时钟执行：首次健康即停、跨过 BitPro 重启、三种持续失败都以 75 退出、别名不一致硬失败且不调用 BitPro；`main()` 对假 docker：两个容器都检查完才报软失败、软失败后 worker 的硬失败仍是硬失败、探针拿到网关与软状态码）；新增 `tests/test_deploy_script.py`，把真实的 `deploy.sh` 放进沙箱（路径前缀映射到 tmp、外部命令全部换成只记录参数的假命令）跑 helper 退出码 0／75／1／2／127；`tests/test_deployment_config.py` 的顺序断言改为锚定在实际调用上而不是注释里的提及。
+- **验证**：`LC_ALL=en_US.UTF-8 ./scripts/check.sh` 全量通过：前端 lint、15 项测试与构建，`ruff`，`mypy`（329 个文件），`pytest` 2804 项（新增 16 项）；对 14 种破坏做过变异检验（改回裸调用、75 当致命、吞掉硬失败、去掉告警、探针重新抛异常、去掉或降级别名断言、遇到第一次软失败就停、软失败当成功、吞掉探针硬失败、常量与脚本里的 75 不一致、不把软状态码传给探针、缩小重试预算、整体删除检查），全部被测试抓到、无存活；`deploy.sh` 脚本测试在 macOS 系统 bash 3.2 下也通过。本机 shell 没有设置 locale 时，6 个依赖本地 PostgreSQL 的测试会因 `postmaster became multithreaded during startup` 失败（与本改动无关，设置有效 locale 后通过）。
+- **未验证／注意**：①没有 Docker 主机，`docker exec` 真实传递容器内 `sys.exit(75)` 的退出码只靠假 docker 与探针单测覆盖；②托管引擎里 `::warning::` 经 SSH 的标准输出是否渲染成注解，要等第一次真实发布才能确认（自托管引擎的 `Deploy` 步骤同理）；③BitPro 持续不可用时两个容器各重试约 30 秒，发布尾部最多多约 30 秒；④token 错误、BitPro 绑定地址或主机防火墙拦截这类持续性问题现在由红变黄（告警），要靠 `/api/healthz` 的 `adapters.bitpro` 与 worker 心跳发现；⑤本改动随下一次发布生效（`deploy.sh` 与 helper 由发布同步到主机）；`from-github.sh` 是主机独占的 root 文件，不随发布更新，这次不需要主机侧操作。
+
 ## 2026-11-11：worker 启动后事件循环被堵约 100 秒的根因与修复——行情快照改为线程中的批量写入，新增事件循环看门狗
 
 - **背景**：2026-11-10 部署 `cf065a1` 后，`/api/healthz` 的 worker 心跳显示：每次启动后约 100–130 秒内事件循环被堵住（`event_loop_lag_max_seconds` = 95.954，心跳年龄等于运行时间），之后每几分钟还有 11–16 秒的堵塞；没有循环连续失败，也没有被监督器重启过。堵塞期间心跳、模拟盘、全部 ARC 循环都不运行。
