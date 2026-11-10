@@ -402,3 +402,68 @@ def test_success_criteria_applies_deflated_sharpe_check():
     )
     assert passed_multi is False
     assert any("deflated_sharpe" in r for r in reasons_multi)
+
+
+def test_source_variant_uses_supplied_sealed_data_reference_without_baseline_creation():
+    from datetime import date
+
+    from hypertrade.arc.contracts import ResearchWindowsV1
+
+    manifest = "a" * 64
+    identity = "b" * 64
+    data = "e" * 64
+    created = []
+    backtests = []
+
+    class Client:
+        def strategy_research_variant_create(self, **kwargs):
+            created.append(kwargs)
+            return {"candidate_strategy_id": 5001, "status": "stopped"}
+
+        def backtest_start_job(self, **kwargs):
+            backtests.append(kwargs)
+            return {
+                "backtest_result": {"id": "bt-1", "metrics": {"net_return": 0.1}},
+                "job": {"job_id": "job-1", "status": "completed"},
+            }
+
+    attempt = ARCCandidateAttemptV1(
+        attempt_id="abl_case_1",
+        candidate_id="abl_case_1",
+        hypothesis="ablation",
+        strategy_code="class Parent: pass\n",
+        strategy_spec={
+            "symbol": "BTC-USDT-SWAP",
+            "timeframe": "1H",
+            "is_source_variant": True,
+            "parent_strategy_id": 443,
+            "parent_manifest_sha256": manifest,
+            "parent_execution_identity_sha256": identity,
+            "parameter_changes": {"fast": 12},
+        },
+    )
+    goal = ARCGoalV1(
+        objective="ablation",
+        research_mode="avo",
+        paper_review_required=True,
+        research_id="ablation-case",
+        research_windows=ResearchWindowsV1(as_of=date(2026, 10, 20)),
+        symbols=["BTC-USDT-SWAP"],
+        timeframes=["1H"],
+        paper_initial_equity=Decimal("100"),
+    )
+    result = ARCSelfTestService(Client()).run(
+        attempt,
+        goal,
+        purpose="development",
+        data_reference={
+            "verified_data_snapshot_id": "vbs_" + data,
+            "verified_data_manifest_sha256": data,
+        },
+    )
+
+    assert result.backtest_id == "bt-1"
+    assert len(created) == 1
+    assert created[0]["purpose"] == "candidate"
+    assert backtests[0]["verified_data_snapshot_id"] == "vbs_" + data
+    assert backtests[0]["verified_data_manifest_sha256"] == data

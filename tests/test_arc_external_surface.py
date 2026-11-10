@@ -628,3 +628,37 @@ def test_evolution_status_survives_forward_outcome_failure(client: TestClient, m
 
     assert response.status_code == 200
     assert "error" in response.json()["forward_outcomes"]
+
+
+def test_evolution_ablations_requires_read_scope_and_lists_runs(client: TestClient) -> None:
+    from hypertrade.arc.evolution_models import ArcAblationRun
+
+    with client.app.state.db.session() as session:
+        session.add(
+            ArcAblationRun(
+                id="run_surface",
+                outcome_id="out_surface",
+                target_id="bitpro",
+                parent_strategy_id="44",
+                challenger_strategy_id="4401",
+                status="completed",
+                message="done",
+                result_json={"harmful": ["fast=12"], "note": "dev-only"},
+            )
+        )
+
+    response = client.get("/api/v1/arc/evolution/ablations", headers=_headers(READ_TOKEN))
+
+    assert response.status_code == 200
+    runs = response.json()["runs"]
+    assert isinstance(runs, list)
+    assert [run["id"] for run in runs] == ["run_surface"]
+    assert runs[0]["result"] == {
+        "harmful": ["fast=12"],
+        "helpful": None,
+        "neutral": None,
+        "unknown": None,
+        "incomparable": None,
+        "note": "dev-only",
+    }
+    assert client.get("/api/v1/arc/evolution/ablations").status_code == 401

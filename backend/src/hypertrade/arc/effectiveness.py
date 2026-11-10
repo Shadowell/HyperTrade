@@ -16,9 +16,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from hypertrade.arc.evolution_models import EvolutionCycle
+from hypertrade.arc.evolution_models import (
+    ArcAblationRun,
+    ArcAblationStep,
+    EvolutionCycle,
+)
+from hypertrade.arc.runtime_journal import failure_text
 from hypertrade.arc.store import load_projection
 from hypertrade.db import ArcMission, Database, StrategyOutcome
 
@@ -81,6 +86,10 @@ class EvolutionEffectivenessV1(BaseModel):
     cost_candidates: int = 0
     missions_admitted: int = 0
     per_source: list[PerSourceEffectivenessV1] = Field(default_factory=list)
+    ablation_runs_by_status: dict[str, int] = Field(default_factory=dict)
+    ablation_reasons: dict[str, int] = Field(default_factory=dict)
+    ablation_backtests_charged: int = 0
+    ablation_error: str | None = None
     causal_conclusion: str = "not_established"
     note: str = (
         "只统计进化循环发起的任务（evolution_context/feedback_parent）；胜率是"
@@ -195,6 +204,37 @@ def build_effectiveness_report(
             entry.outcomes_settled += outcome_mission_ids.get(mission_row.mission_id, 0)
 
         report.per_source = [per_source[k] for k in sorted(per_source)]
+
+    # Independent session: an unreadable ablation ledger degrades only its own counters
+    # and must never hide the rest of the report.
+    try:
+        with db.session() as session:
+            runs = {
+                str(status): int(count)
+                for status, count in session.execute(
+                    select(ArcAblationRun.status, func.count()).group_by(
+                        ArcAblationRun.status
+                    )
+                ).all()
+            }
+            reasons = {
+                str(reason): int(count)
+                for reason, count in session.execute(
+                    select(ArcAblationRun.reason, func.count())
+                    .where(ArcAblationRun.reason.is_not(None), ArcAblationRun.reason != "")
+                    .group_by(ArcAblationRun.reason)
+                ).all()
+            }
+            charged = session.scalar(
+                select(func.count())
+                .select_from(ArcAblationStep)
+                .where(ArcAblationStep.charged_at.is_not(None))
+            )
+        report.ablation_runs_by_status = runs
+        report.ablation_reasons = reasons
+        report.ablation_backtests_charged = int(charged or 0)
+    except Exception as exc:
+        report.ablation_error = failure_text(exc)[:200]
 
     if report.baseline_comparisons:
         win_rate = report.beat_baseline / report.baseline_comparisons
