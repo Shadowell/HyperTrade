@@ -101,6 +101,9 @@ jobs:
           mkdir -p /opt/hypertrade/frontend/dist /opt/hypertrade/deploy
           # 持久备份只放 /var/backups/hypertrade。排除发布根下的 backups，
           # 否则 --delete 会清掉 /opt/hypertrade/backups 里的迁移 dump。
+          # 这份排除列表必须与 deploy/from-github.sh 里的 rsync 完全一致（tests/test_deployment_config.py
+          # 会校验）：托管引擎的强制命令入口、锁文件和可信镜像只存在于主机，不在仓库里，
+          # 漏排除会让 server 引擎的 --delete 把它们删掉或覆盖成 644，托管发布随之 Permission denied。
           rsync -a --delete \
             --exclude '.git' \
             --exclude '.venv' \
@@ -112,6 +115,9 @@ jobs:
             --exclude 'logs' \
             --exclude 'workspace' \
             --exclude 'deploy/last_deployed_sha' \
+            --exclude 'deploy/from-github.sh' \
+            --exclude 'deploy/from-github.lock' \
+            --exclude 'deploy/github.git/' \
             --exclude '/backups/' \
             ./ /opt/hypertrade/
           rsync -a --delete frontend/dist/ /opt/hypertrade/frontend/dist/

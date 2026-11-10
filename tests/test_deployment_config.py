@@ -1,4 +1,6 @@
 import re
+import stat
+import subprocess
 from pathlib import Path
 
 from hypertrade.config import Settings
@@ -41,3 +43,49 @@ def test_production_compose_mounts_codex_auth_as_an_optional_read_only_secret() 
     assert compose.count("target: hypertrade_codex_auth") == 2
     assert compose.count("CODEX_AUTH_JSON: /run/secrets/hypertrade_codex_auth") == 2
     assert "CODEX_AUTH_SOURCE_PATH=" in env_example
+
+
+def test_hosted_deploy_entrypoint_is_committed_executable() -> None:
+    # sshd runs this file directly as the forced command, so a 644 copy fails with
+    # "Permission denied" (exit 126) before a single line of the script runs.
+    script = Path("deploy/from-github.sh")
+    assert script.stat().st_mode & stat.S_IXUSR, "deploy/from-github.sh must be executable"
+
+    try:
+        listed = subprocess.run(
+            ["git", "ls-files", "-s", str(script)], capture_output=True, text=True, check=False
+        )
+    except FileNotFoundError:  # no git binary: the filesystem check above still applies
+        return
+    if listed.returncode == 0 and listed.stdout.strip():
+        assert listed.stdout.startswith("100755"), "commit deploy/from-github.sh as mode 100755"
+
+
+def _rsync_excludes(text: str) -> set[str]:
+    """Exclude patterns of the release-sync `rsync -a --delete` (the one with a filter list)."""
+    block = re.search(
+        r"rsync -a --delete \\\n(?P<body>(?:[ \t]*--exclude '[^']+' \\\n)+)[ \t]*\./ ", text
+    )
+    assert block is not None, "release-sync rsync with --exclude filters not found"
+    return set(re.findall(r"--exclude '([^']+)'", block.group("body")))
+
+
+def test_both_deploy_engines_share_one_rsync_protect_list() -> None:
+    # `rsync --delete` removes anything on the host that is not in the repo. The hosted
+    # engine's trusted mirror, lock file and root-owned entrypoint live only on the host,
+    # so the self-hosted engine must protect exactly what the hosted engine protects.
+    workflow = Path(".github/workflows/deploy.yml").read_text(encoding="utf-8")
+    hosted_script = Path("deploy/from-github.sh").read_text(encoding="utf-8")
+
+    server_excludes = _rsync_excludes(workflow)
+    hosted_excludes = _rsync_excludes(hosted_script)
+
+    assert {
+        "deploy/from-github.sh",
+        "deploy/from-github.lock",
+        "deploy/github.git/",
+        "deploy/last_deployed_sha",
+        ".env",
+        "data",
+    } <= server_excludes
+    assert server_excludes == hosted_excludes

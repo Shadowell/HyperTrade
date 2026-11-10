@@ -1,3 +1,14 @@
+## 2026-11-10：托管发布 Permission denied 的根因：server 引擎的 rsync 会覆盖/删除托管引擎的受信文件
+
+- **背景**：11-09 起 `DEPLOY_ENGINE=github`。#80、#91 合并后触发的两次发布都在「Trigger trusted deploy」一步以 `bash: line 1: /opt/hypertrade/deploy/from-github.sh: Permission denied`（exit 126）失败，主机上没有执行任何内容；主机补过可执行位后重跑，同一报错依旧。
+- **根因**：`deploy.yml` 里 server 引擎的 `rsync -a --delete` 排除列表，比 `deploy/from-github.sh` 自己那份少三项：`deploy/from-github.sh`、`deploy/from-github.lock`、`deploy/github.git/`。这三样只存在于主机、不在仓库里，于是每次 server 引擎发布都会把强制命令入口覆盖成仓库里的 644 副本（sshd 直接执行强制命令，所以是 Permission denied），并把受信镜像目录 `deploy/github.git/` 当作多余文件删掉（补完可执行位后下一步会是 `trusted mirror missing`）。PR #83 把客户端命令改成 `bash … <sha>` 治不了它：强制命令仍由 sshd 直接执行，而且 `from-github.sh` 会把整条命令当作非 40 位 SHA 拒绝（`invalid SHA`），该 PR 已关闭。
+- **交付**：
+  1. server 引擎的 rsync 补齐三项排除，与托管脚本逐项一致；
+  2. `deploy/from-github.sh` 以 `100755` 提交；
+  3. `tests/test_deployment_config.py` 新增两个用例：入口脚本必须以可执行位提交；两条发布路径的 rsync 排除列表必须完全一致（修复前缺三项，用例会失败）。
+- **主机侧仍需处理**（仓库改不了，`from-github.sh` 在主机上是独立维护的 root 文件，不随发布更新）：恢复 `/opt/hypertrade/deploy/from-github.sh` 的可执行位，确认 `/opt/hypertrade/deploy/github.git` 受信镜像仍在（11-02、11-03 的 server 引擎发布可能已将其删除，缺失则需重建），再重跑最新一次 main 的发布。
+- **验证**：`./scripts/check.sh` 全量通过：前端 lint、15 项测试与构建，`ruff`，`mypy`（325 个文件），`pytest` 2661 项。
+
 ## 2026-11-03：开放母体三变体槽位并发锁、按三大参数功能维度正交探索与策略卡全覆盖
 
 - **背景**：每个母体策略卡在 BitPro 上拥有 3 个并发变体槽位（Slot 1 / Slot 2 / Slot 3），但此前：①`research_budget.py` 按整张母体加并发锁，只要 1 个任务进入 `paper_observing`，整张母体在 14 天赛马期内一直被判为 `busy=True`（`source_active`），其余 2 个槽位无法继续发起研究；②`RuleTweakProvider` 按参数名字母顺序平铺生成候选，单任务 3 个候选与跨任务的多槽位候选容易挤在同一个参数维度上；③`EvolutionService._scan` 在 `proactive_enabled=False`（默认）且 `launch_enabled=True` 时，满 14 天且表现稳定的策略卡未被纳入 `launch` 探索，且 `launch_days` 最低限制为 3 天。
