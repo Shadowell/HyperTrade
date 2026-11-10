@@ -1,7 +1,7 @@
 ## 2026-11-10：托管发布 Permission denied 的根因：server 引擎的 rsync 会覆盖/删除托管引擎的受信文件
 
 - **背景**：11-09 起 `DEPLOY_ENGINE=github`。#80、#91 合并后触发的两次发布都在「Trigger trusted deploy」一步以 `bash: line 1: /opt/hypertrade/deploy/from-github.sh: Permission denied`（exit 126）失败，主机上没有执行任何内容；主机补过可执行位后重跑，同一报错依旧。
-- **根因**：`deploy.yml` 里 server 引擎的 `rsync -a --delete` 排除列表，比 `deploy/from-github.sh` 自己那份少三项：`deploy/from-github.sh`、`deploy/from-github.lock`、`deploy/github.git/`。这三样只存在于主机、不在仓库里，于是每次 server 引擎发布都会把强制命令入口覆盖成仓库里的 644 副本（sshd 直接执行强制命令，所以是 Permission denied），并把受信镜像目录 `deploy/github.git/` 当作多余文件删掉（补完可执行位后下一步会是 `trusted mirror missing`）。PR #83 把客户端命令改成 `bash … <sha>` 治不了它：强制命令仍由 sshd 直接执行，而且 `from-github.sh` 会把整条命令当作非 40 位 SHA 拒绝（`invalid SHA`），该 PR 已关闭。
+- **根因**：`deploy.yml` 里 server 引擎的 `rsync -a --delete` 排除列表，比 `deploy/from-github.sh` 自己那份少三项：`deploy/from-github.sh`、`deploy/from-github.lock`、`deploy/github.git/`。这三样只存在于主机、不在仓库里，于是每次 server 引擎发布都会把强制命令入口覆盖成仓库里的 644 副本（sshd 直接执行强制命令，所以是 Permission denied），并把受信镜像目录 `deploy/github.git/` 当作多余文件删掉（若主机上的镜像确实已被删，补完可执行位后下一步会是 `trusted mirror missing`；这一点是按 rsync 语义推断的，尚未在主机上确认）。PR #83 把客户端命令改成 `bash … <sha>` 治不了它：强制命令仍由 sshd 直接执行，而且 `from-github.sh` 会把整条命令当作非 40 位 SHA 拒绝（`invalid SHA`），该 PR 已关闭。
 - **交付**：
   1. server 引擎的 rsync 补齐三项排除，与托管脚本逐项一致；
   2. `deploy/from-github.sh` 以 `100755` 提交；
