@@ -64,6 +64,7 @@ from hypertrade.runtime.adapters.tool_runtime import (
 )
 from hypertrade.runtime.application.service import MissionRuntime
 from hypertrade.runtime.domain.models import TERMINAL_STATUSES, MissionStatus
+from hypertrade.runtime.supervisor import LoopFactory, supervise
 from hypertrade.skills.lifecycle import ApprovedSkillLoader
 
 logger = logging.getLogger("hypertrade.worker")
@@ -489,50 +490,77 @@ async def research_trigger_loop(db: Database) -> None:
         await asyncio.sleep(max(1.0, settings.research_trigger_poll_interval_seconds))
 
 
-async def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    settings = get_settings()
-    db = Database(settings.database_url)
-    tasks = [
-        rag_scanner_loop(db),
-        market_ingestion_loop(db),
-        market_rest_supplement_loop(db),
+def build_loops(db: Database, settings: Settings) -> list[tuple[str, LoopFactory]]:
+    """The loops this worker runs, as ``(name, factory)`` pairs.
+
+    Factories rather than ready coroutines: the supervisor builds a fresh coroutine each time it
+    restarts a crashed loop. The names identify a loop in logs and in the runtime-error journal,
+    so keep them stable.
+    """
+    loops: list[tuple[str, LoopFactory]] = [
+        ("rag_scanner", lambda: rag_scanner_loop(db)),
+        ("market_ingestion", lambda: market_ingestion_loop(db)),
+        ("market_rest_supplement", lambda: market_rest_supplement_loop(db)),
     ]
     if settings.paper_enabled:
-        tasks.append(paper_trading_loop(db))
+        loops.append(("paper_trading", lambda: paper_trading_loop(db)))
     if settings.monitor_scheduler_enabled:
-        tasks.append(monitor_scheduler_loop(db))
+        loops.append(("monitor_scheduler", lambda: monitor_scheduler_loop(db)))
     full_mission_cutover = (
         settings.mission_runtime_enabled and settings.mission_runtime_canary_percent >= 100
     )
     if settings.agent_task_worker_enabled and not full_mission_cutover:
-        tasks.append(agent_task_worker_loop(db))
+        loops.append(("agent_task_worker", lambda: agent_task_worker_loop(db)))
     if settings.mission_runtime_enabled and settings.mission_runtime_worker_enabled:
         # Each loop owns its runtime resources and claims through the durable lease,
         # so fencing — not this count — is what prevents double execution. Default
         # stays 1: chat requests queue behind each other until an operator opts in.
-        for _ in range(max(1, settings.mission_runtime_worker_concurrency)):
-            tasks.append(mission_worker_loop(db))
+        for index in range(max(1, settings.mission_runtime_worker_concurrency)):
+            loops.append((f"mission_worker_{index + 1}", lambda: mission_worker_loop(db)))
     if settings.research_triggers_enabled and not full_mission_cutover:
-        tasks.append(research_trigger_loop(db))
+        loops.append(("research_trigger", lambda: research_trigger_loop(db)))
     if settings.autonomous_pulse_enabled:
-        tasks.append(autonomous_market_pulse_loop(db))
-    tasks.append(arc_observation_loop(db))
-    tasks.append(arc_evolution_loop(db))
-    tasks.append(arc_auto_review_loop(db))
+        loops.append(("autonomous_market_pulse", lambda: autonomous_market_pulse_loop(db)))
+    loops.append(("arc_observation", lambda: arc_observation_loop(db)))
+    loops.append(("arc_evolution", lambda: arc_evolution_loop(db)))
+    loops.append(("arc_auto_review", lambda: arc_auto_review_loop(db)))
     if settings.arc_paper_effect_reconcile_enabled:
-        tasks.append(arc_paper_effect_reconcile_loop(db, settings=settings))
-    tasks.append(arc_meta_tuning_loop(db))
-    tasks.append(cognitive_memory_replay_loop(db))
+        loops.append(
+            (
+                "arc_paper_effect_reconcile",
+                lambda: arc_paper_effect_reconcile_loop(db, settings=settings),
+            )
+        )
+    loops.append(("arc_meta_tuning", lambda: arc_meta_tuning_loop(db)))
+    loops.append(("cognitive_memory_replay", lambda: cognitive_memory_replay_loop(db)))
     if settings.mission_runtime_worker_enabled:
-        tasks.append(avo_research_loop(db))
+        loops.append(("avo_research", lambda: avo_research_loop(db)))
     if settings.self_healing_evolution_enabled:
-        tasks.append(self_healing_evolution_loop(db, settings=settings))
+        loops.append(
+            ("self_healing_evolution", lambda: self_healing_evolution_loop(db, settings=settings))
+        )
     if settings.race_judge_enabled:
-        tasks.append(race_judge_loop(db, settings=settings))
+        loops.append(("race_judge", lambda: race_judge_loop(db, settings=settings)))
     if settings.arc_memory_distillation_enabled:
-        tasks.append(memory_distillation_loop(db, settings=settings))
-    await asyncio.gather(*tasks)
+        loops.append(
+            ("memory_distillation", lambda: memory_distillation_loop(db, settings=settings))
+        )
+    return loops
+
+
+async def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    settings = get_settings()
+    db = Database(settings.database_url)
+
+    async def journal(component: str, exc: Exception) -> None:
+        await _journal(db, component, exc)
+
+    # Every loop runs under a supervisor: a crash restarts that one loop (with backoff) instead
+    # of ending the gather, and with it the whole worker process.
+    await asyncio.gather(
+        *(supervise(name, factory, journal=journal) for name, factory in build_loops(db, settings))
+    )
 
 
 def memory_distillation_worker_once(
