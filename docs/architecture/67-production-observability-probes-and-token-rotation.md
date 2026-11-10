@@ -69,13 +69,35 @@ flowchart TB
 | --- | --- | --- | --- | --- | --- |
 | `/livez` | 进程存活 | FastAPI 事件循环健康响应 | 200 `{"status": "alive"}` | 500 / 超时 | K8s `livenessProbe`（失败则重启容器） |
 | `/readyz` | 依赖就绪 | 数据库真实执行 `SELECT 1` | 200 `{"status": "ready"}` | 503 `{"status": "not_ready", "database": "error"}` | K8s `readinessProbe`（失败则摘除流量） |
-| `/healthz` | 全景诊断 | DB 延迟、适配器心跳、Paper 会话与令牌状态 | 200 全息 JSON 诊断树 | 503 全景诊断失败树 | 监控系统采集、灰度检查、巡检报警 |
+| `/healthz` | 全景诊断 | DB 延迟、适配器心跳、Worker 存活、构建标识、Paper 会话与令牌状态 | 200 全息 JSON 诊断树 | 503 全景诊断失败树 | 监控系统采集、灰度检查、巡检报警 |
+| `/version` | 构建标识 | 读取随发布树打入镜像的 `BUILD_INFO`（提交 SHA；未打标记时为 `null`） | 200 `{"service","version","sha","stamped"}` | — | 发布流程在部署后比对线上 SHA 与刚发布的提交 |
 
 ### 3.2 适配器心跳与外部连通性探测
 在 `QuantLabTargetAdapter` 与 `BitProTargetAdapter` 注入统一的 `heartbeat()` 探测方法：
 - **QuantLab**：探测远端 MCP 或仿真进程连通性，上报毫秒级延迟；
 - **BitPro**：调用健康检查端口上报服务连通状态；
 - 全景健康报告实时输出 `adapters: {"quantlab": {"status": "ok", "latency_ms": 12.4}, "bitpro": {"status": "ok"}}`，一旦主数据库或核心适配器发生严重断联，健康探针即时返回 HTTP 503 并携带精准错误堆栈。
+
+
+### 3.3 Worker 存活心跳、循环监督与构建标识
+
+**Worker 存活。** worker 是独立进程，API 只能通过数据库了解它：`worker_heartbeats` 表（迁移 0052）每个 worker 一行
+（`HYPERTRADE_WORKER_ID`，默认 `worker`），worker 每 30 秒刷新一次。记录的内容只有运维遥测：每个循环的最近成功／失败时间、
+连续失败数、累计失败数、监督器重启数、最近一次失败的异常**类型**（不保存异常消息，它可能带有密钥或业务数据）；以及进程级的
+事件循环滞后（定时器比预期晚醒多久，取最近约 5 分钟窗口的最坏值，同步调用堵住事件循环时会直接体现在这里）。
+
+`/healthz` 的 `workers.status`：`alive`；`stale`（超过 3 分钟没有心跳）；`unknown`（还没有 worker 上报过，**不算故障**）。
+整体状态在 worker `stale` 或某个循环连续失败 ≥ 3 次时变为 `degraded`；超过 24 小时没有上报的 worker 行视为已下线。
+上报与读取都不会抛异常，遥测本身不能让 worker 或 API 出问题。
+
+**循环监督。** `worker.main` 把每个循环交给 `runtime/loop_supervisor.py`：循环崩溃只重启该循环（抖动指数退避，1 秒起、
+上限 60 秒，稳定运行 5 分钟后清零），崩溃记入 `worker.crash.<循环名>`；`CancelledError`（关机）原样透传。
+此前任何一个循环漏出异常都会结束 `asyncio.gather`，连带所有循环直到 Docker 重启容器（REST 兜底失败和 RAG 扫描失败就是两个真实例子）。
+
+**构建标识。** `backend/src/hypertrade/BUILD_INFO` 在 git 里是占位符 `$Format:%H$`，`.gitattributes` 的 `export-subst` 让
+`git archive`（托管发布用）把它展开为被归档的提交 SHA；自托管发布在同步前写入 `$GITHUB_SHA`。未打标记的普通检出报告
+`sha: null`，不会冒充某个提交。两条发布路径在部署后都轮询 `/api/version`，要求它等于刚发布的提交，不一致则任务失败；
+自托管路径此时也不记录 `last_deployed_sha`，下一次推送会重试。
 
 ---
 

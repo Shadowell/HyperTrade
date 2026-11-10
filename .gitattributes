@@ -1,0 +1,3 @@
+# git archive replaces the placeholder in BUILD_INFO with the archived commit SHA (see
+# backend/src/hypertrade/build_info.py); the hosted deploy builds its release tree that way.
+backend/src/hypertrade/BUILD_INFO export-subst

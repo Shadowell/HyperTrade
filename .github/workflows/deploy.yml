@@ -101,6 +101,16 @@ jobs:
           npm exec --yes pnpm@10 -- -C frontend install --frozen-lockfile
           npm exec --yes pnpm@10 -- -C frontend build
 
+      # Written into the tree that is synced below and baked into the image, so the running API
+      # can say which commit it is (GET /api/version). The hosted engine gets the same file from
+      # `git archive` through the export-subst rule in .gitattributes.
+      - name: Stamp build identity
+        if: steps.gate.outputs.deploy == 'true'
+        shell: bash
+        env:
+          BUILD_SHA: ${{ github.sha }}
+        run: printf '%s\n' "$BUILD_SHA" > backend/src/hypertrade/BUILD_INFO
+
       - name: Sync release to /opt/hypertrade
         if: steps.gate.outputs.deploy == 'true'
         shell: bash
@@ -135,6 +145,28 @@ jobs:
         run: |
           chmod +x /opt/hypertrade/deploy/deploy.sh
           /opt/hypertrade/deploy/deploy.sh
+
+      # deploy.sh only proves the API answers; this proves it is the build that was just shipped.
+      # The SHA is recorded below only when it matches, so a mismatch is retried by the next run.
+      - name: Verify the deployed build
+        if: steps.gate.outputs.deploy == 'true'
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            deployed=$(curl -fsS --max-time 10 http://127.0.0.1:3334/api/version \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("sha") or "")' 2>/dev/null || true)
+            if [ "$deployed" = "$EXPECTED_SHA" ]; then
+              echo "the running API reports build $EXPECTED_SHA"
+              exit 0
+            fi
+            echo "attempt $attempt: the API reports '${deployed:-<none>}', expected $EXPECTED_SHA"
+            sleep 5
+          done
+          echo "the running API never reported build $EXPECTED_SHA" >&2
+          exit 1
 
       - name: Record deployed SHA
         if: steps.gate.outputs.deploy == 'true'
@@ -173,3 +205,22 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsS --max-time 10 https://hypertrade.notenap.com/ >/dev/null
+      # A green SSH step only means the host script exited 0. Ask the public site which commit it
+      # is serving, so a deploy that did not actually replace the running build fails here.
+      - name: Verify the deployed build
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            deployed=$(curl -fsS --max-time 10 https://hypertrade.notenap.com/api/version \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("sha") or "")' 2>/dev/null || true)
+            if [ "$deployed" = "$EXPECTED_SHA" ]; then
+              echo "the site reports build $EXPECTED_SHA"
+              exit 0
+            fi
+            echo "attempt $attempt: the site reports '${deployed:-<none>}', expected $EXPECTED_SHA"
+            sleep 10
+          done
+          echo "::error::the site never reported build $EXPECTED_SHA after the deploy"
+          exit 1

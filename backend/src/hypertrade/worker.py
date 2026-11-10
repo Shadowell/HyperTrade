@@ -64,6 +64,8 @@ from hypertrade.runtime.adapters.tool_runtime import (
 )
 from hypertrade.runtime.application.service import MissionRuntime
 from hypertrade.runtime.domain.models import TERMINAL_STATUSES, MissionStatus
+from hypertrade.runtime.heartbeat import HEARTBEATS, heartbeat_loop
+from hypertrade.runtime.loop_supervisor import LoopFactory, supervise
 from hypertrade.skills.lifecycle import ApprovedSkillLoader
 
 logger = logging.getLogger("hypertrade.worker")
@@ -223,6 +225,7 @@ async def mission_worker_loop(db: Database) -> None:
                         result.get("status"),
                         result.get("mission_id"),
                     )
+                HEARTBEATS.record_success("worker.mission")
             except Exception as exc:
                 logger.exception("mission_worker loop failed")
                 await _journal(db, "worker.mission", exc)
@@ -235,15 +238,28 @@ async def rag_scanner_loop(db: Database) -> None:
     settings = get_settings()
     service = RagService(db, knowledge_dir=settings.knowledge_dir)
     while True:
-        result = service.scan_once()
-        logger.info("rag_scan scanned=%s ingested=%s", result.scanned_files, result.ingested_files)
+        # Every worker loop catches its own failure: they share one asyncio.gather, so an
+        # exception escaping this one (an unreadable knowledge file is enough) used to end the
+        # whole worker process.
+        try:
+            result = service.scan_once()
+            logger.info(
+                "rag_scan scanned=%s ingested=%s", result.scanned_files, result.ingested_files
+            )
+            HEARTBEATS.record_success("worker.rag_scanner")
+        except Exception as exc:
+            logger.exception("rag_scanner failed")
+            await _journal(db, "worker.rag_scanner", exc)
         await asyncio.sleep(settings.rag_scan_interval_seconds)
 
 
 async def market_ingestion_loop(db: Database) -> None:
     settings = get_settings()
     ingestor = MarketIngestor(settings, MarketRepository(db))
-    await ingestor.ingest_ws_forever()
+    await ingestor.ingest_ws_forever(
+        on_error=lambda component, exc: _journal(db, component, exc),
+        on_ok=HEARTBEATS.record_success,
+    )
 
 
 async def market_rest_supplement_loop(db: Database) -> None:
@@ -253,6 +269,7 @@ async def market_rest_supplement_loop(db: Database) -> None:
         try:
             count = await ingestor.ingest_rest_once()
             logger.info("okx_rest_supplement tickers=%s", count)
+            HEARTBEATS.record_success("worker.okx_rest_supplement")
         except Exception as exc:
             logger.exception("okx_rest_supplement failed")
             await _journal(db, "worker.okx_rest_supplement", exc)
@@ -266,6 +283,7 @@ async def paper_trading_loop(db: Database) -> None:
         try:
             result = service.run_once()
             logger.info("paper_trading tick status=%s fills=%s", result.status, result.fill_count)
+            HEARTBEATS.record_success("worker.paper_trading")
         except Exception as exc:
             logger.exception("paper_trading failed")
             await _journal(db, "worker.paper_trading", exc)
@@ -301,6 +319,7 @@ async def monitor_scheduler_loop(db: Database) -> None:
                 len(result.get("skipped", [])),
                 len(result.get("failed", [])),
             )
+            HEARTBEATS.record_success("worker.monitor_scheduler")
         except Exception as exc:
             logger.exception("monitor_scheduler failed")
             await _journal(db, "worker.monitor_scheduler", exc)
@@ -428,6 +447,7 @@ async def agent_task_worker_loop(db: Database) -> None:
                     result.get("status"),
                     result.get("task_id"),
                 )
+            HEARTBEATS.record_success("worker.agent_task")
         except Exception as exc:
             logger.exception("agent_task_worker failed")
             await _journal(db, "worker.agent_task", exc)
@@ -474,56 +494,91 @@ async def research_trigger_loop(db: Database) -> None:
                     result.get("trigger_id"),
                     result.get("task_id"),
                 )
+            HEARTBEATS.record_success("worker.research_trigger")
         except Exception as exc:
             logger.exception("research_trigger failed")
             await _journal(db, "worker.research_trigger", exc)
         await asyncio.sleep(max(1.0, settings.research_trigger_poll_interval_seconds))
 
 
-async def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    settings = get_settings()
-    db = Database(settings.database_url)
-    tasks = [
-        rag_scanner_loop(db),
-        market_ingestion_loop(db),
-        market_rest_supplement_loop(db),
+def build_loops(db: Database, settings: Settings) -> list[tuple[str, LoopFactory]]:
+    """The loops this worker runs, as ``(name, factory)`` pairs.
+
+    Factories rather than ready coroutines: the supervisor builds a fresh coroutine each time it
+    restarts a crashed loop. The names identify a loop in logs and in the runtime-error journal,
+    so keep them stable.
+    """
+    loops: list[tuple[str, LoopFactory]] = [
+        ("rag_scanner", lambda: rag_scanner_loop(db)),
+        ("market_ingestion", lambda: market_ingestion_loop(db)),
+        ("market_rest_supplement", lambda: market_rest_supplement_loop(db)),
     ]
     if settings.paper_enabled:
-        tasks.append(paper_trading_loop(db))
+        loops.append(("paper_trading", lambda: paper_trading_loop(db)))
     if settings.monitor_scheduler_enabled:
-        tasks.append(monitor_scheduler_loop(db))
+        loops.append(("monitor_scheduler", lambda: monitor_scheduler_loop(db)))
     full_mission_cutover = (
         settings.mission_runtime_enabled and settings.mission_runtime_canary_percent >= 100
     )
     if settings.agent_task_worker_enabled and not full_mission_cutover:
-        tasks.append(agent_task_worker_loop(db))
+        loops.append(("agent_task_worker", lambda: agent_task_worker_loop(db)))
     if settings.mission_runtime_enabled and settings.mission_runtime_worker_enabled:
         # Each loop owns its runtime resources and claims through the durable lease,
         # so fencing — not this count — is what prevents double execution. Default
         # stays 1: chat requests queue behind each other until an operator opts in.
-        for _ in range(max(1, settings.mission_runtime_worker_concurrency)):
-            tasks.append(mission_worker_loop(db))
+        for index in range(max(1, settings.mission_runtime_worker_concurrency)):
+            loops.append((f"mission_worker_{index + 1}", lambda: mission_worker_loop(db)))
     if settings.research_triggers_enabled and not full_mission_cutover:
-        tasks.append(research_trigger_loop(db))
+        loops.append(("research_trigger", lambda: research_trigger_loop(db)))
     if settings.autonomous_pulse_enabled:
-        tasks.append(autonomous_market_pulse_loop(db))
-    tasks.append(arc_observation_loop(db))
-    tasks.append(arc_evolution_loop(db))
-    tasks.append(arc_auto_review_loop(db))
+        loops.append(("autonomous_market_pulse", lambda: autonomous_market_pulse_loop(db)))
+    loops.append(("arc_observation", lambda: arc_observation_loop(db)))
+    loops.append(("arc_evolution", lambda: arc_evolution_loop(db)))
+    loops.append(("arc_auto_review", lambda: arc_auto_review_loop(db)))
     if settings.arc_paper_effect_reconcile_enabled:
-        tasks.append(arc_paper_effect_reconcile_loop(db, settings=settings))
-    tasks.append(arc_meta_tuning_loop(db))
-    tasks.append(cognitive_memory_replay_loop(db))
+        loops.append(
+            (
+                "arc_paper_effect_reconcile",
+                lambda: arc_paper_effect_reconcile_loop(db, settings=settings),
+            )
+        )
+    loops.append(("arc_meta_tuning", lambda: arc_meta_tuning_loop(db)))
+    loops.append(("cognitive_memory_replay", lambda: cognitive_memory_replay_loop(db)))
+    loops.append(("heartbeat", lambda: heartbeat_loop(db)))
     if settings.mission_runtime_worker_enabled:
-        tasks.append(avo_research_loop(db))
+        loops.append(("avo_research", lambda: avo_research_loop(db)))
     if settings.self_healing_evolution_enabled:
-        tasks.append(self_healing_evolution_loop(db, settings=settings))
+        loops.append(
+            ("self_healing_evolution", lambda: self_healing_evolution_loop(db, settings=settings))
+        )
     if settings.race_judge_enabled:
-        tasks.append(race_judge_loop(db, settings=settings))
+        loops.append(("race_judge", lambda: race_judge_loop(db, settings=settings)))
     if settings.arc_memory_distillation_enabled:
-        tasks.append(memory_distillation_loop(db, settings=settings))
-    await asyncio.gather(*tasks)
+        loops.append(
+            ("memory_distillation", lambda: memory_distillation_loop(db, settings=settings))
+        )
+    return loops
+
+
+async def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    settings = get_settings()
+    db = Database(settings.database_url)
+
+    async def journal(component: str, exc: Exception) -> None:
+        await _journal(db, component, exc, track=False)
+
+    def on_crash(name: str, exc: Exception) -> None:
+        HEARTBEATS.record_failure(f"worker.{name}", exc, restarted=True)
+
+    # Every loop runs under a supervisor: a crash restarts that one loop (with backoff) instead
+    # of ending the gather, and with it the whole worker process.
+    await asyncio.gather(
+        *(
+            supervise(name, factory, journal=journal, on_crash=on_crash)
+            for name, factory in build_loops(db, settings)
+        )
+    )
 
 
 def memory_distillation_worker_once(
@@ -670,16 +725,28 @@ def _provider_causal_summarizer(
 async def _guarded(db: Database, component: str, step: Callable[[], Any]) -> Any:
     """Run one loop step; a failure is journalled in the database, not only stdout."""
     try:
-        return await asyncio.to_thread(step)
+        result = await asyncio.to_thread(step)
     except Exception as exc:
         logger.exception("%s failed", component)
         await _journal(db, component, exc)
         return None
+    HEARTBEATS.record_success(component)
+    return result
 
 
 async def _journal(
-    db: Database, component: str, exc: Exception, *, mission_id: str | None = None
+    db: Database,
+    component: str,
+    exc: Exception,
+    *,
+    mission_id: str | None = None,
+    track: bool = True,
 ) -> None:
+    # Every handled loop failure passes through here, so this is the one place that feeds the
+    # liveness record behind /api/healthz (exception type only; see runtime/heartbeat.py).
+    # ``track=False`` is for the supervisor, which reports the same crash itself.
+    if track:
+        HEARTBEATS.record_failure(component, exc)
     await asyncio.to_thread(record_runtime_error, component, exc, mission_id=mission_id, db=db)
 
 
@@ -723,8 +790,10 @@ async def autonomous_market_pulse_loop(
                 len(orders),
                 result.get("duration_ms", 0),
             )
-        except Exception:
+            HEARTBEATS.record_success("worker.autonomous_pulse")
+        except Exception as exc:
             logger.exception("autonomous_market_pulse_loop cycle error")
+            await _journal(db, "worker.autonomous_pulse", exc)
         await asyncio.sleep(max(1, active_settings.autonomous_pulse_interval_seconds))
 
 
@@ -828,6 +897,7 @@ async def self_healing_evolution_loop(
                     len(healed),
                     [h.offspring_strategy_id for h in healed],
                 )
+            HEARTBEATS.record_success("worker.self_healing_evolution")
         except Exception as exc:
             logger.exception("self_healing_evolution_loop cycle error")
             await _journal(db, "worker.self_healing_evolution", exc)
@@ -856,6 +926,7 @@ async def race_judge_loop(
                     len(records),
                     [(r.parent_strategy_id, r.challenger_strategy_id, r.state) for r in records],
                 )
+            HEARTBEATS.record_success("worker.race_judge")
         except Exception as exc:
             logger.exception("race_judge_loop cycle error")
             await _journal(db, "worker.race_judge", exc)

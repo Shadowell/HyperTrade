@@ -55,7 +55,7 @@ It is not an automated money maker, promises no profitability, and does not prov
 ```mermaid
 flowchart LR
   Op["Operator / External Agent<br/>Web · ht CLI · TUI · Desktop"] --> API["FastAPI Control Plane<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
-  API --> DB[("PostgreSQL + pgvector<br/>51 migrations · Mission projections · HET tree · Memory")]
+  API --> DB[("PostgreSQL + pgvector<br/>52 migrations · Mission projections · HET tree · Memory")]
   Worker["Worker Loops (13 Loops)<br/>Mission · AVO research · evolution · auto-review · meta-tuning"] --> DB
   Worker --> Research["ARC Autonomous Research Loop (AVO + RD-Agent)<br/>HET tree → Co-STEER synthesis → AST gatekeeper → sandbox → baseline"]
   Worker --> Evolution["Evolution Engine (default on)<br/>decay / launch scan → budget admission → re-research or rule tweak → admission → race duel → ledger"]
@@ -105,7 +105,7 @@ Scans active incubating paper strategies hourly:
 Design docs: [63 Evolution Hardening](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) · [66 Smooth Relay Handover](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md)
 
 ### 5. Production Probe Matrix & Quantum Portfolio Console
-- **Probe Matrix**: `/livez` (liveness), `/readyz` (readiness with `SELECT 1` DB probe), `/healthz` (comprehensive diagnostics with DB latency, adapter heartbeats, paper session counts, and token status), fully aligned with Kubernetes standards.
+- **Probe Matrix**: `/livez` (liveness), `/readyz` (readiness with `SELECT 1` DB probe), `/healthz` (comprehensive diagnostics with DB latency, adapter heartbeats, worker liveness, paper session counts, and token status), `/version` (the running commit SHA, which the deploy workflow checks after every deploy), fully aligned with Kubernetes standards.
 - **Quantum Portfolio Dashboard**: React 19 UI with BitPro / QuantLab target switcher, dynamic A-share rule badges, interactive HET evolution tree visualization, and real-time relay handover slice stepping monitor.
 
 Design docs: [67 Production Probes & Token Rotation](docs/architecture/67-production-observability-probes-and-token-rotation.md)
@@ -214,7 +214,7 @@ Single command executes all quality gates: Frontend lint, Vitest, and production
 | **Control Plane** | FastAPI 0.122+ / Uvicorn, scoped security tokens, `/livez`, `/readyz`, `/healthz` container probes, cursor SSE |
 | **Credential Security**| `TokenRotationService` (SHA-256 single-way hashing, zero plaintext storage, 24h grace period hot rotation, 7-day expiration audit) |
 | **Domain & Runtime** | Python 3.12+, Pydantic v2 strict models, modular monolith + ports-and-adapters |
-| **Storage** | SQLAlchemy 2.0 + Alembic (51 migrations), PostgreSQL 14+ with `pgvector` |
+| **Storage** | SQLAlchemy 2.0 + Alembic (52 migrations), PostgreSQL 14+ with `pgvector` |
 | **Workers** | asyncio + PostgreSQL SQL lease locking (13 concurrent background loops) |
 | **Research Core** | ARC + RD-Agent Hypothesis Evolution Tree (HET) + Co-STEER synthesizer + `ASTGatekeeper` |
 | **Target Adapters** | `market_target.v1` and `market-evolution.v1` MCP contracts; BitPro (Crypto) + QuantLab (A-Shares) |

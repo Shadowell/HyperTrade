@@ -14,7 +14,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from openai import OpenAI
+import httpx
+from openai import DEFAULT_TIMEOUT, OpenAI
 
 
 @dataclass(frozen=True)
@@ -79,10 +80,25 @@ class OpenAICompatibleChatProvider:
         base_url: str,
         model: str,
         client: Any | None = None,
+        timeout_seconds: float | None = None,
+        max_retries: int | None = None,
     ) -> None:
+        """``timeout_seconds`` / ``max_retries`` of ``None`` keep the OpenAI SDK's own defaults.
+
+        The timeout is the read/write/pool budget; the connect timeout stays at the SDK's short
+        default so an unreachable host still fails fast. The SDK retries connection errors, 408,
+        409, 429 and 5xx with its own backoff.
+        """
         self.name = name
         self.model = model
-        self._client = client if client is not None else OpenAI(api_key=api_key, base_url=base_url)
+        if client is None:
+            options: dict[str, Any] = {}
+            if timeout_seconds is not None:
+                options["timeout"] = httpx.Timeout(timeout_seconds, connect=DEFAULT_TIMEOUT.connect)
+            if max_retries is not None:
+                options["max_retries"] = max_retries
+            client = OpenAI(api_key=api_key, base_url=base_url, **options)
+        self._client = client
 
     def chat(
         self,

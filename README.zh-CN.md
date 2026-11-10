@@ -55,7 +55,7 @@
 ```mermaid
 flowchart LR
   Op["操作员 / 外部 Agent<br/>Web · ht CLI · TUI · Desktop"] --> API["FastAPI 控制面<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
-  API --> DB[("PostgreSQL + pgvector<br/>51 项迁移 · Mission 投影 · 演进树 · 记忆库")]
+  API --> DB[("PostgreSQL + pgvector<br/>52 项迁移 · Mission 投影 · 演进树 · 记忆库")]
   Worker["Worker 循环 (13 个 Loop)<br/>Mission · AVO 研究 · 进化扫描 · 自动评审 · 元学习"] --> DB
   Worker --> Research["ARC 自主研究循环 (AVO + RD-Agent)<br/>HET 假设树 → Co-STEER 合成 → AST 门禁 → 沙箱自测 → 基线对比"]
   Worker --> Evolution["自主进化引擎（默认开启）<br/>退化 / 上线扫描 → 预算准入 → 再研究或参数微调 → 入场检查 → 赛马对决 → 效果账本"]
@@ -105,7 +105,7 @@ flowchart LR
 设计文档：[63 进化加固](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) · [66 赛马平滑换仓](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md)
 
 ### 5. 容器级分级探活矩阵与量子量化指挥台
-- **探活矩阵**：`/livez`（进程存活）、`/readyz`（`SELECT 1` 数据库就绪）、`/healthz`（包含 DB 延迟、QuantLab/BitPro 适配器心跳、Paper 会话与令牌审计全景诊断），原生适配 K8s 探针；
+- **探活矩阵**：`/livez`（进程存活）、`/readyz`（`SELECT 1` 数据库就绪）、`/healthz`（包含 DB 延迟、QuantLab/BitPro 适配器心跳、worker 存活心跳、Paper 会话与令牌审计全景诊断）、`/version`（运行中的提交 SHA，发布流程每次部署后据此校验），原生适配 K8s 探针；
 - **量子指挥台 (QuantumPortfolioDashboard)**：React 19 现代化界面，支持 BitPro / QuantLab 一键切换、动态 A 股微观规则警示徽章、HET 假设演进树可视化渲染与净额换仓切片步进监视器。
 
 设计文档：[67 生产级探活与令牌轮换](docs/architecture/67-production-observability-probes-and-token-rotation.md)
@@ -214,7 +214,7 @@ curl http://localhost:3334/api/portfolio/relay/handovers
 | **控制面** | FastAPI 0.122+ / Uvicorn，作用域安全令牌，`/livez`, `/readyz`, `/healthz` 容器探活矩阵，游标可续传 SSE |
 | **凭据安全** | `TokenRotationService`（SHA-256 单向散列，零明文存储，24h 宽限期热轮换，7天临期审计） |
 | **运行时与领域** | Python 3.12+、Pydantic v2 严格合同，模块化单体 + ports-and-adapters |
-| **存储** | SQLAlchemy 2.0 + Alembic（51 个迁移），PostgreSQL 14+ 带 `pgvector` |
+| **存储** | SQLAlchemy 2.0 + Alembic（52 个迁移），PostgreSQL 14+ 带 `pgvector` |
 | **Worker 集群** | asyncio + PostgreSQL SQL lease 租约（13 个并发后台循环） |
 | **研究与演进中枢** | ARC + RD-Agent 假设演进树 (HET) + Co-STEER 代码合成器 + `ASTGatekeeper` 语法守卫 |
 | **多市场目标适配** | `market_target.v1` 与 `market-evolution.v1` MCP 契约；BitPro (Crypto) + QuantLab (A股) |
