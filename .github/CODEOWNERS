@@ -1,0 +1,12 @@
+# Every change is reviewed by the repository owner. The paths below are the ones whose mistakes
+# reach production or the supply chain directly; they are listed explicitly so that adding a
+# second maintainer later only needs the right-hand side changed, and so that branch protection's
+# "Require review from Code Owners" can be switched on without further edits.
+*                       @Shadowell
+/.github/               @Shadowell
+/deploy/                @Shadowell
+/backend/alembic/       @Shadowell
+/backend/Dockerfile     @Shadowell
+/docker-compose.yml     @Shadowell
+/pyproject.toml         @Shadowell
+/uv.lock                @Shadowell

@@ -22,6 +22,11 @@ concurrency:
 env:
   DEPLOY_ENGINE: ${{ (github.event_name == 'workflow_dispatch' && inputs.engine) || vars.DEPLOY_ENGINE || 'server' }}
 
+# The only repository API call is a read-only `gh api .../commits/main`; deploying needs no write
+# access to the repository, so the token is limited to reading contents.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.engine) || vars.DEPLOY_ENGINE || 'server') == 'server'
@@ -75,15 +80,17 @@ jobs:
           fi
           echo "deploy=true" >> "$GITHUB_OUTPUT"
 
+      # This job runs on the self-hosted production runner, so third-party actions are pinned to a
+      # commit SHA: a moved or hijacked tag must not be able to run code on the production host.
       - name: Checkout
         if: steps.gate.outputs.deploy == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 1
 
       - name: Set up Node
         if: steps.gate.outputs.deploy == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "25"
 
