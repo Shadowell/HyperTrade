@@ -1,0 +1,5 @@
+# Config for `actionlint` (run by the "Workflow Lint" job in ci.yml).
+# The production deploy job targets a self-hosted runner with this custom label.
+self-hosted-runner:
+  labels:
+    - hypertrade-production
