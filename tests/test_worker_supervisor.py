@@ -254,6 +254,7 @@ def test_core_loops_always_run() -> None:
         "arc_auto_review",
         "arc_meta_tuning",
         "cognitive_memory_replay",
+        "heartbeat",
     ]
 
 

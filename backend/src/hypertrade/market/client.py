@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
@@ -15,6 +16,23 @@ logger = logging.getLogger("hypertrade.market")
 
 # `(component, exception)`: where the worker plugs in its runtime-error journal.
 ErrorHook = Callable[[str, Exception], Awaitable[None]]
+# `(component)`: called while ingestion works, so a failure streak can end. Throttled below.
+OkHook = Callable[[str], None]
+
+_OK_REPORT_INTERVAL_SECONDS = 5.0
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
+def _ok(on_ok: OkHook | None, component: str) -> None:
+    if on_ok is None:
+        return
+    try:
+        on_ok(component)
+    except Exception:
+        logger.warning("could not report the %s success", component, exc_info=True)
 
 
 async def _report(on_error: ErrorHook | None, component: str, exc: Exception) -> None:
@@ -123,15 +141,19 @@ class MarketIngestor:
             )
         return len(tickers)
 
-    async def ingest_ws_forever(self, on_error: ErrorHook | None = None) -> None:
+    async def ingest_ws_forever(
+        self, on_error: ErrorHook | None = None, on_ok: OkHook | None = None
+    ) -> None:
         """Stream tickers forever; a dropped websocket falls back to one REST snapshot.
 
         Nothing in here may raise: this is one task of the worker's single `asyncio.gather`, so an
         escaping exception ends the whole worker process. The REST fallback runs inside the
         `except` block, which is exactly where it used to escape: an upstream outage that closes
         the websocket usually takes the REST endpoint down with it. Failures go to
-        `on_error(component, exc)`, which the worker points at its runtime-error journal.
+        `on_error(component, exc)`, which the worker points at its runtime-error journal; `on_ok`
+        says it is working again (at most every few seconds), which ends a failure streak.
         """
+        last_ok = float("-inf")
         while True:
             try:
                 async for ticker in self.ws.stream():
@@ -143,6 +165,10 @@ class MarketIngestor:
                         change_utc0_pct=ticker.change_utc0_pct,
                         raw=ticker.raw,
                     )
+                    moment = _now()
+                    if moment - last_ok >= _OK_REPORT_INTERVAL_SECONDS:
+                        last_ok = moment
+                        _ok(on_ok, "worker.okx_ws")
             except Exception as exc:
                 logger.warning("OKX websocket stream failed; falling back to REST", exc_info=True)
                 await _report(on_error, "worker.okx_ws", exc)
@@ -151,4 +177,6 @@ class MarketIngestor:
                 except Exception as rest_exc:
                     logger.warning("OKX REST fallback failed; retrying after pause", exc_info=True)
                     await _report(on_error, "worker.okx_rest_fallback", rest_exc)
+                else:
+                    _ok(on_ok, "worker.okx_rest_fallback")
                 await asyncio.sleep(15)

@@ -223,6 +223,7 @@ from hypertrade.runtime.domain.models import (
 )
 from hypertrade.runtime.domain.sandbox import ImportReviewV1, SandboxRequestV1
 from hypertrade.runtime.domain.supervision import TeamRunRequestV1
+from hypertrade.runtime.heartbeat import read_worker_status
 from hypertrade.security.token_manager import TokenRotationService, TokenStatus
 from hypertrade.skills.lifecycle import (
     ApprovedSkillLoader,
@@ -948,13 +949,21 @@ def create_app(
             )
             token_stats["expiring_soon_tokens"] = len(expiring)
 
+        # 5. Worker liveness (the worker is a separate process; it reports through the database)
+        workers = read_worker_status(database)
+
         # Compute overall status
         if db_status != "connected":
             overall_status = "unhealthy"
             response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        elif any(
-            isinstance(a, dict) and a.get("status") in ("degraded", "unhealthy")
-            for a in adapters.values()
+        elif (
+            any(
+                isinstance(a, dict) and a.get("status") in ("degraded", "unhealthy")
+                for a in adapters.values()
+            )
+            # "unknown" (no worker has reported) is not a fault; a stale or failing one is.
+            or workers["status"] == "stale"
+            or bool(workers.get("failing_components"))
         ):
             overall_status = "degraded"
         else:
@@ -972,6 +981,7 @@ def create_app(
             },
             "build": get_build_info().to_dict(),
             "adapters": adapters,
+            "workers": workers,
             "paper_session": paper_session_status,
             "security": token_stats,
         }
