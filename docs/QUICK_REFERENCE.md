@@ -226,7 +226,8 @@
 | `OKX_PASSPHRASE` | OKX 口令 |
 | `OKX_TESTNET` | 启用 Testnet | `true`/`false` |
 | `OKX_REST_URL` | REST API URL |
-| `OKX_PUBLIC_WS_URL` | WebSocket URL |
+| `OKX_PUBLIC_WS_URL` | WebSocket URL，默认 `wss://ws.okx.com/ws/v5/public`（OKX 已不再接受 8443 端口） |
+| `OKX_WS_MAX_INSTRUMENTS` | WebSocket 按 `instId` 订阅的合约数上限，取成交额最大的 N 个，默认 `100`；其余合约按 REST 快照刷新 |
 
 ### 模拟盘与风控
 

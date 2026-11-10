@@ -1,3 +1,21 @@
+## 2026-11-11：OKX 公共 WebSocket 一条 ticker 都没写入过的修复——按 `instId` 订阅、回到 443 端口、断流检测与退避重连
+
+- **背景**：2026-11-10 部署后，`/api/healthz` 里 `worker.okx_ws` 在 11 分钟里没有一次成功，只有 2 次 `ConnectionClosedError`；`market_tickers` 只靠每 5 分钟一次的 REST 快照（`MarketIngestor.ingest_rest_once`）刷新，价格最长落后 5 分钟。上一条记录（事件循环停摆）把这件事标为「本次未改」，这里接着做。
+- **根因**（对照 OKX 官方文档，Wayback 快照 2026-11-09；开发机连不上 okx.com）：有两个互相独立的缺陷，任何一个都足以让 WS 收不到 ticker：
+  1. **订阅格式不对**：`tickers` 频道的请求参数只有 `channel` 和 `instId`（必填），没有 `instType`；原来发的 `{"channel": "tickers", "instType": "SWAP"}` 不在文档里。文档同时写明，订阅没有建立成功、或超过 30 秒没有数据推送的连接会被服务端断开（关闭帧 4004 `No data received in 30s`），与反复出现的 `ConnectionClosedError` 吻合。
+  2. **端口已下线**：默认地址和 `.env.example` 写的是 `wss://ws.okx.com:8443/ws/v5/public`，而 OKX 自 2026-10-31 起不再接受 8443 端口的公网 WebSocket 连接（更新日志 "WebSocket port 8443 discontinuation"，Colo 为 11-16）。`deploy/setup-server.sh` 生成的服务器 `.env` 不含 `OKX_PUBLIC_WS_URL`，生产多半用的是代码默认值。
+  生产里那 2 次 `ConnectionClosedError` 具体由哪一个造成，离线判断不了（连不上 OKX，也没有当时的关闭码）；两个都修了，并且新代码把关闭码和 OKX 的回答写进失败信息，部署后看就能分清。
+- **交付**：
+  1. **按 `instId` 分批订阅**：合约清单取自 SWAP tickers 的 REST 快照，按 24 小时成交额（`last` × `volCcy24h`，对 USDT／USDC／币本位合约可比）取前 `OKX_WS_MAX_INSTRUMENTS` 个（新增设置，默认 100），每个 `subscribe` 请求 50 个；其余合约仍按 REST 节奏刷新。设上限是因为官方没有公布公共频道的单连接订阅数上限（只有关闭码 4008／4009，没有数值），并且每多订阅一个合约，`market_tickers` 大约每秒多一次行写入。收到 4008／4009 时把订阅数减半（不低于 10），在进程存活期间保持，失败照常上报（`OkxWsSubscriptionLimitError`）并走 REST 兜底。
+  2. **保活与断流检测**：OKX 的保活是文本 `ping`／`pong`（不是 JSON），静默 15 秒就发 `ping`，不再用库自带的协议级 ping；订阅后 20 秒内没有 ticker、或之后连续 30 秒没有 ticker（只有 `pong` 不算）按失败处理（`OkxWsError`），失败信息带上 OKX 的 `error` 事件（码和文字），不再等服务端 30 秒后给一个没有原因的 `ConnectionClosedError`。`pong`、订阅确认和不认识的帧不会让连接掉线。
+  3. **重连与兜底**：连续失败按 15 秒、30 秒、60 秒退避（第一档与原来的固定 15 秒相同），一条连接稳定流式 30 秒后重新计数；正常关闭（1000／1001）和 OKX 的 64008 重启通知不算错误，一秒后重连（原来是立刻重连，服务端反复正常关闭会变成紧循环，而 OKX 限制每个 IP 每秒 3 条新连接）。每次失败仍先上报（`worker.okx_ws`）、再做一次 REST 兜底快照（`worker.okx_rest_fallback`），`on_error`／`on_ok` 的语义不变；兜底刚取回的合约清单会在 5 分钟内被下一次重连复用，不重复请求 OKX。
+  4. **地址**：默认值改为 `wss://ws.okx.com/ws/v5/public`；配置里仍是 OKX 域名加 `:8443`（例如照着旧版 `.env.example` 写的）时，改写成 443 并打一条警告，其他主机（本地测试服务、代理）不动。
+  5. 没有回退 #105：仍是缓冲、约每秒一批、在线程里写库；`ingest_rest_once` 的签名和行为不变。
+- **验证**：`./scripts/check.sh` 全量通过：前端 lint、15 项测试与构建，`ruff`，`mypy`（329 个文件），`pytest` 2828 项（新增 40 项）。
+  - 新增 `tests/test_okx_ws_tickers.py` 40 项，用一个真实的本地 WebSocket 假服务端，它只接受文档里的订阅形式（带 `instType` 的订阅会被拒绝且不推数据）。覆盖：订阅消息格式与分批、排名与上限、URL 规整、帧分类、文本 ping／pong、无 pong、订阅无数据、保活不能掩盖断流、重启通知与正常关闭、4008／4009 减半与下限、断开后重连并重新订阅、REST 兜底、退避增长与清零（含真实等待时长）、合约清单复用。
+  - 变异检验：注入 40 个变异（旧的 `instType` 订阅、不分批、分批多 1、排序反向、不规整 URL、不发 ping、pong 延长截止时间、没有首包超时、失败信息不带 OKX 的回答、忽略重启通知、不减半、没有下限、不退避、不清零、不兜底、不复用清单、紧循环重连等），全部被对应测试抓到，0 个漏网（脚本在仓库外，每次只改一处并还原）。
+- **注意／未做**：对照官方文档确认的是：`tickers` 只有 `channel`／`instId` 参数；订阅未建立或 30 秒无数据会被断开（4004）；文本 `ping`／`pong` 保活；每连接每小时 480 次订阅类请求、单个请求不超过 64 KB、每 IP 每秒 3 条新连接；4008／4009 存在但没有数值；8443 端口 2026-10-31 下线。**无法离线验证**的是：OKX 对旧的 `instType` 订阅实际回了什么；两个缺陷各自对生产那 2 次错误的责任；单连接订阅数的真实上限；默认 100 个是否过于保守；`ping_interval=None` 改用文本 ping 在真实服务端上的表现。GitNexus 影响分析：`ingest_ws_forever` 为 MEDIUM，`ingest_rest_once` 为 HIGH（间接依赖 15 个，签名和行为未变），`Settings` 为 CRITICAL（只新增一个带默认值的字段并改了默认 URL）。副作用：`latest_tickers` 按 `updated_at` 倒序取前 250，被 WS 刷新的行会排在最前，模拟盘和 agent 读到的「最新 250 条」里会稳定包含这批最活跃的合约。**上线后验证**：`GET /api/healthz` 的 `workers[].components["worker.okx_ws"]`，`last_ok_age_seconds` 应在几秒内、`consecutive_failures` 为 0；失败时 `last_error_type` 能区分 `ConnectionClosedError`（服务端关闭，消息里有关闭码）、`OkxWsError`（订阅没有数据，消息里有 OKX 的回答）、`OkxWsSubscriptionLimitError`（超上限，已自动减半）；消息本身在 worker 日志和运行时错误日志里（healthz 只存类型）；worker 日志里应出现 `OKX websocket: subscribing to 100 instruments in 2 requests`。数据库写入速率大约增加 100 行／秒，调高 `OKX_WS_MAX_INSTRUMENTS` 之前先看这一项。
+
 ## 2026-11-11：worker 启动后事件循环被堵约 100 秒的根因与修复——行情快照改为线程中的批量写入，新增事件循环看门狗
 
 - **背景**：2026-11-10 部署 `cf065a1` 后，`/api/healthz` 的 worker 心跳显示：每次启动后约 100–130 秒内事件循环被堵住（`event_loop_lag_max_seconds` = 95.954，心跳年龄等于运行时间），之后每几分钟还有 11–16 秒的堵塞；没有循环连续失败，也没有被监督器重启过。堵塞期间心跳、模拟盘、全部 ARC 循环都不运行。
