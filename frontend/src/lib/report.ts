@@ -1,4 +1,10 @@
-import type { AgentRun, EvidenceSelection, ReportBlock, StrategyLibraryItem, TraceEvent } from "../types";
+import type {
+  AgentRun,
+  EvidenceSelection,
+  ReportBlock,
+  StrategyLibraryItem,
+  TraceEvent
+} from "../types";
 import { formatPercentValue } from "./format";
 import { isRecord, stringOrUndefined, summarizeRecord } from "./values";
 
