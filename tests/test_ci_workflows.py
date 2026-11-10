@@ -81,7 +81,9 @@ def test_third_party_actions_are_pinned_to_commit_shas() -> None:
 def test_security_workflow_audits_what_the_image_ships() -> None:
     security = _workflow("security.yml")
     triggers = _on_block(security)
-    assert "pull_request:" in triggers and "schedule:" in triggers
+    # The audit runs on every PR and on main. A weekly schedule used to be required here too; it
+    # was removed on purpose (#102), so only the triggers that exist are pinned.
+    assert "pull_request:" in triggers and "push:" in triggers
 
     # The audited set must be the production closure from the committed lock.
     export = re.search(r"uv export (?P<flags>[^\n]*(?:\n[ \t]+[^\n]*)*)", security)
