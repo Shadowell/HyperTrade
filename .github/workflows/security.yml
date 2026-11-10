@@ -1,0 +1,65 @@
+name: Security
+
+# Audits the dependencies that actually ship, not the whole development toolchain:
+#   * Python: the closure the production image installs (`uv sync --frozen --no-dev`).
+#   * Frontend: production dependencies only (`pnpm audit --prod`).
+# Advisories are published every day, so besides push/PR the audit also runs weekly. A red run on
+# an unrelated PR means a new advisory landed against a locked package: bump it (Dependabot opens
+# a grouped PR) rather than ignoring the check.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 2 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: hypertrade-security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python-audit:
+    name: Python Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "latest"
+
+      # --locked: fail if uv.lock does not match pyproject.toml, so the audited set is the
+      # committed one. --no-dev: the production image never installs the dev group.
+      - name: Export the production dependency closure
+        run: >
+          uv export --locked --no-dev --no-hashes --no-emit-project --format requirements-txt
+          --output-file "$RUNNER_TEMP/requirements-prod.txt"
+
+      - name: Audit against the PyPI / OSV advisory database
+        run: uvx pip-audit==2.10.1 -r "$RUNNER_TEMP/requirements-prod.txt" --disable-pip --no-deps
+
+  frontend-audit:
+    name: Frontend Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.17.1
+
+      - name: Audit production dependencies
+        run: pnpm --dir frontend audit --prod --audit-level moderate
