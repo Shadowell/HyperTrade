@@ -89,3 +89,31 @@ def test_both_deploy_engines_share_one_rsync_protect_list() -> None:
         "data",
     } <= server_excludes
     assert server_excludes == hosted_excludes
+
+
+def test_both_deploy_engines_verify_the_running_build_against_the_shipped_commit() -> None:
+    # A green deploy step only proves the host script exited 0. Asking the running API which
+    # commit it serves is what catches a deploy that did not actually replace the build.
+    workflow = Path(".github/workflows/deploy.yml").read_text(encoding="utf-8")
+    steps = re.findall(
+        r"- name: Verify the deployed build\n(?P<body>(?:(?!      - name:).*\n)+)", workflow
+    )
+    assert len(steps) == 2, "expected one verification step per deploy engine"
+    for body in steps:
+        assert "EXPECTED_SHA: ${{ github.sha }}" in body
+        assert "/api/version" in body and '.get("sha")' in body
+        assert "exit 1" in body, "a mismatch must fail the job"
+
+
+def test_self_hosted_engine_stamps_ships_verifies_and_only_then_records_the_sha() -> None:
+    workflow = Path(".github/workflows/deploy.yml").read_text(encoding="utf-8")
+    stamp = workflow.index("- name: Stamp build identity")
+    sync = workflow.index("- name: Sync release to /opt/hypertrade")
+    deploy = workflow.index("- name: Deploy\n")
+    verify = workflow.index("- name: Verify the deployed build")
+    record = workflow.index("- name: Record deployed SHA")
+
+    # The stamp must be in the tree before it is synced and baked into the image, and the SHA is
+    # recorded as deployed only after the running API confirmed it (a mismatch is retried).
+    assert stamp < sync < deploy < verify < record
+    assert "backend/src/hypertrade/BUILD_INFO" in workflow[stamp:sync]

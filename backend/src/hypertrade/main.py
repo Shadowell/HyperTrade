@@ -53,6 +53,7 @@ from hypertrade.bitpro.mcp import (
     bitpro_capabilities,
 )
 from hypertrade.bitpro.paced_reads import PacedReadClient
+from hypertrade.build_info import get_build_info
 from hypertrade.config import Settings, get_settings
 from hypertrade.connectors.registry import ConnectorRegistry
 from hypertrade.db import (
@@ -850,6 +851,13 @@ def create_app(
             "timestamp": datetime.now(UTC).isoformat(),
         }
 
+    @app.get("/version")
+    @app.get("/api/version")
+    def version() -> dict[str, Any]:
+        # Public on purpose, like /livez: the deploy workflow compares `sha` with the commit it
+        # just shipped, and the SHA is already public in the repository.
+        return {"service": "hypertrade-api", **get_build_info().to_dict()}
+
     @app.get("/readyz")
     @app.get("/api/readyz")
     def readyz(response: Response) -> dict[str, Any]:
@@ -962,6 +970,7 @@ def create_app(
                 "status": db_status,
                 "latency_ms": db_latency_ms,
             },
+            "build": get_build_info().to_dict(),
             "adapters": adapters,
             "paper_session": paper_session_status,
             "security": token_stats,
