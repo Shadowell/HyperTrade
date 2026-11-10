@@ -295,6 +295,14 @@ class Settings(BaseSettings):
         alias="CODEX_MODEL_OPTIONS",
     )
     codex_timeout_seconds: float = Field(default=90.0, alias="CODEX_TIMEOUT_SECONDS")
+    # Request budget for the OpenAI-compatible providers (DeepSeek, OpenAI, OpenRouter, Qwen,
+    # vide_coding). The defaults equal the OpenAI SDK's own, so leaving them alone changes
+    # nothing; they exist so the values are explicit and tunable without a code change. The read
+    # timeout is deliberately long: reasoning models can think for minutes before the first byte.
+    provider_request_timeout_seconds: float = Field(
+        default=600.0, ge=1.0, le=3600.0, alias="PROVIDER_REQUEST_TIMEOUT_SECONDS"
+    )
+    provider_max_retries: int = Field(default=2, ge=0, le=10, alias="PROVIDER_MAX_RETRIES")
     agy_bin_path: str = Field(default="agy", alias="AGY_BIN_PATH")
     agy_model: str = Field(default="gemini-3.8-flash-high", alias="AGY_MODEL")
     agy_model_options: str = Field(

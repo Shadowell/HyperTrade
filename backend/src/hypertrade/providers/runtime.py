@@ -161,6 +161,8 @@ class ProviderRuntime:
                 api_key=self.settings.deepseek_api_key,
                 base_url=self.settings.deepseek_base_url,
                 model=self.settings.deepseek_model,
+                timeout_seconds=self.settings.provider_request_timeout_seconds,
+                max_retries=self.settings.provider_max_retries,
             )
         if name == "openai" and self.settings.openai_api_key:
             return OpenAICompatibleChatProvider(
@@ -168,6 +170,8 @@ class ProviderRuntime:
                 api_key=self.settings.openai_api_key,
                 base_url=self.settings.openai_base_url,
                 model=self.settings.openai_model,
+                timeout_seconds=self.settings.provider_request_timeout_seconds,
+                max_retries=self.settings.provider_max_retries,
             )
         if name == "codex":
             codex_token = resolve_codex_access_token(
@@ -191,6 +195,8 @@ class ProviderRuntime:
                 api_key=self.settings.openrouter_api_key,
                 base_url=self.settings.openrouter_base_url,
                 model=self.settings.openrouter_model,
+                timeout_seconds=self.settings.provider_request_timeout_seconds,
+                max_retries=self.settings.provider_max_retries,
             )
         if name == "qwen" and self.settings.qwen_api_key:
             return OpenAICompatibleChatProvider(
@@ -198,6 +204,8 @@ class ProviderRuntime:
                 api_key=self.settings.qwen_api_key,
                 base_url=self.settings.qwen_embedding_base_url,
                 model=self.settings.qwen_chat_model,
+                timeout_seconds=self.settings.provider_request_timeout_seconds,
+                max_retries=self.settings.provider_max_retries,
             )
         if name == "vide_coding" and self.settings.vide_coding_api_key:
             return OpenAICompatibleChatProvider(
@@ -205,6 +213,8 @@ class ProviderRuntime:
                 api_key=self.settings.vide_coding_api_key,
                 base_url=self.settings.vide_coding_base_url,
                 model=model_override or self.settings.vide_coding_model,
+                timeout_seconds=self.settings.provider_request_timeout_seconds,
+                max_retries=self.settings.provider_max_retries,
             )
         if name in {"agy", "gemini", "antigravity"} and resolve_agy_access(
             bin_path=self.settings.agy_bin_path,
