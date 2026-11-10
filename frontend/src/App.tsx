@@ -19,9 +19,7 @@ import {
   TerminalSquare
 } from "lucide-react";
 import {
-  CSSProperties,
   MouseEvent,
-  ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -49,12 +47,17 @@ import {
 } from "./agentThread";
 
 import { copy } from "./i18n/messages";
+import { cascadeStyle, formatAge, formatMetricNumber, formatPercentValue, formatTokenSource, metricTone, providerLabel, statusLabel } from "./lib/format";
+import { isRecord, keyValueRows, stringOrUndefined, stringifyValue, toStringList } from "./lib/values";
+import { renderMarkdown } from "./lib/markdown";
+import { createClientIdempotencyKey } from "./lib/ids";
+import { activeSectionFromPath, sectionPath } from "./lib/routes";
+import { reportBlocksFromRun, strategyEvidenceSelection, traceEvidenceSelection } from "./lib/report";
 import type {
   Language,
   NavSection,
   TraceEvent,
   AgentRun,
-  ProviderStatus,
   MissionProjection,
   MissionEvent,
   StrategyCardProjection,
@@ -2136,69 +2139,6 @@ function App() {
   );
 }
 
-function providerLabel(provider: ProviderStatus | undefined, t: Record<string, string>): string {
-  if (!provider) {
-    return t.missing;
-  }
-  const model = provider.model || provider.name;
-  return `${provider.display_name} / ${model}`;
-}
-
-function formatTokenSource(source: string | undefined, t: Record<string, string>): string {
-  if (source === "bitpro_settings_agent_token_or_server_env") {
-    return t.mcpTokenSourceSettings;
-  }
-  return source || "n/a";
-}
-
-function statusLabel(status: string | undefined): string {
-  const normalized = (status ?? "").toLowerCase();
-  const labels: Record<string, string> = {
-    allowed: "通过",
-    approved: "已批准",
-    completed: "已完成",
-    configured: "已配置",
-    deterministic: "确定性",
-    disabled: "已禁用",
-    error: "异常",
-    failed: "失败",
-    missing: "未配置",
-    passed: "通过",
-    pending: "待处理",
-    pending_approval: "待审批",
-    preview: "预览",
-    ready: "就绪",
-    rejected: "已拒绝",
-    running: "运行中",
-    success: "成功"
-  };
-  return labels[normalized] ?? status ?? "未知";
-}
-
-function activeSectionFromPath(): NavSection {
-  if (typeof window === "undefined") {
-    return "harness";
-  }
-  const section = window.location.pathname.split("/").filter(Boolean).at(-1) ?? "harness";
-  if (
-    section === "missions" ||
-    section === "strategy" ||
-    section === "portfolio" ||
-    section === "alerts" ||
-    section === "runs" ||
-    section === "quality" ||
-    section === "memory" ||
-    section === "rag"
-  ) {
-    return section;
-  }
-  return "harness";
-}
-
-function sectionPath(section: NavSection): string {
-  return section === "harness" ? "/harness" : `/harness/${section}`;
-}
-
 function StatusDot({ enabled }: { enabled: boolean }) {
   return (
     <span
@@ -3008,45 +2948,6 @@ function memoryChartColor(index: number): string {
   return ["#5ad6c4", "#d6a24a", "#9d87e8", "#73a7d8", "#e36b4f"][index % 5];
 }
 
-function cascadeStyle(index: number): CSSProperties & Record<"--index", number> {
-  return { "--index": index };
-}
-
-function formatMetricNumber(value: number): string {
-  if (value >= 1000) {
-    return Intl.NumberFormat("en", { notation: "compact" }).format(value);
-  }
-  return String(value);
-}
-
-function formatAge(seconds: number | null): string {
-  if (seconds === null) {
-    return "无数据";
-  }
-  if (seconds < 60) {
-    return `${seconds}秒`;
-  }
-  if (seconds < 3600) {
-    return `${Math.floor(seconds / 60)}分`;
-  }
-  return `${Math.floor(seconds / 3600)}时`;
-}
-
-function formatPercentValue(value: string | undefined): string {
-  if (!value || value === "n/a") {
-    return "n/a";
-  }
-  return value.endsWith("%") ? value : `${value}%`;
-}
-
-function metricTone(value: string | undefined): RouteMetric["tone"] {
-  const numericValue = Number(value?.replace("%", ""));
-  if (Number.isFinite(numericValue) && numericValue < 0) {
-    return "danger";
-  }
-  return "signal";
-}
-
 function EvidenceMetric({
   label,
   tone,
@@ -3211,194 +3112,6 @@ function ReportSourceList({
       </div>
     </div>
   );
-}
-
-function reportBlocksFromRun(run: AgentRun): ReportBlock[] {
-  const reportJson = run.report_json;
-  if (!reportJson) {
-    return [];
-  }
-  const blocks = reportJson.report_blocks ?? reportJson.blocks;
-  if (!Array.isArray(blocks)) {
-    return [];
-  }
-  return blocks.filter(isRecord).map((block) => ({
-    block_type: stringOrUndefined(block.block_type),
-    title: stringOrUndefined(block.title),
-    severity: stringOrUndefined(block.severity),
-    notes: block.notes,
-    metrics: block.metrics,
-    rows: block.rows,
-    missing: block.missing,
-    source_refs: block.source_refs
-  }));
-}
-
-function strategyEvidenceSelection(
-  item: StrategyLibraryItem,
-  t: Record<string, string>
-): EvidenceSelection {
-  const best = item.best ?? {};
-  const rows = [
-    { label: "memory", value: best.memory_id ?? "n/a" },
-    { label: "experiment", value: best.experiment_id ?? "n/a" },
-    { label: "backtest", value: best.backtest_id ?? "n/a" },
-    { label: "bitpro_result", value: best.bitpro_result_id ?? "n/a" },
-    { label: t.returnPct, value: formatPercentValue(best.total_return_pct) },
-    { label: t.maxDrawdown, value: formatPercentValue(best.max_drawdown_pct) },
-    { label: t.score, value: best.score ?? "n/a" },
-    { label: t.sourceMemories, value: (item.source_memory_ids ?? []).join(", ") || t.noSourceIds }
-  ];
-  return {
-    title: item.strategy_key,
-    rows
-  };
-}
-
-function traceEvidenceSelection(event: TraceEvent, t: Record<string, string>): EvidenceSelection {
-  return {
-    title: `${t.traceEvidence}: ${event.tool_name}`,
-    rows: [
-      { label: "trace", value: event.id ?? "n/a" },
-      { label: "tool", value: event.tool_name },
-      { label: "status", value: event.status },
-      { label: "created_at", value: event.created_at ?? "n/a" },
-      { label: "input", value: summarizeRecord(event.input_json) },
-      { label: "output", value: summarizeRecord(event.output_json) }
-    ]
-  };
-}
-
-function keyValueRows(value: unknown): Array<{ label: string; value: string }> {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => {
-        if (!isRecord(item)) {
-          return null;
-        }
-        const label = stringOrUndefined(item.label ?? item.name ?? item.key);
-        if (!label) {
-          return null;
-        }
-        return { label, value: stringifyValue(item.value ?? item.amount ?? item.metric ?? "") };
-      })
-      .filter((item): item is { label: string; value: string } => Boolean(item));
-  }
-  if (isRecord(value)) {
-    return Object.entries(value).map(([label, item]) => ({
-      label,
-      value: stringifyValue(item)
-    }));
-  }
-  return [];
-}
-
-function toStringList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.map(stringifyValue).filter((item) => item.length > 0);
-  }
-  if (typeof value === "string" && value.trim()) {
-    return [value.trim()];
-  }
-  return [];
-}
-
-function summarizeRecord(value: Record<string, unknown> | undefined): string {
-  if (!value) {
-    return "n/a";
-  }
-  const entries = Object.entries(value).slice(0, 4);
-  if (entries.length === 0) {
-    return "n/a";
-  }
-  return entries.map(([key, item]) => `${key}=${stringifyValue(item)}`).join(" / ");
-}
-
-function stringifyValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "";
-  }
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map(stringifyValue).join(", ");
-  }
-  if (isRecord(value)) {
-    return Object.entries(value)
-      .slice(0, 4)
-      .map(([key, item]) => `${key}=${stringifyValue(item)}`)
-      .join(" / ");
-  }
-  return String(value);
-}
-
-function stringOrUndefined(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
-function renderMarkdown(markdown: string): ReactNode {
-  const lines = markdown.split("\n");
-  const nodes: ReactNode[] = [];
-  let listItems: string[] = [];
-
-  function flushList() {
-    if (listItems.length === 0) {
-      return;
-    }
-    const items = listItems;
-    listItems = [];
-    nodes.push(
-      <ul key={`ul-${nodes.length}`}>
-        {items.map((item, index) => (
-          <li key={`${item}-${index}`}>{renderInlineMarkdown(item)}</li>
-        ))}
-      </ul>
-    );
-  }
-
-  lines.forEach((line, index) => {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      flushList();
-      return;
-    }
-    if (trimmed.startsWith("- ")) {
-      listItems.push(trimmed.slice(2));
-      return;
-    }
-    flushList();
-    if (trimmed.startsWith("### ")) {
-      nodes.push(<h3 key={index}>{renderInlineMarkdown(trimmed.slice(4))}</h3>);
-    } else if (trimmed.startsWith("## ")) {
-      nodes.push(<h2 key={index}>{renderInlineMarkdown(trimmed.slice(3))}</h2>);
-    } else if (trimmed.startsWith("# ")) {
-      nodes.push(<h1 key={index}>{renderInlineMarkdown(trimmed.slice(2))}</h1>);
-    } else {
-      nodes.push(<p key={index}>{renderInlineMarkdown(trimmed)}</p>);
-    }
-  });
-  flushList();
-  return nodes.length > 0 ? nodes : <p>n/a</p>;
-}
-
-function renderInlineMarkdown(text: string): ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, index) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={index}>{part.slice(2, -2)}</strong>;
-    }
-    return <span key={index}>{part}</span>;
-  });
-}
-
-function createClientIdempotencyKey(prefix: string): string {
-  const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
-  return `${prefix}_${random}`;
 }
 
 export default App;
