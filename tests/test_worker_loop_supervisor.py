@@ -1,4 +1,4 @@
-"""Supervisor: a crashed worker loop restarts alone, with backoff, and never ends the process."""
+"""Loop supervisor: a crashed worker loop restarts alone, with backoff; the process survives."""
 
 import asyncio
 import random
@@ -9,7 +9,7 @@ import pytest
 from hypertrade import worker
 from hypertrade.config import Settings
 from hypertrade.db import Database
-from hypertrade.runtime.supervisor import supervise
+from hypertrade.runtime.loop_supervisor import supervise
 
 
 class _Done(BaseException):

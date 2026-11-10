@@ -65,7 +65,7 @@ from hypertrade.runtime.adapters.tool_runtime import (
 from hypertrade.runtime.application.service import MissionRuntime
 from hypertrade.runtime.domain.models import TERMINAL_STATUSES, MissionStatus
 from hypertrade.runtime.heartbeat import HEARTBEATS, heartbeat_loop
-from hypertrade.runtime.supervisor import LoopFactory, supervise
+from hypertrade.runtime.loop_supervisor import LoopFactory, supervise
 from hypertrade.skills.lifecycle import ApprovedSkillLoader
 
 logger = logging.getLogger("hypertrade.worker")

@@ -1,5 +1,8 @@
 """Run each worker loop under a supervisor so one loop's crash never ends the process.
 
+Not to be confused with ``runtime.adapters.supervisor``, which coordinates a *team of agents*
+(assignments, handoffs, budgets); this one supervises the worker process's own asyncio loops.
+
 `worker.main` used to hand every loop straight to one `asyncio.gather`: an exception that escaped
 any loop ended the process and, with it, every sibling loop until Docker restarted the container
 (two such escapes were real: the OKX REST fallback and the RAG scanner). Each loop already catches
@@ -23,7 +26,7 @@ from collections.abc import Awaitable, Callable
 
 from hypertrade.runtime.backoff import calculate_jittered_backoff
 
-logger = logging.getLogger("hypertrade.supervisor")
+logger = logging.getLogger("hypertrade.loop_supervisor")
 
 LoopFactory = Callable[[], Awaitable[None]]
 Journal = Callable[[str, Exception], Awaitable[None]]
