@@ -27,7 +27,7 @@ from hypertrade.arc.forward_outcomes import outcome_id
 from hypertrade.arc.research_budget import budget_status
 from hypertrade.arc.store import configure_store, reset_store, save_mission
 from hypertrade.db import ArcMission, Database
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 M = "a" * 64
 E = "b" * 64
@@ -567,6 +567,15 @@ def test_parent_change_skips_and_seat_hold_waits_with_visible_reasons(db: Databa
     assert waiting.reason == "parent_relay_hold"
     assert "3 个变体位已占满" in waiting.message
     assert _aware(waiting.next_check_at) == NOW + timedelta(hours=1)
+
+    # created_at is stamped by the database clock while the engine measures the hold limit against
+    # the injected clock. Pin it to NOW so both sit on one timeline whatever date the suite runs on.
+    with db.session() as session:
+        session.execute(
+            update(ArcAblationRun)
+            .where(ArcAblationRun.challenger_strategy_id == "9102")
+            .values(created_at=NOW)
+        )
 
     ablation_once(db, now=NOW + timedelta(days=8), client=held)
     timed_out = _run(db, "9102")
