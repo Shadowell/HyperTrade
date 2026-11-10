@@ -235,15 +235,24 @@ async def rag_scanner_loop(db: Database) -> None:
     settings = get_settings()
     service = RagService(db, knowledge_dir=settings.knowledge_dir)
     while True:
-        result = service.scan_once()
-        logger.info("rag_scan scanned=%s ingested=%s", result.scanned_files, result.ingested_files)
+        # Every worker loop catches its own failure: they share one asyncio.gather, so an
+        # exception escaping this one (an unreadable knowledge file is enough) used to end the
+        # whole worker process.
+        try:
+            result = service.scan_once()
+            logger.info(
+                "rag_scan scanned=%s ingested=%s", result.scanned_files, result.ingested_files
+            )
+        except Exception as exc:
+            logger.exception("rag_scanner failed")
+            await _journal(db, "worker.rag_scanner", exc)
         await asyncio.sleep(settings.rag_scan_interval_seconds)
 
 
 async def market_ingestion_loop(db: Database) -> None:
     settings = get_settings()
     ingestor = MarketIngestor(settings, MarketRepository(db))
-    await ingestor.ingest_ws_forever()
+    await ingestor.ingest_ws_forever(on_error=lambda component, exc: _journal(db, component, exc))
 
 
 async def market_rest_supplement_loop(db: Database) -> None:
