@@ -1,3 +1,16 @@
+## 2026-11-11：worker 启动后事件循环被堵约 100 秒的根因与修复——行情快照改为线程中的批量写入，新增事件循环看门狗
+
+- **背景**：2026-11-10 部署 `cf065a1` 后，`/api/healthz` 的 worker 心跳显示：每次启动后约 100–130 秒内事件循环被堵住（`event_loop_lag_max_seconds` = 95.954，心跳年龄等于运行时间），之后每几分钟还有 11–16 秒的堵塞；没有循环连续失败，也没有被监督器重启过。堵塞期间心跳、模拟盘、全部 ARC 循环都不运行。
+- **根因**：`MarketIngestor.ingest_rest_once` 在**事件循环线程**里对约 700 条 OKX SWAP ticker 逐条 upsert，每条 3 次数据库往返（SELECT、UPDATE、COMMIT），耗时 ≈ 条数 × 3 × 往返延迟。生产里 WebSocket 没有写入过任何 ticker（`worker.okx_ws` 在 11 分钟里没有一次成功，只有 2 次 `ConnectionClosedError`），所以每 5 分钟的 REST 快照加上 WS 失败后的兜底快照是唯一的实时来源。离线用模拟的数据库往返延迟复现：2.6ms（`healthz` 稳态测到的值）停摆 8.8 秒，30ms（部署后数据库繁忙）停摆 73.9 秒，量级与生产观测吻合。同一类问题还有：`monitor_scheduler_loop` 每分钟在事件循环里新建 `BitProMcpClient`（含 SSL 上下文），BitPro 不可达时每次重试都会冻结整个 worker；`rag_scanner_loop`、`paper_trading_loop` 也在事件循环里同步读写数据库。
+- **交付**：
+  1. `MarketRepository.upsert_ticker_snapshots`：每 500 个品种一次 SELECT、批量写入、一次 COMMIT；同一品种取最新；进程内加锁串行化，并对跨进程的唯一键冲突重试一次；原有的逐条 `upsert_ticker_snapshot` 不变。
+  2. `ingest_rest_once` 在线程里执行这个批量事务；WebSocket ticker 先缓冲（同一品种取最新）、约每秒一批在线程里写入；流失败时丢弃缓冲，因为随后的 REST 快照会覆盖它（否则陈旧的缓冲行情会盖掉更新的快照，有测试守护）。
+  3. `rag_scanner_loop`、`paper_trading_loop`、`monitor_scheduler_loop` 的同步工作改用 `asyncio.to_thread`。
+  4. 事件循环看门狗（`runtime/loop_watchdog.py`）：独立线程每 0.5 秒让事件循环确认一次回调，晚于 3 秒就抓取事件循环线程的调用栈；`/api/healthz` 的 `workers[].last_stall`（停摆秒数、距今、正在运行的函数，最深的在前）和 `stalls_total` 直接说明是哪个调用堵的。只存 `文件:行 函数`，不存源码和变量值。
+  5. 心跳刷新改用独立单线程，不再排在共享线程池里被长时间的 ARC／AVO 步骤挡住（线程池默认只有 `min(32, cpu+4)` 个线程，2 核机器上是 6 个，而循环有约 18 个）。
+- **验证**：`./scripts/check.sh` 全量通过：前端 lint、15 项测试与构建，`ruff`，`mypy`（329 个文件），`pytest` 2788 项（新增 34 项）。同一个复现脚本（真实的 `worker.main()` + 模拟延迟的数据库 + 700 条合成 ticker）修复后在 2.6ms 和 30ms 下都是 0 次停摆，700 条仍全部入库。新测试做过变异检验：把写入挪回事件循环、取消分块、取消写锁、取消冲突重试、同品种取最早、空缓冲报成功、三个循环改回同步、看门狗阈值失效、不记录最终时长、心跳改用共享线程池、`main` 不启动／不停止看门狗等，逐个破坏后对应测试都会变红；其中 3 处一开始漏网，已补强测试（陈旧缓冲覆盖快照、停摆最终时长、存储 JSON 的校验）。
+- **注意／未做**：GitNexus 影响分析 `ingest_rest_once` 为 HIGH（调用者只有 worker 的两个摄取循环），签名和返回值未变。**没有**放大默认线程池：它的大小同时限制了并发数据库会话，Postgres 连接池默认只有 5+10 个连接，放大线程池可能在启动时把连接池打满。WebSocket 订阅 `{"channel": "tickers", "instType": "SWAP"}` 在生产里从未写入过 ticker，也就是 `market_tickers` 实际每 5 分钟才刷新一次；OKX 的 tickers 频道按 `instId` 订阅，这条订阅是否有效需要对照 OKX 文档验证（开发环境连不上 OKX，没法实测），本次未改。部署后用 `/api/healthz` 的 `event_loop_lag_max_seconds` 和 `last_stall` 确认堵塞是否消失、是否还有别的来源。`rag_scanner_loop` 等的第一轮仍会在部署后的前几秒占用线程池线程，不影响事件循环。
+
 ## 2026-11-10：运行时加固——单个循环不再带崩整个 worker、worker 存活心跳与构建标识、模型调用预算显式化、提示词变更管控
 
 - **背景**：①`worker.main` 把所有循环交给同一个 `asyncio.gather`，任何一个循环漏出异常都会结束整个进程，连带其余循环；已确认有两处会漏：`rag_scanner_loop` 对 `scan_once()` 没有任何异常保护，`MarketIngestor.ingest_ws_forever` 的 REST 兜底写在 `except` 块里，WebSocket 与 REST 同时失败（上游中断时的常见情形）时 REST 的异常会逃出循环；②API 看不到 worker 的状态，所有循环都停了也与健康无异；③发布成功只代表 SSH 命令退出码为 0（托管）或 API 能应答（自托管），无法确认线上跑的就是刚发布的提交；④OpenAI 兼容供应商（DeepSeek／OpenAI／OpenRouter／Qwen／vide_coding）使用 SDK 隐含的 600 秒超时与 2 次重试，既看不到也调不了；⑤AVO 系统提示词与研究角色提示词没有整体固定，修改可以混在无关 PR 里。
