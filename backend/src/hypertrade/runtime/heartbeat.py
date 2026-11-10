@@ -15,9 +15,11 @@ up there as roughly 40, which is how a stalled worker is told apart from an idle
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import UTC, datetime
 from threading import Lock
@@ -42,6 +44,8 @@ STALE_AFTER_SECONDS = 180.0
 FORGET_AFTER_SECONDS = 24 * 3600.0
 # Consecutive failures after which a loop counts as failing rather than unlucky.
 FAILING_STREAK = 3
+# Frames kept of a stall's stack (the watchdog already trims; this bounds what is stored).
+STALL_STACK_FRAMES = 12
 DEFAULT_WORKER_ID = "worker"
 
 
@@ -73,6 +77,8 @@ class HeartbeatRegistry:
         self._components: dict[str, dict[str, Any]] = {}
         self._lag_window = 0.0
         self._lag_history: deque[float] = deque(maxlen=LAG_WINDOWS)
+        self._last_stall: dict[str, Any] | None = None
+        self._stalls_total = 0
 
     def _entry(self, component: str) -> dict[str, Any]:
         return self._components.setdefault(
@@ -114,6 +120,35 @@ class HeartbeatRegistry:
         with self._lock:
             self._lag_window = max(self._lag_window, seconds)
 
+    def note_stall(
+        self,
+        seconds: float,
+        stack: list[str] | None = None,
+        *,
+        new_episode: bool = False,
+        now: datetime | None = None,
+    ) -> None:
+        """Record what the loop watchdog saw while the event loop was blocked.
+
+        ``stack`` (deepest frame first) is given when a stall is sampled; calling again with only
+        ``seconds`` updates the duration of the last stall once it has ended.
+        """
+        with self._lock:
+            if new_episode:
+                self._stalls_total += 1
+            if stack is not None:
+                self._last_stall = {
+                    "at": _iso(now),
+                    "seconds": round(seconds, 1),
+                    "stack": [str(frame)[:160] for frame in stack[:STALL_STACK_FRAMES]],
+                }
+            elif self._last_stall is not None:
+                self._last_stall["seconds"] = round(max(seconds, self._last_stall["seconds"]), 1)
+
+    def stall_snapshot(self) -> tuple[dict[str, Any] | None, int]:
+        with self._lock:
+            return (deepcopy(self._last_stall), self._stalls_total)
+
     def snapshot(self, *, close_window: bool = False) -> tuple[dict[str, dict[str, Any]], float]:
         """Loop outcomes plus the worst event-loop lag over the recent flush windows.
 
@@ -141,6 +176,7 @@ def flush_heartbeat(
 ) -> bool:
     """Upsert this worker's row. Never raises: liveness reporting must not stop the worker."""
     components, lag = registry.snapshot(close_window=True)
+    last_stall, stalls_total = registry.stall_snapshot()
     try:
         with db.session() as session:
             session.merge(
@@ -150,7 +186,11 @@ def flush_heartbeat(
                     heartbeat_at=now or datetime.now(UTC),
                     build_sha=get_build_info().sha,
                     components_json=components,
-                    process_json={"event_loop_lag_max_seconds": round(lag, 3)},
+                    process_json={
+                        "event_loop_lag_max_seconds": round(lag, 3),
+                        "last_stall": last_stall,
+                        "stalls_total": stalls_total,
+                    },
                 )
             )
     except Exception:
@@ -170,16 +210,23 @@ async def heartbeat_loop(
     identity = worker_id or default_worker_id()
     started_at = datetime.now(UTC)
     loop = asyncio.get_running_loop()
-    while True:
-        # Written from a thread so a slow database never blocks the event loop it is measuring.
-        await asyncio.to_thread(
-            flush_heartbeat, db, worker_id=identity, started_at=started_at, registry=registry
-        )
-        # Lag is how much later than requested the timer fires, so the due time is taken right
-        # before sleeping: the database write above must not count as event-loop lag.
-        due = loop.time() + interval_seconds
-        await asyncio.sleep(interval_seconds)
-        registry.note_loop_lag(max(0.0, loop.time() - due))
+    # Written from a thread so a slow database never blocks the event loop it is measuring, and
+    # from a thread of its own: in the shared pool the flush would queue behind long ARC / AVO
+    # steps and a busy worker would look dead.
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hypertrade-heartbeat")
+    flush = functools.partial(
+        flush_heartbeat, db, worker_id=identity, started_at=started_at, registry=registry
+    )
+    try:
+        while True:
+            await loop.run_in_executor(executor, flush)
+            # Lag is how much later than requested the timer fires, so the due time is taken
+            # right before sleeping: the database write above must not count as event-loop lag.
+            due = loop.time() + interval_seconds
+            await asyncio.sleep(interval_seconds)
+            registry.note_loop_lag(max(0.0, loop.time() - due))
+    finally:
+        executor.shutdown(wait=False)
 
 
 def _aware(moment: datetime) -> datetime:
@@ -193,6 +240,20 @@ def _age_seconds(iso: Any, now: datetime) -> float | None:
         return round(max(0.0, (now - _aware(datetime.fromisoformat(iso))).total_seconds()), 1)
     except ValueError:
         return None
+
+
+def _stall_view(raw: Any, now: datetime) -> dict[str, Any] | None:
+    """The watchdog's last stall as stored, re-validated: it came out of a JSON column."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("seconds"), int | float):
+        return None
+    stack = raw.get("stack")
+    return {
+        "seconds": raw["seconds"],
+        "age_seconds": _age_seconds(raw.get("at"), now),
+        "running": [str(frame)[:160] for frame in stack[:STALL_STACK_FRAMES]]
+        if isinstance(stack, list)
+        else [],
+    }
 
 
 def _count(value: Any) -> int:
@@ -223,6 +284,8 @@ def _instance_view(row: WorkerHeartbeat, now: datetime, stale_after: float) -> d
         "uptime_seconds": round(max(0.0, (now - _aware(row.started_at)).total_seconds()), 1),
         "build_sha": row.build_sha,
         "event_loop_lag_max_seconds": lag if isinstance(lag, int | float) else None,
+        "stalls_total": _count(process.get("stalls_total")),
+        "last_stall": _stall_view(process.get("last_stall"), now),
         "failing_components": [
             name
             for name, view in components.items()

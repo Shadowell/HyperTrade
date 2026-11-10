@@ -66,6 +66,7 @@ from hypertrade.runtime.application.service import MissionRuntime
 from hypertrade.runtime.domain.models import TERMINAL_STATUSES, MissionStatus
 from hypertrade.runtime.heartbeat import HEARTBEATS, heartbeat_loop
 from hypertrade.runtime.loop_supervisor import LoopFactory, supervise
+from hypertrade.runtime.loop_watchdog import LoopWatchdog
 from hypertrade.skills.lifecycle import ApprovedSkillLoader
 
 logger = logging.getLogger("hypertrade.worker")
@@ -577,14 +578,21 @@ async def main() -> None:
     def on_crash(name: str, exc: Exception) -> None:
         HEARTBEATS.record_failure(f"worker.{name}", exc, restarted=True)
 
-    # Every loop runs under a supervisor: a crash restarts that one loop (with backoff) instead
-    # of ending the gather, and with it the whole worker process.
-    await asyncio.gather(
-        *(
-            supervise(name, factory, journal=journal, on_crash=on_crash)
-            for name, factory in build_loops(db, settings)
+    # Names the call that holds the event loop when something still blocks it (shown in
+    # /api/healthz as workers[].last_stall), so the next stall does not need a guess.
+    watchdog = LoopWatchdog(HEARTBEATS)
+    watchdog.start()
+    try:
+        # Every loop runs under a supervisor: a crash restarts that one loop (with backoff)
+        # instead of ending the gather, and with it the whole worker process.
+        await asyncio.gather(
+            *(
+                supervise(name, factory, journal=journal, on_crash=on_crash)
+                for name, factory in build_loops(db, settings)
+            )
         )
-    )
+    finally:
+        watchdog.stop()
 
 
 def memory_distillation_worker_once(
