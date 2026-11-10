@@ -168,8 +168,9 @@ def test_ws_ingestion_still_stores_tickers_when_the_stream_works() -> None:
     stored: list[str] = []
 
     class Repository:
-        def upsert_ticker_snapshot(self, **kwargs: Any) -> None:
-            stored.append(kwargs["inst_id"])
+        def upsert_ticker_snapshots(self, tickers: Any) -> int:
+            stored.extend(ticker.inst_id for ticker in tickers)
+            return len(stored)
 
     ingestor = MarketIngestor(Settings(DEEPSEEK_API_KEY=""), Repository())  # type: ignore[arg-type]
     ingestor.ws = Stream()  # type: ignore[assignment]

@@ -16,10 +16,13 @@ logger = logging.getLogger("hypertrade.market")
 
 # `(component, exception)`: where the worker plugs in its runtime-error journal.
 ErrorHook = Callable[[str, Exception], Awaitable[None]]
+InstId = str  # e.g. "BTC-USDT-SWAP"
 # `(component)`: called while ingestion works, so a failure streak can end. Throttled below.
 OkHook = Callable[[str], None]
 
 _OK_REPORT_INTERVAL_SECONDS = 5.0
+# Websocket tickers are buffered (newest per instrument) and written as one batch this often.
+_WS_FLUSH_INTERVAL_SECONDS = 1.0
 
 
 def _now() -> float:
@@ -130,16 +133,24 @@ class MarketIngestor:
 
     async def ingest_rest_once(self) -> int:
         tickers = await self.rest.fetch_swap_tickers()
-        for ticker in tickers:
-            self.repository.upsert_ticker_snapshot(
-                inst_id=ticker.inst_id,
-                inst_type=ticker.inst_type,
-                last=ticker.last,
-                volume_ccy_24h=ticker.volume_ccy_24h,
-                change_utc0_pct=ticker.change_utc0_pct,
-                raw=ticker.raw,
-            )
+        # One batched transaction on a worker thread. This used to be a loop of per-ticker
+        # upserts right here on the event-loop thread: ~700 tickers x 3 database round trips held
+        # the whole worker (heartbeat, paper trading, every ARC loop) for ~9 s at a 2.6 ms round
+        # trip and for over a minute while the database was busy after a deploy.
+        await asyncio.to_thread(self.repository.upsert_ticker_snapshots, tickers)
         return len(tickers)
+
+    async def _store(self, pending: dict[InstId, OkxTicker]) -> bool:
+        """Write the buffered websocket tickers as one batch off the event loop.
+
+        Returns whether anything was written, so an empty buffer is never reported as success.
+        """
+        if not pending:
+            return False
+        batch = list(pending.values())
+        pending.clear()
+        await asyncio.to_thread(self.repository.upsert_ticker_snapshots, batch)
+        return True
 
     async def ingest_ws_forever(
         self, on_error: ErrorHook | None = None, on_ok: OkHook | None = None
@@ -152,24 +163,35 @@ class MarketIngestor:
         the websocket usually takes the REST endpoint down with it. Failures go to
         `on_error(component, exc)`, which the worker points at its runtime-error journal; `on_ok`
         says it is working again (at most every few seconds), which ends a failure streak.
+
+        Tickers are buffered (newest per instrument wins) and written as one batch off the event
+        loop about once a second, instead of one blocking write per message. A stream that goes
+        quiet flushes when the next message arrives or when it ends; the tickers channel is
+        never quiet for long.
         """
+        pending: dict[InstId, OkxTicker] = {}
+        last_flush = _now()
         last_ok = float("-inf")
+
+        async def flush() -> None:
+            nonlocal last_flush, last_ok
+            wrote = await self._store(pending)
+            last_flush = _now()
+            if wrote and last_flush - last_ok >= _OK_REPORT_INTERVAL_SECONDS:
+                last_ok = last_flush
+                _ok(on_ok, "worker.okx_ws")
+
         while True:
             try:
                 async for ticker in self.ws.stream():
-                    self.repository.upsert_ticker_snapshot(
-                        inst_id=ticker.inst_id,
-                        inst_type=ticker.inst_type,
-                        last=ticker.last,
-                        volume_ccy_24h=ticker.volume_ccy_24h,
-                        change_utc0_pct=ticker.change_utc0_pct,
-                        raw=ticker.raw,
-                    )
-                    moment = _now()
-                    if moment - last_ok >= _OK_REPORT_INTERVAL_SECONDS:
-                        last_ok = moment
-                        _ok(on_ok, "worker.okx_ws")
+                    pending[ticker.inst_id] = ticker
+                    if _now() - last_flush >= _WS_FLUSH_INTERVAL_SECONDS:
+                        await flush()
+                await flush()  # the stream ended normally: write what is still buffered
             except Exception as exc:
+                # The REST snapshot below refreshes every instrument, so whatever was buffered
+                # is superseded; dropping it keeps a failing database from being hit twice.
+                pending.clear()
                 logger.warning("OKX websocket stream failed; falling back to REST", exc_info=True)
                 await _report(on_error, "worker.okx_ws", exc)
                 try:

@@ -242,7 +242,9 @@ async def rag_scanner_loop(db: Database) -> None:
         # exception escaping this one (an unreadable knowledge file is enough) used to end the
         # whole worker process.
         try:
-            result = service.scan_once()
+            # Synchronous file and database work: on a thread, never on the event loop (see
+            # MarketRepository.upsert_ticker_snapshots for what that cost in production).
+            result = await asyncio.to_thread(service.scan_once)
             logger.info(
                 "rag_scan scanned=%s ingested=%s", result.scanned_files, result.ingested_files
             )
@@ -281,7 +283,8 @@ async def paper_trading_loop(db: Database) -> None:
     service = PaperTradingService(db, settings=settings)
     while True:
         try:
-            result = service.run_once()
+            # A tick makes many database calls: on a thread, so it can never hold the event loop.
+            result = await asyncio.to_thread(service.run_once)
             logger.info("paper_trading tick status=%s fills=%s", result.status, result.fill_count)
             HEARTBEATS.record_success("worker.paper_trading")
         except Exception as exc:
@@ -311,7 +314,10 @@ async def monitor_scheduler_loop(db: Database) -> None:
     settings = get_settings()
     while True:
         try:
-            result = monitor_scheduler_once(db, settings=settings)
+            # BitPro calls with their own timeouts plus building an httpx client (an SSL context
+            # per run): blocking work, so on a thread. While BitPro is down, every retry would
+            # otherwise freeze the whole worker for the length of the timeout.
+            result = await asyncio.to_thread(monitor_scheduler_once, db, settings=settings)
             logger.info(
                 "monitor_scheduler status=%s ran=%s skipped=%s failed=%s",
                 result.get("status"),
