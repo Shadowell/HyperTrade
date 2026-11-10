@@ -46,6 +46,30 @@ variant inside the selected strategy card. This preserves a visual distinction
 between the primary evidence selection and its audited subfacts while keeping
 one consistent source-state language.
 
+The `/harness` Agent workbench is composed from focused components in
+`frontend/src/components/agent/`: `HarnessHeader`, `TelemetryGrid`, `RunControls`,
+`AgentProgress`, `ThreadDetails`, `ReportReader`, `RuntimeMonitor` (with `BitProCard`) and the
+existing `AgentFlightRecorder`, assembled by `HarnessPage`. Each region sits in its own
+`ErrorBoundary`, so one crashing region does not blank the console. Shared pieces moved out of
+`App.tsx` into `types/`, `i18n/`, `lib/` (format, time, errors, markdown, report),
+`api/client.ts` (typed fetch with `ApiError`) and `components/ui/`. The other pages are untouched:
+the split is incremental by design (`docs/optimization/03-frontend-component-refactor.md`).
+
+The page states what it does not know. Before the first response the overview is `null`: the
+header says it is connecting, telemetry shows placeholders and the tool heading keeps a skeleton
+body. If the API cannot be reached the page says "overview unavailable" and offers Retry. It never
+falls back to sample data (a preview fixture with an example report, a paper account and a BitPro
+configuration was removed); `EMPTY_OVERVIEW` is all zeros. With no run, the report area is an
+explicit empty state.
+
+Access detection stays passive. The console never probes the session and renders no login form
+(see `docs/spec.md`). Only when a privileged call (run, new thread, archive thread) is refused with
+401/403 does the page switch to read-only: an explanatory note (an admin session is required; sign
+in from a terminal with `ht /login`), a "Read-only" badge, and the three actions disabled. Errors
+are mapped to actionable localized sentences (`describeError`) instead of raw status text. After the
+overview, the other sections load in parallel (`Promise.allSettled`), so one failing endpoint no
+longer stops the rest and the header stops spinning once the overview is in.
+
 Design direction:
 
 - dense dark observability console with deep green-black surfaces and a restrained grid texture
@@ -92,6 +116,25 @@ Sprint 90 为操作员的证据和状态行提供共享的卡片系统。策略�
 Sprint 91 完成策略证据的卡片层级。摘要、表现指标、来源引用、实验建议和详情行在
 选中的策略证据卡内部复用低对比度的紧凑卡片变体。它保留主证据选择与审计子事实的
 层级差异，同时维持同一套来源状态语言。
+
+`/harness` Agent 工作台由 `frontend/src/components/agent/` 下职责单一的组件组成：
+`HarnessHeader`、`TelemetryGrid`、`RunControls`、`AgentProgress`、`ThreadDetails`、
+`ReportReader`、`RuntimeMonitor`（含 `BitProCard`）和既有的 `AgentFlightRecorder`，由
+`HarnessPage` 组装。每个区域各有一层 `ErrorBoundary`，单个区域崩溃不会让整个控制台白屏。
+公共部分从 `App.tsx` 搬到 `types/`、`i18n/`、`lib/`（格式化、时间、错误、Markdown、报告）、
+`api/client.ts`（带 `ApiError` 的类型化请求）和 `components/ui/`。其余页面保持不变：拆分是
+有意渐进的（见 `docs/optimization/03-frontend-component-refactor.md`）。
+
+页面如实表达“不知道”。首个响应之前概览为 `null`：头部显示连接中，遥测卡用占位符，工具
+标题保留、内容是骨架。API 不可达时页面明确显示“无法获取运行概览”并提供重试，绝不回退到
+示例数据（原先带示例报告、模拟账户和 BitPro 配置的预览夹具已删除）；`EMPTY_OVERVIEW` 全部
+为零。没有运行记录时，报告区是明确的空状态。
+
+访问状态保持被动判定。控制台不探测会话，也不渲染登录表单（见 `docs/spec.md`）。只有特权
+操作（运行、新建会话、归档会话）被服务端以 401/403 拒绝时，页面才进入只读状态：给出说明
+（需要管理员会话，请先在终端执行 `ht /login`）、显示“只读”徽标，并禁用这三个操作。错误
+经 `describeError` 映射成可操作的本地化句子，而不是原始状态文本。概览之后，其余分区并行加载
+（`Promise.allSettled`），一个接口失败不再中断其余分区，概览到达后头部也不再一直转圈。
 
 设计方向：
 

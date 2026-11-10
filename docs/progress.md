@@ -29,6 +29,17 @@
 - **验证**：`./scripts/check.sh` 全量通过：前端 lint、15 项测试与构建，`ruff`，`mypy`（329 个文件），`pytest` 2788 项（新增 34 项）。同一个复现脚本（真实的 `worker.main()` + 模拟延迟的数据库 + 700 条合成 ticker）修复后在 2.6ms 和 30ms 下都是 0 次停摆，700 条仍全部入库。新测试做过变异检验：把写入挪回事件循环、取消分块、取消写锁、取消冲突重试、同品种取最早、空缓冲报成功、三个循环改回同步、看门狗阈值失效、不记录最终时长、心跳改用共享线程池、`main` 不启动／不停止看门狗等，逐个破坏后对应测试都会变红；其中 3 处一开始漏网，已补强测试（陈旧缓冲覆盖快照、停摆最终时长、存储 JSON 的校验）。
 - **注意／未做**：GitNexus 影响分析 `ingest_rest_once` 为 HIGH（调用者只有 worker 的两个摄取循环），签名和返回值未变。**没有**放大默认线程池：它的大小同时限制了并发数据库会话，Postgres 连接池默认只有 5+10 个连接，放大线程池可能在启动时把连接池打满。WebSocket 订阅 `{"channel": "tickers", "instType": "SWAP"}` 在生产里从未写入过 ticker，也就是 `market_tickers` 实际每 5 分钟才刷新一次；OKX 的 tickers 频道按 `instId` 订阅，这条订阅是否有效需要对照 OKX 文档验证（开发环境连不上 OKX，没法实测），本次未改。部署后用 `/api/healthz` 的 `event_loop_lag_max_seconds` 和 `last_stall` 确认堵塞是否消失、是否还有别的来源。`rag_scanner_loop` 等的第一轮仍会在部署后的前几秒占用线程池线程，不影响事件循环。
 
+## 2026-11-10：Agent 工作台页面（/harness）重构——拆成可测试的组件、去掉编造的示例数据、被动只读说明
+
+- **背景**：前端几乎只有一个 4422 行的 `App.tsx`（`App` 组件约 1900 行、42 个类型和 9 个分区），维护者在 `docs/optimization/` 里评审过“渐进拆分、不要一次性重写”，但一直没落地。在浏览器里实际看这页还发现：①没有运行记录时「报告阅读」显示一份带具体数字的示例报告（BTC 70000、ETH 3600），「预览概览」夹具还带模拟账户和 BitPro 配置，接口不可用时会一直当作真实数据展示；②匿名访客点主按钮「发起归纳」只得到一行英文 `Not authenticated`，页面没有说明这是只读模式；③首屏是 13 个请求的串行链（`refreshOverview` 逐个 `await`，任何一个抛错就中断，“刷新中”要等全部结束）；④头部时间是原始 ISO 字符串，滚动后左侧导航消失，输入框没有标签。
+- **交付**：
+  1. **拆分**：类型、中英文案、纯函数分别进 `types/`、`i18n/`、`lib/`；新增类型化 `api/client.ts`（`ApiError` 保留状态码和 FastAPI `detail`）；`components/agent/` 下 `HarnessHeader`、`TelemetryGrid`、`RunControls`、`AgentProgress`、`ThreadDetails`、`ReportReader`、`RuntimeMonitor`（含 `BitProCard`）由 `HarnessPage` 组装，每个区域各一层 `ErrorBoundary`；`App.tsx` 4422 → 约 2530 行。
+  2. **如实的状态**：删除示例报告和预览概览，新增全为零/空的 `EMPTY_OVERVIEW`；首个响应前用占位符，接口不可达时显示“无法获取运行概览”和重试；无运行记录时是明确的空状态。
+  3. **被动只读说明**：不探测会话、不渲染登录表单（`docs/spec.md` 与 `App.test.tsx` 的既有约定）；只有特权操作被 401/403 拒绝后才显示说明（需要管理员会话，终端 `ht /login`）、“只读”徽标并禁用三个操作；错误经 `describeError` 变成可操作的本地化句子。
+  4. **加载与体验**：其余分区在概览之后用 `Promise.allSettled` 并行加载，互不影响；头部时间本地化并带相对时间；侧栏在 lg 及以上粘性；提示词输入框有标签；进度区是礼貌的 live region；加载时标题保持可见。
+- **验证**：前端 `pnpm lint`、`pnpm test`（15 → 70 项，原有 15 项**未修改**全部通过）、`pnpm build`；13 种破坏（只读不禁用、报告空状态、遥测占位、概览不可用、被动只读、并行加载、错误映射、时间格式、空概览混入假数据、错误边界复位、侧栏粘性等）逐个验证对应测试会变红。开发中由测试拦下一个真实缺陷：`Intl.DateTimeFormat` 不允许 `dateStyle` 与 `timeZoneName` 同用，概览一加载头部就抛 `TypeError`，因头部当时没有错误边界而整页白屏——已修复，补了回归测试，并给头部和遥测也加了错误边界。
+- **未做**：其余 8 个分区仍在 `App.tsx`；Agent 页面的状态和处理函数还在 `App` 里（计划提成 `useAgentConsole`）；只挂载当前分区（其余分区仍全部挂载并 `hidden`）；没有引入 Zustand。部署后需要在线上页面做一次肉眼核对（本地预览按要求已停用，合并前没有做视觉截图核对）。
+
 ## 2026-11-10：运行时加固——单个循环不再带崩整个 worker、worker 存活心跳与构建标识、模型调用预算显式化、提示词变更管控
 
 - **背景**：①`worker.main` 把所有循环交给同一个 `asyncio.gather`，任何一个循环漏出异常都会结束整个进程，连带其余循环；已确认有两处会漏：`rag_scanner_loop` 对 `scan_once()` 没有任何异常保护，`MarketIngestor.ingest_ws_forever` 的 REST 兜底写在 `except` 块里，WebSocket 与 REST 同时失败（上游中断时的常见情形）时 REST 的异常会逃出循环；②API 看不到 worker 的状态，所有循环都停了也与健康无异；③发布成功只代表 SSH 命令退出码为 0（托管）或 API 能应答（自托管），无法确认线上跑的就是刚发布的提交；④OpenAI 兼容供应商（DeepSeek／OpenAI／OpenRouter／Qwen／vide_coding）使用 SDK 隐含的 600 秒超时与 2 次重试，既看不到也调不了；⑤AVO 系统提示词与研究角色提示词没有整体固定，修改可以混在无关 PR 里。
