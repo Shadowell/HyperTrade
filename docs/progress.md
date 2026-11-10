@@ -1,3 +1,16 @@
+## 2026-11-10：运行时加固——单个循环不再带崩整个 worker、worker 存活心跳与构建标识、模型调用预算显式化、提示词变更管控
+
+- **背景**：①`worker.main` 把所有循环交给同一个 `asyncio.gather`，任何一个循环漏出异常都会结束整个进程，连带其余循环；已确认有两处会漏：`rag_scanner_loop` 对 `scan_once()` 没有任何异常保护，`MarketIngestor.ingest_ws_forever` 的 REST 兜底写在 `except` 块里，WebSocket 与 REST 同时失败（上游中断时的常见情形）时 REST 的异常会逃出循环；②API 看不到 worker 的状态，所有循环都停了也与健康无异；③发布成功只代表 SSH 命令退出码为 0（托管）或 API 能应答（自托管），无法确认线上跑的就是刚发布的提交；④OpenAI 兼容供应商（DeepSeek／OpenAI／OpenRouter／Qwen／vide_coding）使用 SDK 隐含的 600 秒超时与 2 次重试，既看不到也调不了；⑤AVO 系统提示词与研究角色提示词没有整体固定，修改可以混在无关 PR 里。
+- **交付**：
+  1. **修复两处漏异常**：`rag_scanner_loop` 捕获、记录并写入运行时错误日志（`worker.rag_scanner`）；`ingest_ws_forever` 的 REST 兜底失败也只记录并按原节奏重试，失败经可选的 `on_error` 钩子写入日志（`worker.okx_ws`、`worker.okx_rest_fallback`）。
+  2. **循环监督**（`runtime/loop_supervisor.py`，`worker.build_loops()` 返回 `(名称, 工厂)`）：循环崩溃只重启该循环，抖动指数退避（复用 #74 的 `calculate_jittered_backoff`，1 秒起、上限 60 秒，稳定运行 5 分钟后清零），崩溃记入 `worker.crash.<循环名>`；`CancelledError` 透传，正常返回的循环不重启。
+  3. **存活心跳**：迁移 0052 新增 `worker_heartbeats`（幂等，一个 worker 一行），worker 每 30 秒刷新；记录每个循环的最近成功／失败时间、连续失败数、累计失败、监督器重启数、最近失败的异常**类型**（不存消息），以及进程的事件循环滞后（最近约 5 分钟的最坏值）。`/api/healthz` 新增 `workers`：`alive`／`stale`（3 分钟无心跳）／`unknown`（尚无 worker 上报，不算故障）；worker 过期或某循环连续失败 3 次时整体状态为 `degraded`。`_journal()` 与 `_guarded()` 是失败／成功的统一入口，自带 try/except 的循环显式记录成功，WebSocket 摄取每 5 秒至多上报一次成功。`autonomous_market_pulse_loop` 的周期异常现在也写入错误日志。
+  4. **构建标识**：`backend/src/hypertrade/BUILD_INFO` 在 git 里是占位符 `$Format:%H$`，`.gitattributes` 的 `export-subst` 让 `git archive`（托管发布）展开为提交 SHA，自托管发布在同步前写入 `$GITHUB_SHA`；`GET /api/version` 与 `healthz.build` 报告版本与 SHA（未打标记为 `null`）。两条发布路径在部署后都轮询 `/api/version`，必须等于刚发布的提交，否则任务失败；自托管路径校验通过后才写 `last_deployed_sha`。
+  5. **模型调用预算**：`PROVIDER_REQUEST_TIMEOUT_SECONDS`（默认 600）与 `PROVIDER_MAX_RETRIES`（默认 2）对 OpenAI 兼容供应商生效，默认值与 SDK 完全一致（有测试固定），连接超时仍为 SDK 的 5 秒；默认不改变任何行为。
+  6. **提示词变更管控**：`tests/test_prompt_change_control.py` 按哈希固定 AVO 系统提示词与研究角色目录，修改会红灯并提示在 PR 里说明行为变化、结果不可直接比较后再更新哈希。
+- **验证**：`./scripts/check.sh` 全量通过：前端 lint、15 项测试与构建，`ruff`，`mypy`（328 个文件），`pytest` 2754 项；监督、心跳、`healthz`、供应商预算、提示词固定、部署校验脚本都做过变异检验（逐个破坏后对应测试变红），发布校验脚本用本地假 `/api/version` 跑过「一致／不一致／未打标记／404」四种情形，`git archive` 展开在裸镜像仓库上验证过（去掉 `.gitattributes` 则不展开）。
+- **注意／未做**：GitNexus 影响分析显示 `OpenAICompatibleChatProvider`、`get_chat_provider` 为 HIGH（所有聊天流程），因此只做纯增量改动（新增可选参数，默认值不变）。`paper_trading`、`monitor_scheduler`、RAG 扫描等循环仍在事件循环里同步执行，没有改动；现在可以从 `event_loop_lag_max_seconds` 看到它们堵塞的时长。迁移 0052 随下一次发布执行。托管入口 `deploy/from-github.sh` 是主机上独立维护的文件，不随发布更新，主机侧需要单独处理（见上一条记录）。新增的发布校验步骤要等 PR 合并后的第一次发布才会在 GitHub 上真正运行。
+
 ## 2026-11-10：供应链与 CI 治理——升级 13 个有漏洞的生产依赖、PR 上跑 CI、依赖审计／CodeQL／Dependabot、Action 固定到提交 SHA
 
 - **背景**：①CI 只在推送 main 之后才运行（没有 `pull_request` 触发），而发布由同一次推送触发，合并前没有任何自动检查；②对生产镜像实际安装的依赖闭包（`uv sync --frozen --no-dev`，94 个包）跑 `pip-audit`，13 个包有已知漏洞（`pyjwt` 15 条、`mcp` 4 条、`python-multipart` 3 条、`urllib3` 3 条、`starlette`／`anyio` 各 2 条等）；③没有依赖审计、静态分析和依赖更新机制；④`deploy` 任务跑在自托管的生产 runner 上，却直接引用可变标签 `actions/checkout@v4`，标签被篡改就等于在生产机上执行第三方代码。

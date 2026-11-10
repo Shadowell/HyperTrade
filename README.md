@@ -55,7 +55,7 @@ It is not an automated money maker, promises no profitability, and does not prov
 ```mermaid
 flowchart LR
   Op["Operator / External Agent<br/>Web · ht CLI · TUI · Desktop"] --> API["FastAPI Control Plane<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
-  API --> DB[("PostgreSQL + pgvector<br/>51 migrations · Mission projections · HET tree · Memory")]
+  API --> DB[("PostgreSQL + pgvector<br/>52 migrations · Mission projections · HET tree · Memory")]
   Worker["Worker Loops (13 Loops)<br/>Mission · AVO research · evolution · auto-review · meta-tuning"] --> DB
   Worker --> Research["ARC Autonomous Research Loop (AVO + RD-Agent)<br/>HET tree → Co-STEER synthesis → AST gatekeeper → sandbox → baseline"]
   Worker --> Evolution["Evolution Engine (default on)<br/>decay / launch scan → budget admission → re-research or rule tweak → admission → race duel → ledger"]
@@ -105,7 +105,7 @@ Scans active incubating paper strategies hourly:
 Design docs: [63 Evolution Hardening](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) · [66 Smooth Relay Handover](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md)
 
 ### 5. Production Probe Matrix & Quantum Portfolio Console
-- **Probe Matrix**: `/livez` (liveness), `/readyz` (readiness with `SELECT 1` DB probe), `/healthz` (comprehensive diagnostics with DB latency, adapter heartbeats, paper session counts, and token status), fully aligned with Kubernetes standards.
+- **Probe Matrix**: `/livez` (liveness), `/readyz` (readiness with `SELECT 1` DB probe), `/healthz` (comprehensive diagnostics with DB latency, adapter heartbeats, worker liveness, paper session counts, and token status), `/version` (the running commit SHA, which the deploy workflow checks after every deploy), fully aligned with Kubernetes standards.
 - **Quantum Portfolio Dashboard**: React 19 UI with BitPro / QuantLab target switcher, dynamic A-share rule badges, interactive HET evolution tree visualization, and real-time relay handover slice stepping monitor.
 
 Design docs: [67 Production Probes & Token Rotation](docs/architecture/67-production-observability-probes-and-token-rotation.md)
