@@ -529,3 +529,10 @@ export type HarnessOverview = {
   };
   evals: EvalStatus;
 };
+
+/**
+ * "unknown" until the server refuses a privileged call (401/403), then "readonly". The console
+ * deliberately never probes the session or offers a login form (privileged actions use the CLI's
+ * `ht /login`, see docs/deployment.md), so it only learns it is read-only when an action is refused.
+ */
+export type AccessMode = "unknown" | "readonly";

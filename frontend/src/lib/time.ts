@@ -2,14 +2,20 @@ import type { Language } from "../types";
 
 const LOCALES: Record<Language, string> = { zh: "zh-CN", en: "en-US" };
 
-/** Local date and time with the zone, e.g. "2026年11月10日 20:52:38 GMT+8"; null if unparsable. */
+/** Local date and time with the zone, e.g. "2026年11月10日 20:52:38 [GMT+8]"; null if unparsable. */
 export function formatTimestamp(iso: string | null | undefined, language: Language): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
+  // Explicit fields rather than dateStyle/timeStyle: those cannot be combined with timeZoneName
+  // (Intl throws a TypeError), and an exception here would unmount the whole console.
   return new Intl.DateTimeFormat(LOCALES[language], {
-    dateStyle: "medium",
-    timeStyle: "medium",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
     timeZoneName: "short"
   }).format(date);
 }

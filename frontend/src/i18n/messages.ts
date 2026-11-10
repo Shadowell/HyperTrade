@@ -259,8 +259,6 @@ export const copy = {
     noSourceIds: "暂无来源 ID",
     tokenUsage: "Token 使用量",
     readOnlyBadge: "只读",
-    operatorBadge: "管理员",
-    sessionChecking: "正在确认会话…",
     readOnlyTitle: "当前为只读模式",
     readOnlyHint: "运行智能体、新建或归档会话需要管理员会话。请先在终端执行 ht /login 登录；浏览和审阅不受影响。",
     overviewConnecting: "正在连接运行态",
@@ -276,7 +274,9 @@ export const copy = {
     errorNetwork: "无法连接后端，请稍后重试。",
     errorGeneric: "请求失败",
     sectionCrashed: "这个区域出错了，其余区域不受影响。",
-    reloadSection: "重新加载此区域"
+    reloadSection: "重新加载此区域",
+    noToolCalls: "暂无工具调用",
+    overviewMetrics: "运行概览指标"
   },
   en: {
     product: "HyperTrade",
@@ -541,8 +541,6 @@ export const copy = {
     noSourceIds: "No source ids",
     tokenUsage: "Token usage",
     readOnlyBadge: "Read-only",
-    operatorBadge: "Operator",
-    sessionChecking: "Checking session…",
     readOnlyTitle: "Read-only mode",
     readOnlyHint: "Running the Agent and creating or archiving threads needs an admin session. Sign in from a terminal with ht /login first; browsing and review are unaffected.",
     overviewConnecting: "Connecting to the runtime",
@@ -558,7 +556,9 @@ export const copy = {
     errorNetwork: "Cannot reach the backend; try again shortly.",
     errorGeneric: "Request failed",
     sectionCrashed: "This section crashed; the rest of the console still works.",
-    reloadSection: "Reload this section"
+    reloadSection: "Reload this section",
+    noToolCalls: "No tool calls yet",
+    overviewMetrics: "Runtime overview metrics"
   }
 } satisfies Record<Language, Record<string, string>>;
 

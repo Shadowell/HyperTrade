@@ -5,7 +5,6 @@ import {
   BarChart3,
   Bot,
   Brain,
-  Cable,
   CheckCircle2,
   Clock3,
   FileText,
@@ -14,7 +13,6 @@ import {
   LineChart,
   MemoryStick,
   Radio,
-  RefreshCw,
   Sparkles,
   TerminalSquare
 } from "lucide-react";
@@ -26,7 +24,7 @@ import {
   useRef,
   useState
 } from "react";
-import { AgentFlightRecorder, RunObservability } from "./components/observability/AgentFlightRecorder";
+import { RunObservability } from "./components/observability/AgentFlightRecorder";
 import { QuantumPortfolioDashboard } from "./components/portfolio/QuantumPortfolioDashboard";
 import {
   archiveAgentThread,
@@ -38,18 +36,21 @@ import {
   presentThread,
   readThreadSession,
   startAgentTurn,
-  ThreadProtocolRequestError,
   ThreadSnapshot,
   writeThreadSession
 } from "./agentThread";
 
+import { apiGet, isAuthError } from "./api/client";
+import type { SyncState } from "./components/agent/HarnessHeader";
+import { HarnessPage } from "./components/agent/HarnessPage";
+import { EMPTY_OVERVIEW } from "./lib/emptyOverview";
+import { describeError } from "./lib/errors";
 import { copy } from "./i18n/messages";
 import {
   cascadeStyle,
   formatAge,
   formatMetricNumber,
   formatPercentValue,
-  formatTokenSource,
   metricTone,
   providerLabel,
   statusLabel
@@ -61,13 +62,9 @@ import { activeSectionFromPath, sectionPath } from "./lib/routes";
 import { reportBlocksFromRun, strategyEvidenceSelection, traceEvidenceSelection } from "./lib/report";
 import { StatusDot } from "./components/ui/StatusDot";
 import { RouteMetricStrip } from "./components/ui/RouteMetricStrip";
-import {
-  EvidenceMetric,
-  ReportSourceList,
-  SourceIdStrip,
-  StructuredReport
-} from "./components/report/StructuredReport";
+import { EvidenceMetric, SourceIdStrip } from "./components/report/StructuredReport";
 import type {
+  AccessMode,
   Language,
   NavSection,
   TraceEvent,
@@ -97,179 +94,13 @@ import type {
   HarnessOverview
 } from "./types";
 
-const seedRun: AgentRun = {
-  id: "run_preview",
-  status: "ready",
-  report_markdown:
-    "# OKX 永续合约行情归纳\n\n**范围**: OKX 全市场 SWAP\n\n- BTC-USDT-SWAP: 最新价 70000, UTC0 涨跌幅 4.2%, 24h 成交额 20000\n- ETH-USDT-SWAP: 最新价 3600, UTC0 涨跌幅 -2.5%, 24h 成交额 14000",
-  trace_events: [
-    { tool_name: "market.summary", status: "ready" },
-    { tool_name: "rag.search", status: "ready" },
-    { tool_name: "memory.write", status: "ready" }
-  ]
-};
-
-const previewOverview: HarnessOverview = {
-  generated_at: new Date(0).toISOString(),
-  providers: [
-    {
-      name: "deepseek",
-      display_name: "DeepSeek",
-      model: "deepseek-v4-flash",
-      enabled: false,
-      default: true,
-      key_status: "missing"
-    },
-    {
-      name: "qwen",
-      display_name: "Qwen",
-      model: "text-embedding-v4",
-      enabled: false,
-      default: false,
-      key_status: "missing"
-    }
-  ],
-  tools: [
-    {
-      name: "market.summary",
-      description: "Summarize OKX SWAP market state.",
-      category: "market",
-      requires_approval: false
-    },
-    {
-      name: "rag.search",
-      description: "Search project and trading knowledge.",
-      category: "rag",
-      requires_approval: false
-    },
-    {
-      name: "memory.write",
-      description: "Write audited long-term memory.",
-      category: "memory",
-      requires_approval: false
-    },
-    {
-      name: "live.order_intent",
-      description: "Create a live/testnet order intent for human approval.",
-      category: "live",
-      requires_approval: true
-    }
-  ],
-  market: {
-    ticker_count: 0,
-    latest_ticker_at: null,
-    latest_update_age_seconds: null,
-    top_movers: []
-  },
-  agent_runs: {
-    total_count: 0,
-    recent: []
-  },
-  rag: {
-    document_count: 0,
-    chunk_count: 0
-  },
-  memory: {
-    active_count: 0,
-    total_count: 0,
-    latest_created_at: null
-  },
-  trace: {
-    total_count: 0,
-    recent_events: seedRun.trace_events
-  },
-  paper: {
-    session: {
-      id: "paper_preview",
-      status: "ready",
-      cash: "100000",
-      equity: "100000",
-      realized_pnl: "0"
-    },
-    positions: [],
-    recent_fills: [],
-    recent_events: []
-  },
-  strategy_lab: {
-    latest_research: null,
-    latest_backtest: null,
-    latest_experiment: null
-  },
-  live_orders: {
-    total_count: 0,
-    pending_approval_count: 0,
-    recent: []
-  },
-  bitpro: {
-    adapter: "mcp_non_live_lifecycle",
-    configured: false,
-    api_base: "http://127.0.0.1:8889/api/v2",
-    auth_header: "X-BitPro-MCP-Token",
-    token_configured: false,
-    token_source: "bitpro_settings_agent_token_or_server_env",
-    remote_mcp: {
-      transport: "streamable-http",
-      path_default: "/api/v2/mcp/",
-      auth_header_default: "X-BitPro-MCP-Token",
-      token_env: "BITPRO_MCP_API_TOKEN",
-      token_status_path: "/settings/mcp-token",
-      token_generate_path: "/settings/mcp-token/generate"
-    },
-    agent_auth: {
-      auth_header_default: "X-BitPro-MCP-Token",
-      static_token_env: "BITPRO_MCP_API_TOKEN",
-      token_management: {
-        settings_routes: {
-          list: "GET /api/v2/settings/mcp-agent-tokens",
-          create: "POST /api/v2/settings/mcp-agent-tokens",
-          revoke: "DELETE /api/v2/settings/mcp-agent-tokens/{token_id}"
-        },
-        plaintext_returned_once: true,
-        default_tool_groups: ["read", "research_backtest_paper_mutation", "live_diagnostic"]
-      },
-      scope_classes: {
-        R: { label: "read", tool_group: "read" },
-        W: { label: "research_backtest_paper_mutation", tool_group: "research_backtest_paper_mutation" },
-        L: { label: "live_diagnostic", tool_group: "live_diagnostic" },
-        T: { label: "live_mutation", tool_group: "live_mutation" }
-      },
-      idempotency: { required_tools: ["backtest_start_job", "paper_start"] }
-    },
-    tool_groups: {
-      read: ["bitpro_capabilities", "bitpro_health", "market_klines"],
-      research_backtest_paper_mutation: ["strategy_create", "backtest_start_job", "paper_start"],
-      live_diagnostic: ["live_preflight", "trading_positions"],
-      live_mutation: ["trading_futures_order"]
-    },
-    live_write_enabled: false,
-    live_write_scope: "hypertrade_mcp_live_write_gate",
-    tools: [
-      "bitpro_capabilities",
-      "bitpro_health",
-      "market_klines",
-      "strategy_generate",
-      "strategy_create",
-      "backtest_start_job",
-      "backtest_get_job",
-      "paper_configure",
-      "paper_start",
-      "paper_dashboard",
-      "trading_positions"
-    ]
-  },
-  evals: {
-    status: "preview",
-    case_count: 0,
-    mode: "deterministic",
-    cases: []
-  }
-};
-
 function App() {
+  const [access, setAccess] = useState<AccessMode>("unknown");
+  const [overviewFailed, setOverviewFailed] = useState(false);
   const [language, setLanguage] = useState<Language>("zh");
   const [activeSection, setActiveSection] = useState<NavSection>(() => activeSectionFromPath());
   const [prompt, setPrompt] = useState(copy.zh.prompt);
-  const [run, setRun] = useState<AgentRun>(seedRun);
+  const [run, setRun] = useState<AgentRun | null>(null);
   const [threadSnapshot, setThreadSnapshot] = useState<ThreadSnapshot | null>(null);
   const [threadCursor, setThreadCursor] = useState(0);
   const [threadConnection, setThreadConnection] = useState("idle");
@@ -331,13 +162,14 @@ function App() {
   const [runObservability, setRunObservability] = useState<RunObservability | null>(null);
   const [observabilityLoading, setObservabilityLoading] = useState(false);
   const t = copy[language];
-  const activeOverview = overview ?? previewOverview;
+  const activeOverview = overview ?? EMPTY_OVERVIEW;
   const threadPresentation = useMemo(() => presentThread(threadSnapshot), [threadSnapshot]);
-  const reportMarkdown = partialAnswer || threadPresentation.answer || run.report_markdown;
+  const reportMarkdown = partialAnswer || threadPresentation.answer || run?.report_markdown || "";
   const reportBlocks = useMemo(
-    () => (threadSnapshot ? [] : reportBlocksFromRun(run)),
+    () => (threadSnapshot || !run ? [] : reportBlocksFromRun(run)),
     [run, threadSnapshot]
   );
+  const sync: SyncState = overview ? "ready" : overviewFailed ? "unavailable" : "connecting";
   const defaultProvider =
     activeOverview.providers.find((provider) => provider.default) ?? activeOverview.providers[0];
   const traceEvents = threadSnapshot
@@ -346,7 +178,7 @@ function App() {
         tool_name: tool.name,
         status: tool.status
       }))
-    : run.id !== seedRun.id
+    : run
       ? run.trace_events
       : activeOverview.trace.recent_events.slice(0, 6);
   const selectedMemory =
@@ -732,28 +564,32 @@ function App() {
   const refreshOverview = useCallback(async () => {
     setRefreshing(true);
     try {
-      const response = await fetch("/api/harness/overview", { credentials: "include" });
-      if (response.ok) {
-        setOverview((await response.json()) as HarnessOverview);
-        await refreshMemoryItems();
-        await refreshStrategyLibrary();
-        await refreshStrategyCards();
-        await refreshMonitorAlerts();
-        await refreshGovernance();
-        await refreshPortfolioAssessments();
-        await refreshPortfolioObservationWindows();
-        await refreshPaperCohorts();
-        await refreshPaperIncubationMandates();
-        await refreshShadowPortfolios();
-        await refreshRegimeShadowV2();
-        await refreshMissions();
-        setHarnessError("");
-        return;
-      }
-      setHarnessError(`${response.status}`);
+      setOverview(await apiGet<HarnessOverview>("/api/harness/overview"));
+      setOverviewFailed(false);
+    } catch {
+      // The header and the monitor panel say so; the page never falls back to sample data.
+      setOverviewFailed(true);
+      return;
     } finally {
       setRefreshing(false);
     }
+    // The other sections load in parallel and independently. This used to be a serial chain of
+    // twelve awaits that stopped at the first request that threw.
+    await Promise.allSettled([
+      refreshMemoryItems(),
+      refreshStrategyLibrary(),
+      refreshStrategyCards(),
+      refreshMonitorAlerts(),
+      refreshGovernance(),
+      refreshPortfolioAssessments(),
+      refreshPortfolioObservationWindows(),
+      refreshPaperCohorts(),
+      refreshPaperIncubationMandates(),
+      refreshShadowPortfolios(),
+      refreshRegimeShadowV2(),
+      refreshMissions()
+    ]);
+    setHarnessError("");
   }, [
     refreshGovernance,
     refreshMemoryItems,
@@ -876,6 +712,11 @@ function App() {
     setActiveSection(section);
   }
 
+  function reportActionError(error: unknown) {
+    if (isAuthError(error)) setAccess("readonly");
+    setHarnessError(describeError(error, t));
+  }
+
   async function handleRun() {
     const submittedPrompt = prompt.trim();
     if (!submittedPrompt) return;
@@ -914,11 +755,7 @@ function App() {
       await followCanonicalTurn(threadId, started.turn.turn_id, started.event_cursor);
       await refreshOverview();
     } catch (error) {
-      if (error instanceof ThreadProtocolRequestError && error.status === 409) {
-        setHarnessError(`409 · ${error.message}`);
-      } else {
-        setHarnessError(error instanceof Error ? error.message : "Thread request failed");
-      }
+      reportActionError(error);
     } finally {
       setBusy(false);
     }
@@ -926,7 +763,7 @@ function App() {
 
   async function handleNewThread() {
     if (threadSnapshot?.thread.active_turn_id) {
-      setHarnessError("Active Turn must reach a terminal state before archiving the Thread.");
+      setHarnessError(t.errorConflict);
       return;
     }
     setBusy(true);
@@ -946,7 +783,7 @@ function App() {
         cursor: created.thread.event_cursor
       });
     } catch (error) {
-      setHarnessError(error instanceof Error ? error.message : "Thread creation failed");
+      reportActionError(error);
     } finally {
       setBusy(false);
     }
@@ -962,7 +799,7 @@ function App() {
       activeTurnRequest.current = null;
       setThreadConnection("archived");
     } catch (error) {
-      setHarnessError(error instanceof Error ? error.message : "Thread archive failed");
+      reportActionError(error);
     } finally {
       setBusy(false);
     }
@@ -1142,7 +979,7 @@ function App() {
     <div className="min-h-[100dvh] bg-paper text-ink">
       <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_82%_0%,rgba(90,214,196,0.10),transparent_28%),radial-gradient(circle_at_20%_10%,rgba(214,162,74,0.06),transparent_24%),linear-gradient(rgba(110,165,150,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(110,165,150,0.035)_1px,transparent_1px)] bg-[size:auto,auto,28px_28px,28px_28px]" />
       <div className="relative grid min-h-[100dvh] grid-cols-[260px_1fr] max-lg:grid-cols-1">
-        <aside className="border-r border-ink/15 bg-night px-5 py-6 text-ink shadow-[inset_-1px_0_0_rgba(90,214,196,0.05)]">
+        <aside className="border-r border-ink/15 bg-night px-5 py-6 text-ink shadow-[inset_-1px_0_0_rgba(90,214,196,0.05)] lg:sticky lg:top-0 lg:h-[100dvh] lg:self-start lg:overflow-y-auto">
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-md border border-signal/35 bg-signal/10 text-signal shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
               <Activity size={19} />
@@ -1250,293 +1087,48 @@ function App() {
 
         <main className="mx-auto min-w-0 w-full max-w-[1480px] px-8 py-7 max-lg:px-4">
           <div className={activeSection === "harness" ? "" : "hidden"}>
-          <header
-            className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-ink/15 pb-5 max-md:grid-cols-1"
-            id="harness"
-          >
-            <div>
-              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase text-brass">
-                <span>{t.risk}</span>
-                <span className="h-1 w-1 rounded-full bg-brass/45" />
-                <span>{overview ? t.lastSync : t.preview}</span>
-              </div>
-              <h1 className="mt-2 text-4xl font-semibold tracking-tight max-sm:text-3xl">
-                {t.workbenchTitle}
-              </h1>
-              <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-ink/55">
-                <span>{t.workbenchSubtitle}</span>
-                <span className="font-mono">{overview ? activeOverview.generated_at : t.preview}</span>
-                {refreshing ? (
-                  <span className="inline-flex items-center gap-2 text-brass">
-                    <span className="skeleton-pulse h-1.5 w-1.5 rounded-full bg-brass" />
-                    {t.overviewLoading}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-            <div className="runtime-pill">
-              <div>
-                <span>{t.systemStatus}</span>
-                <strong>{overview ? t.healthy : t.preview}</strong>
-                <span className="mt-1 font-mono">{t.okx}</span>
-              </div>
-              <CheckCircle2 className="text-signal" size={18} />
-            </div>
-          </header>
-
-          <section className="telemetry-grid mt-6">
-            {metrics.map((metric, index) => (
-              <div className="telemetry-cell" key={metric.label} style={cascadeStyle(index)}>
-                <div className="flex items-start justify-between gap-4">
-                  <metric.icon className={`metric-${metric.tone}`} size={18} />
-                  <span className="font-mono text-2xl font-semibold tracking-tight text-ink">
-                    {metric.value}
-                  </span>
-                </div>
-                <div className="mt-4 text-xs uppercase text-ink/45">{metric.label}</div>
-              </div>
-            ))}
-          </section>
-
-          <section className="mt-5 grid grid-cols-[0.95fr_1.05fr] gap-5 max-xl:grid-cols-1">
-            <div className="panel">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="section-title">{t.runConsole}</h2>
-                  <p className="mt-1 text-sm text-ink/50">{t.runConsoleHint}</p>
-                </div>
-                <Sparkles size={18} className="text-brass" />
-              </div>
-              <textarea
-                className="prompt-box"
-                onChange={(event) => setPrompt(event.target.value)}
-                value={prompt}
-              />
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className="button-primary"
-                  disabled={busy || Boolean(threadSnapshot?.thread.active_turn_id)}
-                  onClick={handleRun}
-                  type="button"
-                >
-                  {busy ? <RefreshCw className="animate-spin" size={16} /> : <Bot size={16} />}
-                  {t.run}
-                </button>
-                <button className="icon-button" disabled={busy} onClick={handleNewThread} type="button">
-                  {t.newThread}
-                </button>
-                <button
-                  className="icon-button"
-                  disabled={busy || !threadSnapshot || Boolean(threadSnapshot.thread.active_turn_id)}
-                  onClick={handleArchiveThread}
-                  type="button"
-                >
-                  <Archive size={14} />
-                  {t.archiveThread}
-                </button>
-              </div>
-              {threadSnapshot ? (
-                <div className="mt-3 flex flex-wrap gap-2 font-mono text-xs text-ink/50">
-                  <span>{threadSnapshot.thread.thread_id}</span>
-                  <span>cursor={threadCursor}</span>
-                  <span>{threadConnection.startsWith("reconnecting") ? t.reconnecting : t.threadReady}</span>
-                </div>
-              ) : null}
-              {harnessError ? (
-                <div className="mt-3 rounded border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger">
-                  {harnessError}
-                </div>
-              ) : null}
-              <div className="mt-4 trace-list">
-                <div className="px-1 py-2 text-xs font-semibold uppercase text-ink/45">
-                  {t.agentProgress}
-                </div>
-                <div className="trace-row">
-                  <Bot size={14} className="text-brass" />
-                  <span className="text-xs">{t.currentStage}</span>
-                  <span className="ml-auto font-mono text-xs text-ink/55">
-                    {threadSnapshot ? threadPresentation.status : run.run_state_json?.current_node ?? t.preview}
-                  </span>
-                </div>
-                {agentProgress.length === 0 ? (
-                  <div className="empty-row my-3">{t.overviewLoading}</div>
-                ) : (
-                  agentProgress.map((item, index) => (
-                    <div className="trace-row" key={`${item}-${index}`} style={cascadeStyle(index)}>
-                      <Clock3 size={14} className="text-brass" />
-                      <span className="min-w-0 truncate font-mono text-xs">{item}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-              {threadPresentation.resolvedRefs.length > 0 ? (
-                <div className="mt-4 mini-block">
-                  <span>{t.resolvedRefs}</span>
-                  <strong className="font-mono">{threadPresentation.resolvedRefs.join(" / ")}</strong>
-                </div>
-              ) : null}
-              {threadPresentation.messages.length > 0 ? (
-                <div className="mt-4">
-                  <h3 className="section-title">{t.canonicalHistory}</h3>
-                  <div className="mt-2 max-h-64 space-y-2 overflow-auto">
-                    {threadPresentation.messages.map((message) => (
-                      <div className="operator-card operator-card-compact" data-tone={message.role === "user" ? "brass" : "signal"} key={message.id}>
-                        <span>{message.role} · {message.kind} · {message.status}</span>
-                        <strong className="whitespace-pre-wrap text-sm">{message.text}</strong>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              {threadPresentation.warnings.length > 0 ? (
-                <div className="mt-4 operator-card operator-card-compact" data-tone="danger">
-                  <span>warning / unknown</span>
-                  <strong>{threadPresentation.warnings.join(" · ")}</strong>
-                </div>
-              ) : null}
-              {threadPresentation.evidence.length > 0 ? (
-                <ReportSourceList label={t.sourceRefs} prefix="evidence" values={threadPresentation.evidence} />
-              ) : null}
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <h3 className="section-title">{t.reportReader}</h3>
-                <button
-                  className="icon-button"
-                  onClick={() => setShowRawMarkdown((value) => !value)}
-                  type="button"
-                >
-                  <TerminalSquare size={14} />
-                  {showRawMarkdown ? t.reportReader : t.rawMarkdown}
-                </button>
-              </div>
-              {showRawMarkdown ? (
-                <pre className="report-block">
-                  {busy ? `${t.overviewLoading}...` : reportMarkdown}
-                </pre>
-              ) : reportBlocks.length > 0 ? (
-                <StructuredReport blocks={reportBlocks} markdown={reportMarkdown} t={t} />
-              ) : (
-                <div className="markdown-report">
-                  {busy ? t.overviewLoading : renderMarkdown(reportMarkdown)}
-                </div>
-              )}
-            </div>
-
-            <div className="panel panel-command">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="section-title">{t.runtimeMonitor}</h2>
-                  <p className="mt-1 text-sm text-ink/50">{t.runtimeMonitorHint}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button className="icon-button" onClick={refreshOverview} type="button">
-                    <RefreshCw className={refreshing ? "animate-spin" : ""} size={16} />
-                    <span>{t.refresh}</span>
-                  </button>
-                  <Cable size={18} className="text-brass" />
-                </div>
-              </div>
-              <div className="mt-5 flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold">{t.tools}</h3>
-                <span className="rounded border border-ink/10 px-2 py-1 text-xs text-ink/45">
-                  {activeOverview.trace.total_count}
-                </span>
-              </div>
-              <div className="mt-2 trace-list">
-                {traceEvents.map((event, index) => (
-                  <button
-                    className="trace-row w-full text-left"
-                    key={`${event.tool_name}-${event.id ?? index}`}
-                    onClick={() => handleSelectTraceEvidence(event)}
-                    style={cascadeStyle(index)}
-                    type="button"
-                  >
-                    <span className="font-mono text-xs text-ink/45">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span className="font-medium">{event.tool_name}</span>
-                    <span className="ml-auto rounded border border-signal/30 px-2 py-1 text-xs text-signal">
-                      {statusLabel(event.status)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div className="mt-6 grid grid-cols-3 gap-3 max-md:grid-cols-1">
-                <div className="mini-block">
-                  <span>{t.providers}</span>
-                  <strong>{providerLabel(defaultProvider, t)}</strong>
-                </div>
-                <div className="mini-block">
-                  <span>{t.rag}</span>
-                  <strong>
-                    {activeOverview.rag.document_count} 文档 / {activeOverview.rag.chunk_count} 分片
-                  </strong>
-                </div>
-                <div className="mini-block">
-                  <span>{t.memory}</span>
-                  <strong>
-                    {activeOverview.memory.active_count} 可用 /{" "}
-                    {activeOverview.memory.total_count} 总数
-                  </strong>
-                </div>
-              </div>
-              {activeOverview.bitpro ? (
-                <div className="mt-6 rounded-md border border-ink/10 bg-paper/70 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold">{t.bitproMcp}</h3>
-                      <p className="mt-1 text-xs leading-5 text-ink/50">{t.bitproMcpHint}</p>
-                    </div>
-                    <span
-                      className={`inline-flex items-center gap-2 rounded border px-2 py-1 text-xs font-semibold ${
-                        activeOverview.bitpro.token_configured
-                          ? "border-signal/25 text-signal"
-                          : "border-danger/25 text-danger"
-                      }`}
-                    >
-                      <StatusDot enabled={activeOverview.bitpro.token_configured} />
-                      {activeOverview.bitpro.token_configured ? t.mcpTokenReady : t.mcpTokenMissing}
-                    </span>
-                  </div>
-                  <div className="mt-4 grid grid-cols-2 gap-3 max-md:grid-cols-1">
-                    <div className="mini-block">
-                      <span>{t.mcpApiBase}</span>
-                      <strong className="truncate font-mono">{activeOverview.bitpro.api_base}</strong>
-                    </div>
-                    <div className="mini-block">
-                      <span>{t.mcpAuthHeader}</span>
-                      <strong className="truncate font-mono">{activeOverview.bitpro.auth_header}</strong>
-                    </div>
-                    <div className="mini-block">
-                      <span>{t.mcpTokenSource}</span>
-                      <strong>{formatTokenSource(activeOverview.bitpro.token_source, t)}</strong>
-                    </div>
-                    <div className="mini-block">
-                      <span>{t.mcpScopes}</span>
-                      <strong className="font-mono">
-                        {Object.keys(activeOverview.bitpro.agent_auth?.scope_classes ?? {}).join(" / ") ||
-                          "R / W / L / T"}
-                      </strong>
-                    </div>
-                    <div className="mini-block">
-                      <span>{t.mcpAdapter}</span>
-                      <strong className="truncate font-mono">{activeOverview.bitpro.adapter}</strong>
-                    </div>
-                    <div className="mini-block">
-                      <span>{t.mcpTools}</span>
-                      <strong className="font-mono">
-                        {formatMetricNumber(activeOverview.bitpro.tools.length)}
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </section>
-
-          <AgentFlightRecorder
-            data={runObservability}
+          <HarnessPage
+            access={access}
             language={language}
-            loading={busy || observabilityLoading}
+            metrics={metrics}
+            monitor={{
+              defaultProvider,
+              onSelectTraceEvidence: handleSelectTraceEvidence,
+              traceEvents
+            }}
+            observability={{ data: runObservability, loading: observabilityLoading }}
+            onRefresh={() => void refreshOverview()}
+            overview={overview}
+            refreshing={refreshing}
+            run={{
+              busy,
+              error: harnessError,
+              hasThread: Boolean(threadSnapshot),
+              onArchiveThread: () => void handleArchiveThread(),
+              onNewThread: () => void handleNewThread(),
+              onPromptChange: setPrompt,
+              onRun: () => void handleRun(),
+              presentation: threadPresentation,
+              progress: agentProgress,
+              prompt,
+              report: {
+                blocks: reportBlocks,
+                markdown: reportMarkdown,
+                onToggleRaw: () => setShowRawMarkdown((value) => !value),
+                showRaw: showRawMarkdown
+              },
+              stage: threadSnapshot ? threadPresentation.status : (run?.run_state_json?.current_node ?? null),
+              thread: threadSnapshot
+                ? {
+                    cursor: threadCursor,
+                    id: threadSnapshot.thread.thread_id,
+                    reconnecting: threadConnection.startsWith("reconnecting")
+                  }
+                : null,
+              turnActive: Boolean(threadSnapshot?.thread.active_turn_id)
+            }}
+            sync={sync}
+            t={t}
           />
           </div>
 
