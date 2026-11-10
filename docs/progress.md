@@ -114,6 +114,22 @@
   3. **v0.2.0 发布准备**：为基于 Headline Arena 外部真实验证流（解决 Issue #1）的 ARC 前向盲测、Brier 评分与因果反思闭环发布正式版本，生成 Python wheel/sdist 分发包并完成校验。
 - **验证**：`./scripts/check.sh` 全量门禁校验通过，构建产物签名生成。
 
+## 2026-10-21：CLI 增加结构化 JSON 输出支持（--json）
+
+- **背景**：响应 Issue #68，为终端操作工具增加 `--json` 输出选项，支持外部 Agent 与自动化 CI 脚本直接通过 `jq` 解析。
+- **交付**：
+  1. `handle_regime_shadow_command` 适配 `--json` 参数，返回格式化 JSON 字符串；
+  2. 新增 `tests/test_cli_json_output.py`：测试普通文本格式与 JSON 结构化输出互斥性及正确性。
+- **验证**：`tests/test_cli_json_output.py` 2 项测试通过，ruff 检查通过。
+
+## 2026-10-21：实现工作线程空闲指数退避与抖动算法
+
+- **背景**：响应 Issue #70，优化多 Loop 后台工作线程在非交易与无任务时段的轮询开销，降低数据库读连接瞬时争用。
+- **交付**：
+  1. 新增 `backend/src/hypertrade/runtime/backoff.py`：实现 `calculate_jittered_backoff` 函数，支持指数增长与对称平滑随机抖动；
+  2. 新增 `tests/test_worker_backoff.py`：测试退避增长、最大上限与确定性 RNG 边界。
+- **验证**：`tests/test_worker_backoff.py` 3 项测试全部通过，mypy 和 ruff 检查全绿。
+
 ## 2026-10-21：强化 ASTGatekeeper 边界语法与反射注入测试覆盖
 
 - **背景**：响应社区 Issue #60，针对 LLM 策略代码合成可能出现的复杂 Python AST 结构，增加全套参数化边界语法与反思注入测试。
