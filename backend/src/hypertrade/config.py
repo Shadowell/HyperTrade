@@ -39,9 +39,16 @@ class Settings(BaseSettings):
     okx_api_secret: str = Field(default="", alias="OKX_API_SECRET")
     okx_passphrase: str = Field(default="", alias="OKX_PASSPHRASE")
     okx_testnet: bool = Field(default=True, alias="OKX_TESTNET")
+    # OKX stopped accepting websocket connections on port 8443 on 2026-10-31; the default port 443
+    # serves the same host and path.
     okx_public_ws_url: str = Field(
-        default="wss://ws.okx.com:8443/ws/v5/public", alias="OKX_PUBLIC_WS_URL"
+        default="wss://ws.okx.com/ws/v5/public", alias="OKX_PUBLIC_WS_URL"
     )
+    # The `tickers` channel is subscribed per instrument. This many of the busiest SWAP contracts
+    # (by 24h turnover) are streamed; the rest keep the REST snapshot cadence. OKX documents no
+    # per-connection subscription cap for public channels (only the close codes 4008/4009), and
+    # every streamed instrument costs about one database row write per second.
+    okx_ws_max_instruments: int = Field(default=100, ge=1, alias="OKX_WS_MAX_INSTRUMENTS")
     okx_rest_url: str = Field(default="https://www.okx.com", alias="OKX_REST_URL")
     okx_rest_supplement_interval_seconds: int = Field(
         default=300,
