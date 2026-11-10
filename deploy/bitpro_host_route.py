@@ -8,11 +8,38 @@ import ipaddress
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 ALIAS = "host.docker.internal"
+
+# EX_TEMPFAIL: the alias points at the real Docker gateway, but BitPro itself did not answer its
+# authenticated health check. BitPro restarts independently of a HyperTrade release, so deploy.sh
+# treats this as a warning; every other non-zero status (alias mismatch, docker failure) is a
+# defect of the deployment and stays fatal. deploy.sh matches this literal in its `case`.
+EXIT_BITPRO_UNAVAILABLE = 75
+
+# Runs inside the api/worker container; argv: gateway, exit status for "BitPro unavailable". The
+# alias assertion is deterministic and local, so it fails hard and is never retried. Only the
+# authenticated BitPro call may degrade, because the assertion above it already proved the route.
+CONTAINER_PROBE = """import socket,sys,time,urllib.request
+from hypertrade.config import get_settings
+s=get_settings()
+assert sys.argv[1] in {r[4][0] for r in socket.getaddrinfo('host.docker.internal',8889)}
+q=urllib.request.Request(str(s.bitpro_mcp_api_base).rstrip('/')+'/system/health',headers={s.bitpro_mcp_auth_header:s.bitpro_mcp_api_token})
+for attempt in range(15):
+    try:
+        with urllib.request.urlopen(q,timeout=3) as r: assert r.status==200
+        break
+    except Exception as exc:
+        if attempt == 14:
+            print('BitPro authenticated health unavailable: %r' % (exc,), file=sys.stderr)
+            sys.exit(int(sys.argv[2]))
+        time.sleep(2)
+print('BitPro DNS and authenticated health verified')
+"""
 
 
 def gateway_from_network(networks):
@@ -74,6 +101,7 @@ def main():
         print(gateway)
         return
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")  # noqa: UP017
+    bitpro_unavailable = []
     for container in ("hypertrade-api", "hypertrade-worker"):
         content = subprocess.check_output(
             ["docker", "exec", container, "cat", "/etc/hosts"], text=True
@@ -99,30 +127,43 @@ def main():
                 text=True,
                 check=True,
             )
-        probe = """import socket,sys,time,urllib.request
-from hypertrade.config import get_settings
-s=get_settings()
-assert sys.argv[1] in {r[4][0] for r in socket.getaddrinfo('host.docker.internal',8889)}
-q=urllib.request.Request(str(s.bitpro_mcp_api_base).rstrip('/')+'/system/health',headers={s.bitpro_mcp_auth_header:s.bitpro_mcp_api_token})
-for attempt in range(15):
-    try:
-        with urllib.request.urlopen(q,timeout=3) as r: assert r.status==200
-        break
-    except Exception:
-        if attempt == 14: raise RuntimeError('BitPro authenticated health unavailable') from None
-        time.sleep(2)
-print('BitPro DNS and authenticated health verified')
-"""
-        subprocess.run(["docker", "exec", container, "python", "-c", probe, gateway], check=True)
+        result = subprocess.run(
+            [
+                "docker",
+                "exec",
+                container,
+                "python",
+                "-c",
+                CONTAINER_PROBE,
+                gateway,
+                str(EXIT_BITPRO_UNAVAILABLE),
+            ],
+            check=False,
+        )
+        # Any other failure (alias mismatch, docker error) aborts immediately, as before; only the
+        # soft status is collected so the remaining container still gets its alias check.
+        if result.returncode == EXIT_BITPRO_UNAVAILABLE:
+            bitpro_unavailable.append(container)
+        elif result.returncode != 0:
+            raise subprocess.CalledProcessError(result.returncode, result.args)
         print(
             json.dumps(
                 {
                     "container": container,
                     "gateway": gateway,
                     "backup": str(backup) if backup else None,
+                    "bitpro": "unavailable" if container in bitpro_unavailable else "ok",
                 }
             )
         )
+    if bitpro_unavailable:
+        print(
+            "BitPro did not answer its authenticated health check from "
+            + ", ".join(bitpro_unavailable)
+            + "; the host route itself is valid",
+            file=sys.stderr,
+        )
+        sys.exit(EXIT_BITPRO_UNAVAILABLE)
 
 
 if __name__ == "__main__":

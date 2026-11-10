@@ -66,7 +66,26 @@ if ! docker compose up -d --wait --wait-timeout 90 api; then
   docker compose logs --tail=120 api
   exit 1
 fi
-python3 "$ROOT_DIR/deploy/bitpro_host_route.py" --check-running
+
+# --check-running tells a defect of this deploy apart from BitPro merely being down. A container
+# alias that does not match the Docker gateway still aborts. BitPro not answering (it restarts on
+# its own: connection refused, then about a minute of warm-up) exits 75 and must not: the new
+# containers are already serving and BitPro is a soft dependency (/api/health never calls it,
+# /api/healthz reports it as degraded, the worker loops retry), so aborting here would only skip the
+# host CLI install, nginx reload, final health wait and last_deployed_sha record.
+# 75 is bitpro_host_route.EXIT_BITPRO_UNAVAILABLE.
+bitpro_status=0
+python3 "$ROOT_DIR/deploy/bitpro_host_route.py" --check-running || bitpro_status=$?
+case "$bitpro_status" in
+  0) ;;
+  75)
+    echo "[deploy] BitPro did not answer its authenticated health check; continuing, the new build is live"
+    echo "::warning title=BitPro not ready after deploy::The new containers are live and the BitPro host route is valid, but BitPro did not answer its authenticated health check (last error above). Check BitPro and GET /api/healthz (adapters.bitpro); a restarting BitPro needs no redeploy."
+    ;;
+  *)
+    exit "$bitpro_status"
+    ;;
+esac
 
 echo "[deploy] installing host cli wrapper"
 install -m 755 "$ROOT_DIR/deploy/hypertrade-host-cli" /usr/local/bin/hypertrade
