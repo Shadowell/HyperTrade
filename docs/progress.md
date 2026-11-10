@@ -1,3 +1,14 @@
+## 2026-11-10：供应链与 CI 治理——升级 13 个有漏洞的生产依赖、PR 上跑 CI、依赖审计／CodeQL／Dependabot、Action 固定到提交 SHA
+
+- **背景**：①CI 只在推送 main 之后才运行（没有 `pull_request` 触发），而发布由同一次推送触发，合并前没有任何自动检查；②对生产镜像实际安装的依赖闭包（`uv sync --frozen --no-dev`，94 个包）跑 `pip-audit`，13 个包有已知漏洞（`pyjwt` 15 条、`mcp` 4 条、`python-multipart` 3 条、`urllib3` 3 条、`starlette`／`anyio` 各 2 条等）；③没有依赖审计、静态分析和依赖更新机制；④`deploy` 任务跑在自托管的生产 runner 上，却直接引用可变标签 `actions/checkout@v4`，标签被篡改就等于在生产机上执行第三方代码。
+- **交付**：
+  1. **依赖升级**：13 个有漏洞的包升到「最低修复版本所在大版本内的最新版」，锁文件共 21 个包变动；`cryptography` 49→50 是唯一跨大版本（49.x 没有修复版本）；`anyio`、`mcp`、`opentelemetry-api`、`pydantic-settings`、`python-multipart` 五个直接依赖在 `pyproject.toml` 里抬高下限。升级后 `pip-audit` 对生产闭包「无已知漏洞」，`pnpm audit --prod` 同样干净。
+  2. **CI**：新增 `pull_request` 触发；后端改为 `uv sync --locked`（锁文件与 `pyproject.toml` 不一致时直接失败，不再静默重新解析）；新增 `Workflow Lint` 任务（`actionlint`，`.github/actionlint.yaml` 声明自托管标签 `hypertrade-production`）；所有 workflow 的 token 从 `contents: read` 起步；`ci.yml`／`deploy.yml` 里的第三方 Action 全部固定到提交 SHA（行尾 `# vN` 注释记录版本）。
+  3. **安全自动化**：`security.yml`（生产闭包 `pip-audit` + `pnpm audit --prod`，每次推送／PR 以及每周一）、`codeql.yml`（python、javascript-typescript、actions 三种语言）、`dependabot.yml`（`uv`、`npm`、`github-actions` 每周一个分组 PR，`mcp` 大版本忽略）、`CODEOWNERS`；`SECURITY.md` 同步写明这些控制并补上 0.2.x 支持版本。
+  4. **防回退测试**：`tests/test_ci_workflows.py` 11 个用例（PR 触发、`--locked`、SHA 固定、最小权限、审计范围与镜像安装一致、CodeQL 语言、Dependabot 生态、CODEOWNERS 等）；对 9 种破坏做过变异检验，全部被抓到。
+- **验证**：`./scripts/check.sh` 全量通过：前端 lint、15 项测试与构建，`ruff`，`mypy`（325 个文件），`pytest` 2672 项（新增 11 项）；workflow 用与 CI 相同的命令跑过 `actionlint`（通过，故意写错表达式时会拦截）、`pip-audit`、`pnpm audit`。新 workflow 本身要等 PR 推上去才会在 GitHub 上首次真正运行。
+- **未做／需要在 GitHub 仓库设置里操作**（Agent 的令牌没有 admin 权限）：开启 Dependabot alerts 与 security updates（目前为 disabled）；把 `Backend Quality & Tests`、`Frontend Quality & Build`、`Workflow Lint`、`Python Dependency Audit`、`CodeQL` 设为 `main` 的必过检查并启用「Require review from Code Owners」（目前 `main` 未开启分支保护）。`agent-evals` 可选依赖里另有 8 个包有漏洞（`pillow` 需大版本升级、`diskcache`／`ragas` 暂无修复版本），只存在于离线评测镜像，未处理。Starlette 的测试客户端提示 `httpx` 用法已弃用、建议改装 `httpx2`，目前只是警告，Starlette 移除兼容前需要处理。
+
 ## 2026-11-10：托管发布 Permission denied 的根因：server 引擎的 rsync 会覆盖/删除托管引擎的受信文件
 
 - **背景**：11-09 起 `DEPLOY_ENGINE=github`。#80、#91 合并后触发的两次发布都在「Trigger trusted deploy」一步以 `bash: line 1: /opt/hypertrade/deploy/from-github.sh: Permission denied`（exit 126）失败，主机上没有执行任何内容；主机补过可执行位后重跑，同一报错依旧。

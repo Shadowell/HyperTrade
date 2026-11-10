@@ -6,6 +6,7 @@ Currently supported versions of HyperTrade:
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 0.2.x   | :white_check_mark: |
 | 0.1.x   | :white_check_mark: |
 | < 0.1   | :x:                |
 
@@ -82,6 +83,19 @@ If you discover a security vulnerability in HyperTrade, please report it private
 - Network segmentation (Nginx reverse proxy)
 - Minimal container privileges
 - Regular security updates
+
+**Supply Chain & CI** (enforced by `.github/workflows`, guarded by `tests/test_ci_workflows.py`):
+- CI (lint, types, tests) runs on every pull request, not only after the merge to `main`;
+  Python dependencies are installed with `uv sync --locked`, so an out-of-date `uv.lock` fails
+  the build instead of being silently re-resolved
+- `security.yml` audits what the production image installs (`pip-audit` on the locked
+  `--no-dev` closure, `pnpm audit --prod`) on every push and pull request, and weekly
+- `codeql.yml` runs CodeQL for Python, JavaScript/TypeScript and the workflows themselves
+- Dependabot opens one grouped update PR per ecosystem per week (`uv`, `npm`, GitHub Actions)
+- Third-party Actions are pinned to full commit SHAs and every workflow token starts from
+  `contents: read`; the production deploy job runs on a self-hosted runner, so a moved tag
+  must not be able to execute code there
+- `actionlint` validates the workflows on every pull request
 
 ### Known Limitations
 
