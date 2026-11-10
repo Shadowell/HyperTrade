@@ -12,6 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 # the model, and a pending call left by a crash is not an unresolved side effect.
 SIDE_EFFECT_FREE_TOOLS = frozenset({"inspect", "propose", "stop"})
 ChatProviderName = Literal["deepseek", "openai", "codex", "qwen", "openrouter", "vide_coding"]
+# Deterministic researcher for exploration missions: one-step parameter neighbours of the
+# source, no model call. Not a ChatProviderName: it never reaches ProviderRuntime.
+RULE_TWEAK_PROVIDER = "rule_tweak"
 
 
 class ARCSuccessCriteriaV1(BaseModel):
@@ -148,6 +151,11 @@ class ARCGoalV1(BaseModel):
     # always enables version-bound review for new work.
     paper_review_required: bool = False
     paper_review_mode: Literal["human", "agent"] = "human"
+    # How a final candidate reaches Paper review. "strict" (default; every historical
+    # mission) requires the full final gate. "basic" also admits a candidate that fails it
+    # but passes arc.admission.basic_admission against its same-window parent. Frozen at
+    # creation, so a later config change never re-judges a running mission.
+    paper_admission: Literal["strict", "basic"] = "strict"
     research_id: str | None = None
     paper_initial_equity: Decimal = Field(default=Decimal("100"), gt=0, le=10000)
     # Evidence-window provenance consent. The gate refuses to spend candidate budget on

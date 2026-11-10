@@ -16,9 +16,18 @@ from typing import Any
 from jsonschema import ValidationError, validate
 
 from hypertrade.agent.compaction import ContextBlocked, compact_request, sanitize_context
+from hypertrade.arc.admission import (
+    basic_admission,
+    basic_admitted,
+    basic_validation_id,
+)
 from hypertrade.arc.adversarial import BlueTeamQuant
 from hypertrade.arc.backtest_recovery import BacktestActionRunner, BacktestDeferred, recoverable
-from hypertrade.arc.contracts import SIDE_EFFECT_FREE_TOOLS, ARCCandidateAttemptV1
+from hypertrade.arc.contracts import (
+    RULE_TWEAK_PROVIDER,
+    SIDE_EFFECT_FREE_TOOLS,
+    ARCCandidateAttemptV1,
+)
 from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProjection
 from hypertrade.arc.evolution_memory import (
     assess_development,
@@ -27,7 +36,7 @@ from hypertrade.arc.evolution_memory import (
 )
 from hypertrade.arc.paper_review import request_paper_review
 from hypertrade.arc.provider_hypothesis import ProviderProposal, _bounded_spec
-from hypertrade.arc.relay_seats import describe_tried, tried_variant
+from hypertrade.arc.relay_seats import describe_tried, tried_variant, variant_identity
 from hypertrade.arc.runtime_journal import record_model_exchange, record_runtime_error
 from hypertrade.arc.self_test import ARCSelfTestService
 from hypertrade.arc.store import get_controller, list_mission_ids, research_lock, save_avo_context
@@ -202,6 +211,10 @@ source_variant_policy.relay.tried_variants lists the changes BitPro already race
 eliminated for this parent; a proposal identical to one of them is rejected because BitPro never
 races the same changes twice, so propose a different direction. relay.slots shows how many of the
 parent's seats are open (free minus candidates already queued).
+When exploration_plan is present, parameters are partitioned into 3 orthogonal functional
+dimensions (signal_period, risk_exit, filter_sizing); explore across distinct functional
+dimensions and prioritize unoccupied_dimensions / preferred_dimension so the parent's 3 variant
+slots cover 3 different functional directions rather than clustering on the same parameter.
 For autonomous_evolution, every propose must include evolution_hypothesis with evidence_refs
 (paper_feedback, order_sample, a memory_id or a developed attempt_id), expected_metric,
 expected_direction and falsification (what observation would refute the hypothesis).
@@ -557,6 +570,18 @@ def _perform(
                     "BitPro never races the same changes twice. Propose different "
                     "parameter_changes or structural_changes"
                 )
+            active_slots = (goal.evolution_context or {}).get("active_slot_variants")
+            if isinstance(active_slots, list) and not structural_changes:
+                proposed_id = variant_identity(param_changes, {})
+                if any(
+                    isinstance(slot_changes, dict)
+                    and variant_identity(slot_changes, {}) == proposed_id
+                    for slot_changes in active_slots
+                ):
+                    raise ValueError(
+                        "identical variant is already observing in an active parent slot; "
+                        "propose a different parameter or functional direction"
+                    )
             parent_manifest_sha256 = variant_policy["parent_manifest_sha256"]
             parent_execution_identity_sha256 = variant_policy.get(
                 "parent_execution_identity_sha256"
@@ -869,8 +894,32 @@ def _perform(
             "avo_development_result", {"attempt_id": candidate.attempt_id, "result": payload}
         )
         return payload
+    if final and not result.passed and goal.paper_admission == "basic" and comparison_context:
+        admission = basic_admission(
+            result.metrics,
+            controller.projection.avo.get("baseline_final") or {},
+        )
+        payload["admission"] = admission
+        if admission["passed"]:
+            payload["admitted"] = True
+            # The id is bound after admission and admitted are in the receipt.
+            payload["validation_id"] = basic_validation_id(payload)
     controller.apply_event("bitpro_self_tested", payload)
     if result.passed:
+        request_paper_review(controller)
+    elif payload.get("admitted") is True:
+        # Basic admission: strict gate failed (recorded above); the parent comparison
+        # did not show it clearly worse, so the Paper race decides. Succession is unchanged.
+        controller.apply_event(
+            "candidate_validated",
+            {
+                "attempt_id": candidate.attempt_id,
+                "validation_id": payload["validation_id"],
+                "bitpro_strategy_id": payload.get("bitpro_strategy_id"),
+                "backtest_id": payload.get("backtest_id"),
+                "admission": "basic",
+            },
+        )
         request_paper_review(controller)
     else:
         controller.apply_event("operator_needed", {"reason": "avo_final_validation_failed"})
@@ -945,7 +994,7 @@ def run_avo_research(
 # shared with output, leaving >=100K output headroom and keeping the recovery
 # snapshot under its 2MB limit. Other providers keep the conservative default.
 _DEFAULT_CONTEXT_BUDGET = 64_000
-_PROVIDER_CONTEXT_BUDGET = {"deepseek": 900_000}
+_PROVIDER_CONTEXT_BUDGET = {"deepseek": 900_000, RULE_TWEAK_PROVIDER: 900_000}
 
 
 def _context_budget(provider: Any) -> int:
@@ -1097,6 +1146,10 @@ def _run(
         controller.apply_event("avo_model_abandoned", {"reason": "unacknowledged_model_call"})
     if goal.model_name and goal.provider_name not in {"codex", "vide_coding"}:
         raise ResearchStopped("avo_provider_unavailable")
+    if provider is None and goal.provider_name == RULE_TWEAK_PROVIDER:
+        from hypertrade.arc.rule_tweak import RuleTweakProvider
+
+        provider = RuleTweakProvider(controller)
     if provider is None:
         try:
             provider = ProviderRuntime(get_settings()).get_chat_provider(
@@ -1402,7 +1455,7 @@ def _recover_receipt(controller: ARCController) -> None:
         return
     pending = controller.projection.avo["pending"]
     if pending["name"] == "finish":
-        if result.get("passed"):
+        if result.get("passed") or basic_admitted(controller.projection.goal, result):
             if controller.projection.state != "paper_review_ready":
                 controller.apply_event("candidate_validated", result)
                 request_paper_review(controller)

@@ -1,5 +1,7 @@
 # 032 运维探活与安全令牌管理（2026-10-05）
 
+2026-11-03 三槽位并发与正交维度探索：支持来源变体的母体策略按变体槽位数（默认3槽位或 `relay_seats.total`）进行并发准入锁控制，仅在研究执行中（`in_research`）或观察槽位占满（`observing_slots >= slot_limit`）时阻塞；补齐未满槽位期间无连败时免除24小时等待。参数按功能维度划分为信号与趋势周期（`signal_period`）、风控与退出边界（`risk_exit`）、阈值过滤与仓位（`filter_sizing`）三大正交方向，单任务提案与跨任务槽位均优先覆盖未占用维度并剔除在役重复变体；开启 `launch_enabled` 时稳定变体母体同样纳入补位覆盖。
+
 2026-10-15 自进化质量门禁：来源参数提议也必须绑定可核验引用、明确反证及净收益提高/回撤降低目标；仅减少交易次数不算改进。已知执行失败单独结算为失败研究，不当作交易成绩继续突变。来源回测比较要求同执行环境、成本、封存行情及经济输入；Paper审核须与最终通过回执及源码一致。人工暂停不能被旧回执覆盖。部署健康检查断连仅对已有行动回执有界重试，五次失败或24小时上限停止；审计恢复脚本可复核原绑定后恢复部署断连等待，不补预算、不重置Paper。
 
 执行版本变化使用显式后继重验，保留原实验失败/中断事实；同一经济输入不等于同一执行版本，禁止把新job结果回填为旧job成功。
@@ -254,6 +256,15 @@ BitPro `strategy_validate_code` / create / `backtest_start_job`；`ARCGoalV1.suc
 ref、paper instance、观察窗或对账时包状态为 `incomplete`，`POST .../live-approval/decide`
 拒绝批准。操作员批准后才走审批绑定的 `authorized_live_promote`；`call_tool("live_promote")`
 和现货/合约下单、划转仍然拦截。Mission 投影落在 `arc_missions`，重启可恢复。
+
+观察收尾与降频（2026-11-02）：`paper_observing` 的评审任务（`paper_review_required`）在它观察的东西结束时自行落到
+`completed`，由新事件 `paper_observation_ended` 完成，不使用 `mission_completed`：①进化循环建的任务，按「目标 + 母体
+策略号 + 挑战者策略号」读前向结果表那一行（赛马裁判在赛道结束时写入，早于这次模拟盘开始的行不算），有结论即收尾
+（`reason=race_finished`，带结论与赛道指标）；②没有账本行时，最近一次确认是本实例的观察显示 BitPro 会话 `ended_at`
+已超过 1 小时，则 `reason=paper_session_ended`。归约守卫：只能从 `paper_observing` 进入、必须对上持有该 Paper 实例的候选，
+结果存入投影字段 `paper_outcome`，候选与 `paper_review` 状态不变。关闭后母体不再被算「忙」。观察循环每分钟只做这次不碰
+BitPro 的检查；读 BitPro 并写一条 `paper_observed` 的间隔由 `ARC_OBSERVATION_RECORD_SECONDS` 决定（默认 3600 秒，上次
+时间存在观察记录的 `observed_at` 里）。`ARC_OBSERVATION_EXIT_ENABLED=false` 停用收尾。
 
 证据窗口带来源合同（2026-08-23）：preflight 与每个 attempt 的证据记录携带
 `source_origin`（`okx_swap` / `alternative_exchange` / `archive_unknown`）、`window_as_of`
@@ -1178,6 +1189,17 @@ agent模式受enabled、策略范围、候选资金上限约束；独立评审�
 ### 主动探索与全局研究预算（2026-09-13）
 
 `proactive_enabled` 允许 worker 对未退化但证据完整的 Paper 发起可证伪研究；旧配置默认为关闭，原总开关与门槛不迁移。7+7 退化与主动探索及任务自身反馈共用持久 `research_budget.v1` 准入账本，按 UTC 日/可选累计任务限额、全局并发及来源冷却控制。任务与扣额原子提交，重启与配置修订不清账；旧自动任务计入消耗。退化优先，同级按最久未研究来源和策略ID选择。冷却计入诚实终态时间，未知效果继续阻断。GET evolution 和 CLI `research evolution` 展示预算、触发来源、拒绝原因与下一可运行时间；预览不扣额。完整数据门槛不降低，不产生 Live 或原 Paper 修改。
+
+### 上线探索、参数微调研究员与基本入场（2026-10-23）
+
+三项均由 `EvolutionConfig` 开关控制，默认关闭，开关关闭时扫描、预算与任务目标与此前一致。
+
+- **上线探索**：`launch_enabled` 开启后，会话已满 `launch_days`（默认 7，范围 3～14）个完整 UTC 日、但 7+7 证据缺失（成交门槛、14 天窗口、成本或采样回执）的 BitPro 母体以 `launch` 触发研究；仅限支持来源变体的母体，不声称退化，零成交母体也可研究；readiness 不再对其挂成交与 14 天阻断；预算准入在开关关闭时以 `launch_disabled` 拒绝；其他市场目标保持原样。
+- **参数微调研究员**：`exploration_provider=rule_tweak` 时，launch/proactive 探索任务交给确定性研究员：只提单参数约 ±20% 的一步邻居（按授权范围、快慢窗口顺序过滤，跳过 BitPro 已赛过或已排队的组合，按任务编号轮换起点），开发回测后终验净收益最高的一个，不调用模型；它走与模型研究相同的工具、预算、记账与评审路径。退化与紧急任务始终使用 `research_provider`。来源最近一次任务是 rule_tweak 时，冷却改用 `exploration_cooldown_hours`，其余任务仍用 `cooldown_hours`。
+- **基本入场**：`paper_admission=basic`（随任务目标冻结）时，严格终验未过的候选若在同一终验窗口对母体满足基本检查——成交至少 1 笔且不少于母体三成；收益落后不超过 max(2 个百分点, 母体最大回撤的一半)；最大回撤不超过母体 +5 个百分点且不超过 30%——以内容绑定的 `val_basic_` 编号进入原有 Paper 评审。严格结果如实保留（`passed=false` 与原因），评审包增加 `admission` 段，自动评审按存档数字重算而不信任标记；严格任务的评审包与哈希不变。接班仍由 BitPro 前向赛马决定（14 天里至少赢 12 天），本项不改变接班标准。
+- **启动契约与效果对账**：评审通过后的 `reviewed/configure → reviewed/start` 请求体只含 BitPro 声明的字段（适配器在发请求前拒绝多余字段，常量 `REVIEWED_*_FIELDS` 与 BitPro 的 `extra="forbid"` 模型同步维护）；start 响应只核对 BitPro 回显的 `guard_version/review_hash/code_sha256/config_version`，若回显 `strategy_version` 则必须与 configure 回执一致。start 失败或回执无法确认时任务仍进入 `effect_unknown`、从不重发写请求；`arc_paper_effect_reconcile_loop`（`ARC_PAPER_EFFECT_RECONCILE_ENABLED`，默认开启）只读核对 BitPro 的 `paper_snapshot`，实例、策略、`strategy_version`、`config_version` 与 configure 回执逐项一致且会话 `running`、未结束、非 `critical` 时，以 `paper_review_effect_reconciled` 事件把任务转入 `paper_observing`，否则保持挂起。
+- **研究窗口适配**：开发与终验窗口按标的数与周期压进 BitPro 封存回测上限（单快照 100 万根、单标的 10 万根、预热按母体自己的需要，至少 500 根，由 BitPro 变体政策的 `baseline_backtest.warmup_policy_bars` 给出）；可用天数不足 14 天时拒绝研究。120 个标的的 15m 母体开发窗口由 119 天降为 81 天。
+- **基线预检与失败退避**：扫描读取 BitPro 变体政策里的 `baseline_backtest`——策略预热需求超限，或父策略标的里最晚的 OKX 上线时间（`history_start_ms`）太晚连两个最短窗口都切不出，或窗口放不进封存上限，本轮不建任务（`skip_reason=baseline_infeasible`，账本阻塞项 `baseline_infeasible`，resolution=time）；读不到结论放行。**标的上线晚按可用历史缩短窗口（2026-11-03）**：BitPro 在 `warmup_min_bars` 下限（默认 30 根）之上按最年轻标的的第一根 K 线封存，研究窗口因此不再要求「窗口起点前凑满 500 根」——窗口终点不动（最近的日子最要紧），起点后移到「最年轻标的上线 + 1 天余量 + `warmup_min_bars` 根」之后的第一个 UTC 日，可用天数按原窗口的开发:验证比例拆分，两个窗口各不少于 14 天（`arc/baseline_feasibility.py::fit_windows_to_history`；扫描与任务上下文用同一个 `research_windows_for_parent`，所以扫描判过的窗口就是任务实际研究的窗口）；连两个最短窗口都放不下时才跳过，提示里写明最早可研究的日期。老版 BitPro（没有 `warmup_min_bars`）仍按它总是封存满 `warmup_policy_bars` 根处理，窗口后移到满足为止。任务因确定性的基线封存失败（K 线网格不完整、预热超限、范围超限等）结束时，同一母体按连败次数等待 24/48/96/168 小时再试，且这类任务不计入当日额度（`period_refunded`）；只有同一个问题（BitPro 策略标签、母体 `strategy_version`、`config_version`）才累计，任一变化立即重问。
 
 ### 不可变组合研究基线（任务 F，2026-09-13）
 

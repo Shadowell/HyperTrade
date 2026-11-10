@@ -1,3 +1,77 @@
+## 2026-11-03：开放母体三变体槽位并发锁、按三大参数功能维度正交探索与策略卡全覆盖
+
+- **背景**：每个母体策略卡在 BitPro 上拥有 3 个并发变体槽位（Slot 1 / Slot 2 / Slot 3），但此前：①`research_budget.py` 按整张母体加并发锁，只要 1 个任务进入 `paper_observing`，整张母体在 14 天赛马期内一直被判为 `busy=True`（`source_active`），其余 2 个槽位无法继续发起研究；②`RuleTweakProvider` 按参数名字母顺序平铺生成候选，单任务 3 个候选与跨任务的多槽位候选容易挤在同一个参数维度上；③`EvolutionService._scan` 在 `proactive_enabled=False`（默认）且 `launch_enabled=True` 时，满 14 天且表现稳定的策略卡未被纳入 `launch` 探索，且 `launch_days` 最低限制为 3 天。
+- **交付**：
+  1. **开放三槽位并发锁（按槽位计数而非整母体封锁）**：`arc/research_budget.py` 新增 `source_slot_limit` 与 `_observing_parameter_changes`，区分「正在执行 AVO 回测研究（`in_research`）」与「已在 Paper 赛道观察（`in_observation`）」。支持来源变体的母体默认拥有 3 个并发观察槽位（或取 `relay_seats.total`），仅当 `in_research` 为真或 `observing_slots >= slot_limit` 时才将母体标记为 `busy=True`；当母体已有变体在跑且仍有空余槽位（`0 < observing_slots < slot_limit`）且最近一次任务正常进入 `paper_observing` 时，补位冷却 `source_cooldown_hours` 为 `0` 小时，使母体可连续补齐全部 3 个变体槽位；同时 `in_observation` 的冷却基准使用 `paper_started_at` 而非每小时追加 `paper_observed` 刷新的 `updated_at`。传统非变体单槽位任务保持 `slot_limit=1` 向后兼容。
+  2. **按参数功能维度划分三个正交探索方向**：`arc/rule_tweak.py` 新增 `PARAMETER_DIMENSIONS = ("signal_period", "risk_exit", "filter_sizing")`（信号与趋势周期、风控与退出边界、阈值过滤与仓位）、`parameter_dimension`、`active_slot_changes`、`occupied_slot_dimensions` 与 `exploration_plan_for_policy`。`parameter_neighbours` 先在各功能维度内部跨参数交错，再在三大功能维度间轮转交错，并剔除已在在役槽位中赛马的变体组合（`active_slot_variants`）；`RuleTweakProvider` 在单任务内优先提议尚未覆盖的功能维度（保证单次任务 3 个候选覆盖 3 个不同功能方向），在 `finish` 选优与跨任务补位时优先选择母体尚未占用的功能维度（保证母体的 3 个槽位分别探索 3 个不同功能方向）。`arc/avo.py` 同步注入 `exploration_plan` 提示与在役槽位去重守卫。
+  3. **策略卡覆盖**：`arc/evolution.py` 将 `EvolutionConfig.launch_days` 下限放宽至 `0`（`ge=0, le=14`），并在 `launch_enabled=True` 时允许满 14 天但未触发退化的稳定变体母体以 `launch` 触发补位探索（非变体普通模拟盘仍保持 `stable` 跳过），同时在 `context` 与 `diagnostic` 中附上 `exploration_plan` 与 `active_slot_variants`。
+- **验证**：`tests/test_rule_tweak.py` 与 `tests/test_evolution_launch.py` 新增参数功能维度分类、三维度交错生成、在役槽位维度去重与跨三轮任务填满三个正交功能维度槽位、三槽位并发准入与第四槽位阻断及关单释放、稳定策略卡 `launch` 覆盖等测试，全部通过。
+- **影响分析与风险**：GitNexus 评 `usage`、`budget_status`、`admit`、`_scan` 为 HIGH（涉及 `tick`、`observe_arc_missions_once`、`check_paper_feedback`）。通过保留非变体任务的 `slot_limit=1` 以及仅在 `last_state == "paper_observing"` 且无连败时启用 0h 补位冷却，避免失败任务死循环重试，且完全兼容既有契约测试。
+
+## 2026-11-03：标的上线晚时按可用历史缩短研究窗口，不再要求凑满 500 根预热
+
+- **背景**：线上只读核对（2026-11-02）：大宗宏观 #583、半导体日线 #524 等 8 个母体，因为标的上线太晚（OKX 的 TradFi/大宗永续多数 2026-03 之后才上线），「窗口起点前 500 根预热」要追到上线之前，研究被预检拦下（文案「部分标的 2026-07-30 才上线，晚于研究窗口前 500 根预热所需的起点 2025-08-29，回测基准数据建不出来」）。用户的要求：最近才上线的标的，只要有最近日期的数据就可以研究。
+- **交付**（BitPro 同步放宽封存：`strategy_bars_v3`，见 BitPro 同日进度）：
+  1. `arc/baseline_feasibility.py` 新增 `fit_windows_to_history`：读取 `baseline_backtest` 的 `history_start_ms`（最年轻标的上线时间）与 `warmup_min_bars`（封存预热的下限，默认 30 根，配置明确要求更多时取其值），窗口起点后移到「上线 + 1 天余量 + 下限根数」之后的第一个 UTC 日；终点不动；可用天数按原窗口的开发:验证比例拆分，两者各不少于 `MIN_WINDOW_DAYS=14`。已经够长的窗口原样返回。
+  2. `infeasibility` 新模式：有 `warmup_min_bars` 时只问「两个最短窗口（14+1+14 天）还放不放得下」，放不下时 `history_shorter_than_window` 的提示写明最早可研究的日期；没有该字段的老版 BitPro 保持原判法（它总是封存满 `warmup_policy_bars` 根），窗口也会后移到满足为止。
+  3. `evolution.py` 新增 `research_windows_for_parent`（先按封存上限收窄，再按历史缩短），扫描预检与任务上下文都用它，两处窗口一致；`research_windows_for` 本身未改。
+  4. `history_shorter_than_required_warmup`（BitPro 新增的失败原因）加入确定性基线失败，进入既有退避。BitPro 策略标签升到 `strategy_bars_v3`，失败指纹随之变化，此前因同一问题连败退避中的母体会立即重问一次。
+- **验证**：`tests/test_baseline_feasibility.py` 新增 16 项（窗口原样/缩短到 7 月上线的标的/不超过原窗口/最短窗口边界与一天之差/昨天才上线/老版 BitPro 后移/不可用结论不动窗口）、`tests/test_research_backoff.py` 新增 4 项（扫描端到端：年轻母体按可用历史研究并带缩短后的窗口、太年轻被跳过并写明最早日期、与封存上限叠加时取更短者、老版 BitPro 后移窗口）。变异检验 12 处守卫（不缩短、最短窗口守卫、验证窗口下限、上线余量、整日取整、边界差一、日期差一、下限根数被忽略、新失败不进退避、包装函数不缩短、扫描/任务任一处用未缩短的窗口）全部被抓。
+- **影响分析与风险**：GitNexus 评 `infeasibility` 与 `research_windows_for` 均为 HIGH（唯一直接调用方在 `EvolutionService._scan` / 任务上下文，波及 tick、观察、反馈三条流程）。签名与返回结构未变，`research_windows_for` 一行未动，新增的只是包装与缩短函数；`check_paper_feedback` 构造子任务窗口的那条路径（`feedback.py`）仍用默认窗口，本次不改。证据口径：缩短的是窗口，不是门槛——`min_trades`、验证门禁、前向赛马照旧，历史短的候选更难过门，而不是更容易。
+- **已知限制**：①窗口短（最短 14+14 天）时统计证据单薄，由既有门禁把关；②`check_paper_feedback` 的子任务仍用默认窗口，对上线晚的母体做反馈研究时基线可能仍建不出来；③BitPro 未部署前（读不到 `warmup_min_bars`）按老版处理，只做窗口后移；④门槛没动：`paper_criteria.min_trades=30` 对日线策略在 14～60 天的窗口里本来就难满足，窗口缩短后更难，第一批年轻母体的研究结果出来后再决定要不要按窗口长度折算（需另行决定）。
+
+## 2026-11-02：观察中的候选能自行结束，观察记录改为每小时一条
+
+- **背景**：线上只读核对（2026-11-02）：`paper_observing` 的任务永远不会结束——全后端没有任何地方发出 `mission_completed`。BitPro 的赛道打完（胜出、被淘汰、超时、被取消）后，裁判已把结论写进前向结果表，但 HyperTrade 的任务仍然在观察，母体因此一直被算「忙」，不能再试新候选。同时观察循环每分钟无条件写一条 `paper_observed`，两个 9 月的验收任务各积累了 6.7～6.9 万条事件；任务每次写入都要把整个投影（含全部事件）重新序列化，进化预算统计 `usage()` 每次扫描也要把所有任务的全部事件读进内存。#86 部署后，原本卡在 `effect_unknown` 的 8 个候选会转入观察，若不处理每天还会多约 1.1 万条事件。
+- **交付**：
+  1. 降频：观察循环 `observe_arc_missions_once` 只在任务上次观察记录的 `observed_at` 距现在不小于 `ARC_OBSERVATION_RECORD_SECONDS`（默认 3600 秒，范围 60～86400）时才读 BitPro 并写一条 `paper_observed`，未到期不读 BitPro、不写事件。时间存在观察记录自身里，重启后接得上；读取失败那条同样带时间，不会一失败就每分钟重试；没有该字段的旧记录视为到期。一天最多 24 条（原来 1440 条）。直接调用 `observe_mission`（`GET .../live-approval`）不降频。
+  2. 赛道结束就收尾：每轮对每个观察中的评审任务先做一次不碰 BitPro 的检查——按「目标 + 母体策略号（`evolution_context.source_strategy_id`）+ 挑战者策略号（候选的 `bitpro_strategy_id`）」按主键取前向结果表的那一行。有这一行（且不早于这次模拟盘开始，晚于开始才算这次比赛）就用新事件 `paper_observation_ended`（`reason=race_finished`，带 `verdict`、`outcome_id`、赛道指标、最后一次观察的摘要）把任务关成 `completed`。兜底：没有账本行，但最近一次观察确认是本实例、且 BitPro 报告会话 `ended_at` 已超过 1 小时（留给裁判写结论的时间），则以 `reason=paper_session_ended` 收尾。不是进化循环建的任务（没有母体）、不要求评审的任务不走这条路。
+  3. 新事件的归约守卫（`ARCController._reduce` 只新增分支）：只能从 `paper_observing` 进入；必须对上持有该 Paper 实例的候选；`reason` 只能是 `race_finished` / `paper_session_ended`；结果存入投影的新字段 `paper_outcome`；候选状态与 `paper_review` 保持原样。被拒绝时任务不变（并发里别的进程已先改了状态也一样）。
+  4. 关闭之后：母体不再被算「忙」，冷却从关闭时刻起算，下一轮研究可以再选它；流水线「模拟盘」阶段显示「模拟盘观察已结束：…」及原因（胜出已接班 / 中途被判落后淘汰 / 终考未过 / 超时 / 位置被接管 / 人工取消 / 会话已结束）；续跑账本把它记为终态阶段；效果统计的 `missions_completed` 计入（`paper_observing` 仍表示「到达过观察」，口径不变）。
+  5. 开关：`ARC_OBSERVATION_EXIT_ENABLED`（默认开启），关掉后行为回到「永远观察」（降频仍生效）。
+- **验证**：新增 `tests/test_arc_observation_exit.py`（82 项：8 种账本结论逐一收尾、别人的赛道/别的目标/早于开始的行不收尾、会话结束兜底与 1 小时宽限边界、归约守卫逐项、并发时被别的进程抢先、关闭后母体解除忙锁、流水线与续跑账本与效果统计的展示）与 `tests/test_arc_observation_throttle.py`（16 项，循环层：首轮、未到期不读 BitPro、到期再记、一天 24 条、读取失败不立刻重试、设置的默认值与上下限、账本收尾不碰 BitPro、开关、同一轮观察到会话结束即关闭、一个任务的退出检查抛异常不影响其他任务、反馈检查不受降频影响）。变异检验 49 处守卫（赛道键、早于开始的行、确认值严格性、宽限边界、归约守卫逐项、到期边界、开关与设置上下限、展示文案）全部被抓。
+- **影响分析与风险**：GitNexus 评 `ARCController._reduce` 为 CRITICAL（所有任务事件都经过它）：只新增一个事件分支，既有分支一行未动。`observe_arc_missions_once` 在图里没有调用方（worker 以函数引用传入），已用文本搜索确认只有 `worker.arc_observation_loop` 一处；`observe_mission` 的调用方是该循环、`live-approval` 路由和测试（LOW）。不动 BitPro、不放宽任何评审门槛；`ARC_OBSERVATION_EXIT_ENABLED=false` 可整体停用收尾。
+- **已知限制**：①前向结果表对同一对（母体、挑战者）只保留第一条结论，同一挑战者再次入赛时第二次比赛的任务拿不到新结论，只能靠会话结束兜底；②两个 9 月验收任务本身是别人的母体、会话仍在运行，不会被关，只是不再每分钟记事件；③历史事件不清理（需另行授权）；④母体「忙」仍按母体而不是按变体位加锁（一个母体同时赛多个候选），不在本次范围。
+
+## 2026-11-02：研究前先问 BitPro 能不能建基线，必败的母体退避、不占每日额度
+
+- **背景**：线上只读核对（2026-11-01）：10-26 06:20 起自进化建的 204 个研究任务里 200 个死在第一步——造同窗基线用的封存数据（`baseline_data_snapshot_unavailable`：126 个是 K 线网格不完整 `incomplete_official_bar_grid`，74 个是策略预热超过固定 500 根 `strategy_warmup_exceeds_policy`）。这是母体自身（数据历史、预热需求）决定的，同一母体换任务、隔几小时再试，结果完全一样；但扫描没有任何预检也不记失败，冷却只有 2 小时、失败任务照扣每日额度，排序还偏爱「空位最多」的母体，结果同一批母体每 2～6 小时被重试一次、每天 32 个额度烧光（10 个母体各被试了约 20 次）。
+- **交付**：
+  1. 研究前预检：读取 BitPro 变体政策里的 `baseline_backtest`（BitPro 配套 PR），策略预热需求超过上限、或父策略标的里最晚的 OKX 上线时间晚于「研究窗口起点 − 封存预热根数」（留一天余量）时，该母体本轮不建任务，诊断写 `skip_reason=baseline_infeasible` 与带中文原因的 `baseline_infeasible`，续跑账本给出 `baseline_infeasible` 阻塞项（resolution=time，不触发「需要人工」告警）。读不到结论（旧版 BitPro、读取失败）一律放行。
+  2. 失败退避：任务因「基线封存数据建不出来」且 BitPro 的原因属于确定性类（K 线网格不完整、预热超限、范围超限、标的范围无效等；崩溃、超时这类偶发错误不算）结束时，同一母体按连败次数等待 24 / 48 / 96 / 168 小时（上限一周）才再试。只有「同一个问题」才累计：BitPro 的 `baseline_backtest.policy`、母体的 `strategy_version`、`config_version` 任一变化就重新问（例如 BitPro 放宽预热策略部署后，之前失败的母体会立刻重试一次）。`source_cooldown_hours` 新增可选的 `fingerprint` 参数，扫描排序与 `admit` 都按当前问题判断；`budget.sources[*]` 新增 `failure_streak`、`failure_reason`、`failure_fingerprint`、`cooldown_hours`。
+  3. 不占每日额度：这类任务不计入 `period_used`（新增 `period_refunded` 单列；`total_used` 仍计入，每轮最多建 1 个任务的节奏不变，所以不会因此失控）。
+  4. 研究窗口按母体自己的预热根数适配 BitPro 的单快照 100 万根上限（`research_windows_for(..., warmup_bars)`，缺省仍按 500 根）；窗口放不进上限的母体现在在预检里被跳过，而不是等到建任务时抛错、把整个扫描周期记成 error。
+- **验证**：新增 `tests/test_baseline_feasibility.py`（65 项，DeepSeek 编写、逐项审阅）与 `tests/test_research_backoff.py`（21 项，含扫描端到端：被 BitPro 判不可行、上线太晚、读不到结论照常研究、退避期内不建任务且到期重试、父策略被改后立刻重问、双母体排序、窗口随母体预热收缩）。变异检验 20 处守卫全部被抓（第一轮 3 处存活，补用例后抓住）。
+- **影响分析与风险**：GitNexus 把 `usage`、`admit`、`source_cooldown_hours`、`_scan`、`readiness`、`research_windows_for` 都评为 HIGH（同一批流程：`tick`、`check_paper_feedback`、`observe_arc_missions_once`）。应对：只加字段与可选参数，既有调用不变；唯一改变口径的是 `period_used`（不再含被退还的基线失败任务）；`_scan` 新增的跳过只在 BitPro 明确说不行、或窗口放不下时触发。
+- **部署顺序与预期**：先部署 BitPro 配套 PR（放宽预热并返回 `baseline_backtest`），再部署本 PR；单独部署本 PR 也安全（没有结论就放行，退避照常生效，已有 200 个失败任务会立刻让必败母体各进入一周以内的退避）。预期：必败母体不再每天烧掉全部额度，额度留给能做基线的母体。
+- **未做**：标的上线时间晚于窗口起点的篮子（大宗宏观、TradFi 系列、年轻币）本质上建不出基线，现在只是提前知道并停止重试；`paper_observing` 任务永不结束、母体「忙」按母体而不是按位加锁的问题不在本次范围。
+
+## 2026-11-02：通过评审的候选启动不再卡死在 effect_unknown（HyperTrade ↔ BitPro 启动契约修复与对账）
+
+- **背景**：线上只读核对（2026-11-01）：10-23 起 9 个通过 Agent 自动评审的研究任务全部停在 `needs_operator`/`effect_unknown`，`paper_review_effect` 回执为 `bitpro_paper_start_failed:BitProMcpError`；HyperTrade 容器日志显示 `POST /api/v2/live/reviewed/configure` 返回 200、随后 `POST /api/v2/live/reviewed/start` 返回 422。这些任务让对应母体长期 `source_active`（占 14/20 个并发名额），其余变体位空着也不再研究。变体本身是靠 BitPro 接力服务自己启动的，HyperTrade 并不知情。
+- **根因（两处契约不一致，两边测试都用假对象所以没抓到）**：①请求：`incubation.py` 给 `paper_start_reviewed` 多传了 `strategy_version`，BitPro 的 `ReviewedPaperStart` 是 `extra="forbid"`，只认 `strategy_id/instance_id/code_sha256/review_hash/config_version/idempotency_key`；②响应：BitPro 的 start 响应只回显请求体，不含 `strategy_version`，而 HyperTrade 要求它与 configure 回执一致，即使请求被接受也会判 `bitpro_started_review_binding_unconfirmed`。
+- **交付**：
+  1. 契约：`incubation.py` 不再发送 `strategy_version`；start 回执核对 `guard_version/review_hash/code_sha256/config_version`，响应里若带 `strategy_version`（BitPro 之后会回显）则必须与 configure 回执一致；`paper_review_started` 审计回执用已核对的 configure 回执补上 `strategy_version`。`bitpro/mcp.py` 新增 `REVIEWED_CONFIGURE_FIELDS/REVIEWED_START_FIELDS`，适配器在发任何网络请求前拒绝 BitPro 不认识的字段（`*_contract_mismatch`）。
+  2. 对账：新增 `arc/paper_effect_reconcile.py` 与 worker 循环 `arc_paper_effect_reconcile_loop`（默认开启，`ARC_PAPER_EFFECT_RECONCILE_ENABLED`，每 120 秒一轮）。只处理「失败发生在 start 阶段、且已有 configure 回执」的 `effect_unknown` 任务：只读取 BitPro 的 `paper_snapshot`，实例号、策略号、`strategy_version`、`config_version` 与 configure 回执逐项一致，且会话 `running`、有启动时间、未结束、`error_level` 不是 `critical`，才写一条 `paper_review_effect_reconciled` 事件；归约器只在「needs_operator + effect_unknown + 同一评审包」下接受，任务转 `paper_observing` 并以 BitPro 会话启动时间作观察起点。不一致一律保持挂起，10 分钟后再看；从不重发写请求。
+  3. 续跑账本把该事件记作 `reviewed_start` 阶段，流水线视图加了对应标签。
+- **验证**：新增 `tests/test_bitpro_reviewed_contract.py`（真实适配器 + 与 BitPro 相同的 pydantic 镜像模型做假 BitPro，端到端 configure→start）和 `tests/test_arc_paper_effect_reconcile.py`（24 项：采纳、重放一致、账本阶段、会话不一致 7 种、他人实例、BitPro 读失败、非 start 阶段失败、缺 configure 回执、只验证不写、只采纳一次、归约器守卫、被拒评审不可采纳、清扫节流、worker 循环）；`tests/test_arc_incubation.py` 去掉了对 `strategy_version` 请求参数的错误断言。变异检验 20 处守卫全部被抓（含一处存活后补的「被拒评审」用例）。线上只读演练：用线上 9 个卡死任务的真实投影和 BitPro 实时快照跑新校验（不写入），8 个核验通过，第 9 个（#972 的任务）因 BitPro 把该会话标为 `critical`（源码漂移恢复失败）被正确拒绝。
+- **影响分析与风险**：GitNexus 把 `ARCController._reduce` 评为 CRITICAL（所有任务事件都经过它）。改动只新增一个事件分支，不改任何既有分支；未知事件类型在旧代码里被归约器忽略，回滚后任务回到挂起而不是出错。`acceptance_entries` 为 LOW。
+- **部署后预期**：合并部署后约两分钟内，8 个已在 BitPro 运行的卡死任务会各追加一条对账事件、转为 `paper_observing`（只写 HyperTrade 任务记录，不动 BitPro 和模拟盘）；它们不再占并发名额，但仍是「母体忙」直到变体赛完，所以这些母体的 2 个空位暂时不会被研究。已知后果：每个观察中的任务每分钟追加一条 `paper_observed` 事件、每天读一次 14 天窗口，这是既有行为（两个 9 月任务已各积累 6.7 万条事件），观察任务不会自行结束的问题不在本次范围。
+- **未做**：BitPro 侧让 start 响应回显 `strategy_version` 与契约测试在 BitPro 仓库的 PR；`paper_observing` 的结束条件与按位而不是按母体加锁。
+
+## 2026-10-23：母体上线满 7 天就生成变体、参数微调研究员与基本入场
+
+- **背景**：BitPro 每个母体有 3 个变体位（BitPro #1286），但生产上这些位长期空着（系统统计 12 个位、占用 0）。只读核对生产：34 个在役模拟盘里只有 4 个满足研究报名条件，其余 30 个卡在同一会话成交满 30 笔、满 14 天以及成本元数据与权益采样核验上；这 4 个里 333 被挂起副作用占着，443 每天在开发回测报 `snapshot_range_exceeds_bound`（120 个标的 15m 的 119 天开发窗口超过 BitPro 封存回测 100 万根上限），509、513 的候选在终验同窗都比母体差。10-11 起 25 个候选 0 个通过严格终验（60 天窗口上要求去偏夏普概率 ≥0.95，约等于年化夏普 4 以上，且必须优于母体）。用户要求所有策略上线后或表现差时都能自动产生变体，并逐项拍板：母体满 7 天、满 20 笔后生成，7 天不到 20 笔的低频策略满 7 天也生成；变体上模拟盘前的考试改为基本检查，接班标准不降；变体来源为参数微调加 AI 研究；全站同时赛马上限保持 60。
+- **交付**（三项都由配置开关控制，默认关闭；代码合入本身不改变线上行为）：
+  1. 基本入场 `paper_admission`（strict|basic，任务创建时冻结）：严格终验未过的候选，若在同一终验窗口对母体满足基本检查——成交至少 1 笔且不少于母体三成；收益落后不超过 max(2 个百分点, 母体最大回撤的一半)；最大回撤不超过母体 +5 个百分点且不超过 30%——以内容绑定的 `val_basic_` 编号走原有 `candidate_validated` 与 Paper 评审路径。严格结果如实保留（`passed=false` 与原因），评审包只在基本入场时增加 `admission` 段（严格任务的包与哈希不变），自动评审按存档数字重算、不信任标记；崩溃恢复同样识别。状态机未改。
+  2. 上线探索 `launch_enabled`/`launch_days`（默认 7）：7+7 证据缺失但会话已满 N 个完整 UTC 日、且支持来源变体的 BitPro 母体以 `launch` 触发研究，不声称退化，零成交母体也可研究；readiness 不再对其挂成交与 14 天阻断；预算准入识别 `launch`（未开启时 `launch_disabled`）。
+  3. 参数微调研究员 `exploration_provider=rule_tweak`：launch/proactive 探索任务由确定性的 `RuleTweakProvider` 驱动——只提单参数约 ±20% 的一步邻居，按授权范围、BitPro 全部参数规则（8 对快慢周期严格递增、动量出场阈值不超过入场阈值、整数类型）过滤，跳过 BitPro 已赛过或排队的组合，按任务编号轮换起点；开发后对成交过的候选中净收益最高者做终验，不调用模型，走与模型研究相同的工具、预算、记账与评审。退化与紧急任务始终用 `research_provider`。来源最近一次任务是 rule_tweak 时冷却用 `exploration_cooldown_hours`。
+  4. 研究窗口适配：开发与终验窗口按标的数与周期压进 BitPro 封存回测上限（单快照 100 万根、单标的 10 万根、固定 500 根预热）；120 个标的 15m 的开发窗口 119→81 天，修复 443。
+- **验证**：新增 `tests/test_arc_basic_admission.py`、`tests/test_evolution_launch.py`、`tests/test_rule_tweak.py`。变异检验共 38 处守卫（基本入场 13、上线探索与冷却 14、参数微调 11），去掉任一守卫都有用例失败（首轮未被抓住的 8 处已补用例）。完整 `./scripts/check.sh` 通过（前端 lint／15 项测试／构建、ruff、mypy 320 个源文件、pytest 2369 项）。合并前未在生产实测。
+- **影响分析与风险**：GitNexus 把 `build_paper_review` 与 `ARCController._reduce` 评为 CRITICAL，`_scan`、`readiness`、`usage`、`admit` 评为 HIGH，`_perform`、`evaluate_auto_review` 评为 LOW。应对：状态机不改（复用已有 `candidate_validated` 事件）；评审包只在任务明确为 basic 时多一段；所有新路径由默认关闭的配置开关控制。另：BitPro 在变体创建时拒绝参数会被记为未知效果并卡住任务，所以参数微调研究员完整镜像了 BitPro 的参数规则。
+- **生产启用（另行执行，按用户已拍板的规则）**：`launch_enabled=true`、`launch_days=7`、`min_trades` 30→20、`exploration_provider=rule_tweak`、`exploration_cooldown_hours=2`、`paper_admission=basic`；全站赛马上限（BitPro `PAPER_RELAY_MAX_RACING_TOTAL=60`）不动。333 的挂起任务已用 `scripts/reconcile_avo_effects.py` 审计对账关闭（用户同意，备份在容器 `/app/data/backups/`）。
+- **已知限制**：9 月遗留、仍在运行的旧研究副本（#529、#531 为对照副本，#532、#533 为候选）满 7 天后也会被当作母体研究，旧规则下 10-25 本来也会；是否停掉它们由用户决定。变体数量上来后，BitPro 修改策略共用文件会让已审核变体重启后被拒绝加载（源码漂移），影响面随之变大。
+
 ## 2026-10-22：赛马输家逐项消融
 
 - **背景**：被系统判负的挑战者只留下「整体输了」的结论，看不出是哪一处改动拖累；研究侧需要一个中性的单因素观察，避免把整份提案连坐。

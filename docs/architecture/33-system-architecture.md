@@ -68,6 +68,7 @@ flowchart TB
     MissionWorker["Mission 执行 Worker"]
     EvolutionWorker["自主进化扫描 Worker (小时级退化扫描)"]
     RaceJudgeWorker["赛马裁判（只读镜像 BitPro 接力并通知）"]
+    PaperEffectReconciler["启动对账（只读核对 BitPro 会话，一致才采纳 effect_unknown 的启动）"]
   end
 
   subgraph ResearchEngine["ARC / RD-Agent 自主研究中枢"]
@@ -113,8 +114,9 @@ flowchart TB
 | **Control Plane** | `hypertrade/main.py`, `hypertrade/security/token_manager.py` | 暴露 REST/SSE 控制端点，分级探活（`/livez`, `/readyz`, `/healthz`），零信任令牌签发/轮换/鉴权 |
 | **Domain Core** | `hypertrade/runtime/domain/`, `hypertrade/arc/contracts.py` | 严格定义 Mission、Plan、Step、Capability、HET 假设、NettingPlan 等不可变 Pydantic 模型 |
 | **Research Engine** | `hypertrade/arc/`, `hypertrade/research/` | RD-Agent 假设演进、Co-STEER 代码生成、`ASTGatekeeper` 语法守卫、`QuantLabStrategyTranspiler` 转译 |
-| **Paper & Evolution** | `hypertrade/arc/evolution.py`, `hypertrade/paper/relay_netting.py` | 小时级基准相对退化扫描、预算准入、延续账本（遵守 BitPro `relay.blocks_evolution` 跳过接力中的策略；按变体位空位排序、空位已被排队候选预订时让位、AVO 拒绝与 BitPro 已赛过变体完全相同的提案）、赛马裁判只读通知（按变体位逐赛道跟踪、按取消原因区分系统淘汰与人工取消、观察中的赛道慢轮询；BitPro 是唯一接力控制者）、赛道结束时记入前向结果表且结果回流研究记忆、输家逐项消融（开发窗口单因素回测、独立每日额度，结果回流研究记忆）、两腿持仓净额平滑换仓（仅限有真实持仓的目标） |
+| **Paper & Evolution** | `hypertrade/arc/evolution.py`, `hypertrade/paper/relay_netting.py` | 小时级基准相对退化扫描、预算准入、延续账本（遵守 BitPro `relay.blocks_evolution` 跳过接力中的策略；按变体位空位排序、空位已被排队候选预订时让位、AVO 拒绝与 BitPro 已赛过变体完全相同的提案）、启动对账（`arc/paper_effect_reconcile.py`：只读核对 BitPro 会话后采纳 `effect_unknown` 的启动）、基线预检与失败退避（`arc/baseline_feasibility.py`：先问 BitPro 能不能封存母体的同窗基线，必败的母体退避且不占每日额度；最年轻标的上线晚时按可用历史缩短研究窗口，不再要求凑满 500 根预热）、赛马裁判只读通知（按变体位逐赛道跟踪、按取消原因区分系统淘汰与人工取消、观察中的赛道慢轮询；BitPro 是唯一接力控制者）、赛道结束时记入前向结果表且结果回流研究记忆、输家逐项消融（开发窗口单因素回测、独立每日额度，结果回流研究记忆）、两腿持仓净额平滑换仓（仅限有真实持仓的目标） |
 | **Target Adapters** | `hypertrade/targets/bitpro.py`, `hypertrade/targets/quantlab.py` | 实现 `market_target.v1` 档案与 `market-evolution.v1` 契约，提供标准化行情、回测、部署与心跳探测 |
+| **Observation Lifecycle** | `hypertrade/arc/observation.py`, `hypertrade/arc/observation_exit.py` | 模拟盘观察任务的读取与收尾：观察循环每分钟先查「赛道是否已结束」（前向结果表按目标+母体+挑战者取行，兜底为 BitPro 会话已结束超过 1 小时），结束则以 `paper_observation_ended` 关闭任务并释放母体；读 BitPro 并记 `paper_observed` 的间隔默认 1 小时（`ARC_OBSERVATION_RECORD_SECONDS`），避免事件日志无限增长 |
 | **Data & Storage** | PostgreSQL 14+, pgvector, 51 项 Alembic 迁移 | 保存规范 Mission 投影、策略资产卡片、实验记录、认知记忆表及飞书告警台账 |
 | **Safety & Ops** | UDS 沙箱, GitHub Actions, Docker Compose, `./scripts/check.sh` | 进程资源限制、网络隔离、静态代码检查（Ruff/Mypy）与 2100+ 项全量自动化测试 |
 

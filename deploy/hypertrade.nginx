@@ -1,3 +1,12 @@
+# 发布窗口遮蔽：`docker compose up -d` 会重建 sandbox/api/worker，api(:3334) 在这段时间没有监听。
+# 前端静态资源由 nginx 直接从 /opt/hypertrade/frontend/dist 提供，页面照常打开；
+# 需要处理的是 /api/：后端关闭时快速失败并 retry，仍失败则返回可解析 JSON + Retry-After。
+# 健康检查与 WebSocket 不拦截：监控/探针要看到真实状态，行情推送不能被错误页打断。
+upstream hypertrade_api {
+    server 127.0.0.1:3334 max_fails=0;
+    keepalive 32;
+}
+
 server {
     listen 80;
     listen [::]:80;
@@ -38,12 +47,39 @@ server {
         proxy_read_timeout 3600s;
     }
 
+    # 健康检查直通：不拦截错误、不缓存，监控与发布探针必须看到真实状态。
+    location = /api/health {
+        access_log off;
+        proxy_pass http://hypertrade_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 10s;
+        proxy_next_upstream error timeout http_502 http_503;
+    }
+
     location /api/ {
-        proxy_pass http://127.0.0.1:3334;
+        proxy_pass http://hypertrade_api;
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 300s;
+        proxy_next_upstream error timeout http_502 http_503;
+        proxy_next_upstream_tries 2;
+        proxy_intercept_errors on;
+        error_page 502 503 504 = @hypertrade_api_restarting;
+    }
+
+    location @hypertrade_api_restarting {
+        internal;
+        default_type application/json;
+        add_header Retry-After 3 always;
+        add_header Cache-Control "no-store" always;
+        return 503 '{"error":"service_restarting","message":"HyperTrade 正在发布新版本，请 3 秒后重试","retry_after":3}';
     }
 
     location / {
@@ -70,12 +106,39 @@ server {
         proxy_read_timeout 3600s;
     }
 
+    # 健康检查直通：不拦截错误、不缓存，监控与发布探针必须看到真实状态。
+    location = /api/health {
+        access_log off;
+        proxy_pass http://hypertrade_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 10s;
+        proxy_next_upstream error timeout http_502 http_503;
+    }
+
     location /api/ {
-        proxy_pass http://127.0.0.1:3334;
+        proxy_pass http://hypertrade_api;
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 300s;
+        proxy_next_upstream error timeout http_502 http_503;
+        proxy_next_upstream_tries 2;
+        proxy_intercept_errors on;
+        error_page 502 503 504 = @hypertrade_api_restarting;
+    }
+
+    location @hypertrade_api_restarting {
+        internal;
+        default_type application/json;
+        add_header Retry-After 3 always;
+        add_header Cache-Control "no-store" always;
+        return 503 '{"error":"service_restarting","message":"HyperTrade 正在发布新版本，请 3 秒后重试","retry_after":3}';
     }
 
     location / {

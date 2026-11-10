@@ -60,8 +60,10 @@ _EVENT_LABELS = {
     "paper_auto_review_evaluated": "Agent 自动评审结果",
     "paper_review_decided": "模拟盘审核决定",
     "paper_review_effect": "模拟盘执行回执",
+    "paper_review_effect_reconciled": "模拟盘执行对账（BitPro 已在运行）",
     "paper_started": "模拟盘启动",
     "paper_observed": "模拟盘观察",
+    "paper_observation_ended": "模拟盘观察结束",
     "live_approval_ready": "审批包就绪",
     "live_decided": "实盘决策",
     "live_promoted": "实盘灰度上线",
@@ -543,6 +545,25 @@ def _ratio(value: float, limit: float) -> float:
     return round(min(1.0, max(0.0, value / limit)), 4)
 
 
+_RACE_VERDICT_LABELS = {
+    "won": "挑战者胜出，已接班",
+    "lost_futility": "中途判定落后，被淘汰",
+    "lost_exam": "终考未通过，被淘汰",
+    "expired_timeout": "超过期限仍无结论，被淘汰",
+    "superseded": "位置被其他挑战者接管",
+    "cancelled_operator": "被人工取消",
+    "cancelled_unknown": "被取消，原因未知",
+    "ended_unknown": "BitPro 已不再保留该赛道",
+}
+
+
+def _paper_outcome_detail(outcome: dict[str, Any]) -> str:
+    if outcome.get("reason") == "race_finished":
+        label = _RACE_VERDICT_LABELS.get(str(outcome.get("verdict")), "赛道已结束")
+        return f"模拟盘观察已结束：{label}"
+    return "模拟盘观察已结束：BitPro 的模拟盘会话已结束"
+
+
 def _paper_review_pipeline(projection: ARCMissionProjection, clock: datetime) -> dict[str, Any]:
     decision = projection.paper_review.get("decision") or {}
     automatic = (
@@ -591,6 +612,11 @@ def _paper_review_pipeline(projection: ARCMissionProjection, clock: datetime) ->
     }
     if projection.state == "paper_observing":
         metrics["paper"]["detail"] = "持续模拟观察，运行数据用于下一轮研究"
+    elif projection.state == "completed" and projection.paper_outcome:
+        metrics["paper"]["detail"] = _paper_outcome_detail(projection.paper_outcome)
+        metrics["paper"]["metrics"]["outcome"] = {
+            key: projection.paper_outcome.get(key) for key in ("reason", "verdict", "ended_at")
+        }
     if is_avo and projection.goal is not None:
         budget = projection.goal.budget
         metrics["explore"]["detail"] = (

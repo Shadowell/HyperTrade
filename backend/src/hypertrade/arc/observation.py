@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, PaperObservationPolicyV1
-from hypertrade.arc.controller import ARCController
+from hypertrade.arc.controller import ARCController, ARCMissionProjection
+from hypertrade.arc.observation_exit import end_observation, parse_moment
 from hypertrade.bitpro.mcp import BitProToolAdapter
+from hypertrade.config import get_settings
+
+logger = logging.getLogger("hypertrade.arc.observation")
 
 
 class PaperObservationClient(Protocol):
@@ -77,6 +82,8 @@ def collect_paper_observation(
         healthy = str(nested.get("status") or "")
     else:
         healthy = str(health.get("status") or "")
+    session = body.get("session")
+    session_ended_at = session.get("ended_at") if isinstance(session, dict) else None
     return {
         "ok": bool(matched is not False and body),
         "instance_id": instance_id,
@@ -89,6 +96,8 @@ def collect_paper_observation(
         "max_drawdown": _number(body, "max_drawdown_pct", "max_drawdown"),
         "sharpe": _number(body, "sharpe_ratio", "sharpe"),
         "error_count": _number(body, "error_count"),
+        # Set once BitPro has ended the session; a running or paused one has none.
+        "session_ended_at": session_ended_at if isinstance(session_ended_at, str) else None,
         "generated_at": body.get("generated_at"),
         "bitpro_health": healthy or "unknown",
         "raw_keys": sorted(body),
@@ -148,10 +157,13 @@ def observe_mission(
     controller: ARCController,
     client: PaperObservationClient | None = None,
     gt_client: Any = None,
+    *,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Record one observation. Window complete → live_approval_ready; timeout → operator."""
     if controller.projection.state != "paper_observing":
         return {"status": controller.projection.state, "skipped": True}
+    clock = now or datetime.now(UTC)
     attempt = paper_attempt(controller)
     if attempt is None or not attempt.paper_instance_id:
         controller.apply_event(
@@ -161,6 +173,8 @@ def observe_mission(
         return {"status": "needs_operator", "reason": "paper_instance_missing"}
     adapter: PaperObservationClient = client or BitProToolAdapter()
     observation = collect_paper_observation(attempt, adapter)
+    # The loop reads this back to know when the mission is next due; a failed read carries it too.
+    observation["observed_at"] = clock.isoformat()
     controller.apply_event(
         "paper_observed",
         {"attempt_id": attempt.attempt_id, "observation": observation},
@@ -180,6 +194,7 @@ def observe_mission(
         policy=policy,
         observation=observation,
         started_at=controller.projection.paper_started_at,
+        now=clock,
     )
     if complete:
         from hypertrade.arc.live_approval import build_live_approval_package
@@ -190,7 +205,9 @@ def observe_mission(
         if gt_sync:
             res["ground_truth"] = gt_sync
         return res
-    if observation_timed_out(policy=policy, started_at=controller.projection.paper_started_at):
+    if observation_timed_out(
+        policy=policy, started_at=controller.projection.paper_started_at, now=clock
+    ):
         controller.apply_event(
             "operator_needed",
             {
@@ -287,18 +304,79 @@ def sync_external_ground_truth(
     }
 
 
-def observe_arc_missions_once(client: PaperObservationClient | None = None) -> dict[str, Any]:
+def observation_due(
+    projection: ARCMissionProjection, *, now: datetime, interval_seconds: int
+) -> bool:
+    """True when the last recorded observation is older than the interval (or has no time)."""
+    last = parse_moment(projection.paper_observation.get("observed_at"))
+    return last is None or (now - last).total_seconds() >= interval_seconds
+
+
+def _end_if_finished(controller: ARCController, now: datetime) -> dict[str, Any] | None:
+    attempt = paper_attempt(controller)
+    if attempt is None:
+        return None
+    try:
+        return end_observation(controller, attempt, now=now)
+    except Exception:
+        # One mission's unreadable ledger row must not stop the others from being observed.
+        logger.warning(
+            "arc observation exit failed for %s", controller.mission_id, exc_info=True
+        )
+        return None
+
+
+def observe_arc_missions_once(
+    client: PaperObservationClient | None = None,
+    *,
+    now: datetime | None = None,
+    record_seconds: int | None = None,
+    exit_enabled: bool | None = None,
+) -> dict[str, Any]:
+    """One sweep over the observing missions.
+
+    Each mission first gets the cheap check "has what it observes ended" (ledger row, no BitPro
+    call). It is read from BitPro and journaled only once its last observation is older than
+    `record_seconds`: every journal write serializes the whole mission, and a per-minute
+    observation made two missions 68k events long.
+    """
     from hypertrade.arc.store import get_controller, list_mission_ids
 
+    settings = get_settings()
+    clock = now or datetime.now(UTC)
+    interval = settings.arc_observation_record_seconds if record_seconds is None else record_seconds
+    exit_on = settings.arc_observation_exit_enabled if exit_enabled is None else exit_enabled
     results: list[dict[str, Any]] = []
+    observed = skipped = closed = 0
     for mission_id in list_mission_ids(state="paper_observing"):
         controller = get_controller(mission_id)
         if controller is None:
             continue
-        result = {"mission_id": mission_id, **observe_mission(controller, client)}
-        if controller.projection.goal and controller.projection.goal.feedback.enabled:
+        ended = _end_if_finished(controller, clock) if exit_on else None
+        result: dict[str, Any] | None = None
+        if ended is None and observation_due(
+            controller.projection, now=clock, interval_seconds=interval
+        ):
+            result = {"mission_id": mission_id, **observe_mission(controller, client, now=clock)}
+            observed += 1
+            if exit_on and controller.projection.state == "paper_observing":
+                # The session end BitPro just reported can only be read from this observation.
+                ended = _end_if_finished(controller, clock)
+        if ended is not None:
+            results.append({"mission_id": mission_id, **ended})
+            closed += int(ended.get("status") == "completed")
+            continue
+        if result is None:
+            result = {"mission_id": mission_id, "status": "paper_observing", "skipped": True}
+            skipped += 1
+        goal = controller.projection.goal
+        if (
+            goal is not None
+            and goal.feedback.enabled
+            and controller.projection.state == "paper_observing"
+        ):
             from hypertrade.arc.feedback import check_paper_feedback
 
             result["feedback"] = check_paper_feedback(mission_id, client)
         results.append(result)
-    return {"observed": len(results), "results": results}
+    return {"observed": observed, "skipped": skipped, "closed": closed, "results": results}

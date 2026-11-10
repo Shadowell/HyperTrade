@@ -229,6 +229,10 @@ def readiness(
             and diagnostic.get("candidate_id") is not None
         )
     )
+    launch_ready = (
+        diagnostic.get("status") == "opportunity"
+        and diagnostic.get("trigger_source") == "launch"
+    )
     is_organic = bool(
         snapshot.get("is_organic")
         or snapshot.get("source_type") in ("seed", "manual", "organic")
@@ -245,7 +249,7 @@ def readiness(
                 "condition": "original Paper must be running; do not restart or reconfigure",
             }
         )
-    if snapshot and not short_ready and not self_healed:
+    if snapshot and not short_ready and not self_healed and not launch_ready:
         trades = snapshot.get("trade_count")
         try:
             observed = int(trades) if trades is not None and not isinstance(trades, bool) else None
@@ -260,7 +264,7 @@ def readiness(
                     "condition": "same-session trade_count >= required",
                 }
             )
-    if snapshot_read and not short_ready and not self_healed:
+    if snapshot_read and not short_ready and not self_healed and not launch_ready:
         try:
             if not start:
                 raise ValueError("missing start")
@@ -342,6 +346,19 @@ def readiness(
                     str(relay.get("reason") or "").strip()
                     or "BitPro variant seats must free up (a relay completes, or a challenger "
                     "is eliminated or cancelled) before evolving again"
+                ),
+            }
+        )
+    infeasible = diagnostic.get("baseline_infeasible")
+    if isinstance(infeasible, dict):
+        blockers.append(
+            {
+                "code": "baseline_infeasible",
+                "reason": str(infeasible.get("message") or ""),
+                "reason_code": infeasible.get("reason_code"),
+                "condition": (
+                    "BitPro must be able to seal this parent's data for the research window "
+                    "(a new BitPro policy, an edited parent, or more listing history)"
                 ),
             }
         )
@@ -799,7 +816,12 @@ def acceptance_entries(projection: ARCMissionProjection, now: datetime) -> list[
                 )
                 else "rejected"
             )
-        elif event.event_type in {"paper_review_configured", "paper_review_started"}:
+        elif event.event_type in {
+            "paper_review_configured",
+            "paper_review_started",
+            # A start adopted from BitPro's live session carries the same configured identity.
+            "paper_review_effect_reconciled",
+        }:
             stage = (
                 "reviewed_configure"
                 if event.event_type.endswith("configured")
@@ -846,7 +868,13 @@ def acceptance_entries(projection: ARCMissionProjection, now: datetime) -> list[
                     )
                 )
             result = "passed" if valid else "unknown"
-        elif event.event_type in {"operator_needed", "mission_failed", "mission_completed"}:
+        elif event.event_type in {
+            "operator_needed",
+            "mission_failed",
+            "mission_completed",
+            # The observed race lane (or Paper session) ended; the mission closes with its outcome.
+            "paper_observation_ended",
+        }:
             stage = "terminal"
         elif event.event_type in {"avo_unknown_result", "paper_review_effect"}:
             stage = "external_effect"

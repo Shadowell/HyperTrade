@@ -57,7 +57,15 @@ echo "[deploy] running database migrations"
 docker compose run --rm api alembic upgrade head
 
 echo "[deploy] starting app services"
-docker compose up -d sandbox api worker
+# sandbox/worker 先起（worker 是队列消费者，不影响 HTTP 可用性）；
+# api 用 --wait 等健康检查通过再继续，避免"容器起来了但还没 ready"被当成部署成功。
+docker compose up -d sandbox worker
+if ! docker compose up -d --wait --wait-timeout 90 api; then
+  echo "[deploy] api failed to become healthy within 90s"
+  docker compose ps
+  docker compose logs --tail=120 api
+  exit 1
+fi
 python3 "$ROOT_DIR/deploy/bitpro_host_route.py" --check-running
 
 echo "[deploy] installing host cli wrapper"
