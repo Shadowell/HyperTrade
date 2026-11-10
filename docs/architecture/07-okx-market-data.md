@@ -9,7 +9,10 @@ Data flow:
 1. Worker subscribes to public WebSocket tickers with `instType=SWAP`.
 2. REST tickers run at startup and then every 5 minutes as a supplement.
 3. REST tickers are also used as fallback after repeated WS failures.
-4. Parsed tickers are upserted into `market_tickers`.
+4. Parsed tickers are upserted into `market_tickers` in batches on a worker thread, never on the
+   worker's event loop: one transaction per REST snapshot (about 700 tickers), and about one batch a
+   second for WS tickers (newest per instrument). Writing them one by one on the loop froze every
+   worker loop for 9 s to over a minute.
 5. The agent reads latest movers from PostgreSQL when the user asks for a summary.
    Market heat summaries also compute breadth from recent ticker snapshots:
    advancers, decliners, average UTC0 change, and strongest/weakest symbols.
@@ -40,7 +43,8 @@ Sprint 01 覆盖 OKX 全市场永续合约 `SWAP`。行情使用 mainnet；交�
 1. worker 订阅 public WebSocket tickers，参数 `instType=SWAP`。
 2. REST tickers 在启动时跑一次，之后每 5 分钟补充一次。
 3. WS 连续失败后也用 REST tickers 降级。
-4. 解析后的 ticker upsert 到 `market_tickers`。
+4. 解析后的 ticker 在线程中批量 upsert 到 `market_tickers`，不占用 worker 的事件循环：每次 REST 快照（约 700 条）
+   一个事务，WS 约每秒一批（同一品种取最新）。此前逐条在事件循环里写库，会让 worker 所有循环停摆 9 秒到一分多钟。
 5. 用户发起归纳时，Agent 从 PostgreSQL 读取最新异动。
    市场热度总结还会基于近期 ticker 快照计算 breadth：上涨数、下跌数、平均 UTC0
    涨跌幅、最强/最弱标的。

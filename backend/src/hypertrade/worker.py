@@ -66,6 +66,7 @@ from hypertrade.runtime.application.service import MissionRuntime
 from hypertrade.runtime.domain.models import TERMINAL_STATUSES, MissionStatus
 from hypertrade.runtime.heartbeat import HEARTBEATS, heartbeat_loop
 from hypertrade.runtime.loop_supervisor import LoopFactory, supervise
+from hypertrade.runtime.loop_watchdog import LoopWatchdog
 from hypertrade.skills.lifecycle import ApprovedSkillLoader
 
 logger = logging.getLogger("hypertrade.worker")
@@ -242,7 +243,9 @@ async def rag_scanner_loop(db: Database) -> None:
         # exception escaping this one (an unreadable knowledge file is enough) used to end the
         # whole worker process.
         try:
-            result = service.scan_once()
+            # Synchronous file and database work: on a thread, never on the event loop (see
+            # MarketRepository.upsert_ticker_snapshots for what that cost in production).
+            result = await asyncio.to_thread(service.scan_once)
             logger.info(
                 "rag_scan scanned=%s ingested=%s", result.scanned_files, result.ingested_files
             )
@@ -281,7 +284,8 @@ async def paper_trading_loop(db: Database) -> None:
     service = PaperTradingService(db, settings=settings)
     while True:
         try:
-            result = service.run_once()
+            # A tick makes many database calls: on a thread, so it can never hold the event loop.
+            result = await asyncio.to_thread(service.run_once)
             logger.info("paper_trading tick status=%s fills=%s", result.status, result.fill_count)
             HEARTBEATS.record_success("worker.paper_trading")
         except Exception as exc:
@@ -311,7 +315,10 @@ async def monitor_scheduler_loop(db: Database) -> None:
     settings = get_settings()
     while True:
         try:
-            result = monitor_scheduler_once(db, settings=settings)
+            # BitPro calls with their own timeouts plus building an httpx client (an SSL context
+            # per run): blocking work, so on a thread. While BitPro is down, every retry would
+            # otherwise freeze the whole worker for the length of the timeout.
+            result = await asyncio.to_thread(monitor_scheduler_once, db, settings=settings)
             logger.info(
                 "monitor_scheduler status=%s ran=%s skipped=%s failed=%s",
                 result.get("status"),
@@ -571,14 +578,21 @@ async def main() -> None:
     def on_crash(name: str, exc: Exception) -> None:
         HEARTBEATS.record_failure(f"worker.{name}", exc, restarted=True)
 
-    # Every loop runs under a supervisor: a crash restarts that one loop (with backoff) instead
-    # of ending the gather, and with it the whole worker process.
-    await asyncio.gather(
-        *(
-            supervise(name, factory, journal=journal, on_crash=on_crash)
-            for name, factory in build_loops(db, settings)
+    # Names the call that holds the event loop when something still blocks it (shown in
+    # /api/healthz as workers[].last_stall), so the next stall does not need a guess.
+    watchdog = LoopWatchdog(HEARTBEATS)
+    watchdog.start()
+    try:
+        # Every loop runs under a supervisor: a crash restarts that one loop (with backoff)
+        # instead of ending the gather, and with it the whole worker process.
+        await asyncio.gather(
+            *(
+                supervise(name, factory, journal=journal, on_crash=on_crash)
+                for name, factory in build_loops(db, settings)
+            )
         )
-    )
+    finally:
+        watchdog.stop()
 
 
 def memory_distillation_worker_once(

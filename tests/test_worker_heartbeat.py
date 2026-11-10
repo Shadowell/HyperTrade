@@ -448,39 +448,48 @@ def test_main_reports_a_supervisor_restart_to_the_record(
     assert entry["restarts_total"] == 2 and entry["last_error_type"] == "RuntimeError"
 
 
-def test_ws_ingestion_reports_success_at_most_every_few_seconds(
+def test_ws_ingestion_reports_success_after_stored_batches_at_most_every_few_seconds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    now = [0.0]
+    monkeypatch.setattr(market_client, "_now", lambda: now[0])
+
     class Ticker:
-        inst_id = "BTC-USDT-SWAP"
         inst_type = "SWAP"
         last = 1
         volume_ccy_24h = 1
         change_utc0_pct = 0
         raw: dict[str, Any] = {}
 
-    class Stream:
-        calls = 0
-
-        async def _batch(self) -> Any:
-            for _ in range(4):
-                yield Ticker()
-
-        def stream(self) -> Any:
-            Stream.calls += 1
-            if Stream.calls > 1:
-                raise _Halt
-            return self._batch()
+        def __init__(self, inst_id: str) -> None:
+            self.inst_id = inst_id
 
     class _Halt(BaseException):
         pass
 
-    class Repository:
-        def upsert_ticker_snapshot(self, **kwargs: Any) -> None:
-            pass
+    class Stream:
+        calls = 0
 
-    clock = iter([0.0, 1.0, 2.0, 6.5])  # four tickers: reported at 0.0 and again at 6.5 only
-    monkeypatch.setattr(market_client, "_now", lambda: next(clock))
+        async def _batch(self) -> Any:
+            # (time, instrument): the clock moves as the messages arrive
+            for moment, inst_id in ((0.0, "A"), (1.2, "B"), (2.5, "C"), (7.0, "D")):
+                now[0] = moment
+                yield Ticker(inst_id)
+            now[0] = 20.0  # long after the last report, then the stream ends with nothing buffered
+
+        def stream(self) -> Any:
+            Stream.calls += 1
+            if Stream.calls > 1:  # the first stream ended normally; stop on the reconnect
+                raise _Halt
+            return self._batch()
+
+    batches: list[list[str]] = []
+
+    class Repository:
+        def upsert_ticker_snapshots(self, tickers: Any) -> int:
+            batches.append([ticker.inst_id for ticker in tickers])
+            return len(batches)
+
     reported: list[str] = []
     ingestor = MarketIngestor(Settings(DEEPSEEK_API_KEY=""), Repository())  # type: ignore[arg-type]
     ingestor.ws = Stream()  # type: ignore[assignment]
@@ -488,4 +497,8 @@ def test_ws_ingestion_reports_success_at_most_every_few_seconds(
     with pytest.raises(_Halt):
         asyncio.run(ingestor.ingest_ws_forever(on_ok=reported.append))
 
+    # Written about once a second as batches (A+B arrive within one flush window), and success is
+    # reported after a stored batch at 1.2 s and again at 7.0 s, not after every batch and not
+    # for the empty flush when the stream ended.
+    assert batches == [["A", "B"], ["C"], ["D"]]
     assert reported == ["worker.okx_ws", "worker.okx_ws"]
