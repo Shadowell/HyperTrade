@@ -257,7 +257,26 @@ export const copy = {
     variants: "变体",
     score: "评分",
     noSourceIds: "暂无来源 ID",
-    tokenUsage: "Token 使用量"
+    tokenUsage: "Token 使用量",
+    readOnlyBadge: "只读",
+    operatorBadge: "管理员",
+    sessionChecking: "正在确认会话…",
+    readOnlyTitle: "当前为只读模式",
+    readOnlyHint: "运行智能体、新建或归档会话需要管理员会话。请先在终端执行 ht /login 登录；浏览和审阅不受影响。",
+    overviewConnecting: "正在连接运行态",
+    overviewUnavailable: "无法获取运行概览",
+    overviewUnavailableHint: "后端暂时没有响应。本页不会显示示例数据，请稍后重试。",
+    retry: "重试",
+    noRunYet: "还没有运行记录",
+    noRunYetHint: "发起一次归纳后，节点进度、结构化报告和飞行记录会显示在这里。",
+    noProgressYet: "暂无进度",
+    promptLabel: "给智能体的任务",
+    errorNotAuthenticated: "这个操作需要管理员会话，当前未登录。",
+    errorConflict: "已有进行中的回合，请等它结束后再试。",
+    errorNetwork: "无法连接后端，请稍后重试。",
+    errorGeneric: "请求失败",
+    sectionCrashed: "这个区域出错了，其余区域不受影响。",
+    reloadSection: "重新加载此区域"
   },
   en: {
     product: "HyperTrade",
@@ -520,6 +539,34 @@ export const copy = {
     variants: "Variants",
     score: "Score",
     noSourceIds: "No source ids",
-    tokenUsage: "Token usage"
+    tokenUsage: "Token usage",
+    readOnlyBadge: "Read-only",
+    operatorBadge: "Operator",
+    sessionChecking: "Checking session…",
+    readOnlyTitle: "Read-only mode",
+    readOnlyHint: "Running the Agent and creating or archiving threads needs an admin session. Sign in from a terminal with ht /login first; browsing and review are unaffected.",
+    overviewConnecting: "Connecting to the runtime",
+    overviewUnavailable: "Runtime overview unavailable",
+    overviewUnavailableHint: "The backend is not answering. This page never shows sample data; try again shortly.",
+    retry: "Retry",
+    noRunYet: "No run yet",
+    noRunYetHint: "Start a run and its node progress, structured report and flight record appear here.",
+    noProgressYet: "No progress yet",
+    promptLabel: "Task for the Agent",
+    errorNotAuthenticated: "This action needs an admin session and you are not signed in.",
+    errorConflict: "A turn is already running; wait for it to finish.",
+    errorNetwork: "Cannot reach the backend; try again shortly.",
+    errorGeneric: "Request failed",
+    sectionCrashed: "This section crashed; the rest of the console still works.",
+    reloadSection: "Reload this section"
   }
 } satisfies Record<Language, Record<string, string>>;
+
+export type Copy = (typeof copy)["zh"];
+
+// Compile-time guard: both languages must define exactly the same keys, so `t.someKey`
+// can never be undefined in one of them.
+const zhHasEveryEnKey: Record<keyof (typeof copy)["en"], string> = copy.zh;
+const enHasEveryZhKey: Record<keyof Copy, string> = copy.en;
+void zhHasEveryEnKey;
+void enHasEveryZhKey;
