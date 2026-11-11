@@ -11,7 +11,7 @@ read here is revision-checked and every write happens under the mission row.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager, suppress
 from threading import Lock
 from typing import Any
@@ -28,6 +28,9 @@ _MEMORY_REVISIONS: dict[str, int] = {}
 _database: Database | None = None
 _research_locks: dict[str, Any] = {}
 _research_lock_guard = Lock()
+# What a periodic scan concluded about a mission, by the revision it concluded it at:
+# (scan, mission id) -> (database, revision). See ``park``.
+_PARKED: dict[tuple[str, str], tuple[Database, int]] = {}
 
 
 @contextmanager
@@ -88,10 +91,54 @@ def get_configured_database() -> Database | None:
 def reset_runtime() -> None:
     """Drop in-process controllers. Persisted rows and the memory snapshot stay."""
     MISSIONS.clear()
+    _PARKED.clear()
+
+
+def cache_stats() -> dict[str, Any]:
+    """How much of the ARC history this process holds in memory: missions and their events, in
+    all and by the state the missions are in.
+
+    Published with the worker heartbeat, because what the process keeps resident decides how long
+    each full garbage collection freezes it, and nothing else shows what is being kept.
+    """
+    by_state: dict[str, dict[str, int]] = {}
+    missions = events = 0
+    for controller in list(MISSIONS.values()):
+        count = len(controller.projection.events)
+        held = by_state.setdefault(controller.projection.state, {"missions": 0, "events": 0})
+        held["missions"] += 1
+        held["events"] += count
+        missions += 1
+        events += count
+    return {"missions": missions, "events": events, "by_state": by_state}
+
+
+def park(scan: str, mission_id: str, revision: int) -> None:
+    """Remember that ``scan`` has nothing to do with this mission at this revision.
+
+    A scan that runs every few seconds over missions that are done with, and cannot be resumed,
+    must not read each of them again every time (a read is the whole event journal, and what is
+    read stays resident). A mission has moved on when its committed revision has, which is also
+    when the scan has to look again. Without a database there is no revision to trust.
+    """
+    if _database is not None:
+        _PARKED[(scan, mission_id)] = (_database, revision)
+
+
+def is_parked(scan: str, mission_id: str, revision: int | None) -> bool:
+    """Whether ``park`` holds for this mission, which is at ``revision`` now."""
+    parked = _PARKED.get((scan, mission_id))
+    return (
+        parked is not None
+        and revision is not None
+        and parked[0] is _database
+        and parked[1] == revision
+    )
 
 
 def reset_store() -> None:
     MISSIONS.clear()
+    _PARKED.clear()
     _MEMORY.clear()
     _MEMORY_REVISIONS.clear()
     configure_store(None)
@@ -147,18 +194,57 @@ def save_mission(controller: ARCController) -> None:
     _cache(controller, payload)
 
 
-def load_projection(session: Session, row: ArcMission) -> ARCMissionProjection:
+def load_projection(
+    session: Session, row: ArcMission, *, with_events: bool = True
+) -> ARCMissionProjection:
     """The committed projection: journalled events plus any inline legacy events.
 
     Rows written by pre-journal code keep events inline in ``projection_json``; a process
     still running that code during a deploy appends there too. Both layouts are merged
     by ``event_id`` so neither loses nor duplicates an event.
+
+    ``with_events=False`` leaves the journal unread: every other field of the projection is in
+    ``projection_json``, and the journal is by far the largest part of a mission (thousands of
+    events, each a JSON document that is parsed and validated). A reader that never looks at
+    ``projection.events`` must not pay for it; whatever is inline stays, as it is part of the row.
     """
     payload = dict(row.projection_json or {})
+    if not with_events:
+        return ARCMissionProjection.model_validate(payload)
     inline = list(payload.get("events") or [])
     stored = _stored_events(session, row.mission_id)
     known = {event["event_id"] for event in stored}
     payload["events"] = stored + [event for event in inline if event.get("event_id") not in known]
+    return ARCMissionProjection.model_validate(payload)
+
+
+def load_projection_tail(
+    session: Session, row: ArcMission, event_types: Collection[str]
+) -> ARCMissionProjection:
+    """The projection without its journal, except for the newest event of each of ``event_types``.
+
+    For a reader that asks what the last such event was and nothing else about the history: it
+    costs a lookup per type instead of the parsing and validation of every event the mission has
+    had. A row that still keeps events inline (written by pre-journal code) is read whole: inline
+    events follow the journal, so finding the newest takes both.
+    """
+    payload = dict(row.projection_json or {})
+    if payload.get("events"):
+        return load_projection(session, row)
+    newest: list[tuple[int, dict[str, Any]]] = []
+    for event_type in event_types:
+        found = session.execute(
+            select(ArcMissionEvent.seq, ArcMissionEvent.event_json)
+            .where(
+                ArcMissionEvent.mission_id == row.mission_id,
+                ArcMissionEvent.event_type == event_type,
+            )
+            .order_by(ArcMissionEvent.seq.desc())
+            .limit(1)
+        ).first()
+        if found is not None:
+            newest.append((int(found[0]), dict(found[1])))
+    payload["events"] = [event for _, event in sorted(newest, key=lambda item: item[0])]
     return ARCMissionProjection.model_validate(payload)
 
 
@@ -237,18 +323,67 @@ def get_controller(mission_id: str) -> ARCController | None:
     return live
 
 
-def list_mission_ids(*, state: str | None = None) -> list[str]:
+def peek_controller(mission_id: str) -> ARCController | None:
+    """The mission as committed, for a reader that does not want it kept in memory.
+
+    Like ``get_controller``, except that a mission nobody holds is loaded and handed back
+    *without* being added to ``MISSIONS``. A scan over many missions must not turn every mission it
+    touches into a resident controller: the worker held ~2 GB of them, and every full garbage
+    collection walked all of it, freezing the whole process (and its event loop) for seconds.
+    """
+    live = MISSIONS.get(mission_id)
+    if live is not None and not _is_stale(mission_id, live.revision):
+        return live
+    return _load_persisted(mission_id) or live
+
+
+def list_mission_ids(
+    *, state: str | None = None, states: Collection[str] | None = None
+) -> list[str]:
+    """Mission ids, optionally only those whose state is ``state`` or one of ``states``.
+
+    The state column is written with the projection on every commit, so a scan can ask the
+    database which missions could possibly interest it instead of loading every mission ever
+    created to find the few that are not finished.
+    """
+    wanted = _wanted_states(state, states)
     if _database is not None:
         with _database.session() as session:
             stmt = select(ArcMission.mission_id)
-            if state is not None:
-                stmt = stmt.where(ArcMission.state == state)
+            if wanted is not None:
+                stmt = stmt.where(ArcMission.state.in_(sorted(wanted)))
             return [str(value) for value in session.scalars(stmt).all()]
-    ids: list[str] = []
-    for mission_id, payload in _MEMORY.items():
-        if state is None or payload.get("state") == state:
-            ids.append(mission_id)
-    return ids
+    return [
+        mission_id
+        for mission_id, payload in _MEMORY.items()
+        if wanted is None or payload.get("state") in wanted
+    ]
+
+
+def _wanted_states(state: str | None, states: Collection[str] | None) -> set[str] | None:
+    if state is None and states is None:
+        return None
+    wanted = set(states) if states is not None else None
+    if state is not None:
+        wanted = {state} if wanted is None else wanted & {state}
+    return wanted
+
+
+def committed_revisions(mission_ids: Collection[str]) -> dict[str, int]:
+    """The committed revision of each of these missions (those that exist), in one query."""
+    if _database is None:
+        return {m: _MEMORY_REVISIONS[m] for m in mission_ids if m in _MEMORY_REVISIONS}
+    ids = list(mission_ids)
+    revisions: dict[str, int] = {}
+    with _database.session() as session:
+        for start in range(0, len(ids), 500):
+            rows = session.execute(
+                select(ArcMission.mission_id, ArcMission.revision).where(
+                    ArcMission.mission_id.in_(ids[start : start + 500])
+                )
+            )
+            revisions.update({str(mission_id): int(revision or 0) for mission_id, revision in rows})
+    return revisions
 
 
 def _commit_in_memory(controller: ARCController, event: ARCEventV1) -> None:

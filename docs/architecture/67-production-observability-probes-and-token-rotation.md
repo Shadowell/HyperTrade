@@ -117,6 +117,7 @@ flowchart TB
   `unknown`（这个系统读不到线程 CPU）。判据见 `stall_evidence.classify`，原始数字就在旁边，可以自己复核。
 - 停摆期间的每次采样（首次约在 3 秒时，之后每 15 秒一次）都带一份「到目前为止」的证据（`ongoing: true`），结束时被最终证据替换，只有最终证据才计入 `stall_causes`，所以一次不结束的挂死也能被解释。
 - `workers[].process`：Python 版本、CPU 核数、线程数、常驻内存和各代垃圾回收的累计次数、暂停与阈值（阈值能看出是哪种回收器：Python 3.14 的增量 GC 是 `[2000, 10, 0]`），是读停摆时的背景。
+- `workers[].process.arc_cache`：这个进程常驻的 ARC 任务数和事件数，以及按任务状态的拆分（`missions`、`events`、`by_state`）。完整垃圾回收要遍历所有存活对象，停摆的长短由常驻的堆决定，而 ARC 任务的大头是事件日志；2026-11-11 的根因就是周期扫描把全部任务（含早已结束的）的日志缓存进 `store.MISSIONS`，约 2 GB，一次完整回收近 10 秒（最长 18 秒）（见 `docs/progress.md`）。现在周期扫描用 `peek_controller` 读而不缓存，只缓存正在工作的任务；这个数字应当只剩进行中和待评审的任务，若重新长大，`by_state` 会指出是哪类状态的任务，`last_stall.threads` 的栈会指出是谁在读。
 
 `/healthz` 的 `workers.status`：`alive`；`stale`（超过 3 分钟没有心跳）；`unknown`（还没有 worker 上报过，**不算故障**）。
 整体状态在 worker `stale` 或某个循环连续失败 ≥ 3 次时变为 `degraded`；超过 24 小时没有上报的 worker 行视为已下线。

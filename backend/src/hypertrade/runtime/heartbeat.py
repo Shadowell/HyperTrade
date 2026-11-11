@@ -194,6 +194,15 @@ class HeartbeatRegistry:
 
 HEARTBEATS = HeartbeatRegistry()
 
+# Extra facts about the process that another layer wants published with its heartbeat, by name (the
+# size of a cache, say). Only the default statistics carry them, so a caller that passes its own
+# statistics gets exactly those.
+_PROCESS_PROBES: dict[str, Callable[[], Any]] = {}
+
+
+def register_process_probe(name: str, probe: Callable[[], Any]) -> None:
+    _PROCESS_PROBES[name] = probe
+
 
 def flush_heartbeat(
     db: Database,
@@ -208,7 +217,14 @@ def flush_heartbeat(
     components, lag = registry.snapshot(close_window=True)
     last_stall, stalls_total = registry.stall_snapshot()
     try:
-        process = _clean((stats or process_stats)())
+        process = (stats or process_stats)()
+        if stats is None:
+            for name, probe in list(_PROCESS_PROBES.items()):
+                try:
+                    process[name] = probe()
+                except Exception:
+                    logger.debug("process probe %s failed", name, exc_info=True)
+        process = _clean(process)
     except Exception:
         logger.debug("process statistics could not be read", exc_info=True)
         process = None

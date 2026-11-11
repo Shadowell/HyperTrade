@@ -26,7 +26,7 @@ from hypertrade.arc.controller import ARCController
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import _feedback_child_active, _pending_effect
 from hypertrade.arc.runtime_journal import failure_text
-from hypertrade.arc.store import insert_mission, load_projection
+from hypertrade.arc.store import insert_mission, load_projection, load_projection_tail
 from hypertrade.db import ArcMission, Database
 
 if TYPE_CHECKING:
@@ -208,7 +208,13 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
     refunded: set[str] = set()
     attempts: dict[str, list[tuple[datetime, str | None, str]]] = {}
     for row in session.scalars(select(ArcMission)):
-        projection = load_projection(session, row)
+        # Only the reason a mission waiting on the operator stopped for is read from its journal
+        # (its last operator_needed event, below); for every other mission, and for every other
+        # event of that one, the journal, by far the largest part of a mission, would be parsed
+        # and validated here on every call (several times a minute) for nothing.
+        projection = load_projection(session, row, with_events=False)
+        if projection.state == "needs_operator":
+            projection = load_projection_tail(session, row, ("operator_needed",))
         goal = projection.goal
         if goal is None:
             continue

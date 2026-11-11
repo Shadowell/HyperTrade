@@ -1275,7 +1275,7 @@ class EvolutionService:
             for row in records:
                 if len(memory) >= 200:
                     break  # Full: later rows cannot add entries, so stop loading projections.
-                projection = load_projection(session, row)
+                projection = load_projection(session, row, with_events=False)  # no events used
                 goal = projection.goal
                 if goal is None:
                     continue
