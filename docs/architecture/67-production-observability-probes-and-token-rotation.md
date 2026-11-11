@@ -92,6 +92,32 @@ flowchart TB
 长步骤共用线程池，否则繁忙的 worker 会被误判为过期。2026-11-10 部署后它暴露了启动时堵塞 95.954 秒、之后约 11 秒：根因是行情快照在事件循环线程里
 逐条写库（约 700 条 × 每条 3 次数据库往返），现已改为线程中的单事务批量写入（见 `07-okx-market-data.md`）。
 
+**停摆证据。** 循环线程的栈只在「循环自己在跑同步代码」时才指向责任方。#105、#107 之后生产里仍然每小时约 70～100 次、每次 3～14 秒的停摆，
+循环线程的栈要么是空闲的 `select`，要么散落在毫不相干的位置（`socket.gethostname()`、SQLAlchemy 的 `_cloned_set`、deflate 的 `decode`……），
+它是被别的线程占着 GIL、或整个进程没有拿到 CPU 时的受害者。看门狗因此在停摆结束时再记一份证据，写进 `last_stall`，并把原因累计到 `workers[].stall_causes`
+（只存 `文件:行 函数` 和数字，不存源码和变量值；`runtime/stall_evidence.py`）：
+
+- `scope`：`process` 表示看门狗线程自己离开轮询超过阈值（GIL 被占或进程没被调度），`loop` 表示只有事件循环没有应答。占 GIL 的 C 调用结束后事件循环常常先
+  补跑积压的确认回调，看门狗再算时差已经小于阈值，这类停摆过去根本不会被记录，现在按看门狗自己离开轮询的时间计入。该时间从上一次轮询**开始**算起，
+  所以落在轮询中途的占用（每次读 `/proc` 都会放掉 GIL）也算；读计数在一个独立的采样线程里做，看门狗自己的轮询只做最轻的事，不会因为别的线程忙而变晚。
+- `threads`：循环线程（`loop: true`）加上最可能的 3 个线程，各带线程名、停摆期间的 CPU 秒数（Linux 的线程 CPU 时钟）和栈。`stack_source` 为 `dump`
+  时栈是 faulthandler 的 C 线程在停摆**进行中**抓的（它不需要 GIL，占 GIL 的函数会出现在里面；超时取「阈值减两个轮询间隔」，保证比阈值更早触发；
+  转储写在内存文件 `memfd` 里，磁盘被限速也不会冻住解释器；可用 `HYPERTRADE_STALL_DUMP=0` 关闭），为 `sample` 时是看门狗在停摆之后才采的样。
+  非 Python 创建的线程（BLAS、Arrow）看不到栈，只体现在 `cpu.process_seconds` 与各线程 CPU 之和的差里。动态生成的代码（`<string>`、`<candidate>`）
+  的函数名一律显示为 `<dynamic>:行 <code>`。
+- `gc`（窗口内垃圾回收的次数、总暂停、最慢一次及其代数，来自 `gc.callbacks`）、`cpu`（进程 CPU 秒数、循环线程在运行队列里等 CPU 的秒数；注意这是等 CPU，
+  不是等 GIL）、`host`（系统 CPU／内存／IO 压力的停滞秒数、CPU 被宿主机偷走的秒数、缺页和被抢占次数）：用来区分「某个线程占着 GIL」「垃圾回收」和
+  「主机没给 CPU」。
+- `cause`（一个原因要解释半数以上的停摆时长）：`gc`；`loop_busy`（循环线程自己在跑同步代码；`process` 范围时是循环线程里一次占 GIL 的长调用）；
+  `cpu_starved`（循环线程可运行但在等 CPU，主机、别的进程或别的线程占着）；`other_thread`（仅 `process` 范围：另一个线程占了半数以上的时间，同时看门狗也被卡住，
+  所以它占着 GIL，它的栈第一帧就是发起长调用的函数）；`cpu_contention`（仅 `process` 范围：没有单个线程过半，但几个线程合起来过半，GIL 车队）；
+  `busy_pool`（仅 `loop` 范围：看门狗正常、循环没应答、别的线程在用 CPU，循环可能被它们饿着，也可能卡在自己的调用里，栈会说明）；`native_threads`
+  （Python 不认识的线程占了 CPU）；`host_pressure`（进程几乎没跑，而宿主机的 steal 或 PSI 压力说明是主机的问题）；`no_cpu`（`process` 范围：进程几乎没用 CPU，
+  可能是占着 GIL 却在等待的调用、IO、换页，或主机没调度它，看 `threads` 和 `host`）；`loop_blocked`（`loop` 范围：循环线程卡在一次调用里，栈会点出是哪个）；
+  `unknown`（这个系统读不到线程 CPU）。判据见 `stall_evidence.classify`，原始数字就在旁边，可以自己复核。
+- 停摆期间的每次采样（首次约在 3 秒时，之后每 15 秒一次）都带一份「到目前为止」的证据（`ongoing: true`），结束时被最终证据替换，只有最终证据才计入 `stall_causes`，所以一次不结束的挂死也能被解释。
+- `workers[].process`：Python 版本、CPU 核数、线程数、常驻内存和各代垃圾回收的累计次数、暂停与阈值（阈值能看出是哪种回收器：Python 3.14 的增量 GC 是 `[2000, 10, 0]`），是读停摆时的背景。
+
 `/healthz` 的 `workers.status`：`alive`；`stale`（超过 3 分钟没有心跳）；`unknown`（还没有 worker 上报过，**不算故障**）。
 整体状态在 worker `stale` 或某个循环连续失败 ≥ 3 次时变为 `degraded`；超过 24 小时没有上报的 worker 行视为已下线。
 上报与读取都不会抛异常，遥测本身不能让 worker 或 API 出问题。
