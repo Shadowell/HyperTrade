@@ -6,9 +6,22 @@ Sprint 01 targets all OKX perpetual swap instruments (`SWAP`). Mainnet market da
 
 Data flow:
 
-1. Worker subscribes to public WebSocket tickers with `instType=SWAP`.
+1. Worker subscribes to the public WebSocket `tickers` channel **per `instId`**, not per
+   `instType`: OKX documents `channel` and `instId` as the only parameters of that channel, and a
+   subscription that is not established gets the connection closed after 30 s (close code 4004).
+   The contracts come from a REST snapshot of the SWAP tickers; the `OKX_WS_MAX_INSTRUMENTS` (default
+   100) busiest by 24h turnover (`last` x `volCcy24h`) are subscribed, 50 per `subscribe` request.
+   The rest keep the REST cadence. Every streamed instrument costs about one `market_tickers` row
+   write per second, and OKX publishes no per-connection cap for public channels (only the close
+   codes 4008/4009), so a close with 4008/4009 halves the subscription (never below 10) for the
+   rest of the process. The URL is `wss://ws.okx.com/ws/v5/public` (port 443): OKX stopped
+   accepting port 8443 on 2026-10-31, and a configured `:8443` on an OKX host is rewritten.
 2. REST tickers run at startup and then every 5 minutes as a supplement.
-3. REST tickers are also used as fallback after repeated WS failures.
+3. REST tickers are also used as fallback whenever the WS stream fails. Reconnects back off 15 s,
+   30 s, then 60 s and start over after a connection streamed for 30 s. A stream also fails when
+   no ticker arrives within 20 s of subscribing or for 30 s afterwards (a keepalive does not
+   count), and the failure carries what OKX answered. Keepalive is OKX's text `ping`/`pong`; a
+   close with 1000/1001 or OKX's 64008 restart notice reconnects after one second, as no error.
 4. Parsed tickers are upserted into `market_tickers` in batches on a worker thread, never on the
    worker's event loop: one transaction per REST snapshot (about 700 tickers), and about one batch a
    second for WS tickers (newest per instrument). Writing them one by one on the loop froze every
@@ -40,9 +53,17 @@ Sprint 01 覆盖 OKX 全市场永续合约 `SWAP`。行情使用 mainnet；交�
 
 数据流：
 
-1. worker 订阅 public WebSocket tickers，参数 `instType=SWAP`。
+1. worker 订阅 public WebSocket 的 `tickers` 频道，**按 `instId` 逐个订阅**，不能按 `instType`：OKX 文档里该频道
+   只有 `channel` 和 `instId` 两个参数，订阅没建立成功的连接 30 秒后会被服务端关闭（关闭码 4004）。合约清单来自
+   SWAP tickers 的 REST 快照，取 24 小时成交额（`last` × `volCcy24h`）最大的 `OKX_WS_MAX_INSTRUMENTS` 个
+   （默认 100），每个 `subscribe` 请求 50 个；其余合约仍按 REST 节奏刷新。每多订阅一个合约，`market_tickers`
+   大约每秒多一次行写入；OKX 没有公布公共频道的单连接订阅数上限（只有关闭码 4008/4009），所以收到 4008/4009 时
+   把订阅数减半（不低于 10），在进程存活期间保持。地址是 `wss://ws.okx.com/ws/v5/public`（443 端口）：OKX 自
+   2026-10-31 起不再接受 8443 端口，配置里写着 OKX 域名加 `:8443` 时会被改写成 443。
 2. REST tickers 在启动时跑一次，之后每 5 分钟补充一次。
-3. WS 连续失败后也用 REST tickers 降级。
+3. WS 流只要失败就用 REST tickers 降级。重连退避 15 秒、30 秒、之后 60 秒，一条连接稳定流式 30 秒后重新计数。
+   订阅后 20 秒内没有任何 ticker、或之后连续 30 秒没有 ticker（只有保活不算）也算失败，失败信息会带上 OKX 的
+   回答。保活用 OKX 的文本 `ping`/`pong`；1000/1001 正常关闭或 OKX 的 64008 重启通知会在一秒后重连，不算错误。
 4. 解析后的 ticker 在线程中批量 upsert 到 `market_tickers`，不占用 worker 的事件循环：每次 REST 快照（约 700 条）
    一个事务，WS 约每秒一批（同一品种取最新）。此前逐条在事件循环里写库，会让 worker 所有循环停摆 9 秒到一分多钟。
 5. 用户发起归纳时，Agent 从 PostgreSQL 读取最新异动。
