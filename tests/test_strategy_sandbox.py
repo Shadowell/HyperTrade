@@ -13,11 +13,13 @@ from hypertrade.runtime.adapters.sandbox import (
     StrategySandbox,
     UdsCoSteerSandbox,
     UdsSandboxRunner,
+    _command_argv,
     is_pinned_oci_image,
 )
 from hypertrade.runtime.domain.sandbox import (
     ImportReviewV1,
     SandboxCommandResultV1,
+    SandboxCommandV1,
     SandboxRequestV1,
 )
 
@@ -136,6 +138,33 @@ async def test_failed_test_never_produces_validated_manifest() -> None:
 
     assert result.status == "failed"
     assert result.commands[-1].name == "pytest"
+    assert result.commands[-1].status == "failed"
+
+
+def test_ruff_gate_pins_its_rule_set_instead_of_following_ruffs_default() -> None:
+    # Ruff 0.17 grew the built-in default from 59 rules to 407. A bare `ruff check` made the gate
+    # depend on the installed version, so the selection stays explicit.
+    argv = _command_argv(SandboxCommandV1(name="ruff"), Path("."), Path("."))
+
+    assert argv[1:4] == ["-m", "ruff", "check"]
+    assert argv[argv.index("--select") + 1] == "E4,E7,E9,F"
+    assert argv[-2:] == ["strategies", "tests"]
+
+
+@pytest.mark.anyio
+async def test_ruff_gate_still_rejects_a_pyflakes_error() -> None:
+    candidate = files()
+    candidate["strategies/candidate.py"] = (
+        "def generate_signals(prices: list[float]) -> list[int]:\n"
+        "    unused = 1\n"
+        "    return [0 for _ in prices]\n"
+    )
+    result = await StrategySandbox(InMemorySandboxStore()).run(
+        "mis_sandbox", request(files=candidate)
+    )
+
+    assert result.status == "failed"
+    assert [row.name for row in result.commands] == ["ruff"]
     assert result.commands[-1].status == "failed"
 
 

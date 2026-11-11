@@ -587,9 +587,26 @@ def _patch_manifest(files: dict[str, str]) -> PatchManifestV1:
     )
 
 
+# The lint gate must not follow whatever default rule set the installed ruff ships. Ruff 0.17
+# grew its built-in default from these 59 rules (E4, E7, E9, F) to 407, so a bare `ruff check`
+# started failing candidates the gate used to accept (an unsorted import was enough). Pinning
+# the selection keeps the gate identical across ruff upgrades.
+_SANDBOX_RUFF_SELECT = "E4,E7,E9,F"
+
+
 def _command_argv(command: SandboxCommandV1, workspace: Path, guard: Path) -> list[str]:
     if command.name == "ruff":
-        return [sys.executable, "-m", "ruff", "check", "strategies", "tests", *command.args]
+        return [
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "--select",
+            _SANDBOX_RUFF_SELECT,
+            "strategies",
+            "tests",
+            *command.args,
+        ]
     if command.name == "pytest":
         return [sys.executable, "-m", "pytest", "-q", "tests", *command.args]
     strategies = sorted((workspace / "strategies").glob("*.py"))
