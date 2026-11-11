@@ -17,7 +17,15 @@ import time
 from typing import Any
 
 from hypertrade.arc.controller import ARCController, ARCEventV1
-from hypertrade.arc.store import get_controller, list_mission_ids, research_lock
+from hypertrade.arc.store import (
+    committed_revisions,
+    get_controller,
+    is_parked,
+    list_mission_ids,
+    park,
+    peek_controller,
+    research_lock,
+)
 from hypertrade.bitpro.mcp import BitProToolAdapter
 from hypertrade.targets.read_ports import SnapshotContractError, read_ports
 
@@ -151,14 +159,21 @@ def reconcile_paper_effects_once(client: Any = None, *, now: float | None = None
     """One sweep over parked missions; read-only against BitPro, one ARC event per adoption."""
     clock = time.monotonic() if now is None else now
     results: list[dict[str, Any]] = []
-    for mission_id in list_mission_ids(state="needs_operator"):
+    mission_ids = list_mission_ids(state="needs_operator")
+    revisions = committed_revisions(mission_ids)
+    for mission_id in mission_ids:
         previous = _last_checked.get(mission_id)
         if previous is not None and clock - previous < RECHECK_SECONDS:
             continue
-        controller = get_controller(mission_id)
+        if is_parked("paper_effect", mission_id, revisions.get(mission_id)):
+            continue
+        # Looking is not keeping: missions that wait for the operator pile up, and every one of
+        # them stayed resident, journal and all, for no reason but to be told it is not unknown.
+        controller = peek_controller(mission_id)
         if controller is None:
             continue
         if controller.projection.paper_review.get("status") != "effect_unknown":
+            park("paper_effect", mission_id, controller.revision)  # until it changes
             continue
         _last_checked[mission_id] = clock
         with research_lock(f"paper-effect-reconcile/{mission_id}") as owner:

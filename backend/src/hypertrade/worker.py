@@ -19,7 +19,7 @@ from hypertrade.agent.task_executor import (
 from hypertrade.agent.tasks import AgentTaskService
 from hypertrade.arc.observation import observe_arc_missions_once
 from hypertrade.arc.runtime_journal import record_model_exchange, record_runtime_error
-from hypertrade.arc.store import configure_store
+from hypertrade.arc.store import cache_stats, configure_store
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.config import Settings, get_settings
 from hypertrade.db import Database
@@ -64,7 +64,7 @@ from hypertrade.runtime.adapters.tool_runtime import (
 )
 from hypertrade.runtime.application.service import MissionRuntime
 from hypertrade.runtime.domain.models import TERMINAL_STATUSES, MissionStatus
-from hypertrade.runtime.heartbeat import HEARTBEATS, heartbeat_loop
+from hypertrade.runtime.heartbeat import HEARTBEATS, heartbeat_loop, register_process_probe
 from hypertrade.runtime.loop_supervisor import LoopFactory, supervise
 from hypertrade.runtime.loop_watchdog import LoopWatchdog
 from hypertrade.skills.lifecycle import ApprovedSkillLoader
@@ -582,6 +582,9 @@ async def main() -> None:
     # /api/healthz as workers[].last_stall), so the next stall does not need a guess.
     watchdog = LoopWatchdog(HEARTBEATS)
     watchdog.start()
+    # What the worker keeps of the ARC history decides how long each full garbage collection
+    # freezes it: published with the heartbeat as workers[].process.arc_cache.
+    register_process_probe("arc_cache", cache_stats)
     try:
         # Every loop runs under a supervisor: a crash restarts that one loop (with backoff)
         # instead of ending the gather, and with it the whole worker process.

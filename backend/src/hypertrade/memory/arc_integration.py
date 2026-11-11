@@ -10,9 +10,12 @@ from threading import Lock
 from typing import Any, cast
 
 from hypertrade.arc.store import (
+    committed_revisions,
     get_configured_database,
-    get_controller,
+    is_parked,
     list_mission_ids,
+    park,
+    peek_controller,
 )
 from hypertrade.db import Database
 from hypertrade.memory.layered_service import (
@@ -170,7 +173,16 @@ def ingest_projection(
 
 
 def replay_arc_cognitive_memory_once(*, limit: int = 100) -> dict[str, int | str]:
-    """Backfill bounded persisted ARC journals after restarts or missed inline hooks."""
+    """Backfill bounded persisted ARC journals after restarts or missed inline hooks.
+
+    Ingesting is idempotent but not cheap: it rebuilds the mission's whole journal in memory and
+    makes a database round trip per hypothesis and per episode. This runs every minute over every
+    mission, so a mission this process already ingested at its current revision (nothing new in
+    it) is parked and skipped, and one that moved on is ingested again. After a restart every
+    mission is ingested once more, which is what a backfill after a restart is for. Missions are
+    read without being cached: a backfill must not leave every mission it touched resident in the
+    worker.
+    """
     database = get_configured_database()
     if database is None:
         return {"status": "unavailable", "missions": 0}
@@ -184,14 +196,19 @@ def replay_arc_cognitive_memory_once(*, limit: int = 100) -> dict[str, int | str
             _REPLAY_CURSOR = (start + len(selected)) % len(mission_ids)
         else:
             selected = []
-    synced = 0
+    committed = committed_revisions(selected)
+    synced = unchanged = 0
     for mission_id in selected:
-        controller = get_controller(mission_id)
+        if is_parked("cognitive_replay", mission_id, committed.get(mission_id)):
+            unchanged += 1
+            continue
+        controller = peek_controller(mission_id)
         if controller is None:
             continue
         ingest_projection(database, mission_id, controller.projection)
+        park("cognitive_replay", mission_id, controller.revision)  # only once it succeeded
         synced += 1
-    return {"status": "ok", "missions": synced}
+    return {"status": "ok", "missions": synced, "unchanged": unchanged}
 
 
 def _episode_from_event(

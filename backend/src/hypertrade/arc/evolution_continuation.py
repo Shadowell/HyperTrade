@@ -389,6 +389,13 @@ def readiness(
     }
 
 
+# The missions, each with the revision it was at, that the last complete ``refresh`` went through:
+# (database, ((mission id, revision), ...)). The acceptance ledger is a function of the missions,
+# so while none of them has changed there is nothing to compute again but the ``checked_at``
+# stamp, and computing it again reads the whole journal of every mission it tracks, every minute.
+_REFRESHED: tuple[Database, tuple[tuple[str, int], ...]] | None = None
+
+
 class ContinuationLedger:
     def __init__(self, db: Database):
         self.db = db
@@ -493,6 +500,7 @@ class ContinuationLedger:
                     )
 
     def refresh(self, now: datetime) -> None:
+        global _REFRESHED
         from hypertrade.arc.store import load_projection, research_lock
         from hypertrade.db import ArcMission
 
@@ -500,11 +508,25 @@ class ContinuationLedger:
             if owner is None:
                 return
             with self.db.session() as session:
+                seen = tuple(
+                    (str(mission_id), int(revision or 0))
+                    for mission_id, revision in session.execute(
+                        select(ArcMission.mission_id, ArcMission.revision).order_by(
+                            ArcMission.mission_id
+                        )
+                    )
+                )
+            if _REFRESHED is not None and _REFRESHED[0] is self.db and _REFRESHED[1] == seen:
+                return
+            with self.db.session() as session:
                 missions = session.scalars(
                     select(ArcMission).order_by(ArcMission.created_at)
                 ).yield_per(20)
                 for mission in missions:
-                    projection = load_projection(session, mission)
+                    # The checks below need the goal only, which is not in the journal. Most of a
+                    # mission is its journal, and this loop visits every mission every minute:
+                    # it is read further down, only for a mission that passes them.
+                    projection = load_projection(session, mission, with_events=False)
                     goal = projection.goal
                     context = (goal.feedback_parent or goal.evolution_context) if goal else None
                     if not goal or not context:
@@ -529,6 +551,7 @@ class ContinuationLedger:
                             continue
                     elif not isinstance(sid, str) or not sid.strip():
                         continue
+                    projection = load_projection(session, mission)
                     source_id = continuation_source_id(target_id, sid, instance)
                     checkpoint = session.get(EvolutionContinuation, source_id, with_for_update=True)
                     if checkpoint is None:
@@ -666,6 +689,9 @@ class ContinuationLedger:
                                 )
                             )
                     owner()
+            # Only once the whole pass has committed; a mission that moved during it differs from
+            # ``seen`` next time and is taken up then.
+            _REFRESHED = (self.db, seen)
 
 
 def acceptance_entries(projection: ARCMissionProjection, now: datetime) -> list[dict[str, Any]]:
