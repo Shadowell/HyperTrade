@@ -125,10 +125,11 @@ class MissionRuntime:
                     reason="plan_validated",
                     fencing_token=fencing_token,
                 )
-            elif mission.status == MissionStatus.PAUSED or mission.status not in {
+            elif mission.status not in {
                 MissionStatus.RUNNING,
                 MissionStatus.RETRY_WAIT,
             }:
+                # Anything that is not running, PAUSED included, goes back unchanged.
                 return mission
             if mission.status == MissionStatus.RETRY_WAIT:
                 mission = await self.store.transition(
