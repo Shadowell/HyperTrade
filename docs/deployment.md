@@ -1,6 +1,6 @@
 # HyperTrade Deployment
 
-BitPro 主机路由由 `deploy/bitpro_host_route.py` 读取实际 Docker 网关后写入专用环境变量，Compose 显式注入地址；应用启动后必须通过 API/worker 的认证健康探测。仅修复运行容器时使用 `--repair-running`，先备份 hosts，不重启 Paper。
+BitPro 主机路由由 `deploy/bitpro_host_route.py` 读取实际 Docker 网关后写入专用环境变量，Compose 显式注入地址。容器切换后 `--check-running` 对 API/worker 做两层检查，分量不同：容器内 `host.docker.internal` 必须等于真实网关，不一致即发布失败（`exit 1`）；BitPro 认证健康探针重试约 30 秒仍无应答时以退出码 75 返回，`deploy.sh` 只打印 `::warning::` 并继续装 host CLI、重载 Nginx、做最终健康等待，`last_deployed_sha` 照常记录（BitPro 重启或预热不是这次发布的缺陷，新版本此时已在对外服务，中止也不会回滚）。看到该告警时检查 BitPro 与 `GET /api/healthz` 的 `adapters.bitpro`（最后一次错误在探针的标准错误输出里）；只是 BitPro 重启的话，恢复后无需重新发布。仅修复运行容器时使用 `--repair-running`，先备份 hosts，不重启 Paper。
 
 ## Summary
 
@@ -39,7 +39,7 @@ hypertrade-production
 2. Self-hosted runner checks `/opt/hypertrade/deploy/last_deployed_sha`.
 3. If the SHA is new, frontend builds in Actions.
 4. Source and frontend dist sync to `/opt/hypertrade`.
-5. `deploy/deploy.sh` builds Docker images, starts PostgreSQL, runs Alembic, starts API/worker, reloads Nginx.
+5. `deploy/deploy.sh` builds Docker images, starts PostgreSQL, runs Alembic, starts API/worker, checks the BitPro host route (an unreachable BitPro only warns, see above), reloads Nginx.
 6. SHA is recorded only after health check passes.
 
 ## CLI Access
