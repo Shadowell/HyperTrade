@@ -17,8 +17,10 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import math
 import os
 from collections import deque
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -30,6 +32,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from hypertrade.build_info import get_build_info
 from hypertrade.db import Base, Database, TimestampMixin
+from hypertrade.runtime.stall_evidence import process_stats
 
 logger = logging.getLogger("hypertrade.heartbeat")
 
@@ -46,6 +49,16 @@ FORGET_AFTER_SECONDS = 24 * 3600.0
 FAILING_STREAK = 3
 # Frames kept of a stall's stack (the watchdog already trims; this bounds what is stored).
 STALL_STACK_FRAMES = 12
+# What a stall's evidence may hold: it is rebuilt from a JSON column on every read, so it is bounded
+# on the way in and again on the way out.
+_EVIDENCE_STRING = 160
+_EVIDENCE_ITEMS = 12
+_EVIDENCE_KEYS = 16
+_EVIDENCE_DEPTH = 4
+# Integers beyond this are not counters; JSON readers and databases cannot be trusted with them.
+_EVIDENCE_INT_LIMIT = 2**63
+# Distinct causes the stall counters keep (the set the watchdog uses is far smaller).
+_STALL_CAUSE_KEYS = 16
 DEFAULT_WORKER_ID = "worker"
 
 
@@ -79,6 +92,7 @@ class HeartbeatRegistry:
         self._lag_history: deque[float] = deque(maxlen=LAG_WINDOWS)
         self._last_stall: dict[str, Any] | None = None
         self._stalls_total = 0
+        self._stall_causes: dict[str, int] = {}
 
     def _entry(self, component: str) -> dict[str, Any]:
         return self._components.setdefault(
@@ -127,11 +141,13 @@ class HeartbeatRegistry:
         *,
         new_episode: bool = False,
         now: datetime | None = None,
+        evidence: dict[str, Any] | None = None,
     ) -> None:
         """Record what the loop watchdog saw while the event loop was blocked.
 
         ``stack`` (deepest frame first) is given when a stall is sampled; calling again with only
-        ``seconds`` updates the duration of the last stall once it has ended.
+        ``seconds`` updates the duration of the last stall once it has ended. ``evidence`` (see
+        ``stall_evidence``) explains the stall that has just ended and is attached to it.
         """
         with self._lock:
             if new_episode:
@@ -144,6 +160,19 @@ class HeartbeatRegistry:
                 }
             elif self._last_stall is not None:
                 self._last_stall["seconds"] = round(max(seconds, self._last_stall["seconds"]), 1)
+            if evidence is not None and self._last_stall is not None:
+                self._last_stall["evidence"] = _clean(evidence)
+
+    def note_stall_cause(self, cause: str) -> None:
+        """Count a finished stall under the cause the watchdog gave it."""
+        key = str(cause)[:32]
+        with self._lock:
+            if key in self._stall_causes or len(self._stall_causes) < _STALL_CAUSE_KEYS:
+                self._stall_causes[key] = self._stall_causes.get(key, 0) + 1
+
+    def stall_causes(self) -> dict[str, int]:
+        with self._lock:
+            return dict(self._stall_causes)
 
     def stall_snapshot(self) -> tuple[dict[str, Any] | None, int]:
         with self._lock:
@@ -173,10 +202,16 @@ def flush_heartbeat(
     started_at: datetime,
     registry: HeartbeatRegistry = HEARTBEATS,
     now: datetime | None = None,
+    stats: Callable[[], dict[str, Any]] | None = None,
 ) -> bool:
     """Upsert this worker's row. Never raises: liveness reporting must not stop the worker."""
     components, lag = registry.snapshot(close_window=True)
     last_stall, stalls_total = registry.stall_snapshot()
+    try:
+        process = _clean((stats or process_stats)())
+    except Exception:
+        logger.debug("process statistics could not be read", exc_info=True)
+        process = None
     try:
         with db.session() as session:
             session.merge(
@@ -190,6 +225,8 @@ def flush_heartbeat(
                         "event_loop_lag_max_seconds": round(lag, 3),
                         "last_stall": last_stall,
                         "stalls_total": stalls_total,
+                        "stall_causes": registry.stall_causes(),
+                        "process": process,
                     },
                 )
             )
@@ -242,22 +279,76 @@ def _age_seconds(iso: Any, now: datetime) -> float | None:
         return None
 
 
+def _clean(value: Any, depth: int = 0) -> Any:
+    """``value`` limited to JSON scalars, short strings and small lists and dicts.
+
+    A stall's evidence is rebuilt from a JSON column on every read and published unauthenticated,
+    so what reaches ``/api/healthz`` is bounded here whatever the column holds: numbers that JSON
+    cannot carry (NaN, infinity, an integer too big to be a counter) become null, strings are cut,
+    containers are capped and nested no deeper than ``_EVIDENCE_DEPTH``.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, int):  # a bool is an int and stays what it is
+        return value if -_EVIDENCE_INT_LIMIT < value < _EVIDENCE_INT_LIMIT else None
+    if isinstance(value, str):
+        return value[:_EVIDENCE_STRING]
+    if depth >= _EVIDENCE_DEPTH:
+        return None
+    if isinstance(value, list | tuple):
+        return [_clean(item, depth + 1) for item in value[:_EVIDENCE_ITEMS]]
+    if isinstance(value, dict):
+        return {
+            str(key)[:48]: _clean(item, depth + 1)
+            for key, item in list(value.items())[:_EVIDENCE_KEYS]
+        }
+    return None
+
+
 def _stall_view(raw: Any, now: datetime) -> dict[str, Any] | None:
     """The watchdog's last stall as stored, re-validated: it came out of a JSON column."""
     if not isinstance(raw, dict) or not isinstance(raw.get("seconds"), int | float):
         return None
     stack = raw.get("stack")
-    return {
+    view: dict[str, Any] = {
         "seconds": raw["seconds"],
         "age_seconds": _age_seconds(raw.get("at"), now),
         "running": [str(frame)[:160] for frame in stack[:STALL_STACK_FRAMES]]
         if isinstance(stack, list)
         else [],
     }
+    # What explains the stall (cause, threads, CPU, garbage collection, host), once it has ended.
+    evidence = _clean(raw.get("evidence"))
+    if isinstance(evidence, dict):
+        for key, value in evidence.items():
+            view.setdefault(key, value)
+    return view
 
 
 def _count(value: Any) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _process_view(raw: Any) -> dict[str, Any] | None:
+    cleaned = _clean(raw) if isinstance(raw, dict) else None
+    return cleaned if isinstance(cleaned, dict) else None
+
+
+def _safely(build: Callable[[], Any]) -> Any:
+    """What ``build`` returns, or None: this part of a worker row is diagnostics only, and
+    ``/api/healthz`` must answer whatever a row holds."""
+    try:
+        return build()
+    except Exception:
+        logger.warning("part of a worker heartbeat could not be read", exc_info=True)
+        return None
+
+
+def _counts(raw: Any) -> dict[str, int]:
+    if not isinstance(raw, dict):
+        return {}
+    counts = {str(key)[:32]: _count(value) for key, value in list(raw.items())[:_STALL_CAUSE_KEYS]}
+    return {key: value if 0 <= value < _EVIDENCE_INT_LIMIT else 0 for key, value in counts.items()}
 
 
 def _instance_view(row: WorkerHeartbeat, now: datetime, stale_after: float) -> dict[str, Any]:
@@ -285,7 +376,9 @@ def _instance_view(row: WorkerHeartbeat, now: datetime, stale_after: float) -> d
         "build_sha": row.build_sha,
         "event_loop_lag_max_seconds": lag if isinstance(lag, int | float) else None,
         "stalls_total": _count(process.get("stalls_total")),
-        "last_stall": _stall_view(process.get("last_stall"), now),
+        "stall_causes": _safely(lambda: _counts(process.get("stall_causes"))) or {},
+        "last_stall": _safely(lambda: _stall_view(process.get("last_stall"), now)),
+        "process": _safely(lambda: _process_view(process.get("process"))),
         "failing_components": [
             name
             for name, view in components.items()
