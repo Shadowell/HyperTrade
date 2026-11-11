@@ -1,5 +1,17 @@
 # 优化计划 3：前端组件拆分 + Error Boundary + 状态管理
 
+> **实施状态（2026-11-10）：第一阶段已落地，范围是 Agent 工作台 `/harness`。**
+>
+> - 已完成：`types/`、`i18n/`、`lib/`、`api/client.ts` 抽出；`components/agent/` 下 8 个组件 + `HarnessPage`；
+>   `components/ui/` 的 `ErrorBoundary`、`EmptyState`、`InlineAlert`；每个区域独立错误边界；加载／不可用／空三种状态
+>   （去掉了编造的示例数据）；`App.tsx` 由 4422 行降到约 2530 行；前端测试由 15 项增至 70 项。
+> - 与本文原方案的有意差异：**没有引入 Zustand**（按 `README.md` 的评审结论先做类型化 API 与区域拆分，不一次性重写）；
+>   **不做 Web 登录／会话探测**（`docs/spec.md` 与 `App.test.tsx` 已把“无登录墙、不渲染登录表单”钉成产品约定，
+>   只读状态改为被动判定）。
+> - 尚未完成：其余 8 个分区（Mission、策略库、组合生命周期、监控告警、最近运行、智能体评测、记忆、知识库）仍在
+>   `App.tsx`；把 Agent 页面的状态与处理函数提成 `useAgentConsole` hook；只挂载当前分区（目前其余分区仍用 `hidden`
+>   隐藏但全部挂载）。以下“现状诊断”是拆分前的描述，保留作背景。
+
 ## 现状诊断
 
 `frontend/src/App.tsx` 单文件 2229 行，包含：
