@@ -39,7 +39,16 @@ from hypertrade.arc.provider_hypothesis import ProviderProposal, _bounded_spec
 from hypertrade.arc.relay_seats import describe_tried, tried_variant, variant_identity
 from hypertrade.arc.runtime_journal import record_model_exchange, record_runtime_error
 from hypertrade.arc.self_test import ARCSelfTestService
-from hypertrade.arc.store import get_controller, list_mission_ids, research_lock, save_avo_context
+from hypertrade.arc.store import (
+    committed_revisions,
+    get_controller,
+    is_parked,
+    list_mission_ids,
+    park,
+    peek_controller,
+    research_lock,
+    save_avo_context,
+)
 from hypertrade.arc.universe import candidate_symbols, declared_symbols
 from hypertrade.config import get_settings
 from hypertrade.providers.chat import ChatProvider
@@ -1467,11 +1476,34 @@ def _recover_receipt(controller: ARCController) -> None:
     )
 
 
+# Every state in which ``needs_research`` can be true (it is false in all the others, which is
+# pinned by a test). The scan below runs every few seconds: it asks the database for these
+# missions instead of loading all of them, finished ones included, only to find the few that
+# are not. Loading them also parked every one of them in ``MISSIONS`` for the life of the process.
+AVO_SCAN_STATES = frozenset(
+    RESEARCH_STATES | {"paper_authorizing", "paper_review_ready", "needs_operator"}
+)
+
+
 def run_pending_avo_once() -> dict[str, Any]:
-    for mission_id in list_mission_ids():
-        controller = get_controller(mission_id)
-        if controller is not None and needs_research(controller.projection):
+    mission_ids = list_mission_ids(states=AVO_SCAN_STATES)
+    revisions = committed_revisions(mission_ids)
+    for mission_id in mission_ids:
+        if is_parked("avo", mission_id, revisions.get(mission_id)):
+            continue
+        # Looking is not keeping: ``run_avo_research`` loads the mission it works on, and only
+        # that one stays resident. (Missions parked in ``needs_operator`` pile up, and a mission's
+        # journal is megabytes.)
+        controller = peek_controller(mission_id)
+        if controller is None:
+            continue
+        if needs_research(controller.projection):
             result = run_avo_research(mission_id)
             if result["status"] != "busy":
                 return result
+        elif not recoverable(controller.projection, due=False):
+            # Only a backtest that is not yet due makes the answer depend on the clock. Otherwise
+            # nothing can make this mission need research until it changes, which moves its
+            # revision, so it is not looked at again until then.
+            park("avo", mission_id, controller.revision)
     return {"status": "idle"}

@@ -10,14 +10,22 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Iterator
 from dataclasses import replace
+from itertools import chain
 from statistics import variance
 from typing import Any
 
 from hypertrade.arc.contracts import ARCCandidateAttemptV1, ARCGoalV1
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.self_test import SelfTestResult
-from hypertrade.arc.store import get_controller, list_mission_ids
+from hypertrade.arc.store import (
+    committed_revisions,
+    get_configured_database,
+    list_mission_ids,
+    peek_controller,
+)
+from hypertrade.db import Database
 from hypertrade.research.sharpe import calculate_deflated_sharpe_ratio
 
 MIN_DSR_PROBABILITY = 0.95
@@ -78,64 +86,114 @@ def _statistics(metrics: dict[str, Any]) -> dict[str, Any] | None:
     return stats
 
 
+# One thing a mission says about the search: the trial it counts as and, when its events carry
+# the return statistics of that trial, those statistics and the reference they are cited by.
+TrialFact = tuple[str, dict[str, Any] | None, str]
+
+# What ``selection_evidence`` took from a mission, by the committed revision it was read at:
+# (database, revision, family, facts). Every call walks every mission there is, finished ones
+# included, and a mission changes only when its revision does. Holding the missions themselves
+# would keep all the research ever run resident in the process (``get_controller`` caches each
+# one for good: that was ~2 GB, and every full garbage collection walked all of it), and reading
+# them again on every call would parse all of it again. A few tuples per mission are enough.
+_FACTS: dict[str, tuple[Database, int, str | None, tuple[TrialFact, ...]]] = {}
+
+
+def _trial_facts(owner: ARCController) -> Iterator[TrialFact]:
+    """The trials one mission's events establish, in the order they establish them."""
+    attempts = {item.attempt_id: item for item in owner.projection.attempts}
+    for event in owner.projection.events:
+        payload = event.payload
+        attempt = attempts.get(str(payload.get("attempt_id")))
+        if attempt is None or attempt.attempt_id.startswith("baseline_"):
+            continue
+        key = _trial(attempt)
+        if event.event_type in {
+            "avo_development_requested",
+            "avo_final_requested",
+            "red_team_tested",
+        }:
+            yield key, None, ""
+        if event.event_type == "red_team_tested":
+            replay_metrics = payload.get("metrics") or {}
+            observed = _statistics(replay_metrics)
+            if (
+                observed is not None
+                and replay_metrics.get("evidence_available") is True
+                and replay_metrics.get("ranking_basis") == "out_of_sample"
+                and payload.get("code_sha256")
+                == hashlib.sha256(attempt.strategy_code.encode()).hexdigest()
+            ):
+                yield key, observed, "arc-event:" + event.event_id
+        if event.event_type not in {"avo_development_result", "bitpro_self_tested"}:
+            continue
+        yield key, None, ""
+        receipt = payload.get("result", payload)
+        code_hash = hashlib.sha256(attempt.strategy_code.encode()).hexdigest()
+        if not receipt.get("backtest_id") or receipt.get("code_sha256") != code_hash:
+            continue
+        # The search distribution uses development returns, never other candidates'
+        # final holdout results. That would turn the holdout into another search set.
+        if event.event_type == "avo_development_result":
+            observed = _statistics(receipt.get("metrics") or {})
+            if observed is not None:
+                yield key, observed, str(receipt["backtest_id"])
+
+
+def _family_trial_facts(mission_ids: list[str], family: str) -> Iterator[TrialFact]:
+    """The trial facts of those missions that belong to ``family``, mission by mission."""
+    database = get_configured_database()
+    # Without a database this process is the only writer and already holds every mission, so
+    # there is nothing to save by remembering what it has in hand.
+    revisions = committed_revisions(mission_ids) if database is not None else {}
+    for mission_id in mission_ids:
+        remembered = _FACTS.get(mission_id) if database is not None else None
+        if (
+            remembered is not None
+            and remembered[0] is database
+            and remembered[1] == revisions.get(mission_id)
+        ):
+            _, _, other_family, facts = remembered
+        else:
+            other = peek_controller(mission_id)
+            if other is None:
+                continue
+            goal = other.projection.goal
+            other_family = None if goal is None else _family(goal)
+            facts = tuple(_trial_facts(other))
+            if database is not None:
+                _FACTS[mission_id] = (database, other.revision, other_family, facts)
+        if other_family == family:
+            yield from facts
+
+
+def _collect_trials(
+    controller: ARCController, family: str
+) -> tuple[dict[str, dict[str, Any] | None], dict[str, str]]:
+    """Every trial of the family persisted so far, with the statistics and reference of those
+    that have them."""
+    trials: dict[str, dict[str, Any] | None] = {}
+    refs: dict[str, str] = {}
+    others = [
+        mission_id for mission_id in list_mission_ids() if mission_id != controller.mission_id
+    ]
+    # This mission first, then the others of its family in listing order: later facts win.
+    for key, observed, ref in chain(_trial_facts(controller), _family_trial_facts(others, family)):
+        if observed is None:
+            trials.setdefault(key, None)
+        else:
+            trials[key] = observed
+            refs[key] = ref
+    return trials, refs
+
+
 def selection_evidence(
     controller: ARCController, candidate: ARCCandidateAttemptV1, metrics: dict[str, Any]
 ) -> dict[str, Any]:
     goal = controller.projection.goal
     assert goal is not None
     family = _family(goal)
-    trials: dict[str, dict[str, Any] | None] = {}
-    refs: dict[str, str] = {}
-    controllers = {controller.mission_id: controller}
-    for mission_id in list_mission_ids():
-        if mission_id != controller.mission_id:
-            other = get_controller(mission_id)
-            if (
-                other is not None
-                and other.projection.goal is not None
-                and _family(other.projection.goal) == family
-            ):
-                controllers[mission_id] = other
-    for owner in controllers.values():
-        attempts = {item.attempt_id: item for item in owner.projection.attempts}
-        for event in owner.projection.events:
-            payload = event.payload
-            attempt = attempts.get(str(payload.get("attempt_id")))
-            if attempt is None or attempt.attempt_id.startswith("baseline_"):
-                continue
-            key = _trial(attempt)
-            if event.event_type in {
-                "avo_development_requested",
-                "avo_final_requested",
-                "red_team_tested",
-            }:
-                trials.setdefault(key, None)
-            if event.event_type == "red_team_tested":
-                replay_metrics = payload.get("metrics") or {}
-                observed = _statistics(replay_metrics)
-                if (
-                    observed is not None
-                    and replay_metrics.get("evidence_available") is True
-                    and replay_metrics.get("ranking_basis") == "out_of_sample"
-                    and payload.get("code_sha256")
-                    == hashlib.sha256(attempt.strategy_code.encode()).hexdigest()
-                ):
-                    trials[key] = observed
-                    refs[key] = "arc-event:" + event.event_id
-            if event.event_type not in {"avo_development_result", "bitpro_self_tested"}:
-                continue
-            trials.setdefault(key, None)
-            receipt = payload.get("result", payload)
-            code_hash = hashlib.sha256(attempt.strategy_code.encode()).hexdigest()
-            if not receipt.get("backtest_id") or receipt.get("code_sha256") != code_hash:
-                continue
-            # The search distribution uses development returns, never other candidates'
-            # final holdout results. That would turn the holdout into another search set.
-            if event.event_type == "avo_development_result":
-                observed = _statistics(receipt.get("metrics") or {})
-                if observed is not None:
-                    trials[key] = observed
-                    refs[key] = str(receipt["backtest_id"])
+    trials, refs = _collect_trials(controller, family)
     current = _trial(candidate)
     trials.setdefault(current, None)
     evidence: dict[str, Any] = {

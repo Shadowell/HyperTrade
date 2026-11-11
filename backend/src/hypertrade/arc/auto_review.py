@@ -149,7 +149,9 @@ def auto_review_once(
             # A blocked mission is recorded and skipped: returning on it would starve
             # every mission listed after it on every tick.
             blocked: dict[str, Any] | None = None
-            for mission_id in list_mission_ids():
+            # Only an active mission is ever acted on below; asking for the rest would take an
+            # advisory lock on, and load, every finished mission on every tick.
+            for mission_id in list_mission_ids(states=_ACTIVE):
                 with research_lock(mission_id) as check_owner:
                     if check_owner is None:
                         continue
