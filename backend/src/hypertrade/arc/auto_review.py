@@ -42,7 +42,7 @@ def evaluate_auto_review(controller: ARCController, config: EvolutionConfig) -> 
     attempt = next((a for a in projection.attempts if a.attempt_id == package["attempt_id"]), None)
     if attempt is None:
         return {"decision": "block", "reasons": ["missing_candidate"]}
-    proof = next(
+    proof: dict[str, Any] = next(
         (
             r
             for r in reversed(projection.self_test_records)
@@ -199,7 +199,7 @@ def auto_review_once(
                         elif is_auto_approve_mode:
                             package = build_paper_review(projection)
                             attempt_id = package.get("attempt_id")
-                            proof = next(
+                            proof: dict[str, Any] = next(
                                 (
                                     r
                                     for r in reversed(projection.self_test_records)
