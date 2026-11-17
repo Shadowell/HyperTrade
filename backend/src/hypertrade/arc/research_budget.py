@@ -11,6 +11,7 @@ import hashlib
 import json
 import re
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
@@ -21,12 +22,18 @@ from hypertrade.arc.baseline_feasibility import (
     baseline_failure,
     failure_fingerprint,
 )
-from hypertrade.arc.contracts import RULE_TWEAK_PROVIDER
+from hypertrade.arc.contracts import RULE_TWEAK_PROVIDER, ARCSuccessCriteriaV1
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.feedback import _feedback_child_active, _pending_effect
 from hypertrade.arc.runtime_journal import failure_text
-from hypertrade.arc.store import insert_mission, load_projection, load_projection_tail
+from hypertrade.arc.store import (
+    insert_mission,
+    load_budget_mission_rows,
+    load_final_validation_records,
+    load_latest_events_by_type,
+    load_projection,
+)
 from hypertrade.db import ArcMission, Database
 
 if TYPE_CHECKING:
@@ -193,7 +200,267 @@ def source_cooldown_hours(
     return base
 
 
-def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str, Any]:
+def _build_goal_proxy(
+    row_data: dict[str, Any], *, success_criteria: dict[str, Any] | None = None
+) -> SimpleNamespace:
+    context: dict[str, Any] = {}
+    if row_data["ctx_target_id_exists"]:
+        context["target_id"] = row_data["ctx_target_id"]
+    if row_data["ctx_source_instance_id"] is not None:
+        context["source_instance_id"] = row_data["ctx_source_instance_id"]
+    if row_data["ctx_source_strategy_id"] is not None:
+        context["source_strategy_id"] = row_data["ctx_source_strategy_id"]
+    if row_data["ctx_trigger_source_exists"]:
+        context["trigger_source"] = row_data["ctx_trigger_source"]
+    if isinstance(row_data["ctx_source_snapshot"], dict):
+        context["source_snapshot"] = row_data["ctx_source_snapshot"]
+    if isinstance(row_data["ctx_relay_seats"], dict):
+        context["relay_seats"] = row_data["ctx_relay_seats"]
+    if row_data["ctx_vp_is_dict"]:
+        vp: dict[str, Any] = {}
+        if isinstance(row_data["ctx_vp_baseline_backtest"], dict):
+            vp["baseline_backtest"] = row_data["ctx_vp_baseline_backtest"]
+        if row_data["ctx_vp_supported"]:
+            vp["variant_creation_supported"] = True
+        slots_len = row_data["ctx_vp_slots_len"]
+        if slots_len is not None:
+            vp["relay"] = {"slots": [None] * int(slots_len)}
+        context["variant_policy"] = vp
+    if row_data["ctx_baseline_is_source_variant"]:
+        context["baseline"] = {"strategy_spec": {"is_source_variant": True}}
+
+    parent: dict[str, Any] | None = None
+    if row_data["fb_present"]:
+        parent = {}
+        if row_data["fb_target_id_exists"]:
+            parent["target_id"] = row_data["fb_target_id"]
+        if row_data["fb_instance_id"] is not None:
+            parent["instance_id"] = row_data["fb_instance_id"]
+        if row_data["fb_evidence_is_dict"]:
+            evidence: dict[str, Any] = {}
+            if row_data["fb_evidence_sid_exists"]:
+                evidence["strategy_id"] = row_data["fb_evidence_sid"]
+            parent["evidence"] = evidence
+        if not parent:
+            parent["_present"] = True
+
+    return SimpleNamespace(
+        provider_name=row_data["provider_name"],
+        evolution_context=context or None,
+        feedback_parent=parent,
+        success_criteria=(
+            ARCSuccessCriteriaV1.model_validate(success_criteria)
+            if success_criteria is not None
+            else None
+        ),
+    )
+
+
+def _build_projection_proxy(
+    row_data: dict[str, Any],
+    *,
+    goal: Any,
+    op_event: dict[str, Any] | None = None,
+    last_self_test: dict[str, Any] | None = None,
+) -> SimpleNamespace:
+    paper_review: dict[str, Any] = {}
+    if row_data["paper_review_status"] is not None:
+        paper_review["status"] = row_data["paper_review_status"]
+    if row_data["paper_review_attempt_id"] is not None:
+        paper_review["attempt_id"] = row_data["paper_review_attempt_id"]
+
+    avo: dict[str, Any] = {}
+    if row_data["avo_pending"] is not None:
+        avo["pending"] = row_data["avo_pending"]
+    if row_data["avo_terminal_failure"] is not None:
+        avo["terminal_execution_failure"] = row_data["avo_terminal_failure"]
+    if row_data["avo_final_attempt_id"] is not None:
+        avo["final"] = {"attempt_id": row_data["avo_final_attempt_id"]}
+    if row_data["avo_final_window_consumed"]:
+        avo["final_window_consumed"] = True
+
+    raw_started = row_data["paper_started_at"]
+    paper_started_at = _stored_time(raw_started) if isinstance(raw_started, str) else None
+    attempts = [
+        SimpleNamespace(
+            attempt_id=attempt.get("attempt_id"),
+            strategy_spec={"parameter_changes": attempt.get("parameter_changes")},
+        )
+        for attempt in (row_data["observing_attempts"] or [])
+        if isinstance(attempt, dict)
+    ]
+    events = (
+        [
+            SimpleNamespace(
+                event_type="operator_needed",
+                payload=(
+                    op_event.get("payload")
+                    if isinstance(op_event.get("payload"), dict)
+                    else {}
+                ),
+            )
+        ]
+        if op_event is not None
+        else []
+    )
+    return SimpleNamespace(
+        state=row_data["state"],
+        goal=goal,
+        paper_review=paper_review,
+        avo=avo,
+        paper_started_at=paper_started_at,
+        current_attempt_id=row_data["current_attempt_id"],
+        attempts=attempts,
+        events=events,
+        self_test_records=[last_self_test] if last_self_test is not None else [],
+    )
+
+
+def _usage_items_full(
+    session: Session,
+) -> list[tuple[str, datetime, datetime, Any, Any, str, str, int | str, str | None]]:
+    items = []
+    for row in session.scalars(select(ArcMission)):
+        projection = load_projection(session, row)
+        goal = projection.goal
+        if goal is None:
+            continue
+        target_id, source, strategy_id, trigger = _source_identity(goal)
+        if not source or strategy_id is None:
+            continue
+        items.append(
+            (
+                row.mission_id,
+                row.created_at,
+                row.updated_at,
+                projection,
+                goal,
+                target_id or "bitpro",
+                source,
+                strategy_id,
+                trigger,
+            )
+        )
+    return items
+
+
+def _usage_items_fast(
+    session: Session,
+) -> list[tuple[str, datetime, datetime, Any, Any, str, str, int | str, str | None]]:
+    raw_rows = load_budget_mission_rows(session)
+    if raw_rows is None:
+        return _usage_items_full(session)
+
+    inline_ids = [str(r["mission_id"]) for r in raw_rows if r["has_inline_events"]]
+    inline_by_id: dict[str, tuple[ArcMission, Any]] = {}
+    if inline_ids:
+        for start in range(0, len(inline_ids), 500):
+            for row in session.scalars(
+                select(ArcMission).where(ArcMission.mission_id.in_(inline_ids[start : start + 500]))
+            ):
+                inline_by_id[row.mission_id] = (row, load_projection(session, row))
+
+    prepared: list[
+        tuple[
+            str,
+            dict[str, Any] | None,
+            Any,
+            tuple[Any, str | None, int | str | None, str | None],
+        ]
+    ] = []
+    needs_operator_ids: list[str] = []
+    for row_data in raw_rows:
+        mission_id = str(row_data["mission_id"])
+        if row_data["has_inline_events"]:
+            inline_pair = inline_by_id.get(mission_id)
+            if inline_pair is None or inline_pair[1].goal is None:
+                continue
+            goal = inline_pair[1].goal
+            identity = _source_identity(goal)
+            if not identity[1] or identity[2] is None:
+                continue
+            prepared.append((mission_id, None, inline_pair, identity))
+            continue
+
+        if not row_data["has_goal"]:
+            continue
+        goal = _build_goal_proxy(row_data)
+        identity = _source_identity(goal)
+        if not identity[1] or identity[2] is None:
+            continue
+        prepared.append((mission_id, row_data, goal, identity))
+        if (
+            row_data["state"] == "needs_operator"
+            and row_data["paper_review_status"] != "rejected"
+            and not _pending_effect(SimpleNamespace(avo={"pending": row_data["avo_pending"]}))
+        ):
+            needs_operator_ids.append(mission_id)
+
+    op_events = load_latest_events_by_type(session, needs_operator_ids, "operator_needed")
+    final_val_ids = [
+        mission_id
+        for mission_id, row_data, _, _ in prepared
+        if row_data is not None
+        and mission_id in op_events
+        and row_data["avo_final_window_consumed"]
+        and (op_events[mission_id].get("payload") or {}).get("reason")
+        == "avo_final_validation_failed"
+    ]
+    final_val_records = load_final_validation_records(session, final_val_ids)
+
+    items = []
+    for mission_id, row_meta, obj, (target_id, source, strategy_id, trigger) in prepared:
+        assert source is not None and strategy_id is not None
+        if row_meta is None:
+            row, projection = obj
+            items.append(
+                (
+                    row.mission_id,
+                    row.created_at,
+                    row.updated_at,
+                    projection,
+                    projection.goal,
+                    target_id or "bitpro",
+                    source,
+                    strategy_id,
+                    trigger,
+                )
+            )
+            continue
+
+        goal = obj
+        last_self_test: dict[str, Any] | None = None
+        if mission_id in final_val_records:
+            sc_dict, last_self_test = final_val_records[mission_id]
+            goal.success_criteria = ARCSuccessCriteriaV1.model_validate(sc_dict or {})
+        projection = _build_projection_proxy(
+            row_meta,
+            goal=goal,
+            op_event=op_events.get(mission_id),
+            last_self_test=last_self_test,
+        )
+        items.append(
+            (
+                mission_id,
+                row_meta["created_at"],
+                row_meta["updated_at"],
+                projection,
+                goal,
+                target_id or "bitpro",
+                source,
+                strategy_id,
+                trigger,
+            )
+        )
+    return items
+
+
+def _reduce_usage(
+    session: Session,
+    config: EvolutionConfig,
+    now: datetime,
+    items: list[tuple[str, datetime, datetime, Any, Any, str, str, int | str, str | None]],
+) -> dict[str, Any]:
     start = now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     entries = {
         r.payload_json["mission_id"]: dict(r.payload_json)
@@ -207,29 +474,26 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
     # not charged to the day; `attempts` keeps each parent's outcomes for the failure streak.
     refunded: set[str] = set()
     attempts: dict[str, list[tuple[datetime, str | None, str]]] = {}
-    for row in session.scalars(select(ArcMission)):
-        # Only the reason a mission waiting on the operator stopped for is read from its journal
-        # (its last operator_needed event, below); for every other mission, and for every other
-        # event of that one, the journal, by far the largest part of a mission, would be parsed
-        # and validated here on every call (several times a minute) for nothing.
-        projection = load_projection(session, row, with_events=False)
-        if projection.state == "needs_operator":
-            projection = load_projection_tail(session, row, ("operator_needed",))
-        goal = projection.goal
-        if goal is None:
-            continue
-        target_id, source, strategy_id, trigger = _source_identity(goal)
-        if not source or strategy_id is None:
-            continue
+    for (
+        mission_id,
+        created_at,
+        updated_at,
+        projection,
+        goal,
+        target_id,
+        source,
+        strategy_id,
+        trigger,
+    ) in items:
         # Pre-ledger missions count too: deployment/revision must never reset usage.
         entry = entries.setdefault(
-            row.mission_id,
+            mission_id,
             {
-                "mission_id": row.mission_id,
+                "mission_id": mission_id,
                 "target_id": target_id,
                 "source_strategy_id": strategy_id,
                 "source_instance_id": source,
-                "admitted_at": _utc(row.created_at).isoformat(),
+                "admitted_at": _utc(created_at).isoformat(),
                 "trigger_source": trigger or "invalid",
                 "legacy": True,
             },
@@ -240,9 +504,8 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
         entry_source = entry.get("source_instance_id", source)
         key = source_key(entry_target, entry_strategy, entry_source)
         when = _stored_time(entry["admitted_at"])
-        ctrl = ARCController(mission_id=row.mission_id)
-        ctrl.rebase(projection, row.revision)
-        busy_mission = _pending_effect(projection) or _feedback_child_active(ctrl)
+        ctrl = SimpleNamespace(projection=projection)
+        busy_mission = _pending_effect(projection) or _feedback_child_active(ctrl)  # type: ignore[arg-type]
         in_observation = (
             busy_mission
             and projection.state == "paper_observing"
@@ -253,12 +516,12 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
             active += 1
         failure = baseline_failure(projection)
         if failure:
-            refunded.add(row.mission_id)
+            refunded.add(mission_id)
         attempts.setdefault(key, []).append(
             (when, failure, failure_fingerprint(goal.evolution_context or {}))
         )
         if not busy_mission:
-            cooldown_at = max(when, _utc(row.updated_at))
+            cooldown_at = max(when, _utc(updated_at))
         elif in_observation:
             cooldown_at = (
                 max(when, _utc(projection.paper_started_at))
@@ -343,6 +606,10 @@ def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str,
         "recent_triggers": [r["trigger_source"] for r in ordered[-2:]],
         "fairness": ("eligible_degradation_first;least_recent_source_then_id"),
     }
+
+
+def usage(session: Session, config: EvolutionConfig, now: datetime) -> dict[str, Any]:
+    return _reduce_usage(session, config, now, _usage_items_fast(session))
 
 
 def budget_status(db: Database, config: EvolutionConfig, now: datetime) -> dict[str, Any]:
