@@ -10,7 +10,7 @@ from typing import Any
 
 from hypertrade.arc.admission import basic_admission, basic_admitted
 from hypertrade.arc.controller import ARCController
-from hypertrade.arc.evolution import EvolutionConfig
+from hypertrade.arc.evolution import EvolutionConfig, effective_validation_criteria
 from hypertrade.arc.evolution_models import EvolutionControl
 from hypertrade.arc.feedback import compare_backtests
 from hypertrade.arc.incubation import ARCPaperIncubationResolver
@@ -86,8 +86,20 @@ def evaluate_auto_review(controller: ARCController, config: EvolutionConfig) -> 
         )
         if not passed:
             reasons.extend(failed)
+        effective_policy_criteria = effective_validation_criteria(
+            config.paper_criteria,
+            validation_days=(
+                goal.research_windows.validation_days
+                if goal.research_windows is not None
+                else 60
+            ),
+            timeframe=str(
+                attempt.strategy_spec.get("timeframe")
+                or (goal.timeframes[0] if goal.timeframes else "1H")
+            ),
+        )
         policy_passed, policy_failed = apply_success_criteria(
-            metrics, config.paper_criteria, require_selection_evidence=True
+            metrics, effective_policy_criteria, require_selection_evidence=True
         )
         if not policy_passed:
             reasons.extend("policy: " + reason for reason in policy_failed)
@@ -105,7 +117,29 @@ def evaluate_auto_review(controller: ARCController, config: EvolutionConfig) -> 
         comparison = compare_backtests(metrics, projection.avo.get("baseline_final", {}))
         if not comparison["passed"] or not comparison.get("backtest_id"):
             reasons.append("baseline_comparison_failed")
-    if Decimal(package["paper_configuration"]["initial_equity"]) > config.paper_capital:
+    equity = Decimal(package["paper_configuration"]["initial_equity"])
+    if attempt.strategy_spec.get("is_source_variant") is True:
+        # BitPro binds source variants to their running parent's capital instead of global
+        # config.paper_capital; validate the bound research_capital within [0, 10000].
+        bound_capital = (goal.evolution_context or {}).get("research_capital")
+        if bound_capital is not None:
+            bound_equity: Decimal | None = None
+            if not isinstance(bound_capital, bool):
+                try:
+                    parsed_bound = Decimal(str(bound_capital))
+                    if parsed_bound.is_finite():
+                        bound_equity = parsed_bound
+                except (InvalidOperation, ValueError):
+                    bound_equity = None
+            if not (
+                bound_equity is not None
+                and bound_equity == equity
+                and Decimal("0") < equity <= Decimal("10000")
+            ):
+                reasons.append("automatic_paper_capital_limit")
+        elif equity > config.paper_capital:
+            reasons.append("automatic_paper_capital_limit")
+    elif equity > config.paper_capital:
         reasons.append("automatic_paper_capital_limit")
     if goal.live_allowed:
         reasons.append("paper_only_policy")

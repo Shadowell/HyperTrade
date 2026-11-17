@@ -142,6 +142,41 @@ class EvolutionConfig(BaseModel):
 
 LAUNCH_MEASUREMENT = "launch_exploration"
 
+# Named operator presets merged over the active config; default EvolutionConfig()
+# field values stay unchanged for backward-compatible tests and deployments.
+EVOLUTION_PRESETS: dict[str, dict[str, Any]] = {
+    "production_3slot": {
+        "enabled": True,
+        "launch_enabled": True,
+        "launch_days": 0,
+        "exploration_provider": "rule_tweak",
+        "exploration_cooldown_hours": 2,
+        "paper_admission": "basic",
+        "paper_review_mode": "agent",
+        "max_research_per_day": 32,
+        "max_candidates": 3,
+    }
+}
+
+
+def effective_validation_criteria(
+    criteria: ARCSuccessCriteriaV1,
+    *,
+    validation_days: int,
+    timeframe: str,
+) -> ARCSuccessCriteriaV1:
+    """Scale validation min_trades proportionally for shortened windows or coarse timeframes."""
+    tf = timeframe.strip().upper()
+    if validation_days >= 60 and tf not in {"4H", "6H", "12H", "1D", "1W"}:
+        return criteria.model_copy(deep=True)
+    scaled = round(criteria.min_trades * min(1.0, max(0, validation_days) / 60.0))
+    if tf in {"4H", "6H", "12H"}:
+        scaled = max(3, scaled // 2)
+    elif tf in {"1D", "1W"} and scaled > 10:
+        scaled = max(5, scaled // 3)
+    min_trades = min(criteria.min_trades, max(3, scaled))
+    return criteria.model_copy(update={"min_trades": min_trades}, deep=True)
+
 # BitPro's verified-backtest contract: at most 1,000,000 bars per snapshot, 100,000 per
 # symbol, plus a fixed 500-bar warmup.
 BITPRO_MAX_TOTAL_BARS = 1_000_000
@@ -445,6 +480,30 @@ class EvolutionService:
                 row.updated_by = actor
         return self.status()
 
+    def apply_preset(self, preset_name: str, *, actor: str) -> dict[str, Any]:
+        """Merge a named preset onto the active config at the current revision."""
+        preset = EVOLUTION_PRESETS.get(preset_name)
+        if preset is None:
+            raise ValueError(f"unknown evolution preset: {preset_name}")
+        state = self.status()
+        merged = EvolutionConfig.model_validate({**state["config"], **preset})
+        return self.configure(merged, revision=state["revision"], actor=actor)
+
+    def ensure_bootstrap_preset(self, preset_name: str) -> dict[str, Any] | None:
+        """Apply a preset once at startup only when no global EvolutionControl row exists."""
+        if preset_name not in EVOLUTION_PRESETS:
+            raise ValueError(f"unknown evolution preset: {preset_name}")
+        with self.db.session() as session:
+            if session.get(EvolutionControl, "global") is not None:
+                return None
+        try:
+            return self.apply_preset(preset_name, actor="system:bootstrap")
+        except ValueError:
+            with self.db.session() as session:
+                if session.get(EvolutionControl, "global") is not None:
+                    return None
+            raise
+
     def queue_preview(self) -> dict[str, Any]:
         state = self.status()
         with self.db.session() as session:
@@ -571,6 +630,8 @@ class EvolutionService:
                     if exploration and config.exploration_provider == "rule_tweak"
                     else config.research_provider
                 )
+                research_windows = ResearchWindowsV1.model_validate(context["research_windows"])
+                timeframe = context["baseline"]["strategy_spec"]["timeframe"]
                 goal = ARCGoalV1(
                     objective=(
                         "依据有来源的原Paper观察、历史成交样本和开发实验提出可证伪优化方向；"
@@ -578,7 +639,7 @@ class EvolutionService:
                         "保留原策略，通过同窗比较和最终门槛后按配置评审独立Paper。"
                     ),
                     symbols=declared_symbols(context["baseline"]["strategy_spec"]),
-                    timeframes=[context["baseline"]["strategy_spec"]["timeframe"]],
+                    timeframes=[timeframe],
                     research_mode="avo",
                     provider_name=provider_name,
                     paper_review_required=True,
@@ -586,14 +647,18 @@ class EvolutionService:
                     paper_admission=config.paper_admission,
                     paper_initial_equity=research_capital,
                     evolution_context=context,
-                    research_windows=ResearchWindowsV1.model_validate(context["research_windows"]),
+                    research_windows=research_windows,
                     feedback=PaperFeedbackPolicyV1(enabled=True, threshold_pp=config.threshold_pp),
                     budget=ARCBudgetV1(
                         max_candidates=config.max_candidates,
                         max_model_calls=config.max_model_calls,
                         max_backtests=config.max_backtests,
                     ),
-                    success_criteria=config.paper_criteria.model_copy(deep=True),
+                    success_criteria=effective_validation_criteria(
+                        config.paper_criteria,
+                        validation_days=research_windows.validation_days,
+                        timeframe=timeframe,
+                    ),
                 )
                 ctrl = ARCController(mission_id=mission_id, goal=goal)
                 ctrl.projection.created_by = "paper-evolution-worker"

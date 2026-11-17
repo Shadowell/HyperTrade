@@ -12,7 +12,7 @@ import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any, Literal, Protocol
 
 from hypertrade.arc.backtest_recovery import PENDING_BACKTEST_STATES, BacktestDeferred
@@ -784,25 +784,3 @@ class ARCSelfTestService:
             reasons=reasons,
             message="success_criteria passed" if passed else "; ".join(reasons),
         )
-
-
-def record_self_test_outcome(
-    *,
-    mission_id: str,
-    attempt: ARCCandidateAttemptV1,
-    result: SelfTestResult,
-) -> dict[str, Any]:
-    """Audit record stored on the mission. Does not invent ledger lineage ids."""
-    return {
-        "kind": "arc_self_test",
-        "mission_id": mission_id,
-        "attempt_id": attempt.attempt_id,
-        "candidate_id": attempt.candidate_id,
-        "passed": result.passed,
-        "validation_id": result.validation_id,
-        "bitpro_strategy_id": result.bitpro_strategy_id,
-        "backtest_id": result.backtest_id,
-        "metrics": result.metrics,
-        "reasons": result.reasons,
-        "as_of": datetime.now(UTC).isoformat(),
-    }
