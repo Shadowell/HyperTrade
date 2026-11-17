@@ -340,7 +340,7 @@ def observe_arc_missions_once(
     `record_seconds`: every journal write serializes the whole mission, and a per-minute
     observation made two missions 68k events long.
     """
-    from hypertrade.arc.store import get_controller, list_mission_ids
+    from hypertrade.arc.store import list_mission_ids, peek_controller, peek_light_controller
 
     settings = get_settings()
     clock = now or datetime.now(UTC)
@@ -349,7 +349,7 @@ def observe_arc_missions_once(
     results: list[dict[str, Any]] = []
     observed = skipped = closed = 0
     for mission_id in list_mission_ids(state="paper_observing"):
-        controller = get_controller(mission_id)
+        controller = peek_light_controller(mission_id)
         if controller is None:
             continue
         ended = _end_if_finished(controller, clock) if exit_on else None
@@ -357,6 +357,10 @@ def observe_arc_missions_once(
         if ended is None and observation_due(
             controller.projection, now=clock, interval_seconds=interval
         ):
+            # Only due missions need full event hydration; release the reference after this step.
+            controller = peek_controller(mission_id)
+            if controller is None:
+                continue
             result = {"mission_id": mission_id, **observe_mission(controller, client, now=clock)}
             observed += 1
             if exit_on and controller.projection.state == "paper_observing":
@@ -365,16 +369,15 @@ def observe_arc_missions_once(
         if ended is not None:
             results.append({"mission_id": mission_id, **ended})
             closed += int(ended.get("status") == "completed")
+            controller = None
             continue
         if result is None:
             result = {"mission_id": mission_id, "status": "paper_observing", "skipped": True}
             skipped += 1
         goal = controller.projection.goal
-        if (
-            goal is not None
-            and goal.feedback.enabled
-            and controller.projection.state == "paper_observing"
-        ):
+        state = controller.projection.state
+        controller = None
+        if goal is not None and goal.feedback.enabled and state == "paper_observing":
             from hypertrade.arc.feedback import check_paper_feedback
 
             result["feedback"] = check_paper_feedback(mission_id, client)

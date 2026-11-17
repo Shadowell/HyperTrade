@@ -39,7 +39,6 @@ from hypertrade.arc.evidence import (
 from hypertrade.arc.evidence_view import (
     build_candidate_detail,
     build_evidence_view,
-    build_mission_summary,
 )
 from hypertrade.arc.evolution_router import router as evolution_router
 from hypertrade.arc.findings import ARCReasonCode, AttackFinding
@@ -59,7 +58,14 @@ from hypertrade.arc.provider_hypothesis import build_provider_hypothesist
 from hypertrade.arc.reflexion import ARCReflexionLedger
 from hypertrade.arc.self_test import ARCSelfTestService, SelfTestResult
 from hypertrade.arc.skills import ARCSkill, ARCSkillDistiller, ARCSkillLibrary
-from hypertrade.arc.store import MISSIONS, get_controller, list_mission_ids, save_mission
+from hypertrade.arc.store import (
+    MISSIONS,
+    get_controller,
+    list_mission_summaries,
+    load_progress_projection,
+    peek_controller,
+    save_mission,
+)
 from hypertrade.arc.streaming import router as stream_router
 from hypertrade.arc.universe import resolve_universe
 from hypertrade.config import get_settings
@@ -135,10 +141,16 @@ class PaperDecisionRequest(BaseModel):
     "/missions/{mission_id}/paper-review", dependencies=[Depends(require_scope(ARCScope.READ))]
 )
 async def get_paper_review(mission_id: str) -> dict[str, Any]:
-    ctrl = get_controller(mission_id)
-    if ctrl is None:
+    def _load() -> dict[str, Any] | None:
+        ctrl = peek_controller(mission_id)
+        if ctrl is None:
+            return None
+        return build_paper_review(ctrl.projection)
+
+    result = await run_in_threadpool(_load)
+    if result is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
-    return build_paper_review(ctrl.projection)
+    return result
 
 
 @router.post(
@@ -419,22 +431,22 @@ async def list_arc_missions(
     state: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> dict[str, Any]:
-    summaries: list[dict[str, Any]] = []
-    for mission_id in list_mission_ids(state=state):
-        ctrl = get_controller(mission_id)
-        if ctrl is None:
-            continue
-        summaries.append(build_mission_summary(ctrl.projection))
-    summaries.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
-    return {"missions": summaries[:limit]}
+    summaries = await run_in_threadpool(list_mission_summaries, state=state, limit=limit)
+    return {"missions": summaries}
 
 
 @router.get("/missions/{mission_id}", dependencies=[Depends(require_scope(ARCScope.READ))])
 async def get_arc_mission(mission_id: str) -> dict[str, Any]:
-    ctrl = get_controller(mission_id)
-    if ctrl is None:
+    def _load() -> dict[str, Any] | None:
+        ctrl = peek_controller(mission_id)
+        if ctrl is None:
+            return None
+        return ctrl.projection.model_dump(mode="json")
+
+    result = await run_in_threadpool(_load)
+    if result is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
-    return ctrl.projection.model_dump(mode="json")
+    return result
 
 
 @router.get(
@@ -443,10 +455,18 @@ async def get_arc_mission(mission_id: str) -> dict[str, Any]:
 )
 async def get_arc_mission_progress(mission_id: str) -> dict[str, Any]:
     """Pipeline position of a running mission, for a console that polls it."""
-    ctrl = get_controller(mission_id)
-    if ctrl is None:
+
+    def _load() -> dict[str, Any] | None:
+        loaded = load_progress_projection(mission_id)
+        if loaded is None:
+            return None
+        projection, total_events = loaded
+        return build_pipeline_view(projection, event_count=total_events)
+
+    result = await run_in_threadpool(_load)
+    if result is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
-    return build_pipeline_view(ctrl.projection)
+    return result
 
 
 @router.get(
@@ -454,10 +474,16 @@ async def get_arc_mission_progress(mission_id: str) -> dict[str, Any]:
     dependencies=[Depends(require_scope(ARCScope.READ))],
 )
 async def get_arc_mission_evidence(mission_id: str) -> dict[str, Any]:
-    ctrl = get_controller(mission_id)
-    if ctrl is None:
+    def _load() -> dict[str, Any] | None:
+        ctrl = peek_controller(mission_id)
+        if ctrl is None:
+            return None
+        return build_evidence_view(ctrl.projection)
+
+    result = await run_in_threadpool(_load)
+    if result is None:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
-    return build_evidence_view(ctrl.projection)
+    return result
 
 
 @router.get(
@@ -465,10 +491,15 @@ async def get_arc_mission_evidence(mission_id: str) -> dict[str, Any]:
     dependencies=[Depends(require_scope(ARCScope.READ))],
 )
 async def get_arc_mission_candidate(mission_id: str, attempt_id: str) -> dict[str, Any]:
-    ctrl = get_controller(mission_id)
-    if ctrl is None:
+    def _load() -> tuple[bool, dict[str, Any] | None]:
+        ctrl = peek_controller(mission_id)
+        if ctrl is None:
+            return False, None
+        return True, build_candidate_detail(ctrl.projection, attempt_id)
+
+    found, detail = await run_in_threadpool(_load)
+    if not found:
         raise HTTPException(status_code=404, detail="ARC Mission not found")
-    detail = build_candidate_detail(ctrl.projection, attempt_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="ARC candidate not found")
     return detail

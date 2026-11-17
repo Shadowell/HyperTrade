@@ -395,6 +395,23 @@ def readiness(
 # stamp, and computing it again reads the whole journal of every mission it tracks, every minute.
 _REFRESHED: tuple[Database, tuple[tuple[str, int], ...]] | None = None
 
+_ACCEPTANCE_EVENT_TYPES = (
+    "bitpro_self_tested",
+    "paper_review_decided",
+    "paper_auto_review_evaluated",
+    "paper_review_configured",
+    "paper_review_started",
+    "paper_review_effect_reconciled",
+    "operator_needed",
+    "mission_failed",
+    "mission_completed",
+    "paper_observation_ended",
+    "avo_unknown_result",
+    "paper_review_effect",
+    "avo_development_result",
+    "avo_baseline_result",
+)
+
 
 class ContinuationLedger:
     def __init__(self, db: Database):
@@ -501,7 +518,11 @@ class ContinuationLedger:
 
     def refresh(self, now: datetime) -> None:
         global _REFRESHED
-        from hypertrade.arc.store import load_projection, research_lock
+        from hypertrade.arc.store import (
+            load_projection,
+            load_projection_events,
+            research_lock,
+        )
         from hypertrade.db import ArcMission
 
         with research_lock("evolution-acceptance") as owner:
@@ -522,10 +543,11 @@ class ContinuationLedger:
                 missions = session.scalars(
                     select(ArcMission).order_by(ArcMission.created_at)
                 ).yield_per(20)
+                missions_by_source: dict[str, tuple[int | str, str, str, list[ArcMission]]] = {}
                 for mission in missions:
                     # The checks below need the goal only, which is not in the journal. Most of a
-                    # mission is its journal, and this loop visits every mission every minute:
-                    # it is read further down, only for a mission that passes them.
+                    # mission is its journal, and this loop visits every mission: only changed or
+                    # newly tracked missions read their selective acceptance events further down.
                     projection = load_projection(session, mission, with_events=False)
                     goal = projection.goal
                     context = (goal.feedback_parent or goal.evolution_context) if goal else None
@@ -551,9 +573,39 @@ class ContinuationLedger:
                             continue
                     elif not isinstance(sid, str) or not sid.strip():
                         continue
-                    projection = load_projection(session, mission)
                     source_id = continuation_source_id(target_id, sid, instance)
+                    bucket = missions_by_source.get(source_id)
+                    if bucket is None:
+                        missions_by_source[source_id] = (sid, target_id, str(instance), [mission])
+                    else:
+                        bucket[3].append(mission)
+
+                for source_id, (sid, target_id, instance, source_missions) in (
+                    missions_by_source.items()
+                ):
                     checkpoint = session.get(EvolutionContinuation, source_id, with_for_update=True)
+                    recorded_revisions: dict[str, int] = (
+                        dict(checkpoint.payload_json.get("mission_revisions") or {})
+                        if checkpoint is not None
+                        else {}
+                    )
+                    current_revisions = {
+                        m.mission_id: int(m.revision or 0) for m in source_missions
+                    }
+                    latest_mission_id = source_missions[-1].mission_id
+                    current_acceptance_mid = (
+                        (checkpoint.payload_json.get("acceptance") or {}).get("mission_id")
+                        if checkpoint is not None
+                        else None
+                    )
+                    # Persistent restart skip: if every mission for this source already matches its
+                    # recorded revision and the latest mission owns ``acceptance``, skip all reads.
+                    if (
+                        checkpoint is not None
+                        and recorded_revisions == current_revisions
+                        and current_acceptance_mid == latest_mission_id
+                    ):
+                        continue
                     if checkpoint is None:
                         checkpoint = EvolutionContinuation(
                             id=source_id,
@@ -571,87 +623,97 @@ class ContinuationLedger:
                             )
                         )
                     )
-                    entries = acceptance_entries(projection, now)
-                    for entry in entries:
-                        entry_id = key(
-                            [
-                                mission.mission_id,
-                                entry["reference_id"],
-                                entry["stage"],
-                                entry["result"],
-                                entry["payload"],
-                            ]
+                    for mission in source_missions:
+                        rev = int(mission.revision or 0)
+                        is_latest = mission.mission_id == latest_mission_id
+                        if recorded_revisions.get(mission.mission_id) == rev and (
+                            not is_latest or current_acceptance_mid == mission.mission_id
+                        ):
+                            continue
+                        projection = load_projection_events(
+                            session, mission, _ACCEPTANCE_EVENT_TYPES, include_last=True
                         )
-                        if entry_id not in known:
-                            session.add(
-                                EvolutionAcceptance(
-                                    id=entry_id,
-                                    source_id=source_id,
-                                    payload_json={"mission_id": mission.mission_id, **entry},
-                                )
+                        entries = acceptance_entries(projection, now)
+                        for entry in entries:
+                            entry_id = key(
+                                [
+                                    mission.mission_id,
+                                    entry["reference_id"],
+                                    entry["stage"],
+                                    entry["result"],
+                                    entry["payload"],
+                                ]
                             )
-                    passed = {e["stage"] for e in entries if e["result"] == "passed"}
-                    required = {
-                        next(
-                            (
-                                entry["stage"]
-                                for entry in entries
-                                if entry["stage"]
-                                in {
-                                    "trigger_short_horizon",
-                                    "trigger_observed_7_plus_7",
-                                    "trigger_7_plus_7",
-                                }
+                            if entry_id not in known:
+                                known.add(entry_id)
+                                session.add(
+                                    EvolutionAcceptance(
+                                        id=entry_id,
+                                        source_id=source_id,
+                                        payload_json={"mission_id": mission.mission_id, **entry},
+                                    )
+                                )
+                        passed = {e["stage"] for e in entries if e["result"] == "passed"}
+                        required = {
+                            next(
+                                (
+                                    entry["stage"]
+                                    for entry in entries
+                                    if entry["stage"]
+                                    in {
+                                        "trigger_short_horizon",
+                                        "trigger_observed_7_plus_7",
+                                        "trigger_7_plus_7",
+                                    }
+                                ),
+                                "trigger_7_plus_7",
                             ),
-                            "trigger_7_plus_7",
-                        ),
-                        "budgeted_avo",
-                        "same_window_comparison",
-                        "final_validation",
-                        "agent_policy_review",
-                        "reviewed_configure",
-                        "reviewed_start",
-                    }
-                    missing = sorted(required - passed)
-                    review = projection.paper_review
-                    unknown = review.get("status") == "effect_unknown" or (
-                        projection.state == "needs_operator" and bool(projection.avo.get("pending"))
-                    )
-                    last_stop = next(
-                        (
-                            e.payload.get("reason", "")
-                            for e in reversed(projection.events)
-                            if e.event_type == "operator_needed"
-                        ),
-                        "",
-                    )
-                    unknown = (
-                        unknown
-                        or projection.state == "paper_provisioning"
-                        or (
+                            "budgeted_avo",
+                            "same_window_comparison",
+                            "final_validation",
+                            "agent_policy_review",
+                            "reviewed_configure",
+                            "reviewed_start",
+                        }
+                        missing = sorted(required - passed)
+                        review = projection.paper_review
+                        unknown = review.get("status") == "effect_unknown" or (
                             projection.state == "needs_operator"
-                            and "effect_unknown" in str(last_stop)
+                            and bool(projection.avo.get("pending"))
                         )
-                    )
-                    reasons = [
-                        e["payload"].get("reason")
-                        for e in entries
-                        if e["stage"] == "terminal" or e["result"] == "rejected"
-                    ]
-                    status = (
-                        "reconciliation_required"
-                        if unknown
-                        else "accepted"
-                        if not missing
-                        else "evidence_incomplete"
-                        if projection.state == "paper_observing"
-                        else "terminal_with_gaps"
-                        if projection.state in {"needs_operator", "failed", "completed"}
-                        else "in_progress"
-                    )
-                    checkpoint.payload_json = {
-                        **checkpoint.payload_json,
-                        "acceptance": {
+                        last_stop = next(
+                            (
+                                e.payload.get("reason", "")
+                                for e in reversed(projection.events)
+                                if e.event_type == "operator_needed"
+                            ),
+                            "",
+                        )
+                        unknown = (
+                            unknown
+                            or projection.state == "paper_provisioning"
+                            or (
+                                projection.state == "needs_operator"
+                                and "effect_unknown" in str(last_stop)
+                            )
+                        )
+                        reasons = [
+                            e["payload"].get("reason")
+                            for e in entries
+                            if e["stage"] == "terminal" or e["result"] == "rejected"
+                        ]
+                        status = (
+                            "reconciliation_required"
+                            if unknown
+                            else "accepted"
+                            if not missing
+                            else "evidence_incomplete"
+                            if projection.state == "paper_observing"
+                            else "terminal_with_gaps"
+                            if projection.state in {"needs_operator", "failed", "completed"}
+                            else "in_progress"
+                        )
+                        acceptance_payload = {
                             "mission_id": mission.mission_id,
                             "status": status,
                             "checked_at": utc(now).isoformat(),
@@ -663,32 +725,47 @@ class ContinuationLedger:
                             else None,
                             "pending_effect": bool(unknown),
                             "automatic_resume": not unknown,
-                        },
-                    }
-                    if status in {
-                        "terminal_with_gaps",
-                        "reconciliation_required",
-                        "evidence_incomplete",
-                        "accepted",
-                    }:
-                        summary = checkpoint.payload_json["acceptance"]
-                        summary_id = key(
-                            [
-                                mission.mission_id,
-                                "acceptance_summary",
-                                summary["event_cursor"],
-                                status,
-                            ]
-                        )
-                        if summary_id not in known:
-                            session.add(
-                                EvolutionAcceptance(
-                                    id=summary_id,
-                                    source_id=source_id,
-                                    payload_json={"stage": "acceptance_summary", **summary},
-                                )
+                        }
+                        recorded_revisions[mission.mission_id] = rev
+                        if is_latest or current_acceptance_mid is None:
+                            current_acceptance_mid = mission.mission_id
+                            checkpoint.payload_json = {
+                                **checkpoint.payload_json,
+                                "acceptance": acceptance_payload,
+                                "mission_revisions": dict(recorded_revisions),
+                            }
+                        else:
+                            checkpoint.payload_json = {
+                                **checkpoint.payload_json,
+                                "mission_revisions": dict(recorded_revisions),
+                            }
+                        if status in {
+                            "terminal_with_gaps",
+                            "reconciliation_required",
+                            "evidence_incomplete",
+                            "accepted",
+                        }:
+                            summary_id = key(
+                                [
+                                    mission.mission_id,
+                                    "acceptance_summary",
+                                    acceptance_payload["event_cursor"],
+                                    status,
+                                ]
                             )
-                    owner()
+                            if summary_id not in known:
+                                known.add(summary_id)
+                                session.add(
+                                    EvolutionAcceptance(
+                                        id=summary_id,
+                                        source_id=source_id,
+                                        payload_json={
+                                            "stage": "acceptance_summary",
+                                            **acceptance_payload,
+                                        },
+                                    )
+                                )
+                        owner()
             # Only once the whole pass has committed; a mission that moved during it differs from
             # ``seen`` next time and is taken up then.
             _REFRESHED = (self.db, seen)

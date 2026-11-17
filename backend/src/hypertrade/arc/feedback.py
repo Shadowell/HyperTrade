@@ -19,7 +19,12 @@ from hypertrade.arc.contracts import (
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.observation import paper_attempt
 from hypertrade.arc.runtime_journal import failure_text
-from hypertrade.arc.store import get_controller, research_lock
+from hypertrade.arc.store import (
+    peek_controller,
+    peek_controller_tail,
+    peek_light_controller,
+    research_lock,
+)
 from hypertrade.arc.universe import candidate_symbols, declared_symbols
 from hypertrade.bitpro.mcp import BitProToolAdapter
 from hypertrade.bitpro.paced_reads import PacedReadClient
@@ -740,7 +745,7 @@ def _feedback_child_active(child: ARCController) -> bool:
 def check_paper_feedback(
     mission_id: str, client: Any = None, now: datetime | None = None
 ) -> dict[str, Any]:
-    parent = get_controller(mission_id)
+    parent = peek_light_controller(mission_id)
     if parent is None or parent.projection.goal is None:
         return {"status": "missing"}
     goal = parent.projection.goal
@@ -758,13 +763,21 @@ def check_paper_feedback(
         .astimezone(UTC)
         .replace(hour=0, minute=0, second=0, microsecond=0)
     )
+    light_state = parent.projection.paper_feedback
+    light_child_id = str(light_state.get("child_mission_id") or "")
+    if light_child_id:
+        child = peek_controller_tail(light_child_id, ("operator_needed",))
+        if child and _feedback_child_active(child):
+            return {"status": "child_active", "child_mission_id": child.mission_id}
+    if light_state.get("checked_end_at") == end.isoformat():
+        return dict(light_state)
     with research_lock(f"paper-feedback/{instance_id}") as owner:
         if owner is None:
             return {"status": "busy"}
-        parent = get_controller(mission_id)
+        parent = peek_controller(mission_id)
         assert parent is not None and parent.projection.goal is not None
         state = parent.projection.paper_feedback
-        child = get_controller(str(state.get("child_mission_id", "")))
+        child = peek_controller_tail(str(state.get("child_mission_id", "")), ("operator_needed",))
         if child and _feedback_child_active(child):
             return {"status": "child_active", "child_mission_id": child.mission_id}
         if state.get("checked_end_at") == end.isoformat():
@@ -811,7 +824,7 @@ def check_paper_feedback(
                 parent.apply_event("paper_feedback_checked", result)
                 return result
             # Stable child identity repairs a crash after child creation but before parent linking.
-            if get_controller(child_id) is None:
+            if peek_light_controller(child_id) is None:
                 service = EvolutionService(store._database, client)
                 policy = service.status()
                 config = EvolutionConfig.model_validate(policy["config"])
