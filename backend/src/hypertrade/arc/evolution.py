@@ -328,12 +328,26 @@ def target_symbols(snapshot: dict[str, Any], *, bitpro: bool) -> list[str]:
     return list(dict.fromkeys(symbols))
 
 
-def cycle_view(row: EvolutionCycle) -> dict[str, Any]:
+def cycle_view(row: EvolutionCycle, *, compact: bool = False) -> dict[str, Any]:
+    payload = dict(row.payload_json)
+    if compact:
+        raw_diagnostics = payload.pop("diagnostics", None)
+        if isinstance(raw_diagnostics, list):
+            by_status: dict[str, int] = {}
+            for item in raw_diagnostics:
+                status = (
+                    str(item.get("status") or "unknown") if isinstance(item, dict) else "unknown"
+                )
+                by_status[status] = by_status.get(status, 0) + 1
+            payload["diagnostics_summary"] = {
+                "count": len(raw_diagnostics),
+                "by_status": by_status,
+            }
     return {
         "id": row.id,
         "status": row.status,
         "created_at": row.created_at.isoformat(),
-        "payload": dict(row.payload_json),
+        "payload": payload,
     }
 
 
@@ -357,16 +371,17 @@ class EvolutionService:
         self.client = client
         self._client_target_id: str | None = None
 
-    def status(self) -> dict[str, Any]:
+    def status(self, *, compact: bool = False, cycles_limit: int = 20) -> dict[str, Any]:
         from hypertrade.arc.research_budget import budget_status
 
+        bounded_limit = max(1, min(int(cycles_limit), 20))
         with self.db.session() as session:
             row = session.get(EvolutionControl, "global")
             cycles = session.scalars(
                 select(EvolutionCycle)
                 .where(EvolutionCycle.status.not_in(["budget_admitted", "budget_denied"]))
                 .order_by(EvolutionCycle.created_at.desc())
-                .limit(20)
+                .limit(bounded_limit)
             ).all()
             return {
                 "config": EvolutionConfig.model_validate(row.config_json if row else {}).model_dump(
@@ -378,7 +393,10 @@ class EvolutionService:
                     datetime.now(UTC),
                 ),
                 "revision": row.revision if row else 0,
-                "cycles": [cycle_view(c) for c in cycles],
+                "cycles": [
+                    cycle_view(c, compact=compact and index >= 2)
+                    for index, c in enumerate(cycles)
+                ],
                 "continuations": ContinuationLedger(self.db).view(),
             }
 
