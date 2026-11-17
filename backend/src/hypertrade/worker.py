@@ -559,12 +559,8 @@ def build_loops(db: Database, settings: Settings) -> list[tuple[str, LoopFactory
     loops.append(("arc_meta_tuning", lambda: arc_meta_tuning_loop(db)))
     loops.append(("cognitive_memory_replay", lambda: cognitive_memory_replay_loop(db)))
     loops.append(("heartbeat", lambda: heartbeat_loop(db)))
-    if settings.mission_runtime_worker_enabled:
+    if settings.arc_avo_research_enabled or settings.mission_runtime_worker_enabled:
         loops.append(("avo_research", lambda: avo_research_loop(db)))
-    if settings.self_healing_evolution_enabled:
-        loops.append(
-            ("self_healing_evolution", lambda: self_healing_evolution_loop(db, settings=settings))
-        )
     if settings.race_judge_enabled:
         loops.append(("race_judge", lambda: race_judge_loop(db, settings=settings)))
     if settings.arc_memory_distillation_enabled:
@@ -898,6 +894,10 @@ async def arc_evolution_loop(db: Database) -> None:
 
     configure_store(db)
     service = EvolutionService(db)
+    settings = get_settings()
+    bootstrap_preset = settings.arc_evolution_bootstrap_preset.strip()
+    if bootstrap_preset:
+        service.ensure_bootstrap_preset(bootstrap_preset)
     while True:
         await _guarded(db, "worker.arc_evolution", service.tick)
         await _guarded(db, "worker.arc_evolution_alerts", lambda: evolution_alerts_once(db))
@@ -938,35 +938,6 @@ async def avo_research_loop(db: Database) -> None:
     while True:
         await _guarded(db, "worker.avo_research", run_pending_avo_once)
         await asyncio.sleep(5)
-
-
-async def self_healing_evolution_loop(
-    db: Database,
-    settings: Settings | None = None,
-    *,
-    engine: Any | None = None,
-) -> None:
-    """Monitors DEGRADED execution strategies and performs autonomous parameter self-healing."""
-    from hypertrade.paper.self_healing import SelfHealingEvolutionEngine
-
-    active_settings = settings or get_settings()
-    evolution_engine = engine or SelfHealingEvolutionEngine()
-    poll_interval = max(5.0, active_settings.self_healing_evolution_interval_seconds)
-    logger.info("self_healing_evolution_loop started poll_interval=%ss", poll_interval)
-    while True:
-        try:
-            healed = await asyncio.to_thread(evolution_engine.scan_and_heal_all_degraded)
-            if healed:
-                logger.info(
-                    "self_healing_evolution_loop healed %d strategies: %s",
-                    len(healed),
-                    [h.offspring_strategy_id for h in healed],
-                )
-            HEARTBEATS.record_success("worker.self_healing_evolution")
-        except Exception as exc:
-            logger.exception("self_healing_evolution_loop cycle error")
-            await _journal(db, "worker.self_healing_evolution", exc)
-        await asyncio.sleep(poll_interval)
 
 
 async def race_judge_loop(

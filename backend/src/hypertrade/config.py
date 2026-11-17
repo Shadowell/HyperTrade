@@ -258,6 +258,14 @@ class Settings(BaseSettings):
         default=300,
         alias="ARC_OPERATOR_ASSERTION_MAX_AGE_SECONDS",
     )
+    arc_avo_research_enabled: bool = Field(
+        default=True,
+        alias="ARC_AVO_RESEARCH_ENABLED",
+    )
+    arc_evolution_bootstrap_preset: str = Field(
+        default="",
+        alias="ARC_EVOLUTION_BOOTSTRAP_PRESET",
+    )
     research_trigger_poll_interval_seconds: float = Field(
         default=10.0,
         alias="RESEARCH_TRIGGER_POLL_INTERVAL_SECONDS",
@@ -418,16 +426,6 @@ class Settings(BaseSettings):
     news_poll_interval_seconds: int = Field(
         default=60,
         alias="NEWS_POLL_INTERVAL_SECONDS",
-    )
-    # Legacy rule-based mutation path; ARC evolution owns candidate creation and its
-    # BitPro deploy branch can no longer pass validation. Off unless explicitly enabled.
-    self_healing_evolution_enabled: bool = Field(
-        default=False,
-        alias="SELF_HEALING_EVOLUTION_ENABLED",
-    )
-    self_healing_evolution_interval_seconds: int = Field(
-        default=60,
-        alias="SELF_HEALING_EVOLUTION_INTERVAL_SECONDS",
     )
     race_judge_enabled: bool = Field(
         default=True,

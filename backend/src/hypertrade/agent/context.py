@@ -54,22 +54,6 @@ def compact_messages(
     )
 
 
-def _prefix_end(messages: list[dict[str, Any]]) -> int:
-    """Index boundary after system + first user message (always preserved)."""
-
-    end = 0
-    seen_user = False
-    for index, message in enumerate(messages):
-        role = message.get("role")
-        if role == "system":
-            end = index
-        elif role == "user" and not seen_user:
-            end = index
-            seen_user = True
-            break
-    return end
-
-
 def json_digest(value: Any, *, max_chars: int = 200) -> str:
     """Bounded JSON digest used inside compaction summaries."""
 

@@ -7,28 +7,9 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from hypertrade.db import MemoryItem, ResearchExperimentEvidence, TraceEvent
+from hypertrade.db import MemoryItem, ResearchExperimentEvidence
 from hypertrade.rag.service import RagHit
 from hypertrade.research.evidence_schemas import EvidenceSourceRef
-
-
-def source_ref_from_trace(event: TraceEvent) -> EvidenceSourceRef:
-    return EvidenceSourceRef(
-        source_type="tool",
-        source_id=event.id,
-        tool_name=event.tool_name,
-        observed_at=_aware(event.created_at),
-        content_hash=_digest(
-            {
-                "run_id": event.run_id,
-                "tool_name": event.tool_name,
-                "status": event.status,
-                "input": event.input_json,
-                "output": event.output_json,
-            }
-        ),
-        availability="available" if event.status == "completed" else "unavailable",
-    )
 
 
 def source_ref_from_rag_hit(hit: RagHit, *, observed_at: datetime) -> EvidenceSourceRef:

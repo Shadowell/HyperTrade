@@ -7,6 +7,18 @@ type BitPro = NonNullable<HarnessOverview["bitpro"]>;
 
 /** How this console reaches BitPro: contract endpoints only, never BitPro business logic. */
 export function BitProCard({ t, bitpro }: { t: Copy; bitpro: BitPro }) {
+  const probe = bitpro.live_probe;
+  const probeHealthy = Boolean(probe?.reachable && probe?.authenticated);
+  const probeLabel = probe
+    ? probeHealthy
+      ? probe.latency_ms != null
+        ? `${t.mcpLiveOnline} · ${Math.round(probe.latency_ms)} ms`
+        : t.mcpLiveOnline
+      : probe.reachable
+        ? t.mcpLiveAuthFailed
+        : t.mcpLiveUnreachable
+    : "";
+
   return (
     <div className="mt-6 rounded-md border border-ink/10 bg-paper/70 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -14,17 +26,42 @@ export function BitProCard({ t, bitpro }: { t: Copy; bitpro: BitPro }) {
           <h3 className="text-sm font-semibold">{t.bitproMcp}</h3>
           <p className="mt-1 text-xs leading-5 text-ink/50">{t.bitproMcpHint}</p>
         </div>
-        <span
-          className={`inline-flex items-center gap-2 rounded border px-2 py-1 text-xs font-semibold ${
-            bitpro.token_configured
-              ? "border-signal/25 text-signal"
-              : "border-danger/25 text-danger"
-          }`}
-        >
-          <StatusDot enabled={bitpro.token_configured} />
-          {bitpro.token_configured ? t.mcpTokenReady : t.mcpTokenMissing}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {probe ? (
+            <span
+              className={`inline-flex items-center gap-2 rounded border px-2 py-1 text-xs font-semibold ${
+                probeHealthy ? "border-signal/25 text-signal" : "border-danger/25 text-danger"
+              }`}
+            >
+              <StatusDot enabled={probeHealthy} />
+              {probeLabel}
+            </span>
+          ) : null}
+          <span
+            className={`inline-flex items-center gap-2 rounded border px-2 py-1 text-xs font-semibold ${
+              bitpro.token_configured
+                ? "border-signal/25 text-signal"
+                : "border-danger/25 text-danger"
+            }`}
+          >
+            <StatusDot enabled={bitpro.token_configured} />
+            {bitpro.token_configured ? t.mcpTokenReady : t.mcpTokenMissing}
+          </span>
+        </div>
       </div>
+      {probe && (probe.error || probe.hint) ? (
+        <div
+          className="mt-3 rounded border border-danger/25 bg-danger/5 px-3 py-2 text-xs leading-5 text-ink/80"
+          role="status"
+        >
+          {probe.error ? <div className="font-mono text-danger">{probe.error}</div> : null}
+          {probe.hint ? (
+            <div className="text-ink/70">
+              {t.mcpProbeHint}: {probe.hint}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="mt-4 grid grid-cols-2 gap-3 max-md:grid-cols-1">
         <div className="mini-block">
           <span>{t.mcpApiBase}</span>

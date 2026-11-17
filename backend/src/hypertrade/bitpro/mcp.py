@@ -9,13 +9,18 @@ write tools are blocked here.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import hashlib
 import json
 import re
 import time
-from collections.abc import Callable, Coroutine
+from collections import OrderedDict
+from collections.abc import Callable, Coroutine, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import httpx
@@ -26,6 +31,13 @@ from hypertrade.strategy.sdk import Candle
 MCP_CONTRACT_VERSION = "bitpro-mcp-v1"
 DEFAULT_API_BASE = "http://127.0.0.1:8889/api/v2"
 DEFAULT_AUTH_HEADER = "X-BitPro-MCP-Token"
+
+_HTTP_CLIENT_POOL_MAX_SIZE = 8
+_HTTP_CLIENT_POOL_LOCK = Lock()
+_HTTP_CLIENT_POOL: OrderedDict[tuple[str, float], httpx.Client] = OrderedDict()
+
+_PROBE_CACHE_LOCK = Lock()
+_PROBE_CACHE: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
 
 READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     "bitpro_health": {"method": "GET", "path": "/system/health"},
@@ -81,6 +93,22 @@ READ_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
     },
     # BitPro's persisted relay plans: the authoritative list of live races.
     "paper_relay_plans": {"method": "GET", "path": "/strategies/relay-plans"},
+    # Multi-Bot Research Event Bus (read)
+    "research_context_snapshot": {"method": "GET", "path": "/research/collaboration/snapshot"},
+    "research_context_delta": {"method": "GET", "path": "/research/collaboration/events"},
+    "research_get_checkpoint": {
+        "method": "GET",
+        "path": "/research/collaboration/checkpoints/{bot_id}",
+    },
+    # Review, Monitor & Onchain (read)
+    "review_summary": {"method": "GET", "path": "/review/summary"},
+    "monitor_active_strategies": {"method": "GET", "path": "/monitor/active_strategies"},
+    "onchain_summary": {"method": "GET", "path": "/onchain/summary"},
+    # FactorLab 2.0 (read)
+    "factorlab_get_operators": {"method": "GET", "path": "/factorlab/studio/operators"},
+    "factorlab_list_alphas": {"method": "GET", "path": "/factorlab/studio/alphas"},
+    "factorlab_matrix_check": {"method": "GET", "path": "/factorlab/studio/matrix"},
+    "factorlab_runner_status": {"method": "GET", "path": "/factorlab/studio/runner/status"},
 }
 
 RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
@@ -114,6 +142,15 @@ RESEARCH_MUTATION_TOOL_ENDPOINTS: dict[str, dict[str, str]] = {
         "method": "POST",
         "path": "/strategies/{parent_id}/relay-control",
     },
+    # Multi-Bot Research Event Bus (mutation)
+    "research_publish_event": {"method": "POST", "path": "/research/collaboration/events"},
+    "research_bot_checkpoint": {
+        "method": "PUT",
+        "path": "/research/collaboration/checkpoints/{bot_id}",
+    },
+    # FactorLab 2.0 (mutation)
+    "factorlab_simulate": {"method": "POST", "path": "/factorlab/studio/simulate"},
+    "factorlab_batch_simulate": {"method": "POST", "path": "/factorlab/studio/simulate/batch"},
 }
 
 # Bodies BitPro accepts on the reviewed Paper endpoints. They mirror BitPro's
@@ -174,6 +211,10 @@ RESEARCH_MUTATION_TOOLS = {
     "paper_resume",
     "paper_stop",
     "paper_relay_control",
+    "research_publish_event",
+    "research_bot_checkpoint",
+    "factorlab_simulate",
+    "factorlab_batch_simulate",
 }
 
 
@@ -248,6 +289,98 @@ MCP_AGENT_AUTH_POLICY: dict[str, Any] = {
 }
 
 
+def _running_in_docker() -> bool:
+    return Path("/.dockerenv").exists()
+
+
+def _connection_error_hint(base_url: str, exc: BaseException | None = None) -> str | None:
+    if exc is not None and not isinstance(
+        exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException)
+    ):
+        return None
+    normalized_base = str(base_url or "").strip()
+    if _running_in_docker() and ("127.0.0.1" in normalized_base or "localhost" in normalized_base):
+        return (
+            "BitPro base_url uses loopback inside Docker; set BITPRO_MCP_API_BASE to "
+            "http://host.docker.internal:8889/api/v2"
+        )
+    if isinstance(exc, (httpx.ConnectTimeout, httpx.TimeoutException)):
+        return (
+            f"connection to BitPro ({normalized_base}) timed out; verify BitPro is "
+            "healthy and BITPRO_MCP_API_BASE routing is reachable"
+        )
+    return (
+        f"cannot reach BitPro at {normalized_base}; verify BitPro is running and "
+        "BITPRO_MCP_API_BASE is reachable"
+    )
+
+
+def _auth_error_hint(
+    status_code: int,
+    *,
+    auth_token: str,
+    auth_header: str,
+    tool_name: str,
+) -> str | None:
+    if status_code not in {401, 403}:
+        return None
+    header = auth_header or DEFAULT_AUTH_HEADER
+    if not auth_token:
+        return (
+            f"BITPRO_MCP_API_TOKEN is not configured; set BITPRO_MCP_API_TOKEN "
+            f"(sent via {header})"
+        )
+    if status_code == 401:
+        return (
+            f"BitPro rejected {header}; verify BITPRO_MCP_API_TOKEN is valid and not revoked"
+        )
+    return (
+        f"BitPro denied permission for {tool_name}; verify BITPRO_MCP_API_TOKEN "
+        f"({header}) tool-group scopes"
+    )
+
+
+def _get_pooled_http_client(base_url: str, timeout_seconds: float) -> httpx.Client:
+    key = (base_url, float(timeout_seconds))
+    evicted_clients: list[httpx.Client] = []
+    with _HTTP_CLIENT_POOL_LOCK:
+        existing = _HTTP_CLIENT_POOL.get(key)
+        if existing is not None and not getattr(existing, "is_closed", False):
+            _HTTP_CLIENT_POOL.move_to_end(key)
+            return existing
+        if existing is not None:
+            _HTTP_CLIENT_POOL.pop(key, None)
+        client = httpx.Client(timeout=float(timeout_seconds))
+        _HTTP_CLIENT_POOL[key] = client
+        while len(_HTTP_CLIENT_POOL) > _HTTP_CLIENT_POOL_MAX_SIZE:
+            _, evicted = _HTTP_CLIENT_POOL.popitem(last=False)
+            evicted_clients.append(evicted)
+    for evicted in evicted_clients:
+        close_fn = getattr(evicted, "close", None)
+        if callable(close_fn) and not getattr(evicted, "is_closed", False):
+            with contextlib.suppress(Exception):
+                close_fn()
+    return client
+
+
+def clear_http_client_pool() -> None:
+    """Close and clear all pooled default httpx.Client instances."""
+    with _HTTP_CLIENT_POOL_LOCK:
+        clients = list(_HTTP_CLIENT_POOL.values())
+        _HTTP_CLIENT_POOL.clear()
+    for client in clients:
+        close_fn = getattr(client, "close", None)
+        if callable(close_fn) and not getattr(client, "is_closed", False):
+            with contextlib.suppress(Exception):
+                close_fn()
+
+
+def clear_probe_cache() -> None:
+    """Clear the module-level BitPro connectivity probe TTL cache."""
+    with _PROBE_CACHE_LOCK:
+        _PROBE_CACHE.clear()
+
+
 class BitProMcpError(RuntimeError):
     """Raised when a BitPro tool-contract call fails."""
 
@@ -257,10 +390,12 @@ class BitProMcpError(RuntimeError):
         *,
         status_code: int | None = None,
         payload: Any = None,
+        hint: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.payload = payload
+        self.hint = hint
 
 
 class BitProMcpClient:
@@ -286,9 +421,17 @@ class BitProMcpClient:
         self.admin_cookie = (
             admin_cookie if admin_cookie is not None else self.settings.bitpro_admin_cookie.strip()
         )
-        self.http_client = http_client or httpx.Client(
-            timeout=self.settings.bitpro_mcp_timeout_seconds
-        )
+        # Reuse a bounded connection pool for default clients across worker loops;
+        # keep explicitly injected mock/custom clients completely isolated.
+        if http_client is not None:
+            self.http_client = http_client
+            self._uses_pooled_http_client = False
+        else:
+            self.http_client = _get_pooled_http_client(
+                self.base_url,
+                float(self.settings.bitpro_mcp_timeout_seconds),
+            )
+            self._uses_pooled_http_client = True
         self.remote_tool_caller = remote_tool_caller
 
     def call_tool(
@@ -317,6 +460,8 @@ class BitProMcpClient:
         spec = endpoints[tool_name]
         method = spec["method"].upper()
         path = _format_path(spec["path"], params)
+        if "{" in path and "}" in path:
+            raise ValueError(f"{tool_name} missing required path parameter in {spec['path']}")
         if method == "GET":
             return self._request(
                 method,
@@ -360,19 +505,40 @@ class BitProMcpClient:
                 headers=headers,
             )
         except httpx.HTTPError as exc:
+            hint = _connection_error_hint(self.base_url, exc)
+            message = f"{tool_name} request failed: {exc}"
+            if hint:
+                message = f"{message} [hint: {hint}]"
+            error_payload: dict[str, Any] = {
+                "message": str(exc),
+                "type": type(exc).__name__,
+            }
+            if hint:
+                error_payload["hint"] = hint
             raise BitProMcpError(
-                f"{tool_name} request failed: {exc}",
+                message,
                 status_code=None,
-                payload={"error": {"message": str(exc), "type": type(exc).__name__}},
+                payload={"error": error_payload},
+                hint=hint,
             ) from exc
         payload = _response_payload(response)
         if response.status_code >= 400 or (
             isinstance(payload, dict) and payload.get("success") is False
         ):
+            hint = _auth_error_hint(
+                response.status_code,
+                auth_token=self.auth_token,
+                auth_header=self.auth_header,
+                tool_name=tool_name,
+            )
+            message = _error_message(payload, response.status_code, tool_name=tool_name)
+            if hint:
+                message = f"{message} [hint: {hint}]"
             raise BitProMcpError(
-                _error_message(payload, response.status_code, tool_name=tool_name),
+                message,
                 status_code=response.status_code,
                 payload=payload,
+                hint=hint,
             )
         if isinstance(payload, dict) and payload.get("success") is True and "data" in payload:
             return payload["data"]
@@ -475,8 +641,13 @@ def _run_async(awaitable: Coroutine[Any, Any, Any]) -> Any:
 class BitProToolAdapter:
     """Agent-facing adapter for BitPro read and non-live lifecycle tools."""
 
-    def __init__(self, client: BitProMcpClient | None = None) -> None:
-        self.client = client or BitProMcpClient()
+    def __init__(
+        self,
+        client: BitProMcpClient | None = None,
+        *,
+        settings: Settings | None = None,
+    ) -> None:
+        self.client = client or BitProMcpClient(settings=settings)
         self.last_tool_calls: list[dict[str, Any]] = []
 
     def capabilities(self) -> dict[str, Any]:
@@ -492,6 +663,121 @@ class BitProToolAdapter:
             "health": health,
             "tool_calls": self.last_tool_calls,
         }
+
+    def probe_connectivity(self, *, ttl_seconds: float = 15.0) -> dict[str, Any]:
+        """Probe BitPro reachability and authentication without raising.
+
+        Caches results in a thread-safe module-level TTL cache keyed by
+        `(api_base, auth_header, token_digest)` when `ttl_seconds > 0`.
+        """
+        api_base = self.client.base_url
+        token_configured = bool(self.client.auth_token)
+        token_digest = (
+            hashlib.sha256(self.client.auth_token.encode("utf-8")).hexdigest()[:16]
+            if self.client.auth_token
+            else ""
+        )
+        cache_key = (api_base, self.client.auth_header, token_digest)
+        ttl = max(0.0, float(ttl_seconds))
+        now = time.monotonic()
+        if ttl > 0:
+            with _PROBE_CACHE_LOCK:
+                cached = _PROBE_CACHE.get(cache_key)
+                if cached is not None and cached[0] > now:
+                    return dict(cached[1])
+
+        started = time.monotonic()
+        result: dict[str, Any]
+        try:
+            health_payload = self.health()
+            latency_ms = round((time.monotonic() - started) * 1000.0, 2)
+            health_info = health_payload.get("health")
+            raw_status = (
+                str(health_info.get("status") or "healthy")
+                if isinstance(health_info, dict)
+                else "ok"
+            )
+            result = {
+                "reachable": True,
+                "authenticated": True,
+                "status": raw_status,
+                "latency_ms": latency_ms,
+                "api_base": api_base,
+                "token_configured": token_configured,
+                "error": None,
+                "hint": None,
+            }
+        except BitProMcpError as exc:
+            latency_ms = round((time.monotonic() - started) * 1000.0, 2)
+            status_code = exc.status_code
+            hint = exc.hint
+            if status_code in {401, 403}:
+                if not hint:
+                    hint = _auth_error_hint(
+                        status_code,
+                        auth_token=self.client.auth_token,
+                        auth_header=self.client.auth_header,
+                        tool_name="bitpro_health",
+                    )
+                result = {
+                    "reachable": True,
+                    "authenticated": False,
+                    "status": "unauthorized" if status_code == 401 else "forbidden",
+                    "latency_ms": latency_ms,
+                    "api_base": api_base,
+                    "token_configured": token_configured,
+                    "error": str(exc),
+                    "hint": hint,
+                }
+            elif status_code is not None:
+                reachable = status_code not in {502, 504}
+                status_label = (
+                    "unreachable"
+                    if not reachable
+                    else "degraded"
+                    if status_code >= 500
+                    else f"http_{status_code}"
+                )
+                result = {
+                    "reachable": reachable,
+                    "authenticated": status_code < 500,
+                    "status": status_label,
+                    "latency_ms": latency_ms,
+                    "api_base": api_base,
+                    "token_configured": token_configured,
+                    "error": str(exc),
+                    "hint": hint,
+                }
+            else:
+                if not hint:
+                    hint = _connection_error_hint(api_base, exc.__cause__)
+                result = {
+                    "reachable": False,
+                    "authenticated": False,
+                    "status": "unreachable",
+                    "latency_ms": latency_ms,
+                    "api_base": api_base,
+                    "token_configured": token_configured,
+                    "error": str(exc),
+                    "hint": hint,
+                }
+        except Exception as exc:
+            latency_ms = round((time.monotonic() - started) * 1000.0, 2)
+            result = {
+                "reachable": False,
+                "authenticated": False,
+                "status": "error",
+                "latency_ms": latency_ms,
+                "api_base": api_base,
+                "token_configured": token_configured,
+                "error": str(exc)[:300],
+                "hint": None,
+            }
+
+        if ttl > 0:
+            with _PROBE_CACHE_LOCK:
+                _PROBE_CACHE[cache_key] = (time.monotonic() + ttl, dict(result))
+        return result
 
     def paper_evidence(self, **parameters: Any) -> dict[str, Any]:
         """Read the versioned Paper ledger; unsupported servers fail closed upstream."""
@@ -1655,6 +1941,306 @@ class BitProToolAdapter:
             "tool_calls": self.last_tool_calls,
         }
 
+    # ------------------------------------------------------------------
+    # Multi-Bot Research Event Bus
+    # ------------------------------------------------------------------
+
+    def research_context_snapshot(
+        self,
+        *,
+        project_id: str = "default",
+        limit: int = 100,
+        topics: Sequence[str] | str | None = None,
+    ) -> dict[str, Any]:
+        """Read a bounded snapshot of BitPro's multi-bot research blackboard."""
+        self.last_tool_calls = []
+        self._preflight()
+        params = _compact(
+            {
+                "project_id": str(project_id or "default").strip() or "default",
+                "limit": _bounded_int(limit, default=100, minimum=1, maximum=200),
+                "topics": _csv_param(topics),
+            }
+        )
+        return _ensure_dict(self._call("research_context_snapshot", params))
+
+    def research_context_delta(
+        self,
+        *,
+        project_id: str = "default",
+        after_cursor: int = 0,
+        limit: int = 100,
+        topics: Sequence[str] | str | None = None,
+        event_types: Sequence[str] | str | None = None,
+        include_expired: bool = False,
+    ) -> dict[str, Any]:
+        """Read incremental multi-bot research events strictly after `after_cursor`."""
+        self.last_tool_calls = []
+        self._preflight()
+        params = _compact(
+            {
+                "project_id": str(project_id or "default").strip() or "default",
+                "after_cursor": max(0, int(after_cursor)),
+                "limit": _bounded_int(limit, default=100, minimum=1, maximum=200),
+                "topics": _csv_param(topics),
+                "event_types": _csv_param(event_types),
+                "include_expired": bool(include_expired),
+            }
+        )
+        return _ensure_dict(self._call("research_context_delta", params))
+
+    def research_publish_event(
+        self,
+        *,
+        project_id: str = "default",
+        bot_id: str,
+        squad_id: str = "hypertrade",
+        event_type: str,
+        topic: str,
+        payload: dict[str, Any],
+        idempotency_key: str,
+        symbol: str | None = None,
+        as_of: str | None = None,
+        expires_at: str | None = None,
+        confidence: float | None = None,
+        source_ref: str = "",
+        data_quality: str = "valid",
+    ) -> dict[str, Any]:
+        """Publish an idempotent structured event to BitPro's research blackboard."""
+        if not str(bot_id or "").strip():
+            raise ValueError("research_publish_event requires bot_id")
+        if not str(topic or "").strip():
+            raise ValueError("research_publish_event requires topic")
+        if not str(idempotency_key or "").strip():
+            raise ValueError("research_publish_event requires idempotency_key")
+        self.last_tool_calls = []
+        self._preflight()
+        params = _compact(
+            {
+                "project_id": str(project_id or "default").strip() or "default",
+                "bot_id": str(bot_id).strip(),
+                "squad_id": str(squad_id or "hypertrade").strip() or "hypertrade",
+                "event_type": str(event_type).strip(),
+                "topic": str(topic).strip(),
+                "symbol": symbol,
+                "as_of": as_of,
+                "expires_at": expires_at,
+                "payload": dict(payload),
+                "confidence": confidence,
+                "source_ref": source_ref,
+                "data_quality": data_quality,
+                "idempotency_key": str(idempotency_key).strip(),
+            }
+        )
+        return _ensure_dict(self._call("research_publish_event", params))
+
+    def research_bot_checkpoint(
+        self,
+        *,
+        project_id: str = "default",
+        bot_id: str,
+        cursor: int,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Persist a monotonic consumer cursor for `bot_id` on BitPro's blackboard."""
+        clean_bot = str(bot_id or "").strip()
+        if not clean_bot:
+            raise ValueError("research_bot_checkpoint requires bot_id")
+        if not str(idempotency_key or "").strip():
+            raise ValueError("research_bot_checkpoint requires idempotency_key")
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(
+            self._call(
+                "research_bot_checkpoint",
+                {
+                    "project_id": str(project_id or "default").strip() or "default",
+                    "bot_id": clean_bot,
+                    "cursor": max(0, int(cursor)),
+                    "idempotency_key": str(idempotency_key).strip(),
+                },
+            )
+        )
+
+    def research_get_checkpoint(
+        self,
+        *,
+        project_id: str = "default",
+        bot_id: str,
+    ) -> dict[str, Any]:
+        """Read a bot's persisted collaboration cursor."""
+        clean_bot = str(bot_id or "").strip()
+        if not clean_bot:
+            raise ValueError("research_get_checkpoint requires bot_id")
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(
+            self._call(
+                "research_get_checkpoint",
+                {
+                    "project_id": str(project_id or "default").strip() or "default",
+                    "bot_id": clean_bot,
+                },
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # Review, Monitor & Onchain
+    # ------------------------------------------------------------------
+
+    def review_summary(
+        self,
+        *,
+        window: str = "24h",
+        bucket: str = "1h",
+        include_stopped: bool = False,
+    ) -> dict[str, Any]:
+        """Read BitPro review-center summary across running paper strategies."""
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(
+            self._call(
+                "review_summary",
+                _compact(
+                    {
+                        "window": str(window or "24h"),
+                        "bucket": str(bucket or "1h"),
+                        "include_stopped": bool(include_stopped),
+                    }
+                ),
+            )
+        )
+
+    def monitor_active_strategies(
+        self,
+        *,
+        include_paused: bool = False,
+    ) -> dict[str, Any]:
+        """Read BitPro monitor-center active strategies and live metrics."""
+        self.last_tool_calls = []
+        self._preflight()
+        raw = self._call(
+            "monitor_active_strategies",
+            _compact({"include_paused": bool(include_paused)}),
+        )
+        if isinstance(raw, list):
+            rows = [dict(item) for item in raw if isinstance(item, dict)]
+            return {"strategies": rows, "count": len(rows)}
+        return _ensure_dict(raw)
+
+    def onchain_summary(self, *, compact: bool = False) -> dict[str, Any]:
+        """Read BitPro onchain and DeFiLlama summary."""
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(
+            self._call("onchain_summary", _compact({"compact": bool(compact)}))
+        )
+
+    # ------------------------------------------------------------------
+    # FactorLab 2.0
+    # ------------------------------------------------------------------
+
+    def factorlab_get_operators(self) -> dict[str, Any]:
+        """Read FactorLab 2.0 WorldQuant operators and market/derivatives fields."""
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(self._call("factorlab_get_operators", {}))
+
+    def factorlab_list_alphas(
+        self,
+        *,
+        grade: str | None = None,
+        query: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """List alphas from BitPro FactorLab asset library."""
+        self.last_tool_calls = []
+        self._preflight()
+        params = _compact(
+            {
+                "grade": grade,
+                "q": query,
+                "limit": _bounded_int(limit, default=50, minimum=1, maximum=200),
+                "offset": max(0, int(offset)),
+            }
+        )
+        return _ensure_dict(self._call("factorlab_list_alphas", params))
+
+    def factorlab_matrix_check(self) -> dict[str, Any]:
+        """Read FactorLab active-alpha cross-correlation matrix."""
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(self._call("factorlab_matrix_check", {}))
+
+    def factorlab_runner_status(self) -> dict[str, Any]:
+        """Read FactorLab Continuous Runner scheduling and freshness status."""
+        self.last_tool_calls = []
+        self._preflight()
+        return _ensure_dict(self._call("factorlab_runner_status", {}))
+
+    def factorlab_simulate(
+        self,
+        *,
+        expression: str,
+        delay: int = 1,
+        decay: int = 0,
+        neutralization: str = "MARKET",
+        truncation: float = 0.02,
+        universe: str = "OKX_TOP100",
+        timeframe: str = "1d",
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Run a single FastExpr alpha simulation on BitPro FactorLab."""
+        if not str(expression or "").strip():
+            raise ValueError("factorlab_simulate requires expression")
+        self.last_tool_calls = []
+        self._preflight()
+        params = _compact(
+            {
+                "expression": str(expression).strip(),
+                "delay": int(delay),
+                "decay": int(decay),
+                "neutralization": str(neutralization),
+                "truncation": float(truncation),
+                "universe": str(universe),
+                "timeframe": _normalize_bitpro_timeframe(timeframe),
+                "idempotency_key": idempotency_key or None,
+            }
+        )
+        return _ensure_dict(self._call("factorlab_simulate", params))
+
+    def factorlab_batch_simulate(
+        self,
+        *,
+        alphas: list[dict[str, Any]],
+        delay: int = 1,
+        decay: int = 0,
+        neutralization: str = "MARKET",
+        truncation: float = 0.02,
+        universe: str = "OKX_TOP100",
+        timeframe: str = "1d",
+        auto_save_excellent: bool = False,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Run high-throughput batch alpha simulations on BitPro FactorLab."""
+        self.last_tool_calls = []
+        self._preflight()
+        params = _compact(
+            {
+                "alphas": list(alphas),
+                "delay": int(delay),
+                "decay": int(decay),
+                "neutralization": str(neutralization),
+                "truncation": float(truncation),
+                "universe": str(universe),
+                "timeframe": _normalize_bitpro_timeframe(timeframe),
+                "auto_save_excellent": bool(auto_save_excellent),
+                "idempotency_key": idempotency_key or None,
+            }
+        )
+        return _ensure_dict(self._call("factorlab_batch_simulate", params))
+
     def _preflight(self) -> tuple[dict[str, Any], dict[str, Any]]:
         capabilities = self._call("bitpro_capabilities", {})
         contract_version = str(capabilities.get("contract_version", ""))
@@ -1848,11 +2434,87 @@ def _post_payload(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
                 "end_date": params.get("end_date"),
             }
         )
+    if tool_name == "research_publish_event":
+        return _compact(
+            {
+                "project_id": str(params.get("project_id") or "default"),
+                "bot_id": str(params["bot_id"]),
+                "squad_id": str(params.get("squad_id") or "hypertrade"),
+                "event_type": str(params["event_type"]),
+                "topic": str(params["topic"]),
+                "symbol": params.get("symbol"),
+                "as_of": params.get("as_of"),
+                "expires_at": params.get("expires_at"),
+                "payload": dict(params.get("payload") or {}),
+                "confidence": params.get("confidence"),
+                "source_ref": params.get("source_ref", ""),
+                "data_quality": params.get("data_quality", "valid"),
+                "idempotency_key": params.get("idempotency_key"),
+            }
+        )
+    if tool_name == "research_bot_checkpoint":
+        return _compact(
+            {
+                "project_id": str(params.get("project_id") or "default"),
+                "cursor": int(params["cursor"]),
+                "idempotency_key": params.get("idempotency_key"),
+            }
+        )
+    if tool_name == "factorlab_simulate":
+        return _compact(
+            {
+                "expression": str(params["expression"]),
+                **_factorlab_common_payload(params),
+            }
+        )
+    if tool_name == "factorlab_batch_simulate":
+        return _compact(
+            {
+                "alphas": list(params.get("alphas") or []),
+                **_factorlab_common_payload(params),
+                "auto_save_excellent": bool(params.get("auto_save_excellent", False)),
+            }
+        )
     return _compact(params)
+
+
+def _factorlab_common_payload(params: dict[str, Any]) -> dict[str, Any]:
+    settings_map = params.get("settings")
+    settings_dict = settings_map if isinstance(settings_map, dict) else {}
+    raw_delay = params.get("delay")
+    if raw_delay is None:
+        raw_delay = settings_dict.get("delay")
+    raw_decay = params.get("decay")
+    if raw_decay is None:
+        raw_decay = settings_dict.get("decay")
+    raw_neutralization = params.get("neutralization")
+    if raw_neutralization is None:
+        raw_neutralization = settings_dict.get("neutralization")
+    raw_truncation = params.get("truncation")
+    if raw_truncation is None:
+        raw_truncation = settings_dict.get("truncation")
+    return {
+        "delay": int(1 if raw_delay is None else raw_delay),
+        "decay": int(0 if raw_decay is None else raw_decay),
+        "neutralization": str("MARKET" if raw_neutralization is None else raw_neutralization),
+        "truncation": float(0.02 if raw_truncation is None else raw_truncation),
+        "universe": str(params.get("universe") or "OKX_TOP100"),
+        "timeframe": _normalize_bitpro_timeframe(str(params.get("timeframe") or "1d")),
+    }
 
 
 def _compact(values: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if value is not None}
+
+
+def _csv_param(value: Sequence[str] | str | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or None
+    parts = [str(item).strip() for item in value if str(item).strip()]
+    return ",".join(parts) if parts else None
 
 
 def _response_payload(response: httpx.Response) -> Any:

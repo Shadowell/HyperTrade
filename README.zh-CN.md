@@ -14,7 +14,7 @@
   <a href="#"><img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.9-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14%2B_pgvector-4169E1.svg" alt="PostgreSQL" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-2200%2B%20passed-success.svg" alt="Tests" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-3000%2B%20passed-success.svg" alt="Tests" /></a>
   <a href="docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md"><img src="https://img.shields.io/badge/%E8%87%AA%E4%B8%BB%E8%BF%9B%E5%8C%96-%E9%BB%98%E8%AE%A4%E5%BC%80%E5%90%AF-brightgreen.svg" alt="Evolution" /></a>
   <a href="docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md"><img src="https://img.shields.io/badge/markets-BitPro_%7C_QuantLab-orange.svg" alt="Markets" /></a>
 </p>
@@ -102,6 +102,7 @@ flowchart LR
 - **持仓净额对冲平滑接力 (Position Netting Relay)**：赛马优胜换仓时，`PositionNettingRelayService` 计算母子策略持仓交集并原地保留共有份额 $\min(P_i, C_i)$，仅对净额差量 $\Delta = C - P$ 切分为 $K$ 期平滑切片执行，重合资产换手节约率超 80%，极大减少摩擦滑点；
 - **效果账本与告警**：汇总周期、任务、证据与胜出率；数据缺口停摆与严重报错自动触发告警，直连飞书 Webhook 交互卡片。
 - **每个母体都有变体（可选开启）**：模拟盘母体运行满 7 天，即使退化证据不全也能生成变体；探索任务可交给确定性的一步参数微调研究员；严格终验未过、但同窗不明显差于母体的候选也能进入赛马。接班仍须在前向赛马中胜出。
+- **生产变体流水线与 `production_3slot` 预设**：`ARC_AVO_RESEARCH_ENABLED=true` 默认启用 `avo_research_loop`（不再强绑定 `MISSION_RUNTIME_WORKER_ENABLED`），支持通过 `ARC_EVOLUTION_BOOTSTRAP_PRESET` 与 `POST /api/v1/arc/evolution/preset` 应用 `EVOLUTION_PRESETS["production_3slot"]`；`evaluate_auto_review` 对 `is_source_variant` 候选按绑定 `research_capital`（`<= 10000`）校验放行 1000U+ 变体，并结合 `effective_validation_criteria` 缩放 `policy_passed`。
 
 设计文档：[63 进化加固](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) · [66 赛马平滑换仓](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md)
 
@@ -205,7 +206,7 @@ curl http://localhost:3334/api/portfolio/relay/handovers
 ./scripts/check.sh
 ```
 
-一条命令跑完全部门禁：前端（lint / vitest / 生产构建）+ 后端（Ruff 代码检查与格式化 + Mypy 严格类型检查 + Pytest 全量测试，当前 2100+ 项测试 100% 绿灯）。
+一条命令跑完全部门禁：前端（lint / vitest / 生产构建）+ 后端（Ruff 代码检查与格式化 + Mypy 严格类型检查 + Pytest 全量测试，当前 3070+ 项测试 100% 绿灯）。
 
 ---
 
@@ -217,7 +218,7 @@ curl http://localhost:3334/api/portfolio/relay/handovers
 | **凭据安全** | `TokenRotationService`（SHA-256 单向散列，零明文存储，24h 宽限期热轮换，7天临期审计） |
 | **运行时与领域** | Python 3.12+、Pydantic v2 严格合同，模块化单体 + ports-and-adapters |
 | **存储** | SQLAlchemy 2.0 + Alembic（52 个迁移），PostgreSQL 14+ 带 `pgvector` |
-| **Worker 集群** | asyncio + PostgreSQL SQL lease 租约（13 个并发后台循环） |
+| **Worker 集群** | asyncio + PostgreSQL SQL lease 租约（受监督多并发后台循环；无头模式停用本地行情/模拟盘/脉冲，默认开启 `avo_research`） |
 | **研究与演进中枢** | ARC + RD-Agent 假设演进树 (HET) + Co-STEER 代码合成器 + `ASTGatekeeper` 语法守卫 |
 | **多市场目标适配** | `market_target.v1` 与 `market-evolution.v1` MCP 契约；BitPro (Crypto) + QuantLab (A股) |
 | **A 股微观规则** | `AShareMarketRules` / `AShareRuleValidator`（T+1 状态机、现货单向多头、一手100股、万2.5/5bps） |
@@ -276,3 +277,5 @@ curl http://localhost:3334/api/portfolio/relay/handovers
 旧自愈参数建议不代表已验证候选。缺少不可变候选回测回执时验证失败，不借用母策略结果，不发送成功通知或启动 Paper；正常 ARC 来源变体、同窗验证与审核流程仍负责自动研发。7 维归因复用执行证据合同，汇总回测指标不能推出交易路径或因果结论；数据缺口扫描保持 unavailable，不生成伪候选。
 
 2026-10-15：ARC 新增 `GET /api/v1/arc/variant-status?source_strategy_id=…&candidate_strategy_id=…` 只读摘要。限定 BitPro 目标并精确绑定母体/候选，只选取持久投影子字段与当前受阻任务最近一条阻塞事件，不重建控制器、不加载完整事件/模型对话；权限继续为 `arc:read`。最多检索母体最近100条任务，无匹配返回 `not_found`，不代表审核通过。
+
+2026-11-18：完成生产 Agent 全链路四项升级：① **自主变体流水线疏通与 `production_3slot` 预设**（`ARC_AVO_RESEARCH_ENABLED=true`、`ARC_EVOLUTION_BOOTSTRAP_PRESET`、`POST /api/v1/arc/evolution/preset`、来源变体绑定资金校验放行 `<= 10000` 及 `effective_validation_criteria` 周期缩放）；② **BitPro MCP 加固与 `MissionRuntime` 融合**（线程安全 LRU `httpx.Client` 连接池、Docker/401/403 诊断提示、15s `probe_connectivity` 与前端 `BitProCard` 实时探活徽章、对齐 `bitpro-mcp-v1` 协同事件总线/复盘/监控/FactorLab Studio 端点、`bitpro_paper_stop` 强制 `clear_metrics=False` 连续性守卫，以及 `MissionRuntime` 新增 `bitpro.paper_snapshot`/`bitpro.variant_status`/`arc.evolution_status` 与 `#123` 数值策略上下文解析）；③ **认知与操作记忆统一闭环**（同源 `lineage_key` 跨 Mission 召回、`paper_observation_ended` 赛马终裁情景、零模型 `deterministic_causal_summarizer` 蒸馏并同步至 `MemoryItem`、统一 `memory.search`/`memory.write`/`ThreadTurnService._consolidate_memory` 及 `/api/harness/overview` 与 `/api/memory` 认知遥测）；④ **死代码清理**（移除遗留 `hypertrade.ui`、`agent/formatters.py`、`risk/canary.py`、5 个原型脚本及废弃 `self_healing_evolution_loop`，并由 `tests/test_dead_code_hygiene.py` 持续守卫）。

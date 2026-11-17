@@ -526,6 +526,14 @@ export type HarnessOverview = {
     live_write_scope?: string;
     live_write_note?: string;
     tools: string[];
+    live_probe?: {
+      reachable: boolean;
+      authenticated: boolean;
+      status: string;
+      latency_ms?: number | null;
+      error?: string | null;
+      hint?: string | null;
+    } | null;
   };
   evals: EvalStatus;
 };

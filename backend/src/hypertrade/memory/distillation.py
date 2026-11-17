@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import statistics
+from collections import Counter
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from decimal import Decimal
 from threading import Lock
+from typing import Any
 
 from sqlalchemy import select, text
 
@@ -32,6 +36,123 @@ class DistillationBudgetExhausted(RuntimeError):
 _DISTILL_LOCKS: dict[str, Lock] = {}
 _DISTILL_LOCK_GUARD = Lock()
 _SCOPE_CURSOR = 0
+DEFAULT_DISTILLABLE_EVENT_TYPES = (
+    "paper_decay",
+    "backtest_overfit",
+    "backtest_rejected",
+    "redteam_falsified",
+    "backtest_success",
+    "paper_race_won",
+    "paper_race_lost",
+)
+_METRIC_SUMMARY_KEYS = (
+    "sharpe",
+    "sharpe_ratio",
+    "relative_pnl",
+    "benchmark_relative_pnl",
+    "excess_return_pct",
+    "challenger_net_return_pct",
+    "parent_net_return_pct",
+    "total_return_pct",
+    "net_return_pct",
+    "max_drawdown",
+    "max_drawdown_pct",
+    "challenger_max_drawdown_pct",
+    "observed_hours",
+    "sign_test_p",
+)
+
+
+def _finite_metric_number(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if not isinstance(value, (int, float, Decimal)):
+        return None
+    numeric = float(value)
+    return numeric if math.isfinite(numeric) else None
+
+
+def deterministic_causal_summarizer(
+    episodes: list[EpisodicMemoryItemV1],
+) -> tuple[str, str, Decimal] | None:
+    """Summarize >= 2 audited episodes into a conservative descriptive causal heuristic."""
+    audited = [
+        ep
+        for ep in episodes
+        if (ep.metadata or {}).get("recall_eligible") is not False
+    ]
+    if len(audited) < 2:
+        return None
+
+    symbols = sorted({sym.strip() for ep in audited for sym in ep.symbols if sym and sym.strip()})
+    timeframes = sorted(
+        {ep.timeframe.strip() for ep in audited if ep.timeframe and ep.timeframe.strip()}
+    )
+    regimes = sorted(
+        {
+            ep.market_regime.strip()
+            for ep in audited
+            if ep.market_regime and ep.market_regime.strip()
+        }
+    )
+    counts = Counter(ep.event_type for ep in audited if ep.event_type)
+
+    ordered_count_keys = [
+        "backtest_success",
+        "backtest_rejected",
+        "paper_race_won",
+        "paper_race_lost",
+    ]
+    extra_count_keys = sorted(k for k in counts if k not in ordered_count_keys)
+    count_parts = [
+        f"{key}={counts[key]}"
+        for key in (*ordered_count_keys, *extra_count_keys)
+        if counts.get(key, 0) > 0
+    ]
+
+    metric_values: dict[str, list[float]] = {key: [] for key in _METRIC_SUMMARY_KEYS}
+    for ep in audited:
+        metrics = ep.metrics_delta or {}
+        for key in _METRIC_SUMMARY_KEYS:
+            val = _finite_metric_number(metrics.get(key))
+            if val is not None:
+                metric_values[key].append(val)
+        if (
+            _finite_metric_number(metrics.get("sharpe")) is None
+            and _finite_metric_number(metrics.get("sharpe_ratio")) is None
+        ):
+            ret_stats = metrics.get("return_statistics")
+            if isinstance(ret_stats, dict):
+                period_sharpe = _finite_metric_number(ret_stats.get("period_sharpe"))
+                if period_sharpe is not None:
+                    metric_values["sharpe"].append(period_sharpe)
+
+    metric_parts: list[str] = []
+    for key in _METRIC_SUMMARY_KEYS:
+        vals = metric_values[key]
+        if not vals:
+            continue
+        med = statistics.median(vals)
+        avg = statistics.fmean(vals)
+        metric_parts.append(f"{key} median={med:.4g} mean={avg:.4g} (n={len(vals)})")
+        if len(metric_parts) >= 5:
+            break
+
+    sym_text = ", ".join(symbols) if symbols else "unspecified"
+    tf_text = ", ".join(timeframes) if timeframes else "unspecified"
+    regime_text = ", ".join(regimes) if regimes else "unknown"
+    outcome_text = ", ".join(count_parts) if count_parts else f"episodes={len(audited)}"
+    metrics_text = f"; metrics: {', '.join(metric_parts)}" if metric_parts else ""
+    claim = (
+        f"Observed {len(audited)} audited episodes for {sym_text} "
+        f"({tf_text}, regime={regime_text}): {outcome_text}{metrics_text}. "
+        "Descriptive historical aggregate only; revalidate out-of-sample."
+    )
+    confidence = min(
+        Decimal("0.8000"),
+        Decimal("0.5500") + Decimal("0.0300") * (len(audited) - 2),
+    )
+    return claim, "causal_heuristic", confidence
 
 
 class MemoryDistillationService:
@@ -59,10 +180,7 @@ class MemoryDistillationService:
         similarity never proves contradiction and therefore cannot deprecate a rule.
         """
         del similarity_threshold
-        target_events = set(
-            event_types
-            or ["paper_decay", "backtest_overfit", "backtest_rejected", "redteam_falsified"]
-        )
+        target_events = set(event_types or DEFAULT_DISTILLABLE_EVENT_TYPES)
         episodes = self.memory_service.list_episodes(
             symbols=symbols,
             timeframe=timeframe,
@@ -177,6 +295,8 @@ def distill_pending_regimes(
     *,
     causal_summarizer: CausalSummarizer | None,
     summarizer_version: str,
+    min_episode_count: int = 2,
+    event_types: list[str] | None = None,
 ) -> dict[str, object]:
     """Run one bounded, restart-safe worker pass across observed regimes."""
     if causal_summarizer is None:
@@ -191,7 +311,7 @@ def distill_pending_regimes(
         {
             (str(row.market_regime), str(row.timeframe), str(symbol))
             for row in rows
-            if row.metadata_json.get("recall_eligible") is not False
+            if (row.metadata_json or {}).get("recall_eligible") is not False
             for symbol in (row.symbols_json or [])
             if row.market_regime and row.timeframe and symbol
         }
@@ -211,6 +331,8 @@ def distill_pending_regimes(
                 market_regime=regime,
                 symbols=[symbol],
                 timeframe=timeframe,
+                event_types=event_types,
+                min_episode_count=min_episode_count,
                 summarizer_version=summarizer_version,
                 causal_summarizer=causal_summarizer,
             )

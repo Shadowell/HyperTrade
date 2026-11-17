@@ -9,6 +9,9 @@ from decimal import Decimal, InvalidOperation
 from threading import Lock
 from typing import Any, cast
 
+from sqlalchemy import String, select
+from sqlalchemy import cast as sql_cast
+
 from hypertrade.arc.store import (
     MISSIONS,
     committed_revisions,
@@ -18,15 +21,27 @@ from hypertrade.arc.store import (
     park,
     peek_controller_events,
 )
-from hypertrade.db import Database
+from hypertrade.db import (
+    ArcEpisodicMemory,
+    ArcHypothesisNode,
+    ArcSemanticAssertion,
+    Database,
+    MemoryItem,
+)
+from hypertrade.memory.distillation import (
+    deterministic_causal_summarizer,
+    distill_pending_regimes,
+)
 from hypertrade.memory.layered_service import (
     EpisodicMemoryItemV1,
     HypothesisNodeV1,
     HypothesisStatus,
     LayeredMemoryService,
     MutationType,
+    WorkingMemoryStateV1,
     stable_memory_key,
 )
+from hypertrade.memory.service import MemoryService
 
 logger = logging.getLogger(__name__)
 _REPLAY_CURSOR = 0
@@ -95,6 +110,7 @@ def ingest_projection(
     timeframe = timeframes[0] if timeframes else ""
     regime = _market_regime(goal)
     tree_id = f"arc:{mission_id}"
+    lineage_key = _lineage_key(goal)
 
     attempts = list(getattr(projection, "attempts", None) or [])
     hypothesis_ids: dict[str, str] = {}
@@ -113,6 +129,13 @@ def ingest_projection(
         parent_attempt_id = str(strategy_spec.get("parent_attempt_id") or "")
         parent_id = hypothesis_ids.get(parent_attempt_id)
         parent = memory.get_hypothesis(parent_id) if parent_id else None
+        node_metadata: dict[str, Any] = {
+            "mission_id": mission_id,
+            "candidate_id": candidate_id,
+            "attempt_id": attempt_id,
+        }
+        if lineage_key is not None:
+            node_metadata["lineage_key"] = lineage_key
         node = HypothesisNodeV1(
             idempotency_key=stable_memory_key(
                 mission_id, candidate_id, prefix="arc-hypothesis"
@@ -129,20 +152,19 @@ def ingest_projection(
                 if strategy_code
                 else None
             ),
-            metadata={
-                "mission_id": mission_id,
-                "candidate_id": candidate_id,
-                "attempt_id": attempt_id,
-            },
+            metadata=node_metadata,
         )
         hypothesis_ids[attempt_id] = memory.record_hypothesis(node)
         hypotheses_recorded += 1
 
     episodes_recorded = 0
+    saw_observation_ended = False
     for event in list(getattr(projection, "events", None) or []):
         payload = dict(getattr(event, "payload", None) or {})
         event_type = str(getattr(event, "event_type", "") or "")
         event_id = str(getattr(event, "event_id", "") or "")
+        if event_type == "paper_observation_ended":
+            saw_observation_ended = True
         episode = _episode_from_event(
             mission_id=mission_id,
             event_id=event_id,
@@ -151,6 +173,7 @@ def ingest_projection(
             symbols=symbols,
             timeframe=timeframe,
             market_regime=regime,
+            lineage_key=lineage_key,
         )
         if episode is None:
             continue
@@ -160,6 +183,30 @@ def ingest_projection(
         hypothesis_id = hypothesis_ids.get(attempt_id)
         if hypothesis_id and episode.metadata.get("recall_eligible") is not False:
             _apply_outcome(memory, hypothesis_id, episode)
+
+    if not saw_observation_ended:
+        paper_outcome = getattr(projection, "paper_outcome", None)
+        if isinstance(paper_outcome, dict) and paper_outcome:
+            outcome_event_id = str(
+                paper_outcome.get("outcome_id") or f"paper_outcome:{mission_id}"
+            )
+            episode = _episode_from_event(
+                mission_id=mission_id,
+                event_id=outcome_event_id,
+                event_type="paper_observation_ended",
+                payload=dict(paper_outcome),
+                symbols=symbols,
+                timeframe=timeframe,
+                market_regime=regime,
+                lineage_key=lineage_key,
+            )
+            if episode is not None:
+                memory.record_episode(episode)
+                episodes_recorded += 1
+                attempt_id = str(paper_outcome.get("attempt_id") or "")
+                hypothesis_id = hypothesis_ids.get(attempt_id)
+                if hypothesis_id and episode.metadata.get("recall_eligible") is not False:
+                    _apply_outcome(memory, hypothesis_id, episode)
 
     working = memory.populate_working_memory_for_task(
         session_id=f"arc-memory:{mission_id}",
@@ -171,6 +218,14 @@ def ingest_projection(
         budget_tokens=max(64, min(max_prompt_tokens, 2_000)),
         tree_id=tree_id,
     )
+    if lineage_key is not None:
+        _append_lineage_hypotheses(
+            db,
+            memory,
+            working,
+            tree_id=tree_id,
+            lineage_key=lineage_key,
+        )
     return CognitiveSyncResult(
         status="ok",
         prompt_context=working.format_prompt_context(max_tokens=max_prompt_tokens),
@@ -222,7 +277,110 @@ def replay_arc_cognitive_memory_once(*, limit: int = 100) -> dict[str, int | str
     if mission_ids:
         with _REPLAY_CURSOR_LOCK:
             _REPLAY_CURSOR = (start + processed) % len(mission_ids)
+    sync_cognitive_to_memory_items(database)
     return {"status": "ok", "missions": synced, "unchanged": unchanged}
+
+
+def sync_cognitive_to_memory_items(db: Database) -> int:
+    """Distill pending cognitive episodes and project active rules/outcomes into MemoryItem."""
+    distill_pending_regimes(
+        db,
+        causal_summarizer=deterministic_causal_summarizer,
+        summarizer_version="deterministic-v1",
+    )
+    with db.session() as session:
+        disabled_pairs = {
+            (str(kind), str(content))
+            for kind, content in session.execute(
+                select(MemoryItem.kind, MemoryItem.content).where(
+                    MemoryItem.disabled.is_(True),
+                    MemoryItem.kind.in_(("arc_semantic_rule", "arc_race_outcome")),
+                )
+            ).all()
+        }
+        assertions = session.scalars(
+            select(ArcSemanticAssertion)
+            .where(ArcSemanticAssertion.status == "active")
+            .order_by(
+                ArcSemanticAssertion.updated_at.desc(),
+                ArcSemanticAssertion.created_at.desc(),
+            )
+            .limit(100)
+        ).all()
+        race_episodes = session.scalars(
+            select(ArcEpisodicMemory)
+            .where(ArcEpisodicMemory.event_type.in_(("paper_race_won", "paper_race_lost")))
+            .order_by(ArcEpisodicMemory.created_at.desc())
+            .limit(100)
+        ).all()
+
+    memory_service = MemoryService(db)
+    created = 0
+
+    for assertion in assertions:
+        meta = dict(assertion.metadata_json or {})
+        symbols = [str(value) for value in (meta.get("symbols") or []) if value]
+        timeframe = str(meta.get("timeframe") or "").strip()
+        regimes = [str(value) for value in (assertion.applicable_regimes_json or []) if value]
+        scope_parts = [*symbols, *([timeframe] if timeframe else []), *regimes]
+        content = (
+            f"[{', '.join(scope_parts)}] {assertion.claim}"
+            if scope_parts
+            else assertion.claim
+        ).strip()
+        if not content or ("arc_semantic_rule", content) in disabled_pairs:
+            continue
+        tags = [*scope_parts, assertion.assertion_type, "cognitive_memory"]
+        item = memory_service.write(
+            content=content,
+            kind="arc_semantic_rule",
+            source_run_id="cognitive-replay",
+            source_tool="cognitive_memory.sync",
+            tags=tags,
+            importance=Decimal("0.7500"),
+            confidence=assertion.confidence,
+        )
+        if item.usage_count == 1:
+            created += 1
+
+    for ep in race_episodes:
+        meta = dict(ep.metadata_json or {})
+        if meta.get("recall_eligible") is False:
+            continue
+        symbols = [str(value) for value in (ep.symbols_json or []) if value]
+        timeframe = str(ep.timeframe or "").strip()
+        regime = str(ep.market_regime or "").strip()
+        verdict = str(
+            meta.get("verdict") or ("won" if ep.event_type == "paper_race_won" else "lost")
+        ).strip()
+        scope_parts = [
+            *symbols,
+            *([timeframe] if timeframe else []),
+            *([regime] if regime else []),
+        ]
+        content = (
+            f"[{', '.join(scope_parts)}] {ep.reflection_summary}"
+            if scope_parts
+            else ep.reflection_summary
+        ).strip()
+        if not content or ("arc_race_outcome", content) in disabled_pairs:
+            continue
+        tags = [*scope_parts, verdict, ep.event_type, "cognitive_memory"]
+        item = memory_service.write(
+            content=content,
+            kind="arc_race_outcome",
+            source_run_id="cognitive-replay",
+            source_tool="cognitive_memory.sync",
+            tags=tags,
+            importance=(
+                Decimal("0.8000") if ep.event_type == "paper_race_won" else Decimal("0.7000")
+            ),
+            confidence=Decimal("0.7500"),
+        )
+        if item.usage_count == 1:
+            created += 1
+
+    return created
 
 
 def _episode_from_event(
@@ -234,16 +392,19 @@ def _episode_from_event(
     symbols: list[str],
     timeframe: str,
     market_regime: str,
+    lineage_key: str | None = None,
 ) -> EpisodicMemoryItemV1 | None:
     source = event_type
     data = payload
     recall_eligible = True
+    verdict = ""
+    outcome_ref = ""
     if event_type == "red_team_tested":
         if payload.get("passed") is not False:
             return None
         memory_type = "redteam_falsified"
         evidence_ref = f"arc-event:{event_id}"
-        experiment_id = None
+        experiment_id: str | None = None
     elif event_type == "avo_development_result":
         data = dict(payload.get("result") or {})
         evidence_ref = str(data.get("backtest_id") or "").strip()
@@ -259,17 +420,74 @@ def _episode_from_event(
         experiment_id = evidence_ref
         # Final/holdout evidence is audit history, never research prompt feedback.
         recall_eligible = payload.get("purpose") == "development"
+    elif event_type == "paper_observation_ended":
+        verdict = str(payload.get("verdict") or "").strip()
+        if (
+            payload.get("reason") != "race_finished"
+            and verdict not in {"won", "lost_futility", "lost_exam"}
+        ):
+            return None
+        if verdict not in {"won", "lost_futility", "lost_exam"}:
+            return None
+        memory_type = "paper_race_won" if verdict == "won" else "paper_race_lost"
+        outcome_ref = str(payload.get("outcome_id") or "").strip()
+        evidence_ref = f"outcome:{outcome_ref or event_id}"
+        experiment_id = outcome_ref or (
+            str(payload.get("paper_instance_id") or "").strip() or None
+        )
+        recall_eligible = True
     else:
         return None
     attempt_id = str(data.get("attempt_id") or payload.get("attempt_id") or "")
     metrics = _json_mapping(data.get("metrics") or payload.get("metrics") or {})
-    passed = data.get("passed", payload.get("passed"))
-    summary = (
-        f"{source} recorded candidate {attempt_id or 'unknown'} with "
-        f"outcome={'passed' if passed is True else 'rejected'}."
-    )
+    if event_type == "paper_observation_ended":
+        metric_parts = [
+            f"{key}={metrics[key]}"
+            for key in (
+                "excess_return_pct",
+                "challenger_net_return_pct",
+                "parent_net_return_pct",
+                "challenger_max_drawdown_pct",
+                "observed_hours",
+                "sign_test_p",
+            )
+            if metrics.get(key) is not None
+        ]
+        metrics_note = f" ({', '.join(metric_parts)})" if metric_parts else ""
+        summary = (
+            f"{source} recorded forward race verdict={verdict} for "
+            f"candidate {attempt_id or 'unknown'}{metrics_note}."
+        )
+        dedupe_token = outcome_ref or (
+            f"attempt:{attempt_id}:{verdict}" if attempt_id else event_id
+        )
+        idempotency_key = stable_memory_key(
+            mission_id,
+            "paper_observation_ended",
+            dedupe_token,
+            prefix="arc-episode",
+        )
+    else:
+        passed = data.get("passed", payload.get("passed"))
+        summary = (
+            f"{source} recorded candidate {attempt_id or 'unknown'} with "
+            f"outcome={'passed' if passed is True else 'rejected'}."
+        )
+        idempotency_key = stable_memory_key(mission_id, event_id, prefix="arc-episode")
+    metadata: dict[str, Any] = {
+        "arc_event_id": event_id,
+        "arc_event_type": source,
+        "attempt_id": attempt_id,
+        "recall_eligible": recall_eligible,
+    }
+    if event_type == "paper_observation_ended":
+        metadata["verdict"] = verdict
+        if outcome_ref:
+            metadata["outcome_id"] = outcome_ref
+    if lineage_key is not None:
+        metadata["lineage_key"] = lineage_key
     return EpisodicMemoryItemV1(
-        idempotency_key=stable_memory_key(mission_id, event_id, prefix="arc-episode"),
+        idempotency_key=idempotency_key,
         mission_id=mission_id,
         experiment_id=experiment_id,
         symbols=symbols,
@@ -279,12 +497,7 @@ def _episode_from_event(
         metrics_delta=metrics,
         raw_evidence_ref=evidence_ref,
         reflection_summary=summary,
-        metadata={
-            "arc_event_id": event_id,
-            "arc_event_type": source,
-            "attempt_id": attempt_id,
-            "recall_eligible": recall_eligible,
-        },
+        metadata=metadata,
     )
 
 
@@ -298,7 +511,13 @@ def _apply_outcome(
     sharpe = _decimal(metrics.get("sharpe") or metrics.get("sharpe_ratio"))
     if episode.event_type == "redteam_falsified":
         status = HypothesisStatus.PRUNED
-        prune_reason = "redteam_falsified"
+        prune_reason: str | None = "redteam_falsified"
+    elif episode.event_type == "paper_race_won":
+        status = HypothesisStatus.PROMOTED
+        prune_reason = None
+    elif episode.event_type == "paper_race_lost":
+        status = HypothesisStatus.PRUNED
+        prune_reason = str((episode.metadata or {}).get("verdict") or "paper_race_lost")
     elif episode.event_type == "backtest_success":
         status = HypothesisStatus.PROMOTED
         prune_reason = None
@@ -313,6 +532,63 @@ def _apply_outcome(
         sharpe=sharpe,
         experiment_id=episode.experiment_id,
     )
+
+
+def _lineage_key(goal: Any) -> str | None:
+    context = getattr(goal, "evolution_context", None)
+    if not isinstance(context, dict):
+        return None
+    source_strategy_id = context.get("source_strategy_id")
+    if source_strategy_id is None or isinstance(source_strategy_id, bool):
+        return None
+    strategy_text = str(source_strategy_id).strip()
+    if not strategy_text:
+        return None
+    target_id = str(context.get("target_id") or "bitpro").strip() or "bitpro"
+    return f"{target_id}:{strategy_text}"
+
+
+def _append_lineage_hypotheses(
+    db: Database,
+    memory: LayeredMemoryService,
+    working: WorkingMemoryStateV1,
+    *,
+    tree_id: str,
+    lineage_key: str,
+    limit: int = 10,
+) -> None:
+    seen_ids = {node.id for node in working.active_hypotheses if node.id}
+    seen_signatures = {
+        (node.claim, node.status, node.experiment_id)
+        for node in working.active_hypotheses
+    }
+    with db.session() as session:
+        rows = session.scalars(
+            select(ArcHypothesisNode)
+            .where(
+                ArcHypothesisNode.tree_id != tree_id,
+                sql_cast(
+                    ArcHypothesisNode.metadata_json["lineage_key"].as_string(),
+                    String,
+                )
+                == lineage_key,
+            )
+            .order_by(ArcHypothesisNode.created_at.desc())
+            .limit(25)
+        ).all()
+    added = 0
+    for row in rows:
+        node = memory._db_to_hypothesis(row)
+        sig = (node.claim, node.status, node.experiment_id)
+        if node.id in seen_ids or sig in seen_signatures:
+            continue
+        if node.id:
+            seen_ids.add(node.id)
+        seen_signatures.add(sig)
+        working.active_hypotheses.append(node)
+        added += 1
+        if added >= limit:
+            break
 
 
 def _market_regime(goal: Any) -> str:

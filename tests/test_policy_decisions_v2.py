@@ -126,5 +126,6 @@ def test_production_builtin_catalog_scopes_stay_within_mission_admissible_set() 
         "workspace.run",
         "bitpro.strategy_create",
         "bitpro.backtest_start",
+        "memory.write",
     }
     assert {row.capability_id for row in write_rows} == expected_writes

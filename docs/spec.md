@@ -1,3 +1,18 @@
+# 034 生产 Agent 运行时、变体流水线与认知记忆闭环升级（2026-11-18）
+
+1. **自主变体生成流水线与 `production_3slot` 预设**：
+   - `Settings.arc_avo_research_enabled`（`ARC_AVO_RESEARCH_ENABLED`，默认 `True`）控制 `avo_research_loop` 独立启停，不再强绑定 `MISSION_RUNTIME_WORKER_ENABLED`；`Settings.arc_evolution_bootstrap_preset`（`ARC_EVOLUTION_BOOTSTRAP_PRESET`，默认 `""`）支持在尚无全局 `EvolutionControl` 持久行时于 `arc_evolution_loop` 启动前幂等应用预设（如 `production_3slot`）。
+   - `EVOLUTION_PRESETS["production_3slot"]` 封装 3 槽位并发探索配置，保持 `EvolutionConfig()` 原默认值不变，并暴露 `POST /api/v1/arc/evolution/preset`（需 `ARCScope.POLICY` 权限）。
+   - `evaluate_auto_review` 对 `is_source_variant=True` 且绑定 `evolution_context["research_capital"]` 的候选策略允许在 `(0, 10000]` 资金范围内与 `paper_configuration.initial_equity` 一致性通过，不再被全局 `paper_capital=100` 误拒；`effective_validation_criteria` 同步缩放终验与 `policy_passed` 的 `min_trades`。
+2. **BitPro MCP 加固、协同总线对齐与 `MissionRuntime` 融合**：
+   - `bitpro/mcp.py` 使用线程安全有界 LRU `httpx.Client` 连接池（上限 8，外部注入自定义客户端完全隔离），提供 Docker 网关/超时/401/403 诊断提示、`BitProToolAdapter.probe_connectivity(ttl_seconds=15.0)` 实时探活，并对齐 BitPro `schemas.py` 实机 `bitpro-mcp-v1` 路由（`/research/collaboration/*`、`GET /review/summary`、`GET /monitor/active_strategies`、`GET /onchain/summary` 与 `/factorlab/studio/*`）。
+   - `AgentKernel` 对 `bitpro_paper_stop` 强制固定 `clear_metrics=False` 保护模拟盘历史连续性，并注册 `bitpro.variant_policy`、`bitpro.relay_plans`、`bitpro.research_context_snapshot`、`bitpro.research_publish_event`（`research_write` + 幂等键）与 `arc.evolution_status`。
+   - `MissionRuntime` 新增内置能力 `bitpro.paper_snapshot`、`bitpro.variant_status`、`arc.evolution_status`、`memory.write`（`research_write` + `idempotent_write`），`thread_context` 支持 `#123` / `策略 #123` 数值策略上下文解析；`/harness` `BitProCard` 展示实时连通探测状态与诊断提示。
+3. **认知与操作记忆统一闭环**：
+   - `arc_integration.py` 记录同源 `lineage_key` 实现跨 Mission 历史假设节点召回（上限 10 条，仍保持 `tree_id = f"arc:{mission_id}"` 隔离），消费 `paper_observation_ended`（及 `paper_outcome` 回放兜底）赛马终裁生成 `paper_race_won`/`paper_race_lost` 情景记忆；`distillation.py` 提供零模型调用的 `deterministic_causal_summarizer` 并随 `replay_arc_cognitive_memory_once` 将活跃规则与赛马结果同步投影至 `MemoryItem`。
+   - `/api/harness/overview` 与 `/api/memory` 暴露 `cognitive` / `cognitive_items`（保留原 `items`）；`MissionRuntime` `memory_search` 统一检索 `MemoryItem` 与分层认知记忆，`ThreadTurnService` 在任务完成后幂等沉淀 `operator_note` 与 `strategy_observation`。
+4. **死代码清理与卫生边界**：移除历史遗留 `hypertrade.ui`、`agent/formatters.py`、`risk/canary.py`、5 个原型演示脚本及已废弃的 `self_healing_evolution_loop`、`record_self_test_outcome`、`_prefix_end`、`source_ref_from_trace`，由 `tests/test_dead_code_hygiene.py` 持续守卫。
+
 # 033 无头研究引擎模式与 BitPro 融合控制面（2026-11-18）
 
 HyperTrade 在生产环境以**无头研究引擎**（Headless Research Engine）形态运行：BitPro 前端（`/ai-lab` 与 `/evolution`）承担唯一操作台，HyperTrade 专注于 ARC 自主研究、进化扫描、自动评审、模拟盘观察、对账、赛马镜像裁判、监控告警、RAG 与 Mission 执行。
