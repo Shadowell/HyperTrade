@@ -31,6 +31,7 @@ from hypertrade.agent.planner import (
     ToolExecutor,
 )
 from hypertrade.agent.quality import research_intent_for_prompt
+from hypertrade.arc.evolution import EvolutionService
 from hypertrade.backtest.service import BacktestService
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
 from hypertrade.bitpro.paper_monitor import BitProPaperMonitorService
@@ -878,10 +879,26 @@ class AgentKernel:
             )
             self._trace_bitpro_tool_calls(run_id, result)
         elif tool_name == "bitpro_paper_stop":
+            requested_clear_metrics = bool(args.get("clear_metrics", False))
+            # Enforce BitPro Core Rule #7: autonomous agent runs must preserve paper continuity.
             result = self._bitpro_adapter().paper_stop(
                 strategy_id=int(args.get("strategy_id", 0)),
-                clear_metrics=bool(args.get("clear_metrics", False)),
+                clear_metrics=False,
             )
+            continuity_note = (
+                "continuity_guard: suppressed clear_metrics=True and forced clear_metrics=False "
+                "to preserve paper session history"
+                if requested_clear_metrics
+                else (
+                    "continuity_guard: enforced clear_metrics=False "
+                    "to preserve paper session history"
+                )
+            )
+            if isinstance(result, dict):
+                result = dict(result)
+                result["clear_metrics_enforced"] = False
+                result["clear_metrics_requested"] = requested_clear_metrics
+                result["continuity_note"] = continuity_note
             self._trace_bitpro_tool_calls(run_id, result)
         elif tool_name == "live_order_intent":
             settings = self._settings if self._settings is not None else get_settings()
@@ -1001,6 +1018,67 @@ class AgentKernel:
                 )
                 deploy_res["paper_session"] = start_res
             result = deploy_res
+        elif tool_name == "bitpro_variant_policy":
+            adapter = self._bitpro_adapter()
+            result = adapter.strategy_research_variant_policy(
+                strategy_id=int(args.get("strategy_id", 0)),
+            )
+            self._trace_bitpro_tool_calls(run_id, result, adapter=adapter)
+        elif tool_name == "bitpro_relay_plans":
+            adapter = self._bitpro_adapter()
+            raw_plans = adapter.paper_relay_plans()
+            if isinstance(raw_plans, list):
+                result = {
+                    "status": "ok",
+                    "count": len(raw_plans),
+                    "plans": raw_plans,
+                }
+            else:
+                result = raw_plans
+            self._trace_bitpro_tool_calls(run_id, result, adapter=adapter)
+        elif tool_name == "bitpro_research_context_snapshot":
+            adapter = self._bitpro_adapter()
+            raw_topics = args.get("topics")
+            topics = (
+                [str(topic) for topic in raw_topics]
+                if isinstance(raw_topics, list)
+                else ([str(raw_topics)] if raw_topics is not None else None)
+            )
+            result = adapter.research_context_snapshot(
+                project_id=str(args.get("project_id", "default")),
+                limit=int(args.get("limit", 100)),
+                topics=topics,
+            )
+            self._trace_bitpro_tool_calls(run_id, result, adapter=adapter)
+        elif tool_name == "bitpro_research_publish_event":
+            adapter = self._bitpro_adapter()
+            raw_payload = args.get("payload", {})
+            raw_confidence = args.get("confidence")
+            result = adapter.research_publish_event(
+                project_id=str(args.get("project_id", "default")),
+                bot_id=str(args.get("bot_id", "")),
+                squad_id=str(args.get("squad_id", "hypertrade")),
+                event_type=str(args.get("event_type", "")),
+                topic=str(args.get("topic", "")),
+                payload=raw_payload if isinstance(raw_payload, dict) else {},
+                idempotency_key=str(args.get("idempotency_key", "")),
+                symbol=str(args["symbol"]) if args.get("symbol") else None,
+                confidence=float(raw_confidence) if raw_confidence is not None else None,
+                source_ref=str(args.get("source_ref", "")),
+            )
+            self._trace_bitpro_tool_calls(run_id, result, adapter=adapter)
+        elif tool_name == "arc_evolution_status":
+            raw_compact = args.get("compact", True)
+            compact = (
+                raw_compact
+                if isinstance(raw_compact, bool)
+                else str(raw_compact).strip().lower() not in {"0", "false", "no", ""}
+            )
+            cycles_limit = max(1, min(int(args.get("cycles_limit", 5)), 20))
+            result = EvolutionService(self.db).status(
+                compact=compact,
+                cycles_limit=cycles_limit,
+            )
         else:
             result = self._tool_error_payload(
                 tool_name,
@@ -1446,8 +1524,16 @@ class AgentKernel:
             self.bitpro_adapter = BitProToolAdapter(BitProMcpClient(settings=settings))
         return self.bitpro_adapter
 
-    def _trace_bitpro_tool_calls(self, run_id: str, payload: dict[str, Any]) -> None:
+    def _trace_bitpro_tool_calls(
+        self,
+        run_id: str,
+        payload: dict[str, Any],
+        *,
+        adapter: BitProToolAdapter | None = None,
+    ) -> None:
         calls = payload.get("tool_calls", [])
+        if (not isinstance(calls, list) or not calls) and adapter is not None:
+            calls = getattr(adapter, "last_tool_calls", [])
         if not isinstance(calls, list):
             return
         for call in calls:
@@ -2905,6 +2991,8 @@ class AgentKernel:
                 line += f", paper={paper.get('instance_id', paper.get('id', 'n/a'))}"
                 if paper.get("status"):
                     line += f", paper_status={paper.get('status')}"
+            if payload.get("continuity_note"):
+                line += f", note={payload.get('continuity_note')}"
             if nested_tools:
                 line += f", tools={', '.join(nested_tools)}"
             bitpro_lifecycle_lines.append(line)
@@ -3446,6 +3534,22 @@ def _bitpro_trace_tool_name(tool_name: str) -> str:
         "trading_positions": "bitpro.live_positions",
         "trading_order_history": "bitpro.live_order_history",
         "live_strategies": "bitpro.live_strategy_performance",
+        "strategy_research_variant_policy": "bitpro.variant_policy",
+        "paper_relay_plans": "bitpro.relay_plans",
+        "research_context_snapshot": "bitpro.research_context_snapshot",
+        "research_context_delta": "bitpro.research_context_delta",
+        "research_publish_event": "bitpro.research_publish_event",
+        "research_bot_checkpoint": "bitpro.research_bot_checkpoint",
+        "research_get_checkpoint": "bitpro.research_get_checkpoint",
+        "review_summary": "bitpro.review_summary",
+        "monitor_active_strategies": "bitpro.monitor_active_strategies",
+        "onchain_summary": "bitpro.onchain_summary",
+        "factorlab_get_operators": "bitpro.factorlab_get_operators",
+        "factorlab_list_alphas": "bitpro.factorlab_list_alphas",
+        "factorlab_matrix_check": "bitpro.factorlab_matrix_check",
+        "factorlab_runner_status": "bitpro.factorlab_runner_status",
+        "factorlab_simulate": "bitpro.factorlab_simulate",
+        "factorlab_batch_simulate": "bitpro.factorlab_batch_simulate",
     }.get(tool_name, "")
 
 
