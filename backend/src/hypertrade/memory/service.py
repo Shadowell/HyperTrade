@@ -11,10 +11,17 @@ import json
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from hypertrade.arc.contracts import ResearchWindowsV1
-from hypertrade.db import Database, MemoryItem, utc_now
+from hypertrade.db import (
+    ArcEpisodicMemory,
+    ArcHypothesisNode,
+    ArcSemanticAssertion,
+    Database,
+    MemoryItem,
+    utc_now,
+)
 
 
 class MemoryService:
@@ -275,6 +282,182 @@ class MemoryService:
             item = session.get(MemoryItem, memory_id)
             if item is not None:
                 item.disabled = True
+
+    def cognitive_counts(self) -> dict[str, int]:
+        """Return row counts across cognitive episodic, semantic, and hypothesis tables."""
+        with self.db.session() as session:
+            episodic_count = int(
+                session.scalar(select(func.count()).select_from(ArcEpisodicMemory)) or 0
+            )
+            semantic_count = int(
+                session.scalar(select(func.count()).select_from(ArcSemanticAssertion)) or 0
+            )
+            active_semantic_count = int(
+                session.scalar(
+                    select(func.count())
+                    .select_from(ArcSemanticAssertion)
+                    .where(ArcSemanticAssertion.status == "active")
+                )
+                or 0
+            )
+            hypothesis_count = int(
+                session.scalar(select(func.count()).select_from(ArcHypothesisNode)) or 0
+            )
+        return {
+            "episodic_count": episodic_count,
+            "semantic_count": semantic_count,
+            "active_semantic_count": active_semantic_count,
+            "hypothesis_count": hypothesis_count,
+        }
+
+    def list_cognitive_items(
+        self,
+        *,
+        query: str = "",
+        kind: str = "",
+        tag: str = "",
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Return bounded recent active semantic assertions and episodic summaries."""
+        bounded_limit = max(1, min(limit, 100))
+        half_limit = max(1, (bounded_limit + 1) // 2)
+        normalized_query = query.casefold().strip()
+        normalized_kind = kind.strip().casefold()
+        normalized_tag = tag.casefold().strip()
+        scan_limit = 50 if (normalized_query or normalized_kind or normalized_tag) else half_limit
+
+        with self.db.session() as session:
+            assertions = session.scalars(
+                select(ArcSemanticAssertion)
+                .where(ArcSemanticAssertion.status == "active")
+                .order_by(
+                    ArcSemanticAssertion.updated_at.desc(),
+                    ArcSemanticAssertion.created_at.desc(),
+                )
+                .limit(scan_limit)
+            ).all()
+            has_filter = bool(normalized_query or normalized_kind or normalized_tag)
+            ep_limit = 50 if has_filter else bounded_limit
+            episodes = session.scalars(
+                select(ArcEpisodicMemory)
+                .order_by(ArcEpisodicMemory.created_at.desc())
+                .limit(ep_limit)
+            ).all()
+
+        semantic_items: list[dict[str, Any]] = []
+        for assertion_row in assertions:
+            meta = dict(assertion_row.metadata_json or {})
+            symbols = [str(value) for value in (meta.get("symbols") or []) if value]
+            timeframe = str(meta.get("timeframe") or "")
+            regimes = [
+                str(value) for value in (assertion_row.applicable_regimes_json or []) if value
+            ]
+            item_tags = [
+                value.casefold()
+                for value in (
+                    *symbols,
+                    timeframe,
+                    *regimes,
+                    assertion_row.assertion_type,
+                    "semantic",
+                )
+                if value
+            ]
+            if normalized_kind and normalized_kind not in {
+                assertion_row.assertion_type.casefold(),
+                "semantic",
+                "arc_semantic_rule",
+            }:
+                continue
+            if normalized_tag and normalized_tag not in item_tags:
+                continue
+            if normalized_query:
+                haystack = " ".join(
+                    [assertion_row.assertion_type, assertion_row.claim, *item_tags]
+                ).casefold()
+                if normalized_query not in haystack:
+                    continue
+            semantic_items.append(
+                {
+                    "id": assertion_row.id,
+                    "tier": "semantic",
+                    "kind": assertion_row.assertion_type,
+                    "status": assertion_row.status,
+                    "claim": assertion_row.claim,
+                    "confidence": str(assertion_row.confidence),
+                    "regimes": regimes,
+                    "symbols": symbols,
+                    "timeframe": timeframe,
+                    "distillation_version": assertion_row.distillation_version,
+                    "derived_episode_count": len(assertion_row.derived_from_episodes_json or []),
+                    "created_at": assertion_row.created_at.isoformat(),
+                }
+            )
+            if len(semantic_items) >= half_limit:
+                break
+
+        episodic_items: list[dict[str, Any]] = []
+        remaining = bounded_limit - len(semantic_items)
+        for episode_row in episodes:
+            if remaining <= 0:
+                break
+            meta = dict(episode_row.metadata_json or {})
+            if meta.get("recall_eligible") is False:
+                continue
+            symbols = [str(value) for value in (episode_row.symbols_json or []) if value]
+            timeframe = str(episode_row.timeframe or "")
+            regime = str(episode_row.market_regime or "")
+            verdict = str(meta.get("verdict") or "")
+            item_tags = [
+                value.casefold()
+                for value in (
+                    *symbols,
+                    timeframe,
+                    regime,
+                    verdict,
+                    episode_row.event_type,
+                    "episodic",
+                )
+                if value
+            ]
+            if normalized_kind and normalized_kind not in {
+                episode_row.event_type.casefold(),
+                "episodic",
+                "arc_race_outcome",
+            }:
+                continue
+            if normalized_tag and normalized_tag not in item_tags:
+                continue
+            if normalized_query:
+                haystack = " ".join(
+                    [
+                        episode_row.event_type,
+                        episode_row.reflection_summary,
+                        episode_row.raw_evidence_ref,
+                        *item_tags,
+                    ]
+                ).casefold()
+                if normalized_query not in haystack:
+                    continue
+            episodic_items.append(
+                {
+                    "id": episode_row.id,
+                    "tier": "episodic",
+                    "kind": episode_row.event_type,
+                    "mission_id": episode_row.mission_id,
+                    "experiment_id": episode_row.experiment_id,
+                    "symbols": symbols,
+                    "timeframe": timeframe,
+                    "market_regime": regime,
+                    "raw_evidence_ref": episode_row.raw_evidence_ref,
+                    "summary": episode_row.reflection_summary,
+                    "created_at": episode_row.created_at.isoformat(),
+                }
+            )
+            if len(episodic_items) >= remaining:
+                break
+
+        return [*semantic_items, *episodic_items][:bounded_limit]
 
     def delete(self, memory_id: str) -> None:
         with self.db.session() as session:
