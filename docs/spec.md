@@ -1,3 +1,12 @@
+# 033 无头研究引擎模式与 BitPro 融合控制面（2026-11-18）
+
+HyperTrade 在生产环境以**无头研究引擎**（Headless Research Engine）形态运行：BitPro 前端（`/ai-lab` 与 `/evolution`）承担唯一操作台，HyperTrade 专注于 ARC 自主研究、进化扫描、自动评审、模拟盘观察、对账、赛马镜像裁判、监控告警、RAG 与 Mission 执行。
+
+1. **无头运行模式与循环裁剪**：`Settings.headless_mode`（`HYPERTRADE_HEADLESS_MODE`，代码默认 `false` 保持单测兼容，生产 `.env.example` 与 `docker-compose.yml` 默认 `true`）与 `Settings.market_ingestion_enabled`（`MARKET_INGESTION_ENABLED`，默认 `true`）控制 worker 循环拓扑。开启 `headless_mode=true` 时，worker 停用冗余的 `market_ingestion`、`market_rest_supplement`、`paper_trading` 与 `autonomous_market_pulse` 循环；容器编排为 `worker` 设定 `mem_limit: 3g`、`api` 设定 `mem_limit: 2g`。
+2. **非关键循环首次启动错峰**：`worker.main()` 在首次启动时对 `arc_evolution`（2s）、`arc_observation`（5s）、`cognitive_memory_replay`（8s）、`arc_meta_tuning`（12s）、`rag_scanner`（15s）施加可配置错峰延迟（`WORKER_STARTUP_STAGGER_ENABLED` / `WORKER_STARTUP_STAGGER_DELAYS`），消除冷启动 `t=0` 并发峰值，supervisor 崩溃重启及直接调用单测不重复等待。
+3. **跨系统监控指标兼容与去误报**：`bitpro/mcp.py` 兼容读取 BitPro `strategy_search(status=running)` 返回的多口径收益/回撤字段（`total_pnl_pct`、`return_pct`、`cumulative_return_pct`、`pnl_pct`、`paper_metrics.total_pnl_pct`、`max_drawdown`、`max_drawdown_pct`、`paper_metrics.max_drawdown_pct`）；当轻量策略目录暂缺逐策略明细而 `paper_dashboard` 指标可用时，仅发出 `info` 级 `missing_strategy_metrics` 告警，不写入 `data_gaps` 触发 `WARNING monitor_data_gap`（`dashboard` 与目录均缺指标时仍触发缺口告警）。
+4. **前端收口引导**：HyperTrade Web UI 主区域顶部常驻无头引擎提示横幅，引导操作员前往 BitPro `/ai-lab` 与 `/evolution`。交付合同见 [headless-bitpro-fusion](contracts/headless-bitpro-fusion.md)。
+
 # 032 运维探活与安全令牌管理（2026-10-05）
 
 2026-11-03 三槽位并发与正交维度探索：支持来源变体的母体策略按变体槽位数（默认3槽位或 `relay_seats.total`）进行并发准入锁控制，仅在研究执行中（`in_research`）或观察槽位占满（`observing_slots >= slot_limit`）时阻塞；补齐未满槽位期间无连败时免除24小时等待。参数按功能维度划分为信号与趋势周期（`signal_period`）、风控与退出边界（`risk_exit`）、阈值过滤与仓位（`filter_sizing`）三大正交方向，单任务提案与跨任务槽位均优先覆盖未占用维度并剔除在役重复变体；开启 `launch_enabled` 时稳定变体母体同样纳入补位覆盖。

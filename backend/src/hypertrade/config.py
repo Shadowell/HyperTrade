@@ -1,8 +1,17 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_WORKER_STARTUP_DELAYS: dict[str, float] = {
+    "arc_evolution": 2.0,
+    "arc_observation": 5.0,
+    "cognitive_memory_replay": 8.0,
+    "arc_meta_tuning": 12.0,
+    "rag_scanner": 15.0,
+}
 
 
 class Settings(BaseSettings):
@@ -13,6 +22,27 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=3334, alias="API_PORT")
     frontend_origin: str = Field(default="http://localhost:3333", alias="FRONTEND_ORIGIN")
+    # Headless research engine mode (BitPro serves as the sole operator console). Code default
+    # stays False to keep standalone local/unit-test loop expectations intact unless configured.
+    headless_mode: bool = Field(default=False, alias="HYPERTRADE_HEADLESS_MODE")
+    market_ingestion_enabled: bool = Field(default=True, alias="MARKET_INGESTION_ENABLED")
+    worker_startup_stagger_enabled: bool = Field(
+        default=True,
+        alias="WORKER_STARTUP_STAGGER_ENABLED",
+    )
+    worker_startup_stagger_delays: dict[str, float] = Field(
+        default_factory=lambda: dict(DEFAULT_WORKER_STARTUP_DELAYS),
+        alias="WORKER_STARTUP_STAGGER_DELAYS",
+    )
+
+    @field_validator("worker_startup_stagger_delays", mode="before")
+    @classmethod
+    def _validate_worker_startup_stagger_delays(cls, value: Any) -> dict[str, float]:
+        if value is None or value == "":
+            return dict(DEFAULT_WORKER_STARTUP_DELAYS)
+        if isinstance(value, dict):
+            return {str(key): max(0.0, float(delay)) for key, delay in value.items()}
+        raise TypeError("worker_startup_stagger_delays must be a mapping or JSON object")
     database_url: str = Field(
         default="postgresql+psycopg://hypertrade:hypertrade@postgres:5432/hypertrade",
         alias="DATABASE_URL",

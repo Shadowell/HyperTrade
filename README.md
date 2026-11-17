@@ -54,9 +54,10 @@ It is not an automated money maker, promises no profitability, and does not prov
 
 ```mermaid
 flowchart LR
-  Op["Operator / External Agent<br/>Web · ht CLI · TUI · Desktop"] --> API["FastAPI Control Plane<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
+  BitProUI["BitPro Unified Console (/ai-lab · /evolution)"] --> API["FastAPI Control Plane (mem_limit: 2g)<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
+  Op["HyperTrade Web (Headless Redirect) · ht CLI · TUI"] --> API
   API --> DB[("PostgreSQL + pgvector<br/>52 migrations · Mission projections · HET tree · Memory")]
-  Worker["Worker Loops (13 Loops)<br/>Mission · AVO research · evolution · auto-review · meta-tuning"] --> DB
+  Worker["Headless Worker Loops (mem_limit: 3g)<br/>ARC · evolution · auto-review · observation · judge · stagger 2s..15s"] --> DB
   Worker --> Research["ARC Autonomous Research Loop (AVO + RD-Agent)<br/>HET tree → Co-STEER synthesis → AST gatekeeper → sandbox → baseline"]
   Worker --> Evolution["Evolution Engine (default on)<br/>decay / launch scan → budget admission → re-research or rule tweak → admission → race duel → ledger"]
   Research --> Sandbox["Isolated Strategy Sandbox<br/>UDS · non-root · no network · digest-bound"]
@@ -104,9 +105,10 @@ Scans active incubating paper strategies hourly:
 
 Design docs: [63 Evolution Hardening](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) · [66 Smooth Relay Handover](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md)
 
-### 5. Production Probe Matrix & Quantum Portfolio Console
+### 5. Production Probe Matrix, Headless Engine Mode & BitPro Console Consolidation
+- **Headless Research Engine (`HYPERTRADE_HEADLESS_MODE`)**: In production (`docker-compose.yml` defaults `HYPERTRADE_HEADLESS_MODE` to `true`, with `api` capped at `mem_limit: 2g` and `worker` at `mem_limit: 3g`), BitPro (`/ai-lab` and `/evolution`) serves as the single operator console while the HyperTrade Web UI displays a prominent redirect banner. The worker disables redundant standalone `market_ingestion`, `market_rest_supplement`, `paper_trading`, and `autonomous_market_pulse` loops (also controllable via `MARKET_INGESTION_ENABLED`) and staggers non-critical initial scans (`arc_evolution` 2s, `arc_observation` 5s, `cognitive_memory_replay` 8s, `arc_meta_tuning` 12s, `rag_scanner` 15s) to eliminate `t=0` restart spikes. `bitpro/mcp.py` accepts multiple PnL/drawdown field aliases from `strategy_search(status=running)` and suppresses false-positive `monitor_data_gap` warnings when `paper_dashboard` metrics are healthy. Contract: [Headless BitPro Fusion](docs/contracts/headless-bitpro-fusion.md).
 - **Probe Matrix**: `/livez` (liveness), `/readyz` (readiness with `SELECT 1` DB probe), `/healthz` (comprehensive diagnostics with DB latency, adapter heartbeats, worker liveness, paper session counts, and token status), `/version` (the running commit SHA, which the deploy workflow checks after every deploy), fully aligned with Kubernetes standards.
-- **Quantum Portfolio Dashboard**: React 19 UI with BitPro / QuantLab target switcher, dynamic A-share rule badges, interactive HET evolution tree visualization, and real-time relay handover slice stepping monitor.
+- **Quantum Portfolio Dashboard**: React 19 UI with headless BitPro redirect guidance, BitPro / QuantLab target switcher, dynamic A-share rule badges, interactive HET evolution tree visualization, and real-time relay handover slice stepping monitor.
 
 Design docs: [67 Production Probes & Token Rotation](docs/architecture/67-production-observability-probes-and-token-rotation.md)
 
@@ -149,7 +151,7 @@ uv run alembic upgrade head
 uv run uvicorn hypertrade.main:app --app-dir backend/src --reload --host 0.0.0.0 --port 3334
 ```
 
-API and 13 background worker loops start in the same process; workers can also run standalone:
+Standalone worker process (production Compose runs with `HYPERTRADE_HEADLESS_MODE=true`, keeping ARC research, evolution, observation, reconciliation, race judge, monitoring, heartbeat, RAG, and Mission loops):
 
 ```bash
 uv run python -m hypertrade.worker

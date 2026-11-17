@@ -2,7 +2,7 @@
 
 ## Start here / 从这里开始
 
-- [33 System Architecture](33-system-architecture.md) 是核心实现快照（已全面刷新至多市场与企业级生产态）。系统性阐述 Mission Runtime、ARC 自主研究循环（AVO）、默认开启的自主进化引擎、BitPro / QuantLab 双目标适配层与企业级安全治理边界。
+- [33 System Architecture](33-system-architecture.md) 是核心实现快照（已刷新至无头研究引擎收口、多市场与企业级生产态）。系统性阐述 Mission Runtime、ARC 自主研究循环（AVO）、默认开启的自主进化引擎、BitPro 唯一操作台收口与无头 Worker 错峰拓扑、QuantLab 适配层及企业级安全治理边界；交付合同见 [headless-bitpro-fusion](../contracts/headless-bitpro-fusion.md)。
 - [68 外部 Ground Truth 流与 Headline Arena 接入](68-external-ground-truth-stream-and-headline-arena.md) 规定了外部真实价格预测竞技场（Headline Arena）协议接入、前向盲测方向预测合成与提交、第三方 Brier 评分/校准曲线同步，以及注入 ARC 因果归因与反思记忆账本的外生选择压力闭环。
 - [66 QuantLab 适配器、A 股微观结构与平滑换仓](66-quantlab-adapter-a-share-microstructure-and-relay-handover.md) 规定了 A 股现货市场的硬约束机制（T+1 状态机、现货单向多头、涨跌停阻断、万2.5/5bps 印花税）、Co-STEER 到 QuantLab 原生向量化矩阵策略的转译器，以及赛马接力阶段节省换手摩擦超 80% 的持仓净额对冲与切片执行调度器。
 - [67 生产级探活、令牌轮换与指挥台设计](67-production-observability-probes-and-token-rotation.md) 规定了容器级分级探活矩阵（`/livez`, `/readyz`, `/healthz`）、适配器心跳检测、零信任动态安全令牌热轮换引擎（`TokenRotationService`，支持无缝宽限期过渡），以及集成 RD-Agent 假设演进树（HET）的前端多目标指挥台。
@@ -29,3 +29,5 @@ HyperTrade 不复制交易平台的内部业务逻辑，不直接读取其内部
 - 运维与部署操作手册：[Runbooks](../runbooks/)
 
 2026-10-15：ARC 新增 `GET /api/v1/arc/variant-status?source_strategy_id=…&candidate_strategy_id=…` 只读摘要。限定 BitPro 目标并精确绑定母体/候选，只选取持久投影子字段与当前受阻任务最近一条阻塞事件，不重建控制器、不加载完整事件/模型对话；权限继续为 `arc:read`。最多检索母体最近100条任务，无匹配返回 `not_found`，不代表审核通过。
+
+2026-11-18：HyperTrade 生产定位收口为无头研究引擎（`HYPERTRADE_HEADLESS_MODE=true` 默认经 `docker-compose.yml` 生效，BitPro `/ai-lab` 与 `/evolution` 为唯一控制台）；worker 停用冗余本地行情采集/模拟盘/脉冲循环并对 5 个非关键扫描循环实施首次启动错峰（2s/5s/8s/12s/15s），`bitpro/mcp.py` 兼容运行策略清单指标字段并消除轻量目录在 `dashboard` 可用时的 `monitor_data_gap` 误报。

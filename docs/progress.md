@@ -1,3 +1,37 @@
+## 2026-11-18：无头研究引擎模式收口、启动错峰、跨系统 `monitor_data_gap` 去误报与 Dependabot PR `#112`~`#117` 只读盘点
+
+- **背景**：HyperTrade 生产工作流已与 BitPro 融合：BitPro 作为唯一前端操作台（`/ai-lab` 与 `/evolution`），HyperTrade 作为受治理的后台策略研究与自主进化引擎。此前生产 worker 仍默认启动独立行情摄入、本地模拟盘与自主脉冲循环，且重启瞬间多个扫描循环同时触发形成 `t=0` 峰值；同时 `bitpro/mcp.py` 对 `strategy_search(status=running)` 轻量目录字段兼容不足并在 `paper_dashboard` 正常时仍向 `data_gaps` 写入缺失项，导致 `MonitorService`（`mon_bitpro_paper_all`）每 5 分钟产生 `WARNING monitor_data_gap` 误报。
+- **交付**：
+  1. **无头研究引擎模式与容器内存边界**（`config.py`、`worker.py`、`.env.example`、`docker-compose.yml`）：
+     - `Settings` 新增 `headless_mode`（`HYPERTRADE_HEADLESS_MODE`，代码默认 `False` 兼容已有单测）与 `market_ingestion_enabled`（`MARKET_INGESTION_ENABLED`，默认 `True`）；`.env.example` 写入 `HYPERTRADE_HEADLESS_MODE=true`，`docker-compose.yml` 在 `api` 与 `worker` 均配置 `HYPERTRADE_HEADLESS_MODE: ${HYPERTRADE_HEADLESS_MODE:-true}`，并设置内存限制 `api mem_limit: 2g`、`worker mem_limit: 3g`。
+     - `worker.build_loops` 在 `headless_mode=True` 时停用 `market_ingestion`、`market_rest_supplement`、`paper_trading` 与 `autonomous_market_pulse`；`market_ingestion_enabled=False` 独立停用行情采集循环；保留 ARC 研究/进化/自动评审/观察/对账/赛马裁判/监控/心跳/RAG/Mission 循环。
+  2. **非关键循环首次启动错峰**（`config.py`、`worker.py`）：
+     - `Settings` 新增 `worker_startup_stagger_enabled`（`WORKER_STARTUP_STAGGER_ENABLED`，默认 `True`）与 `worker_startup_stagger_delays`（`WORKER_STARTUP_STAGGER_DELAYS`）；`worker.main()` 仅在进程首次启动时按 `arc_evolution` 2s、`arc_observation` 5s、`cognitive_memory_replay` 8s、`arc_meta_tuning` 12s、`rag_scanner` 15s 错开启动；`supervise` 故障重启不重复等待，直接调用循环函数的既有单测零延迟。
+  3. **跨系统监控 `monitor_data_gap` 误报治理**（`bitpro/mcp.py`）：
+     - `_strategy_item` 与 `_paper_monitor_summary` 新增 `_inventory_item_has_metrics`，兼容读取 `total_pnl_pct`、`return_pct`、`cumulative_return_pct`、`pnl_pct`、`paper_metrics.total_pnl_pct`、`max_drawdown`、`max_drawdown_pct`、`paper_metrics.max_drawdown_pct`；与 BitPro `strategy_search(status=running)` 附带零 DB 读 `total_pnl_pct` 及缓存态 `max_drawdown_pct` 对齐。
+     - 当轻量级运行策略目录缺少逐策略明细而 `paper_dashboard` 已有实时净值/收益/回撤指标时，仅保留 `level="info"` 的 `missing_strategy_metrics` 告警，不再写入 `data_gaps` 误报 `WARNING monitor_data_gap`；当 `dashboard` 与目录均缺核心指标时仍保留 `data_gaps` 上报。同步维护 `tests/test_bitpro_mcp_adapter.py` 契约，并新增 `tests/test_worker_headless_mode.py`、`tests/test_bitpro_mcp_inventory_metrics.py`。
+  4. **前端无头引导与全套文档同步**（`frontend/`、`README*.md`、`docs/`）：
+     - HyperTrade 前端 `App.tsx` 主区域顶部新增无头研究引擎提示横幅及跳转 BitPro 唯一工作台（`${VITE_BITPRO_CONSOLE_URL || "https://bitpro.notenap.com"}/ai-lab` 与 `/evolution`）链接，补充 `frontend/src/App.harness.test.tsx` 测试用例。
+     - 新建交付合同 `docs/contracts/headless-bitpro-fusion.md`，同步更新 `docs/spec.md`、`docs/architecture/00-overview.md`、`docs/architecture/33-system-architecture.md`、`README.md`、`README.zh-CN.md`、`README.en.md` 与本进度文档。
+- **Dependabot PR `#112`~`#117` 只读盘点（2026-11-18）**：
+
+  | PR | 标题 / 变更包 | 修改文件 | CI / CodeQL / 前端审计 | Python 安全审计 | 可合并评估与结论 |
+  | --- | --- | --- | --- | --- | --- |
+  | `#112` | `chore(deps): bump the frontend-dependencies group in /frontend with 2 updates`（`typescript-eslint` 8.72.1→8.72.2、`vite` 8.3.6→8.3.8） | `frontend/package.json`, `frontend/pnpm-lock.yaml` | 全部 `SUCCESS` | `FAILURE`（继承 `main`） | 补丁级 dev 升级，代码检查全绿；仅受 `main` 的 `soupsieve` 漏洞门禁牵连，待 `soupsieve` 单独升级后再合并。 |
+  | `#113` | `chore(deps): bump vitest from 4.1.7 to 5.1.0 in /frontend` | `frontend/package.json`, `frontend/pnpm-lock.yaml` | 全部 `SUCCESS` | `FAILURE`（继承 `main`） | 跨大版本升级（4.x→5.x）；CI 前端构建/测试虽通过，仍需复核 Vitest v5 配置/API 破坏性变更并在 `soupsieve` 修复后合并。 |
+  | `#114` | `chore(deps): bump @types/node from 25.9.1 to 26.6.6 in /frontend` | `frontend/package.json`, `frontend/pnpm-lock.yaml` | 全部 `SUCCESS` | `FAILURE`（继承 `main`） | 跨大版本类型包（25.x→26.x），而仓库 CI 运行 Node 22；CI 虽通过，建议结合 Node LTS 目标确认是否延后或固定 22/25 线。 |
+  | `#115` | `chore(deps): bump the python-dependencies group with 3 updates`（`fastapi` 0.162.2→0.162.5、`langgraph` 1.2.20→1.2.21、`ruff` 0.17.4→0.17.5） | `uv.lock` | 全部 `SUCCESS` | `FAILURE`（继承 `main`） | 补丁级升级且沙箱已固定 `_SANDBOX_RUFF_SELECT`，CI 后端测试/CodeQL 全绿；待 `soupsieve` 修复后可安全合并。 |
+  | `#116` | `chore(deps): bump websockets from 15.0.1 to 17.4` | `uv.lock` | 全部 `SUCCESS` | `FAILURE`（继承 `main`） | 生产运行时依赖跨两代大版本升级（15.0.1→17.4），涉及 `market/okx.py` 与 `uvicorn`；无头模式虽停用 OKX WS，合并前仍需核对 16/17 破坏性变更并重测 WS 套件。 |
+  | `#117` | `chore(deps): bump types-jsonschema from 4.26.0.20260518 to 4.26.0.20261006` | `uv.lock` | 全部 `SUCCESS` | `FAILURE`（继承 `main`） | 纯开发期 mypy stub 更新，CI/mypy 全绿；待 `soupsieve` 修复后可直接合并。 |
+
+  - **共性阻塞根因实测**：在当前 `main`（`8688082`）执行 `.github/workflows/security.yml` 同款审计命令 `uv export --locked --no-dev --no-hashes --no-emit-project --format requirements-txt` + `uvx pip-audit==2.10.1 --disable-pip --no-deps`，检出传递生产依赖 `soupsieve==2.10`（经 `yfinance==1.8.0` → `beautifulsoup4==4.15.0` 引入）存在 3 项已知 CVE：`CVE-2026-126190`（修复版本 `4.0.0`）、`CVE-2026-126191`（修复版本 `3.0.2`）、`CVE-2026-126193`（修复版本 `3.0.2`）。6 个 PR 均未触及 `soupsieve`，因此统一在 `Security / Python Dependency Audit` 失败。本次仅做只读盘点，未合并任何 PR 或修改锁文件；后续应单开 PR 执行 `uv lock --upgrade-package soupsieve` 解除全局安全门禁阻塞。
+
+- **验证**：
+  - `LC_ALL=en_US.UTF-8 ./scripts/check.sh`（于全部代码、测试、前端与配置修改后执行）全量通过：
+    - 前端 `eslint .` 通过；`vitest run` 11 个测试文件 / 71 项测试全部通过；`tsc --noEmit && vite build` 成功（1717 模块，473ms）。
+    - 后端 `ruff check backend tests` 0 错误；`mypy backend/src`（330 个源文件）0 错误；`pytest -q` **3018 passed, 3 skipped**（3 项为既有 Linux 专属跳过项）。
+  - GitNexus 上游影响分析：`Settings` 为 `CRITICAL`（106 impacted，仅新增向后兼容默认字段），`build_loops`（3 impacted）、`main`（9 impacted）、`_strategy_item`（4 impacted）、`_paper_monitor_summary`（1 impacted）、`App`（0 impacted）均为 `LOW`。
+
 ## 2026-11-11：Python 依赖组升级（取代 Dependabot #99）——策略沙箱的 lint 门禁固定规则集，不再随 ruff 默认规则漂移
 
 - **背景**：Dependabot #99 一次升级 23 个锁定包和 1 条约束：运行时的 `sqlalchemy` 2.0.50→2.1.8、`fastapi` 0.136.3→0.162.2、`alembic` 1.18.4→1.20.1、`langgraph` 1.2.9→1.2.20（及 `langgraph-checkpoint`）、`yfinance` 1.5.1→1.8.0，仅在可选依赖 `agent-evals` 里的 `langchain-community` 0.3.31→0.4.2（约束 `<0.4`→`<0.5`），以及 `mypy` 2.1.0→2.4.1、`ruff` 0.15.14→0.17.4、`pytest` 9.0.3→9.2.0 等开发工具。PR 上的 CI 在 mypy 这一步就失败，后端测试从没在升级后的环境里跑过，所以没有直接合并。

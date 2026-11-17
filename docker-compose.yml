@@ -23,6 +23,7 @@ services:
       dockerfile: backend/Dockerfile
     container_name: hypertrade-api
     restart: unless-stopped
+    mem_limit: 2g
     env_file:
       - .env
     extra_hosts:
@@ -32,6 +33,7 @@ services:
       # The server-local file is mounted as a read-only Compose secret. An
       # empty /dev/null fallback leaves Codex disabled without exposing OAuth.
       CODEX_AUTH_JSON: /run/secrets/hypertrade_codex_auth
+      HYPERTRADE_HEADLESS_MODE: ${HYPERTRADE_HEADLESS_MODE:-true}
     ports:
       - "127.0.0.1:3334:3334"
     volumes:
@@ -64,6 +66,7 @@ services:
       dockerfile: backend/Dockerfile
     container_name: hypertrade-worker
     restart: unless-stopped
+    mem_limit: 3g
     command: ["python", "-m", "hypertrade.worker"]
     env_file:
       - .env
@@ -74,6 +77,7 @@ services:
       # Background Agent work uses the same read-only provider credential as
       # the API, never a copied OAuth token in the environment file.
       CODEX_AUTH_JSON: /run/secrets/hypertrade_codex_auth
+      HYPERTRADE_HEADLESS_MODE: ${HYPERTRADE_HEADLESS_MODE:-true}
     secrets:
       - source: codex_auth
         target: hypertrade_codex_auth
