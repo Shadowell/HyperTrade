@@ -361,6 +361,40 @@ class ToolRegistry:
                     "Read BitPro live strategy performance ranking for diagnostics only.",
                     "bitpro",
                 ),
+                ToolDefinition(
+                    "bitpro.variant_policy",
+                    (
+                        "Read BitPro authorized research variant policy and parameter bounds "
+                        "for a parent strategy."
+                    ),
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.relay_plans",
+                    "Read BitPro persisted relay plans and active paper horse races.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.research_context_snapshot",
+                    "Read BitPro multi-bot research blackboard snapshot.",
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "bitpro.research_publish_event",
+                    (
+                        "Publish an idempotent structured event to BitPro multi-bot "
+                        "research blackboard."
+                    ),
+                    "bitpro",
+                ),
+                ToolDefinition(
+                    "arc.evolution_status",
+                    (
+                        "Read HyperTrade ARC autonomous evolution config, budget, active "
+                        "cycles, and continuations."
+                    ),
+                    "arc",
+                ),
                 ToolDefinition("paper.session", "Control paper trading sessions.", "paper"),
                 ToolDefinition(
                     "world_model.defensive_action",
@@ -1757,6 +1791,149 @@ RUNTIME_TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_variant_policy",
+            "description": (
+                "Read BitPro authorized research variant policy, execution identity, "
+                "and parameter bounds for a parent strategy. Read-only."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_id": {
+                        "type": "integer",
+                        "description": "BitPro parent strategy id.",
+                    },
+                },
+                "required": ["strategy_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_relay_plans",
+            "description": (
+                "Read BitPro persisted relay plans and active paper horse races. Read-only."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_research_context_snapshot",
+            "description": (
+                "Read BitPro multi-bot research collaboration blackboard snapshot. Read-only."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "Collaboration project id, default default.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum events to return, default 100.",
+                    },
+                    "topics": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional topic filters.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bitpro_research_publish_event",
+            "description": (
+                "Publish an idempotent structured event to BitPro multi-bot research "
+                "collaboration blackboard. Requires idempotency_key."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "Collaboration project id, default default.",
+                    },
+                    "bot_id": {
+                        "type": "string",
+                        "description": "Publishing bot or agent identifier.",
+                    },
+                    "squad_id": {
+                        "type": "string",
+                        "description": "Squad identifier, default hypertrade.",
+                    },
+                    "event_type": {
+                        "type": "string",
+                        "enum": [
+                            "observation",
+                            "hypothesis",
+                            "trade_proposal",
+                            "risk_review",
+                            "paper_execution",
+                            "monitoring",
+                            "coordination",
+                        ],
+                        "description": "Structured research event type.",
+                    },
+                    "topic": {
+                        "type": "string",
+                        "description": "Event topic name.",
+                    },
+                    "payload": {
+                        "type": "object",
+                        "description": "Structured JSON payload without secrets.",
+                    },
+                    "symbol": {
+                        "type": "string",
+                        "description": "Optional symbol context.",
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "description": "Optional confidence between 0 and 1.",
+                    },
+                    "source_ref": {
+                        "type": "string",
+                        "description": "Optional evidence source reference.",
+                    },
+                },
+                "required": ["bot_id", "event_type", "topic", "payload"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "arc_evolution_status",
+            "description": (
+                "Read HyperTrade ARC autonomous evolution configuration, daily budget, "
+                "recent cycles, and paper continuations. Read-only."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "compact": {
+                        "type": "boolean",
+                        "description": "Return compact cycle views, default true.",
+                    },
+                    "cycles_limit": {
+                        "type": "integer",
+                        "description": "Maximum recent cycles to return (1..20), default 5.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 )
 
 
@@ -1770,6 +1947,7 @@ _IDEMPOTENCY_REQUIRED_TOOL_NAMES = {
     "bitpro_paper_pause",
     "bitpro_paper_resume",
     "bitpro_paper_stop",
+    "bitpro_research_publish_event",
     "paper_promotion_request",
     "mcp_invoke_tool",
     "live_order_intent",
@@ -1883,6 +2061,7 @@ def _default_policy_for(
             "strategy_create",
             "strategy_update",
             "backtest_start_job",
+            "research_publish_event",
         }:
             return ToolPolicy(
                 scope="research_write",
@@ -1998,6 +2177,11 @@ _RUNTIME_TO_REGISTRY_NAME = {
     "bitpro_live_positions": "bitpro.live_positions",
     "bitpro_live_order_history": "bitpro.live_order_history",
     "bitpro_live_strategy_performance": "bitpro.live_strategy_performance",
+    "bitpro_variant_policy": "bitpro.variant_policy",
+    "bitpro_relay_plans": "bitpro.relay_plans",
+    "bitpro_research_context_snapshot": "bitpro.research_context_snapshot",
+    "bitpro_research_publish_event": "bitpro.research_publish_event",
+    "arc_evolution_status": "arc.evolution_status",
     "world_model_defensive_action": "world_model.defensive_action",
     "live_order_intent": "live.order_intent",
     "live_autonomous_order": "live.autonomous_order",
@@ -2243,6 +2427,36 @@ _DEFAULT_TOOL_POLICIES: dict[str, ToolPolicy] = {
         source="bitpro_mcp",
         timeout="standard",
         sample=20,
+    ),
+    "bitpro.variant_policy": _policy(
+        source="bitpro_mcp",
+        timeout="standard",
+        sample=20,
+        failure="return_unavailable",
+    ),
+    "bitpro.relay_plans": _policy(
+        source="bitpro_mcp",
+        timeout="standard",
+        sample=50,
+        failure="return_unavailable",
+    ),
+    "bitpro.research_context_snapshot": _policy(
+        source="bitpro_mcp",
+        timeout="standard",
+        sample=100,
+        failure="return_unavailable",
+    ),
+    "bitpro.research_publish_event": _policy(
+        scope="research_write",
+        idempotency="required",
+        source="bitpro_mcp",
+        timeout="standard",
+        sample=1,
+    ),
+    "arc.evolution_status": _policy(
+        source="hypertrade_db",
+        timeout="quick",
+        sample=5,
     ),
     "paper.session": _policy(
         scope="paper_write",
