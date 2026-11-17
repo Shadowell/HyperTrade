@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import socket
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from decimal import Decimal, InvalidOperation
 from threading import Event, Thread
@@ -21,7 +21,7 @@ from hypertrade.arc.observation import observe_arc_missions_once
 from hypertrade.arc.runtime_journal import record_model_exchange, record_runtime_error
 from hypertrade.arc.store import cache_stats, configure_store
 from hypertrade.bitpro.mcp import BitProMcpClient, BitProToolAdapter
-from hypertrade.config import Settings, get_settings
+from hypertrade.config import DEFAULT_WORKER_STARTUP_DELAYS, Settings, get_settings
 from hypertrade.db import Database
 from hypertrade.market.client import MarketIngestor
 from hypertrade.market.repository import MarketRepository
@@ -514,13 +514,20 @@ def build_loops(db: Database, settings: Settings) -> list[tuple[str, LoopFactory
     Factories rather than ready coroutines: the supervisor builds a fresh coroutine each time it
     restarts a crashed loop. The names identify a loop in logs and in the runtime-error journal,
     so keep them stable.
+
+    In headless research-engine mode (``headless_mode=True``), legacy standalone market
+    ingestion, local paper trading, and autonomous market pulse loops are omitted so the worker
+    dedicates resources to ARC research, evolution, auto-review, observation, reconciliation,
+    race judging, monitoring, heartbeats, RAG, and durable Missions.
     """
+    headless = settings.headless_mode
     loops: list[tuple[str, LoopFactory]] = [
         ("rag_scanner", lambda: rag_scanner_loop(db)),
-        ("market_ingestion", lambda: market_ingestion_loop(db)),
-        ("market_rest_supplement", lambda: market_rest_supplement_loop(db)),
     ]
-    if settings.paper_enabled:
+    if not headless and settings.market_ingestion_enabled:
+        loops.append(("market_ingestion", lambda: market_ingestion_loop(db)))
+        loops.append(("market_rest_supplement", lambda: market_rest_supplement_loop(db)))
+    if not headless and settings.paper_enabled:
         loops.append(("paper_trading", lambda: paper_trading_loop(db)))
     if settings.monitor_scheduler_enabled:
         loops.append(("monitor_scheduler", lambda: monitor_scheduler_loop(db)))
@@ -537,7 +544,7 @@ def build_loops(db: Database, settings: Settings) -> list[tuple[str, LoopFactory
             loops.append((f"mission_worker_{index + 1}", lambda: mission_worker_loop(db)))
     if settings.research_triggers_enabled and not full_mission_cutover:
         loops.append(("research_trigger", lambda: research_trigger_loop(db)))
-    if settings.autonomous_pulse_enabled:
+    if not headless and settings.autonomous_pulse_enabled:
         loops.append(("autonomous_market_pulse", lambda: autonomous_market_pulse_loop(db)))
     loops.append(("arc_observation", lambda: arc_observation_loop(db)))
     loops.append(("arc_evolution", lambda: arc_evolution_loop(db)))
@@ -567,7 +574,42 @@ def build_loops(db: Database, settings: Settings) -> list[tuple[str, LoopFactory
     return loops
 
 
-async def main() -> None:
+def resolve_startup_delays(
+    settings: Any,
+    overrides: Mapping[str, float] | None = None,
+) -> dict[str, float]:
+    """Resolve per-loop initial startup stagger delays; disabled returns an empty map."""
+    if not getattr(settings, "worker_startup_stagger_enabled", True):
+        return {}
+    configured = getattr(settings, "worker_startup_stagger_delays", None)
+    delays = (
+        dict(DEFAULT_WORKER_STARTUP_DELAYS)
+        if configured is None
+        else {str(name): max(0.0, float(seconds)) for name, seconds in configured.items()}
+    )
+    if overrides:
+        for name, seconds in overrides.items():
+            delays[str(name)] = max(0.0, float(seconds))
+    return delays
+
+
+def _with_startup_delay(factory: LoopFactory, delay_seconds: float) -> LoopFactory:
+    """Delay only the initial start in main() so restarts do not re-pay cold-start stagger."""
+    if delay_seconds <= 0:
+        return factory
+    delayed = False
+
+    async def _staggered() -> None:
+        nonlocal delayed
+        if not delayed:
+            delayed = True
+            await asyncio.sleep(delay_seconds)
+        await factory()
+
+    return _staggered
+
+
+async def main(*, startup_delays: Mapping[str, float] | None = None) -> None:
     logging.basicConfig(level=logging.INFO)
     settings = get_settings()
     db = Database(settings.database_url)
@@ -585,12 +627,18 @@ async def main() -> None:
     # What the worker keeps of the ARC history decides how long each full garbage collection
     # freezes it: published with the heartbeat as workers[].process.arc_cache.
     register_process_probe("arc_cache", cache_stats)
+    delays = resolve_startup_delays(settings, startup_delays)
     try:
         # Every loop runs under a supervisor: a crash restarts that one loop (with backoff)
         # instead of ending the gather, and with it the whole worker process.
         await asyncio.gather(
             *(
-                supervise(name, factory, journal=journal, on_crash=on_crash)
+                supervise(
+                    name,
+                    _with_startup_delay(factory, delays.get(name, 0.0)),
+                    journal=journal,
+                    on_crash=on_crash,
+                )
                 for name, factory in build_loops(db, settings)
             )
         )
