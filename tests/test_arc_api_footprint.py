@@ -497,6 +497,19 @@ def test_evolution_compact_avoids_full_mission_scans_and_n_plus_one_events(
     assert resp.status_code == 200
     assert journal_reads == []
     assert len([s for s in executed_sql if "arc_mission_events" in s]) == 1
+
+    # Second steady-state call hits the per-engine cache with 0 projection_json / event reads.
+    executed_sql.clear()
+    event.listen(database.engine, "before_cursor_execute", before_execute)
+    try:
+        hot_resp = client.get("/api/v1/arc/evolution?compact=true", headers=_headers())
+    finally:
+        event.remove(database.engine, "before_cursor_execute", before_execute)
+    assert hot_resp.status_code == 200
+    assert not any("projection_json" in s for s in executed_sql)
+    assert not any("arc_mission_events" in s for s in executed_sql)
+    assert hot_resp.json()["budget"] == resp.json()["budget"]
+
     fixed_now = datetime(2026, 11, 18, 0, tzinfo=UTC)
     monkeypatch.setattr(research_budget, "_usage_items_fast", research_budget._usage_items_full)
     expected_full = research_budget.budget_status(database, EvolutionConfig(), fixed_now)
@@ -507,3 +520,77 @@ def test_evolution_compact_avoids_full_mission_scans_and_n_plus_one_events(
         actual_source = actual_budget["sources"][key]
         for field in ("in_research", "busy", "last_state", "cooldown_hours", "slots_open"):
             assert actual_source[field] == expected_source[field]
+
+
+def test_lifespan_warms_budget_cache_nonblockingly_and_tolerates_uninitialized_db() -> None:
+    import time
+
+    store.reset_store()
+    pre_db = Database("sqlite:///:memory:")
+    pre_db.create_all()
+    store.configure_store(pre_db)
+    try:
+        goal = ARCGoalV1(
+            objective="lifespan warmup",
+            paper_review_required=True,
+            research_mode="avo",
+            research_windows=ResearchWindowsV1(),
+            paper_initial_equity=Decimal("100"),
+            evolution_context={
+                "target_id": "bitpro",
+                "source_strategy_id": 777,
+                "source_instance_id": "inst-warmup-777",
+                "trigger_source": "degradation",
+            },
+        )
+        ctrl = ARCController(goal=goal)
+        ctrl.apply_event("goal_compiled", {"goal": goal.model_dump(mode="json")})
+        ctrl.apply_event("operator_needed", {"reason": "manual_hold"})
+        store.reset_runtime()
+
+        settings = Settings(
+            DATABASE_URL="sqlite:///:memory:",
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            SESSION_SECRET="arc-api-warmup-secret",
+            ARC_SERVICE_TOKENS=f"reader:arc:read:{hash_service_token(READ_TOKEN)}",
+        )
+        with TestClient(create_app(settings=settings, db=pre_db)) as client:
+            deadline = time.monotonic() + 2.0
+            while not store._BUDGET_USAGE_CACHE.get(pre_db.engine):
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+
+            executed_sql: list[str] = []
+
+            def before_execute(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+                executed_sql.append(statement)
+
+            event.listen(pre_db.engine, "before_cursor_execute", before_execute)
+            try:
+                resp = client.get("/api/v1/arc/evolution?compact=true", headers=_headers())
+            finally:
+                event.remove(pre_db.engine, "before_cursor_execute", before_execute)
+            assert resp.status_code == 200
+            assert resp.json()["budget"]["total_used"] == 1
+            assert not any("projection_json" in s for s in executed_sql)
+            assert not any("arc_mission_events" in s for s in executed_sql)
+    finally:
+        store.reset_store()
+        pre_db.engine.dispose()
+
+    # Non-sqlite DB without tables created yet: lifespan background warmup fails silently.
+    uninit_db = Database("sqlite:///:memory:")
+    try:
+        non_sqlite_settings = Settings(
+            DATABASE_URL="postgresql+psycopg://unused:unused@127.0.0.1:1/unused",
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            SESSION_SECRET="arc-api-warmup-uninit",
+            ARC_SERVICE_TOKENS=f"reader:arc:read:{hash_service_token(READ_TOKEN)}",
+        )
+        with TestClient(create_app(settings=non_sqlite_settings, db=uninit_db)) as client:
+            assert client.get("/api/health").status_code == 200
+    finally:
+        store.reset_store()
+        uninit_db.engine.dispose()
