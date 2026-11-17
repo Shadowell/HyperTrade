@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from hypertrade.arc import research_budget, store
 from hypertrade.arc import router as arc_router
-from hypertrade.arc import store
 from hypertrade.arc.auth import hash_service_token
 from hypertrade.arc.contracts import (
     ARCBudgetV1,
@@ -20,12 +20,13 @@ from hypertrade.arc.contracts import (
 )
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.evidence_view import build_mission_summary
+from hypertrade.arc.evolution import EvolutionConfig
 from hypertrade.arc.evolution_models import EvolutionCycle
 from hypertrade.arc.pipeline_view import build_pipeline_view
 from hypertrade.config import Settings
 from hypertrade.db import ArcMission, ArcMissionEvent, Database
 from hypertrade.main import create_app
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 READ_TOKEN = "ht_svc_api_footprint_read"
 
@@ -446,3 +447,63 @@ def test_evolution_endpoint_compact_and_cycles_limit_preserve_db_and_compatibili
     after_full = client.get("/api/v1/arc/evolution", headers=_headers())
     assert after_full.status_code == 200
     assert all("diagnostics" in c["payload"] for c in after_full.json()["cycles"])
+
+
+def test_evolution_compact_avoids_full_mission_scans_and_n_plus_one_events(
+    db_client: tuple[TestClient, Database],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, database = db_client
+    heavy_code = "y = 2\n" * 4000
+    for idx in range(8):
+        goal = ARCGoalV1(
+            objective=f"evo budget {idx}",
+            paper_review_required=True,
+            research_mode="avo",
+            research_windows=ResearchWindowsV1(),
+            paper_initial_equity=Decimal("100"),
+            evolution_context={
+                "target_id": "bitpro",
+                "source_strategy_id": 500 + idx,
+                "source_instance_id": f"inst-evo-{idx}",
+                "trigger_source": "degradation",
+                "baseline": {"strategy_code": heavy_code, "strategy_spec": {}},
+            },
+        )
+        ctrl = ARCController(goal=goal)
+        ctrl.apply_event("goal_compiled", {"goal": goal.model_dump(mode="json")})
+        ctrl.apply_event(
+            "operator_needed",
+            {"reason": "avo_context_budget_exhausted" if idx % 2 else "manual_hold"},
+        )
+    store.reset_runtime()
+
+    journal_reads: list[str] = []
+    real_stored = store._stored_events
+    monkeypatch.setattr(
+        store, "_stored_events", lambda s, mid: (journal_reads.append(mid), real_stored(s, mid))[1]
+    )
+    executed_sql: list[str] = []
+
+    def before_execute(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+        executed_sql.append(statement)
+
+    event.listen(database.engine, "before_cursor_execute", before_execute)
+    try:
+        resp = client.get("/api/v1/arc/evolution?compact=true", headers=_headers())
+    finally:
+        event.remove(database.engine, "before_cursor_execute", before_execute)
+
+    assert resp.status_code == 200
+    assert journal_reads == []
+    assert len([s for s in executed_sql if "arc_mission_events" in s]) == 1
+    fixed_now = datetime(2026, 11, 18, 0, tzinfo=UTC)
+    monkeypatch.setattr(research_budget, "_usage_items_fast", research_budget._usage_items_full)
+    expected_full = research_budget.budget_status(database, EvolutionConfig(), fixed_now)
+    actual_budget = resp.json()["budget"]
+    assert actual_budget["total_used"] == expected_full["total_used"] == 8
+    assert set(actual_budget["sources"]) == set(expected_full["sources"])
+    for key, expected_source in expected_full["sources"].items():
+        actual_source = actual_budget["sources"][key]
+        for field in ("in_research", "busy", "last_state", "cooldown_hours", "slots_open"):
+            assert actual_source[field] == expected_source[field]

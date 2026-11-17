@@ -17,7 +17,20 @@ from threading import Lock
 from typing import Any
 from weakref import WeakValueDictionary
 
-from sqlalchemy import select, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Integer,
+    String,
+    and_,
+    case,
+    func,
+    literal_column,
+    select,
+    text,
+    type_coerce,
+)
 from sqlalchemy.orm import Session
 
 from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProjection
@@ -324,6 +337,693 @@ def load_projection_events(
             events_by_seq.setdefault(int(last[0]), dict(last[1]))
     payload["events"] = [events_by_seq[seq] for seq in sorted(events_by_seq)]
     return ARCMissionProjection.model_validate(payload)
+
+
+def load_latest_events_by_type(
+    session: Session, mission_ids: Collection[str], event_type: str
+) -> dict[str, dict[str, Any]]:
+    """Load the newest event of ``event_type`` per mission in batched SQL queries."""
+    ids = list(dict.fromkeys(str(mid) for mid in mission_ids if mid))
+    if not ids:
+        return {}
+    latest: dict[str, dict[str, Any]] = {}
+    for start in range(0, len(ids), 500):
+        chunk = ids[start : start + 500]
+        latest_seq = (
+            select(
+                ArcMissionEvent.mission_id.label("mission_id"),
+                func.max(ArcMissionEvent.seq).label("max_seq"),
+            )
+            .where(
+                ArcMissionEvent.mission_id.in_(chunk),
+                ArcMissionEvent.event_type == event_type,
+            )
+            .group_by(ArcMissionEvent.mission_id)
+            .subquery()
+        )
+        rows = session.execute(
+            select(ArcMissionEvent.mission_id, ArcMissionEvent.event_json).join(
+                latest_seq,
+                and_(
+                    ArcMissionEvent.mission_id == latest_seq.c.mission_id,
+                    ArcMissionEvent.seq == latest_seq.c.max_seq,
+                ),
+            )
+        )
+        for mission_id, event_json in rows:
+            latest[str(mission_id)] = dict(event_json)
+    return latest
+
+
+def _sqlite_typed_json(value: Any, json_type: str | None) -> Any:
+    if json_type == "true":
+        return True
+    if json_type == "false":
+        return False
+    return value
+
+
+def _sqlite_budget_mission_rows(session: Session) -> list[dict[str, Any]]:
+    pj = ArcMission.projection_json
+    jtype = func.json_type
+    jget = func.json_extract
+    state_expr = case(
+        (jtype(pj, "$.state") == "text", jget(pj, "$.state")),
+        else_="created",
+    )
+    fb_is_obj = jtype(pj, "$.goal.feedback_parent") == "object"
+    fb_ev_is_obj = and_(fb_is_obj, jtype(pj, "$.goal.feedback_parent.evidence") == "object")
+    ctx_is_obj = jtype(pj, "$.goal.evolution_context") == "object"
+    vp_is_obj = and_(ctx_is_obj, jtype(pj, "$.goal.evolution_context.variant_policy") == "object")
+    is_observing = state_expr == "paper_observing"
+
+    stmt = select(
+        ArcMission.mission_id.label("mission_id"),
+        ArcMission.created_at.label("created_at"),
+        ArcMission.updated_at.label("updated_at"),
+        ArcMission.revision.label("revision"),
+        case(
+            (
+                jtype(pj, "$.events") == "array",
+                func.json_array_length(pj, "$.events") > 0,
+            ),
+            else_=False,
+        ).label("has_inline_events"),
+        state_expr.label("state"),
+        (jtype(pj, "$.goal") == "object").label("has_goal"),
+        case(
+            (jtype(pj, "$.goal.provider_name") == "text", jget(pj, "$.goal.provider_name")),
+            else_=None,
+        ).label("provider_name"),
+        case(
+            (
+                fb_is_obj,
+                literal_column(
+                    "EXISTS (SELECT 1 FROM json_each("
+                    "arc_missions.projection_json, '$.goal.feedback_parent'))",
+                    type_=Boolean(),
+                ),
+            ),
+            else_=False,
+        ).label("fb_present"),
+        case(
+            (fb_is_obj, jtype(pj, "$.goal.feedback_parent.target_id").is_not(None)),
+            else_=False,
+        ).label("fb_target_id_exists"),
+        case(
+            (
+                and_(fb_is_obj, jtype(pj, "$.goal.feedback_parent.target_id") == "text"),
+                jget(pj, "$.goal.feedback_parent.target_id"),
+            ),
+            else_=None,
+        ).label("fb_target_id"),
+        case(
+            (
+                and_(fb_is_obj, jtype(pj, "$.goal.feedback_parent.instance_id") == "text"),
+                jget(pj, "$.goal.feedback_parent.instance_id"),
+            ),
+            else_=None,
+        ).label("fb_instance_id"),
+        fb_ev_is_obj.label("fb_evidence_is_dict"),
+        case(
+            (fb_ev_is_obj, jtype(pj, "$.goal.feedback_parent.evidence.strategy_id").is_not(None)),
+            else_=False,
+        ).label("fb_evidence_sid_exists"),
+        case(
+            (fb_ev_is_obj, jtype(pj, "$.goal.feedback_parent.evidence.strategy_id")),
+            else_=None,
+        ).label("fb_evidence_sid_type"),
+        case(
+            (fb_ev_is_obj, pj[("goal", "feedback_parent", "evidence", "strategy_id")]),
+            else_=None,
+        ).label("fb_evidence_sid"),
+        case(
+            (ctx_is_obj, jtype(pj, "$.goal.evolution_context.target_id").is_not(None)),
+            else_=False,
+        ).label("ctx_target_id_exists"),
+        case(
+            (
+                and_(ctx_is_obj, jtype(pj, "$.goal.evolution_context.target_id") == "text"),
+                jget(pj, "$.goal.evolution_context.target_id"),
+            ),
+            else_=None,
+        ).label("ctx_target_id"),
+        case(
+            (
+                and_(
+                    ctx_is_obj,
+                    jtype(pj, "$.goal.evolution_context.source_instance_id") == "text",
+                ),
+                jget(pj, "$.goal.evolution_context.source_instance_id"),
+            ),
+            else_=None,
+        ).label("ctx_source_instance_id"),
+        case(
+            (ctx_is_obj, jtype(pj, "$.goal.evolution_context.source_strategy_id")),
+            else_=None,
+        ).label("ctx_source_strategy_id_type"),
+        case(
+            (ctx_is_obj, pj[("goal", "evolution_context", "source_strategy_id")]),
+            else_=None,
+        ).label("ctx_source_strategy_id"),
+        case(
+            (ctx_is_obj, jtype(pj, "$.goal.evolution_context.trigger_source").is_not(None)),
+            else_=False,
+        ).label("ctx_trigger_source_exists"),
+        case(
+            (
+                and_(ctx_is_obj, jtype(pj, "$.goal.evolution_context.trigger_source") == "text"),
+                jget(pj, "$.goal.evolution_context.trigger_source"),
+            ),
+            else_=None,
+        ).label("ctx_trigger_source"),
+        case(
+            (
+                and_(ctx_is_obj, jtype(pj, "$.goal.evolution_context.source_snapshot") == "object"),
+                pj[("goal", "evolution_context", "source_snapshot")],
+            ),
+            else_=None,
+        ).label("ctx_source_snapshot"),
+        case(
+            (
+                and_(ctx_is_obj, jtype(pj, "$.goal.evolution_context.relay_seats") == "object"),
+                pj[("goal", "evolution_context", "relay_seats")],
+            ),
+            else_=None,
+        ).label("ctx_relay_seats"),
+        vp_is_obj.label("ctx_vp_is_dict"),
+        case(
+            (
+                and_(
+                    vp_is_obj,
+                    jtype(pj, "$.goal.evolution_context.variant_policy.baseline_backtest")
+                    == "object",
+                ),
+                pj[("goal", "evolution_context", "variant_policy", "baseline_backtest")],
+            ),
+            else_=None,
+        ).label("ctx_vp_baseline_backtest"),
+        case(
+            (
+                vp_is_obj,
+                jtype(pj, "$.goal.evolution_context.variant_policy.variant_creation_supported")
+                == "true",
+            ),
+            else_=False,
+        ).label("ctx_vp_supported"),
+        case(
+            (
+                and_(
+                    vp_is_obj,
+                    jtype(pj, "$.goal.evolution_context.variant_policy.relay") == "object",
+                    jtype(pj, "$.goal.evolution_context.variant_policy.relay.slots") == "array",
+                ),
+                func.json_array_length(
+                    pj, "$.goal.evolution_context.variant_policy.relay.slots"
+                ),
+            ),
+            else_=None,
+        ).label("ctx_vp_slots_len"),
+        case(
+            (
+                and_(
+                    ctx_is_obj,
+                    jtype(pj, "$.goal.evolution_context.baseline") == "object",
+                    jtype(pj, "$.goal.evolution_context.baseline.strategy_spec") == "object",
+                ),
+                jtype(pj, "$.goal.evolution_context.baseline.strategy_spec.is_source_variant")
+                == "true",
+            ),
+            else_=False,
+        ).label("ctx_baseline_is_source_variant"),
+        case(
+            (
+                and_(
+                    jtype(pj, "$.paper_review") == "object",
+                    jtype(pj, "$.paper_review.status") == "text",
+                ),
+                jget(pj, "$.paper_review.status"),
+            ),
+            else_=None,
+        ).label("paper_review_status"),
+        case(
+            (jtype(pj, "$.avo") == "object", jtype(pj, "$.avo.pending")),
+            else_=None,
+        ).label("avo_pending_type"),
+        case(
+            (jtype(pj, "$.avo") == "object", pj[("avo", "pending")]),
+            else_=None,
+        ).label("avo_pending"),
+        case(
+            (
+                and_(
+                    state_expr == "failed",
+                    jtype(pj, "$.avo") == "object",
+                    jtype(pj, "$.avo.terminal_execution_failure") == "object",
+                ),
+                pj[("avo", "terminal_execution_failure")],
+            ),
+            else_=None,
+        ).label("avo_terminal_failure"),
+        case(
+            (
+                and_(is_observing, jtype(pj, "$.paper_started_at") == "text"),
+                jget(pj, "$.paper_started_at"),
+            ),
+            else_=None,
+        ).label("paper_started_at"),
+        case(
+            (
+                and_(
+                    is_observing,
+                    jtype(pj, "$.paper_review") == "object",
+                    jtype(pj, "$.paper_review.attempt_id") == "text",
+                ),
+                jget(pj, "$.paper_review.attempt_id"),
+            ),
+            else_=None,
+        ).label("paper_review_attempt_id"),
+        case(
+            (
+                and_(
+                    is_observing,
+                    jtype(pj, "$.avo") == "object",
+                    jtype(pj, "$.avo.final") == "object",
+                    jtype(pj, "$.avo.final.attempt_id") == "text",
+                ),
+                jget(pj, "$.avo.final.attempt_id"),
+            ),
+            else_=None,
+        ).label("avo_final_attempt_id"),
+        case(
+            (
+                and_(is_observing, jtype(pj, "$.current_attempt_id") == "text"),
+                jget(pj, "$.current_attempt_id"),
+            ),
+            else_=None,
+        ).label("current_attempt_id"),
+        type_coerce(
+            literal_column(
+                """
+                CASE WHEN json_type(arc_missions.projection_json, '$.state') = 'text'
+                      AND json_extract(arc_missions.projection_json, '$.state') = 'paper_observing'
+                      AND json_type(arc_missions.projection_json, '$.attempts') = 'array'
+                THEN (
+                    SELECT json_group_array(json_object(
+                        'attempt_id', json_extract(je.value, '$.attempt_id'),
+                        'parameter_changes', CASE
+                            WHEN json_type(je.value, '$.strategy_spec') = 'object'
+                             AND json_type(
+                                 je.value, '$.strategy_spec.parameter_changes'
+                             ) = 'object'
+                            THEN json(json_extract(
+                                je.value, '$.strategy_spec.parameter_changes'
+                            ))
+                            ELSE NULL
+                        END
+                    ))
+                    FROM json_each(arc_missions.projection_json, '$.attempts') AS je
+                )
+                ELSE NULL END
+                """
+            ),
+            JSON(),
+        ).label("observing_attempts"),
+        case(
+            (
+                and_(
+                    state_expr == "needs_operator",
+                    jtype(pj, "$.avo") == "object",
+                ),
+                case(
+                    (jtype(pj, "$.avo.final_window_consumed") == "true", True),
+                    (
+                        jtype(pj, "$.avo.final_window_consumed") == "integer",
+                        jget(pj, "$.avo.final_window_consumed") != 0,
+                    ),
+                    (
+                        jtype(pj, "$.avo.final_window_consumed") == "real",
+                        jget(pj, "$.avo.final_window_consumed") != 0.0,
+                    ),
+                    (
+                        jtype(pj, "$.avo.final_window_consumed") == "text",
+                        jget(pj, "$.avo.final_window_consumed") != "",
+                    ),
+                    (
+                        jtype(pj, "$.avo.final_window_consumed") == "array",
+                        func.json_array_length(pj, "$.avo.final_window_consumed") > 0,
+                    ),
+                    (
+                        jtype(pj, "$.avo.final_window_consumed") == "object",
+                        literal_column(
+                            "EXISTS (SELECT 1 FROM json_each("
+                            "arc_missions.projection_json, '$.avo.final_window_consumed'))",
+                            type_=Boolean(),
+                        ),
+                    ),
+                    else_=False,
+                ),
+            ),
+            else_=False,
+        ).label("avo_final_window_consumed"),
+    )
+
+    out: list[dict[str, Any]] = []
+    for row in session.execute(stmt):
+        item = dict(row._mapping)
+        item["has_inline_events"] = bool(item["has_inline_events"])
+        item["has_goal"] = bool(item["has_goal"])
+        item["fb_present"] = bool(item["fb_present"])
+        item["fb_target_id_exists"] = bool(item["fb_target_id_exists"])
+        item["fb_evidence_is_dict"] = bool(item["fb_evidence_is_dict"])
+        item["fb_evidence_sid_exists"] = bool(item["fb_evidence_sid_exists"])
+        item["fb_evidence_sid"] = _sqlite_typed_json(
+            item.pop("fb_evidence_sid"), item.pop("fb_evidence_sid_type")
+        )
+        item["ctx_target_id_exists"] = bool(item["ctx_target_id_exists"])
+        item["ctx_source_strategy_id"] = _sqlite_typed_json(
+            item.pop("ctx_source_strategy_id"), item.pop("ctx_source_strategy_id_type")
+        )
+        item["ctx_trigger_source_exists"] = bool(item["ctx_trigger_source_exists"])
+        item["ctx_vp_is_dict"] = bool(item["ctx_vp_is_dict"])
+        item["ctx_vp_supported"] = bool(item["ctx_vp_supported"])
+        item["ctx_baseline_is_source_variant"] = bool(item["ctx_baseline_is_source_variant"])
+        item["avo_pending"] = _sqlite_typed_json(
+            item.pop("avo_pending"), item.pop("avo_pending_type")
+        )
+        item["avo_final_window_consumed"] = bool(item["avo_final_window_consumed"])
+        out.append(item)
+    return out
+
+
+def _postgres_budget_mission_rows(session: Session) -> list[dict[str, Any]]:
+    stmt = text(
+        """
+        SELECT m.mission_id,
+               m.created_at,
+               m.updated_at,
+               m.revision,
+               CASE WHEN r.events IS NOT NULL AND json_typeof(r.events) = 'array'
+                    THEN json_array_length(r.events) > 0
+                    ELSE false END AS has_inline_events,
+               COALESCE(
+                   CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
+                        THEN r.state #>> '{}' END,
+                   'created'
+               ) AS state,
+               (r.goal IS NOT NULL AND json_typeof(r.goal) = 'object') AS has_goal,
+               CASE WHEN g.provider_name IS NOT NULL AND json_typeof(g.provider_name) = 'string'
+                    THEN g.provider_name #>> '{}' ELSE NULL END AS provider_name,
+               CASE WHEN g.feedback_parent IS NOT NULL
+                         AND json_typeof(g.feedback_parent) = 'object'
+                    THEN EXISTS (SELECT 1 FROM json_object_keys(g.feedback_parent))
+                    ELSE false END AS fb_present,
+               (g.feedback_parent IS NOT NULL AND json_typeof(g.feedback_parent) = 'object'
+                AND (g.feedback_parent #> '{target_id}') IS NOT NULL) AS fb_target_id_exists,
+               g.feedback_parent #> '{target_id}' AS fb_target_id,
+               g.feedback_parent #> '{instance_id}' AS fb_instance_id,
+               (g.feedback_parent IS NOT NULL AND json_typeof(g.feedback_parent) = 'object'
+                AND json_typeof(g.feedback_parent #> '{evidence}') = 'object'
+               ) AS fb_evidence_is_dict,
+               (g.feedback_parent IS NOT NULL AND json_typeof(g.feedback_parent) = 'object'
+                AND json_typeof(g.feedback_parent #> '{evidence}') = 'object'
+                AND (g.feedback_parent #> '{evidence,strategy_id}') IS NOT NULL
+               ) AS fb_evidence_sid_exists,
+               g.feedback_parent #> '{evidence,strategy_id}' AS fb_evidence_sid,
+               (g.evolution_context IS NOT NULL AND json_typeof(g.evolution_context) = 'object'
+                AND (g.evolution_context #> '{target_id}') IS NOT NULL) AS ctx_target_id_exists,
+               ec.target_id AS ctx_target_id,
+               ec.source_instance_id AS ctx_source_instance_id,
+               ec.source_strategy_id AS ctx_source_strategy_id,
+               (g.evolution_context IS NOT NULL AND json_typeof(g.evolution_context) = 'object'
+                AND (g.evolution_context #> '{trigger_source}') IS NOT NULL
+               ) AS ctx_trigger_source_exists,
+               ec.trigger_source AS ctx_trigger_source,
+               CASE WHEN ec.source_snapshot IS NOT NULL
+                         AND json_typeof(ec.source_snapshot) = 'object'
+                    THEN ec.source_snapshot ELSE NULL END AS ctx_source_snapshot,
+               CASE WHEN ec.relay_seats IS NOT NULL AND json_typeof(ec.relay_seats) = 'object'
+                    THEN ec.relay_seats ELSE NULL END AS ctx_relay_seats,
+               (ec.variant_policy IS NOT NULL
+                AND json_typeof(ec.variant_policy) = 'object') AS ctx_vp_is_dict,
+               CASE WHEN ec.variant_policy IS NOT NULL AND json_typeof(ec.variant_policy) = 'object'
+                         AND json_typeof(ec.variant_policy #> '{baseline_backtest}') = 'object'
+                    THEN ec.variant_policy #> '{baseline_backtest}'
+                    ELSE NULL END AS ctx_vp_baseline_backtest,
+               CASE WHEN ec.variant_policy IS NOT NULL AND json_typeof(ec.variant_policy) = 'object'
+                         AND json_typeof(
+                             ec.variant_policy #> '{variant_creation_supported}'
+                         ) = 'boolean'
+                    THEN (ec.variant_policy #>> '{variant_creation_supported}')::boolean
+                    ELSE false END AS ctx_vp_supported,
+               CASE WHEN ec.variant_policy IS NOT NULL AND json_typeof(ec.variant_policy) = 'object'
+                         AND json_typeof(ec.variant_policy #> '{relay}') = 'object'
+                         AND json_typeof(ec.variant_policy #> '{relay,slots}') = 'array'
+                    THEN json_array_length(ec.variant_policy #> '{relay,slots}')
+                    ELSE NULL END AS ctx_vp_slots_len,
+               CASE WHEN ec.baseline IS NOT NULL AND json_typeof(ec.baseline) = 'object'
+                         AND json_typeof(ec.baseline #> '{strategy_spec}') = 'object'
+                         AND json_typeof(
+                             ec.baseline #> '{strategy_spec,is_source_variant}'
+                         ) = 'boolean'
+                    THEN (ec.baseline #>> '{strategy_spec,is_source_variant}')::boolean
+                    ELSE false END AS ctx_baseline_is_source_variant,
+               CASE WHEN r.paper_review IS NOT NULL AND json_typeof(r.paper_review) = 'object'
+                    THEN r.paper_review #> '{status}' ELSE NULL END AS paper_review_status,
+               CASE WHEN r.avo IS NOT NULL AND json_typeof(r.avo) = 'object'
+                    THEN r.avo #> '{pending}' ELSE NULL END AS avo_pending,
+               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
+                         AND (r.state #>> '{}') = 'failed'
+                         AND r.avo IS NOT NULL AND json_typeof(r.avo) = 'object'
+                    THEN r.avo #> '{terminal_execution_failure}'
+                    ELSE NULL END AS avo_terminal_failure,
+               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
+                         AND (r.state #>> '{}') = 'paper_observing'
+                         AND r.paper_started_at IS NOT NULL
+                         AND json_typeof(r.paper_started_at) = 'string'
+                    THEN r.paper_started_at #>> '{}' ELSE NULL END AS paper_started_at,
+               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
+                         AND (r.state #>> '{}') = 'paper_observing'
+                         AND r.paper_review IS NOT NULL AND json_typeof(r.paper_review) = 'object'
+                    THEN r.paper_review #> '{attempt_id}' ELSE NULL END AS paper_review_attempt_id,
+               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
+                         AND (r.state #>> '{}') = 'paper_observing'
+                         AND r.avo IS NOT NULL AND json_typeof(r.avo) = 'object'
+                         AND json_typeof(r.avo #> '{final}') = 'object'
+                    THEN r.avo #> '{final,attempt_id}' ELSE NULL END AS avo_final_attempt_id,
+               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
+                         AND (r.state #>> '{}') = 'paper_observing'
+                    THEN r.current_attempt_id ELSE NULL END AS current_attempt_id,
+               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
+                         AND (r.state #>> '{}') = 'paper_observing'
+                         AND r.attempts IS NOT NULL AND json_typeof(r.attempts) = 'array'
+                    THEN (
+                        SELECT json_agg(json_build_object(
+                            'attempt_id', a.attempt_id,
+                            'parameter_changes', CASE
+                                WHEN a.strategy_spec IS NOT NULL
+                                     AND json_typeof(a.strategy_spec) = 'object'
+                                THEN a.strategy_spec #> '{parameter_changes}'
+                                ELSE NULL
+                            END
+                        ))
+                        FROM json_to_recordset(r.attempts) AS a(attempt_id text, strategy_spec json)
+                    )
+                    ELSE NULL END AS observing_attempts,
+               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
+                         AND (r.state #>> '{}') = 'needs_operator'
+                         AND r.avo IS NOT NULL AND json_typeof(r.avo) = 'object'
+                    THEN (
+                        CASE json_typeof(r.avo #> '{final_window_consumed}')
+                            WHEN 'boolean' THEN (r.avo #>> '{final_window_consumed}')::boolean
+                            WHEN 'number'
+                                THEN (r.avo #>> '{final_window_consumed}')::double precision != 0
+                            WHEN 'string' THEN (r.avo #>> '{final_window_consumed}') != ''
+                            WHEN 'array'
+                                THEN json_array_length(r.avo #> '{final_window_consumed}') > 0
+                            WHEN 'object' THEN EXISTS (
+                                SELECT 1 FROM json_object_keys(r.avo #> '{final_window_consumed}')
+                            )
+                            ELSE false
+                        END
+                    )
+                    ELSE false END AS avo_final_window_consumed
+        FROM arc_missions m
+        LEFT JOIN LATERAL json_to_record(m.projection_json) AS r(
+            state json, goal json, paper_review json, avo json, events json,
+            current_attempt_id json, paper_started_at json, attempts json
+        ) ON m.projection_json IS NOT NULL AND json_typeof(m.projection_json) = 'object'
+        LEFT JOIN LATERAL json_to_record(r.goal) AS g(
+            provider_name json, feedback_parent json, evolution_context json
+        ) ON r.goal IS NOT NULL AND json_typeof(r.goal) = 'object'
+        LEFT JOIN LATERAL json_to_record(g.evolution_context) AS ec(
+            target_id json, source_instance_id json, source_strategy_id json, trigger_source json,
+            source_snapshot json, relay_seats json, variant_policy json, baseline json
+        ) ON g.evolution_context IS NOT NULL AND json_typeof(g.evolution_context) = 'object'
+        """
+    ).columns(
+        mission_id=String,
+        created_at=DateTime(timezone=True),
+        updated_at=DateTime(timezone=True),
+        revision=Integer,
+        has_inline_events=Boolean,
+        state=String,
+        has_goal=Boolean,
+        provider_name=String,
+        fb_present=Boolean,
+        fb_target_id_exists=Boolean,
+        fb_target_id=JSON,
+        fb_instance_id=JSON,
+        fb_evidence_is_dict=Boolean,
+        fb_evidence_sid_exists=Boolean,
+        fb_evidence_sid=JSON,
+        ctx_target_id_exists=Boolean,
+        ctx_target_id=JSON,
+        ctx_source_instance_id=JSON,
+        ctx_source_strategy_id=JSON,
+        ctx_trigger_source_exists=Boolean,
+        ctx_trigger_source=JSON,
+        ctx_source_snapshot=JSON,
+        ctx_relay_seats=JSON,
+        ctx_vp_is_dict=Boolean,
+        ctx_vp_baseline_backtest=JSON,
+        ctx_vp_supported=Boolean,
+        ctx_vp_slots_len=Integer,
+        ctx_baseline_is_source_variant=Boolean,
+        paper_review_status=JSON,
+        avo_pending=JSON,
+        avo_terminal_failure=JSON,
+        paper_started_at=String,
+        paper_review_attempt_id=JSON,
+        avo_final_attempt_id=JSON,
+        current_attempt_id=JSON,
+        observing_attempts=JSON,
+        avo_final_window_consumed=Boolean,
+    )
+    out: list[dict[str, Any]] = []
+    for row in session.execute(stmt):
+        item = dict(row._mapping)
+        item["has_inline_events"] = bool(item["has_inline_events"])
+        item["has_goal"] = bool(item["has_goal"])
+        item["fb_present"] = bool(item["fb_present"])
+        item["fb_target_id_exists"] = bool(item["fb_target_id_exists"])
+        item["fb_evidence_is_dict"] = bool(item["fb_evidence_is_dict"])
+        item["fb_evidence_sid_exists"] = bool(item["fb_evidence_sid_exists"])
+        item["ctx_target_id_exists"] = bool(item["ctx_target_id_exists"])
+        item["ctx_trigger_source_exists"] = bool(item["ctx_trigger_source_exists"])
+        item["ctx_vp_is_dict"] = bool(item["ctx_vp_is_dict"])
+        item["ctx_vp_supported"] = bool(item["ctx_vp_supported"])
+        item["ctx_baseline_is_source_variant"] = bool(item["ctx_baseline_is_source_variant"])
+        item["avo_final_window_consumed"] = bool(item["avo_final_window_consumed"])
+        out.append(item)
+    return out
+
+
+def load_budget_mission_rows(session: Session) -> list[dict[str, Any]] | None:
+    """Load lightweight ``ArcMission`` summaries for ``research_budget.usage()``.
+
+    Returns ``None`` on dialects without JSON extraction support so callers can fall back to
+    full projection loading. Rows with legacy inline ``events`` are flagged via
+    ``has_inline_events`` so the caller loads only those specific rows via ``load_projection``.
+    """
+    bind = session.get_bind()
+    dialect = bind.dialect.name if bind is not None else ""
+    if dialect == "postgresql":
+        return _postgres_budget_mission_rows(session)
+    if dialect == "sqlite":
+        return _sqlite_budget_mission_rows(session)
+    return None
+
+
+def load_final_validation_records(
+    session: Session, mission_ids: Collection[str]
+) -> dict[str, tuple[dict[str, Any] | None, dict[str, Any] | None]]:
+    """Load only ``goal.success_criteria`` and the last ``self_test_records`` entry."""
+    ids = list(dict.fromkeys(str(mid) for mid in mission_ids if mid))
+    if not ids:
+        return {}
+    bind = session.get_bind()
+    dialect = bind.dialect.name if bind is not None else ""
+    results: dict[str, tuple[dict[str, Any] | None, dict[str, Any] | None]] = {}
+    for start in range(0, len(ids), 500):
+        chunk = ids[start : start + 500]
+        if dialect == "postgresql":
+            stmt = select(
+                ArcMission.mission_id,
+                type_coerce(
+                    literal_column(
+                        "CASE WHEN arc_missions.projection_json IS NOT NULL"
+                        " AND json_typeof(arc_missions.projection_json) = 'object'"
+                        " AND json_typeof(arc_missions.projection_json #> '{goal}') = 'object'"
+                        " AND json_typeof("
+                        "arc_missions.projection_json #> '{goal,success_criteria}') = 'object'"
+                        " THEN arc_missions.projection_json #> '{goal,success_criteria}'"
+                        " ELSE NULL END"
+                    ),
+                    JSON(),
+                ).label("success_criteria"),
+                type_coerce(
+                    literal_column(
+                        "CASE WHEN arc_missions.projection_json IS NOT NULL"
+                        " AND json_typeof(arc_missions.projection_json) = 'object'"
+                        " AND json_typeof("
+                        "arc_missions.projection_json #> '{self_test_records}') = 'array'"
+                        " THEN arc_missions.projection_json #> '{self_test_records,-1}'"
+                        " ELSE NULL END"
+                    ),
+                    JSON(),
+                ).label("last_self_test"),
+            ).where(ArcMission.mission_id.in_(chunk))
+            for mission_id, sc, last_record in session.execute(stmt):
+                results[str(mission_id)] = (
+                    dict(sc) if isinstance(sc, dict) else None,
+                    dict(last_record) if isinstance(last_record, dict) else None,
+                )
+        elif dialect == "sqlite":
+            pj = ArcMission.projection_json
+            stmt = select(
+                ArcMission.mission_id,
+                case(
+                    (
+                        and_(
+                            func.json_type(pj, "$.goal") == "object",
+                            func.json_type(pj, "$.goal.success_criteria") == "object",
+                        ),
+                        pj[("goal", "success_criteria")],
+                    ),
+                    else_=None,
+                ).label("success_criteria"),
+                type_coerce(
+                    case(
+                        (
+                            func.json_type(pj, "$.self_test_records") == "array",
+                            func.json_extract(pj, "$.self_test_records[#-1]"),
+                        ),
+                        else_=None,
+                    ),
+                    JSON(),
+                ).label("last_self_test"),
+            ).where(ArcMission.mission_id.in_(chunk))
+            for mission_id, sc, last_record in session.execute(stmt):
+                results[str(mission_id)] = (
+                    dict(sc) if isinstance(sc, dict) else None,
+                    dict(last_record) if isinstance(last_record, dict) else None,
+                )
+        else:
+            for row in session.scalars(select(ArcMission).where(ArcMission.mission_id.in_(chunk))):
+                projection = load_projection(session, row, with_events=False)
+                sc_dict = (
+                    projection.goal.success_criteria.model_dump()
+                    if projection.goal is not None
+                    else None
+                )
+                last_rec = (
+                    dict(projection.self_test_records[-1])
+                    if projection.self_test_records
+                    else None
+                )
+                results[row.mission_id] = (sc_dict, last_rec)
+    return results
 
 
 def _stored_events(session: Session, mission_id: str) -> list[dict[str, Any]]:

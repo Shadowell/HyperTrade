@@ -53,6 +53,7 @@ from hypertrade.db import ArcHypothesisNode, ArcMission, Database
 from hypertrade.memory import arc_integration
 from hypertrade.runtime import heartbeat
 from hypertrade.runtime.heartbeat import flush_heartbeat, read_worker_status
+from sqlalchemy import event as sa_event
 from sqlalchemy import select
 
 NOW = datetime(2026, 11, 11, 12, tzinfo=UTC)
@@ -640,32 +641,273 @@ def test_usage_reads_no_journal_but_the_last_stop_of_missions_waiting_on_the_ope
         _research_mission("completed", 5),
         _mission("failed"),  # not a research mission at all
     ]
-    waiting = {missions[1].mission_id, missions[2].mission_id}
+    assert len(missions) == 7
     store.reset_runtime()
     config = EvolutionConfig()
-    tails: list[str] = []
-    real_tail = research_budget.load_projection_tail
+    executed_sql: list[str] = []
 
-    def load_projection_tail(session: Any, row: Any, types: Any) -> Any:
-        assert tuple(types) == ("operator_needed",)
-        tails.append(row.mission_id)
-        return real_tail(session, row, types)
+    def before_execute(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+        executed_sql.append(statement)
 
-    monkeypatch.setattr(research_budget, "load_projection_tail", load_projection_tail)
-    with db.session() as session:
-        fast = research_budget.usage(session, config, NOW)
-    assert journal_reads == [] and set(tails) == waiting and len(tails) == 2
+    sa_event.listen(db.engine, "before_cursor_execute", before_execute)
+    try:
+        with db.session() as session:
+            fast = research_budget.usage(session, config, NOW)
+    finally:
+        sa_event.remove(db.engine, "before_cursor_execute", before_execute)
+
+    event_queries = [stmt for stmt in executed_sql if "arc_mission_events" in stmt]
+    assert journal_reads == []
+    assert len(event_queries) == 1  # single batch query for all needs_operator missions
 
     # The same answer as when every mission's whole journal is read.
-    real = research_budget.load_projection
-    monkeypatch.setattr(research_budget, "load_projection", lambda s, row, **_: real(s, row))
-    monkeypatch.setattr(research_budget, "load_projection_tail", lambda s, row, types: real(s, row))
-    reference = None
     with db.session() as session:
-        reference = research_budget.usage(session, config, NOW)
+        reference = research_budget._reduce_usage(
+            session, config, NOW, research_budget._usage_items_full(session)
+        )
     assert set(journal_reads) == {mission.mission_id for mission in missions}
     assert fast == reference
     assert fast["total_used"] == 6 and fast["active"] >= 1 and fast["sources"]
+
+
+def test_usage_batches_events_skips_heavy_blobs_and_matches_full_scan(
+    db: Database, journal_reads: list[str]
+) -> None:
+    import json
+
+    from hypertrade.arc.contracts import ARCSuccessCriteriaV1
+
+    heavy_code = "x = 1\n" * 5000
+    heavy_orders = [{"id": i, "blob": "z" * 120} for i in range(60)]
+    for idx in range(12):
+        reason = (
+            "avo_context_budget_exhausted"
+            if idx % 3 == 0
+            else ("avo_final_validation_failed" if idx % 3 == 1 else "manual_hold")
+        )
+        ctrl = _research_mission(
+            "needs_operator",
+            10 + idx,
+            reason=reason,
+            success_criteria=ARCSuccessCriteriaV1(),
+        )
+        if idx % 3 == 1:
+            ctrl.projection.avo["final_window_consumed"] = True
+            ctrl.projection.self_test_records = [
+                {
+                    "passed": False,
+                    "backtest_id": f"bt_{idx}",
+                    "metrics": {"sharpe_ratio": 0.2, "trade_count": 25},
+                }
+            ]
+            store.save_mission(ctrl)
+        with db.session() as session:
+            row = session.get(ArcMission, ctrl.mission_id)
+            assert row is not None
+            pj = dict(row.projection_json)
+            pj["goal"]["evolution_context"]["baseline"] = {
+                "strategy_code": heavy_code,
+                "strategy_spec": {"is_source_variant": True},
+            }
+            pj["goal"]["evolution_context"]["orders"] = heavy_orders
+            pj["attempts"] = [
+                {
+                    "attempt_id": "a1",
+                    "candidate_id": "c1",
+                    "hypothesis": "h",
+                    "strategy_code": heavy_code,
+                    "strategy_spec": {"parameter_changes": {"k": idx}},
+                }
+            ]
+            row.projection_json = pj
+
+    # Observing mission with boolean/float parameter_changes and heavy baseline.
+    obs = _research_mission("paper_observing", 30)
+    with db.session() as session:
+        row = session.get(ArcMission, obs.mission_id)
+        assert row is not None
+        pj = dict(row.projection_json)
+        pj["goal"]["evolution_context"]["variant_policy"] = {
+            "variant_creation_supported": True,
+            "baseline_backtest": {"policy": "pol-1"},
+            "relay": {"slots": [1, 2, 3], "tried_variants": heavy_orders},
+        }
+        pj["goal"]["evolution_context"]["baseline"] = {
+            "strategy_code": heavy_code,
+            "strategy_spec": {"is_source_variant": False},
+        }
+        pj["attempts"] = [
+            {
+                "attempt_id": "att_observed",
+                "candidate_id": "att_observed",
+                "hypothesis": "h",
+                "strategy_code": heavy_code,
+                "strategy_spec": {"parameter_changes": {"fast": True, "mult": 1.5}},
+            }
+        ]
+        row.projection_json = pj
+
+    # Failed mission with deterministic baseline failure & heavy attempts.
+    failed = _research_mission("failed", 31)
+    with db.session() as session:
+        row = session.get(ArcMission, failed.mission_id)
+        assert row is not None
+        pj = dict(row.projection_json)
+        pj["avo"] = {
+            "terminal_execution_failure": {
+                "reasons": ["baseline_data_snapshot_unavailable"],
+                "message": "incomplete_official_bar_grid",
+            }
+        }
+        pj["goal"]["evolution_context"]["source_snapshot"] = {
+            "strategy_version": 2,
+            "config_version": 3,
+        }
+        pj["attempts"] = [
+            {
+                "attempt_id": "f1",
+                "candidate_id": "f1",
+                "hypothesis": "h",
+                "strategy_code": heavy_code,
+                "strategy_spec": {},
+            }
+        ]
+        row.projection_json = pj
+
+    # Edge cases: empty feedback_parent {}, target_id=None in feedback_parent, boolean sid rejected.
+    with db.session() as session:
+        session.add(
+            ArcMission(
+                mission_id="arc_edge_fb_empty",
+                state="completed",
+                revision=1,
+                event_count=0,
+                projection_json={
+                    "mission_id": "arc_edge_fb_empty",
+                    "state": "completed",
+                    "goal": {
+                        "objective": "edge",
+                        "feedback_parent": {},
+                        "evolution_context": {
+                            "target_id": "bitpro",
+                            "source_instance_id": "inst-edge-1",
+                            "source_strategy_id": 901,
+                        },
+                    },
+                    "events": [],
+                },
+            )
+        )
+        session.add(
+            ArcMission(
+                mission_id="arc_edge_fb_null_target",
+                state="completed",
+                revision=1,
+                event_count=0,
+                projection_json={
+                    "mission_id": "arc_edge_fb_null_target",
+                    "state": "completed",
+                    "goal": {
+                        "objective": "edge",
+                        "feedback_parent": {
+                            "target_id": None,
+                            "instance_id": "inst-edge-2",
+                            "evidence": {"other": 1},
+                        },
+                        "evolution_context": {
+                            "target_id": "bitpro",
+                            "source_strategy_id": 902,
+                        },
+                    },
+                    "events": [],
+                },
+            )
+        )
+        session.add(
+            ArcMission(
+                mission_id="arc_edge_bool_sid",
+                state="completed",
+                revision=1,
+                event_count=0,
+                projection_json={
+                    "mission_id": "arc_edge_bool_sid",
+                    "state": "completed",
+                    "goal": {
+                        "objective": "edge",
+                        "evolution_context": {
+                            "source_instance_id": "inst-bool",
+                            "source_strategy_id": True,
+                        },
+                    },
+                    "events": [],
+                },
+            )
+        )
+
+    store.reset_runtime()
+    journal_reads.clear()
+    config = EvolutionConfig()
+    executed_sql: list[str] = []
+
+    def before_execute(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+        executed_sql.append(statement)
+
+    sa_event.listen(db.engine, "before_cursor_execute", before_execute)
+    try:
+        with db.session() as session:
+            total_db_bytes = sum(
+                len(json.dumps(row.projection_json).encode())
+                for row in session.scalars(select(ArcMission))
+            )
+            executed_sql.clear()
+            fast = research_budget.usage(session, config, NOW)
+            light_rows = store.load_budget_mission_rows(session)
+            assert light_rows is not None
+            light_bytes = len(json.dumps(light_rows, default=str).encode())
+    finally:
+        sa_event.remove(db.engine, "before_cursor_execute", before_execute)
+
+    event_queries = [stmt for stmt in executed_sql if "arc_mission_events" in stmt]
+    assert journal_reads == []
+    assert len(event_queries) == 1  # single batch across 12 needs_operator missions (no N+1)
+    assert total_db_bytes > 500_000
+    assert light_bytes < total_db_bytes // 10
+
+    with db.session() as session:
+        reference = research_budget._reduce_usage(
+            session, config, NOW, research_budget._usage_items_full(session)
+        )
+    assert fast == reference
+    assert all(
+        source.get("source_instance_id") != "inst-bool" for source in fast["sources"].values()
+    )
+
+
+def test_usage_falls_back_only_for_inline_legacy_rows(
+    db: Database, journal_reads: list[str]
+) -> None:
+    journaled = _research_mission("needs_operator", 41, reason="manual_hold")
+    inline = _research_mission("needs_operator", 42, reason="avo_context_budget_exhausted")
+    with db.session() as session:
+        row = session.get(ArcMission, inline.mission_id)
+        assert row is not None
+        pj = dict(row.projection_json)
+        pj["events"] = [event.model_dump(mode="json") for event in inline.projection.events]
+        row.projection_json = pj
+    store.reset_runtime()
+    journal_reads.clear()
+
+    config = EvolutionConfig()
+    with db.session() as session:
+        fast = research_budget.usage(session, config, NOW)
+    assert journal_reads == [inline.mission_id]
+    assert journaled.mission_id not in journal_reads
+
+    with db.session() as session:
+        reference = research_budget._reduce_usage(
+            session, config, NOW, research_budget._usage_items_full(session)
+        )
+    assert fast == reference
 
 
 def _ledger(db: Database) -> tuple[dict[str, Any], dict[str, Any]]:
