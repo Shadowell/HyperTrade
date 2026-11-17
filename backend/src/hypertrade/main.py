@@ -11,7 +11,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from decimal import Decimal
 from queue import Queue
@@ -43,6 +43,7 @@ from hypertrade.agent.tasks import (
     TaskControl,
     task_to_dict,
 )
+from hypertrade.arc.research_budget import warm_usage_cache
 from hypertrade.arc.router import router as arc_router
 from hypertrade.arc.store import configure_store
 from hypertrade.backtest.service import BacktestService
@@ -604,9 +605,13 @@ def create_app(
         if app_settings.database_url.startswith("sqlite"):
             database.create_all()
         await capability_catalog.bootstrap(builtin_capabilities())
+        warmup_task = asyncio.create_task(asyncio.to_thread(warm_usage_cache, database))
         try:
             yield
         finally:
+            if not warmup_task.done():
+                with suppress(BaseException):
+                    await asyncio.wait_for(warmup_task, timeout=0.5)
             portfolio_read_client.http_client.close()
             for resource in (
                 mission_store,

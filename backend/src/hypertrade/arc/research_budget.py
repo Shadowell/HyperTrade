@@ -29,6 +29,7 @@ from hypertrade.arc.feedback import _feedback_child_active, _pending_effect
 from hypertrade.arc.runtime_journal import failure_text
 from hypertrade.arc.store import (
     insert_mission,
+    load_budget_mission_meta,
     load_budget_mission_rows,
     load_final_validation_records,
     load_latest_events_by_type,
@@ -44,6 +45,20 @@ if TYPE_CHECKING:
 
 def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _mission_stamp(
+    revision: int | None,
+    state: str | None,
+    event_count: int | None,
+    updated_at: datetime | None,
+) -> tuple[int, str, int, datetime | None]:
+    return (
+        int(revision or 0),
+        str(state or ""),
+        int(event_count or 0),
+        _utc(updated_at) if updated_at is not None else None,
+    )
 
 
 def _stored_time(value: str) -> datetime:
@@ -344,13 +359,9 @@ def _usage_items_full(
     return items
 
 
-def _usage_items_fast(
-    session: Session,
-) -> list[tuple[str, datetime, datetime, Any, Any, str, str, int | str, str | None]]:
-    raw_rows = load_budget_mission_rows(session)
-    if raw_rows is None:
-        return _usage_items_full(session)
-
+def _build_usage_items_from_rows(
+    session: Session, raw_rows: list[dict[str, Any]]
+) -> dict[str, tuple[tuple[int, str, int, datetime | None], Any]]:
     inline_ids = [str(r["mission_id"]) for r in raw_rows if r["has_inline_events"]]
     inline_by_id: dict[str, tuple[ArcMission, Any]] = {}
     if inline_ids:
@@ -360,9 +371,11 @@ def _usage_items_fast(
             ):
                 inline_by_id[row.mission_id] = (row, load_projection(session, row))
 
+    loaded_by_id: dict[str, tuple[tuple[int, str, int, datetime | None], Any]] = {}
     prepared: list[
         tuple[
             str,
+            tuple[int, str, int, datetime | None],
             dict[str, Any] | None,
             Any,
             tuple[Any, str | None, int | str | None, str | None],
@@ -373,22 +386,33 @@ def _usage_items_fast(
         mission_id = str(row_data["mission_id"])
         if row_data["has_inline_events"]:
             inline_pair = inline_by_id.get(mission_id)
-            if inline_pair is None or inline_pair[1].goal is None:
+            if inline_pair is None:
                 continue
-            goal = inline_pair[1].goal
-            identity = _source_identity(goal)
+            row, inline_proj = inline_pair
+            stamp = _mission_stamp(row.revision, row.state, row.event_count, row.updated_at)
+            loaded_by_id[mission_id] = (stamp, None)
+            if inline_proj.goal is None:
+                continue
+            identity = _source_identity(inline_proj.goal)
             if not identity[1] or identity[2] is None:
                 continue
-            prepared.append((mission_id, None, inline_pair, identity))
+            prepared.append((mission_id, stamp, None, inline_pair, identity))
             continue
 
+        stamp = _mission_stamp(
+            row_data["revision"],
+            row_data["col_state"],
+            row_data["col_event_count"],
+            row_data["updated_at"],
+        )
+        loaded_by_id[mission_id] = (stamp, None)
         if not row_data["has_goal"]:
             continue
         goal = _build_goal_proxy(row_data)
         identity = _source_identity(goal)
         if not identity[1] or identity[2] is None:
             continue
-        prepared.append((mission_id, row_data, goal, identity))
+        prepared.append((mission_id, stamp, row_data, goal, identity))
         if (
             row_data["state"] == "needs_operator"
             and row_data["paper_review_status"] != "rejected"
@@ -399,7 +423,7 @@ def _usage_items_fast(
     op_events = load_latest_events_by_type(session, needs_operator_ids, "operator_needed")
     final_val_ids = [
         mission_id
-        for mission_id, row_data, _, _ in prepared
+        for mission_id, _stamp, row_data, _, _ in prepared
         if row_data is not None
         and mission_id in op_events
         and row_data["avo_final_window_consumed"]
@@ -408,12 +432,12 @@ def _usage_items_fast(
     ]
     final_val_records = load_final_validation_records(session, final_val_ids)
 
-    items = []
-    for mission_id, row_meta, obj, (target_id, source, strategy_id, trigger) in prepared:
+    for mission_id, stamp, row_meta, obj, (target_id, source, strategy_id, trigger) in prepared:
         assert source is not None and strategy_id is not None
         if row_meta is None:
             row, projection = obj
-            items.append(
+            loaded_by_id[mission_id] = (
+                stamp,
                 (
                     row.mission_id,
                     row.created_at,
@@ -424,7 +448,7 @@ def _usage_items_fast(
                     source,
                     strategy_id,
                     trigger,
-                )
+                ),
             )
             continue
 
@@ -439,7 +463,8 @@ def _usage_items_fast(
             op_event=op_events.get(mission_id),
             last_self_test=last_self_test,
         )
-        items.append(
+        loaded_by_id[mission_id] = (
+            stamp,
             (
                 mission_id,
                 row_meta["created_at"],
@@ -450,9 +475,78 @@ def _usage_items_fast(
                 source,
                 strategy_id,
                 trigger,
-            )
+            ),
         )
+    return loaded_by_id
+
+
+def _usage_items_fast(
+    session: Session,
+) -> list[tuple[str, datetime, datetime, Any, Any, str, str, int | str, str | None]]:
+    bind = session.get_bind()
+    dialect = bind.dialect.name if bind is not None else ""
+    if dialect not in ("postgresql", "sqlite"):
+        return _usage_items_full(session)
+
+    engine = store._session_engine(session)
+    cache_allowed = engine is not None and not (session.new or session.dirty or session.deleted)
+    meta = load_budget_mission_meta(session)
+    current_ids = {mission_id for mission_id, *_ in meta}
+
+    hits: dict[str, Any] = {}
+    missing_ids: list[str] = []
+    if cache_allowed:
+        with store._BUDGET_USAGE_CACHE_LOCK:
+            engine_cache = store._BUDGET_USAGE_CACHE.get(engine)
+            if engine_cache is not None:
+                for stale_id in [k for k in engine_cache if k not in current_ids]:
+                    del engine_cache[stale_id]
+            for mission_id, rev, col_state, col_ec, _created_at, updated_at in meta:
+                stamp = _mission_stamp(rev, col_state, col_ec, updated_at)
+                cached = engine_cache.get(mission_id) if engine_cache is not None else None
+                if cached is not None and cached[0] == stamp:
+                    hits[mission_id] = cached[1]
+                else:
+                    missing_ids.append(mission_id)
+    else:
+        missing_ids = [mission_id for mission_id, *_ in meta]
+
+    loaded_by_id: dict[str, tuple[tuple[int, str, int, datetime | None], Any]] = {}
+    if missing_ids:
+        raw_rows = load_budget_mission_rows(session, mission_ids=missing_ids)
+        if raw_rows is None:
+            return _usage_items_full(session)
+        loaded_by_id = _build_usage_items_from_rows(session, raw_rows)
+        if cache_allowed and loaded_by_id:
+            with store._BUDGET_USAGE_CACHE_LOCK:
+                engine_cache = store._BUDGET_USAGE_CACHE.setdefault(engine, {})
+                for mission_id, (row_stamp, entry) in loaded_by_id.items():
+                    if mission_id not in current_ids:
+                        continue
+                    existing = engine_cache.get(mission_id)
+                    if existing is None or (row_stamp[0], row_stamp[2]) >= (
+                        existing[0][0],
+                        existing[0][2],
+                    ):
+                        engine_cache[mission_id] = (row_stamp, entry)
+
+    items = []
+    for mission_id, *_ in meta:
+        entry = (
+            loaded_by_id[mission_id][1] if mission_id in loaded_by_id else hits.get(mission_id)
+        )
+        if entry is not None:
+            items.append(entry)
     return items
+
+
+def warm_usage_cache(db: Database) -> int:
+    """Populate the per-engine budget usage cache without blocking API startup."""
+    try:
+        with db.session() as session:
+            return len(_usage_items_fast(session))
+    except Exception:
+        return 0
 
 
 def _reduce_usage(

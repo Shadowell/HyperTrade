@@ -13,9 +13,10 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager, suppress
+from datetime import datetime
 from threading import Lock
 from typing import Any
-from weakref import WeakValueDictionary
+from weakref import WeakKeyDictionary, WeakValueDictionary
 
 from sqlalchemy import (
     JSON,
@@ -24,6 +25,7 @@ from sqlalchemy import (
     Integer,
     String,
     and_,
+    bindparam,
     case,
     func,
     literal_column,
@@ -31,6 +33,7 @@ from sqlalchemy import (
     text,
     type_coerce,
 )
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.orm import Session
 
 from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProjection
@@ -52,6 +55,13 @@ _NON_RESIDENT_STATES = frozenset(
 )
 _EPHEMERAL_MISSIONS: WeakValueDictionary[str, ARCController] = WeakValueDictionary()
 _CACHE_LOCK = Lock()
+# Per-Engine cache of lightweight mission summaries used by ``research_budget.usage()``,
+# keyed by mission_id -> (revision, col_state, col_event_count, updated_at). WeakKeyDictionary
+# ensures test/temporary Engines release memory cleanly on disposal.
+_BUDGET_USAGE_CACHE: WeakKeyDictionary[Any, dict[str, tuple[tuple[Any, ...], Any]]] = (
+    WeakKeyDictionary()
+)
+_BUDGET_USAGE_CACHE_LOCK = Lock()
 _SUMMARY_EVENT_TYPES = (
     "goal_compiled",
     "provider_status",
@@ -124,11 +134,28 @@ def get_configured_database() -> Database | None:
     return _database
 
 
+def _session_engine(session: Session) -> Any | None:
+    bind = session.get_bind()
+    if bind is None:
+        return None
+    return getattr(bind, "engine", bind)
+
+
+def clear_budget_usage_cache(engine: Any | None = None) -> None:
+    """Drop cached ``research_budget.usage()`` mission entries (for one Engine or all)."""
+    with _BUDGET_USAGE_CACHE_LOCK:
+        if engine is None:
+            _BUDGET_USAGE_CACHE.clear()
+        else:
+            _BUDGET_USAGE_CACHE.pop(engine, None)
+
+
 def reset_runtime() -> None:
     """Drop in-process controllers. Persisted rows and the memory snapshot stay."""
     with _CACHE_LOCK:
         MISSIONS.clear()
         _EPHEMERAL_MISSIONS.clear()
+    clear_budget_usage_cache()
     _PARKED.clear()
 
 
@@ -178,6 +205,7 @@ def reset_store() -> None:
     with _CACHE_LOCK:
         MISSIONS.clear()
         _EPHEMERAL_MISSIONS.clear()
+    clear_budget_usage_cache()
     _PARKED.clear()
     _MEMORY.clear()
     _MEMORY_REVISIONS.clear()
@@ -383,7 +411,35 @@ def _sqlite_typed_json(value: Any, json_type: str | None) -> Any:
     return value
 
 
-def _sqlite_budget_mission_rows(session: Session) -> list[dict[str, Any]]:
+def load_budget_mission_meta(
+    session: Session,
+) -> list[tuple[str, int, str, int, datetime, datetime]]:
+    """Fetch only lightweight scalar metadata columns for ``research_budget.usage()``."""
+    return [
+        (
+            str(mission_id),
+            int(revision or 0),
+            str(state or ""),
+            int(event_count or 0),
+            created_at,
+            updated_at,
+        )
+        for mission_id, revision, state, event_count, created_at, updated_at in session.execute(
+            select(
+                ArcMission.mission_id,
+                ArcMission.revision,
+                ArcMission.state,
+                ArcMission.event_count,
+                ArcMission.created_at,
+                ArcMission.updated_at,
+            )
+        )
+    ]
+
+
+def _sqlite_budget_mission_rows(
+    session: Session, *, mission_ids: Collection[str] | None = None
+) -> list[dict[str, Any]]:
     pj = ArcMission.projection_json
     jtype = func.json_type
     jget = func.json_extract
@@ -397,11 +453,13 @@ def _sqlite_budget_mission_rows(session: Session) -> list[dict[str, Any]]:
     vp_is_obj = and_(ctx_is_obj, jtype(pj, "$.goal.evolution_context.variant_policy") == "object")
     is_observing = state_expr == "paper_observing"
 
-    stmt = select(
+    base_stmt = select(
         ArcMission.mission_id.label("mission_id"),
         ArcMission.created_at.label("created_at"),
         ArcMission.updated_at.label("updated_at"),
         ArcMission.revision.label("revision"),
+        ArcMission.state.label("col_state"),
+        ArcMission.event_count.label("col_event_count"),
         case(
             (
                 jtype(pj, "$.events") == "array",
@@ -688,76 +746,92 @@ def _sqlite_budget_mission_rows(session: Session) -> list[dict[str, Any]]:
         ).label("avo_final_window_consumed"),
     )
 
+    chunks: list[list[str] | None]
+    if mission_ids is None:
+        chunks = [None]
+    else:
+        ids = list(dict.fromkeys(str(mid) for mid in mission_ids if mid))
+        if not ids:
+            return []
+        chunks = [ids[start : start + 500] for start in range(0, len(ids), 500)]
+
     out: list[dict[str, Any]] = []
-    for row in session.execute(stmt):
-        item = dict(row._mapping)
-        item["has_inline_events"] = bool(item["has_inline_events"])
-        item["has_goal"] = bool(item["has_goal"])
-        item["fb_present"] = bool(item["fb_present"])
-        item["fb_target_id_exists"] = bool(item["fb_target_id_exists"])
-        item["fb_evidence_is_dict"] = bool(item["fb_evidence_is_dict"])
-        item["fb_evidence_sid_exists"] = bool(item["fb_evidence_sid_exists"])
-        item["fb_evidence_sid"] = _sqlite_typed_json(
-            item.pop("fb_evidence_sid"), item.pop("fb_evidence_sid_type")
-        )
-        item["ctx_target_id_exists"] = bool(item["ctx_target_id_exists"])
-        item["ctx_source_strategy_id"] = _sqlite_typed_json(
-            item.pop("ctx_source_strategy_id"), item.pop("ctx_source_strategy_id_type")
-        )
-        item["ctx_trigger_source_exists"] = bool(item["ctx_trigger_source_exists"])
-        item["ctx_vp_is_dict"] = bool(item["ctx_vp_is_dict"])
-        item["ctx_vp_supported"] = bool(item["ctx_vp_supported"])
-        item["ctx_baseline_is_source_variant"] = bool(item["ctx_baseline_is_source_variant"])
-        item["avo_pending"] = _sqlite_typed_json(
-            item.pop("avo_pending"), item.pop("avo_pending_type")
-        )
-        item["avo_final_window_consumed"] = bool(item["avo_final_window_consumed"])
-        out.append(item)
+    for chunk in chunks:
+        stmt = base_stmt if chunk is None else base_stmt.where(ArcMission.mission_id.in_(chunk))
+        for row in session.execute(stmt):
+            item = dict(row._mapping)
+            item["has_inline_events"] = bool(item["has_inline_events"])
+            item["has_goal"] = bool(item["has_goal"])
+            item["fb_present"] = bool(item["fb_present"])
+            item["fb_target_id_exists"] = bool(item["fb_target_id_exists"])
+            item["fb_evidence_is_dict"] = bool(item["fb_evidence_is_dict"])
+            item["fb_evidence_sid_exists"] = bool(item["fb_evidence_sid_exists"])
+            item["fb_evidence_sid"] = _sqlite_typed_json(
+                item.pop("fb_evidence_sid"), item.pop("fb_evidence_sid_type")
+            )
+            item["ctx_target_id_exists"] = bool(item["ctx_target_id_exists"])
+            item["ctx_source_strategy_id"] = _sqlite_typed_json(
+                item.pop("ctx_source_strategy_id"), item.pop("ctx_source_strategy_id_type")
+            )
+            item["ctx_trigger_source_exists"] = bool(item["ctx_trigger_source_exists"])
+            item["ctx_vp_is_dict"] = bool(item["ctx_vp_is_dict"])
+            item["ctx_vp_supported"] = bool(item["ctx_vp_supported"])
+            item["ctx_baseline_is_source_variant"] = bool(item["ctx_baseline_is_source_variant"])
+            item["avo_pending"] = _sqlite_typed_json(
+                item.pop("avo_pending"), item.pop("avo_pending_type")
+            )
+            item["avo_final_window_consumed"] = bool(item["avo_final_window_consumed"])
+            out.append(item)
     return out
 
 
-def _postgres_budget_mission_rows(session: Session) -> list[dict[str, Any]]:
-    stmt = text(
-        """
+def _postgres_budget_mission_rows(
+    session: Session, *, mission_ids: Collection[str] | None = None
+) -> list[dict[str, Any]]:
+    base_sql = """
         SELECT m.mission_id,
                m.created_at,
                m.updated_at,
                m.revision,
+               m.state AS col_state,
+               m.event_count AS col_event_count,
                CASE WHEN r.events IS NOT NULL AND json_typeof(r.events) = 'array'
                     THEN json_array_length(r.events) > 0
                     ELSE false END AS has_inline_events,
-               COALESCE(
-                   CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
-                        THEN r.state #>> '{}' END,
-                   'created'
-               ) AS state,
+               COALESCE(r_state.s, 'created') AS state,
                (r.goal IS NOT NULL AND json_typeof(r.goal) = 'object') AS has_goal,
                CASE WHEN g.provider_name IS NOT NULL AND json_typeof(g.provider_name) = 'string'
                     THEN g.provider_name #>> '{}' ELSE NULL END AS provider_name,
-               CASE WHEN g.feedback_parent IS NOT NULL
-                         AND json_typeof(g.feedback_parent) = 'object'
-                    THEN EXISTS (SELECT 1 FROM json_object_keys(g.feedback_parent))
-                    ELSE false END AS fb_present,
-               (g.feedback_parent IS NOT NULL AND json_typeof(g.feedback_parent) = 'object'
-                AND (g.feedback_parent #> '{target_id}') IS NOT NULL) AS fb_target_id_exists,
-               g.feedback_parent #> '{target_id}' AS fb_target_id,
-               g.feedback_parent #> '{instance_id}' AS fb_instance_id,
-               (g.feedback_parent IS NOT NULL AND json_typeof(g.feedback_parent) = 'object'
-                AND json_typeof(g.feedback_parent #> '{evidence}') = 'object'
+               COALESCE(fbk.present, false) AS fb_present,
+               COALESCE(fbk.tid_exists, false) AS fb_target_id_exists,
+               fb.target_id AS fb_target_id,
+               fb.instance_id AS fb_instance_id,
+               (fb.evidence IS NOT NULL AND json_typeof(fb.evidence) = 'object'
                ) AS fb_evidence_is_dict,
-               (g.feedback_parent IS NOT NULL AND json_typeof(g.feedback_parent) = 'object'
-                AND json_typeof(g.feedback_parent #> '{evidence}') = 'object'
-                AND (g.feedback_parent #> '{evidence,strategy_id}') IS NOT NULL
-               ) AS fb_evidence_sid_exists,
-               g.feedback_parent #> '{evidence,strategy_id}' AS fb_evidence_sid,
-               (g.evolution_context IS NOT NULL AND json_typeof(g.evolution_context) = 'object'
-                AND (g.evolution_context #> '{target_id}') IS NOT NULL) AS ctx_target_id_exists,
+               CASE WHEN fb.evidence IS NOT NULL AND json_typeof(fb.evidence) = 'object'
+                    THEN (
+                        CASE WHEN fbev.strategy_id IS NOT NULL THEN true
+                             ELSE (fb.evidence #> '{strategy_id}') IS NOT NULL END
+                    )
+                    ELSE false END AS fb_evidence_sid_exists,
+               fbev.strategy_id AS fb_evidence_sid,
+               CASE WHEN g.evolution_context IS NOT NULL
+                         AND json_typeof(g.evolution_context) = 'object'
+                    THEN (
+                        CASE WHEN ec.target_id IS NOT NULL THEN true
+                             ELSE (g.evolution_context #> '{target_id}') IS NOT NULL END
+                    )
+                    ELSE false END AS ctx_target_id_exists,
                ec.target_id AS ctx_target_id,
                ec.source_instance_id AS ctx_source_instance_id,
                ec.source_strategy_id AS ctx_source_strategy_id,
-               (g.evolution_context IS NOT NULL AND json_typeof(g.evolution_context) = 'object'
-                AND (g.evolution_context #> '{trigger_source}') IS NOT NULL
-               ) AS ctx_trigger_source_exists,
+               CASE WHEN g.evolution_context IS NOT NULL
+                         AND json_typeof(g.evolution_context) = 'object'
+                    THEN (
+                        CASE WHEN ec.trigger_source IS NOT NULL THEN true
+                             ELSE (g.evolution_context #> '{trigger_source}') IS NOT NULL END
+                    )
+                    ELSE false END AS ctx_trigger_source_exists,
                ec.trigger_source AS ctx_trigger_source,
                CASE WHEN ec.source_snapshot IS NOT NULL
                          AND json_typeof(ec.source_snapshot) = 'object'
@@ -766,56 +840,37 @@ def _postgres_budget_mission_rows(session: Session) -> list[dict[str, Any]]:
                     THEN ec.relay_seats ELSE NULL END AS ctx_relay_seats,
                (ec.variant_policy IS NOT NULL
                 AND json_typeof(ec.variant_policy) = 'object') AS ctx_vp_is_dict,
-               CASE WHEN ec.variant_policy IS NOT NULL AND json_typeof(ec.variant_policy) = 'object'
-                         AND json_typeof(ec.variant_policy #> '{baseline_backtest}') = 'object'
-                    THEN ec.variant_policy #> '{baseline_backtest}'
+               CASE WHEN vp.baseline_backtest IS NOT NULL
+                         AND json_typeof(vp.baseline_backtest) = 'object'
+                    THEN vp.baseline_backtest
                     ELSE NULL END AS ctx_vp_baseline_backtest,
-               CASE WHEN ec.variant_policy IS NOT NULL AND json_typeof(ec.variant_policy) = 'object'
-                         AND json_typeof(
-                             ec.variant_policy #> '{variant_creation_supported}'
-                         ) = 'boolean'
-                    THEN (ec.variant_policy #>> '{variant_creation_supported}')::boolean
+               CASE WHEN vp.variant_creation_supported IS NOT NULL
+                         AND json_typeof(vp.variant_creation_supported) = 'boolean'
+                    THEN (vp.variant_creation_supported #>> '{}')::boolean
                     ELSE false END AS ctx_vp_supported,
-               CASE WHEN ec.variant_policy IS NOT NULL AND json_typeof(ec.variant_policy) = 'object'
-                         AND json_typeof(ec.variant_policy #> '{relay}') = 'object'
-                         AND json_typeof(ec.variant_policy #> '{relay,slots}') = 'array'
-                    THEN json_array_length(ec.variant_policy #> '{relay,slots}')
+               CASE WHEN vpr.slots IS NOT NULL AND json_typeof(vpr.slots) = 'array'
+                    THEN json_array_length(vpr.slots)
                     ELSE NULL END AS ctx_vp_slots_len,
-               CASE WHEN ec.baseline IS NOT NULL AND json_typeof(ec.baseline) = 'object'
-                         AND json_typeof(ec.baseline #> '{strategy_spec}') = 'object'
-                         AND json_typeof(
-                             ec.baseline #> '{strategy_spec,is_source_variant}'
-                         ) = 'boolean'
-                    THEN (ec.baseline #>> '{strategy_spec,is_source_variant}')::boolean
+               CASE WHEN blss.is_source_variant IS NOT NULL
+                         AND json_typeof(blss.is_source_variant) = 'boolean'
+                    THEN (blss.is_source_variant #>> '{}')::boolean
                     ELSE false END AS ctx_baseline_is_source_variant,
-               CASE WHEN r.paper_review IS NOT NULL AND json_typeof(r.paper_review) = 'object'
-                    THEN r.paper_review #> '{status}' ELSE NULL END AS paper_review_status,
-               CASE WHEN r.avo IS NOT NULL AND json_typeof(r.avo) = 'object'
-                    THEN r.avo #> '{pending}' ELSE NULL END AS avo_pending,
-               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
-                         AND (r.state #>> '{}') = 'failed'
-                         AND r.avo IS NOT NULL AND json_typeof(r.avo) = 'object'
-                    THEN r.avo #> '{terminal_execution_failure}'
+               pr.status AS paper_review_status,
+               av.pending AS avo_pending,
+               CASE WHEN r_state.s = 'failed'
+                    THEN av.terminal_execution_failure
                     ELSE NULL END AS avo_terminal_failure,
-               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
-                         AND (r.state #>> '{}') = 'paper_observing'
+               CASE WHEN r_state.s = 'paper_observing'
                          AND r.paper_started_at IS NOT NULL
                          AND json_typeof(r.paper_started_at) = 'string'
                     THEN r.paper_started_at #>> '{}' ELSE NULL END AS paper_started_at,
-               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
-                         AND (r.state #>> '{}') = 'paper_observing'
-                         AND r.paper_review IS NOT NULL AND json_typeof(r.paper_review) = 'object'
-                    THEN r.paper_review #> '{attempt_id}' ELSE NULL END AS paper_review_attempt_id,
-               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
-                         AND (r.state #>> '{}') = 'paper_observing'
-                         AND r.avo IS NOT NULL AND json_typeof(r.avo) = 'object'
-                         AND json_typeof(r.avo #> '{final}') = 'object'
-                    THEN r.avo #> '{final,attempt_id}' ELSE NULL END AS avo_final_attempt_id,
-               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
-                         AND (r.state #>> '{}') = 'paper_observing'
+               CASE WHEN r_state.s = 'paper_observing'
+                    THEN pr.attempt_id ELSE NULL END AS paper_review_attempt_id,
+               CASE WHEN r_state.s = 'paper_observing'
+                    THEN avf.attempt_id ELSE NULL END AS avo_final_attempt_id,
+               CASE WHEN r_state.s = 'paper_observing'
                     THEN r.current_attempt_id ELSE NULL END AS current_attempt_id,
-               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
-                         AND (r.state #>> '{}') = 'paper_observing'
+               CASE WHEN r_state.s = 'paper_observing'
                          AND r.attempts IS NOT NULL AND json_typeof(r.attempts) = 'array'
                     THEN (
                         SELECT json_agg(json_build_object(
@@ -830,19 +885,18 @@ def _postgres_budget_mission_rows(session: Session) -> list[dict[str, Any]]:
                         FROM json_to_recordset(r.attempts) AS a(attempt_id text, strategy_spec json)
                     )
                     ELSE NULL END AS observing_attempts,
-               CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
-                         AND (r.state #>> '{}') = 'needs_operator'
-                         AND r.avo IS NOT NULL AND json_typeof(r.avo) = 'object'
+               CASE WHEN r_state.s = 'needs_operator'
+                         AND av.final_window_consumed IS NOT NULL
                     THEN (
-                        CASE json_typeof(r.avo #> '{final_window_consumed}')
-                            WHEN 'boolean' THEN (r.avo #>> '{final_window_consumed}')::boolean
+                        CASE json_typeof(av.final_window_consumed)
+                            WHEN 'boolean' THEN (av.final_window_consumed #>> '{}')::boolean
                             WHEN 'number'
-                                THEN (r.avo #>> '{final_window_consumed}')::double precision != 0
-                            WHEN 'string' THEN (r.avo #>> '{final_window_consumed}') != ''
+                                THEN (av.final_window_consumed #>> '{}')::double precision != 0
+                            WHEN 'string' THEN (av.final_window_consumed #>> '{}') != ''
                             WHEN 'array'
-                                THEN json_array_length(r.avo #> '{final_window_consumed}') > 0
+                                THEN json_array_length(av.final_window_consumed) > 0
                             WHEN 'object' THEN EXISTS (
-                                SELECT 1 FROM json_object_keys(r.avo #> '{final_window_consumed}')
+                                SELECT 1 FROM json_object_keys(av.final_window_consumed)
                             )
                             ELSE false
                         END
@@ -853,73 +907,133 @@ def _postgres_budget_mission_rows(session: Session) -> list[dict[str, Any]]:
             state json, goal json, paper_review json, avo json, events json,
             current_attempt_id json, paper_started_at json, attempts json
         ) ON m.projection_json IS NOT NULL AND json_typeof(m.projection_json) = 'object'
+        LEFT JOIN LATERAL (
+            SELECT CASE WHEN r.state IS NOT NULL AND json_typeof(r.state) = 'string'
+                        THEN r.state #>> '{}' ELSE NULL END AS s
+        ) AS r_state ON true
         LEFT JOIN LATERAL json_to_record(r.goal) AS g(
             provider_name json, feedback_parent json, evolution_context json
         ) ON r.goal IS NOT NULL AND json_typeof(r.goal) = 'object'
+        LEFT JOIN LATERAL json_to_record(g.feedback_parent) AS fb(
+            target_id json, instance_id json, evidence json
+        ) ON g.feedback_parent IS NOT NULL AND json_typeof(g.feedback_parent) = 'object'
+        LEFT JOIN LATERAL (
+            SELECT EXISTS (SELECT 1 FROM json_object_keys(g.feedback_parent)) AS present,
+                   CASE WHEN fb.target_id IS NOT NULL THEN true
+                        ELSE (g.feedback_parent #> '{target_id}') IS NOT NULL END AS tid_exists
+        ) AS fbk ON g.feedback_parent IS NOT NULL AND json_typeof(g.feedback_parent) = 'object'
+        LEFT JOIN LATERAL json_to_record(fb.evidence) AS fbev(
+            strategy_id json
+        ) ON fb.evidence IS NOT NULL AND json_typeof(fb.evidence) = 'object'
         LEFT JOIN LATERAL json_to_record(g.evolution_context) AS ec(
             target_id json, source_instance_id json, source_strategy_id json, trigger_source json,
             source_snapshot json, relay_seats json, variant_policy json, baseline json
         ) ON g.evolution_context IS NOT NULL AND json_typeof(g.evolution_context) = 'object'
-        """
-    ).columns(
-        mission_id=String,
-        created_at=DateTime(timezone=True),
-        updated_at=DateTime(timezone=True),
-        revision=Integer,
-        has_inline_events=Boolean,
-        state=String,
-        has_goal=Boolean,
-        provider_name=String,
-        fb_present=Boolean,
-        fb_target_id_exists=Boolean,
-        fb_target_id=JSON,
-        fb_instance_id=JSON,
-        fb_evidence_is_dict=Boolean,
-        fb_evidence_sid_exists=Boolean,
-        fb_evidence_sid=JSON,
-        ctx_target_id_exists=Boolean,
-        ctx_target_id=JSON,
-        ctx_source_instance_id=JSON,
-        ctx_source_strategy_id=JSON,
-        ctx_trigger_source_exists=Boolean,
-        ctx_trigger_source=JSON,
-        ctx_source_snapshot=JSON,
-        ctx_relay_seats=JSON,
-        ctx_vp_is_dict=Boolean,
-        ctx_vp_baseline_backtest=JSON,
-        ctx_vp_supported=Boolean,
-        ctx_vp_slots_len=Integer,
-        ctx_baseline_is_source_variant=Boolean,
-        paper_review_status=JSON,
-        avo_pending=JSON,
-        avo_terminal_failure=JSON,
-        paper_started_at=String,
-        paper_review_attempt_id=JSON,
-        avo_final_attempt_id=JSON,
-        current_attempt_id=JSON,
-        observing_attempts=JSON,
-        avo_final_window_consumed=Boolean,
-    )
+        LEFT JOIN LATERAL json_to_record(ec.variant_policy) AS vp(
+            baseline_backtest json, variant_creation_supported json, relay json
+        ) ON ec.variant_policy IS NOT NULL AND json_typeof(ec.variant_policy) = 'object'
+        LEFT JOIN LATERAL json_to_record(vp.relay) AS vpr(
+            slots json
+        ) ON vp.relay IS NOT NULL AND json_typeof(vp.relay) = 'object'
+        LEFT JOIN LATERAL json_to_record(ec.baseline) AS bl(
+            strategy_spec json
+        ) ON ec.baseline IS NOT NULL AND json_typeof(ec.baseline) = 'object'
+        LEFT JOIN LATERAL json_to_record(bl.strategy_spec) AS blss(
+            is_source_variant json
+        ) ON bl.strategy_spec IS NOT NULL AND json_typeof(bl.strategy_spec) = 'object'
+        LEFT JOIN LATERAL json_to_record(r.paper_review) AS pr(
+            status json, attempt_id json
+        ) ON r.paper_review IS NOT NULL AND json_typeof(r.paper_review) = 'object'
+        LEFT JOIN LATERAL json_to_record(r.avo) AS av(
+            pending json, terminal_execution_failure json, final json, final_window_consumed json
+        ) ON r.avo IS NOT NULL AND json_typeof(r.avo) = 'object'
+        LEFT JOIN LATERAL json_to_record(av.final) AS avf(
+            attempt_id json
+        ) ON r_state.s = 'paper_observing' AND av.final IS NOT NULL
+             AND json_typeof(av.final) = 'object'
+    """
+    pg_cols: dict[str, Any] = {
+        "mission_id": String,
+        "created_at": DateTime(timezone=True),
+        "updated_at": DateTime(timezone=True),
+        "revision": Integer,
+        "col_state": String,
+        "col_event_count": Integer,
+        "has_inline_events": Boolean,
+        "state": String,
+        "has_goal": Boolean,
+        "provider_name": String,
+        "fb_present": Boolean,
+        "fb_target_id_exists": Boolean,
+        "fb_target_id": JSON,
+        "fb_instance_id": JSON,
+        "fb_evidence_is_dict": Boolean,
+        "fb_evidence_sid_exists": Boolean,
+        "fb_evidence_sid": JSON,
+        "ctx_target_id_exists": Boolean,
+        "ctx_target_id": JSON,
+        "ctx_source_instance_id": JSON,
+        "ctx_source_strategy_id": JSON,
+        "ctx_trigger_source_exists": Boolean,
+        "ctx_trigger_source": JSON,
+        "ctx_source_snapshot": JSON,
+        "ctx_relay_seats": JSON,
+        "ctx_vp_is_dict": Boolean,
+        "ctx_vp_baseline_backtest": JSON,
+        "ctx_vp_supported": Boolean,
+        "ctx_vp_slots_len": Integer,
+        "ctx_baseline_is_source_variant": Boolean,
+        "paper_review_status": JSON,
+        "avo_pending": JSON,
+        "avo_terminal_failure": JSON,
+        "paper_started_at": String,
+        "paper_review_attempt_id": JSON,
+        "avo_final_attempt_id": JSON,
+        "current_attempt_id": JSON,
+        "observing_attempts": JSON,
+        "avo_final_window_consumed": Boolean,
+    }
+
+    chunks: list[list[str] | None]
+    if mission_ids is None:
+        chunks = [None]
+    else:
+        ids = list(dict.fromkeys(str(mid) for mid in mission_ids if mid))
+        if not ids:
+            return []
+        chunks = [ids[start : start + 2000] for start in range(0, len(ids), 2000)]
+
     out: list[dict[str, Any]] = []
-    for row in session.execute(stmt):
-        item = dict(row._mapping)
-        item["has_inline_events"] = bool(item["has_inline_events"])
-        item["has_goal"] = bool(item["has_goal"])
-        item["fb_present"] = bool(item["fb_present"])
-        item["fb_target_id_exists"] = bool(item["fb_target_id_exists"])
-        item["fb_evidence_is_dict"] = bool(item["fb_evidence_is_dict"])
-        item["fb_evidence_sid_exists"] = bool(item["fb_evidence_sid_exists"])
-        item["ctx_target_id_exists"] = bool(item["ctx_target_id_exists"])
-        item["ctx_trigger_source_exists"] = bool(item["ctx_trigger_source_exists"])
-        item["ctx_vp_is_dict"] = bool(item["ctx_vp_is_dict"])
-        item["ctx_vp_supported"] = bool(item["ctx_vp_supported"])
-        item["ctx_baseline_is_source_variant"] = bool(item["ctx_baseline_is_source_variant"])
-        item["avo_final_window_consumed"] = bool(item["avo_final_window_consumed"])
-        out.append(item)
+    for chunk in chunks:
+        if chunk is None:
+            stmt = text(base_sql).columns(**pg_cols)
+        else:
+            stmt = (
+                text(base_sql + " WHERE m.mission_id = ANY(:mission_ids)")
+                .bindparams(bindparam("mission_ids", value=chunk, type_=PG_ARRAY(String())))
+                .columns(**pg_cols)
+            )
+        for row in session.execute(stmt):
+            item = dict(row._mapping)
+            item["has_inline_events"] = bool(item["has_inline_events"])
+            item["has_goal"] = bool(item["has_goal"])
+            item["fb_present"] = bool(item["fb_present"])
+            item["fb_target_id_exists"] = bool(item["fb_target_id_exists"])
+            item["fb_evidence_is_dict"] = bool(item["fb_evidence_is_dict"])
+            item["fb_evidence_sid_exists"] = bool(item["fb_evidence_sid_exists"])
+            item["ctx_target_id_exists"] = bool(item["ctx_target_id_exists"])
+            item["ctx_trigger_source_exists"] = bool(item["ctx_trigger_source_exists"])
+            item["ctx_vp_is_dict"] = bool(item["ctx_vp_is_dict"])
+            item["ctx_vp_supported"] = bool(item["ctx_vp_supported"])
+            item["ctx_baseline_is_source_variant"] = bool(item["ctx_baseline_is_source_variant"])
+            item["avo_final_window_consumed"] = bool(item["avo_final_window_consumed"])
+            out.append(item)
     return out
 
 
-def load_budget_mission_rows(session: Session) -> list[dict[str, Any]] | None:
+def load_budget_mission_rows(
+    session: Session, *, mission_ids: Collection[str] | None = None
+) -> list[dict[str, Any]] | None:
     """Load lightweight ``ArcMission`` summaries for ``research_budget.usage()``.
 
     Returns ``None`` on dialects without JSON extraction support so callers can fall back to
@@ -929,9 +1043,9 @@ def load_budget_mission_rows(session: Session) -> list[dict[str, Any]] | None:
     bind = session.get_bind()
     dialect = bind.dialect.name if bind is not None else ""
     if dialect == "postgresql":
-        return _postgres_budget_mission_rows(session)
+        return _postgres_budget_mission_rows(session, mission_ids=mission_ids)
     if dialect == "sqlite":
-        return _sqlite_budget_mission_rows(session)
+        return _sqlite_budget_mission_rows(session, mission_ids=mission_ids)
     return None
 
 
