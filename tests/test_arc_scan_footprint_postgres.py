@@ -268,6 +268,40 @@ def test_budget_usage_footprint_and_equivalence_on_postgresql(
                 src.get("source_instance_id") != "inst-pg-bool"
                 for src in fast["sources"].values()
             )
+
+            # Steady-state hot hit on PostgreSQL: 0 projection_json/json_to_record & 0 event reads.
+            executed_sql.clear()
+            event.listen(db.engine, "before_cursor_execute", before_execute)
+            try:
+                with db.session() as session:
+                    hot = research_budget.usage(session, config, NOW)
+            finally:
+                event.remove(db.engine, "before_cursor_execute", before_execute)
+            assert hot == fast
+            assert not any("json_to_record" in stmt for stmt in executed_sql)
+            assert not any("arc_mission_events" in stmt for stmt in executed_sql)
+
+            # Incremental single-mission mutation invalidates and queries ONLY that row on PG.
+            loaded_batches: list[list[str] | None] = []
+            real_load = research_budget.load_budget_mission_rows
+            monkeypatch.setattr(
+                research_budget,
+                "load_budget_mission_rows",
+                lambda s, *, mission_ids=None: (
+                    loaded_batches.append(list(mission_ids) if mission_ids is not None else None),
+                    real_load(s, mission_ids=mission_ids),
+                )[1],
+            )
+            missions["exploring_candidates"].apply_event(
+                "operator_needed", {"reason": "avo_context_budget_exhausted"}
+            )
+            with db.session() as session:
+                after_move = research_budget.usage(session, config, NOW)
+            assert loaded_batches == [[missions["exploring_candidates"].mission_id]]
+            with db.session() as session:
+                assert after_move == research_budget._reduce_usage(
+                    session, config, NOW, research_budget._usage_items_full(session)
+                )
         finally:
             store.reset_store()
             db.engine.dispose()

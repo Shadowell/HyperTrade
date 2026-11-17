@@ -910,6 +910,140 @@ def test_usage_falls_back_only_for_inline_legacy_rows(
     assert fast == reference
 
 
+def test_usage_cache_cold_incremental_hot_hit_invalidation_eviction_and_tx_bypass(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    moving = _research_mission("exploring_candidates", 51)
+    waiting = _research_mission("needs_operator", 52, reason="manual_hold")
+    done = _research_mission("completed", 53)
+    store.reset_runtime()
+    config = EvolutionConfig()
+
+    loaded_batches: list[list[str] | None] = []
+    real_load = research_budget.load_budget_mission_rows
+
+    def spy_load(session: Any, *, mission_ids: Any = None) -> Any:
+        loaded_batches.append(list(mission_ids) if mission_ids is not None else None)
+        return real_load(session, mission_ids=mission_ids)
+
+    monkeypatch.setattr(research_budget, "load_budget_mission_rows", spy_load)
+    executed_sql: list[str] = []
+
+    def before_execute(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+        executed_sql.append(statement)
+
+    sa_event.listen(db.engine, "before_cursor_execute", before_execute)
+    try:
+        # 1. Cold start loads all 3 missions once.
+        with db.session() as session:
+            cold = research_budget.usage(session, config, NOW)
+        assert len(loaded_batches) == 1 and sorted(loaded_batches[0] or []) == sorted(
+            [moving.mission_id, waiting.mission_id, done.mission_id]
+        )
+
+        # 2. Steady-state hot hit: 0 projection_json reads and 0 arc_mission_events reads.
+        loaded_batches.clear()
+        executed_sql.clear()
+        with db.session() as session:
+            hot = research_budget.usage(session, config, NOW)
+        assert hot == cold
+        assert loaded_batches == []
+        assert not any("projection_json" in s for s in executed_sql)
+        assert not any("arc_mission_events" in s for s in executed_sql)
+
+        # 3. Single-mission revision change reloads only that 1 mission.
+        moving.apply_event("operator_needed", {"reason": "avo_context_budget_exhausted"})
+        loaded_batches.clear()
+        executed_sql.clear()
+        with db.session() as session:
+            after_rev = research_budget.usage(session, config, NOW)
+        assert loaded_batches == [[moving.mission_id]]
+        with db.session() as session:
+            assert after_rev == research_budget._reduce_usage(
+                session, config, NOW, research_budget._usage_items_full(session)
+            )
+
+        # 4. updated_at change on one row also invalidates only that row.
+        loaded_batches.clear()
+        with db.session() as session:
+            row = session.get(ArcMission, done.mission_id)
+            assert row is not None
+            row.updated_at = NOW + timedelta(minutes=7)
+        with db.session() as session:
+            after_ts = research_budget.usage(session, config, NOW)
+        assert loaded_batches == [[done.mission_id]]
+        with db.session() as session:
+            assert after_ts == research_budget._reduce_usage(
+                session, config, NOW, research_budget._usage_items_full(session)
+            )
+
+        # 5. Uncommitted dirty session bypasses both reading and polluting the cache.
+        loaded_batches.clear()
+        with db.session() as session:
+            dirty_row = session.get(ArcMission, waiting.mission_id)
+            assert dirty_row is not None
+            dirty_row.state = "completed"
+            pj = dict(dirty_row.projection_json)
+            pj["state"] = "completed"
+            dirty_row.projection_json = pj
+            dirty_usage = research_budget.usage(session, config, NOW)
+            assert len(loaded_batches) == 1 and set(loaded_batches[0] or []) == {
+                moving.mission_id,
+                waiting.mission_id,
+                done.mission_id,
+            }
+            assert dirty_usage["active"] == 0
+            session.rollback()
+
+        loaded_batches.clear()
+        with db.session() as session:
+            after_rollback = research_budget.usage(session, config, NOW)
+        assert loaded_batches == []  # cache was not polluted by uncommitted rollback
+        assert after_rollback == after_ts and after_rollback["active"] == 1
+
+        # 6. Deleted row is automatically evicted on next usage() call.
+        with db.session() as session:
+            to_delete = session.get(ArcMission, done.mission_id)
+            assert to_delete is not None
+            session.delete(to_delete)
+        loaded_batches.clear()
+        with db.session() as session:
+            after_delete = research_budget.usage(session, config, NOW)
+        assert loaded_batches == []
+        assert after_delete["total_used"] == 2
+        assert done.mission_id not in store._BUDGET_USAGE_CACHE[db.engine]
+    finally:
+        sa_event.remove(db.engine, "before_cursor_execute", before_execute)
+
+
+def test_usage_cache_is_isolated_per_engine() -> None:
+    db_a = Database("sqlite:///:memory:")
+    db_b = Database("sqlite:///:memory:")
+    db_a.create_all()
+    db_b.create_all()
+    try:
+        store.reset_store()
+        store.configure_store(db_a)
+        _research_mission("exploring_candidates", 61)
+        with db_a.session() as session:
+            usage_a = research_budget.usage(session, EvolutionConfig(), NOW)
+
+        store.configure_store(db_b)
+        _research_mission("failed", 62)
+        _research_mission("completed", 63)
+        with db_b.session() as session:
+            usage_b = research_budget.usage(session, EvolutionConfig(), NOW)
+
+        assert usage_a["total_used"] == 1 and usage_b["total_used"] == 2
+        assert set(store._BUDGET_USAGE_CACHE[db_a.engine]) != set(
+            store._BUDGET_USAGE_CACHE[db_b.engine]
+        )
+    finally:
+        store.reset_store()
+        db_a.engine.dispose()
+        db_b.engine.dispose()
+
+
 def _ledger(db: Database) -> tuple[dict[str, Any], dict[str, Any]]:
     """What the acceptance ledger holds: the checkpoints and the entries."""
     with db.session() as session:
