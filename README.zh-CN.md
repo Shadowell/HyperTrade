@@ -54,9 +54,10 @@
 
 ```mermaid
 flowchart LR
-  Op["操作员 / 外部 Agent<br/>Web · ht CLI · TUI · Desktop"] --> API["FastAPI 控制面<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
+  BitProUI["BitPro 唯一操作台 (/ai-lab · /evolution)"] --> API["FastAPI 控制面 (mem_limit: 2g)<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
+  Op["HyperTrade Web (无头引导横幅) · ht CLI · TUI"] --> API
   API --> DB[("PostgreSQL + pgvector<br/>52 项迁移 · Mission 投影 · 演进树 · 记忆库")]
-  Worker["Worker 循环 (13 个 Loop)<br/>Mission · AVO 研究 · 进化扫描 · 自动评审 · 元学习"] --> DB
+  Worker["无头 Worker 集群 (mem_limit: 3g)<br/>ARC 研究 · 进化 · 自动评审 · 观察 · 赛马裁判 · 启动错峰 2s..15s"] --> DB
   Worker --> Research["ARC 自主研究循环 (AVO + RD-Agent)<br/>HET 假设树 → Co-STEER 合成 → AST 门禁 → 沙箱自测 → 基线对比"]
   Worker --> Evolution["自主进化引擎（默认开启）<br/>退化 / 上线扫描 → 预算准入 → 再研究或参数微调 → 入场检查 → 赛马对决 → 效果账本"]
   Research --> Sandbox["隔离策略沙箱<br/>UDS · 非 root · 无网络 · digest 绑定"]
@@ -104,9 +105,10 @@ flowchart LR
 
 设计文档：[63 进化加固](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) · [66 赛马平滑换仓](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md)
 
-### 5. 容器级分级探活矩阵与量子量化指挥台
+### 5. 无头研究引擎模式、分级探活矩阵与 BitPro 唯一工作台收口
+- **无头研究引擎（`HYPERTRADE_HEADLESS_MODE`）**：生产部署（`docker-compose.yml` 默认开启 `HYPERTRADE_HEADLESS_MODE: ${HYPERTRADE_HEADLESS_MODE:-true}`，并设定 `api mem_limit: 2g`、`worker mem_limit: 3g`）下，操作交互统一收口至 BitPro 工作台（`/ai-lab` 与 `/evolution`），HyperTrade Web 顶部展示无头引导横幅并附直达链接。Worker 停用冗余的 `market_ingestion`、`market_rest_supplement`、`paper_trading` 与 `autonomous_market_pulse` 循环（亦可通过 `MARKET_INGESTION_ENABLED` 独立控制），并对非关键扫描循环在首次启动时按 2s/5s/8s/12s/15s 错峰调度以消除冷启动并发峰值。`bitpro/mcp.py` 兼容 `strategy_search(status=running)` 多口径收益/回撤字段，并在 `paper_dashboard` 可用时避免误报 `monitor_data_gap`。契约详见 [headless-bitpro-fusion](docs/contracts/headless-bitpro-fusion.md)。
 - **探活矩阵**：`/livez`（进程存活）、`/readyz`（`SELECT 1` 数据库就绪）、`/healthz`（包含 DB 延迟、QuantLab/BitPro 适配器心跳、worker 存活心跳、Paper 会话与令牌审计全景诊断）、`/version`（运行中的提交 SHA，发布流程每次部署后据此校验），原生适配 K8s 探针；
-- **量子指挥台 (QuantumPortfolioDashboard)**：React 19 现代化界面，支持 BitPro / QuantLab 一键切换、动态 A 股微观规则警示徽章、HET 假设演进树可视化渲染与净额换仓切片步进监视器。
+- **量子指挥台 (QuantumPortfolioDashboard)**：React 19 现代化界面，内置无头工作台迁移引导、BitPro / QuantLab 一键切换、动态 A 股微观规则警示徽章、HET 假设演进树可视化渲染与净额换仓切片步进监视器。
 
 设计文档：[67 生产级探活与令牌轮换](docs/architecture/67-production-observability-probes-and-token-rotation.md)
 
@@ -149,7 +151,7 @@ uv run alembic upgrade head
 uv run uvicorn hypertrade.main:app --app-dir backend/src --reload --host 0.0.0.0 --port 3334
 ```
 
-API 与 13 个 worker 循环在同一生命周期内启动；也可单独启动独立 worker：
+独立启动 worker 进程（生产 Compose 默认 `HYPERTRADE_HEADLESS_MODE=true`，仅保留 ARC 研究、进化、自动评审、观察、对账、赛马裁判、监控、心跳、RAG 与 Mission 循环）：
 
 ```bash
 uv run python -m hypertrade.worker
