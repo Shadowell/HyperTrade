@@ -115,6 +115,15 @@ results page rather than a polling lifecycle log.
 
 For containerized deployments, BitPro MCP is reached through an explicit host-gateway address instead of `127.0.0.1`, because loopback inside `hypertrade-api` points to the container itself. If BitPro is unavailable, API endpoints return a structured `502` with the failed BitPro tool calls so operators can distinguish upstream outage from HyperTrade runtime failure.
 
+### 2026-11-18 Production Hardening, `bitpro-mcp-v1` Endpoints & Runtime Integration
+
+- **HTTP pooling, diagnostic hints & live probe (`bitpro/mcp.py`)**: `BitProMcpClient` reuses a thread-safe bounded LRU `httpx.Client` pool (`_HTTP_CLIENT_POOL`, capacity 8, keyed by `(base_url, timeout_seconds)`) while keeping injected mock/custom clients isolated (`clear_http_client_pool()`). `BitProMcpError.hint` surfaces actionable Docker host-gateway (`/.dockerenv` -> `http://host.docker.internal:8889/api/v2`), timeout, and 401/403 token-scope diagnostics. `BitProToolAdapter` accepts optional `settings` and provides `probe_connectivity(ttl_seconds=15.0)` (cached via `_PROBE_CACHE`, cleared by `clear_probe_cache()`), surfaced in `/api/harness/overview` (`bitpro.live_probe`) and the frontend `BitProCard`.
+- **Confirmed `bitpro-mcp-v1` endpoints wired in `BitProToolAdapter`**:
+  - Multi-bot research collaboration bus: `research_context_snapshot` (`GET /research/collaboration/snapshot`), `research_context_delta` (`GET /research/collaboration/events`), `research_publish_event` (`POST /research/collaboration/events`), `research_bot_checkpoint` (`PUT /research/collaboration/checkpoints/{bot_id}`), `research_get_checkpoint` (`GET /research/collaboration/checkpoints/{bot_id}`).
+  - Review, monitor & onchain reads: `review_summary` (`GET /review/summary`), `monitor_active_strategies` (`GET /monitor/active_strategies`), `onchain_summary` (`GET /onchain/summary`).
+  - FactorLab Studio: `factorlab_get_operators` (`GET /factorlab/studio/operators`), `factorlab_list_alphas` (`GET /factorlab/studio/alphas`), `factorlab_matrix_check` (`GET /factorlab/studio/matrix`), `factorlab_runner_status` (`GET /factorlab/studio/runner/status`), `factorlab_simulate` (`POST /factorlab/studio/simulate`), `factorlab_batch_simulate` (`POST /factorlab/studio/simulate/batch`).
+- **`AgentKernel` & `MissionRuntime` parity + Paper continuity guard**: `tools/registry.py` and `AgentKernel` expose `bitpro.variant_policy`, `bitpro.relay_plans`, `bitpro.research_context_snapshot`, `bitpro.research_publish_event` (`scope="research_write"`, `idempotency="required"`), and `arc.evolution_status`; `AgentKernel` enforces `clear_metrics=False` with `continuity_note` on `bitpro_paper_stop` to protect running paper history. `MissionRuntime` adds `bitpro.paper_snapshot`, `bitpro.variant_status`, and `arc.evolution_status`, while `thread_context.py` resolves numeric `#123` / `策略 #123` references (`subject_kind="bitpro_strategy"`).
+
 ## 中文
 
 BitPro 可以作为 HyperTrade Agent 工具的外部能力提供方。边界必须清晰：Agent 规划在 HyperTrade，工具执行审计在 HyperTrade，BitPro 只通过稳定 API 提供数据和状态。
@@ -184,3 +193,9 @@ BitPro 回测排行和阈值问题必须通过 `bitpro_backtest_list_results` �
 当 Agent 启动 BitPro 负责的回测时，`bitpro_backtest_start_job` 会在 Agent 执行路径中等待 job 进入终态，然后标准化 completed `job.result`，并在可用时关联到 BitPro 已保存的 result 行。CLI 报告应展示与 BitPro 回测结果页面同口径的核心指标，而不是轮询生命周期日志。默认面向交易阅读的回测报告不展示 MCP 合同版本、内部工具顺序或 RAG 引用来源；这些审计信息保留在 trace 和显式调试输出里。
 
 容器化部署时，BitPro MCP 通过显式 host-gateway 地址访问，不能使用 `127.0.0.1`，因为容器内 loopback 指向 `hypertrade-api` 自身。如果 BitPro 不可达，API 返回结构化 `502`，并携带失败的 BitPro tool call，方便区分上游不可用和 HyperTrade 运行时故障。
+
+### 2026-11-18 生产加固、`bitpro-mcp-v1` 端点对齐与运行时集成
+
+- **连接池复用、故障提示与 15s 实时探活（`bitpro/mcp.py`）**：`BitProMcpClient` 启用线程安全有界 LRU `httpx.Client` 连接池（上限 8，按 `(base_url, timeout_seconds)` 缓存，外部注入自定义/Mock 客户端保持隔离）；`BitProMcpError.hint` 输出 Docker `host.docker.internal` 路由提示、超时及 401/403 令牌作用域诊断；`BitProToolAdapter` 支持传入 `settings` 并新增 `probe_connectivity(ttl_seconds=15.0)`，向 `/api/harness/overview`（`bitpro.live_probe`）及前端 `BitProCard` 供给实时连通状态。
+- **对齐 BitPro `schemas.py` 实机 `bitpro-mcp-v1` 端点**：补齐多 Bot 协同事件总线（`/research/collaboration/snapshot`、`GET/POST /research/collaboration/events`、`GET/PUT /research/collaboration/checkpoints/{bot_id}`）、复盘/监控/链上只读端点（`/review/summary`、`/monitor/active_strategies`、`/onchain/summary`）以及 FactorLab Studio（`/factorlab/studio/*` 共 6 个工具）。
+- **`AgentKernel`、`MissionRuntime` 融合与模拟盘连续性守卫**：`tools/registry.py` 与 `AgentKernel` 注册并分发 `bitpro.variant_policy`、`bitpro.relay_plans`、`bitpro.research_context_snapshot`、`bitpro.research_publish_event`（`research_write` + 幂等键）与 `arc.evolution_status`，且 `bitpro_paper_stop` 强制固定 `clear_metrics=False` 防止清空模拟盘指标；`MissionRuntime` 新增 `bitpro.paper_snapshot`、`bitpro.variant_status` 与 `arc.evolution_status`，`thread_context.py` 支持 `#123` / `策略 #123` 数值策略上下文解析。

@@ -118,6 +118,38 @@ and bounded content previews from the existing audited Memory rows; it does not
 create a second Memory store or copy private reasoning into Memory. Historical
 items read by a run retain their original `source_run_id` and `source_tool`.
 
+## 2026-11-18 Production Cognitive-Operational Memory Unification
+
+Production Agent upgrades bridge the operational `MemoryItem` ledger and the
+three-tier ARC cognitive memory store (`ArcHypothesisNode`, `ArcEpisodicMemory`,
+`ArcSemanticAssertion`):
+
+- **Cross-mission lineage recall & race verdicts (`memory/arc_integration.py`)**:
+  `ingest_projection` stamps `lineage_key` (`f"{target_id}:{source_strategy_id}"`)
+  when `evolution_context` identifies a source parent and appends up to 10 prior
+  `ArcHypothesisNode` rows from earlier missions for the same lineage while
+  keeping per-mission `tree_id = f"arc:{mission_id}"` isolation intact. It also
+  ingests `paper_observation_ended` forward race verdicts (`won`,
+  `lost_futility`, `lost_exam`)—with `projection.paper_outcome` fallback—into
+  `paper_race_won` / `paper_race_lost` episodes and updates hypothesis status.
+- **Zero-LLM deterministic distillation & projection (`memory/distillation.py`)**:
+  `deterministic_causal_summarizer` synthesizes conservative descriptive
+  heuristics from at least 2 recall-eligible episodes (extending
+  `DEFAULT_DISTILLABLE_EVENT_TYPES` with `backtest_success`, `paper_race_won`,
+  and `paper_race_lost`; `min_episode_count=2` by default). At the end of
+  `replay_arc_cognitive_memory_once`, `sync_cognitive_to_memory_items(db)`
+  distills pending regimes and projects active semantic assertions and race
+  outcomes into `MemoryItem` rows (`arc_semantic_rule`, `arc_race_outcome`),
+  respecting existing disabled tombstone rows.
+- **Unified search, governed writes, and telemetry**: `MemoryService` adds
+  `cognitive_counts()` and `list_cognitive_items()`, surfaced via
+  `/api/harness/overview` (`memory.cognitive`) and `/api/memory` (`cognitive`
+  and `cognitive_items` alongside `items`). In `MissionRuntime`, `memory.search`
+  queries both `MemoryService` and cognitive semantic/episodic records,
+  `memory.write` registers as an idempotent `research_write` capability, and
+  `ThreadTurnService._consolidate_memory()` persists bounded `operator_note` or
+  `strategy_observation` entries after validated turn completion.
+
 ## 中文
 
 Memory 自动写入，但必须可审计。每条 memory 记录 kind、content、source run id、source tool、时间戳和 disabled 状态。
@@ -176,3 +208,9 @@ Agent Flight Recorder 会把显式 `memory_search` / `memory_write` 工具结果
 当前 run 时间线关联，展示现有审计 Memory 行的 id 与有限内容预览；它不会
 新增第二套 Memory 存储，也不会把私有推理写入 Memory。某次 run 读取历史
 Memory 时，原条目的 `source_run_id` 与 `source_tool` 保持不变。
+
+## 2026-11-18 认知记忆与操作记忆统一闭环
+
+- **跨 Mission 血缘召回与赛马终裁情景**（`memory/arc_integration.py`）：对存在 `evolution_context.source_strategy_id` 的任务记录 `lineage_key`（`f"{target_id}:{source_strategy_id}"`），在保留单任务 `tree_id = f"arc:{mission_id}"` 隔离的同时通过 `_append_lineage_hypotheses` 补充同源历史最多 10 条假设节点；将 `paper_observation_ended` 赛马结果（含 `paper_outcome` 回放兜底）沉淀为 `paper_race_won` / `paper_race_lost` 情景记忆并更新假设状态。
+- **零模型确定性蒸馏与 `MemoryItem` 投影**（`memory/distillation.py`）：新增 `deterministic_causal_summarizer`，将 `DEFAULT_DISTILLABLE_EVENT_TYPES` 扩展纳入 `backtest_success`、`paper_race_won`、`paper_race_lost`（`min_episode_count=2`）；`replay_arc_cognitive_memory_once` 末尾调用 `sync_cognitive_to_memory_items(db)` 把活跃规则与赛马结果写入 `MemoryItem`（`arc_semantic_rule` / `arc_race_outcome`，遵守已有 `disabled` 墓碑行）。
+- **统一检索、受治理写入与接口遥测**：`MemoryService` 新增 `cognitive_counts()` 与 `list_cognitive_items()`，由 `/api/harness/overview`（`memory.cognitive`）与 `/api/memory`（`cognitive`、`cognitive_items` 并保留 `items`）暴露；`MissionRuntime` 中 `memory.search` 联合检索操作记忆与认知记忆，`memory.write` 作为受治理 `research_write` 幂等能力开放，`ThreadTurnService._consolidate_memory()` 在合法 Turn 完成后自动或按显式指令沉淀 `operator_note` / `strategy_observation`。

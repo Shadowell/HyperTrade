@@ -1,5 +1,7 @@
 # 33 HyperTrade 系统架构
 
+2026-11-18 生产 Agent 升级与死代码收口：自主变体流水线默认开启 `ARC_AVO_RESEARCH_ENABLED=true` 并新增 `production_3slot` 预设（`POST /api/v1/arc/evolution/preset` 与 `ARC_EVOLUTION_BOOTSTRAP_PRESET`），`evaluate_auto_review` 修复来源变体绑定资金校验（`(0, 10000]`）与 `effective_validation_criteria` 周期缩放；`bitpro/mcp.py` 接入有界 LRU HTTP 连接池、15s `probe_connectivity` 与 `bitpro-mcp-v1` 协同/FactorLab 实机路由，`AgentKernel` 与 `MissionRuntime` 融合 `bitpro.paper_snapshot`/`bitpro.variant_status`/`arc.evolution_status`/`memory.write` 且强制 `bitpro_paper_stop(clear_metrics=False)`；`memory/` 打通 `lineage_key` 跨任务召回、赛马终裁情景、确定性因果蒸馏及 `MemoryItem` 双向统一检索；并移除遗留 `hypertrade.ui`、`agent/formatters.py`、`risk/canary.py` 与废弃 `self_healing_evolution_loop`。
+
 2026-11-18 无头研究引擎与 BitPro 融合控制面收口（见 [headless-bitpro-fusion](../contracts/headless-bitpro-fusion.md)）：HyperTrade 生产默认以无头研究引擎运行（`HYPERTRADE_HEADLESS_MODE=true` 经 `docker-compose.yml` 与 `.env.example` 下发，代码默认 `false` 兼顾独立测试），操作台收口至 BitPro 唯一工作台（`/ai-lab` 与 `/evolution`），HyperTrade 前端仅保留迁移引导与跳转入口；Worker 在无头模式停用本地行情采集（`market_ingestion`、`market_rest_supplement`）、本地模拟盘（`paper_trading`）与自主脉冲（`autonomous_market_pulse`），仅保留 ARC 研究/进化/自动评审/观察/对账/赛马裁判/监控/心跳/RAG/Mission 循环，并对非关键扫描循环（`arc_evolution` 2s、`arc_observation` 5s、`cognitive_memory_replay` 8s、`arc_meta_tuning` 12s、`rag_scanner` 15s）实施首次启动错峰；`docker-compose.yml` 设定 `api mem_limit: 2g`、`worker mem_limit: 3g`；`bitpro/mcp.py` 兼容多口径运行策略清单收益/回撤字段，并在 `paper_dashboard` 可用时不再因轻量目录缺逐策略明细而持续触发 `WARNING monitor_data_gap`。
 
 2026-10-15 自进化质量门禁：来源参数提议也必须绑定可核验引用、明确反证及净收益提高/回撤降低目标；仅减少交易次数不算改进。已知执行失败单独结算为失败研究，不当作交易成绩继续突变。来源回测比较要求同执行环境、成本、封存行情及经济输入；Paper审核须与最终通过回执及源码一致。人工暂停不能被旧回执覆盖。部署健康检查断连仅对已有行动回执有界重试，五次失败或24小时上限停止；审计恢复脚本可复核原绑定后恢复部署断连等待，不补预算、不重置Paper。
@@ -114,16 +116,16 @@ flowchart TB
 
 | 图层 | 核心模块 / 文件 | 职责与生产边界 |
 | --- | --- | --- |
-| **Operator Surfaces** | BitPro 唯一工作台 (`/ai-lab`, `/evolution`), `frontend/src/` (React 19 无头迁移引导横幅), `ht` CLI, TUI | 收口统一操控入口，引导操作员前往 BitPro，保留只读态诊断与受治理动作能力 |
-| **Control Plane** | `hypertrade/main.py`, `hypertrade/security/token_manager.py` | 暴露 REST/SSE 控制端点，分级探活（`/livez`, `/readyz`, `/healthz`）与构建标识（`/version`），零信任令牌签发/轮换/鉴权（生产容器 `mem_limit: 2g`） |
-| **Worker & Staggered Loops** | `hypertrade/worker.py`, `hypertrade/config.py` | 无头模式下 (`HYPERTRADE_HEADLESS_MODE=true`) 停用本地 `market_ingestion`、`market_rest_supplement`、`paper_trading`、`autonomous_market_pulse`；首次启动按 2s/5s/8s/12s/15s 错峰调度非关键扫描循环（生产容器 `mem_limit: 3g`） |
+| **Operator Surfaces** | BitPro 唯一工作台 (`/ai-lab`, `/evolution`), `frontend/src/` (React 19 无头迁移引导横幅与 `BitProCard` 实时连通徽章), `ht` CLI, TUI | 收口统一操控入口，引导操作员前往 BitPro，展示 `bitpro.live_probe` 实时连通/诊断提示并保留只读态诊断与受治理动作能力 |
+| **Control Plane** | `hypertrade/main.py`, `hypertrade/security/token_manager.py`, `hypertrade/runtime/` | 暴露 REST/SSE 控制端点（含 `/api/harness/overview` 与 `/api/memory` 认知遥测）、分级探活（`/livez`, `/readyz`, `/healthz`）与构建标识（`/version`），零信任令牌签发/轮换/鉴权，以及 `MissionRuntime` / `ThreadTurnService` 统一能力调度（生产容器 `mem_limit: 2g`） |
+| **Worker & Staggered Loops** | `hypertrade/worker.py`, `hypertrade/config.py` | 无头模式下 (`HYPERTRADE_HEADLESS_MODE=true`) 停用本地 `market_ingestion`、`market_rest_supplement`、`paper_trading`、`autonomous_market_pulse`；默认开启 `ARC_AVO_RESEARCH_ENABLED=true` 驱动 `avo_research` 并支持 `ARC_EVOLUTION_BOOTSTRAP_PRESET`；已移除废弃 `self_healing_evolution_loop`；首次启动按 2s/5s/8s/12s/15s 错峰调度非关键扫描循环（生产容器 `mem_limit: 3g`） |
 | **Domain Core** | `hypertrade/runtime/domain/`, `hypertrade/arc/contracts.py` | 严格定义 Mission、Plan、Step、Capability、HET 假设、NettingPlan 等不可变 Pydantic 模型 |
-| **Research Engine** | `hypertrade/arc/`, `hypertrade/research/` | RD-Agent 假设演进、Co-STEER 代码生成、`ASTGatekeeper` 语法守卫、`QuantLabStrategyTranspiler` 转译 |
-| **Paper & Evolution** | `hypertrade/arc/evolution.py`, `hypertrade/paper/relay_netting.py` | 小时级基准相对退化扫描、预算准入、延续账本（遵守 BitPro `relay.blocks_evolution` 跳过接力中的策略；按变体位空位排序、空位已被排队候选预订时让位、AVO 拒绝与 BitPro 已赛过变体完全相同的提案）、启动对账（`arc/paper_effect_reconcile.py`：只读核对 BitPro 会话后采纳 `effect_unknown` 的启动）、基线预检与失败退避（`arc/baseline_feasibility.py`：先问 BitPro 能不能封存母体的同窗基线，必败的母体退避且不占每日额度；最年轻标的上线晚时按可用历史缩短研究窗口，不再要求凑满 500 根预热）、赛马裁判只读通知（按变体位逐赛道跟踪、按取消原因区分系统淘汰与人工取消、观察中的赛道慢轮询；BitPro 是唯一接力控制者）、赛道结束时记入前向结果表且结果回流研究记忆、输家逐项消融（开发窗口单因素回测、独立每日额度，结果回流研究记忆）、两腿持仓净额平滑换仓（仅限有真实持仓的目标） |
-| **Target Adapters** | `hypertrade/targets/bitpro.py`, `hypertrade/targets/quantlab.py`, `hypertrade/bitpro/mcp.py` | 实现 `market_target.v1` 档案与 `market-evolution.v1` 契约，兼容运行策略清单多口径收益/回撤指标，并在 `paper_dashboard` 可用时避免轻量目录误报 `monitor_data_gap` |
+| **Research Engine** | `hypertrade/arc/`, `hypertrade/research/`, `hypertrade/memory/` | RD-Agent 假设演进、Co-STEER 代码生成、`ASTGatekeeper` 语法守卫、`QuantLabStrategyTranspiler` 转译；`lineage_key` 跨 Mission 召回、赛马终裁情景记忆与零模型调用 `deterministic_causal_summarizer` 蒸馏同步 |
+| **Paper & Evolution** | `hypertrade/arc/evolution.py`, `hypertrade/arc/auto_review.py`, `hypertrade/paper/relay_netting.py` | 小时级基准相对退化扫描、预算准入、`EVOLUTION_PRESETS["production_3slot"]`（`POST /evolution/preset`）、`effective_validation_criteria` 与绑定 `research_capital`（`<=10000`）来源变体评审、延续账本（遵守 BitPro `relay.blocks_evolution` 跳过接力中的策略；按变体位空位排序、空位已被排队候选预订时让位、AVO 拒绝与 BitPro 已赛过变体完全相同的提案）、启动对账（`arc/paper_effect_reconcile.py`）、基线预检与失败退避（`arc/baseline_feasibility.py`）、赛马裁判只读通知与结果回流、输家逐项消融与两腿持仓净额平滑换仓 |
+| **Target Adapters** | `hypertrade/targets/bitpro.py`, `hypertrade/targets/quantlab.py`, `hypertrade/bitpro/mcp.py` | 实现 `market_target.v1` 档案与 `market-evolution.v1` / `bitpro-mcp-v1` 契约：有界 LRU HTTP 连接池、15s `probe_connectivity`、Docker/401/403 诊断提示、多 Bot 协同事件总线（`/research/collaboration/*`）、复盘/监控/FactorLab Studio 端点、运行清单多口径指标兼容与 `paper_dashboard` 可用时去误报 |
 | **Observation Lifecycle** | `hypertrade/arc/observation.py`, `hypertrade/arc/observation_exit.py` | 模拟盘观察任务的读取与收尾：观察循环每分钟先查「赛道是否已结束」（前向结果表按目标+母体+挑战者取行，兜底为 BitPro 会话已结束超过 1 小时），结束则以 `paper_observation_ended` 关闭任务并释放母体；读 BitPro 并记 `paper_observed` 的间隔默认 1 小时（`ARC_OBSERVATION_RECORD_SECONDS`），避免事件日志无限增长 |
-| **Data & Storage** | PostgreSQL 14+, pgvector, 52 项 Alembic 迁移 | 保存规范 Mission 投影、策略资产卡片、实验记录、认知记忆表及飞书告警台账 |
-| **Safety & Ops** | UDS 沙箱, GitHub Actions, Docker Compose, `./scripts/check.sh` | 进程资源限制、网络隔离、静态代码检查（Ruff/Mypy）与 2100+ 项全量自动化测试；worker 每个循环由 `runtime/loop_supervisor.py` 监督（崩溃只重启该循环），并通过 `worker_heartbeats` 上报存活；CI 在 PR 上运行，依赖审计／CodeQL／Dependabot 见 `SECURITY.md` |
+| **Data & Storage** | PostgreSQL 14+, pgvector, 52 项 Alembic 迁移 | 保存规范 Mission 投影、策略资产卡片、实验记录、统一 `MemoryItem` + 分层认知记忆表（`arc_hypothesis_nodes` / `arc_episodic_memories` / `arc_semantic_assertions`）及飞书告警台账 |
+| **Safety & Ops** | UDS 沙箱, GitHub Actions, Docker Compose, `./scripts/check.sh` | 进程资源限制、网络隔离、静态代码检查（Ruff/Mypy 322 文件）与 3076+ 项全量自动化测试（含 `tests/test_dead_code_hygiene.py` 防回归守卫）；worker 每个循环由 `runtime/loop_supervisor.py` 监督（崩溃只重启该循环），并通过 `worker_heartbeats` 上报存活；CI 在 PR 上运行，依赖审计／CodeQL／Dependabot 见 `SECURITY.md` |
 
 ---
 
@@ -167,8 +169,8 @@ flowchart TB
    - 前端代码检查与 Vitest 测试全绿；
    - 前端 Vite 生产构建成功；
    - 后端 Ruff 静态检查与格式规范通过；
-   - 后端 Mypy 严格类型检查（316 文件 0 错误）；
-   - 后端 Pytest 测试套件全量通过（当前 2100+ 项测试 100% 绿灯）。
+   - 后端 Mypy 严格类型检查（322 文件 0 错误）；
+   - 后端 Pytest 测试套件全量通过（当前 3076+ 项测试 100% 绿灯）。
 3. **自动化闭环准则**：代码与文档修改严格遵循原子提交、全量校验通过后通过 PR 自动合并至 `origin/main` 并推送到远端。
 
 ---
