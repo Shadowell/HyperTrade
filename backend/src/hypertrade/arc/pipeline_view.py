@@ -100,11 +100,14 @@ _SAFE_EVENT_FIELDS = (
 
 
 def build_pipeline_view(
-    projection: ARCMissionProjection, *, now: datetime | None = None
+    projection: ARCMissionProjection,
+    *,
+    now: datetime | None = None,
+    event_count: int | None = None,
 ) -> dict[str, Any]:
     clock = now or datetime.now(UTC)
     if projection.goal and projection.goal.paper_review_required:
-        return _paper_review_pipeline(projection, clock)
+        return _paper_review_pipeline(projection, clock, event_count=event_count)
     done = _completed_stages(projection)
     frontier = _frontier(done)
     blocked = projection.state in _BLOCKED_STATES
@@ -129,7 +132,7 @@ def build_pipeline_view(
         "percent": _percent(frontier, metrics, blocked),
         "updated_at": projection.updated_at.isoformat(),
         "seconds_since_update": _age_seconds(projection.updated_at, clock),
-        "event_count": len(projection.events),
+        "event_count": event_count if event_count is not None else len(projection.events),
         "activity": [_activity_row(event) for event in projection.events[-100:]][::-1],
     }
 
@@ -564,7 +567,12 @@ def _paper_outcome_detail(outcome: dict[str, Any]) -> str:
     return "模拟盘观察已结束：BitPro 的模拟盘会话已结束"
 
 
-def _paper_review_pipeline(projection: ARCMissionProjection, clock: datetime) -> dict[str, Any]:
+def _paper_review_pipeline(
+    projection: ARCMissionProjection,
+    clock: datetime,
+    *,
+    event_count: int | None = None,
+) -> dict[str, Any]:
     decision = projection.paper_review.get("decision") or {}
     automatic = (
         decision.get("identity_source") == "agent_policy"
@@ -651,6 +659,6 @@ def _paper_review_pipeline(projection: ARCMissionProjection, clock: datetime) ->
         "percent": 100.0 * frontier / len(labels),
         "updated_at": projection.updated_at.isoformat(),
         "seconds_since_update": _age_seconds(projection.updated_at, clock),
-        "event_count": len(projection.events),
+        "event_count": event_count if event_count is not None else len(projection.events),
         "activity": [_activity_row(event) for event in projection.events[-100:]][::-1],
     }

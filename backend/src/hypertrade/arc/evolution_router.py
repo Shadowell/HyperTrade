@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -20,10 +20,14 @@ class EvolutionUpdate(BaseModel):
 
 
 @router.get("/evolution", dependencies=[Depends(require_scope(ARCScope.READ))])
-async def evolution_status(request: Request) -> dict[str, Any]:
+async def evolution_status(
+    request: Request,
+    compact: bool = Query(default=False),
+    cycles_limit: int = Query(default=20, ge=1, le=20),
+) -> dict[str, Any]:
     def _status() -> dict[str, Any]:
         service = EvolutionService(request.app.state.db)
-        state = service.status()
+        state = service.status(compact=compact, cycles_limit=cycles_limit)
         # Page-level telemetry only; the research scan keeps calling status() directly.
         state["forward_outcomes"] = service.forward_outcomes_summary()
         return state

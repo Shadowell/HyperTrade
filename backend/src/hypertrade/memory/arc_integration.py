@@ -10,12 +10,13 @@ from threading import Lock
 from typing import Any, cast
 
 from hypertrade.arc.store import (
+    MISSIONS,
     committed_revisions,
     get_configured_database,
     is_parked,
     list_mission_ids,
     park,
-    peek_controller,
+    peek_controller_events,
 )
 from hypertrade.db import Database
 from hypertrade.memory.layered_service import (
@@ -30,6 +31,12 @@ from hypertrade.memory.layered_service import (
 logger = logging.getLogger(__name__)
 _REPLAY_CURSOR = 0
 _REPLAY_CURSOR_LOCK = Lock()
+_EPISODE_EVENT_TYPES = (
+    "red_team_tested",
+    "avo_development_result",
+    "bitpro_self_tested",
+)
+_MAX_UNRESIDENT_REPLAYS_PER_ROUND = 10
 
 
 @dataclass(frozen=True)
@@ -175,13 +182,11 @@ def ingest_projection(
 def replay_arc_cognitive_memory_once(*, limit: int = 100) -> dict[str, int | str]:
     """Backfill bounded persisted ARC journals after restarts or missed inline hooks.
 
-    Ingesting is idempotent but not cheap: it rebuilds the mission's whole journal in memory and
-    makes a database round trip per hypothesis and per episode. This runs every minute over every
-    mission, so a mission this process already ingested at its current revision (nothing new in
-    it) is parked and skipped, and one that moved on is ingested again. After a restart every
-    mission is ingested once more, which is what a backfill after a restart is for. Missions are
-    read without being cached: a backfill must not leave every mission it touched resident in the
-    worker.
+    Ingesting is idempotent but not cheap: it makes a database round trip per hypothesis and
+    per episode. A mission already ingested at its current revision is parked and skipped; on a
+    cold restart, each unresident mission loads only episode-producing event types and at most
+    ``_MAX_UNRESIDENT_REPLAYS_PER_ROUND`` unresident missions are replayed per sweep so memory
+    and DB load stay bounded.
     """
     database = get_configured_database()
     if database is None:
@@ -193,21 +198,30 @@ def replay_arc_cognitive_memory_once(*, limit: int = 100) -> dict[str, int | str
         if mission_ids:
             start = _REPLAY_CURSOR % len(mission_ids)
             selected = (mission_ids[start:] + mission_ids[:start])[:bounded_limit]
-            _REPLAY_CURSOR = (start + len(selected)) % len(mission_ids)
         else:
+            start = 0
             selected = []
     committed = committed_revisions(selected)
-    synced = unchanged = 0
+    synced = unchanged = unresident_synced = processed = 0
     for mission_id in selected:
+        is_resident = mission_id in MISSIONS
+        if not is_resident and unresident_synced >= _MAX_UNRESIDENT_REPLAYS_PER_ROUND:
+            break
+        processed += 1
         if is_parked("cognitive_replay", mission_id, committed.get(mission_id)):
             unchanged += 1
             continue
-        controller = peek_controller(mission_id)
+        controller = peek_controller_events(mission_id, _EPISODE_EVENT_TYPES)
         if controller is None:
             continue
         ingest_projection(database, mission_id, controller.projection)
         park("cognitive_replay", mission_id, controller.revision)  # only once it succeeded
         synced += 1
+        if not is_resident:
+            unresident_synced += 1
+    if mission_ids:
+        with _REPLAY_CURSOR_LOCK:
+            _REPLAY_CURSOR = (start + processed) % len(mission_ids)
     return {"status": "ok", "missions": synced, "unchanged": unchanged}
 
 

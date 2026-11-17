@@ -15,6 +15,7 @@ from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager, suppress
 from threading import Lock
 from typing import Any
+from weakref import WeakValueDictionary
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -23,6 +24,28 @@ from hypertrade.arc.controller import ARCController, ARCEventV1, ARCMissionProje
 from hypertrade.db import ArcMission, ArcMissionEvent, Database
 
 MISSIONS: dict[str, ARCController] = {}
+# Terminal and long-lived observing controllers are kept only weakly while a caller holds a
+# reference, so single-process object identity survives within one call chain without pinning
+# megabytes of historical event journals across worker sweeps or API requests.
+_NON_RESIDENT_STATES = frozenset(
+    {
+        "paper_observing",
+        "completed",
+        "failed",
+        "rejected",
+        "retired",
+        "needs_operator",
+    }
+)
+_EPHEMERAL_MISSIONS: WeakValueDictionary[str, ARCController] = WeakValueDictionary()
+_CACHE_LOCK = Lock()
+_SUMMARY_EVENT_TYPES = (
+    "goal_compiled",
+    "provider_status",
+    "operator_needed",
+    "mission_failed",
+    "red_team_tested",
+)
 _MEMORY: dict[str, dict[str, Any]] = {}
 _MEMORY_REVISIONS: dict[str, int] = {}
 _database: Database | None = None
@@ -90,7 +113,9 @@ def get_configured_database() -> Database | None:
 
 def reset_runtime() -> None:
     """Drop in-process controllers. Persisted rows and the memory snapshot stay."""
-    MISSIONS.clear()
+    with _CACHE_LOCK:
+        MISSIONS.clear()
+        _EPHEMERAL_MISSIONS.clear()
     _PARKED.clear()
 
 
@@ -137,7 +162,9 @@ def is_parked(scan: str, mission_id: str, revision: int | None) -> bool:
 
 
 def reset_store() -> None:
-    MISSIONS.clear()
+    with _CACHE_LOCK:
+        MISSIONS.clear()
+        _EPHEMERAL_MISSIONS.clear()
     _PARKED.clear()
     _MEMORY.clear()
     _MEMORY_REVISIONS.clear()
@@ -248,6 +275,57 @@ def load_projection_tail(
     return ARCMissionProjection.model_validate(payload)
 
 
+def load_projection_events(
+    session: Session,
+    row: ArcMission,
+    event_types: Collection[str],
+    *,
+    include_first: bool = False,
+    include_last: bool = False,
+) -> ARCMissionProjection:
+    """Load projection metadata plus only the requested ``event_types`` (and optional ends).
+
+    Rows with inline legacy events fall back to ``load_projection`` so inline + stored merge
+    is preserved. Journaled rows skip irrelevant high-volume events (such as thousands of
+    ``paper_observed`` ticks) while returning events in ascending journal order.
+    """
+    payload = dict(row.projection_json or {})
+    if payload.get("events"):
+        return load_projection(session, row)
+    events_by_seq: dict[int, dict[str, Any]] = {}
+    wanted = sorted(set(event_types))
+    if wanted:
+        for seq, event_json in session.execute(
+            select(ArcMissionEvent.seq, ArcMissionEvent.event_json)
+            .where(
+                ArcMissionEvent.mission_id == row.mission_id,
+                ArcMissionEvent.event_type.in_(wanted),
+            )
+            .order_by(ArcMissionEvent.seq)
+        ):
+            events_by_seq[int(seq)] = dict(event_json)
+    if include_first:
+        first = session.execute(
+            select(ArcMissionEvent.seq, ArcMissionEvent.event_json)
+            .where(ArcMissionEvent.mission_id == row.mission_id)
+            .order_by(ArcMissionEvent.seq.asc())
+            .limit(1)
+        ).first()
+        if first is not None:
+            events_by_seq.setdefault(int(first[0]), dict(first[1]))
+    if include_last:
+        last = session.execute(
+            select(ArcMissionEvent.seq, ArcMissionEvent.event_json)
+            .where(ArcMissionEvent.mission_id == row.mission_id)
+            .order_by(ArcMissionEvent.seq.desc())
+            .limit(1)
+        ).first()
+        if last is not None:
+            events_by_seq.setdefault(int(last[0]), dict(last[1]))
+    payload["events"] = [events_by_seq[seq] for seq in sorted(events_by_seq)]
+    return ARCMissionProjection.model_validate(payload)
+
+
 def _stored_events(session: Session, mission_id: str) -> list[dict[str, Any]]:
     return [
         dict(value)
@@ -311,16 +389,50 @@ def _write(
     return payload
 
 
+def _cached_live_controller(
+    mission_id: str,
+) -> tuple[ARCController | None, ARCController | None]:
+    """Return ``(fresh_cached, fallback_cached)`` from ``MISSIONS`` / ``_EPHEMERAL_MISSIONS``."""
+    with _CACHE_LOCK:
+        live = MISSIONS.get(mission_id)
+        ephemeral = _EPHEMERAL_MISSIONS.get(mission_id)
+    if live is not None and not _is_stale(mission_id, live.revision):
+        return live, live
+    if ephemeral is not None and not _is_stale(mission_id, ephemeral.revision):
+        return ephemeral, ephemeral
+    return None, live if live is not None else ephemeral
+
+
+def _load_uncached_with(
+    mission_id: str,
+    loader: Callable[[Session, ArcMission], tuple[ARCMissionProjection, int]],
+) -> ARCController | None:
+    fresh, fallback = _cached_live_controller(mission_id)
+    if fresh is not None:
+        return fresh
+    if _database is not None:
+        with _database.session() as session:
+            row = session.get(ArcMission, mission_id)
+            if row is not None and isinstance(row.projection_json, dict):
+                projection, revision = loader(session, row)
+                controller = ARCController(mission_id=mission_id)
+                controller.projection = projection
+                controller.revision = revision
+                return controller
+        return fallback
+    return _load_persisted(mission_id) or fallback
+
+
 def get_controller(mission_id: str) -> ARCController | None:
     """Return the mission as committed, reloading when another process advanced it."""
-    live = MISSIONS.get(mission_id)
-    if live is not None and not _is_stale(mission_id, live.revision):
-        return live
+    fresh, fallback = _cached_live_controller(mission_id)
+    if fresh is not None:
+        return fresh
     loaded = _load_persisted(mission_id)
     if loaded is not None:
-        MISSIONS[mission_id] = loaded
+        _store_cached_controller(loaded)
         return loaded
-    return live
+    return fallback
 
 
 def peek_controller(mission_id: str) -> ARCController | None:
@@ -331,10 +443,211 @@ def peek_controller(mission_id: str) -> ARCController | None:
     touches into a resident controller: the worker held ~2 GB of them, and every full garbage
     collection walked all of it, freezing the whole process (and its event loop) for seconds.
     """
-    live = MISSIONS.get(mission_id)
+    fresh, fallback = _cached_live_controller(mission_id)
+    if fresh is not None:
+        return fresh
+    return _load_persisted(mission_id) or fallback
+
+
+def peek_light_controller(mission_id: str) -> ARCController | None:
+    """Load the mission without its journal unless an up-to-date copy is already held.
+
+    When loaded from DB without events, ``controller.revision`` is set to ``-1`` if the row
+    has unloaded journal events, so any subsequent ``commit_event`` automatically rebases onto
+    the full committed projection before writing.
+    """
+
+    def _load(session: Session, row: ArcMission) -> tuple[ARCMissionProjection, int]:
+        projection = load_projection(session, row, with_events=False)
+        has_unloaded_journal = int(row.event_count or 0) > 0 and not (
+            row.projection_json or {}
+        ).get("events")
+        revision = -1 if has_unloaded_journal else int(row.revision or 0)
+        return projection, revision
+
+    return _load_uncached_with(mission_id, _load)
+
+
+def peek_controller_tail(
+    mission_id: str, event_types: Collection[str]
+) -> ARCController | None:
+    """Load an uncached controller with only the newest event of each of ``event_types``."""
+    if not mission_id:
+        return None
+    return _load_uncached_with(
+        mission_id,
+        lambda session, row: (
+            load_projection_tail(session, row, event_types),
+            int(row.revision or 0),
+        ),
+    )
+
+
+def peek_controller_events(
+    mission_id: str, event_types: Collection[str]
+) -> ARCController | None:
+    """Load an uncached controller with only ``event_types`` hydrated (or cached live copy)."""
+    if not mission_id:
+        return None
+    return _load_uncached_with(
+        mission_id,
+        lambda session, row: (
+            load_projection_events(session, row, event_types),
+            int(row.revision or 0),
+        ),
+    )
+
+
+def load_progress_projection(mission_id: str) -> tuple[ARCMissionProjection, int] | None:
+    """Load projection + event count for progress polling without caching or full journal read.
+
+    In database mode for journaled rows (empty inline ``events``), reads at most the newest
+    100 ``ArcMissionEvent`` rows plus earlier stage/summary events (never ``paper_observed``).
+    Legacy rows with inline events fall back to ``load_projection``.
+    """
+    with _CACHE_LOCK:
+        live = MISSIONS.get(mission_id)
+        ephemeral = _EPHEMERAL_MISSIONS.get(mission_id)
     if live is not None and not _is_stale(mission_id, live.revision):
-        return live
-    return _load_persisted(mission_id) or live
+        return live.projection, len(live.projection.events)
+    if ephemeral is not None and not _is_stale(mission_id, ephemeral.revision):
+        return ephemeral.projection, len(ephemeral.projection.events)
+    if _database is None:
+        loaded = _load_persisted(mission_id) or live or ephemeral
+        if loaded is None:
+            return None
+        return loaded.projection, len(loaded.projection.events)
+    with _database.session() as session:
+        row = session.get(ArcMission, mission_id)
+        if row is None or not isinstance(row.projection_json, dict):
+            fallback = live or ephemeral
+            if fallback is None:
+                return None
+            return fallback.projection, len(fallback.projection.events)
+        payload = dict(row.projection_json or {})
+        if payload.get("events"):
+            projection = load_projection(session, row)
+            return projection, len(projection.events)
+        tail_rows = session.execute(
+            select(ArcMissionEvent.seq, ArcMissionEvent.event_json)
+            .where(ArcMissionEvent.mission_id == mission_id)
+            .order_by(ArcMissionEvent.seq.desc())
+            .limit(100)
+        ).all()
+        events_by_seq: dict[int, dict[str, Any]] = {
+            int(seq): dict(event_json) for seq, event_json in tail_rows
+        }
+        min_tail_seq = min(events_by_seq) if events_by_seq else 0
+        latest_seq = max(events_by_seq) if events_by_seq else 0
+        if min_tail_seq > 1:
+            for seq, event_json in session.execute(
+                select(ArcMissionEvent.seq, ArcMissionEvent.event_json)
+                .where(
+                    ArcMissionEvent.mission_id == mission_id,
+                    ArcMissionEvent.seq < min_tail_seq,
+                    ArcMissionEvent.event_type.in_(_SUMMARY_EVENT_TYPES),
+                )
+                .order_by(ArcMissionEvent.seq)
+            ):
+                events_by_seq.setdefault(int(seq), dict(event_json))
+        payload["events"] = [events_by_seq[seq] for seq in sorted(events_by_seq)]
+        projection = ARCMissionProjection.model_validate(payload)
+        total_events = max(int(row.event_count or 0), latest_seq)
+        return projection, total_events
+
+
+def list_mission_summaries(*, state: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    """Return bounded mission list summaries without polluting ``MISSIONS`` or reading full logs."""
+    from hypertrade.arc.evidence_view import build_mission_summary
+
+    if limit <= 0:
+        return []
+    if _database is None:
+        projections: list[ARCMissionProjection] = []
+        seen_ids: set[str] = set()
+        for mission_id, payload in _MEMORY.items():
+            if state is not None and payload.get("state") != state:
+                continue
+            projections.append(ARCMissionProjection.model_validate(payload))
+            seen_ids.add(mission_id)
+        with _CACHE_LOCK:
+            cached = list(MISSIONS.items())
+        for mission_id, controller in cached:
+            if mission_id in seen_ids:
+                continue
+            if state is not None and controller.projection.state != state:
+                continue
+            projections.append(controller.projection)
+        summaries = [build_mission_summary(projection) for projection in projections]
+        summaries.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+        return summaries[:limit]
+
+    with _database.session() as session:
+        stmt = select(ArcMission)
+        if state is not None:
+            stmt = stmt.where(ArcMission.state == state)
+        rows = session.scalars(
+            stmt.order_by(ArcMission.updated_at.desc(), ArcMission.mission_id.desc()).limit(limit)
+        ).all()
+        valid_rows = [row for row in rows if isinstance(row.projection_json, dict)]
+        non_inline_rows = [
+            row for row in valid_rows if not (row.projection_json or {}).get("events")
+        ]
+        non_inline_ids = [row.mission_id for row in non_inline_rows]
+        first_by_mission: dict[str, tuple[int, dict[str, Any]]] = {}
+        summary_events_by_mission: dict[str, dict[int, dict[str, Any]]] = {
+            mid: {} for mid in non_inline_ids
+        }
+        if non_inline_ids:
+            for mid, seq, event_json in session.execute(
+                select(
+                    ArcMissionEvent.mission_id,
+                    ArcMissionEvent.seq,
+                    ArcMissionEvent.event_json,
+                ).where(
+                    ArcMissionEvent.mission_id.in_(non_inline_ids),
+                    ArcMissionEvent.seq == 1,
+                )
+            ):
+                first_by_mission[str(mid)] = (int(seq), dict(event_json))
+            for row in non_inline_rows:
+                if row.mission_id not in first_by_mission and int(row.event_count or 0) > 0:
+                    first = session.execute(
+                        select(ArcMissionEvent.seq, ArcMissionEvent.event_json)
+                        .where(ArcMissionEvent.mission_id == row.mission_id)
+                        .order_by(ArcMissionEvent.seq.asc())
+                        .limit(1)
+                    ).first()
+                    if first is not None:
+                        first_by_mission[row.mission_id] = (int(first[0]), dict(first[1]))
+            for mid, seq, event_json in session.execute(
+                select(
+                    ArcMissionEvent.mission_id,
+                    ArcMissionEvent.seq,
+                    ArcMissionEvent.event_json,
+                )
+                .where(
+                    ArcMissionEvent.mission_id.in_(non_inline_ids),
+                    ArcMissionEvent.event_type.in_(_SUMMARY_EVENT_TYPES),
+                )
+                .order_by(ArcMissionEvent.mission_id, ArcMissionEvent.seq)
+            ):
+                summary_events_by_mission[str(mid)][int(seq)] = dict(event_json)
+        summaries = []
+        for row in valid_rows:
+            raw = dict(row.projection_json or {})
+            if raw.get("events"):
+                projection = load_projection(session, row)
+            else:
+                events_map = summary_events_by_mission[row.mission_id]
+                if row.mission_id in first_by_mission:
+                    seq1, ev1 = first_by_mission[row.mission_id]
+                    events_map.setdefault(seq1, ev1)
+                raw["events"] = [events_map[seq] for seq in sorted(events_map)]
+                projection = ARCMissionProjection.model_validate(raw)
+            summaries.append(build_mission_summary(projection))
+    summaries.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+    return summaries[:limit]
 
 
 def list_mission_ids(
@@ -393,8 +706,19 @@ def _commit_in_memory(controller: ARCController, event: ARCEventV1) -> None:
     _cache(controller, controller.projection.model_dump(mode="json"))
 
 
+def _store_cached_controller(controller: ARCController) -> None:
+    mission_id = controller.mission_id
+    with _CACHE_LOCK:
+        if controller.projection.state in _NON_RESIDENT_STATES:
+            MISSIONS.pop(mission_id, None)
+            _EPHEMERAL_MISSIONS[mission_id] = controller
+        else:
+            _EPHEMERAL_MISSIONS.pop(mission_id, None)
+            MISSIONS[mission_id] = controller
+
+
 def _cache(controller: ARCController, payload: dict[str, Any]) -> None:
-    MISSIONS[controller.mission_id] = controller
+    _store_cached_controller(controller)
     _MEMORY[controller.mission_id] = payload
 
 

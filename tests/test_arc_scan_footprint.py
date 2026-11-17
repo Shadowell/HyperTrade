@@ -26,6 +26,8 @@ from hypertrade.arc import (
     avo,
     evolution,
     evolution_continuation,
+    feedback,
+    observation,
     paper_effect_reconcile,
     research_budget,
     selection_bias,
@@ -35,6 +37,7 @@ from hypertrade.arc.contracts import (
     ARCBudgetV1,
     ARCCandidateAttemptV1,
     ARCGoalV1,
+    PaperFeedbackPolicyV1,
     ResearchWindowsV1,
 )
 from hypertrade.arc.controller import (
@@ -78,6 +81,20 @@ def journal_reads(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         return real(session, mission_id)
 
     monkeypatch.setattr(store, "_stored_events", spy)
+    return reads
+
+
+@pytest.fixture
+def selective_reads(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, tuple[str, ...]]]:
+    """The ids and requested event types passed to ``load_projection_events``."""
+    reads: list[tuple[str, tuple[str, ...]]] = []
+    real = store.load_projection_events
+
+    def spy(session: Any, row: Any, event_types: Any, **kwargs: Any) -> Any:
+        reads.append((row.mission_id, tuple(event_types)))
+        return real(session, row, event_types, **kwargs)
+
+    monkeypatch.setattr(store, "load_projection_events", spy)
     return reads
 
 
@@ -263,24 +280,68 @@ def test_committed_revisions_without_a_database() -> None:
 
 
 def test_cache_stats_counts_what_the_process_holds(db: Database) -> None:
-    first, second, third = _mission("failed"), _mission("exploring_candidates"), _mission("failed")
-    events = {m.mission_id: len(m.projection.events) for m in (first, second, third)}
-    failed = events[first.mission_id] + events[third.mission_id]
+    first = _mission("exploring_candidates")
+    second = _mission("exploring_candidates")
+    second.apply_event("operator_needed", {"reason": "parked"})
+    third = _mission("paper_observing")
+    fourth = _mission("failed")
+    fifth = _mission("completed")
+    assert second.mission_id not in store.MISSIONS
+    assert third.mission_id not in store.MISSIONS
+    assert fourth.mission_id not in store.MISSIONS
+    assert fifth.mission_id not in store.MISSIONS
 
+    first_events = len(first.projection.events)
     assert store.cache_stats() == {
-        "missions": 3,
-        "events": sum(events.values()),
+        "missions": 1,
+        "events": first_events,
         "by_state": {
-            "failed": {"missions": 2, "events": failed},
-            "exploring_candidates": {"missions": 1, "events": events[second.mission_id]},
+            "exploring_candidates": {"missions": 1, "events": first_events},
         },
     }
 
     store.reset_runtime()
     assert store.cache_stats() == {"missions": 0, "events": 0, "by_state": {}}
+    # Loading a terminal or paper_observing controller must never keep it resident in MISSIONS.
+    store.get_controller(third.mission_id)
+    store.get_controller(fourth.mission_id)
+    store.get_controller(second.mission_id)
+    assert store.cache_stats() == {"missions": 0, "events": 0, "by_state": {}}
+
     store.get_controller(first.mission_id)
-    held = {"missions": 1, "events": events[first.mission_id]}
-    assert store.cache_stats() == {**held, "by_state": {"failed": held}}
+    held = {"missions": 1, "events": first_events}
+    assert store.cache_stats() == {**held, "by_state": {"exploring_candidates": held}}
+
+
+def test_store_missions_evicts_non_resident_states_including_rejected_and_retired(
+    db: Database,
+) -> None:
+    active = _mission("exploring_candidates")
+    assert active.mission_id in store.MISSIONS
+
+    for state in (
+        "paper_observing",
+        "completed",
+        "failed",
+        "rejected",
+        "retired",
+        "needs_operator",
+    ):
+        ctrl = _mission("exploring_candidates")
+        assert ctrl.mission_id in store.MISSIONS
+        ctrl.projection.state = state  # type: ignore[assignment]
+        store.save_mission(ctrl)
+        assert ctrl.mission_id not in store.MISSIONS
+
+        store.reset_runtime()
+        del ctrl
+        loaded = store.get_controller(active.mission_id)
+        assert loaded is not None and active.mission_id in store.MISSIONS
+
+    # Transitioning an active controller to needs_operator via commit_event evicts it.
+    active.apply_event("operator_needed", {"reason": "done"})
+    assert active.mission_id not in store.MISSIONS
+    assert store.cache_stats() == {"missions": 0, "events": 0, "by_state": {}}
 
 
 def test_a_parked_mission_stays_parked_only_until_it_changes(db: Database) -> None:
@@ -508,9 +569,9 @@ def test_the_paper_effect_sweep_looks_without_keeping_and_parks_what_has_nothing
     first = sweep(now=1000.0)
 
     assert sorted(reconcile["looked"]) == sorted([unknown.mission_id, quiet.mission_id])
-    assert reconcile["loaded"] == [unknown.mission_id]  # only the mission it works on is kept
+    assert reconcile["loaded"] == [unknown.mission_id]  # only the mission it works on is loaded
     assert reconcile["reconciled"] == [unknown.mission_id] and first["checked"] == 1
-    assert _resident()[0] == 1
+    assert _resident() == (0, 0)  # needs_operator never stays resident in MISSIONS
 
     # When the unknown one is due again the quiet one is not looked at again.
     reconcile["looked"].clear()
@@ -616,7 +677,9 @@ def _ledger(db: Database) -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def test_the_continuation_ledger_reads_a_journal_only_for_the_missions_it_tracks(
-    db: Database, journal_reads: list[str]
+    db: Database,
+    journal_reads: list[str],
+    selective_reads: list[tuple[str, tuple[str, ...]]],
 ) -> None:
     plain = _mission("failed")
     unusable = _mission("failed", evolution_context={"source_instance_id": "instance-x"})
@@ -626,7 +689,9 @@ def test_the_continuation_ledger_reads_a_journal_only_for_the_missions_it_tracks
 
     ContinuationLedger(db).refresh(NOW)
 
-    assert journal_reads == [tracked.mission_id]
+    assert journal_reads == []  # never loads full journals for journaled rows
+    assert [mid for mid, types in selective_reads] == [tracked.mission_id]
+    assert "paper_observed" not in selective_reads[0][1]
     assert len(_ledger(db)[0]) == 1
 
 
@@ -654,7 +719,9 @@ def test_the_continuation_ledger_records_the_same_whether_or_not_it_skips_journa
 
 
 def test_the_continuation_ledger_does_nothing_while_no_mission_has_changed(
-    db: Database, journal_reads: list[str]
+    db: Database,
+    journal_reads: list[str],
+    selective_reads: list[tuple[str, tuple[str, ...]]],
 ) -> None:
     moving = _research_mission("exploring_candidates", 1)
     still = _research_mission("failed", 2)
@@ -663,27 +730,52 @@ def test_the_continuation_ledger_does_nothing_while_no_mission_has_changed(
 
     ledger.refresh(NOW)
     first = _ledger(db)
-    assert set(journal_reads) == {moving.mission_id, still.mission_id}
+    assert journal_reads == []
+    assert {mid for mid, _ in selective_reads} == {moving.mission_id, still.mission_id}
 
-    journal_reads.clear()
+    selective_reads.clear()
     ledger.refresh(NOW + timedelta(minutes=1))
-    assert journal_reads == [] and _ledger(db) == first  # not even the checked_at stamp moves
+    assert selective_reads == [] and _ledger(db) == first  # not even the checked_at stamp moves
 
-    # Once a mission has changed the whole ledger is computed again, and stamped.
+    # Even after a cold restart (_REFRESHED cleared), mission_revisions skips unchanged rows.
+    evolution_continuation._REFRESHED = None
+    store.reset_runtime()
+    ledger.refresh(NOW + timedelta(minutes=1, seconds=30))
+    assert selective_reads == [] and _ledger(db) == first
+
+    # When an earlier mission for the same source moves while a newer one is unchanged, only the
+    # changed mission is read and ``acceptance`` remains bound to the latest mission.
+    earlier = moving
+    later = _research_mission("paper_observing", 1)
+    ledger.refresh(NOW + timedelta(minutes=1, seconds=45))
+    selective_reads.clear()
+    evolution_continuation._REFRESHED = None
+    earlier.apply_event("operator_needed", {"reason": "earlier updated"})
+    ledger.refresh(NOW + timedelta(minutes=1, seconds=50))
+    assert [mid for mid, _ in selective_reads] == [earlier.mission_id]
+    sid_shared = evolution_continuation.continuation_source_id("bitpro", 7 + 1, "instance-1")
+    assert _ledger(db)[0][sid_shared]["acceptance"]["mission_id"] == later.mission_id
+
+    # Once a mission has changed, only the changed mission is selectively read and updated.
+    selective_reads.clear()
     moving.apply_event("operator_needed", {"reason": "something happened"})
     ledger.refresh(NOW + timedelta(minutes=2))
-    assert set(journal_reads) == {moving.mission_id, still.mission_id}
+    assert [mid for mid, _ in selective_reads] == [moving.mission_id]
+    assert journal_reads == []
     assert _ledger(db) != first
 
-    # A mission that is created is a change as well.
-    journal_reads.clear()
-    _research_mission("failed", 3)
+    # A mission that is created reads only that new mission.
+    selective_reads.clear()
+    created = _research_mission("failed", 3)
     ledger.refresh(NOW + timedelta(minutes=3))
-    assert len(journal_reads) == 3
+    assert [mid for mid, _ in selective_reads] == [created.mission_id]
+    assert journal_reads == []
 
 
 def test_a_ledger_pass_that_failed_is_not_taken_for_a_complete_one(
-    db: Database, journal_reads: list[str], monkeypatch: pytest.MonkeyPatch
+    db: Database,
+    selective_reads: list[tuple[str, tuple[str, ...]]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _research_mission("exploring_candidates", 1)
     store.reset_runtime()
@@ -699,13 +791,13 @@ def test_a_ledger_pass_that_failed_is_not_taken_for_a_complete_one(
     assert _ledger(db) == ({}, {})  # nothing of it committed
 
     monkeypatch.setattr(evolution_continuation, "acceptance_entries", real)
-    journal_reads.clear()
+    selective_reads.clear()
     ledger.refresh(NOW)
-    assert journal_reads and all(_ledger(db))  # nothing changed, yet it is computed in full
+    assert selective_reads and all(_ledger(db))  # nothing changed, yet it is computed cleanly
 
 
 def test_what_the_ledger_remembers_belongs_to_its_database(
-    db: Database, journal_reads: list[str]
+    db: Database, selective_reads: list[tuple[str, tuple[str, ...]]]
 ) -> None:
     _research_mission("exploring_candidates", 1)
     store.reset_runtime()
@@ -714,11 +806,47 @@ def test_what_the_ledger_remembers_belongs_to_its_database(
     seen = evolution_continuation._REFRESHED
     assert seen is not None
 
-    evolution_continuation._REFRESHED = (Database("sqlite:///:memory:"), seen[1])  # not this one
-    journal_reads.clear()
+    other = Database("sqlite:///:memory:")
+    other.create_all()
+    other_ledger = ContinuationLedger(other)
+    evolution_continuation._REFRESHED = (db, seen[1])  # not this database
+    selective_reads.clear()
+    # A second database has no persisted mission_revisions yet, so it never reuses db's.
+    other_ledger.refresh(NOW)
+    assert selective_reads == []  # other has no missions
     ledger.refresh(NOW)
+    assert selective_reads == []  # db already persisted mission_revisions
 
-    assert journal_reads  # it was not taken for the same missions of the same database
+
+def test_the_continuation_ledger_handles_inline_legacy_events_and_skips_paper_observed(
+    db: Database, journal_reads: list[str], selective_reads: list[tuple[str, tuple[str, ...]]]
+) -> None:
+    observed = _research_mission("paper_observing", 1)
+    for tick in range(25):
+        observed.apply_event("paper_observed", {"observation": {"tick": tick}})
+    legacy = _research_mission("paper_observing", 2)
+    inline = [e.model_dump(mode="json") for e in legacy.projection.events]
+    with db.session() as session:
+        from hypertrade.db import ArcMissionEvent
+
+        session.query(ArcMissionEvent).filter_by(mission_id=legacy.mission_id).delete()
+        row = session.get(ArcMission, legacy.mission_id)
+        assert row is not None
+        row.projection_json = {**row.projection_json, "events": inline}
+        row.event_count = 0
+    store.reset_runtime()
+
+    ContinuationLedger(db).refresh(NOW)
+
+    # Only legacy inline row falls back to load_projection; the journaled 25-tick row does not.
+    assert journal_reads == [legacy.mission_id]
+    assert {mid for mid, _ in selective_reads} == {observed.mission_id, legacy.mission_id}
+    checkpoints, _ = _ledger(db)
+    sid1 = evolution_continuation.continuation_source_id("bitpro", 7 + 1, "instance-1")
+    assert (
+        checkpoints[sid1]["acceptance"]["event_cursor"]
+        == observed.projection.events[-1].event_id
+    )
 
 
 def test_the_research_memory_reads_no_journal(
@@ -820,6 +948,126 @@ def test_the_replay_still_backfills_the_cognitive_memory(db: Database, replay_st
     with db.session() as session:
         claims = [node.claim for node in session.scalars(select(ArcHypothesisNode))]
     assert claims == ["hypothesis att_a"]
+
+
+def test_the_replay_loads_only_episode_event_types_and_caps_unresident_batch_at_ten(
+    db: Database,
+    replay_state: None,
+    journal_reads: list[str],
+    selective_reads: list[tuple[str, tuple[str, ...]]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missions = []
+    for idx in range(15):
+        mission = _mission("paper_observing")
+        mission.apply_event(
+            "red_team_tested",
+            {"attempt_id": "att_observed", "passed": False, "metrics": {"sharpe": -0.5}},
+        )
+        mission.apply_event("paper_observed", {"observation": {"tick": idx}})
+        missions.append(mission)
+    store.reset_runtime()
+    monkeypatch.setattr(arc_integration, "_REPLAY_CURSOR", 0)
+
+    first = arc_integration.replay_arc_cognitive_memory_once(limit=100)
+    assert first == {"status": "ok", "missions": 10, "unchanged": 0}
+    assert journal_reads == []
+    assert len(selective_reads) == 10
+    assert all(
+        set(types) == {"red_team_tested", "avo_development_result", "bitpro_self_tested"}
+        for _, types in selective_reads
+    )
+    assert _resident() == (0, 0)
+
+    selective_reads.clear()
+    second = arc_integration.replay_arc_cognitive_memory_once(limit=100)
+    assert second == {"status": "ok", "missions": 5, "unchanged": 10}
+    assert journal_reads == []
+    assert len(selective_reads) == 5
+    assert _resident() == (0, 0)
+
+    selective_reads.clear()
+    third = arc_integration.replay_arc_cognitive_memory_once(limit=100)
+    assert third == {"status": "ok", "missions": 0, "unchanged": 15}
+    assert selective_reads == []
+
+    from hypertrade.db import ArcEpisodicMemory
+
+    with db.session() as session:
+        episodes = session.scalars(select(ArcEpisodicMemory)).all()
+    assert len(episodes) == 15
+
+
+# --- the paper observation & feedback precheck ----------------------------------------------
+
+
+def test_observation_sweep_skips_undue_missions_with_zero_event_reads_and_no_residency(
+    db: Database, journal_reads: list[str]
+) -> None:
+    class _FakeObservationClient:
+        def __init__(self) -> None:
+            self.snapshot_calls = 0
+
+        def paper_snapshot(self, **_kwargs: Any) -> dict[str, Any]:
+            self.snapshot_calls += 1
+            return {"instance_id": "42", "trades": 5, "equity": 105.0, "status": "running"}
+
+        def health(self) -> dict[str, Any]:
+            return {"status": "healthy"}
+
+    due = _mission("paper_observing")
+    for tick in range(5):
+        due.apply_event("paper_observed", {"observation": {"tick": tick}})
+    due.projection.paper_observation = {
+        "observed_at": (NOW - timedelta(hours=2)).isoformat(),
+        "ok": True,
+    }
+    store.save_mission(due)
+
+    fresh = _mission("paper_observing", feedback=PaperFeedbackPolicyV1(enabled=True))
+    for tick in range(5):
+        fresh.apply_event("paper_observed", {"observation": {"tick": tick}})
+    fresh.projection.paper_observation = {
+        "observed_at": (NOW - timedelta(minutes=5)).isoformat(),
+        "ok": True,
+    }
+    today_midnight = (
+        datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    )
+    fresh.projection.paper_feedback = {"status": "stable", "checked_end_at": today_midnight}
+    store.save_mission(fresh)
+
+    due_id, fresh_id = due.mission_id, fresh.mission_id
+    del due, fresh
+    store.reset_runtime()
+    journal_reads.clear()
+
+    client = _FakeObservationClient()
+    sweep = observation.observe_arc_missions_once(
+        client, now=NOW, record_seconds=3600, exit_enabled=False
+    )
+
+    assert sweep["observed"] == 1 and sweep["skipped"] == 1
+    assert client.snapshot_calls == 1
+    # Only the due mission loads its journal; the skipped mission + feedback precheck load 0 events.
+    assert journal_reads == [due_id]
+    assert fresh_id not in journal_reads
+    assert _resident() == (0, 0)
+
+    # Now both missions are not due and feedback is already checked today: zero event reads!
+    journal_reads.clear()
+    second = observation.observe_arc_missions_once(
+        client, now=NOW + timedelta(minutes=1), record_seconds=3600, exit_enabled=False
+    )
+    assert second["observed"] == 0 and second["skipped"] == 2
+    assert journal_reads == []
+    assert _resident() == (0, 0)
+
+    # Also verify check_paper_feedback directly loads 0 events on same-day precheck hit.
+    res = feedback.check_paper_feedback(fresh_id, client)
+    assert res["status"] == "stable"
+    assert journal_reads == []
+    assert _resident() == (0, 0)
 
 
 # --- the selection-bias evidence -----------------------------------------------------------
@@ -1088,6 +1336,10 @@ def test_a_registered_probe_is_published_with_the_process_statistics(
 def test_the_arc_cache_is_published_by_state_within_the_bounds_on_what_is_published(
     db: Database, probes: dict[str, Any]
 ) -> None:
+    _mission("exploring_candidates")
+    review_ready = _mission("exploring_candidates")
+    review_ready.projection.state = "paper_review_ready"
+    store.save_mission(review_ready)
     _mission("failed")
     _mission("needs_operator")
     heartbeat.register_process_probe("arc_cache", store.cache_stats)
@@ -1096,7 +1348,7 @@ def test_the_arc_cache_is_published_by_state_within_the_bounds_on_what_is_publis
 
     assert process is not None
     assert process["arc_cache"] == store.cache_stats()
-    assert set(process["arc_cache"]["by_state"]) == {"failed", "needs_operator"}
+    assert set(process["arc_cache"]["by_state"]) == {"exploring_candidates", "paper_review_ready"}
 
 
 def test_a_failing_probe_costs_the_heartbeat_nothing_else(
