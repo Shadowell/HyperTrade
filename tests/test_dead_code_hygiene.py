@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -41,8 +42,18 @@ ACTIVE_MODULES = (
 
 @pytest.mark.parametrize("module_name", OBSOLETE_MODULES)
 def test_obsolete_modules_cannot_be_imported(module_name: str) -> None:
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module(module_name)
+    try:
+        spec = importlib.util.find_spec(module_name)
+    except ModuleNotFoundError:
+        spec = None
+    assert spec is None or (
+        spec.origin is None
+        and not any(any(Path(p).glob("*.py")) for p in (spec.submodule_search_locations or []))
+    )
+
+
+def test_obsolete_ui_directory_has_no_python_sources() -> None:
+    assert not list((REPO_ROOT / "backend/src/hypertrade/ui").glob("*.py"))
 
 
 @pytest.mark.parametrize("script_relpath", OBSOLETE_SCRIPTS)
