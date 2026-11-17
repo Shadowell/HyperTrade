@@ -8,6 +8,10 @@ from hypertrade.runtime.domain.models import StrictModel
 from hypertrade.runtime.domain.thread_turn import ThreadSnapshotV1, TurnProjectionV1
 
 _STRATEGY_REF = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+)")
+_BITPRO_STRATEGY_REF = re.compile(
+    r"(?:(?:策略|strategy)\s*#?|(?<![A-Za-z0-9_])#)(\d{1,6})(?!\d)",
+    re.IGNORECASE,
+)
 _INSTRUMENT_REF = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{2,20}(?:-USDT(?:-SWAP)?)?)(?![A-Z0-9])")
 _REFERENCE_WORDS = ("后者", "前者", "它", "这个", "其中", "该策略", "该标的")
 _NON_INSTRUMENT_WORDS = {"USDT", "SWAP", "API", "CLI", "MCP", "LAB"}
@@ -36,6 +40,7 @@ def compile_thread_context(
     previous_turns.sort(key=lambda row: (row.created_at, row.turn_id))
 
     current_strategies = _strategy_refs(prompt)
+    current_bitpro_strategies = _bitpro_strategy_refs(prompt)
     current_instruments = _instrument_refs(prompt)
     if current_strategies:
         return CanonicalResolvedContextV1(
@@ -43,6 +48,16 @@ def compile_thread_context(
             subject_kind="strategy",
             subject_refs=current_strategies,
             resolved_subject=current_strategies[-1] if len(current_strategies) == 1 else "",
+            source_item_ids=(current_item.item_id,),
+        )
+    if current_bitpro_strategies:
+        return CanonicalResolvedContextV1(
+            normalized_objective=prompt,
+            subject_kind="bitpro_strategy",
+            subject_refs=current_bitpro_strategies,
+            resolved_subject=(
+                current_bitpro_strategies[-1] if len(current_bitpro_strategies) == 1 else ""
+            ),
             source_item_ids=(current_item.item_id,),
         )
     if current_instruments:
@@ -104,6 +119,9 @@ def _latest_subject_refs(
         strategies = _strategy_refs(text)
         if strategies:
             return strategies, "strategy", (user_item.item_id,)
+        bitpro_strategies = _bitpro_strategy_refs(text)
+        if bitpro_strategies:
+            return bitpro_strategies, "bitpro_strategy", (user_item.item_id,)
         instruments = _instrument_refs(text)
         if instruments:
             return instruments, "instrument", (user_item.item_id,)
@@ -114,11 +132,22 @@ def _strategy_refs(value: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(match.casefold() for match in _STRATEGY_REF.findall(value)))
 
 
+def _bitpro_strategy_refs(value: str) -> tuple[str, ...]:
+    refs: list[str] = []
+    for raw in _BITPRO_STRATEGY_REF.findall(value):
+        num = int(raw)
+        if 1 <= num <= 999_999:
+            refs.append(f"#{num}")
+    return tuple(dict.fromkeys(refs))
+
+
 def _instrument_refs(value: str) -> tuple[str, ...]:
     values: list[str] = []
     for match in _INSTRUMENT_REF.findall(value):
         candidate = match.upper()
         if "-" not in candidate and candidate in _NON_INSTRUMENT_WORDS and candidate != "LAB":
+            continue
+        if candidate.isdigit():
             continue
         if "_" in candidate:
             continue

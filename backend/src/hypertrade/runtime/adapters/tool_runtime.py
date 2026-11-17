@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -16,9 +17,15 @@ from jsonschema.validators import validator_for
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from hypertrade.arc.evolution import EvolutionService
+from hypertrade.arc.relay_seats import relay_seats
+from hypertrade.arc.store import load_projection
 from hypertrade.bitpro.mcp import BitProMcpError, BitProToolAdapter
 from hypertrade.db import (
     AgentToolObservation,
+    ArcEpisodicMemory,
+    ArcMission,
+    ArcSemanticAssertion,
     BacktestRun,
     Database,
     LiveOrderIntent,
@@ -26,6 +33,7 @@ from hypertrade.db import (
     PaperPosition,
 )
 from hypertrade.market.repository import MarketRepository
+from hypertrade.memory.layered_service import LayeredMemoryService
 from hypertrade.memory.service import MemoryService
 from hypertrade.rag.service import RagHit, RagService
 from hypertrade.runtime.adapters.capability_catalog import (
@@ -214,6 +222,14 @@ class CircuitBreaker:
         return self._states.get(capability_id, CircuitStateV1(capability_id=capability_id))
 
 
+class _BuiltinHandlerMap(dict[str, ToolHandler]):
+    """Dictionary of builtin handlers carrying the bound Database."""
+
+    def __init__(self, db: Database, handlers: dict[str, ToolHandler]) -> None:
+        super().__init__(handlers)
+        self.db = db
+
+
 class GovernedToolExecutor:
     """Schema-, policy- and circuit-enforced StepExecutor for Mission V2."""
 
@@ -224,11 +240,13 @@ class GovernedToolExecutor:
         *,
         observations: ObservationStore | None = None,
         circuit: CircuitBreaker | None = None,
+        db: Database | None = None,
     ) -> None:
         self.catalog = catalog
         self.handlers = handlers
         self.observations = observations or InMemoryObservationStore()
         self.circuit = circuit or CircuitBreaker()
+        self.db: Database | None = db if db is not None else getattr(handlers, "db", None)
 
     async def execute(
         self,
@@ -848,27 +866,23 @@ def builtin_handlers(
         step: PlanStepV2,
         attempt: int,
     ) -> ToolResult:
-        rows = await anyio.to_thread.run_sync(
-            lambda: MemoryService(db).search(
-                query=str(arguments.get("query", "")),
-                limit=int(arguments.get("limit", 10)),
+        del plan, step, attempt
+        raw_query = str(arguments.get("query", "")).strip()
+        limit = max(1, min(int(arguments.get("limit", 10)), 20))
+        goal_query = raw_query or mission.objective
+        items, refs = await anyio.to_thread.run_sync(
+            lambda: _unified_memory_search(
+                db,
+                raw_query=raw_query,
+                goal_query=goal_query,
+                limit=limit,
             ),
             limiter=limiter,
         )
-        items: list[dict[str, Any]] = [
-            {
-                "memory_id": row.id,
-                "kind": row.kind,
-                "tags": row.tags,
-                "confidence": str(row.confidence),
-                "preview": _truncate_public_text(row.content, max_chars=240),
-            }
-            for row in rows
-        ]
         return ToolResult(
             payload={"items": items, "count": len(items)},
-            source_refs=tuple(f"memory:{row.id}" for row in rows) or ("memory:no_matches",),
-            unknowns=("未找到可用的历史研究记忆。",) if not rows else (),
+            source_refs=refs or ("memory:no_matches",),
+            unknowns=("未找到可用的历史研究记忆。",) if not items else (),
             public_summary=(
                 "；".join(item["preview"] for item in items[:2])
                 if items
@@ -1696,33 +1710,351 @@ def builtin_handlers(
             public_summary=f"已读取回测 {arguments['backtest_id']} 的真实指标。",
         )
 
-    return {
-        "runtime.objective_inspection": objective,
-        "market.summary": market_summary,
-        "market.relative_strength": market_relative_strength,
-        "market.candles": market_candles,
-        "market.derivatives": market_derivatives,
-        "market.regime": market_regime,
-        "rag.search": rag_search,
-        "memory.search": memory_search,
-        "strategy.performance_summary": strategy_performance_summary,
-        "strategy.compare": strategy_compare,
-        "strategy.draft": strategy_draft,
-        "bitpro.live_strategy_summary": bitpro_live_strategy_summary,
-        "bitpro.order_history": bitpro_order_history,
-        "bitpro.meta": bitpro_meta,
-        "paper.summary": paper_summary,
-        "portfolio.assessment": portfolio_assessment,
-        "world_model.snapshot": world_model_snapshot,
-        "monitor.summary": monitor_summary,
-        "execution.intent_summary": execution_intent_summary,
-        "workspace.write_file": workspace_write_file,
-        "workspace.run": workspace_run,
-        "research.validate_strategy_code": research_validate_strategy_code,
-        "bitpro.strategy_create": bitpro_strategy_create,
-        "bitpro.backtest_start": bitpro_backtest_start,
-        "bitpro.backtest_result": bitpro_backtest_result,
-    }
+    async def bitpro_paper_snapshot(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        raw_strategy_id = arguments.get("strategy_id")
+        strategy_id = int(raw_strategy_id) if raw_strategy_id is not None else None
+        instance_id = str(arguments.get("instance_id", "")).strip()
+        limit = max(1, min(int(arguments.get("limit", 20)), 50))
+        adapter = cast(Any, adapter_factory())
+
+        def read() -> tuple[list[dict[str, Any]], dict[str, Any], tuple[str, ...], str | None]:
+            if strategy_id is not None or instance_id:
+                raw = adapter.paper_snapshot(
+                    strategy_id=strategy_id,
+                    instance_id=instance_id or None,
+                )
+                item = _paper_snapshot_item(raw, default_strategy_id=strategy_id)
+                refs = ["bitpro_mcp:paper_snapshot"]
+                if item.get("strategy_id") is not None:
+                    refs.append(f"bitpro_mcp:paper_snapshot:{item['strategy_id']}")
+                elif instance_id:
+                    refs.append(f"bitpro_mcp:paper_snapshot:{instance_id}")
+                return [item], {"mode": "single"}, tuple(refs), None
+
+            dashboard_raw: dict[str, Any] | None = None
+            perf_raw: dict[str, Any] | None = None
+            errors: list[str] = []
+            try:
+                raw_dash = adapter.paper_dashboard()
+                if isinstance(raw_dash, dict):
+                    dashboard_raw = raw_dash
+            except Exception as exc:
+                errors.append(_truncate_public_text(str(exc), max_chars=120))
+            try:
+                raw_perf = adapter.paper_strategy_performance(limit=limit)
+                if isinstance(raw_perf, dict):
+                    perf_raw = raw_perf
+            except Exception as exc:
+                errors.append(_truncate_public_text(str(exc), max_chars=120))
+
+            if dashboard_raw is None and perf_raw is None:
+                return [], {}, (), ("; ".join(errors) or "BitPro Paper 接口不可达")
+
+            items = _paper_overview_items(dashboard_raw, perf_raw, limit=limit)
+            summary_meta = (
+                dict(perf_raw.get("performance_summary") or {})
+                if isinstance(perf_raw, dict)
+                else {}
+            )
+            refs = ["bitpro_mcp:paper_snapshot"]
+            for row in items[:10]:
+                sid = row.get("strategy_id")
+                if sid is not None and str(sid).strip():
+                    refs.append(f"bitpro_mcp:paper_snapshot:{sid}")
+            return items, summary_meta, tuple(dict.fromkeys(refs)), None
+
+        try:
+            items, summary_meta, refs, err = await anyio.to_thread.run_sync(read, limiter=limiter)
+        except Exception as exc:
+            items, summary_meta, refs, err = (
+                [],
+                {},
+                (),
+                _truncate_public_text(str(exc), max_chars=140) or type(exc).__name__,
+            )
+
+        if err is not None:
+            return ToolResult(
+                payload={"items": [], "count": 0, "source_available": False, "summary": {}},
+                source_refs=("bitpro_mcp:paper_snapshot:no_matches",),
+                unknowns=(f"BitPro Paper 快照当前不可用：{err}。",),
+                public_summary=f"BitPro Paper 快照当前不可用（{err}），未推断模拟盘表现。",
+            )
+        if not items:
+            return ToolResult(
+                payload={
+                    "items": [],
+                    "count": 0,
+                    "source_available": True,
+                    "summary": summary_meta,
+                },
+                source_refs=("bitpro_mcp:paper_snapshot:no_matches",),
+                unknowns=("BitPro 当前没有可验证的运行中 Paper 会话。",),
+                public_summary="BitPro 当前没有可验证的运行中 Paper 会话。",
+            )
+        return ToolResult(
+            payload={
+                "items": items,
+                "count": len(items),
+                "source_available": True,
+                "summary": summary_meta,
+            },
+            source_refs=refs or ("bitpro_mcp:paper_snapshot",),
+            public_summary=_format_paper_snapshot_summary(items),
+        )
+
+    async def bitpro_variant_status(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        raw_strategy_id = arguments.get("strategy_id")
+        strategy_id = int(raw_strategy_id) if raw_strategy_id is not None else None
+        adapter = cast(Any, adapter_factory())
+
+        def read() -> dict[str, Any]:
+            plans_raw: list[dict[str, Any]] | None = None
+            policy_raw: dict[str, Any] | None = None
+            errors: list[str] = []
+            try:
+                raw_plans = adapter.paper_relay_plans()
+                if isinstance(raw_plans, list):
+                    plans_raw = [p for p in raw_plans if isinstance(p, dict)]
+                else:
+                    plans_raw = []
+            except Exception as exc:
+                errors.append(f"relay_plans: {_truncate_public_text(str(exc), max_chars=120)}")
+            if strategy_id is not None:
+                try:
+                    raw_policy = adapter.strategy_research_variant_policy(strategy_id=strategy_id)
+                    if isinstance(raw_policy, dict):
+                        policy_raw = raw_policy
+                except Exception as exc:
+                    detail = _truncate_public_text(str(exc), max_chars=120)
+                    errors.append(f"variant_policy: {detail}")
+            return {
+                "plans": plans_raw,
+                "policy": policy_raw,
+                "errors": errors,
+            }
+
+        try:
+            data = await anyio.to_thread.run_sync(read, limiter=limiter)
+        except Exception as exc:
+            detail = _truncate_public_text(str(exc), max_chars=140) or type(exc).__name__
+            return ToolResult(
+                payload={
+                    "relay_plans": [],
+                    "active_races": [],
+                    "variant_policy": None,
+                    "slots": None,
+                    "source_available": False,
+                    "count": 0,
+                },
+                source_refs=("bitpro_mcp:variant_status:no_matches",),
+                unknowns=(f"BitPro 变体与赛马状态不可用：{detail}。",),
+                public_summary=f"BitPro 变体与赛马状态不可用（{detail}）。",
+            )
+
+        plans = data["plans"]
+        policy = data["policy"]
+        errors = data["errors"]
+        if plans is None and policy is None:
+            detail = "；".join(errors) or "BitPro 变体接口不可达"
+            return ToolResult(
+                payload={
+                    "relay_plans": [],
+                    "active_races": [],
+                    "variant_policy": None,
+                    "slots": None,
+                    "source_available": False,
+                    "count": 0,
+                },
+                source_refs=("bitpro_mcp:variant_status:no_matches",),
+                unknowns=(f"BitPro 变体与赛马状态不可用：{detail}。",),
+                public_summary=f"BitPro 变体与赛马状态不可用（{detail}）。",
+            )
+
+        plan_list = plans or []
+        active_races = _filter_active_races(plan_list, strategy_id=strategy_id)
+        policy_summary, slots, blockers = _summarize_variant_policy(policy)
+        if errors:
+            blockers.extend(errors)
+
+        refs = ["bitpro_mcp:variant_status"]
+        if plans is not None:
+            refs.append("bitpro_mcp:paper_relay_plans")
+        if policy is not None and strategy_id is not None:
+            refs.append(f"bitpro_mcp:variant_policy:{strategy_id}")
+
+        summary = _format_variant_status_summary(
+            strategy_id=strategy_id,
+            plan_count=len(plan_list),
+            active_races=active_races,
+            policy_summary=policy_summary,
+            slots=slots,
+            blockers=blockers,
+        )
+        return ToolResult(
+            payload={
+                "relay_plans": plan_list[:20],
+                "active_races": active_races[:20],
+                "variant_policy": policy_summary,
+                "slots": slots,
+                "source_available": True,
+                "count": len(plan_list) + (1 if policy_summary else 0),
+            },
+            source_refs=tuple(refs),
+            unknowns=tuple(blockers[:3]),
+            public_summary=summary,
+        )
+
+    async def arc_evolution_status(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del mission, plan, step, attempt
+        raw_strategy_id = arguments.get("strategy_id")
+        strategy_id = int(raw_strategy_id) if raw_strategy_id is not None else None
+
+        def read() -> dict[str, Any]:
+            service = EvolutionService(db)
+            evo_status = service.status(compact=True, cycles_limit=5)
+            outcomes = service.forward_outcomes_summary()
+            active_missions = _read_arc_active_missions(db, strategy_id=strategy_id)
+            return {
+                "evo_status": evo_status,
+                "outcomes": outcomes,
+                "active_missions": active_missions,
+            }
+
+        data = await anyio.to_thread.run_sync(read, limiter=limiter)
+        evo_status = data["evo_status"]
+        outcomes = data["outcomes"]
+        active_missions = data["active_missions"]
+        config = dict(evo_status.get("config") or {})
+        budget = dict(evo_status.get("budget") or {})
+        cycles = list(evo_status.get("cycles") or [])[:5]
+        continuations = list(evo_status.get("continuations") or [])
+        if strategy_id is not None:
+            filtered = [
+                item
+                for item in continuations
+                if str(item.get("strategy_id") or "") == str(strategy_id)
+            ]
+            if filtered:
+                continuations = filtered
+
+        summary = _format_arc_evolution_summary(
+            strategy_id=strategy_id,
+            config=config,
+            budget=budget,
+            active_missions=active_missions,
+            continuations=continuations,
+            outcomes=outcomes,
+        )
+        return ToolResult(
+            payload={
+                "config": config,
+                "budget": budget,
+                "cycles": cycles,
+                "continuations": continuations[:20],
+                "forward_outcomes": outcomes,
+                "active_missions": active_missions[:20],
+                "variant_slot_readiness": _variant_slot_readiness(budget, strategy_id=strategy_id),
+                "count": len(active_missions) + len(continuations) + len(cycles),
+            },
+            source_refs=("hypertrade_db:arc_evolution",),
+            public_summary=summary,
+        )
+
+    async def memory_write(
+        arguments: dict[str, Any],
+        mission: MissionProjection,
+        plan: PlanV2,
+        step: PlanStepV2,
+        attempt: int,
+    ) -> ToolResult:
+        del plan, step, attempt
+        content = str(arguments["content"]).strip()
+        kind = str(arguments.get("kind") or "operator_note").strip() or "operator_note"
+        raw_tags = arguments.get("tags")
+        tags = (
+            [str(tag).strip() for tag in raw_tags if str(tag).strip()]
+            if isinstance(raw_tags, list)
+            else []
+        )
+        item = await anyio.to_thread.run_sync(
+            lambda: MemoryService(db).write(
+                content=content,
+                kind=kind,
+                source_run_id=mission.mission_id[:32],
+                source_tool="memory.write",
+                tags=tags,
+            ),
+            limiter=limiter,
+        )
+        return ToolResult(
+            payload={
+                "memory_id": item.id,
+                "kind": item.kind,
+                "tags": list(item.tags or []),
+                "usage_count": int(item.usage_count or 1),
+            },
+            source_refs=(f"memory:{item.id}",),
+            public_summary=(
+                f"已写入记忆 {item.id}（类型：{item.kind}）："
+                f"{_truncate_public_text(item.content, max_chars=160)}"
+            ),
+        )
+
+    return _BuiltinHandlerMap(
+        db,
+        {
+            "runtime.objective_inspection": objective,
+            "market.summary": market_summary,
+            "market.relative_strength": market_relative_strength,
+            "market.candles": market_candles,
+            "market.derivatives": market_derivatives,
+            "market.regime": market_regime,
+            "rag.search": rag_search,
+            "memory.search": memory_search,
+            "memory.write": memory_write,
+            "strategy.performance_summary": strategy_performance_summary,
+            "strategy.compare": strategy_compare,
+            "strategy.draft": strategy_draft,
+            "bitpro.live_strategy_summary": bitpro_live_strategy_summary,
+            "bitpro.order_history": bitpro_order_history,
+            "bitpro.meta": bitpro_meta,
+            "bitpro.paper_snapshot": bitpro_paper_snapshot,
+            "bitpro.variant_status": bitpro_variant_status,
+            "arc.evolution_status": arc_evolution_status,
+            "paper.summary": paper_summary,
+            "portfolio.assessment": portfolio_assessment,
+            "world_model.snapshot": world_model_snapshot,
+            "monitor.summary": monitor_summary,
+            "execution.intent_summary": execution_intent_summary,
+            "workspace.write_file": workspace_write_file,
+            "workspace.run": workspace_run,
+            "research.validate_strategy_code": research_validate_strategy_code,
+            "bitpro.strategy_create": bitpro_strategy_create,
+            "bitpro.backtest_start": bitpro_backtest_start,
+            "bitpro.backtest_result": bitpro_backtest_result,
+        },
+    )
 
 
 def _live_strategy_inventory_summary(
@@ -2007,3 +2339,587 @@ def _hash(payload: object) -> str:
         _redact(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
     return sha256(encoded.encode()).hexdigest()
+
+
+def _unified_memory_search(
+    db: Database,
+    *,
+    raw_query: str,
+    goal_query: str,
+    limit: int,
+) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
+    rows = MemoryService(db).search(query=raw_query, limit=limit)
+    items: list[dict[str, Any]] = [
+        {
+            "memory_id": row.id,
+            "kind": row.kind,
+            "tags": row.tags,
+            "confidence": str(row.confidence),
+            "preview": _truncate_public_text(row.content, max_chars=240),
+        }
+        for row in rows
+    ]
+    refs: list[str] = [f"memory:{row.id}" for row in rows]
+    seen_refs = set(refs)
+
+    def add_semantic(
+        *,
+        sem_id: str,
+        assertion_type: str,
+        claim: str,
+        regimes: list[str],
+        confidence: Any,
+        metadata: dict[str, Any],
+    ) -> None:
+        ref = f"cognitive_semantic:{sem_id}"
+        if ref in seen_refs or len(items) >= limit:
+            return
+        if raw_query and not _cognitive_query_matches(
+            raw_query,
+            (claim, assertion_type, *regimes, json.dumps(metadata, ensure_ascii=False)),
+        ):
+            return
+        seen_refs.add(ref)
+        refs.append(ref)
+        items.append(
+            {
+                "memory_id": sem_id,
+                "kind": f"cognitive_semantic:{assertion_type}",
+                "tags": list(regimes),
+                "confidence": str(confidence),
+                "preview": _truncate_public_text(claim, max_chars=240),
+            }
+        )
+
+    def add_episodic(
+        *,
+        ep_id: str,
+        event_type: str,
+        summary: str,
+        symbols: list[str],
+        timeframe: str,
+        regime: str,
+        mission_id: str,
+        evidence_ref: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        ref = f"cognitive_episodic:{ep_id}"
+        if ref in seen_refs or len(items) >= limit:
+            return
+        if raw_query and not _cognitive_query_matches(
+            raw_query,
+            (
+                summary,
+                event_type,
+                *symbols,
+                timeframe,
+                regime,
+                mission_id,
+                evidence_ref,
+                json.dumps(metadata, ensure_ascii=False),
+            ),
+        ):
+            return
+        seen_refs.add(ref)
+        refs.append(ref)
+        tags = [tag for tag in (*symbols, timeframe, regime) if tag]
+        items.append(
+            {
+                "memory_id": ep_id,
+                "kind": f"cognitive_episodic:{event_type}",
+                "tags": tags,
+                "confidence": "0.7000",
+                "preview": _truncate_public_text(summary, max_chars=240),
+            }
+        )
+
+    try:
+        semantics, episodes = LayeredMemoryService(db).retrieve_context_for_task(
+            goal=goal_query,
+            symbol="",
+            timeframe="",
+            current_regime="unknown",
+            top_k_semantic=3,
+            top_k_episodic=3,
+        )
+        for sem in semantics:
+            if sem.id:
+                add_semantic(
+                    sem_id=sem.id,
+                    assertion_type=sem.assertion_type,
+                    claim=sem.claim,
+                    regimes=list(sem.applicable_regimes),
+                    confidence=sem.confidence,
+                    metadata=dict(sem.metadata or {}),
+                )
+        for ep in episodes:
+            if ep.id:
+                add_episodic(
+                    ep_id=ep.id,
+                    event_type=ep.event_type,
+                    summary=ep.reflection_summary,
+                    symbols=list(ep.symbols),
+                    timeframe=ep.timeframe,
+                    regime=ep.market_regime,
+                    mission_id=ep.mission_id,
+                    evidence_ref=ep.raw_evidence_ref,
+                    metadata=dict(ep.metadata or {}),
+                )
+        if raw_query and raw_query != "__unrecorded_strategy__" and len(items) < limit:
+            with db.session() as session:
+                sem_rows = session.scalars(
+                    select(ArcSemanticAssertion)
+                    .where(ArcSemanticAssertion.status == "active")
+                    .order_by(ArcSemanticAssertion.created_at.desc())
+                    .limit(50)
+                ).all()
+                for sem_row in sem_rows:
+                    add_semantic(
+                        sem_id=sem_row.id,
+                        assertion_type=sem_row.assertion_type,
+                        claim=sem_row.claim,
+                        regimes=list(sem_row.applicable_regimes_json or []),
+                        confidence=sem_row.confidence,
+                        metadata=dict(sem_row.metadata_json or {}),
+                    )
+                ep_rows = session.scalars(
+                    select(ArcEpisodicMemory)
+                    .order_by(ArcEpisodicMemory.created_at.desc())
+                    .limit(50)
+                ).all()
+                for ep_row in ep_rows:
+                    if (ep_row.metadata_json or {}).get("recall_eligible") is False:
+                        continue
+                    add_episodic(
+                        ep_id=ep_row.id,
+                        event_type=ep_row.event_type,
+                        summary=ep_row.reflection_summary,
+                        symbols=list(ep_row.symbols_json or []),
+                        timeframe=ep_row.timeframe,
+                        regime=ep_row.market_regime,
+                        mission_id=ep_row.mission_id,
+                        evidence_ref=ep_row.raw_evidence_ref,
+                        metadata=dict(ep_row.metadata_json or {}),
+                    )
+    except Exception:  # noqa: BLE001 - cognitive store fallback never breaks MemoryItem search
+        pass
+
+    return items[:limit], tuple(refs)
+
+
+def _cognitive_query_matches(raw_query: str, text_parts: Sequence[str]) -> bool:
+    norm = raw_query.casefold().strip()
+    if not norm:
+        return True
+    haystack = " ".join(str(part) for part in text_parts if part).casefold()
+    if norm in haystack:
+        return True
+    if norm == "__unrecorded_strategy__":
+        return False
+    tokens = re.findall(r"[a-z0-9_#-]{2,}|[\u4e00-\u9fff]+", norm)
+    if not tokens:
+        return False
+    digit_tokens = [tok for tok in tokens if tok.isdigit()]
+    if digit_tokens and not all(tok in haystack for tok in digit_tokens):
+        return False
+    required_hits = len(tokens) if len(tokens) <= 2 else 2
+    return sum(tok in haystack for tok in tokens) >= required_hits
+
+
+def _first_non_empty(*values: Any) -> Any:
+    for value in values:
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _as_dict(value: Any, *, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
+    return value if isinstance(value, dict) else (fallback if fallback is not None else {})
+
+
+def _paper_snapshot_item(
+    raw: Any,
+    *,
+    default_strategy_id: int | None = None,
+) -> dict[str, Any]:
+    raw_dict = _as_dict(raw)
+    snap = _as_dict(raw_dict.get("snapshot"), fallback=raw_dict)
+    system = _as_dict(snap.get("system"))
+    equity_obj = _as_dict(snap.get("equity"))
+    perf = _as_dict(snap.get("performance"))
+    metrics = _as_dict(snap.get("metrics"))
+    session_obj = _as_dict(snap.get("session"))
+    strategy_obj = _as_dict(snap.get("strategy"))
+
+    strategy_id = _first_non_empty(
+        snap.get("strategy_id"),
+        system.get("strategy_id"),
+        strategy_obj.get("id"),
+        default_strategy_id,
+    )
+    strategy_name = _first_non_empty(
+        snap.get("strategy_name"),
+        snap.get("name"),
+        system.get("strategy"),
+        strategy_obj.get("name"),
+    )
+    instance_id = _first_non_empty(
+        snap.get("instance_id"),
+        session_obj.get("instance_id"),
+        session_obj.get("id"),
+        system.get("instance_id"),
+    )
+    status = _first_non_empty(
+        snap.get("status"),
+        system.get("state"),
+        session_obj.get("status"),
+    )
+    equity_val = _first_non_empty(
+        equity_obj.get("current"),
+        equity_obj.get("current_equity"),
+        snap.get("current_equity"),
+        metrics.get("equity"),
+        snap.get("equity") if not isinstance(snap.get("equity"), dict) else None,
+    )
+    return_pct = _first_non_empty(
+        perf.get("total_pnl_pct"),
+        perf.get("total_return_pct"),
+        perf.get("return_pct"),
+        perf.get("pnl_pct"),
+        metrics.get("return_pct"),
+        metrics.get("total_return_pct"),
+        snap.get("return_pct"),
+        snap.get("total_pnl_pct"),
+    )
+    drawdown = _first_non_empty(
+        perf.get("max_drawdown_pct"),
+        perf.get("max_drawdown"),
+        metrics.get("max_drawdown_pct"),
+        metrics.get("max_drawdown"),
+        snap.get("max_drawdown_pct"),
+        snap.get("max_drawdown"),
+    )
+    sharpe = _first_non_empty(
+        perf.get("sharpe_ratio"),
+        perf.get("sharpe"),
+        metrics.get("sharpe_ratio"),
+        metrics.get("sharpe"),
+        snap.get("sharpe_ratio"),
+        snap.get("sharpe"),
+    )
+    trade_count = _first_non_empty(
+        snap.get("trade_count"),
+        perf.get("trade_count"),
+        perf.get("total_trades"),
+        metrics.get("trade_count"),
+        metrics.get("total_trades"),
+        snap.get("trades_count"),
+    )
+    symbols = _first_non_empty(snap.get("symbols"), strategy_obj.get("symbols"))
+    return {
+        "strategy_id": strategy_id,
+        "strategy_name": str(strategy_name or ""),
+        "instance_id": str(instance_id or ""),
+        "status": str(status or ""),
+        "equity": str(equity_val) if equity_val is not None else None,
+        "return_pct": str(return_pct) if return_pct is not None else None,
+        "max_drawdown_pct": str(drawdown) if drawdown is not None else None,
+        "sharpe_ratio": str(sharpe) if sharpe is not None else None,
+        "trade_count": trade_count,
+        "symbols": list(symbols) if isinstance(symbols, list) else [],
+    }
+
+
+def _paper_overview_items(
+    dashboard_raw: dict[str, Any] | None,
+    perf_raw: dict[str, Any] | None,
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    perf_rows = (perf_raw or {}).get("strategies")
+    if isinstance(perf_rows, list):
+        for row in perf_rows[:limit]:
+            if not isinstance(row, dict):
+                continue
+            item = _paper_snapshot_item(row)
+            sid = str(item.get("strategy_id") or "")
+            if sid:
+                seen_ids.add(sid)
+            items.append(item)
+
+    if isinstance(dashboard_raw, dict):
+        running = (dashboard_raw.get("running_strategies") or {}).get("items")
+        if isinstance(running, list):
+            for row in running:
+                if len(items) >= limit:
+                    break
+                if not isinstance(row, dict):
+                    continue
+                sid = str(_first_non_empty(row.get("strategy_id"), row.get("id")) or "")
+                if sid and sid in seen_ids:
+                    continue
+                if sid:
+                    seen_ids.add(sid)
+                paper_metrics = _as_dict(row.get("paper_metrics"))
+                merged = {**paper_metrics, **row}
+                items.append(
+                    _paper_snapshot_item(
+                        merged,
+                        default_strategy_id=int(sid) if sid.isdigit() else None,
+                    )
+                )
+        if not items and isinstance(dashboard_raw.get("dashboard"), dict):
+            dash_item = _paper_snapshot_item(dashboard_raw["dashboard"])
+            if any(
+                dash_item.get(k) is not None
+                for k in ("strategy_id", "equity", "return_pct", "max_drawdown_pct", "trade_count")
+            ):
+                items.append(dash_item)
+    return items[:limit]
+
+
+def _format_paper_snapshot_summary(items: Sequence[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for item in items[:5]:
+        sid = item.get("strategy_id")
+        name = _truncate_public_text(str(item.get("strategy_name") or ""), max_chars=48)
+        fallback_label = (
+            f"策略 #{sid}" if sid is not None else item.get("instance_id") or "Paper 会话"
+        )
+        label = name or fallback_label
+        if sid is not None and f"#{sid}" not in label:
+            label = f"#{sid} {label}"
+        metrics: list[str] = []
+        if item.get("status"):
+            metrics.append(f"状态 {item['status']}")
+        if item.get("equity") is not None:
+            metrics.append(f"权益 {_fmt_num(item['equity'])}")
+        if item.get("return_pct") is not None:
+            metrics.append(f"收益 {_fmt_num(item['return_pct'])}%")
+        if item.get("max_drawdown_pct") is not None:
+            metrics.append(f"回撤 {_fmt_num(item['max_drawdown_pct'])}%")
+        if item.get("sharpe_ratio") is not None:
+            metrics.append(f"Sharpe {_fmt_num(item['sharpe_ratio'])}")
+        if item.get("trade_count") is not None:
+            metrics.append(f"成交 {item['trade_count']} 次")
+        parts.append(f"{label}（{'，'.join(metrics)}）" if metrics else label)
+    return f"BitPro Paper 快照（共 {len(items)} 条）：" + "；".join(parts)
+
+
+def _filter_active_races(
+    plans: Sequence[dict[str, Any]],
+    *,
+    strategy_id: int | None,
+) -> list[dict[str, Any]]:
+    active_states = {"observing", "active", "running", "pending", "eligible", "promoting"}
+    result: list[dict[str, Any]] = []
+    for plan in plans:
+        state = str(plan.get("state") or plan.get("status") or "").casefold()
+        if state and state not in active_states:
+            continue
+        if strategy_id is not None:
+            pid = plan.get("parent_id")
+            cid = plan.get("challenger_id")
+            if pid != strategy_id and cid != strategy_id:
+                continue
+        result.append(
+            {
+                "parent_id": plan.get("parent_id"),
+                "challenger_id": plan.get("challenger_id"),
+                "state": plan.get("state") or plan.get("status") or "unknown",
+                "generation": plan.get("generation"),
+            }
+        )
+    return result
+
+
+def _summarize_variant_policy(
+    policy: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, dict[str, int] | None, list[str]]:
+    if not isinstance(policy, dict):
+        return None, None, []
+    relay = _as_dict(policy.get("relay"))
+    slots = relay_seats(relay)
+    params = policy.get("authorized_parameters")
+    param_items: list[dict[str, Any]] = []
+    if isinstance(params, list):
+        for p in params[:24]:
+            if isinstance(p, dict):
+                param_items.append(
+                    {
+                        "key": p.get("key") or p.get("name"),
+                        "type": p.get("type"),
+                        "dimension": p.get("dimension") or p.get("group") or "",
+                        "min": p.get("min"),
+                        "max": p.get("max"),
+                    }
+                )
+    blockers: list[str] = []
+    if relay.get("blocks_evolution") is True and relay.get("reason"):
+        blockers.append(str(relay["reason"]))
+    for key in ("infeasibility", "blockers"):
+        raw = policy.get(key)
+        if isinstance(raw, list):
+            blockers.extend(str(item) for item in raw if str(item).strip())
+        elif isinstance(raw, dict) and raw.get("message"):
+            blockers.append(str(raw["message"]))
+        elif isinstance(raw, str) and raw.strip():
+            blockers.append(raw.strip())
+    summary = {
+        "parent_strategy_id": policy.get("parent_strategy_id"),
+        "parameter_count": len(param_items),
+        "parameters": param_items,
+        "relay_role": relay.get("role"),
+        "relay_state": relay.get("plan_state"),
+        "blocks_evolution": bool(relay.get("blocks_evolution")),
+    }
+    return summary, slots, blockers
+
+
+def _format_variant_status_summary(
+    *,
+    strategy_id: int | None,
+    plan_count: int,
+    active_races: Sequence[dict[str, Any]],
+    policy_summary: dict[str, Any] | None,
+    slots: dict[str, int] | None,
+    blockers: Sequence[str],
+) -> str:
+    fragments: list[str] = []
+    if strategy_id is not None:
+        fragments.append(f"策略 #{strategy_id} 变体状态")
+    else:
+        fragments.append("BitPro 变体与赛马状态")
+    if slots is not None:
+        fragments.append(
+            f"槽位 {slots['used']}/{slots['total']} 已占用"
+            f"（空闲 {slots['free']}，排队 {slots['queued']}，可用 {slots['open']}）"
+        )
+    if policy_summary is not None:
+        keys = [
+            str(p.get("key") or "")
+            for p in policy_summary.get("parameters", [])
+            if p.get("key")
+        ]
+        if keys:
+            fragments.append(f"可调参数 {len(keys)} 个：{', '.join(keys[:6])}")
+    fragments.append(f"活跃赛马 {len(active_races)} 条（接力计划共 {plan_count} 条）")
+    if blockers:
+        fragments.append(f"阻塞项：{'；'.join(blockers[:2])}")
+    return "；".join(fragments) + "。"
+
+
+def _read_arc_active_missions(
+    db: Database,
+    *,
+    strategy_id: int | None,
+) -> list[dict[str, Any]]:
+    active_states = {
+        "pending",
+        "researching",
+        "validating",
+        "backtesting",
+        "awaiting_review",
+        "paper_authorizing",
+        "paper_observing",
+        "needs_operator",
+    }
+    items: list[dict[str, Any]] = []
+    with db.session() as session:
+        rows = session.scalars(
+            select(ArcMission)
+            .where(ArcMission.state.in_(active_states))
+            .order_by(ArcMission.updated_at.desc())
+            .limit(50)
+        ).all()
+        for row in rows:
+            projection = load_projection(session, row, with_events=False)
+            goal = projection.goal
+            ctx = (goal.evolution_context or {}) if goal else {}
+            sid = ctx.get("source_strategy_id") or ctx.get("strategy_id")
+            if strategy_id is not None and str(sid or "") != str(strategy_id):
+                continue
+            items.append(
+                {
+                    "mission_id": row.mission_id,
+                    "state": projection.state,
+                    "source_strategy_id": sid,
+                    "symbols": list(goal.symbols) if goal else [],
+                    "attempt_count": len(projection.attempts),
+                }
+            )
+            if len(items) >= 20:
+                break
+    return items
+
+
+def _variant_slot_readiness(
+    budget: dict[str, Any],
+    *,
+    strategy_id: int | None,
+) -> list[dict[str, Any]]:
+    raw_sources = budget.get("sources")
+    if not isinstance(raw_sources, dict):
+        return []
+    readiness: list[dict[str, Any]] = []
+    for source in raw_sources.values():
+        if not isinstance(source, dict):
+            continue
+        sid = source.get("source_strategy_id")
+        if strategy_id is not None and str(sid or "") != str(strategy_id):
+            continue
+        readiness.append(
+            {
+                "source_strategy_id": sid,
+                "slot_limit": source.get("slot_limit"),
+                "observing_slots": source.get("observing_slots"),
+                "slots_open": source.get("slots_open"),
+                "in_research": bool(source.get("in_research")),
+                "busy": bool(source.get("busy")),
+                "reason": source.get("reason"),
+            }
+        )
+    return readiness[:20]
+
+
+def _format_arc_evolution_summary(
+    *,
+    strategy_id: int | None,
+    config: dict[str, Any],
+    budget: dict[str, Any],
+    active_missions: Sequence[dict[str, Any]],
+    continuations: Sequence[dict[str, Any]],
+    outcomes: dict[str, Any],
+) -> str:
+    enabled = "开启" if config.get("enabled") else "关闭"
+    launch = "开启" if config.get("launch_enabled") else "关闭"
+    limit_val = int(budget.get("period_limit") or config.get("max_research_per_day") or 0)
+    used_val = int(budget.get("period_used") or 0)
+    remaining = max(0, limit_val - used_val)
+    observing = sum(1 for m in active_missions if m.get("state") == "paper_observing")
+    readiness = _variant_slot_readiness(budget, strategy_id=strategy_id)
+    slot_desc = ""
+    if readiness:
+        first = readiness[0]
+        slot_desc = (
+            f"，变体槽位可用 {first.get('slots_open')}/{first.get('slot_limit')}"
+            f"（观察中 {first.get('observing_slots')}）"
+        )
+    by_verdict = outcomes.get("by_verdict") or {}
+    won = int(by_verdict.get("won", 0))
+    lost = int(by_verdict.get("lost_futility", 0)) + int(by_verdict.get("lost_exam", 0))
+    prefix = (
+        f"策略 #{strategy_id} ARC 自进化状态："
+        if strategy_id is not None
+        else "ARC 自进化状态："
+    )
+    admission = config.get("paper_admission", "unknown")
+    return (
+        f"{prefix}引擎{enabled}（launch={launch}，准入={admission}），"
+        f"今日预算剩余 {remaining}/{limit_val}，"
+        f"活跃任务 {len(active_missions)} 个（观察中 {observing} 个）{slot_desc}，"
+        f"连续状态跟踪 {len(continuations)} 条，"
+        f"前向赛马胜/负 {won}/{lost}（总计 {outcomes.get('total', 0)}）。"
+    )

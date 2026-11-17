@@ -986,6 +986,135 @@ def builtin_capabilities() -> tuple[CapabilityDefinitionV1, ...]:
                 "required": ["items", "count"],
             },
         ),
+        CapabilityDefinitionV1(
+            capability_id="bitpro.paper_snapshot",
+            title="BitPro paper snapshot",
+            description=(
+                "Read bounded BitPro paper session snapshots, equity, return_pct, "
+                "drawdown, Sharpe, and trade_count without mutation."
+            ),
+            source_owner="bitpro.mcp",
+            handler_key="bitpro.paper_snapshot",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer", "minimum": 1},
+                    "instance_id": {"type": "string", "minLength": 1, "maxLength": 128},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20},
+                },
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "items": {"type": "array"},
+                    "count": {"type": "integer"},
+                    "source_available": {"type": "boolean"},
+                    "summary": {"type": "object"},
+                },
+                "required": ["items", "count", "source_available"],
+            },
+            max_result_bytes=24_000,
+        ),
+        CapabilityDefinitionV1(
+            capability_id="bitpro.variant_status",
+            title="BitPro variant and relay status",
+            description=(
+                "Read bounded BitPro relay plans and strategy variant slot/parameter "
+                "policy without mutation."
+            ),
+            source_owner="bitpro.mcp",
+            handler_key="bitpro.variant_status",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer", "minimum": 1},
+                },
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "relay_plans": {"type": "array"},
+                    "active_races": {"type": "array"},
+                    "variant_policy": {"type": ["object", "null"]},
+                    "slots": {"type": ["object", "null"]},
+                    "source_available": {"type": "boolean"},
+                    "count": {"type": "integer"},
+                },
+                "required": ["relay_plans", "count", "source_available"],
+            },
+            max_result_bytes=16_000,
+        ),
+        CapabilityDefinitionV1(
+            capability_id="arc.evolution_status",
+            title="ARC autonomous evolution status",
+            description=(
+                "Read bounded ARC evolution configuration, budget, active/observing "
+                "missions, variant slot readiness, and forward race win/loss summary."
+            ),
+            source_owner="hypertrade.arc",
+            handler_key="arc.evolution_status",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "strategy_id": {"type": "integer", "minimum": 1},
+                },
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "config": {"type": "object"},
+                    "budget": {"type": "object"},
+                    "cycles": {"type": "array"},
+                    "continuations": {"type": "array"},
+                    "forward_outcomes": {"type": "object"},
+                    "active_missions": {"type": "array"},
+                    "count": {"type": "integer"},
+                },
+                "required": ["config", "budget", "forward_outcomes", "count"],
+            },
+            max_result_bytes=24_000,
+        ),
+        CapabilityDefinitionV1(
+            capability_id="memory.write",
+            title="Memory write",
+            description=(
+                "Persist one bounded, audited research note or observation into "
+                "HyperTrade Memory. Research write with idempotent replay."
+            ),
+            source_owner="hypertrade.memory",
+            handler_key="memory.write",
+            scope="research_write",
+            side_effect="idempotent_write",
+            idempotency="required",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "minLength": 3, "maxLength": 2000},
+                    "kind": {"type": "string", "minLength": 1, "maxLength": 64},
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 1, "maxLength": 64},
+                        "maxItems": 16,
+                    },
+                },
+                "required": ["content"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "memory_id": {"type": "string"},
+                    "kind": {"type": "string"},
+                    "tags": {"type": "array"},
+                    "usage_count": {"type": "integer"},
+                },
+                "required": ["memory_id", "kind"],
+            },
+            max_result_bytes=4_096,
+        ),
     )
 
 
