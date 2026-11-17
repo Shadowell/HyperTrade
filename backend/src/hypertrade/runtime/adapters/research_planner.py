@@ -98,6 +98,19 @@ _CAPABILITY_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "bitpro.order_history": {"type": "object", "required": ["items", "count"]},
     "bitpro.meta": {"type": "object", "required": ["items", "count"]},
+    "bitpro.paper_snapshot": {
+        "type": "object",
+        "required": ["items", "count", "source_available"],
+    },
+    "bitpro.variant_status": {
+        "type": "object",
+        "required": ["relay_plans", "count", "source_available"],
+    },
+    "arc.evolution_status": {
+        "type": "object",
+        "required": ["config", "budget", "forward_outcomes", "count"],
+    },
+    "memory.write": {"type": "object", "required": ["memory_id", "kind"]},
     "paper.summary": {"type": "object", "required": ["positions", "orders", "count"]},
     "portfolio.assessment": {"type": "object", "required": ["items", "count"]},
     "world_model.snapshot": {"type": "object", "required": ["items", "count"]},
@@ -647,6 +660,13 @@ def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
     capabilities = ["runtime.objective_inspection"]
     if _is_terminal_without_read(lowered):
         return tuple(capabilities)
+    if _variant_evolution_requested(lowered):
+        capabilities.extend(("arc.evolution_status", "bitpro.variant_status"))
+        if any(term in lowered for term in ("模拟盘", "paper", "快照", "snapshot")):
+            capabilities.append("bitpro.paper_snapshot")
+        if _memory_recall_hint_requested(lowered):
+            capabilities.append("memory.search")
+        return tuple(dict.fromkeys(capabilities))
     if _strategy_draft_requested(lowered):
         return (*capabilities, "strategy.draft")
     if _bitpro_meta_requested(lowered):
@@ -657,6 +677,11 @@ def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
         return (*capabilities, "bitpro.order_history")
     if _live_strategy_lookup_requested(lowered):
         return (*capabilities, "bitpro.live_strategy_summary")
+    if _explicit_bitpro_paper_requested(objective, lowered):
+        capabilities.append("bitpro.paper_snapshot")
+        if _memory_recall_hint_requested(lowered):
+            capabilities.append("memory.search")
+        return tuple(dict.fromkeys(capabilities))
     if _paper_lookup_requested(lowered) and not any(
         term in lowered for term in ("回测", "backtest")
     ):
@@ -677,6 +702,10 @@ def _capabilities_for_objective(objective: str) -> tuple[str, ...]:
             return (*capabilities, "memory.search")
         if "记忆" in lowered and "没有记录" in lowered:
             return (*capabilities, "memory.search", "strategy.performance_summary")
+        if _memory_recall_hint_requested(lowered) and not any(
+            term in lowered for term in ("知识库", "rag", "依据", "证据")
+        ):
+            return (*capabilities, "memory.search")
         if "知识库里有" in lowered:
             return (*capabilities, "rag.search")
         if _market_lookup_requested(lowered):
@@ -867,6 +896,20 @@ def _input_schema_for(capability_id: str) -> dict[str, Any]:
         return {"limit": "integer 1..20", "symbol": "optional string"}
     if capability_id == "bitpro.meta":
         return {}
+    if capability_id == "bitpro.paper_snapshot":
+        return {
+            "strategy_id": "optional integer >= 1",
+            "instance_id": "optional string",
+            "limit": "integer 1..50",
+        }
+    if capability_id in {"bitpro.variant_status", "arc.evolution_status"}:
+        return {"strategy_id": "optional integer >= 1"}
+    if capability_id == "memory.write":
+        return {
+            "content": "string 3..2000",
+            "kind": "optional string",
+            "tags": "optional array of strings",
+        }
     return {"query": "string", "limit": "integer"}
 
 
@@ -978,6 +1021,7 @@ def _market_instrument_from_token(raw: str, *, allow_bare: bool = False) -> str 
         len(base) < 2
         or len(base) > 20
         or not base.isalnum()
+        or base.isdigit()
         or base in _MARKET_SYMBOL_STOPWORDS
     ):
         return None
@@ -1037,6 +1081,46 @@ def _bitpro_meta_requested(lowered: str) -> bool:
     )
 
 
+_NUMERIC_STRATEGY_ID = re.compile(
+    r"(?:策略\s*#?|(?:(?<![a-z0-9_])strategy(?:\s+#?|\s*#))|上文指代对象为\s*#|(?<![a-z0-9_])#)(\d{1,6})(?!\d)",
+    re.IGNORECASE,
+)
+
+
+def _extract_strategy_id(objective: str) -> int | None:
+    match = _NUMERIC_STRATEGY_ID.search(objective)
+    if not match:
+        return None
+    value = int(match.group(1))
+    return value if 1 <= value <= 999_999 else None
+
+
+def _variant_evolution_requested(lowered: str) -> bool:
+    if any(term in lowered for term in ("变体", "槽位", "赛马", "自进化")):
+        return True
+    return bool(re.search(r"\b(?:relay|arc)\b", lowered))
+
+
+def _explicit_bitpro_paper_requested(objective: str, lowered: str) -> bool:
+    if "bitpro" in lowered and any(
+        term in lowered for term in ("模拟盘", "paper", "快照", "snapshot", "策略")
+    ):
+        return True
+    return bool(
+        re.search(
+            r"(?:策略\s*#?|(?:(?<![a-z0-9_])strategy(?:\s+#?|\s*#))|上文指代对象为\s*#)\d{1,6}(?!\d)",
+            objective,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _memory_recall_hint_requested(lowered: str) -> bool:
+    return "记忆" in lowered and any(
+        term in lowered for term in ("之前", "上次", "历史表现", "偏好")
+    )
+
+
 def _requested_strategy_key(objective: str) -> str:
     match = re.search(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b", objective.casefold())
     return match.group(1) if match else ""
@@ -1070,6 +1154,10 @@ def _step_id_for_capability(capability_id: str) -> str:
         "bitpro.live_strategy_summary": "live_strategy_inventory",
         "bitpro.order_history": "live_order_history",
         "bitpro.meta": "bitpro_meta",
+        "bitpro.paper_snapshot": "bitpro_paper_snapshot",
+        "bitpro.variant_status": "bitpro_variant_status",
+        "arc.evolution_status": "arc_evolution_status",
+        "memory.write": "memory_write",
         "paper.summary": "paper_summary",
         "portfolio.assessment": "portfolio_assessment",
         "world_model.snapshot": "world_model_snapshot",
@@ -1171,6 +1259,17 @@ def _step_arguments(capability_id: str, objective: str) -> dict[str, Any]:
         return order_args
     if capability_id == "bitpro.meta":
         return {}
+    if capability_id == "bitpro.paper_snapshot":
+        strategy_id = _extract_strategy_id(objective)
+        paper_args: dict[str, Any] = {"limit": 20}
+        if strategy_id is not None:
+            paper_args["strategy_id"] = strategy_id
+        return paper_args
+    if capability_id in {"bitpro.variant_status", "arc.evolution_status"}:
+        strategy_id = _extract_strategy_id(objective)
+        return {"strategy_id": strategy_id} if strategy_id is not None else {}
+    if capability_id == "memory.write":
+        return {"content": objective[:1900], "kind": "operator_note"}
     if capability_id == "paper.summary":
         focus = (
             "anomaly"

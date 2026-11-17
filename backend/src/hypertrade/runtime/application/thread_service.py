@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from hashlib import sha256
 from typing import Any
 
-from hypertrade.db import new_id
+import anyio
+
+from hypertrade.db import Database, new_id
+from hypertrade.memory.service import MemoryService
 from hypertrade.runtime.application.entrypoint import (
     active_mission_permission_profile,
     mission_request_for_prompt,
@@ -25,6 +29,13 @@ from hypertrade.runtime.domain.thread_turn import (
 )
 from hypertrade.runtime.ports import MissionStore
 from hypertrade.runtime.thread_ports import ThreadStore
+
+_LOGGER = logging.getLogger(__name__)
+
+_CONSOLIDATE_CAPABILITIES = frozenset(
+    {"arc.evolution_status", "bitpro.variant_status", "bitpro.paper_snapshot"}
+)
+_REMEMBER_KEYWORDS = ("记住", "记下来", "保存记忆", "remember")
 
 _MISSION_WAIT_STATES = {
     MissionStatus.WAITING_APPROVAL,
@@ -49,11 +60,13 @@ class ThreadTurnService:
         mission_runtime: MissionRuntime,
         *,
         worker_enabled: bool,
+        db: Database | None = None,
     ) -> None:
         self.thread_store = thread_store
         self.mission_store = mission_store
         self.mission_runtime = mission_runtime
         self.worker_enabled = worker_enabled
+        self._db: Database | None = db
         self._tasks: set[asyncio.Task[None]] = set()
         self._locks: dict[str, asyncio.Lock] = {}
         self._worker_id = new_id("turn_worker")
@@ -338,6 +351,15 @@ class ThreadTurnService:
                 },
             },
         )
+        if completion_valid:
+            await self._consolidate_memory(
+                thread_id=thread_id,
+                turn_id=turn_id,
+                mission=mission,
+                attempts=attempts,
+                operator_response=operator_response,
+                evidence=evidence,
+            )
         terminal = "turn.completed" if completion_valid else "turn.failed"
         await self._append(
             thread_id,
@@ -352,6 +374,127 @@ class ThreadTurnService:
                 ),
             },
         )
+
+    def _resolve_memory_db(self) -> Database | None:
+        if self._db is not None and hasattr(self._db, "session"):
+            return self._db
+        executor = getattr(self.mission_runtime, "executor", None)
+        executor_db = getattr(executor, "db", None)
+        if executor_db is not None and hasattr(executor_db, "session"):
+            return executor_db  # type: ignore[no-any-return]
+        for store in (self.mission_store, self.thread_store):
+            engine = getattr(store, "engine", None)
+            if engine is None:
+                continue
+            try:
+                raw_url = engine.url.render_as_string(hide_password=False)
+            except Exception:  # noqa: BLE001
+                continue
+            sync_url = raw_url.replace("sqlite+aiosqlite:", "sqlite:", 1)
+            if sync_url == "sqlite:///:memory:":
+                continue
+            self._db = Database(sync_url)
+            return self._db
+        return None
+
+    async def _consolidate_memory(
+        self,
+        *,
+        thread_id: str,
+        turn_id: str,
+        mission: Any,
+        attempts: Any,
+        operator_response: Any,
+        evidence: Any,
+    ) -> None:
+        db = self._resolve_memory_db()
+        if db is None:
+            return
+        try:
+            snapshot = await self.thread_store.get(thread_id)
+            turn = snapshot.turn(turn_id)
+            resolved_ctx = turn.resolved_context if isinstance(turn.resolved_context, dict) else {}
+            user_text = ""
+            if turn.input_item_id:
+                try:
+                    item = snapshot.item(turn.input_item_id)
+                    user_text = str(item.content.get("text") or "").strip()
+                except KeyError:
+                    user_text = ""
+            if not user_text:
+                user_text = str(resolved_ctx.get("normalized_objective") or "").strip()
+
+            attempts_list = attempts if isinstance(attempts, list) else []
+            evidence_list = evidence if isinstance(evidence, list) else []
+            explicit_remember = any(
+                keyword in user_text.casefold() for keyword in _REMEMBER_KEYWORDS
+            )
+            used_observed_cap = any(
+                isinstance(attempt, dict)
+                and str(attempt.get("capability_id") or "") in _CONSOLIDATE_CAPABILITIES
+                and str(attempt.get("status") or "") == "succeeded"
+                for attempt in attempts_list
+            )
+            already_wrote_memory = any(
+                isinstance(attempt, dict)
+                and str(attempt.get("capability_id") or "") == "memory.write"
+                and str(attempt.get("status") or "") == "succeeded"
+                for attempt in attempts_list
+            )
+
+            if explicit_remember and already_wrote_memory:
+                return
+            if not explicit_remember and not (used_observed_cap and evidence_list):
+                return
+
+            evidence_summary = "；".join(
+                str(row.get("summary") or "").strip()
+                for row in evidence_list[:2]
+                if isinstance(row, dict) and str(row.get("summary") or "").strip()
+            )
+            decision = (
+                str(operator_response.get("decision") or "").strip()
+                if isinstance(operator_response, dict)
+                else ""
+            )
+            if explicit_remember:
+                kind = "operator_note"
+                raw_summary = (
+                    f"{user_text} — {evidence_summary}"
+                    if evidence_summary
+                    else (user_text or decision)
+                )
+            else:
+                kind = "strategy_observation"
+                raw_summary = evidence_summary or decision
+
+            summary = " ".join(raw_summary.split())[:400]
+            if len(summary) < 3:
+                return
+
+            tags: list[str] = ["thread_turn"]
+            resolved_subject = str(resolved_ctx.get("resolved_subject") or "").strip()
+            if resolved_subject and resolved_subject not in tags:
+                tags.append(resolved_subject)
+            raw_refs = resolved_ctx.get("subject_refs")
+            if isinstance(raw_refs, list):
+                for ref in raw_refs:
+                    cleaned = str(ref).strip()
+                    if cleaned and cleaned not in tags:
+                        tags.append(cleaned)
+
+            source_run_id = str(turn.mission_id or getattr(mission, "mission_id", "") or "")[:32]
+            await anyio.to_thread.run_sync(
+                lambda: MemoryService(db).write(
+                    content=summary,
+                    kind=kind,
+                    source_run_id=source_run_id,
+                    source_tool="thread_turn.consolidate",
+                    tags=tags,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - consolidation must never fail turn delivery
+            _LOGGER.debug("thread_turn memory consolidation skipped: %s", exc)
 
     async def _append(
         self,
