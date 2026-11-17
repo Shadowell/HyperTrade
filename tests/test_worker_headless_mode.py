@@ -144,7 +144,7 @@ def test_worker_main_staggers_non_critical_scan_loops_on_initial_start_only(
         MISSION_RUNTIME_WORKER_ENABLED=False,
         RESEARCH_TRIGGERS_ENABLED=False,
         ARC_PAPER_EFFECT_RECONCILE_ENABLED=False,
-        SELF_HEALING_EVOLUTION_ENABLED=False,
+        ARC_AVO_RESEARCH_ENABLED=False,
         RACE_JUDGE_ENABLED=False,
         ARC_MEMORY_DISTILLATION_ENABLED=False,
     )

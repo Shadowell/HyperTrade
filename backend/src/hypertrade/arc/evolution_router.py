@@ -8,7 +8,7 @@ from starlette.concurrency import run_in_threadpool
 
 from hypertrade.arc.attribution import read_attribution
 from hypertrade.arc.auth import ARCScope, require_scope
-from hypertrade.arc.evolution import EvolutionConfig, EvolutionService
+from hypertrade.arc.evolution import EVOLUTION_PRESETS, EvolutionConfig, EvolutionService
 
 router = APIRouter()
 
@@ -17,6 +17,11 @@ class EvolutionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     revision: int = Field(ge=0)
     config: EvolutionConfig
+
+
+class EvolutionPresetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    preset: str
 
 
 @router.get("/evolution", dependencies=[Depends(require_scope(ARCScope.READ))])
@@ -44,6 +49,24 @@ async def evolution_update(payload: EvolutionUpdate, request: Request) -> dict[s
             EvolutionService(request.app.state.db).configure,
             payload.config,
             revision=payload.revision,
+            actor=_actor_label(request),
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post("/evolution/preset", dependencies=[Depends(require_scope(ARCScope.POLICY))])
+async def evolution_apply_preset(
+    payload: EvolutionPresetRequest, request: Request
+) -> dict[str, Any]:
+    from hypertrade.arc.router import _actor_label
+
+    if payload.preset not in EVOLUTION_PRESETS:
+        raise HTTPException(400, f"unknown evolution preset: {payload.preset}")
+    try:
+        return await run_in_threadpool(
+            EvolutionService(request.app.state.db).apply_preset,
+            payload.preset,
             actor=_actor_label(request),
         )
     except ValueError as exc:

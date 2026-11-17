@@ -233,7 +233,7 @@ _ALL_OFF = {
     "RESEARCH_TRIGGERS_ENABLED": False,
     "AUTONOMOUS_PULSE_ENABLED": False,
     "ARC_PAPER_EFFECT_RECONCILE_ENABLED": False,
-    "SELF_HEALING_EVOLUTION_ENABLED": False,
+    "ARC_AVO_RESEARCH_ENABLED": False,
     "RACE_JUDGE_ENABLED": False,
     "ARC_MEMORY_DISTILLATION_ENABLED": False,
 }
@@ -277,6 +277,32 @@ def test_optional_loops_follow_their_settings() -> None:
         "memory_distillation",
     ):
         assert expected in names
+
+
+def test_avo_research_starts_by_default_even_without_mission_runtime_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ARC_AVO_RESEARCH_ENABLED", raising=False)
+    monkeypatch.delenv("MISSION_RUNTIME_WORKER_ENABLED", raising=False)
+    settings = Settings(
+        _env_file=None,
+        DEEPSEEK_API_KEY="",
+        MISSION_RUNTIME_WORKER_ENABLED=False,
+    )
+    names = [name for name, _ in worker.build_loops(Database("sqlite:///:memory:"), settings)]
+    assert settings.arc_avo_research_enabled is True
+    assert "avo_research" in names
+
+    disabled = Settings(
+        _env_file=None,
+        DEEPSEEK_API_KEY="",
+        ARC_AVO_RESEARCH_ENABLED=False,
+        MISSION_RUNTIME_WORKER_ENABLED=False,
+    )
+    disabled_names = [
+        name for name, _ in worker.build_loops(Database("sqlite:///:memory:"), disabled)
+    ]
+    assert "avo_research" not in disabled_names
 
 
 def test_mission_workers_follow_concurrency_and_the_full_cutover_rule() -> None:
