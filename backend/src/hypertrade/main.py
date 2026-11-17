@@ -1149,6 +1149,20 @@ def create_app(
             for row in MarketRepository(database).top_movers(limit=8)
         ]
         observability_summary = AgentObservabilityService(database).recent_summary()
+        cognitive_counts = MemoryService(database).cognitive_counts()
+        live_probe: dict[str, Any] | None = None
+        if app_settings.bitpro_mcp_api_token.strip():
+            try:
+                probe_fn = getattr(app.state.bitpro_adapter, "probe_connectivity", None)
+                if probe_fn is None and hasattr(BitProToolAdapter, "probe_connectivity"):
+                    adapter = BitProToolAdapter(BitProMcpClient(settings=app_settings))
+                    probe_fn = getattr(adapter, "probe_connectivity", None)
+                if callable(probe_fn):
+                    probe_result = probe_fn()
+                    if isinstance(probe_result, dict):
+                        live_probe = probe_result
+            except Exception:
+                live_probe = None
 
         with database.session() as session:
             latest_market_at = session.scalar(select(func.max(MarketTicker.updated_at)))
@@ -1187,6 +1201,7 @@ def create_app(
                     ),
                     "total_count": _count_rows(session, MemoryItem),
                     "latest_created_at": _iso_or_none(latest_memory_at),
+                    "cognitive": cognitive_counts,
                 },
                 "trace": {
                     "total_count": _count_rows(session, TraceEvent),
@@ -1217,6 +1232,7 @@ def create_app(
                     "auth_header": app_settings.bitpro_mcp_auth_header,
                     "token_configured": bool(app_settings.bitpro_mcp_api_token),
                     "token_source": "bitpro_settings_agent_token_or_server_env",
+                    "live_probe": live_probe,
                     "remote_mcp": bitpro_contract["remote_mcp"],
                     "agent_auth": bitpro_contract["agent_auth"],
                     "tool_groups": bitpro_contract["tool_groups"],
@@ -3581,13 +3597,22 @@ def create_app(
         query: str = "",
         kind: str = "",
         tag: str = "",
-    ) -> dict[str, list[dict[str, Any]]]:
+    ) -> dict[str, Any]:
         service = MemoryService(database)
         if query or kind or tag:
             items = service.search(query=query, kind=kind, tag=tag)
         else:
             items = service.list_active()
-        return {"items": [_memory_to_dict(item) for item in items]}
+        return {
+            "items": [_memory_to_dict(item) for item in items],
+            "cognitive": service.cognitive_counts(),
+            "cognitive_items": service.list_cognitive_items(
+                query=query,
+                kind=kind,
+                tag=tag,
+                limit=20,
+            ),
+        }
 
     @app.post("/api/memory/assertions")
     def propose_memory_assertion(
