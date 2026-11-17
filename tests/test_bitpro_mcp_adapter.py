@@ -1224,7 +1224,6 @@ def test_bitpro_paper_dashboard_builds_monitor_summary() -> None:
         "missing_strategy_metrics",
     }
     assert monitor["data_gaps"] == [
-        "running strategy inventory does not include per-strategy PnL/drawdown metrics",
         "running strategy inventory is truncated; listed_count=2 reported_total=5",
     ]
     assert [action["action"] for action in monitor["recommended_actions"]] == [

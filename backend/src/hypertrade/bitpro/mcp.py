@@ -1925,6 +1925,29 @@ def _extract_strategy_items(raw: Any) -> list[dict[str, Any]]:
 def _strategy_item(row: dict[str, Any]) -> dict[str, Any]:
     config = row.get("config")
     config = config if isinstance(config, dict) else {}
+    paper_metrics = row.get("paper_metrics")
+    paper_metrics = paper_metrics if isinstance(paper_metrics, dict) else {}
+    return_pct = _first_present(
+        row.get("return_pct"),
+        row.get("total_pnl_pct"),
+        row.get("cumulative_return_pct"),
+        row.get("pnl_pct"),
+        paper_metrics.get("total_pnl_pct"),
+        paper_metrics.get("return_pct"),
+        paper_metrics.get("cumulative_return_pct"),
+        paper_metrics.get("pnl_pct"),
+    )
+    total_pnl_pct = _first_present(
+        row.get("total_pnl_pct"),
+        paper_metrics.get("total_pnl_pct"),
+        return_pct,
+    )
+    max_drawdown_pct = _first_present(
+        row.get("max_drawdown_pct"),
+        row.get("max_drawdown"),
+        paper_metrics.get("max_drawdown_pct"),
+        paper_metrics.get("max_drawdown"),
+    )
     return _compact(
         {
             "id": row.get("id") or row.get("strategy_id"),
@@ -1938,12 +1961,9 @@ def _strategy_item(row: dict[str, Any]) -> dict[str, Any]:
             "initial_equity": _first_present(row.get("initial_equity"), row.get("initial_capital")),
             "equity": _first_present(row.get("equity"), row.get("current_equity")),
             "total_pnl": _first_present(row.get("total_pnl"), row.get("pnl")),
-            "return_pct": _first_present(
-                row.get("return_pct"), row.get("total_pnl_pct"), row.get("pnl_pct")
-            ),
-            "max_drawdown_pct": _first_present(
-                row.get("max_drawdown_pct"), row.get("max_drawdown")
-            ),
+            "total_pnl_pct": total_pnl_pct,
+            "return_pct": return_pct,
+            "max_drawdown_pct": max_drawdown_pct,
             "sharpe_ratio": _first_present(row.get("sharpe_ratio"), row.get("sharpe")),
         }
     )
@@ -2620,6 +2640,30 @@ def _paper_performance_gap(
     )
 
 
+def _inventory_item_has_metrics(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    paper_metrics = item.get("paper_metrics")
+    paper_metrics_dict = paper_metrics if isinstance(paper_metrics, dict) else {}
+    return (
+        _first_present(
+            item.get("total_pnl_pct"),
+            item.get("return_pct"),
+            item.get("cumulative_return_pct"),
+            item.get("pnl_pct"),
+            paper_metrics_dict.get("total_pnl_pct"),
+            paper_metrics_dict.get("return_pct"),
+            paper_metrics_dict.get("cumulative_return_pct"),
+            paper_metrics_dict.get("pnl_pct"),
+            item.get("max_drawdown"),
+            item.get("max_drawdown_pct"),
+            paper_metrics_dict.get("max_drawdown_pct"),
+            paper_metrics_dict.get("max_drawdown"),
+        )
+        is not None
+    )
+
+
 def _paper_monitor_summary(
     dashboard: Any,
     *,
@@ -2692,17 +2736,14 @@ def _paper_monitor_summary(
                 ),
             }
         )
-    has_strategy_metrics = all(
-        isinstance(item, dict)
-        and (
-            item.get("total_pnl_pct") is not None
-            or item.get("max_drawdown") is not None
-            or item.get("max_drawdown_pct") is not None
-        )
-        for item in running_items
-    )
+    has_strategy_metrics = all(_inventory_item_has_metrics(item) for item in running_items)
     missing_strategy_metrics = bool(
         strategy_id_filter is None and running_items and not has_strategy_metrics
+    )
+    dashboard_metrics_available = (
+        total_pnl is not None
+        or max_drawdown is not None
+        or _decimal_or_none(equity_dict.get("current")) is not None
     )
     if missing_strategy_metrics:
         alerts.append(
@@ -2713,7 +2754,10 @@ def _paper_monitor_summary(
             }
         )
     data_gaps: list[str] = []
-    if missing_strategy_metrics:
+    # Lightweight strategy_search(status=running) inventories may omit per-strategy breakdown when
+    # warm-up cache is cold or on older backends; do not trigger WARNING monitor_data_gap alerts
+    # while the primary paper dashboard already provides live equity/PnL/drawdown metrics.
+    if missing_strategy_metrics and not dashboard_metrics_available:
         data_gaps.append(
             "running strategy inventory does not include per-strategy PnL/drawdown metrics"
         )
