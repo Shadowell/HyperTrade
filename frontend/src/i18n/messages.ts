@@ -276,7 +276,12 @@ export const copy = {
     sectionCrashed: "这个区域出错了，其余区域不受影响。",
     reloadSection: "重新加载此区域",
     noToolCalls: "暂无工具调用",
-    overviewMetrics: "运行概览指标"
+    overviewMetrics: "运行概览指标",
+    headlessTitle: "无头研究引擎模式",
+    headlessNotice:
+      "HyperTrade 已收口为无头研究引擎，请前往 BitPro 唯一工作台（/ai-lab / /evolution）操作。",
+    headlessAiLabLink: "前往 BitPro AI 实验室 (/ai-lab)",
+    headlessEvolutionLink: "前往 BitPro 自主进化 (/evolution)"
   },
   en: {
     product: "HyperTrade",
@@ -558,7 +563,12 @@ export const copy = {
     sectionCrashed: "This section crashed; the rest of the console still works.",
     reloadSection: "Reload this section",
     noToolCalls: "No tool calls yet",
-    overviewMetrics: "Runtime overview metrics"
+    overviewMetrics: "Runtime overview metrics",
+    headlessTitle: "Headless Research Engine",
+    headlessNotice:
+      "HyperTrade is now consolidated as a headless research engine. Please operate in the BitPro unified console (/ai-lab / /evolution).",
+    headlessAiLabLink: "Open BitPro AI Lab (/ai-lab)",
+    headlessEvolutionLink: "Open BitPro Evolution (/evolution)"
   }
 } satisfies Record<Language, Record<string, string>>;
 

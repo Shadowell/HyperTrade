@@ -2,6 +2,7 @@ import {
   Activity,
   AlertTriangle,
   Archive,
+  ArrowUpRight,
   BarChart3,
   Bot,
   Brain,
@@ -93,6 +94,10 @@ import type {
   RouteMetric,
   HarnessOverview
 } from "./types";
+
+const BITPRO_CONSOLE_URL = (
+  import.meta.env.VITE_BITPRO_CONSOLE_URL || "https://bitpro.notenap.com"
+).replace(/\/+$/, "");
 
 function App() {
   const [access, setAccess] = useState<AccessMode>("unknown");
@@ -1086,6 +1091,37 @@ function App() {
         </aside>
 
         <main className="mx-auto min-w-0 w-full max-w-[1480px] px-8 py-7 max-lg:px-4">
+          <section
+            aria-label={t.headlessTitle}
+            className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-md border border-brass/35 bg-brass/10 px-4 py-3 text-sm"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-brass">
+                {t.headlessTitle}
+              </div>
+              <p className="mt-1 text-sm text-ink/85">{t.headlessNotice}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                className="icon-button border-signal/35 text-signal hover:border-signal/60"
+                href={`${BITPRO_CONSOLE_URL}/ai-lab`}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                {t.headlessAiLabLink}
+                <ArrowUpRight size={14} />
+              </a>
+              <a
+                className="icon-button border-brass/35 text-brass hover:border-brass/60"
+                href={`${BITPRO_CONSOLE_URL}/evolution`}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                {t.headlessEvolutionLink}
+                <ArrowUpRight size={14} />
+              </a>
+            </div>
+          </section>
           <div className={activeSection === "harness" ? "" : "hidden"}>
           <HarnessPage
             access={access}

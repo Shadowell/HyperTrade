@@ -138,3 +138,20 @@ test("the sidebar stays in view while the page scrolls", async () => {
 
   expect(screen.getByRole("complementary")).toHaveClass("lg:sticky", "lg:top-0");
 });
+
+test("displays headless research engine guidance and BitPro unified console links", async () => {
+  mockApi({ "/api/harness/overview": () => jsonResponse(liveOverview()) });
+
+  render(<App />);
+  await screen.findByText(t.bitproMcp);
+
+  expect(screen.getByText(t.headlessNotice)).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: t.headlessAiLabLink })).toHaveAttribute(
+    "href",
+    "https://bitpro.notenap.com/ai-lab"
+  );
+  expect(screen.getByRole("link", { name: t.headlessEvolutionLink })).toHaveAttribute(
+    "href",
+    "https://bitpro.notenap.com/evolution"
+  );
+});
