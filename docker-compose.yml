@@ -18,6 +18,7 @@ services:
       - hypertrade
 
   api:
+    image: hypertrade-api:latest
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -61,6 +62,7 @@ services:
       - hypertrade
 
   worker:
+    image: hypertrade-api:latest
     build:
       context: .
       dockerfile: backend/Dockerfile
