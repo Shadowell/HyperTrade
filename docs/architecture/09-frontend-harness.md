@@ -2,144 +2,61 @@
 
 ## English
 
-The frontend is an operational workbench, not a marketing page. `/harness` is intentionally a core console for Agent runs, report reading, tool trace, RAG, Memory, OKX market snapshot, recent runs, strategy-library evidence, monitor alerts, and approval/risk status.
+The frontend is an operational **HyperMonitor Control-Plane Workbench** for HyperTrade's governed Agent Runtime and headless research/evolution engine—not a marketing page or a trading terminal. Legacy 9-tab views (including `QuantumPortfolioDashboard.tsx` and the redundant `strategy`/`portfolio` tabs) have been consolidated into **4 high-signal routed sections** (`NavSection = "harness" | "missions" | "knowledge" | "system"` in `frontend/src/lib/routes.ts` and `frontend/src/types/index.ts`), with legacy routes redirected transparently:
 
-Runtime data comes from public workbench read endpoints, primarily `GET /api/harness/overview`. That endpoint keeps the page focused on a small operator surface: default provider status, OKX ticker freshness, recent Agent runs, recent trace events, RAG document/chunk counts, and Memory audit counts. The page no longer renders a login form for observability or research workflows. Advanced controls such as provider selection, paper lifecycle controls, live order approval/execution, strategy/backtest forms, eval panels, Memory disable, and Feishu send are intentionally not first-class UI controls; privileged mutations still require admin session auth at the API layer where they are exposed.
+1. **Workbench & Co-Pilot (`/harness` ← `/harness/runs`, `frontend/src/pages/WorkbenchPage.tsx`)**:
+   - Headless 5-card `TelemetryGrid` (Worker Loops from `/api/healthz`, BitPro MCP live probe & tools, Missions/Runs, Unified Memory `active + cognitive`, Evals/Tokens).
+   - Multi-turn canonical Thread/Turn Co-Pilot (`HarnessPage`, `RunControls`, `AgentProgress`, `ThreadDetails`, `ReportReader`, backed by `frontend/src/hooks/useAgentWorkbench.ts` and `frontend/src/agentThread.ts`): starts with an empty prompt (`""`, no OKX SWAP default framing), offers 4 clickable diagnostic quick-command chips (3-slot evolution status, BitPro Paper snapshot, `#strategy_id` diagnosis, cognitive rules recall), supports `Cmd/Ctrl+Enter` submit (clearing the prompt on turn start), non-destructive multi-thread switching (`listAgentThreads` via `GET /api/agent/v1/threads` fetched only when opened), active turn interruption (`interruptAgentTurn` via `POST /api/agent/v1/threads/{id}/turns/{turn_id}/interrupt`), deduplicated latest reply rendering between `ThreadDetails` and `ReportReader`, and inline HITL (`waiting_input` / `waiting_approval`) status display.
+   - `RuntimeMonitor` (with `BitProCard` displaying `bitpro.live_probe` online/auth/latency and diagnostic hints) and clickable recent runs/missions that load `AgentFlightRecorder` (`GET /api/agent/runs/{run_id}/observability`, projecting both legacy `AgentRun` and canonical `mis_*` `AgentMission` timelines into `agent-observability-v1`). `AgentFlightRecorder` is also automatically loaded when a canonical turn completes with a `mission_id`.
+2. **Missions & Evolution (`/harness/missions` ← `/harness/portfolio`, lazy-loaded `frontend/src/pages/MissionsEvolutionPage.tsx`)**:
+   - ARC 3-Slot Autonomous Evolution control strip (`GET /api/v1/arc/evolution?compact=true`, one-click `POST /api/v1/arc/evolution/preset` `{"preset":"production_3slot"}`, `POST /api/v1/arc/evolution/scan`, `budget.sources` 3-slot occupancy & cooldown cards, `GET/POST /api/portfolio/race-judge/{status,run-now}`, and direct deep links to BitPro `/ai-lab` and `/evolution`).
+   - Durable `MissionRuntime` workspace (`GET/POST /api/agent/missions*` for creating, running, pausing, resuming, canceling, steering missions, and inspecting plan/step/event/unknowns).
+3. **Knowledge, Memory & Governance (`/harness/knowledge` ← `/harness/{memory,rag,strategy}`, lazy-loaded `frontend/src/pages/KnowledgeMemoryPage.tsx`)**:
+   - Three-tier memory observability (`MemoryObservatory` + `GET /api/memory`): displays active Operational `MemoryItem` inventory (with `kind`/`tag` filters and `last_used_at`), Semantic causal rules (`ArcSemanticAssertion`), Episodic race outcomes (`ArcEpisodicMemory`), and `hypothesis_count` from `memory.cognitive` and `cognitive_items`.
+   - Auto-executed RAG knowledge search (`GET /api/rag/search?query=risk` on tab mount), Strategy Library drilldown (`GET /api/strategy/library`), and `GovernanceReview` (`MemoryAssertion`, `SkillProposal`, `SkillRelease` review with mandatory operator reason).
+4. **System, Alerts & Diagnostics (`/harness/system` ← `/harness/{alerts,quality}`, lazy-loaded `frontend/src/pages/SystemDiagnosticsPage.tsx`)**:
+   - Worker loop heartbeat & stall forensics (`GET /api/healthz` `workers.instances[]`, loop `components`, `last_stall` cause/frames, DB & BitPro/QuantLab adapter status).
+   - Unified alerts inbox (`GET /api/alerts` + `GET /api/v1/arc/evolution/alerts` with `POST .../ack`), deduplicated runtime exception journal (`GET /api/v1/arc/runtime-errors`), and ResearchOS deterministic eval summary.
 
-Sprint 52 expands the console with source-backed operator review surfaces:
+### Strict On-Demand Fetching & Unified API Client
 
-- Strategy evidence reads `GET /api/strategy/library` and displays best/latest evidence, pass/fail counts, failure reasons, next experiment candidates, and source ids for Memory, experiment, backtest, and BitPro result records.
-- Report reading can render structured blocks from `report_json.report_blocks` or `report_json.blocks` while preserving Markdown fallback for older reports.
-- Recent run rows can load `GET /api/agent/runs/{run_id}` so operators can inspect trace and report details without switching to the CLI.
-- Monitor alerts read the Sprint 51-style `/api/alerts` path when available; empty alert lists render an explicit operational empty state.
-- Approval/risk status is read-only in the console and surfaces pending live/testnet intents and risk status without adding live execution controls.
+- **Initial `/harness` mount** executes ONLY `GET /api/harness/overview` and `GET /api/healthz` (plus optional active thread restoration when `localStorage` already stores `hypertrade.agent.thread.v1`). Hidden tabs (`missions`, `knowledge`, `system`) are code-split via `React.lazy` + `<Suspense>` (with `vite.config.ts` `manualChunks` for `react-vendor` and `icons`) and never fetched until navigated to.
+- **Unified HTTP layer (`frontend/src/api/client.ts`)**: All console requests use `apiGet`, `apiPost`, `apiPut`, and `apiDelete` (`credentials: "include"`, mapping non-2xx responses to `ApiError` and 401/403 via `isAuthError` -> `readonly` mode).
+- **Honest unknowns & passive auth**: Before `/api/harness/overview` arrives, overview is `null` (`EMPTY_OVERVIEW` is all zeros). The console never probes `/api/auth/me` and renders no login form; only when a privileged call returns 401/403 does it enter `readonly` mode (`ht /login` hint and disabled mutations). When `headless_mode=true`, `/api/harness/overview` omits dormant market/paper/strategy_lab/live_orders DB scans and renders `headlessNotice` links to BitPro `/ai-lab` and `/evolution`.
 
-Sprint 76 adds the componentized `AgentFlightRecorder`. It reads
-`GET /api/agent/runs/{run_id}/observability` and renders an ordered Graph /
-Model / Tool / Policy / Memory tape, provider-reported Token composition,
-per-call and tool latency, linked Memory ids, and an explicit redaction boundary.
-Unknown provider usage is displayed as unavailable rather than estimated.
+### HyperMonitor Design Direction (`ConsoleShell.tsx`, `HyperBrandMark.tsx`, `styles.css`, `tailwind.config.ts`)
 
-Sprint 88 expands the routed Memory page into a read-only Memory observability
-dashboard. It uses the existing `GET /api/memory` payload only: active-item
-composition by `kind`, creation-date activity, and the audited importance,
-confidence, and reuse fields. “Capacity” means the proportion of active loaded
-items, not a fabricated storage quota. Search retains a full inventory snapshot
-for the dashboard while rendering filtered rows for the operator.
+- **3-tier control-plane shell**: `.hm-topbar` (68px with `<HyperBrandMark />`, BitPro quick links, theme toggle, ZH/EN toggle, alert bell, live clock, `AccessBadge`), `.hm-sub-topbar` (42px with sidebar collapse toggle, breadcrumb, `.hm-headless-strip`, pinned tab pill), and `.hm-layout` (collapsible sticky left `<aside className="hm-sidebar ...">`, fluid `.hm-workspace`, and right 280px `.hm-signals-rail` `<div>`).
+- **Dual-theme tokens**: Obsidian Dark (`:root`: `--bg: #070708`, `--panel: #141416`, `--panel2: #1c1c20`, `--line: #2a2a30`, `--accent: #c026d3`, `--accent-gradient: linear-gradient(90deg, #7c3aed, #db2777)`, `--up: #10b981`, `--warn: #f59e0b`, `--down: #ef4444`, `--info: #06b6d4`, `--radius-card: 22px`, `--radius-inset: 16px`) and Light Surface (`[data-theme="light"]`: `--bg: #f3f1f8`, `--panel: #ffffff`, `--card-inset-bg: #f6f4fb`, `--line: #e8e3f2`), toggled via `hypertrade.theme.v1` and mapped to Tailwind `--rgb-*` utilities.
+- Chinese UI by default, English toggle available; `lucide-react` icons throughout.
 
-Sprint 89 adds a shared route-context metric strip. It is not a second data
-dashboard: each page projects only already loaded, source-bound state. The
-workbench uses global telemetry; strategy projects evidence totals; alerts
-project monitor and approval state; runs project run/trace/provider counts;
-Memory projects its active inventory; and RAG projects document/chunk/search
-counts. No route creates a new API request just for visual statistics.
-
-Sprint 90 gives the operator's evidence and state rows a shared card system.
-Strategy evidence, monitor alerts, approval intents, Memory rows, and RAG hits
-all use one compact dark container and an explicit semantic rail. The rail is
-a presentation of the source state (signal, brass, violet, or danger), never a
-new risk calculation or permission decision.
-
-Sprint 91 completes the strategy evidence hierarchy. Summary, performance,
-provenance, guidance, and drilldown blocks reuse a lower-contrast compact card
-variant inside the selected strategy card. This preserves a visual distinction
-between the primary evidence selection and its audited subfacts while keeping
-one consistent source-state language.
-
-The `/harness` Agent workbench is composed from focused components in
-`frontend/src/components/agent/`: `HarnessHeader`, `TelemetryGrid`, `RunControls`,
-`AgentProgress`, `ThreadDetails`, `ReportReader`, `RuntimeMonitor` (with `BitProCard`) and the
-existing `AgentFlightRecorder`, assembled by `HarnessPage`. Each region sits in its own
-`ErrorBoundary`, so one crashing region does not blank the console. Shared pieces moved out of
-`App.tsx` into `types/`, `i18n/`, `lib/` (format, time, errors, markdown, report),
-`api/client.ts` (typed fetch with `ApiError`) and `components/ui/`. The other pages are untouched:
-the split is incremental by design (`docs/optimization/03-frontend-component-refactor.md`).
-
-The page states what it does not know. Before the first response the overview is `null`: the
-header says it is connecting, telemetry shows placeholders and the tool heading keeps a skeleton
-body. If the API cannot be reached the page says "overview unavailable" and offers Retry. It never
-falls back to sample data (a preview fixture with an example report, a paper account and a BitPro
-configuration was removed); `EMPTY_OVERVIEW` is all zeros. With no run, the report area is an
-explicit empty state.
-
-Access detection stays passive. The console never probes the session and renders no login form
-(see `docs/spec.md`). Only when a privileged call (run, new thread, archive thread) is refused with
-401/403 does the page switch to read-only: an explanatory note (an admin session is required; sign
-in from a terminal with `ht /login`), a "Read-only" badge, and the three actions disabled. Errors
-are mapped to actionable localized sentences (`describeError`) instead of raw status text. After the
-overview, the other sections load in parallel (`Promise.allSettled`), so one failing endpoint no
-longer stops the rest and the header stops spinning once the overview is in.
-
-Design direction:
-
-- dense dark observability console with deep green-black surfaces and a restrained grid texture
-- light operational text, cyan runtime state, amber audit emphasis, and red risk state
-- 8px-or-less radius
-- lucide icons for controls and state
-- Chinese UI by default, English toggle available
+---
 
 ## 中文
 
-前端是操作工作台，不是营销页。`/harness` 刻意收敛为核心控制台，展示 Agent 运行、报告阅读、工具 trace、RAG、Memory、OKX 行情快照、最近运行、策略库证据、监控告警和审批/风控状态。
+HyperTrade 前端是一个面向受治理 Agent Runtime 与无头研究/进化引擎的 **HyperMonitor 控制平面工作台**，不是营销页，也不是交易下单终端。重构后，原有 9 个分散视图（含已删除的 `QuantumPortfolioDashboard.tsx` 与内联 `PortfolioLifecyclePanel`、以及冗余的 `strategy`/`portfolio` 页签）已按第一性原理收敛为 **4 个高信噪比核心路由**（`NavSection = "harness" | "missions" | "knowledge" | "system"`，定义于 `frontend/src/lib/routes.ts` 与 `frontend/src/types/index.ts`），并保留旧路径透明重定向：
 
-页面通过公开的工作台读取接口获取运行态，核心入口是 `GET /api/harness/overview`。这个聚合端点让操作路径集中在一个较小界面里：默认 Provider 状态、OKX 行情新鲜度、最近 Agent run、最近 trace、RAG 文档/分片计数、Memory 审计计数。工作台不再为了可观测性和研究流程渲染登录表单；Provider 切换、paper 生命周期控制、实盘审批/执行、策略/回测表单、评测面板、Memory 禁用、发送飞书等高级控制不再作为首屏/主页面功能，仍暴露的特权写操作继续在 API 层要求 admin session auth。
+1. **控制台与对话 (`/harness` ← `/harness/runs`，`frontend/src/pages/WorkbenchPage.tsx`)**：
+   - 顶部 5 卡无头遥测条 `TelemetryGrid`（`/api/healthz` Worker 循环存活与 Stall、BitPro MCP 实时探活与工具数、Missions/Runs 计数、统一记忆 `active + cognitive`、评测/Token 用量）。
+   - 多轮规范 Thread/Turn Co-Pilot（由 `HarnessPage`、`RunControls`、`AgentProgress`、`ThreadDetails`、`ReportReader` 组成，状态收敛于 `frontend/src/hooks/useAgentWorkbench.ts` 与 `frontend/src/agentThread.ts`）：清空历史 OKX SWAP 默认提示词，内置 4 个可点击诊断快捷芯片（`3-Slot 进化状态`、`BitPro Paper 快照`、`#strategy_id 诊断`、`认知规则召回`）；支持 `Cmd/Ctrl+Enter` 发送并在开轮后清空输入框；按需拉取历史会话切换器（`listAgentThreads` 调用 `GET /api/agent/v1/threads`）且新建会话不再强行归档旧会话；支持运行中回合中断（`interruptAgentTurn` 调用 `POST /api/agent/v1/threads/{id}/turns/{turn_id}/interrupt`）、去重 `ThreadDetails` 与 `ReportReader` 的最新回复，以及行内 HITL 等待审批/输入状态展示。
+   - 右栏 `RuntimeMonitor`（含展示 `bitpro.live_probe` 实时连通/延迟/诊断提示的 `BitProCard`）与可点击的最近运行/Mission 列表，点击或 Turn 完成带 `mission_id` 时自动加载 `AgentFlightRecorder`（`GET /api/agent/runs/{run_id}/observability`，兼容投影 `AgentRun` 与 `mis_*` `AgentMission` 的 `agent-observability-v1` 时间线）。
+2. **任务与进化 (`/harness/missions` ← `/harness/portfolio`，懒加载 `frontend/src/pages/MissionsEvolutionPage.tsx`)**：
+   - ARC 3-Slot 自主进化控制条（`GET /api/v1/arc/evolution?compact=true`、一键应用 `POST /api/v1/arc/evolution/preset` `{"preset":"production_3slot"}`、触发扫描 `POST /api/v1/arc/evolution/scan`、`budget.sources` 3 槽位占用与冷却卡片、`GET/POST /api/portfolio/race-judge/{status,run-now}` 以及跳转 BitPro `/ai-lab` 与 `/evolution` 链接）。
+   - 持久化 `MissionRuntime` 工作区（`/api/agent/missions*`，支持创建、运行、暂停、恢复、取消、Steer 与计划/步骤/事件/未知项检视）。
+3. **记忆与治理 (`/harness/knowledge` ← `/harness/{memory,rag,strategy}`，懒加载 `frontend/src/pages/KnowledgeMemoryPage.tsx`)**：
+   - 三层记忆可观测台（`MemoryObservatory` + `GET /api/memory`）：同时展示操作型 `MemoryItem`（支持 `kind`/`tag` 过滤与 `last_used_at`）、语义因果规则（`ArcSemanticAssertion`）、情景赛马经验（`ArcEpisodicMemory`）及 `memory.cognitive` / `cognitive_items` 统计与条目。
+   - 进页自动触发默认 RAG 检索（`GET /api/rag/search?query=risk`）、策略知识库下钻（`GET /api/strategy/library`）及 `GovernanceReview`（`MemoryAssertion` / `SkillProposal` / `SkillRelease` 人工复核）。
+4. **告警与诊断 (`/harness/system` ← `/harness/{alerts,quality}`，懒加载 `frontend/src/pages/SystemDiagnosticsPage.tsx`)**：
+   - Worker 循环心跳与 Stall 取证矩阵（`GET /api/healthz` 的 `workers.instances[]`、循环 `components`、`last_stall` 归因与调用帧、DB 及适配器健康）。
+   - 统一告警收件箱（`GET /api/alerts` + `GET /api/v1/arc/evolution/alerts` 含一键 Ack）、去重运行时错误台账（`GET /api/v1/arc/runtime-errors`）及 ResearchOS 确定性评测状态。
 
-Sprint 52 增加面向操作员的证据审阅能力：
+### 严格按需取数与统一 API 客户端
 
-- 策略证据读取 `GET /api/strategy/library`，展示最佳/最新证据、通过/失败计数、失败原因、下一步实验建议，以及 Memory、experiment、backtest、BitPro result 等来源 id。
-- 报告阅读优先渲染 `report_json.report_blocks` 或 `report_json.blocks` 中的结构化 block，同时保留旧报告的 Markdown 回退。
-- 最近运行可以读取 `GET /api/agent/runs/{run_id}`，让操作员不用切 CLI 就能查看报告和 trace 详情。
-- 监控告警读取 Sprint 51 风格的 `/api/alerts` 路径；当告警列表为空时，页面展示明确空状态，而不是报错。
-- 审批/风控区域保持只读，只展示待审批 live/testnet intent 与 risk status，不扩展实盘执行 UI。
+- **首屏严格按需取数**：`/harness` 挂载时只请求 `GET /api/harness/overview` 与 `GET /api/healthz`（若 `localStorage` 已存 `hypertrade.agent.thread.v1` 则按需恢复当前会话）。非首屏页面通过 `React.lazy` + `<Suspense>` 与 `vite.config.ts` `manualChunks`（`react-vendor`、`icons`）按需分包加载，切换进入前零请求。
+- **统一请求层（`frontend/src/api/client.ts`）**：全站收敛至 `apiGet`、`apiPost`、`apiPut`、`apiDelete`（统一携带 `credentials: "include"`，将非 2xx 映射为 `ApiError`，经 `isAuthError` 被动识别 401/403 切换至只读态）。
+- **诚实未知与被动鉴权**：不主动探测 `/api/auth/me`、不渲染登录表单，仅在特权写/读被 401/403 拒绝时显示 `Read-only` 徽标与 `ht /login` 提示；`headless_mode=true` 时后端跳过休眠本地行情/模拟盘/策略研究/实盘订单查库并保持 `EMPTY_OVERVIEW` 零值基线。
 
-Sprint 76 新增组件化 `AgentFlightRecorder`。它读取
-`GET /api/agent/runs/{run_id}/observability`，按顺序显示 Graph / Model /
-Tool / Policy / Memory 时间带、Provider 返回的 Token 构成、模型与工具延迟、
-关联 Memory id 和明确的脱敏边界。Provider 没返回 usage 时显示不可用，
-不会用字符数估算冒充精确 Token。
+### HyperMonitor 视觉体系（`ConsoleShell.tsx`、`HyperBrandMark.tsx`、`styles.css`、`tailwind.config.ts`）
 
-Sprint 88 将独立的 Memory 路由扩展为只读可观测面板。它只使用既有
-`GET /api/memory` 返回的 active 条目：按 `kind` 的构成、按创建日期的写入
-节奏，以及已审计的 importance、confidence、usage_count 字段。界面中的“容量”
-指已加载活跃条目的构成比例，不代表虚构的存储配额。搜索结果只过滤操作员列表，
-面板仍保留完整库存快照。
-
-Sprint 89 增加共享的路由上下文指标条。它不是第二套数据面板：每个页面只投影
-已经加载且有来源的数据。工作台使用全局遥测；策略页投影证据总数；告警页投影
-监控与审批状态；运行页投影运行/Trace/Provider 请求数；Memory 页投影活跃库存；
-RAG 页投影文档、分片和检索命中数。不会为了视觉统计新增 API 请求。
-
-Sprint 90 为操作员的证据和状态行提供共享的卡片系统。策略证据、监控告警、审批
-意图、Memory 条目和 RAG 命中都使用同一个紧凑的深色容器与显式状态轨。状态轨只
-展示来源状态（signal、brass、violet、danger），绝不构成新的风险计算或权限决策。
-
-Sprint 91 完成策略证据的卡片层级。摘要、表现指标、来源引用、实验建议和详情行在
-选中的策略证据卡内部复用低对比度的紧凑卡片变体。它保留主证据选择与审计子事实的
-层级差异，同时维持同一套来源状态语言。
-
-`/harness` Agent 工作台由 `frontend/src/components/agent/` 下职责单一的组件组成：
-`HarnessHeader`、`TelemetryGrid`、`RunControls`、`AgentProgress`、`ThreadDetails`、
-`ReportReader`、`RuntimeMonitor`（含 `BitProCard`）和既有的 `AgentFlightRecorder`，由
-`HarnessPage` 组装。每个区域各有一层 `ErrorBoundary`，单个区域崩溃不会让整个控制台白屏。
-公共部分从 `App.tsx` 搬到 `types/`、`i18n/`、`lib/`（格式化、时间、错误、Markdown、报告）、
-`api/client.ts`（带 `ApiError` 的类型化请求）和 `components/ui/`。其余页面保持不变：拆分是
-有意渐进的（见 `docs/optimization/03-frontend-component-refactor.md`）。
-
-页面如实表达“不知道”。首个响应之前概览为 `null`：头部显示连接中，遥测卡用占位符，工具
-标题保留、内容是骨架。API 不可达时页面明确显示“无法获取运行概览”并提供重试，绝不回退到
-示例数据（原先带示例报告、模拟账户和 BitPro 配置的预览夹具已删除）；`EMPTY_OVERVIEW` 全部
-为零。没有运行记录时，报告区是明确的空状态。
-
-访问状态保持被动判定。控制台不探测会话，也不渲染登录表单（见 `docs/spec.md`）。只有特权
-操作（运行、新建会话、归档会话）被服务端以 401/403 拒绝时，页面才进入只读状态：给出说明
-（需要管理员会话，请先在终端执行 `ht /login`）、显示“只读”徽标，并禁用这三个操作。错误
-经 `describeError` 映射成可操作的本地化句子，而不是原始状态文本。概览之后，其余分区并行加载
-（`Promise.allSettled`），一个接口失败不再中断其余分区，概览到达后头部也不再一直转圈。
-
-设计方向：
-
-- 信息密度较高的交易工作台
-- 克制的 paper/ink/brass 配色
-- 圆角不超过 8px
-- 控件和状态使用 lucide 图标
-- 默认中文，提供英文切换
+- **三层控制面外壳**：`.hm-topbar`（68px，`<HyperBrandMark />` 脉搏心电徽标、`HYPERTRADE` 渐变品牌字标、BitPro 快捷入口、深浅主题切换、中英切换、告警铃铛、实时时钟与 `AccessBadge`）、`.hm-sub-topbar`（42px，侧栏折叠、面包屑、`.hm-headless-strip` 无头引导条与固定页签胶囊）、`.hm-layout`（可折叠 sticky 左侧 `<aside className="hm-sidebar ...">`、流式 `.hm-workspace` 主区与右侧 280px `.hm-signals-rail` 实时信号轨）。
+- **暗黑曜石 + 浅紫白卡双主题**：暗色默认 `:root`（`--bg: #070708`、`--panel: #141416`、`--panel2: #1c1c20`、`--line: #2a2a30`、`--accent: #c026d3`、紫粉渐变 `--accent-gradient: linear-gradient(90deg, #7c3aed, #db2777)`、`--radius-card: 22px`、`--radius-inset: 16px`）与浅色 `[data-theme="light"]`（`--bg: #f3f1f8`、`--panel: #ffffff`、`--card-inset-bg: #f6f4fb`、`--line: #e8e3f2`），由 `hypertrade.theme.v1` 持久化并通过 `--rgb-*` 变量映射至 Tailwind 语义色板。默认中文界面，支持英文一键切换。

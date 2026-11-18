@@ -14,7 +14,7 @@
   <a href="#"><img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.9-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14%2B_pgvector-4169E1.svg" alt="PostgreSQL" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-3000%2B%20passed-success.svg" alt="Tests" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-3089%20passed-success.svg" alt="Tests" /></a>
   <a href="docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md"><img src="https://img.shields.io/badge/%E8%87%AA%E4%B8%BB%E8%BF%9B%E5%8C%96-%E9%BB%98%E8%AE%A4%E5%BC%80%E5%90%AF-brightgreen.svg" alt="Evolution" /></a>
   <a href="docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md"><img src="https://img.shields.io/badge/markets-BitPro_%7C_QuantLab-orange.svg" alt="Markets" /></a>
 </p>
@@ -55,8 +55,8 @@
 ```mermaid
 flowchart LR
   BitProUI["BitPro 唯一操作台 (/ai-lab · /evolution)"] --> API["FastAPI 控制面 (mem_limit: 2g)<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
-  Op["HyperTrade Web (无头引导横幅) · ht CLI · TUI"] --> API
-  API --> DB[("PostgreSQL + pgvector<br/>52 项迁移 · Mission 投影 · 演进树 · 记忆库")]
+  Op["HyperTrade Web (HyperMonitor 四视图控制面) · ht CLI · TUI"] --> API
+  API --> DB[("PostgreSQL + pgvector<br/>53 项迁移 · Mission 投影 · 演进树 · 记忆库")]
   Worker["无头 Worker 集群 (mem_limit: 3g)<br/>ARC 研究 · 进化 · 自动评审 · 观察 · 赛马裁判 · 启动错峰 2s..15s"] --> DB
   Worker --> Research["ARC 自主研究循环 (AVO + RD-Agent)<br/>HET 假设树 → Co-STEER 合成 → AST 门禁 → 沙箱自测 → 基线对比"]
   Worker --> Evolution["自主进化引擎（默认开启）<br/>退化 / 上线扫描 → 预算准入 → 再研究或参数微调 → 入场检查 → 赛马对决 → 效果账本"]
@@ -109,9 +109,9 @@ flowchart LR
 ### 5. 无头研究引擎模式、分级探活矩阵与 BitPro 唯一工作台收口
 - **无头研究引擎（`HYPERTRADE_HEADLESS_MODE`）**：生产部署（`docker-compose.yml` 默认开启 `HYPERTRADE_HEADLESS_MODE: ${HYPERTRADE_HEADLESS_MODE:-true}`，并设定 `api mem_limit: 2g`、`worker mem_limit: 3g`）下，操作交互统一收口至 BitPro 工作台（`/ai-lab` 与 `/evolution`），HyperTrade Web 顶部展示无头引导横幅并附直达链接。Worker 停用冗余的 `market_ingestion`、`market_rest_supplement`、`paper_trading` 与 `autonomous_market_pulse` 循环（亦可通过 `MARKET_INGESTION_ENABLED` 独立控制），并对非关键扫描循环在首次启动时按 2s/5s/8s/12s/15s 错峰调度以消除冷启动并发峰值。`bitpro/mcp.py` 兼容 `strategy_search(status=running)` 多口径收益/回撤字段，并在 `paper_dashboard` 可用时避免误报 `monitor_data_gap`。契约详见 [headless-bitpro-fusion](docs/contracts/headless-bitpro-fusion.md)。
 - **探活矩阵**：`/livez`（进程存活）、`/readyz`（`SELECT 1` 数据库就绪）、`/healthz`（包含 DB 延迟、QuantLab/BitPro 适配器心跳、worker 存活心跳、Paper 会话与令牌审计全景诊断）、`/version`（运行中的提交 SHA，发布流程每次部署后据此校验），原生适配 K8s 探针；
-- **量子指挥台 (QuantumPortfolioDashboard)**：React 19 现代化界面，内置无头工作台迁移引导、BitPro / QuantLab 一键切换、动态 A 股微观规则警示徽章、HET 假设演进树可视化渲染与净额换仓切片步进监视器。
+- **HyperMonitor 控制面工作台 (`/harness`)**：React 19 + TypeScript 5.9 + Tailwind CSS 三层外壳（`ConsoleShell`），提供暗黑曜石（`#070708`/`#141416` + 紫粉渐变）与浅紫白卡双主题切换，将原 9 个页签收敛为 4 个按需懒加载控制面路由（`/harness` 多轮 Co-Pilot 与 Flight Recorder、`/harness/missions` ARC 3-Slot 进化与 Mission 工作区、`/harness/knowledge` 三层认知记忆与治理、`/harness/system` Worker Stall 取证与统一告警/错误台账）；`/harness` 首屏严格只请求 `GET /api/harness/overview`（含 `headless_mode` 与 `missions_summary`）与 `GET /api/healthz`。
 
-设计文档：[67 生产级探活与令牌轮换](docs/architecture/67-production-observability-probes-and-token-rotation.md)
+设计文档：[09 前端 Harness](docs/architecture/09-frontend-harness.md) · [67 生产级探活与令牌轮换](docs/architecture/67-production-observability-probes-and-token-rotation.md)
 
 ---
 
@@ -206,7 +206,7 @@ curl http://localhost:3334/api/portfolio/relay/handovers
 ./scripts/check.sh
 ```
 
-一条命令跑完全部门禁：前端（lint / vitest / 生产构建）+ 后端（Ruff 代码检查与格式化 + Mypy 严格类型检查 + Pytest 全量测试，当前 3070+ 项测试 100% 绿灯）。
+一条命令跑完全部门禁：前端（lint / vitest 72 项 / 生产构建）+ 后端（Ruff 代码检查与格式化 + Mypy 严格类型检查 + Pytest 全量测试，当前 3089 项通过、3 项跳过）。
 
 ---
 
@@ -217,14 +217,14 @@ curl http://localhost:3334/api/portfolio/relay/handovers
 | **控制面** | FastAPI 0.122+ / Uvicorn，作用域安全令牌，`/livez`, `/readyz`, `/healthz` 容器探活矩阵，游标可续传 SSE |
 | **凭据安全** | `TokenRotationService`（SHA-256 单向散列，零明文存储，24h 宽限期热轮换，7天临期审计） |
 | **运行时与领域** | Python 3.12+、Pydantic v2 严格合同，模块化单体 + ports-and-adapters |
-| **存储** | SQLAlchemy 2.0 + Alembic（52 个迁移），PostgreSQL 14+ 带 `pgvector` |
+| **存储** | SQLAlchemy 2.0 + Alembic（53 个迁移），PostgreSQL 14+ 带 `pgvector` |
 | **Worker 集群** | asyncio + PostgreSQL SQL lease 租约（受监督多并发后台循环；无头模式停用本地行情/模拟盘/脉冲，默认开启 `avo_research`） |
 | **研究与演进中枢** | ARC + RD-Agent 假设演进树 (HET) + Co-STEER 代码合成器 + `ASTGatekeeper` 语法守卫 |
 | **多市场目标适配** | `market_target.v1` 与 `market-evolution.v1` MCP 契约；BitPro (Crypto) + QuantLab (A股) |
 | **A 股微观规则** | `AShareMarketRules` / `AShareRuleValidator`（T+1 状态机、现货单向多头、一手100股、万2.5/5bps） |
 | **平滑换仓接力** | `PositionNettingRelayService`（持仓交集保留 $\min(P,C)$，净额差量 $\Delta = C-P$ 分批平滑切片，换手节约 >80%） |
 | **策略沙箱** | UDS 隔离进程、非 root、无网络、只读根、资源限制、digest 绑定 |
-| **前端与终端** | React 19 + TypeScript 5.9 + Vite 7 + Tailwind CSS（量子量化指挥台）；Tauri 桌面端；Textual TUI；`ht` CLI |
+| **前端与终端** | React 19 + TypeScript 5.9 + Vite 8 + Tailwind CSS（HyperMonitor 四视图控制面）；Tauri 桌面端；Textual TUI；`ht` CLI |
 | **部署** | Docker Compose + Nginx + GitHub Actions（`main` 分支自动部署） |
 
 ---
@@ -236,7 +236,8 @@ curl http://localhost:3334/api/portfolio/relay/handovers
 | [架构总览](docs/architecture/00-overview.md) | 架构阅读引导与**架构变更同步强准则** |
 | [33 系统架构](docs/architecture/33-system-architecture.md) | 生产实现全景快照：多市场目标、运行时分层、安全与探活矩阵 |
 | [66 QuantLab 与 A 股微观结构](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md) | QuantLab 适配器、向量化策略转译器、A 股微观规则与持仓净额平滑换仓 |
-| [67 生产级探活与令牌轮换](docs/architecture/67-production-observability-probes-and-token-rotation.md) | `/livez`, `/readyz`, `/healthz` 探活矩阵、`TokenRotationService` 与多目标指挥台 |
+| [09 前端 Harness](docs/architecture/09-frontend-harness.md) | HyperMonitor 四视图控制面工作台、双主题外壳与严格按需取数架构 |
+| [67 生产级探活与令牌轮换](docs/architecture/67-production-observability-probes-and-token-rotation.md) | `/livez`, `/readyz`, `/healthz` 探活矩阵、`TokenRotationService` 与 Stall 取证 |
 | [65 RD-Agent 演进与分层记忆](docs/architecture/65-rd-agent-evolution-and-finmem-layered-memory.md) | 假设演进树（HET）、Co-STEER 代码合成与 FinMem 三层认知记忆 |
 | [64 全自主交易 Agent 架构](docs/architecture/64-autonomous-trading-agent-system-architecture.md) | 统一感知总线、三速协同决策与受控自主边界 |
 | [62 可插拔市场目标](docs/architecture/62-pluggable-market-targets.md) | `market_target.v1` / `market-evolution.v1` 契约与接入方式 |
@@ -279,3 +280,5 @@ curl http://localhost:3334/api/portfolio/relay/handovers
 2026-10-15：ARC 新增 `GET /api/v1/arc/variant-status?source_strategy_id=…&candidate_strategy_id=…` 只读摘要。限定 BitPro 目标并精确绑定母体/候选，只选取持久投影子字段与当前受阻任务最近一条阻塞事件，不重建控制器、不加载完整事件/模型对话；权限继续为 `arc:read`。最多检索母体最近100条任务，无匹配返回 `not_found`，不代表审核通过。
 
 2026-11-18：完成生产 Agent 全链路四项升级：① **自主变体流水线疏通与 `production_3slot` 预设**（`ARC_AVO_RESEARCH_ENABLED=true`、`ARC_EVOLUTION_BOOTSTRAP_PRESET`、`POST /api/v1/arc/evolution/preset`、来源变体绑定资金校验放行 `<= 10000` 及 `effective_validation_criteria` 周期缩放）；② **BitPro MCP 加固与 `MissionRuntime` 融合**（线程安全 LRU `httpx.Client` 连接池、Docker/401/403 诊断提示、15s `probe_connectivity` 与前端 `BitProCard` 实时探活徽章、对齐 `bitpro-mcp-v1` 协同事件总线/复盘/监控/FactorLab Studio 端点、`bitpro_paper_stop` 强制 `clear_metrics=False` 连续性守卫，以及 `MissionRuntime` 新增 `bitpro.paper_snapshot`/`bitpro.variant_status`/`arc.evolution_status` 与 `#123` 数值策略上下文解析）；③ **认知与操作记忆统一闭环**（同源 `lineage_key` 跨 Mission 召回、`paper_observation_ended` 赛马终裁情景、零模型 `deterministic_causal_summarizer` 蒸馏并同步至 `MemoryItem`、统一 `memory.search`/`memory.write`/`ThreadTurnService._consolidate_memory` 及 `/api/harness/overview` 与 `/api/memory` 认知遥测）；④ **死代码清理**（移除遗留 `hypertrade.ui`、`agent/formatters.py`、`risk/canary.py`、5 个原型脚本及废弃 `self_healing_evolution_loop`，并由 `tests/test_dead_code_hygiene.py` 持续守卫）。
+
+2026-11-18（HyperMonitor 工作台重构与控制面 API 完善）：移除 `QuantumPortfolioDashboard.tsx` 与内联 `PortfolioLifecyclePanel`，将 9 个视图收敛为 4 个懒加载 HyperMonitor 控制面路由（`/harness`、`/harness/missions`、`/harness/knowledge`、`/harness/system`），采用暗黑曜石（`#070708`/`#141416` + 紫粉渐变）与浅紫白卡双主题三层 `ConsoleShell`、严格首屏按需取数、统一 `apiGet`/`apiPost`/`apiPut`/`apiDelete` 客户端及多轮 Co-Pilot（快捷诊断芯片、非破坏性会话切换、Turn 中断）；后端在 `GET /api/harness/overview` 补齐 `headless_mode` 与 `missions_summary`（无头跳过休眠查库并由 `bitpro_capabilities()` 派生 `bitpro.tools`），新增 `GET /api/v1/arc/runtime-errors`、`GET /api/agent/v1/threads`，并支持将 `mis_*` `AgentMission` 投影为 `agent-observability-v1` 飞行记录。

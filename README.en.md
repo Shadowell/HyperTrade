@@ -14,7 +14,7 @@
   <a href="#"><img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.9-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14%2B_pgvector-4169E1.svg" alt="PostgreSQL" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-3000%2B%20passed-success.svg" alt="Tests" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-3089%20passed-success.svg" alt="Tests" /></a>
   <a href="docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md"><img src="https://img.shields.io/badge/evolution-default_on-brightgreen.svg" alt="Evolution" /></a>
   <a href="docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md"><img src="https://img.shields.io/badge/markets-BitPro_%7C_QuantLab-orange.svg" alt="Markets" /></a>
 </p>
@@ -55,8 +55,8 @@ It is not an automated money maker, promises no profitability, and does not prov
 ```mermaid
 flowchart LR
   BitProUI["BitPro Unified Console (/ai-lab · /evolution)"] --> API["FastAPI Control Plane (mem_limit: 2g)<br/>Mission · TokenManager · Probes (/livez, /readyz, /healthz)"]
-  Op["HyperTrade Web (Headless Redirect) · ht CLI · TUI"] --> API
-  API --> DB[("PostgreSQL + pgvector<br/>52 migrations · Mission projections · HET tree · Memory")]
+  Op["HyperTrade Web (HyperMonitor 4-Tab Control Plane) · ht CLI · TUI"] --> API
+  API --> DB[("PostgreSQL + pgvector<br/>53 migrations · Mission projections · HET tree · Memory")]
   Worker["Headless Worker Loops (mem_limit: 3g)<br/>ARC · evolution · auto-review · observation · judge · stagger 2s..15s"] --> DB
   Worker --> Research["ARC Autonomous Research Loop (AVO + RD-Agent)<br/>HET tree → Co-STEER synthesis → AST gatekeeper → sandbox → baseline"]
   Worker --> Evolution["Evolution Engine (default on)<br/>decay / launch scan → budget admission → re-research or rule tweak → admission → race duel → ledger"]
@@ -109,9 +109,9 @@ Design docs: [63 Evolution Hardening](docs/architecture/63-evolution-effectivene
 ### 5. Production Probe Matrix, Headless Engine Mode & BitPro Console Consolidation
 - **Headless Research Engine (`HYPERTRADE_HEADLESS_MODE`)**: In production (`docker-compose.yml` defaults `HYPERTRADE_HEADLESS_MODE` to `true`, with `api` capped at `mem_limit: 2g` and `worker` at `mem_limit: 3g`), BitPro (`/ai-lab` and `/evolution`) serves as the single operator console while the HyperTrade Web UI displays a prominent redirect banner. The worker disables redundant standalone `market_ingestion`, `market_rest_supplement`, `paper_trading`, and `autonomous_market_pulse` loops (also controllable via `MARKET_INGESTION_ENABLED`) and staggers non-critical initial scans (`arc_evolution` 2s, `arc_observation` 5s, `cognitive_memory_replay` 8s, `arc_meta_tuning` 12s, `rag_scanner` 15s) to eliminate `t=0` restart spikes. `bitpro/mcp.py` accepts multiple PnL/drawdown field aliases from `strategy_search(status=running)` and suppresses false-positive `monitor_data_gap` warnings when `paper_dashboard` metrics are healthy. Contract: [Headless BitPro Fusion](docs/contracts/headless-bitpro-fusion.md).
 - **Probe Matrix**: `/livez` (liveness), `/readyz` (readiness with `SELECT 1` DB probe), `/healthz` (comprehensive diagnostics with DB latency, adapter heartbeats, worker liveness, paper session counts, and token status), `/version` (the running commit SHA, which the deploy workflow checks after every deploy), fully aligned with Kubernetes standards.
-- **Quantum Portfolio Dashboard**: React 19 UI with headless BitPro redirect guidance, BitPro / QuantLab target switcher, dynamic A-share rule badges, interactive HET evolution tree visualization, and real-time relay handover slice stepping monitor.
+- **HyperMonitor Control-Plane Workbench (`/harness`)**: React 19 + TypeScript 5.9 + Tailwind CSS 3-tier console (`ConsoleShell`) with Obsidian Dark (`#070708`/`#141416`, violet-magenta gradient) and Light themes, converged from 9 legacy views into 4 lazy-loaded routes (`/harness` Co-Pilot & Flight Recorder, `/harness/missions` ARC 3-Slot Evolution & Missions, `/harness/knowledge` 3-Tier Cognitive Memory & Governance, `/harness/system` Worker/Stall Forensics, Unified Alerts, Runtime Errors & Evals). Initial `/harness` mount strictly fetches only `GET /api/harness/overview` (headless-aware with `missions_summary`) and `GET /api/healthz`.
 
-Design docs: [67 Production Probes & Token Rotation](docs/architecture/67-production-observability-probes-and-token-rotation.md)
+Design docs: [09 Frontend Harness](docs/architecture/09-frontend-harness.md) · [67 Production Probes & Token Rotation](docs/architecture/67-production-observability-probes-and-token-rotation.md)
 
 ---
 
@@ -206,7 +206,7 @@ curl http://localhost:3334/api/portfolio/relay/handovers
 ./scripts/check.sh
 ```
 
-Single command executes all quality gates: Frontend lint, Vitest, and production build + Backend Ruff linting/formatting, strict Mypy type-checking, and full Pytest suite (currently 3070+ tests passing 100%).
+Single command executes all quality gates: Frontend lint, Vitest (72 tests), and production build + Backend Ruff linting/formatting, strict Mypy type-checking, and full Pytest suite (currently 3089 tests passing).
 
 ---
 
@@ -217,14 +217,14 @@ Single command executes all quality gates: Frontend lint, Vitest, and production
 | **Control Plane** | FastAPI 0.122+ / Uvicorn, scoped security tokens, `/livez`, `/readyz`, `/healthz` container probes, cursor SSE |
 | **Credential Security**| `TokenRotationService` (SHA-256 single-way hashing, zero plaintext storage, 24h grace period hot rotation, 7-day expiration audit) |
 | **Domain & Runtime** | Python 3.12+, Pydantic v2 strict models, modular monolith + ports-and-adapters |
-| **Storage** | SQLAlchemy 2.0 + Alembic (52 migrations), PostgreSQL 14+ with `pgvector` |
+| **Storage** | SQLAlchemy 2.0 + Alembic (53 migrations), PostgreSQL 14+ with `pgvector` |
 | **Workers** | asyncio + PostgreSQL SQL lease locking (supervised concurrent background loops; headless mode omits local market/paper/pulse loops, `avo_research` enabled by default) |
 | **Research Core** | ARC + RD-Agent Hypothesis Evolution Tree (HET) + Co-STEER synthesizer + `ASTGatekeeper` |
 | **Target Adapters** | `market_target.v1` and `market-evolution.v1` MCP contracts; BitPro (Crypto) + QuantLab (A-Shares) |
 | **A-Share Rules** | `AShareMarketRules` / `AShareRuleValidator` (T+1 state machine, spot long-only, 100-share lot size, exact fees) |
 | **Relay Handover** | `PositionNettingRelayService` (retain $\min(P,C)$, net orders $\Delta = C-P$, >80% turnover saved) |
 | **Sandbox** | UDS isolated processes, non-root, no network, read-only root, resource caps, digest-bound |
-| **Frontend & UI** | React 19 + TypeScript 5.9 + Vite 7 + Tailwind CSS; Tauri desktop; Textual TUI; `ht` CLI |
+| **Frontend & UI** | React 19 + TypeScript 5.9 + Vite 8 + Tailwind CSS (HyperMonitor 4-Tab Control Plane); Tauri desktop; Textual TUI; `ht` CLI |
 | **Deployment** | Docker Compose + Nginx + GitHub Actions (auto-deploy on push to `main`) |
 
 ---
@@ -236,7 +236,8 @@ Single command executes all quality gates: Frontend lint, Vitest, and production
 | [Architecture Overview](docs/architecture/00-overview.md) | Reading guide and **mandatory architecture synchronization rule** |
 | [33 System Architecture](docs/architecture/33-system-architecture.md) | Canonical system architecture snapshot: multi-market targets, runtime layers, safety & probes |
 | [66 QuantLab & A-Share Rules](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md) | QuantLab adapter, strategy transpiler, A-share hard rules, position netting relay |
-| [67 Production Probes & Tokens](docs/architecture/67-production-observability-probes-and-token-rotation.md) | `/livez`, `/readyz`, `/healthz` probes, `TokenRotationService`, quantum portfolio console |
+| [09 Frontend Harness](docs/architecture/09-frontend-harness.md) | HyperMonitor 4-tab control-plane workbench, dual-theme shell, strict on-demand loading |
+| [67 Production Probes & Tokens](docs/architecture/67-production-observability-probes-and-token-rotation.md) | `/livez`, `/readyz`, `/healthz` probes, `TokenRotationService`, worker stall forensics |
 | [65 RD-Agent Evolution & Memory](docs/architecture/65-rd-agent-evolution-and-finmem-layered-memory.md) | Hypothesis Evolution Tree (HET), Co-STEER synthesis, FinMem 3-tier cognitive memory |
 | [64 Autonomous Trading Agent](docs/architecture/64-autonomous-trading-agent-system-architecture.md) | Perception bus, tri-speed decision cycles, and bounded autonomous execution |
 | [62 Pluggable Market Targets](docs/architecture/62-pluggable-market-targets.md) | `market_target.v1` / `market-evolution.v1` contracts and integration |
@@ -279,3 +280,5 @@ Legacy self-healing parameter proposals do not represent verified candidates. Ve
 2026-10-15: ARC added a read-only summary endpoint `GET /api/v1/arc/variant-status?source_strategy_id=…&candidate_strategy_id=…`. Scoped to the BitPro target with exact parent/candidate binding, it projects only durable subfields and the most recent blocking event of currently impeded missions without reconstructing controllers or hydrating full events/model dialogs; permission remains `arc:read`. Queries search up to the parent's 100 most recent missions, returning `not_found` when unmatched (which does not represent audit approval).
 
 2026-11-18: Production agent upgrades landed across four slices: (1) **Autonomous Variant Unblock & `production_3slot` Preset** (`ARC_AVO_RESEARCH_ENABLED=true`, `ARC_EVOLUTION_BOOTSTRAP_PRESET`, `POST /api/v1/arc/evolution/preset`, bound `is_source_variant` capital validation up to `10000` and `effective_validation_criteria` scaling); (2) **Hardened BitPro MCP & `MissionRuntime` Integration** (thread-safe LRU `httpx.Client` pool, Docker/auth diagnostic hints, 15s `probe_connectivity` + `BitProCard` live probe badge, confirmed `bitpro-mcp-v1` collaboration/review/monitor/onchain/FactorLab endpoints, `clear_metrics=False` continuity guard on `bitpro_paper_stop`, plus `bitpro.paper_snapshot`, `bitpro.variant_status`, `arc.evolution_status`, and numeric `#123` strategy context resolution); (3) **Unified Cognitive & Operational Memory Loop** (cross-mission `lineage_key` hypothesis recall, `paper_observation_ended` forward race verdict episodes, zero-LLM `deterministic_causal_summarizer` distillation synced into `MemoryItem`, unified `memory.search`, `memory.write`, `ThreadTurnService._consolidate_memory`, and `/api/harness/overview` + `/api/memory` cognitive telemetry); and (4) **Dead-Code Hygiene** (removed legacy `hypertrade.ui`, `agent/formatters.py`, `risk/canary.py`, 5 prototype scripts, and deprecated `self_healing_evolution_loop`, guarded by `tests/test_dead_code_hygiene.py`).
+
+2026-11-18 (HyperMonitor Workbench & Control-Plane APIs): Removed legacy `QuantumPortfolioDashboard.tsx` and converged 9 views into the 4-route HyperMonitor Control-Plane Workbench (`/harness`, `/harness/missions`, `/harness/knowledge`, `/harness/system`, dark `#070708`/`#141416` + light dual-theme 3-tier `ConsoleShell`, strict on-demand fetching, unified `apiGet`/`apiPost`/`apiPut`/`apiDelete` client, multi-thread Co-Pilot with diagnostic chips & turn interrupt, lazy-loaded pages). Backend control-plane APIs added `headless_mode` + `missions_summary` to `GET /api/harness/overview`, `GET /api/v1/arc/runtime-errors`, `GET /api/agent/v1/threads`, and `agent-observability-v1` projection for `mis_*` `AgentMission` Flight Recorder replay.
