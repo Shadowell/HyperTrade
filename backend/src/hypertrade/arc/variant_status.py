@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy import String, cast, select
+from sqlalchemy import select
 
 from hypertrade.db import ArcMission, ArcMissionEvent, Database
 
@@ -22,10 +22,7 @@ def read_variant_status(
             )
             .where(
                 projection["goal"]["platform"].as_string() == "bitpro",
-                cast(
-                    projection["goal"]["evolution_context"]["source_strategy_id"].as_string(),
-                    String,
-                )
+                projection["goal"]["evolution_context"]["source_strategy_id"].as_string()
                 == str(source_strategy_id),
             )
             .order_by(ArcMission.updated_at.desc(), ArcMission.mission_id.desc())

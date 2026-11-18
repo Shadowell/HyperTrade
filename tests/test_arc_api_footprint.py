@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -21,7 +22,7 @@ from hypertrade.arc.contracts import (
 from hypertrade.arc.controller import ARCController
 from hypertrade.arc.evidence_view import build_mission_summary
 from hypertrade.arc.evolution import EvolutionConfig
-from hypertrade.arc.evolution_models import EvolutionCycle
+from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
 from hypertrade.arc.pipeline_view import build_pipeline_view
 from hypertrade.config import Settings
 from hypertrade.db import ArcMission, ArcMissionEvent, Database
@@ -594,3 +595,58 @@ def test_lifespan_warms_budget_cache_nonblockingly_and_tolerates_uninitialized_d
     finally:
         store.reset_store()
         uninit_db.engine.dispose()
+
+
+def test_evolution_compact_keeps_two_nonempty_diagnostics_across_empty_cycles(
+    tmp_path: Path,
+) -> None:
+    db_file = tmp_path / "compact_nonempty.db"
+    database = Database(f"sqlite:///{db_file}")
+    database.create_all()
+    store.configure_store(database)
+    try:
+        base_time = datetime(2026, 9, 12, 1, 0, tzinfo=UTC)
+        with database.session() as session:
+            session.add(EvolutionControl(id="global", revision=1, config_json={"enabled": True}))
+            # Two older cycles carrying diagnostics, followed by 2 newer empty-diagnostics cycles.
+            for idx, has_rows in enumerate([True, True, False, False]):
+                diagnostics = (
+                    [
+                        {
+                            "strategy_id": 1500 + idx,
+                            "status": "unavailable",
+                            "reason": "minimum_trades",
+                        }
+                    ]
+                    if has_rows
+                    else []
+                )
+                session.add(
+                    EvolutionCycle(
+                        id=f"evo_1_{idx}",
+                        status="deferred",
+                        created_at=base_time + timedelta(hours=idx),
+                        updated_at=base_time + timedelta(hours=idx),
+                        payload_json={"preview": False, "revision": 1, "diagnostics": diagnostics},
+                    )
+                )
+
+        settings = Settings(
+            DATABASE_URL=f"sqlite:///{db_file}",
+            ADMIN_USERNAME="admin",
+            ADMIN_PASSWORD="secret",
+            SESSION_SECRET="arc-api-compact-nonempty",
+            ARC_SERVICE_TOKENS=f"reader:arc:read:{hash_service_token(READ_TOKEN)}",
+        )
+        with TestClient(create_app(settings=settings, db=database)) as client:
+            resp = client.get("/api/v1/arc/evolution?compact=true", headers=_headers())
+            assert resp.status_code == 200
+            by_id = {c["id"]: c for c in resp.json()["cycles"]}
+            # Newest 2 non-empty cycles preserve full diagnostics even after empty cycles.
+            assert "diagnostics" in by_id["evo_1_1"]["payload"]
+            assert "diagnostics" in by_id["evo_1_0"]["payload"]
+            # Empty newer cycles have no non-empty diagnostics to carry.
+            assert by_id["evo_1_3"]["payload"]["diagnostics_summary"]["count"] == 0
+    finally:
+        store.reset_store()
+        database.engine.dispose()

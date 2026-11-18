@@ -600,7 +600,10 @@ def test_auto_review_neither_locks_nor_loads_missions_it_cannot_act_on(
         EvolutionConfig(enabled=True, paper_review_mode="agent"), revision=0, actor="user"
     )
     live = _mission("exploring_candidates").mission_id
-    others = [_mission(state).mission_id for state in ("failed", "completed", "needs_operator")]
+    others = [
+        _mission(state).mission_id
+        for state in ("failed", "completed", "needs_operator", "paper_observing")
+    ]
     store.reset_runtime()
     locked: list[str] = []
     loaded: list[str] = []

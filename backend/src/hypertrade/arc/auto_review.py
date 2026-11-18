@@ -20,6 +20,9 @@ from hypertrade.arc.self_test import SelfTestResult, apply_success_criteria
 from hypertrade.arc.store import get_controller, list_mission_ids, research_lock
 from hypertrade.db import Database
 
+# Only missions not yet past paper review can enter or progress through auto-review;
+# excluding ``paper_observing`` avoids repeatedly locking and scanning event
+# journals for already-running paper trials on every tick.
 _ACTIVE = {
     "created",
     "exploring_candidates",
@@ -28,7 +31,6 @@ _ACTIVE = {
     "validating",
     "paper_authorizing",
     "paper_review_ready",
-    "paper_observing",
 }
 
 
@@ -168,142 +170,159 @@ def configured_review_mode(db: Database) -> Any:
         return config.paper_review_mode if config.enabled else "human"
 
 
+def _read_enabled_control(db: Database) -> tuple[EvolutionConfig, int, str] | None:
+    """Read evolution policy in a brief session without holding row locks across I/O."""
+    with db.session() as session:
+        control = session.get(EvolutionControl, "global")
+        if control is None:
+            return None
+        config = EvolutionConfig.model_validate(control.config_json)
+        if not config.enabled:
+            return None
+        return config, int(control.revision), str(control.updated_by)
+
+
 def auto_review_once(
     db: Database, resolver: ARCPaperIncubationResolver | None = None
 ) -> dict[str, Any]:
     with research_lock("autonomous-paper-review") as owner:
         if owner is None:
             return {"status": "busy"}
-        # Serialize policy changes with dispatch; this does not impersonate human approval.
-        with db.session() as session:
-            control = session.get(EvolutionControl, "global", with_for_update=True)
-            config = EvolutionConfig.model_validate(control.config_json if control else {})
-            if not config.enabled or control is None:
-                return {"status": "disabled"}
-            # A blocked mission is recorded and skipped: returning on it would starve
-            # every mission listed after it on every tick.
-            blocked: dict[str, Any] | None = None
-            # Only an active mission is ever acted on below; asking for the rest would take an
-            # advisory lock on, and load, every finished mission on every tick.
-            for mission_id in list_mission_ids(states=_ACTIVE):
-                with research_lock(mission_id) as check_owner:
-                    if check_owner is None:
-                        continue
-                    controller = get_controller(mission_id)
-                    if controller is None or controller.projection.goal is None:
-                        continue
-                    projection, goal = controller.projection, controller.projection.goal
-                    if projection.state not in _ACTIVE or not goal.paper_review_required:
-                        continue
-                    source_id = (goal.evolution_context or {}).get("source_strategy_id")
-                    if config.strategy_ids and source_id not in config.strategy_ids:
-                        continue
-                    if goal.paper_review_mode != config.paper_review_mode:
-                        controller.apply_event(
-                            "paper_review_policy_selected",
-                            {
-                                "mode": config.paper_review_mode,
-                                "policy_revision": control.revision,
-                                "authorized_by": control.updated_by,
-                            },
-                        )
-                    if projection.state != "paper_review_ready":
-                        continue
-                    should_evaluate = (
-                        config.paper_review_mode == "agent" or config.auto_approve_paper is True
+        if _read_enabled_control(db) is None:
+            return {"status": "disabled"}
+        # A blocked mission is recorded and skipped: returning on it would starve
+        # every mission listed after it on every tick.
+        blocked: dict[str, Any] | None = None
+        # Only an active pre-observing mission is ever acted on below; asking for the
+        # rest would take an advisory lock on, and load, finished or observing missions.
+        for mission_id in list_mission_ids(states=_ACTIVE):
+            with research_lock(mission_id) as check_owner:
+                if check_owner is None:
+                    continue
+                latest = _read_enabled_control(db)
+                if latest is None:
+                    return {"status": "disabled"}
+                config, policy_revision, authorized_by = latest
+                controller = get_controller(mission_id)
+                if controller is None or controller.projection.goal is None:
+                    continue
+                projection, goal = controller.projection, controller.projection.goal
+                if projection.state not in _ACTIVE or not goal.paper_review_required:
+                    continue
+                source_id = (goal.evolution_context or {}).get("source_strategy_id")
+                if config.strategy_ids and source_id not in config.strategy_ids:
+                    continue
+                if goal.paper_review_mode != config.paper_review_mode:
+                    controller.apply_event(
+                        "paper_review_policy_selected",
+                        {
+                            "mode": config.paper_review_mode,
+                            "policy_revision": policy_revision,
+                            "authorized_by": authorized_by,
+                        },
                     )
-                    if not should_evaluate:
-                        continue
-                    evaluation = evaluate_auto_review(controller, config)
-                    is_auto_approve_mode = (
-                        config.auto_approve_paper is True and config.paper_review_mode != "agent"
-                    )
-                    if evaluation["decision"] == "approve":
-                        cost_reasons = verify_candidate_costs(controller)
-                        if cost_reasons:
-                            recover_with_new_candidate = set(cost_reasons) <= {
-                                "cost_evidence_incomplete",
-                                "cost_policy_unverified",
-                                "candidate_already_has_runtime_history",
-                            }
-                            evaluation.update(
-                                decision="reject" if recover_with_new_candidate else "block",
-                                reasons=cost_reasons,
-                            )
-                        elif is_auto_approve_mode:
-                            package = build_paper_review(projection)
-                            attempt_id = package.get("attempt_id")
-                            proof: dict[str, Any] = next(
-                                (
-                                    r
-                                    for r in reversed(projection.self_test_records)
-                                    if r.get("attempt_id") == attempt_id
-                                    and r.get("purpose") == "final"
-                                ),
-                                {},
-                            )
-                            metrics = proof.get("metrics") or {}
-                            baseline_entry = projection.avo.get("baseline_final", {})
-                            better, better_reasons = verify_significantly_better_than_baseline(
-                                metrics, baseline_entry
-                            )
-                            if not better:
-                                # When in human mode with auto_approve_paper, if candidate does not
-                                # significantly beat baseline, safely leave in review ready state.
-                                evaluation.update(
-                                    auto_approve_eligible=False,
-                                    auto_approve_reasons=better_reasons,
-                                )
-                                if (
-                                    projection.paper_review.get("automatic_evaluation")
-                                    != evaluation
-                                ):
-                                    controller.apply_event(
-                                        "paper_auto_review_evaluated", evaluation
-                                    )
-                                continue
-                            evaluation.update(
-                                auto_approved=True,
-                                auto_approve_reasons=["metrics_significantly_better_than_baseline"],
-                            )
-                    evaluation["policy_revision"] = control.revision
-                    if projection.paper_review.get("automatic_evaluation") != evaluation:
-                        controller.apply_event("paper_auto_review_evaluated", evaluation)
-                    if (
-                        evaluation["decision"] == "block"
-                        or build_paper_review(projection)["unknowns"]
-                    ):
-                        blocked = blocked or {
-                            "status": "blocked",
-                            "mission_id": mission_id,
-                            "evaluation": evaluation,
+                if projection.state != "paper_review_ready":
+                    continue
+                should_evaluate = (
+                    config.paper_review_mode == "agent" or config.auto_approve_paper is True
+                )
+                if not should_evaluate:
+                    continue
+                evaluation = evaluate_auto_review(controller, config)
+                is_auto_approve_mode = (
+                    config.auto_approve_paper is True and config.paper_review_mode != "agent"
+                )
+                if evaluation["decision"] == "approve":
+                    cost_reasons = verify_candidate_costs(controller)
+                    if cost_reasons:
+                        recover_with_new_candidate = set(cost_reasons) <= {
+                            "cost_evidence_incomplete",
+                            "cost_policy_unverified",
+                            "candidate_already_has_runtime_history",
                         }
-                        continue
-                    check_owner()
-                    reason = (
-                        "Auto-Approve：回测核心指标显著优于基线且确定性门禁通过"
-                        if is_auto_approve_mode
-                        else (
-                            "Agent自动评审："
-                            + (
-                                "全部确定性门禁通过"
-                                if not evaluation["reasons"]
-                                else "; ".join(evaluation["reasons"])
+                        evaluation.update(
+                            decision="reject" if recover_with_new_candidate else "block",
+                            reasons=cost_reasons,
+                        )
+                    elif is_auto_approve_mode:
+                        package = build_paper_review(projection)
+                        attempt_id = package.get("attempt_id")
+                        proof: dict[str, Any] = next(
+                            (
+                                r
+                                for r in reversed(projection.self_test_records)
+                                if r.get("attempt_id") == attempt_id
+                                and r.get("purpose") == "final"
+                            ),
+                            {},
+                        )
+                        metrics = proof.get("metrics") or {}
+                        baseline_entry = projection.avo.get("baseline_final", {})
+                        better, better_reasons = verify_significantly_better_than_baseline(
+                            metrics, baseline_entry
+                        )
+                        if not better:
+                            # When in human mode with auto_approve_paper, if candidate does not
+                            # significantly beat baseline, safely leave in review ready state.
+                            evaluation.update(
+                                auto_approve_eligible=False,
+                                auto_approve_reasons=better_reasons,
                             )
+                            if (
+                                projection.paper_review.get("automatic_evaluation")
+                                != evaluation
+                            ):
+                                controller.apply_event(
+                                    "paper_auto_review_evaluated", evaluation
+                                )
+                            continue
+                        evaluation.update(
+                            auto_approved=True,
+                            auto_approve_reasons=["metrics_significantly_better_than_baseline"],
+                        )
+                # Refresh policy revision after cost/baseline checks without holding row locks.
+                latest_before_dispatch = _read_enabled_control(db)
+                if latest_before_dispatch is None:
+                    return {"status": "disabled"}
+                _, policy_revision, _ = latest_before_dispatch
+                evaluation["policy_revision"] = policy_revision
+                if projection.paper_review.get("automatic_evaluation") != evaluation:
+                    controller.apply_event("paper_auto_review_evaluated", evaluation)
+                if (
+                    evaluation["decision"] == "block"
+                    or build_paper_review(projection)["unknowns"]
+                ):
+                    blocked = blocked or {
+                        "status": "blocked",
+                        "mission_id": mission_id,
+                        "evaluation": evaluation,
+                    }
+                    continue
+                check_owner()
+                reason = (
+                    "Auto-Approve：回测核心指标显著优于基线且确定性门禁通过"
+                    if is_auto_approve_mode
+                    else (
+                        "Agent自动评审："
+                        + (
+                            "全部确定性门禁通过"
+                            if not evaluation["reasons"]
+                            else "; ".join(evaluation["reasons"])
                         )
                     )
-                    result = decide_paper_review(
-                        controller,
-                        package_hash=evaluation["package_hash"],
-                        decision=evaluation["decision"],
-                        reason=reason,
-                        operator_id=f"hypertrade:paper-referee:policy-{control.revision}",
-                        identity_source="agent_policy",
-                        idempotency_key=f"auto-paper:{control.revision}:{evaluation['package_hash']}",
-                        resolver=resolver,
-                    )
-                    return {"status": result["status"], "mission_id": mission_id}
-            return blocked or {"status": "idle"}
+                )
+                result = decide_paper_review(
+                    controller,
+                    package_hash=evaluation["package_hash"],
+                    decision=evaluation["decision"],
+                    reason=reason,
+                    operator_id=f"hypertrade:paper-referee:policy-{policy_revision}",
+                    identity_source="agent_policy",
+                    idempotency_key=f"auto-paper:{policy_revision}:{evaluation['package_hash']}",
+                    resolver=resolver,
+                )
+                return {"status": result["status"], "mission_id": mission_id}
+        return blocked or {"status": "idle"}
 
 
 def verify_significantly_better_than_baseline(

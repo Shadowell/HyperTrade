@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -2259,6 +2260,29 @@ class Database:
 
     def create_all(self) -> None:
         Base.metadata.create_all(self.engine)
+        if self.engine.dialect.name == "postgresql":
+            ddl = (
+                "CREATE INDEX IF NOT EXISTS ix_arc_missions_bitpro_source_strategy "
+                "ON arc_missions ("
+                "(projection_json->'goal'->>'platform'), "
+                "(projection_json->'goal'->'evolution_context'->>'source_strategy_id'), "
+                "updated_at DESC, "
+                "mission_id DESC"
+                ")"
+            )
+        else:
+            ddl = (
+                "CREATE INDEX IF NOT EXISTS ix_arc_missions_bitpro_source_strategy "
+                "ON arc_missions ("
+                "CAST(json_extract(projection_json, '$.goal.platform') AS TEXT), "
+                "CAST(json_extract(projection_json, "
+                "'$.goal.evolution_context.source_strategy_id') AS TEXT), "
+                "updated_at DESC, "
+                "mission_id DESC"
+                ")"
+            )
+        with self.engine.begin() as conn:
+            conn.execute(text(ddl))
 
     @contextmanager
     def session(self) -> Iterator[Session]:
