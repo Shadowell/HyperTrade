@@ -19,9 +19,16 @@ mkdir -p \
 chown 65532:65532 "$ROOT_DIR/workspace/sandbox-ipc"
 chmod 0750 "$ROOT_DIR/workspace/sandbox-ipc"
 
-echo "[deploy] building api, worker, sandbox, and optional TUI client images"
-# API/worker share layers. Serial export avoids duplicate unpack peaks on this host.
-for service in api worker sandbox cli; do
+echo "[deploy] building api/worker shared runtime image and sandbox image"
+# API and worker share image `hypertrade-api:latest` (same Dockerfile/target), so building
+# `api` once eliminates a duplicate multi-GB export/unpack peak; disable BuildKit default
+# SLSA attestations on local daemon builds to avoid slow manifest-list re-unpacks on host I/O.
+export BUILDX_NO_DEFAULT_ATTESTATIONS=1
+services=(api sandbox)
+if [ "${HYPERTRADE_BUILD_CLI:-0}" = "1" ]; then
+  services+=(cli)
+fi
+for service in "${services[@]}"; do
   docker compose build "$service"
 done
 

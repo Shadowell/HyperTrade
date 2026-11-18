@@ -118,3 +118,12 @@ def test_self_hosted_engine_stamps_ships_verifies_and_only_then_records_the_sha(
     # recorded as deployed only after the running API confirmed it (a mismatch is retried).
     assert stamp < sync < deploy < verify < record
     assert "backend/src/hypertrade/BUILD_INFO" in workflow[stamp:sync]
+
+
+def test_api_and_worker_share_runtime_image_to_avoid_duplicate_unpack() -> None:
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    deploy = Path("deploy/deploy.sh").read_text(encoding="utf-8")
+
+    assert compose.count("image: hypertrade-api:latest") == 2
+    assert "BUILDX_NO_DEFAULT_ATTESTATIONS=1" in deploy
+    assert "services=(api sandbox)" in deploy

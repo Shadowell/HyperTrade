@@ -1,3 +1,11 @@
+## 2026-11-18：生产发布镜像去重与免证明导出（消除 15m 构建超时误杀）
+
+- **背景**：生产宿主机（`tokyo`）在高磁盘 I/O 与 CPU steal 下执行 `deploy/deploy.sh` 时，由于 `api` 与 `worker` 未显式共享 `image:` 标签，`docker compose build` 对同一 `backend/Dockerfile` 重复执行两次完整镜像导出与 containerd rootfs 解包，叠加 `sandbox`、`cli`（按需 TUI profile）与 BuildKit 默认证明清单导出，单步耗时达 `15m46s～17m18s`，连续触发 HyperMonitor `build_stall_recovery` 自动取消。
+- **交付**：
+  1. `docker-compose.yml` 为 `api` 与 `worker` 显式统一 `image: hypertrade-api:latest`（与 `docker-compose.eval.yml` 口径一致），使二者共用同一次构建镜像。
+  2. `deploy/deploy.sh` 默认开启 `BUILDX_NO_DEFAULT_ATTESTATIONS=1`，仅构建 `api` 与 `sandbox` 两个常驻镜像（可选 TUI 镜像通过 `HYPERTRADE_BUILD_CLI=1` 按需触发），将生产镜像导出与解包次数从 4 次减半至 2 次。
+  3. `tests/test_deployment_config.py` 补充共享镜像标签与精简构建列表断言。
+
 ## 2026-11-18：HyperMonitor 控制面工作台重构与控制面后端 API 闭环
 
 - **背景**：第一性原理审计确认旧版前端存在四类结构性失配：① `App.tsx`（2,569 行）与 `QuantumPortfolioDashboard.tsx`（1,179 行）混合 9 个隐藏 `<section hidden>` 页签，`/harness` 首屏并发发出 24–26 个跨页签与休眠功能请求，且以 OKX SWAP 交易终端和本地 `PaperTradingService` 假数据为主视角，违背无头控制面定位；② 31 处裸 `fetch` 绕过统一鉴权错误处理，缺省暗色绿色网格视觉陈旧；③ `/api/harness/overview` 在 `headless_mode=true` 下仍查休眠本地行情/模拟盘/策略研究/实盘意图（甚至懒写入 `PaperSession`），`ArcRuntimeError` 缺少只读 API，`/api/agent/v1/threads` 缺少列表端点，且 `mis_*` `AgentMission` 无法在 `AgentFlightRecorder` 回放。
