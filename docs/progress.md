@@ -1,3 +1,11 @@
+## 2026-11-18：Runner 构建缓存与 `soupsieve` 安全漏洞修复
+
+- **背景**：生产 self-hosted Runner 在每次部署均冷安装 `frontend/node_modules` 与全量 `frontend build`（实测耗时 ~6m21s），`backend/Dockerfile` 中 `sandbox` 阶段继承自拷贝了 `backend/` 与 `docs/` 的 `runtime` 阶段导致每次代码改动都重装全套开发依赖，`docs/`-only 提交也会触发镜像构建与服务重启，同时 `uv.lock` 中的 `soupsieve==2.10` 存在 3 个已知 CVE 导致 `Security` 工作流阻塞合入。
+- **交付**：
+  1. `backend/Dockerfile` 拆出独立 `deps`（生产三方依赖）与 `sandbox-deps`（开发依赖）层，并精简 `.dockerignore`（排除 `frontend/`、`logs/`、`backups/` 等无关构建上下文），使常规代码提交仅重建薄包安装层，同时完整保留 `runtime`、`production`、`tui` 与 `agent-eval` 阶段边界。
+  2. `.github/workflows/deploy.yml` 与 `frontend/tsconfig.json` 为自托管 `server` 引擎新增 `docs`-only 快速跳过（仅推进 `last_deployed_sha`）、`${HOME}/.cache/hypertrade-ci` 下的 `pnpm-store` / `nm-<hash>`（`cp -al` 硬链接复用）/ `tsconfig.tsbuildinfo`（`incremental: true`）与 `dist-<frontend_hash>`（前端未改动直接秒级复用构建产物）。
+  3. 升级 `uv.lock` 中的 `soupsieve` 至 `4.1.1`，清零 `pip-audit` 已知漏洞。
+
 ## 2026-11-18：生产发布镜像去重与免证明导出（消除 15m 构建超时误杀）
 
 - **背景**：生产宿主机（`tokyo`）在高磁盘 I/O 与 CPU steal 下执行 `deploy/deploy.sh` 时，由于 `api` 与 `worker` 未显式共享 `image:` 标签，`docker compose build` 对同一 `backend/Dockerfile` 重复执行两次完整镜像导出与 containerd rootfs 解包，叠加 `sandbox`、`cli`（按需 TUI profile）与 BuildKit 默认证明清单导出，单步耗时达 `15m46s～17m18s`，连续触发 HyperMonitor `build_stall_recovery` 自动取消。
