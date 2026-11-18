@@ -76,35 +76,15 @@ class MemoryService:
         cost_policy_hash: str | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Resolve authoritative ARC receipts on every read, bounded to 200 missions/records."""
-        from hypertrade.arc.store import load_projection
-        from hypertrade.db import ArcMission
+        from hypertrade.arc.store import load_development_memory_records
 
-        records: list[dict[str, Any]] = []
         with self.db.session() as session:
-            rows = session.scalars(
-                select(ArcMission).order_by(ArcMission.updated_at.desc()).limit(201)
-            ).all()
-            for row in rows[:200]:
-                projection = load_projection(session, row)
-                goal = projection.goal
-                if goal is None or symbol not in goal.symbols:
-                    continue
-                for attempt in projection.attempts:
-                    receipt = projection.avo.get("development", {}).get(attempt.attempt_id)
-                    if receipt and len(records) < 200:
-                        records.append(
-                            {
-                                "mission_id": row.mission_id,
-                                "candidate_id": attempt.candidate_id,
-                                "hypothesis": attempt.hypothesis,
-                                "spec": attempt.strategy_spec,
-                                "code_sha256": hashlib.sha256(
-                                    attempt.strategy_code.encode()
-                                ).hexdigest(),
-                                "capital": str(goal.paper_initial_equity),
-                                "development": receipt,
-                            }
-                        )
+            records, scan_truncated = load_development_memory_records(
+                session,
+                symbols={symbol},
+                record_limit=200,
+                mission_scan_limit=200,
+            )
         entries, manifest = self.project_research(
             records,
             symbol=symbol,
@@ -112,7 +92,7 @@ class MemoryService:
             windows=windows,
             cost_policy_hash=cost_policy_hash,
         )
-        manifest["source_scan_truncated"] = len(rows) > 200 or len(records) == 200
+        manifest["source_scan_truncated"] = scan_truncated
         return entries, manifest
 
     @staticmethod

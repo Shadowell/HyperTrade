@@ -1,11 +1,10 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
-
-import backtrader as bt  # type: ignore[import-untyped]
 
 from hypertrade.strategy.sdk import Candle
 
@@ -22,32 +21,39 @@ class BacktestResult:
     report_json: dict[str, object]
 
 
-class MomentumBreakoutStrategy(bt.Strategy):  # type: ignore[misc]
-    default_sma_period = 5
-    default_breakout_pct = 0.0
-    params = (("sma_period", 5), ("breakout_pct", 0.0))
+@lru_cache(maxsize=1)
+def _load_backtrader() -> tuple[Any, type[Any]]:
+    """Lazy-load Backtrader so headless API/worker processes stay lean until local backtest runs."""
+    import backtrader as bt  # type: ignore[import-untyped]
 
-    def __init__(self) -> None:
-        runtime_params: Any = self.p
-        self.sma_period = max(2, int(getattr(runtime_params, "sma_period", 5)))
-        self.breakout_pct = float(getattr(runtime_params, "breakout_pct", 0.0))
-        self.sma = bt.indicators.SimpleMovingAverage(
-            self.data.close,
-            period=self.sma_period,
-        )
-        self.completed_orders = 0
+    class MomentumBreakoutStrategy(bt.Strategy):  # type: ignore[misc]
+        default_sma_period = 5
+        default_breakout_pct = 0.0
+        params = (("sma_period", 5), ("breakout_pct", 0.0))
 
-    def next(self) -> None:
-        if not self.position and self.data.close[0] >= self.sma[0] * (
-            1 + self.breakout_pct
-        ):
-            self.buy(size=1)
-        elif self.position and self.data.close[0] < self.sma[0]:
-            self.close()
+        def __init__(self) -> None:
+            runtime_params: Any = self.p
+            self.sma_period = max(2, int(getattr(runtime_params, "sma_period", 5)))
+            self.breakout_pct = float(getattr(runtime_params, "breakout_pct", 0.0))
+            self.sma = bt.indicators.SimpleMovingAverage(
+                self.data.close,
+                period=self.sma_period,
+            )
+            self.completed_orders = 0
 
-    def notify_order(self, order: Any) -> None:
-        if order.status == order.Completed:
-            self.completed_orders += 1
+        def next(self) -> None:
+            if not self.position and self.data.close[0] >= self.sma[0] * (
+                1 + self.breakout_pct
+            ):
+                self.buy(size=1)
+            elif self.position and self.data.close[0] < self.sma[0]:
+                self.close()
+
+        def notify_order(self, order: Any) -> None:
+            if order.status == order.Completed:
+                self.completed_orders += 1
+
+    return bt, MomentumBreakoutStrategy
 
 
 class BacktestEngine:
@@ -64,6 +70,7 @@ class BacktestEngine:
         if len(candles) < 6:
             raise ValueError("At least 6 candles are required")
         params = _strategy_params(strategy_params)
+        bt, strategy_cls = _load_backtrader()
 
         with TemporaryDirectory() as tmpdir:
             csv_path = Path(tmpdir) / "candles.csv"
@@ -85,7 +92,7 @@ class BacktestEngine:
                 headers=True,
             )
             cerebro.adddata(data)
-            cerebro.addstrategy(MomentumBreakoutStrategy, **params)
+            cerebro.addstrategy(strategy_cls, **params)
             cerebro.addanalyzer(bt.analyzers.DrawDown, _name="drawdown")
             cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trades")
             strategies = cerebro.run()

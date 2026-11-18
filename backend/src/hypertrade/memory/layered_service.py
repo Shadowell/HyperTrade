@@ -390,8 +390,14 @@ class LayeredMemoryService:
         with self.db.session() as session:
             bounded_limit = max(1, min(limit, 200))
             scan_limit = min(1_000, bounded_limit * 10)
+            # Filter on lightweight routing columns first so up to 1,000 rows of
+            # `metrics_delta_json` and `reflection_summary` are not hydrated into ORM state.
             stmt = (
-                select(ArcEpisodicMemory)
+                select(
+                    ArcEpisodicMemory.id,
+                    ArcEpisodicMemory.symbols_json,
+                    ArcEpisodicMemory.metadata_json,
+                )
                 .order_by(desc(ArcEpisodicMemory.created_at))
                 .limit(scan_limit)
             )
@@ -400,19 +406,28 @@ class LayeredMemoryService:
             if market_regime:
                 stmt = stmt.where(ArcEpisodicMemory.market_regime == market_regime)
 
-            records = session.scalars(stmt).all()
-            results: list[EpisodicMemoryItemV1] = []
-            for r in records:
-                if symbols:
-                    sym_set = set(symbols)
-                    if not sym_set.intersection(set(r.symbols_json or [])):
-                        continue
-                if r.metadata_json and r.metadata_json.get("recall_eligible") is False:
+            sym_set = set(symbols) if symbols else None
+            matched_ids: list[str] = []
+            for ep_id, symbols_json, metadata_json in session.execute(stmt):
+                if sym_set is not None and not sym_set.intersection(set(symbols_json or [])):
                     continue
-                results.append(self._db_to_episodic(r))
-                if len(results) >= bounded_limit:
+                if (
+                    isinstance(metadata_json, dict)
+                    and metadata_json.get("recall_eligible") is False
+                ):
+                    continue
+                matched_ids.append(str(ep_id))
+                if len(matched_ids) >= bounded_limit:
                     break
-            return results
+            if not matched_ids:
+                return []
+            by_id = {
+                row.id: self._db_to_episodic(row)
+                for row in session.scalars(
+                    select(ArcEpisodicMemory).where(ArcEpisodicMemory.id.in_(matched_ids))
+                )
+            }
+            return [by_id[ep_id] for ep_id in matched_ids if ep_id in by_id]
 
     # -------------------------------------------------------------------------
     # Tier 3: Semantic Memory (SM)
@@ -728,47 +743,117 @@ class LayeredMemoryService:
         """
         task_emb = query_embedding or deterministic_embedding(f"{symbol} {timeframe} {goal}")
 
-        # 1. Score Semantic Assertions
-        active_semantics = self.list_semantic_assertions(status="active", limit=1_000)
-        scored_semantics: list[tuple[float, SemanticMemoryAssertionV1]] = []
-        for sem in active_semantics:
-            scoped_symbols = sem.metadata.get("symbols") or []
-            scoped_timeframe = str(sem.metadata.get("timeframe") or "")
-            if scoped_symbols and symbol not in scoped_symbols:
-                continue
-            if scoped_timeframe and timeframe != scoped_timeframe:
-                continue
-            regime_score = compute_regime_match_score(current_regime, sem.applicable_regimes)
-            if regime_score < 0:
-                # Filter out polar opposite regime rules to prevent catastrophic misapplication
-                continue
-            sim = cosine_similarity(task_emb, sem.embedding)
-            conf = float(sem.confidence)
-            total_score = alpha * sim + beta * regime_score + gamma * conf
-            if total_score > 0.0:
-                scored_semantics.append((total_score, sem))
+        # 1. Score Semantic Assertions on narrow SQL columns first, then hydrate top-K only.
+        scored_semantics: list[tuple[float, str]] = []
+        with self.db.session() as session:
+            sem_stmt = (
+                select(
+                    ArcSemanticAssertion.id,
+                    ArcSemanticAssertion.applicable_regimes_json,
+                    ArcSemanticAssertion.confidence,
+                    ArcSemanticAssertion.embedding_json,
+                    ArcSemanticAssertion.metadata_json,
+                )
+                .where(ArcSemanticAssertion.status == "active")
+                .order_by(desc(ArcSemanticAssertion.confidence))
+                .limit(1_000)
+            )
+            for sem_id, regimes_raw, conf_raw, emb_raw, meta_raw in session.execute(sem_stmt):
+                meta = meta_raw if isinstance(meta_raw, dict) else {}
+                scoped_symbols = meta.get("symbols") or []
+                scoped_timeframe = str(meta.get("timeframe") or "")
+                if scoped_symbols and symbol not in scoped_symbols:
+                    continue
+                if scoped_timeframe and timeframe != scoped_timeframe:
+                    continue
+                regime_score = compute_regime_match_score(
+                    current_regime, list(regimes_raw or [])
+                )
+                if regime_score < 0:
+                    # Filter out polar opposite regime rules to prevent catastrophic misapplication
+                    continue
+                sim = cosine_similarity(task_emb, list(emb_raw or []))
+                conf = float(conf_raw)
+                total_score = alpha * sim + beta * regime_score + gamma * conf
+                if total_score > 0.0:
+                    scored_semantics.append((total_score, str(sem_id)))
 
-        scored_semantics.sort(key=lambda x: x[0], reverse=True)
-        selected_semantics = [item for _, item in scored_semantics[:top_k_semantic]]
+            scored_semantics.sort(key=lambda x: x[0], reverse=True)
+            sem_winner_ids = (
+                [sid for _, sid in scored_semantics[:top_k_semantic]]
+                if top_k_semantic > 0
+                else []
+            )
+            if sem_winner_ids:
+                sem_by_id = {
+                    row.id: self._db_to_semantic(row)
+                    for row in session.scalars(
+                        select(ArcSemanticAssertion).where(
+                            ArcSemanticAssertion.id.in_(sem_winner_ids)
+                        )
+                    )
+                }
+                selected_semantics = [
+                    sem_by_id[sid] for sid in sem_winner_ids if sid in sem_by_id
+                ]
+            else:
+                selected_semantics = []
 
-        # 2. Score Episodic Memories
-        episodes = self.list_episodes(
-            symbols=[symbol] if symbol else None,
-            timeframe=timeframe or None,
-            limit=100,
-        )
-        scored_episodes: list[tuple[float, EpisodicMemoryItemV1]] = []
-        for ep in episodes:
-            regime_score = compute_regime_match_score(current_regime, [ep.market_regime])
-            if regime_score < 0:
-                continue
-            sim = cosine_similarity(task_emb, ep.embedding)
-            total_score = alpha * sim + beta * regime_score + gamma * 0.5
-            if total_score > 0.0:
-                scored_episodes.append((total_score, ep))
+            # 2. Score Episodic Memories on narrow SQL columns first, then hydrate top-K only.
+            ep_stmt = (
+                select(
+                    ArcEpisodicMemory.id,
+                    ArcEpisodicMemory.symbols_json,
+                    ArcEpisodicMemory.market_regime,
+                    ArcEpisodicMemory.embedding_json,
+                    ArcEpisodicMemory.metadata_json,
+                )
+                .order_by(desc(ArcEpisodicMemory.created_at))
+                .limit(1_000)
+            )
+            if timeframe:
+                ep_stmt = ep_stmt.where(ArcEpisodicMemory.timeframe == timeframe)
 
-        scored_episodes.sort(key=lambda x: x[0], reverse=True)
-        selected_episodes = [item for _, item in scored_episodes[:top_k_episodic]]
+            sym_set = {symbol} if symbol else None
+            scored_episodes: list[tuple[float, str]] = []
+            eligible_scanned = 0
+            for ep_id, symbols_raw, ep_regime, ep_emb, ep_meta in session.execute(ep_stmt):
+                if sym_set is not None and not sym_set.intersection(set(symbols_raw or [])):
+                    continue
+                if isinstance(ep_meta, dict) and ep_meta.get("recall_eligible") is False:
+                    continue
+                eligible_scanned += 1
+                regime_score = compute_regime_match_score(
+                    current_regime, [str(ep_regime or "unknown")]
+                )
+                if regime_score >= 0:
+                    sim = cosine_similarity(task_emb, list(ep_emb or []))
+                    total_score = alpha * sim + beta * regime_score + gamma * 0.5
+                    if total_score > 0.0:
+                        scored_episodes.append((total_score, str(ep_id)))
+                if eligible_scanned >= 100:
+                    break
+
+            scored_episodes.sort(key=lambda x: x[0], reverse=True)
+            ep_winner_ids = (
+                [eid for _, eid in scored_episodes[:top_k_episodic]]
+                if top_k_episodic > 0
+                else []
+            )
+            if ep_winner_ids:
+                ep_by_id = {
+                    row.id: self._db_to_episodic(row)
+                    for row in session.scalars(
+                        select(ArcEpisodicMemory).where(
+                            ArcEpisodicMemory.id.in_(ep_winner_ids)
+                        )
+                    )
+                }
+                selected_episodes = [
+                    ep_by_id[eid] for eid in ep_winner_ids if eid in ep_by_id
+                ]
+            else:
+                selected_episodes = []
 
         return selected_semantics, selected_episodes
 

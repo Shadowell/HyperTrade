@@ -16,9 +16,10 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-import pandas as pd  # type: ignore[import-untyped]
+if TYPE_CHECKING:
+    import pandas as pd  # type: ignore[import-untyped]
 
 
 class BaseEvolutionStrategy(ABC):
@@ -45,6 +46,8 @@ class BaseEvolutionStrategy(ABC):
 
     def evaluate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
         """Run the full pipeline and return signals & positions aligned with df index."""
+        import pandas as pd
+
         features = self.compute_features(df)
         signals = self.generate_signals(features)
         positions = pd.Series(0.0, index=df.index, dtype=float)

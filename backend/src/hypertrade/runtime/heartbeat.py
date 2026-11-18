@@ -15,17 +15,19 @@ up there as roughly 40, which is how a stalled worker is told apart from an idle
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import functools
 import logging
 import math
 import os
+import sys
 from collections import deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import UTC, datetime
 from threading import Lock
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import JSON, DateTime, String, select
 from sqlalchemy.orm import Mapped, mapped_column
@@ -37,6 +39,7 @@ from hypertrade.runtime.stall_evidence import process_stats
 logger = logging.getLogger("hypertrade.heartbeat")
 
 FLUSH_INTERVAL_SECONDS = 30.0
+HEAP_TRIM_INTERVAL_SECONDS = 60.0
 # The reported event-loop lag is the worst of this many recent flush windows (~5 minutes), so a
 # reader polling every minute still sees a spike instead of the next window's zero.
 LAG_WINDOWS = 10
@@ -252,6 +255,35 @@ def flush_heartbeat(
     return True
 
 
+@functools.lru_cache(maxsize=1)
+def _glibc_malloc_trim() -> Callable[[int], int] | None:
+    """Resolve glibc ``malloc_trim`` on Linux; return ``None`` on non-glibc platforms."""
+    if sys.platform != "linux":
+        return None
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        trim_fn = getattr(libc, "malloc_trim", None)
+        if trim_fn is None:
+            return None
+        trim_fn.argtypes = [ctypes.c_size_t]
+        trim_fn.restype = ctypes.c_int
+        return cast(Callable[[int], int], trim_fn)
+    except Exception:
+        return None
+
+
+def trim_process_heap(*, pad: int = 0) -> bool:
+    """Release free glibc heap pages back to the OS on Linux without raising."""
+    trim_fn = _glibc_malloc_trim()
+    if trim_fn is None:
+        return False
+    try:
+        return bool(trim_fn(max(0, int(pad))))
+    except Exception:
+        logger.debug("glibc malloc_trim failed", exc_info=True)
+        return False
+
+
 async def heartbeat_loop(
     db: Database,
     *,
@@ -267,12 +299,20 @@ async def heartbeat_loop(
     # from a thread of its own: in the shared pool the flush would queue behind long ARC / AVO
     # steps and a busy worker would look dead.
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hypertrade-heartbeat")
-    flush = functools.partial(
-        flush_heartbeat, db, worker_id=identity, started_at=started_at, registry=registry
-    )
+    last_trim_at = loop.time()
+
+    def _flush_and_maybe_trim(should_trim: bool) -> None:
+        flush_heartbeat(db, worker_id=identity, started_at=started_at, registry=registry)
+        if should_trim:
+            trim_process_heap()
+
     try:
         while True:
-            await loop.run_in_executor(executor, flush)
+            now_mono = loop.time()
+            should_trim = (now_mono - last_trim_at) >= HEAP_TRIM_INTERVAL_SECONDS
+            if should_trim:
+                last_trim_at = now_mono
+            await loop.run_in_executor(executor, _flush_and_maybe_trim, should_trim)
             # Lag is how much later than requested the timer fires, so the due time is taken
             # right before sleeping: the database write above must not count as event-loop lag.
             due = loop.time() + interval_seconds

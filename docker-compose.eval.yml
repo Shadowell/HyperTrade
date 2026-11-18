@@ -32,6 +32,7 @@ services:
       MONITOR_SCHEDULER_ENABLED: "false"
       RESEARCH_TRIGGERS_ENABLED: "false"
       BITPRO_MCP_API_BASE: http://127.0.0.1:9/api/v2
+      MALLOC_ARENA_MAX: ${MALLOC_ARENA_MAX:-2}
     ports:
       - "127.0.0.1:${HYPERTRADE_EVAL_PORT:-4334}:3334"
     secrets:
@@ -59,6 +60,7 @@ services:
       MONITOR_SCHEDULER_ENABLED: "false"
       RESEARCH_TRIGGERS_ENABLED: "false"
       BITPRO_MCP_API_BASE: http://127.0.0.1:9/api/v2
+      MALLOC_ARENA_MAX: ${MALLOC_ARENA_MAX:-2}
     depends_on:
       postgres:
         condition: service_healthy
