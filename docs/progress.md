@@ -1,3 +1,21 @@
+## 2026-11-18：运行时内存占用深度优化（重型库按需懒加载、glibc Arena 抑制与定期 Trim、RAG/记忆/进化窄列 SQL 投影）
+
+- **背景**：线上观测发现 HyperTrade 在无头模式下不存储本地 K 线（行情/回测均经 BitPro MCP 获取），但 `hypertrade-api` 与 `hypertrade-worker` 常驻物理内存（RSS）依然偏高。根因拆解确认四项非 K 线内存源：① `hypertrade.main` 与 `hypertrade.worker` 冷启动导入链顶层连带加载 `pandas`、`numpy`、`pyarrow`、`backtrader` 与 `yfinance`，导致双进程在零业务负载下即各自占用 `~307 MB`；② 多线程 `asyncio.to_thread` JSON 反序列化在 Linux glibc 默认 `8 * CPU` arena 策略下产生高水位堆驻留，Python `pymalloc` 释放对象后物理页不主动归还 OS；③ `RagService.search_hybrid` 与 `LayeredMemoryService.retrieve_context_for_task`/`list_episodes` 全表加载 ORM 实体（含冗余 `embedding_json`、完整正文与大 JSON 字段）并滞留 Session identity map；④ `EvolutionService._memory` 与 `MemoryService.research_context` 对最多 200 条历史 `ArcMission` 反序列化完整 `projection_json`（包含 200 笔 `evolution_context.orders.fills`、`avo.messages`、`paper_feedback` 与 `self_test_records`）。
+- **交付**：
+  1. **重型非核心库按需懒加载**（`research/co_steer.py`、`backtest/engine.py`、`global_market/sources/yfinance_source.py`）：
+     - 将 `pandas`、`backtrader`、`yfinance` 从模块顶层移至实际执行方法（`BaseEvolutionStrategy.evaluate_signals`、`BacktestEngine.run` 内的 `_load_backtrader()`、`YFinanceSource.get_ticker`）中按需导入。
+     - 实测冷启动基线 RSS：`hypertrade.main` 由 `306.7 MB` 降至 **`197.0 MB`**（`-109.7 MB` / `-35.8%`），`hypertrade.worker` 由 `306.9 MB` 降至 **`157.5 MB`**（`-149.4 MB` / `-48.7%`），双常驻容器合计立减 **`259.1 MB`**，且冷启动 `sys.modules` 对 `pandas`/`numpy`/`pyarrow`/`backtrader`/`yfinance` 实现零加载。
+  2. **容器 glibc Arena 上限与周期性安全 `malloc_trim(0)`**（`backend/Dockerfile`、`docker-compose.yml`、`docker-compose.eval.yml`、`.env.example`、`runtime/heartbeat.py`）：
+     - 在 `backend/Dockerfile` 运行时阶段 `ENV`（保留 `deps`/`sandbox-deps` 缓存层不变）及 `docker-compose.yml` / `docker-compose.eval.yml` 的 `api`、`worker` 服务统一注入 `MALLOC_ARENA_MAX=2`（支持 `.env` 覆盖），抑制多线程 JSON 解析堆碎片；
+     - `runtime/heartbeat.py` 新增跨平台安全的 `trim_process_heap()`（Linux 下调用 `libc.so.6` `malloc_trim(0)`，非 glibc/macOS 静默返回 `False`），并在 `heartbeat_loop` 独立单线程 `executor` 中按 60s 节流执行，零事件循环阻塞地将空闲堆页归还内核。
+  3. **RAG 与三层认知记忆两阶段窄列检索**（`rag/service.py`、`memory/layered_service.py`）：
+     - `RagService.search_hybrid` 改为 `yield_per(100)` 流式读取 `(id, content, embedding_vector)` 窄列计算词法+向量 RRF 排名（跳过冗余 `embedding_json` 与 ORM 实例构建），仅对最终前 `limit` 个命中 ID 回查元数据与正文；
+     - `LayeredMemoryService.retrieve_context_for_task` 与 `list_episodes` 先在窄路由/向量列上完成过滤与 Regime 加权打分，仅对胜出的 Top-K ID 物化完整 ORM/Pydantic 模型。
+  4. **跨任务开发记忆 SQL JSON 窄切片提取**（`arc/store.py`、`arc/evolution.py`、`memory/service.py`）：
+     - `arc/store.py` 新增双数据库方言（PostgreSQL `json_typeof`/`#>` 与 SQLite `func.json_type`/`json_extract`）原生支持的 `load_development_memory_records`，仅投影 `goal.symbols`、`goal.paper_initial_equity`、`attempts` 与 `avo.development`，并在 `EvolutionService._memory` 的 SQL `WHERE` 层直接跳过无 `avo.development` 的任务（同时保留 monkeypatch `evolution.load_projection` 时的差分对拍回退兼容），彻底消除 200 笔成交明细与对话日志的瞬时反序列化峰值。
+  5. **防退化回归门禁**（`tests/test_memory_footprint_optimizations.py`）：新增 8 项回归测试，覆盖子进程入口重型包零加载、`MALLOC_ARENA_MAX=2` 编排配置、`trim_process_heap` 跨平台安全性、RAG/LayeredMemory 零全表 ORM 物化，以及 SQLite + 隔离 PostgreSQL 实例上的开发记忆字节级差分等价验证。
+- **验证**：`gitnexus analyze --force` 与 `detect-changes --scope compare --base-ref origin/main` 完成影响校验；`LC_ALL=en_US.UTF-8 ./scripts/check.sh` 全量通过（前端 `eslint`、`vitest` 72 passed、`tsc && vite build` 通过；后端 `ruff` 0 错误、`mypy backend/src` 322 文件 0 错误、`pytest` **3098 passed, 3 skipped**）。
+
 ## 2026-11-18：Runner 构建缓存与 `soupsieve` 安全漏洞修复
 
 - **背景**：生产 self-hosted Runner 在每次部署均冷安装 `frontend/node_modules` 与全量 `frontend build`（实测耗时 ~6m21s），`backend/Dockerfile` 中 `sandbox` 阶段继承自拷贝了 `backend/` 与 `docs/` 的 `runtime` 阶段导致每次代码改动都重装全套开发依赖，`docs/`-only 提交也会触发镜像构建与服务重启，同时 `uv.lock` 中的 `soupsieve==2.10` 存在 3 个已知 CVE 导致 `Security` 工作流阻塞合入。

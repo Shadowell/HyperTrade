@@ -18,8 +18,10 @@ committed.
 
 The optional `cli` Compose profile builds `hypertrade-tui:latest` from the Docker
 `tui` target. It never runs as a daemon. The host wrapper selects that service only
-for `hypertrade tui`; API and worker keep using the dependency-minimal production
-target, so deploy replacement cannot kill the operator TUI process.
+for `hypertrade tui`; API and worker share the `hypertrade-api:latest` runtime image
+with `MALLOC_ARENA_MAX=2` (capping glibc per-thread malloc arenas) and periodic
+background `malloc_trim(0)` on Linux, keeping steady-state RSS compact without
+killing any operator TUI process on deploy.
 
 ## Isolated Evaluation Deployment
 
@@ -60,8 +62,10 @@ token、provider key、OKX 凭证和 admin 凭证不能提交到仓库。
 
 可选 `cli` Compose profile 从 Docker `tui` target 构建
 `hypertrade-tui:latest`，但不常驻运行。宿主 wrapper 仅在执行
-`hypertrade tui` 时选择该 service；API/Worker 继续使用不含 Textual 的生产 target，
-部署替换 API 容器不会终止操作员的 TUI 进程。
+`hypertrade tui` 时选择该 service；API 与 Worker 共享同一 `hypertrade-api:latest`
+生产镜像，默认注入 `MALLOC_ARENA_MAX=2` 抑制多线程 glibc arena 碎片，并由 Worker
+心跳线程每 60s 定期执行 `malloc_trim(0)` 归还空闲物理页，同时部署替换 API 容器不会
+终止操作员的 TUI 进程。
 
 ## 独立评测部署
 
