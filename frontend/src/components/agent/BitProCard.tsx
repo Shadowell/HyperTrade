@@ -20,17 +20,17 @@ export function BitProCard({ t, bitpro }: { t: Copy; bitpro: BitPro }) {
     : "";
 
   return (
-    <div className="mt-6 rounded-md border border-ink/10 bg-paper/70 p-4">
+    <div className="mt-6 rounded-2xl border border-ink/15 bg-paper p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">{t.bitproMcp}</h3>
-          <p className="mt-1 text-xs leading-5 text-ink/50">{t.bitproMcpHint}</p>
+          <p className="mt-1 text-xs leading-5 text-ink/55">{t.bitproMcpHint}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {probe ? (
             <span
-              className={`inline-flex items-center gap-2 rounded border px-2 py-1 text-xs font-semibold ${
-                probeHealthy ? "border-signal/25 text-signal" : "border-danger/25 text-danger"
+              className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                probeHealthy ? "border-signal/35 text-signal" : "border-danger/35 text-danger"
               }`}
             >
               <StatusDot enabled={probeHealthy} />
@@ -38,10 +38,10 @@ export function BitProCard({ t, bitpro }: { t: Copy; bitpro: BitPro }) {
             </span>
           ) : null}
           <span
-            className={`inline-flex items-center gap-2 rounded border px-2 py-1 text-xs font-semibold ${
+            className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold ${
               bitpro.token_configured
-                ? "border-signal/25 text-signal"
-                : "border-danger/25 text-danger"
+                ? "border-signal/35 text-signal"
+                : "border-danger/35 text-danger"
             }`}
           >
             <StatusDot enabled={bitpro.token_configured} />
@@ -49,9 +49,10 @@ export function BitProCard({ t, bitpro }: { t: Copy; bitpro: BitPro }) {
           </span>
         </div>
       </div>
+
       {probe && (probe.error || probe.hint) ? (
         <div
-          className="mt-3 rounded border border-danger/25 bg-danger/5 px-3 py-2 text-xs leading-5 text-ink/80"
+          className="mt-3 rounded-xl border border-danger/25 bg-danger/5 px-3 py-2 text-xs leading-5 text-ink/80"
           role="status"
         >
           {probe.error ? <div className="font-mono text-danger">{probe.error}</div> : null}
@@ -62,14 +63,13 @@ export function BitProCard({ t, bitpro }: { t: Copy; bitpro: BitPro }) {
           ) : null}
         </div>
       ) : null}
+
       <div className="mt-4 grid grid-cols-2 gap-3 max-md:grid-cols-1">
         <div className="mini-block">
           <span>{t.mcpApiBase}</span>
-          <strong className="truncate font-mono">{bitpro.api_base}</strong>
-        </div>
-        <div className="mini-block">
-          <span>{t.mcpAuthHeader}</span>
-          <strong className="truncate font-mono">{bitpro.auth_header}</strong>
+          <strong className="truncate font-mono" title={bitpro.api_base}>
+            {bitpro.api_base}
+          </strong>
         </div>
         <div className="mini-block">
           <span>{t.mcpTokenSource}</span>
@@ -82,14 +82,17 @@ export function BitProCard({ t, bitpro }: { t: Copy; bitpro: BitPro }) {
           </strong>
         </div>
         <div className="mini-block">
-          <span>{t.mcpAdapter}</span>
-          <strong className="truncate font-mono">{bitpro.adapter}</strong>
-        </div>
-        <div className="mini-block">
           <span>{t.mcpTools}</span>
-          <strong className="font-mono">{formatMetricNumber(bitpro.tools.length)}</strong>
+          <strong className="font-mono">
+            {formatMetricNumber(bitpro.tools.length)} ·{" "}
+            {bitpro.live_write_enabled ? t.mcpLiveWriteOn : t.mcpLiveWriteOff}
+          </strong>
         </div>
       </div>
+
+      {bitpro.live_write_note ? (
+        <p className="mt-3 text-xs leading-5 text-ink/55">{bitpro.live_write_note}</p>
+      ) : null}
     </div>
   );
 }

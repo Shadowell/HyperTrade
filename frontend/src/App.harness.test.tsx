@@ -72,6 +72,7 @@ test("a refused run explains the read-only mode instead of printing 'Not authent
   await screen.findByText(t.bitproMcp);
   expect(screen.getByRole("button", { name: t.run })).toBeEnabled();
 
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "检查当前 3 槽位进化状态" } });
   fireEvent.click(screen.getByRole("button", { name: t.run }));
 
   // The raw server text is replaced by an instruction the operator can act on.

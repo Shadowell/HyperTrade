@@ -35,16 +35,35 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T;
 }
 
+function jsonHeaders(extra?: HeadersInit): HeadersInit {
+  if (!extra) return { "Content-Type": "application/json" };
+  return { "Content-Type": "application/json", ...extra };
+}
+
 export function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
   return request<T>(path, { ...init, method: "GET" });
 }
 
-export function apiPost<T>(path: string, body?: unknown): Promise<T> {
+export function apiPost<T>(path: string, body?: unknown, init?: RequestInit): Promise<T> {
   return request<T>(path, {
+    ...init,
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(init?.headers),
     body: body === undefined ? undefined : JSON.stringify(body)
   });
+}
+
+export function apiPut<T>(path: string, body?: unknown, init?: RequestInit): Promise<T> {
+  return request<T>(path, {
+    ...init,
+    method: "PUT",
+    headers: jsonHeaders(init?.headers),
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+}
+
+export function apiDelete<T>(path: string, init?: RequestInit): Promise<T> {
+  return request<T>(path, { ...init, method: "DELETE" });
 }
 
 /** HTTP status carried by any error the console's two request layers can throw, if any. */

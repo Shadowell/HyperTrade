@@ -3,6 +3,8 @@ import { expect, test, vi } from "vitest";
 import {
   consumeThreadEventStream,
   followAgentTurn,
+  interruptAgentTurn,
+  listAgentThreads,
   presentThread,
   startAgentTurn,
   ThreadSnapshot,
@@ -180,4 +182,50 @@ test("stores only the Thread pointer and presents server Items", () => {
     resolvedRefs: ["mean_reversion_v1"],
     warnings: ["max_drawdown unavailable"]
   });
+});
+
+test("listAgentThreads queries status/limit and interruptAgentTurn posts interrupt", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.startsWith("/api/agent/v1/threads?")) {
+      return new Response(
+        JSON.stringify({
+          items: [
+            {
+              thread_id: "thr_listed",
+              title: "Listed thread",
+              status: "active",
+              active_turn_id: "",
+              event_cursor: 4
+            }
+          ]
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        turn: { turn_id: "trn_9", status: "interrupted" },
+        items: [],
+        event_cursor: 6
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  });
+
+  const listed = await listAgentThreads({ status: "active", limit: 15 }, fetchMock);
+  expect(listed.items[0]?.thread_id).toBe("thr_listed");
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    1,
+    "/api/agent/v1/threads?status=active&limit=15",
+    expect.objectContaining({ credentials: "include" })
+  );
+
+  const interrupted = await interruptAgentTurn("thr_listed", "trn_9", fetchMock);
+  expect(interrupted.turn.status).toBe("interrupted");
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    2,
+    "/api/agent/v1/threads/thr_listed/turns/trn_9/interrupt",
+    expect.objectContaining({ method: "POST", credentials: "include" })
+  );
 });

@@ -1,4 +1,4 @@
-import type { ThreadPresentation } from "../../agentThread";
+import type { ThreadPresentation, ThreadProjection } from "../../agentThread";
 import type { Copy } from "../../i18n/messages";
 import type {
   AccessMode,
@@ -6,6 +6,7 @@ import type {
   Language,
   ProviderStatus,
   ReportBlock,
+  RunSummary,
   TraceEvent
 } from "../../types";
 import {
@@ -30,6 +31,7 @@ export type HarnessPageProps = {
   onRefresh: () => void;
   access: AccessMode;
   metrics: TelemetryMetric[];
+  showAccessBadge?: boolean;
   run: {
     prompt: string;
     onPromptChange: (value: string) => void;
@@ -41,6 +43,12 @@ export type HarnessPageProps = {
     onRun: () => void;
     onNewThread: () => void;
     onArchiveThread: () => void;
+    onInterruptTurn?: () => void;
+    threads?: ThreadProjection[];
+    threadsOpen?: boolean;
+    threadsLoading?: boolean;
+    onToggleThreads?: () => void;
+    onSelectThread?: (threadId: string) => void;
     stage: string | null;
     progress: string[];
     presentation: ThreadPresentation;
@@ -55,6 +63,9 @@ export type HarnessPageProps = {
     traceEvents: TraceEvent[];
     onSelectTraceEvidence: (event: TraceEvent) => void;
     defaultProvider: ProviderStatus | undefined;
+    recentRuns?: RunSummary[];
+    onSelectRun?: (runId: string) => void;
+    selectedRunId?: string;
   };
   observability: { data: RunObservability | null; loading: boolean };
 };
@@ -77,8 +88,10 @@ export function HarnessPage(props: HarnessPageProps) {
         <HarnessHeader
           access={props.access}
           generatedAt={overview?.generated_at || null}
+          headlessMode={overview?.headless_mode}
           language={language}
           refreshing={props.refreshing}
+          showAccessBadge={props.showAccessBadge}
           sync={sync}
           t={t}
         />
@@ -93,16 +106,26 @@ export function HarnessPage(props: HarnessPageProps) {
               error={run.error}
               hasThread={run.hasThread}
               onArchiveThread={run.onArchiveThread}
+              onInterruptTurn={run.onInterruptTurn}
               onNewThread={run.onNewThread}
               onPromptChange={run.onPromptChange}
               onRun={run.onRun}
+              onSelectThread={run.onSelectThread}
+              onToggleThreads={run.onToggleThreads}
               prompt={run.prompt}
               t={t}
               thread={run.thread}
+              threads={run.threads}
+              threadsLoading={run.threadsLoading}
+              threadsOpen={run.threadsOpen}
               turnActive={run.turnActive}
             />
             <AgentProgress items={run.progress} stage={run.stage} t={t} />
-            <ThreadDetails presentation={run.presentation} t={t} />
+            <ThreadDetails
+              deduplicateAnswer={run.report.blocks.length === 0 ? run.report.markdown : ""}
+              presentation={run.presentation}
+              t={t}
+            />
             <ReportReader
               blocks={run.report.blocks}
               busy={run.busy}
@@ -117,9 +140,12 @@ export function HarnessPage(props: HarnessPageProps) {
           <RuntimeMonitor
             defaultProvider={monitor.defaultProvider}
             onRefresh={props.onRefresh}
+            onSelectRun={monitor.onSelectRun}
             onSelectTraceEvidence={monitor.onSelectTraceEvidence}
             overview={overview}
+            recentRuns={monitor.recentRuns}
             refreshing={props.refreshing}
+            selectedRunId={monitor.selectedRunId}
             sync={sync}
             t={t}
             traceEvents={monitor.traceEvents}
