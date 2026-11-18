@@ -67,7 +67,12 @@ from hypertrade.arc.short_horizon import (
     collect_short_horizon,
     verify_short_trigger,
 )
-from hypertrade.arc.store import get_controller, load_projection, research_lock
+from hypertrade.arc.store import (
+    get_controller,
+    load_development_memory_records,
+    load_projection,
+    research_lock,
+)
 from hypertrade.arc.universe import declared_symbols, normalize_symbols
 from hypertrade.db import ArcMission, Database
 from hypertrade.memory.service import MemoryService
@@ -78,6 +83,8 @@ from hypertrade.targets.registry import (
     adapter_for_target,
     get_market_target,
 )
+
+_DEFAULT_LOAD_PROJECTION = load_projection
 
 
 class EvolutionConfig(BaseModel):
@@ -1575,36 +1582,44 @@ class EvolutionService:
         memory: list[dict[str, Any]] = []
         scope_symbols = set(declared_symbols(context["baseline"]["strategy_spec"]))
         with self.db.session() as session:
-            records = session.scalars(
-                select(ArcMission).order_by(ArcMission.updated_at.desc())
-            ).yield_per(20)
-            for row in records:
-                if len(memory) >= 200:
-                    break  # Full: later rows cannot add entries, so stop loading projections.
-                projection = load_projection(session, row, with_events=False)  # no events used
-                goal = projection.goal
-                if goal is None:
-                    continue
-                if not scope_symbols.intersection(goal.symbols) or len(memory) >= 200:
-                    continue
-                # Only development receipts become cross-task memory. Hidden final metrics
-                # never enter another proposal context as if they were training data.
-                for attempt in projection.attempts:
-                    receipt = projection.avo.get("development", {}).get(attempt.attempt_id)
-                    if receipt and len(memory) < 200:
-                        memory.append(
-                            {
-                                "mission_id": row.mission_id,
-                                "candidate_id": attempt.candidate_id,
-                                "hypothesis": attempt.hypothesis,
-                                "spec": attempt.strategy_spec,
-                                "code_sha256": hashlib.sha256(
-                                    attempt.strategy_code.encode()
-                                ).hexdigest(),
-                                "capital": str(goal.paper_initial_equity),
-                                "development": receipt,
-                            }
-                        )
+            if load_projection is _DEFAULT_LOAD_PROJECTION:
+                # Only development receipts become cross-task memory. Project narrow JSON slices
+                # and skip missions without `avo.development` directly in SQL so 200-fill order
+                # samples, AVO transcripts, and self-test blobs are never deserialized into RAM.
+                memory, _ = load_development_memory_records(
+                    session,
+                    symbols=scope_symbols,
+                    record_limit=200,
+                )
+            else:
+                records = session.scalars(
+                    select(ArcMission).order_by(ArcMission.updated_at.desc())
+                ).yield_per(20)
+                for row in records:
+                    if len(memory) >= 200:
+                        break
+                    projection = load_projection(session, row, with_events=False)
+                    goal = projection.goal
+                    if goal is None:
+                        continue
+                    if not scope_symbols.intersection(goal.symbols) or len(memory) >= 200:
+                        continue
+                    for attempt in projection.attempts:
+                        receipt = projection.avo.get("development", {}).get(attempt.attempt_id)
+                        if receipt and len(memory) < 200:
+                            memory.append(
+                                {
+                                    "mission_id": row.mission_id,
+                                    "candidate_id": attempt.candidate_id,
+                                    "hypothesis": attempt.hypothesis,
+                                    "spec": attempt.strategy_spec,
+                                    "code_sha256": hashlib.sha256(
+                                        attempt.strategy_code.encode()
+                                    ).hexdigest(),
+                                    "capital": str(goal.paper_initial_equity),
+                                    "development": receipt,
+                                }
+                            )
         windows = research_windows_for_parent(
             len(scope_symbols),
             context["baseline"]["strategy_spec"]["timeframe"],

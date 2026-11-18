@@ -35,6 +35,7 @@ services:
       # empty /dev/null fallback leaves Codex disabled without exposing OAuth.
       CODEX_AUTH_JSON: /run/secrets/hypertrade_codex_auth
       HYPERTRADE_HEADLESS_MODE: ${HYPERTRADE_HEADLESS_MODE:-true}
+      MALLOC_ARENA_MAX: ${MALLOC_ARENA_MAX:-2}
     ports:
       - "127.0.0.1:3334:3334"
     volumes:
@@ -80,6 +81,7 @@ services:
       # the API, never a copied OAuth token in the environment file.
       CODEX_AUTH_JSON: /run/secrets/hypertrade_codex_auth
       HYPERTRADE_HEADLESS_MODE: ${HYPERTRADE_HEADLESS_MODE:-true}
+      MALLOC_ARENA_MAX: ${MALLOC_ARENA_MAX:-2}
     secrets:
       - source: codex_auth
         target: hypertrade_codex_auth

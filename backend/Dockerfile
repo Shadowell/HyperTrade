@@ -20,7 +20,8 @@ COPY docs ./docs
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH" \
-    PYTHONPATH="/app/backend/src"
+    PYTHONPATH="/app/backend/src" \
+    MALLOC_ARENA_MAX=2
 
 EXPOSE 3334
 
@@ -40,7 +41,8 @@ COPY docs ./docs
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --extra tui
 
 ENV PATH="/app/.venv/bin:$PATH" \
-    PYTHONPATH="/app/backend/src"
+    PYTHONPATH="/app/backend/src" \
+    MALLOC_ARENA_MAX=2
 
 # Evaluation dependencies and scripts stay out of the production image. The
 # isolated deployment builds this target explicitly for reproducible baselines.
@@ -64,7 +66,8 @@ COPY docs ./docs
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen
 
 ENV PATH="/app/.venv/bin:$PATH" \
-    PYTHONPATH="/app/backend/src"
+    PYTHONPATH="/app/backend/src" \
+    MALLOC_ARENA_MAX=2
 
 USER 65532:65532
 

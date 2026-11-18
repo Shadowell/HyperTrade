@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 import time
 
-import yfinance as yf
-
 from hypertrade.global_market.schemas import TickerQuote
 
 logger = logging.getLogger(__name__)
@@ -43,6 +41,8 @@ class YFinanceSource:
         """
         for attempt in range(self.retry_attempts):
             try:
+                import yfinance as yf
+
                 ticker = yf.Ticker(symbol)
 
                 # Get last 2 days of history to compute change

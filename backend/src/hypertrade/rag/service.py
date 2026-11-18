@@ -118,48 +118,76 @@ class RagService:
         query_embedding = self._deterministic_embedding(query, dimensions=1024)
 
         with self.db.session() as session:
-            chunks = session.scalars(select(RagChunk)).all()
-            if not chunks:
+            # Stream narrow columns only: skip legacy `embedding_json`, skip ORM entity
+            # hydration/identity-map retention, and materialize metadata/content only for
+            # the final top-`limit` chunk IDs.
+            chunk_order: list[str] = []
+            lexical_list: list[tuple[str, float]] = []
+            vector_list: list[tuple[str, float]] = []
+
+            rows = session.execute(
+                select(RagChunk.id, RagChunk.content, RagChunk.embedding_vector)
+            ).yield_per(100)
+            for chunk_id, content_raw, embedding_vec in rows:
+                cid = str(chunk_id)
+                chunk_order.append(cid)
+                content_fold = str(content_raw or "").casefold()
+                lex_score = sum(1.0 for term in query_terms if term in content_fold)
+                if lex_score > 0:
+                    lexical_list.append((cid, lex_score))
+                sim = _cosine_similarity(query_embedding, list(embedding_vec or []))
+                vector_list.append((cid, sim))
+
+            if not chunk_order:
                 return []
 
             # 1. Rank by lexical BM25-style term matches
-            lexical_list: list[tuple[RagChunk, float]] = []
-            for chunk in chunks:
-                content_fold = chunk.content.casefold()
-                score = sum(1.0 for term in query_terms if term in content_fold)
-                if score > 0:
-                    lexical_list.append((chunk, score))
             lexical_list.sort(key=lambda x: x[1], reverse=True)
-            lexical_ranks = {chunk.id: idx + 1 for idx, (chunk, _) in enumerate(lexical_list)}
+            lexical_ranks = {cid: idx + 1 for idx, (cid, _) in enumerate(lexical_list)}
 
             # 2. Rank by vector cosine similarity
-            vector_list: list[tuple[RagChunk, float]] = []
-            for chunk in chunks:
-                sim = _cosine_similarity(query_embedding, chunk.embedding_vector or [])
-                vector_list.append((chunk, sim))
             vector_list.sort(key=lambda x: x[1], reverse=True)
-            vector_ranks = {chunk.id: idx + 1 for idx, (chunk, _) in enumerate(vector_list)}
+            vector_ranks = {cid: idx + 1 for idx, (cid, _) in enumerate(vector_list)}
 
-            # 3. Fuse ranks using Reciprocal Rank Fusion (RRF)
-            scored: list[RagHit] = []
-            for chunk in chunks:
-                r_lex = lexical_ranks.get(chunk.id, 9999)
-                r_vec = vector_ranks.get(chunk.id, 9999)
+            # 3. Fuse ranks using Reciprocal Rank Fusion (RRF) and bound to top `limit` IDs
+            scored_ids: list[tuple[str, float]] = []
+            for cid in chunk_order:
+                r_lex = lexical_ranks.get(cid, 9999)
+                r_vec = vector_ranks.get(cid, 9999)
                 rrf_score = (1.0 / (rrf_k + r_lex)) + (1.0 / (rrf_k + r_vec))
                 if r_lex < 9999 or r_vec < 10:
-                    scored.append(
-                        RagHit(
-                            source_path=chunk.source_path,
-                            title=chunk.title,
-                            chunk_index=chunk.chunk_index,
-                            content=chunk.content,
-                            score=float(rrf_score),
-                            content_preview=chunk.content[:240],
-                        )
-                    )
+                    scored_ids.append((cid, float(rrf_score)))
 
-            scored.sort(key=lambda hit: hit.score, reverse=True)
-            return scored[:limit]
+            if not scored_ids or limit <= 0:
+                return []
+            scored_ids.sort(key=lambda item: item[1], reverse=True)
+            winners = scored_ids[:limit]
+            winner_ids = [cid for cid, _ in winners]
+
+            fetched = {
+                str(cid): (str(src or ""), str(title or ""), int(cidx or 0), str(body or ""))
+                for cid, src, title, cidx, body in session.execute(
+                    select(
+                        RagChunk.id,
+                        RagChunk.source_path,
+                        RagChunk.title,
+                        RagChunk.chunk_index,
+                        RagChunk.content,
+                    ).where(RagChunk.id.in_(winner_ids))
+                )
+            }
+            return [
+                RagHit(
+                    source_path=fetched[cid][0],
+                    title=fetched[cid][1],
+                    chunk_index=fetched[cid][2],
+                    content=fetched[cid][3],
+                    score=score,
+                    content_preview=fetched[cid][3][:240],
+                )
+                for cid, score in winners
+                if cid in fetched
+            ]
 
     @staticmethod
     def _title(content: str, path: Path) -> str:

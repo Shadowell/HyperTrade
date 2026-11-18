@@ -1,3 +1,12 @@
+# 036 无头运行时内存占用治理与窄列投影架构（2026-11-18）
+
+1. **冷启动重型依赖按需懒加载**（`research/co_steer.py`、`backtest/engine.py`、`global_market/sources/yfinance_source.py`）：
+   - `hypertrade.main` 与 `hypertrade.worker` 冷启动路径禁止顶层导入 `pandas`、`numpy`、`pyarrow`、`backtrader`、`yfinance` 等本地计算/抓取重包，仅在实际触发本地回测、Co-STEER DataFrame 评估或 Yahoo Finance 行情拉取时按需加载，将 `api`/`worker` 冷启动 RSS 分别压降至 `~197 MB` 与 `~158 MB`（由 `tests/test_memory_footprint_optimizations.py` 子进程探针持续守卫）。
+2. **容器 glibc Arena 约束与周期性堆页归还**（`backend/Dockerfile`、`docker-compose.yml`、`docker-compose.eval.yml`、`runtime/heartbeat.py`）：
+   - 生产与评测容器统一默认注入 `MALLOC_ARENA_MAX=2` 限制多线程 JSON 解析的 glibc arena 碎片；Worker 心跳后台单线程每 60s 安全执行 Linux `malloc_trim(0)`（`trim_process_heap()`，非 Linux 环境无副作用跳过），在不阻塞 asyncio 事件循环的前提下回收峰值空闲页。
+3. **RAG、分层认知记忆与进化开发记忆的窄列 SQL 投影**（`rag/service.py`、`memory/layered_service.py`、`arc/store.py`、`arc/evolution.py`、`memory/service.py`）：
+   - `RagService.search_hybrid` 流式扫描窄列（跳过 `embedding_json` 与全表 ORM 驻留），仅对 Top-K 命中回查完整字段；`LayeredMemoryService` 先按窄列评分再按 Top-K ID 物化；`load_development_memory_records` 在 PostgreSQL/SQLite 双端仅投影 `goal` 标量、`attempts` 与 `avo.development`（并在 SQL 层跳过无开发回执的历史任务），消除对 `evolution_context.orders.fills`、`avo.messages` 等大 JSON 字段的无谓反序列化。
+
 # 035 HyperMonitor 控制面工作台重构与前后端观测闭环（2026-11-18）
 
 1. **信息架构减法与 4 路由收敛**（`frontend/src/lib/routes.ts`、`frontend/src/types/index.ts`、`frontend/src/App.tsx`）：

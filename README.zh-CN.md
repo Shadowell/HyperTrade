@@ -14,7 +14,7 @@
   <a href="#"><img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.9-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/PostgreSQL-14%2B_pgvector-4169E1.svg" alt="PostgreSQL" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-3089%20passed-success.svg" alt="Tests" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-3098%20passed-success.svg" alt="Tests" /></a>
   <a href="docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md"><img src="https://img.shields.io/badge/%E8%87%AA%E4%B8%BB%E8%BF%9B%E5%8C%96-%E9%BB%98%E8%AE%A4%E5%BC%80%E5%90%AF-brightgreen.svg" alt="Evolution" /></a>
   <a href="docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md"><img src="https://img.shields.io/badge/markets-BitPro_%7C_QuantLab-orange.svg" alt="Markets" /></a>
 </p>
@@ -107,7 +107,7 @@ flowchart LR
 设计文档：[63 进化加固](docs/architecture/63-evolution-effectiveness-alerts-and-benchmark.md) · [66 赛马平滑换仓](docs/architecture/66-quantlab-adapter-a-share-microstructure-and-relay-handover.md)
 
 ### 5. 无头研究引擎模式、分级探活矩阵与 BitPro 唯一工作台收口
-- **无头研究引擎（`HYPERTRADE_HEADLESS_MODE`）**：生产部署（`docker-compose.yml` 默认开启 `HYPERTRADE_HEADLESS_MODE: ${HYPERTRADE_HEADLESS_MODE:-true}`，并设定 `api mem_limit: 2g`、`worker mem_limit: 3g`）下，操作交互统一收口至 BitPro 工作台（`/ai-lab` 与 `/evolution`），HyperTrade Web 顶部展示无头引导横幅并附直达链接。Worker 停用冗余的 `market_ingestion`、`market_rest_supplement`、`paper_trading` 与 `autonomous_market_pulse` 循环（亦可通过 `MARKET_INGESTION_ENABLED` 独立控制），并对非关键扫描循环在首次启动时按 2s/5s/8s/12s/15s 错峰调度以消除冷启动并发峰值。`bitpro/mcp.py` 兼容 `strategy_search(status=running)` 多口径收益/回撤字段，并在 `paper_dashboard` 可用时避免误报 `monitor_data_gap`。契约详见 [headless-bitpro-fusion](docs/contracts/headless-bitpro-fusion.md)。
+- **无头研究引擎与低内存基线（`HYPERTRADE_HEADLESS_MODE`）**：生产部署（`docker-compose.yml` 默认开启 `HYPERTRADE_HEADLESS_MODE: ${HYPERTRADE_HEADLESS_MODE:-true}`，共享 `hypertrade-api:latest` 镜像并设定 `api mem_limit: 2g`、`worker mem_limit: 3g`、`MALLOC_ARENA_MAX: ${MALLOC_ARENA_MAX:-2}`）下，操作交互统一收口至 BitPro 工作台（`/ai-lab` 与 `/evolution`），HyperTrade Web 顶部展示无头引导横幅并附直达链接。运行时对 `pandas`、`numpy`、`pyarrow`、`backtrader`、`yfinance` 实施按需懒加载（`api` + `worker` 冷启动基线 RSS 合计降低约 `259 MB`），Worker 心跳后台线程每 60s 执行 Linux `malloc_trim(0)` 归还空闲堆页，且 RAG 混合检索、三层认知记忆与跨任务 `avo.development` 召回均采用窄列 SQL/JSON 投影替代整行 ORM 物化。Worker 停用冗余的 `market_ingestion`、`market_rest_supplement`、`paper_trading` 与 `autonomous_market_pulse` 循环（亦可通过 `MARKET_INGESTION_ENABLED` 独立控制），并对非关键扫描循环在首次启动时按 2s/5s/8s/12s/15s 错峰调度以消除冷启动并发峰值。`bitpro/mcp.py` 兼容 `strategy_search(status=running)` 多口径收益/回撤字段，并在 `paper_dashboard` 可用时避免误报 `monitor_data_gap`。契约详见 [headless-bitpro-fusion](docs/contracts/headless-bitpro-fusion.md)。
 - **探活矩阵**：`/livez`（进程存活）、`/readyz`（`SELECT 1` 数据库就绪）、`/healthz`（包含 DB 延迟、QuantLab/BitPro 适配器心跳、worker 存活心跳、Paper 会话与令牌审计全景诊断）、`/version`（运行中的提交 SHA，发布流程每次部署后据此校验），原生适配 K8s 探针；
 - **HyperMonitor 控制面工作台 (`/harness`)**：React 19 + TypeScript 5.9 + Tailwind CSS 三层外壳（`ConsoleShell`），提供暗黑曜石（`#070708`/`#141416` + 紫粉渐变）与浅紫白卡双主题切换，将原 9 个页签收敛为 4 个按需懒加载控制面路由（`/harness` 多轮 Co-Pilot 与 Flight Recorder、`/harness/missions` ARC 3-Slot 进化与 Mission 工作区、`/harness/knowledge` 三层认知记忆与治理、`/harness/system` Worker Stall 取证与统一告警/错误台账）；`/harness` 首屏严格只请求 `GET /api/harness/overview`（含 `headless_mode` 与 `missions_summary`）与 `GET /api/healthz`。
 

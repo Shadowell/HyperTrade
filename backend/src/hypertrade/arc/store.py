@@ -14,6 +14,7 @@ import hashlib
 from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager, suppress
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from threading import Lock
 from typing import Any
 from weakref import WeakKeyDictionary, WeakValueDictionary
@@ -1050,6 +1051,284 @@ def load_budget_mission_rows(
     if dialect == "sqlite":
         return _sqlite_budget_mission_rows(session, mission_ids=mission_ids)
     return None
+
+
+def _format_goal_capital(raw_equity: Any) -> str:
+    """Format ``goal.paper_initial_equity`` identically to ``ARCGoalV1``."""
+    if raw_equity is None or isinstance(raw_equity, bool):
+        return "100"
+    try:
+        return str(Decimal(str(raw_equity)))
+    except (InvalidOperation, ValueError):
+        return str(raw_equity)
+
+
+def _append_development_memory_slice(
+    records: list[dict[str, Any]],
+    *,
+    mission_id: str,
+    has_goal: bool,
+    goal_symbols: Any,
+    paper_initial_equity: Any,
+    attempts: Any,
+    development: Any,
+    scope_symbols: set[str],
+    record_limit: int,
+) -> None:
+    if not has_goal or len(records) >= record_limit:
+        return
+    symbols = (
+        [str(item) for item in goal_symbols]
+        if isinstance(goal_symbols, list)
+        else ["BTC-USDT-SWAP"]
+    )
+    if not scope_symbols.intersection(symbols):
+        return
+    if not isinstance(development, dict) or not development or not isinstance(attempts, list):
+        return
+    capital_str = _format_goal_capital(paper_initial_equity)
+    for attempt in attempts:
+        if not isinstance(attempt, dict):
+            continue
+        attempt_id = str(attempt.get("attempt_id", ""))
+        receipt = development.get(attempt_id)
+        if receipt and len(records) < record_limit:
+            spec = attempt.get("strategy_spec")
+            records.append(
+                {
+                    "mission_id": str(mission_id),
+                    "candidate_id": str(attempt.get("candidate_id", "")),
+                    "hypothesis": str(attempt.get("hypothesis", "")),
+                    "spec": dict(spec) if isinstance(spec, dict) else {},
+                    "code_sha256": hashlib.sha256(
+                        str(attempt.get("strategy_code", "")).encode()
+                    ).hexdigest(),
+                    "capital": capital_str,
+                    "development": receipt,
+                }
+            )
+
+
+def load_development_memory_records(
+    session: Session,
+    *,
+    symbols: Collection[str],
+    record_limit: int = 200,
+    mission_scan_limit: int | None = None,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Extract cross-mission ``avo.development`` receipts without hydrating full projections.
+
+    Full ``ArcMission.projection_json`` rows carry ``goal.evolution_context.orders.fills`` (200
+    fills), ``avo.messages``, ``self_test_records`` and ``paper_feedback``. Projecting only the
+    goal's symbol/capital scalars plus ``attempts`` and ``avo.development`` (and filtering out
+    missions without ``avo.development`` directly in SQL when ``mission_scan_limit`` is unset)
+    avoids megabytes of transient JSON/Pydantic allocations per scan while keeping exact parity
+    with ``load_projection(..., with_events=False)``.
+    """
+    scope_symbols = {str(sym) for sym in symbols if sym}
+    if not scope_symbols or record_limit <= 0:
+        return [], False
+
+    bind = session.get_bind()
+    dialect = bind.dialect.name if bind is not None else ""
+    records: list[dict[str, Any]] = []
+
+    if dialect == "postgresql":
+        has_goal_sql = (
+            "arc_missions.projection_json IS NOT NULL"
+            " AND json_typeof(arc_missions.projection_json) = 'object'"
+            " AND json_typeof(arc_missions.projection_json #> '{goal}') = 'object'"
+        )
+        has_dev_sql = (
+            f"{has_goal_sql}"
+            " AND json_typeof(arc_missions.projection_json #> '{attempts}') = 'array'"
+            " AND json_array_length(arc_missions.projection_json #> '{attempts}') > 0"
+            " AND json_typeof(arc_missions.projection_json #> '{avo}') = 'object'"
+            " AND json_typeof(arc_missions.projection_json #> '{avo,development}') = 'object'"
+        )
+        pg_stmt: Any = select(
+            ArcMission.mission_id,
+            literal_column(
+                f"CASE WHEN {has_goal_sql} THEN TRUE ELSE FALSE END",
+                type_=Boolean(),
+            ).label("has_goal"),
+            type_coerce(
+                literal_column(
+                    f"CASE WHEN {has_goal_sql}"
+                    " AND json_typeof(arc_missions.projection_json #> '{goal,symbols}') = 'array'"
+                    " THEN arc_missions.projection_json #> '{goal,symbols}'"
+                    " ELSE NULL END"
+                ),
+                JSON(),
+            ).label("goal_symbols"),
+            literal_column(
+                f"CASE WHEN {has_goal_sql}"
+                " THEN arc_missions.projection_json #>> '{goal,paper_initial_equity}'"
+                " ELSE NULL END"
+            ).label("paper_initial_equity"),
+            type_coerce(
+                literal_column(
+                    f"CASE WHEN {has_dev_sql}"
+                    " THEN arc_missions.projection_json #> '{attempts}'"
+                    " ELSE NULL END"
+                ),
+                JSON(),
+            ).label("attempts"),
+            type_coerce(
+                literal_column(
+                    f"CASE WHEN {has_dev_sql}"
+                    " THEN arc_missions.projection_json #> '{avo,development}'"
+                    " ELSE NULL END"
+                ),
+                JSON(),
+            ).label("development"),
+        ).order_by(ArcMission.updated_at.desc())
+        if mission_scan_limit is None:
+            pg_stmt = pg_stmt.where(literal_column(has_dev_sql, type_=Boolean()))
+            for mid, has_goal, g_syms, equity, attempts, dev in (
+                session.execute(pg_stmt).yield_per(20)
+            ):
+                if len(records) >= record_limit:
+                    break
+                _append_development_memory_slice(
+                    records,
+                    mission_id=str(mid),
+                    has_goal=bool(has_goal),
+                    goal_symbols=g_syms,
+                    paper_initial_equity=equity,
+                    attempts=attempts,
+                    development=dev,
+                    scope_symbols=scope_symbols,
+                    record_limit=record_limit,
+                )
+            return records, len(records) >= record_limit
+        fetched = session.execute(pg_stmt.limit(mission_scan_limit + 1)).all()
+        for mid, has_goal, g_syms, equity, attempts, dev in fetched[:mission_scan_limit]:
+            _append_development_memory_slice(
+                records,
+                mission_id=str(mid),
+                has_goal=bool(has_goal),
+                goal_symbols=g_syms,
+                paper_initial_equity=equity,
+                attempts=attempts,
+                development=dev,
+                scope_symbols=scope_symbols,
+                record_limit=record_limit,
+            )
+        return records, len(fetched) > mission_scan_limit or len(records) >= record_limit
+
+    if dialect == "sqlite":
+        pj = ArcMission.projection_json
+        has_goal_cond = func.json_type(pj, "$.goal") == "object"
+        has_dev_cond = and_(
+            has_goal_cond,
+            func.json_type(pj, "$.attempts") == "array",
+            func.json_array_length(pj, "$.attempts") > 0,
+            func.json_type(pj, "$.avo") == "object",
+            func.json_type(pj, "$.avo.development") == "object",
+        )
+        sqlite_stmt = select(
+            ArcMission.mission_id,
+            has_goal_cond.label("has_goal"),
+            case(
+                (
+                    and_(has_goal_cond, func.json_type(pj, "$.goal.symbols") == "array"),
+                    pj[("goal", "symbols")],
+                ),
+                else_=None,
+            ).label("goal_symbols"),
+            case(
+                (has_goal_cond, func.json_extract(pj, "$.goal.paper_initial_equity")),
+                else_=None,
+            ).label("paper_initial_equity"),
+            case((has_dev_cond, pj["attempts"]), else_=None).label("attempts"),
+            case((has_dev_cond, pj[("avo", "development")]), else_=None).label("development"),
+        ).order_by(ArcMission.updated_at.desc())
+        if mission_scan_limit is None:
+            sqlite_stmt = sqlite_stmt.where(has_dev_cond)
+            for mid, has_goal, g_syms, equity, attempts, dev in (
+                session.execute(sqlite_stmt).yield_per(20)
+            ):
+                if len(records) >= record_limit:
+                    break
+                _append_development_memory_slice(
+                    records,
+                    mission_id=str(mid),
+                    has_goal=bool(has_goal),
+                    goal_symbols=g_syms,
+                    paper_initial_equity=equity,
+                    attempts=attempts,
+                    development=dev,
+                    scope_symbols=scope_symbols,
+                    record_limit=record_limit,
+                )
+            return records, len(records) >= record_limit
+        fetched = session.execute(sqlite_stmt.limit(mission_scan_limit + 1)).all()
+        for mid, has_goal, g_syms, equity, attempts, dev in fetched[:mission_scan_limit]:
+            _append_development_memory_slice(
+                records,
+                mission_id=str(mid),
+                has_goal=bool(has_goal),
+                goal_symbols=g_syms,
+                paper_initial_equity=equity,
+                attempts=attempts,
+                development=dev,
+                scope_symbols=scope_symbols,
+                record_limit=record_limit,
+            )
+        return records, len(fetched) > mission_scan_limit or len(records) >= record_limit
+
+    # Generic fallback for non-PostgreSQL/SQLite dialects.
+    base = select(ArcMission).order_by(ArcMission.updated_at.desc())
+    if mission_scan_limit is None:
+        for row in session.scalars(base).yield_per(20):
+            if len(records) >= record_limit:
+                break
+            projection = load_projection(session, row, with_events=False)
+            goal = projection.goal
+            if goal is None or not scope_symbols.intersection(goal.symbols):
+                continue
+            for attempt in projection.attempts:
+                receipt = projection.avo.get("development", {}).get(attempt.attempt_id)
+                if receipt and len(records) < record_limit:
+                    records.append(
+                        {
+                            "mission_id": row.mission_id,
+                            "candidate_id": attempt.candidate_id,
+                            "hypothesis": attempt.hypothesis,
+                            "spec": attempt.strategy_spec,
+                            "code_sha256": hashlib.sha256(
+                                attempt.strategy_code.encode()
+                            ).hexdigest(),
+                            "capital": str(goal.paper_initial_equity),
+                            "development": receipt,
+                        }
+                    )
+        return records, len(records) >= record_limit
+
+    orm_rows = session.scalars(base.limit(mission_scan_limit + 1)).all()
+    for row in orm_rows[:mission_scan_limit]:
+        projection = load_projection(session, row, with_events=False)
+        goal = projection.goal
+        if goal is None or not scope_symbols.intersection(goal.symbols):
+            continue
+        for attempt in projection.attempts:
+            receipt = projection.avo.get("development", {}).get(attempt.attempt_id)
+            if receipt and len(records) < record_limit:
+                records.append(
+                    {
+                        "mission_id": row.mission_id,
+                        "candidate_id": attempt.candidate_id,
+                        "hypothesis": attempt.hypothesis,
+                        "spec": attempt.strategy_spec,
+                        "code_sha256": hashlib.sha256(
+                            attempt.strategy_code.encode()
+                        ).hexdigest(),
+                        "capital": str(goal.paper_initial_equity),
+                        "development": receipt,
+                    }
+                )
+    return records, len(orm_rows) > mission_scan_limit or len(records) >= record_limit
 
 
 def load_final_validation_records(
