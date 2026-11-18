@@ -168,18 +168,19 @@ export function AgentFlightRecorder({ data, language, loading = false }: Props) 
   const t = labels[language];
   const [selectedEventId, setSelectedEventId] = useState("");
 
+  const timeline = useMemo(() => data?.timeline ?? [], [data?.timeline]);
   const selectedEvent =
-    data?.timeline.find((event) => event.id === selectedEventId) ??
-    data?.timeline.find((event) => event.category === "model") ??
-    data?.timeline[0] ??
+    timeline.find((event) => event.id === selectedEventId) ??
+    timeline.find((event) => event.category === "model") ??
+    timeline[0] ??
     null;
   const maxEventDuration = useMemo(
-    () => Math.max(1, ...(data?.timeline.map((event) => event.duration_ms) ?? [1])),
-    [data?.timeline]
+    () => Math.max(1, ...timeline.map((event) => event.duration_ms)),
+    [timeline]
   );
   const memoryById = useMemo(
-    () => new Map((data?.memory.items ?? []).map((item) => [item.id, item])),
-    [data?.memory.items]
+    () => new Map((data?.memory?.items ?? []).map((item) => [item.id, item])),
+    [data?.memory?.items]
   );
 
   return (
@@ -280,7 +281,7 @@ export function AgentFlightRecorder({ data, language, loading = false }: Props) 
               </div>
             </div>
 
-            <aside className="flight-inspector" aria-live="polite">
+            <div className="flight-inspector" aria-live="polite">
               <div className="flight-section-label">
                 <span>{t.evidence}</span>
                 <EyeOff size={14} />
@@ -334,7 +335,7 @@ export function AgentFlightRecorder({ data, language, loading = false }: Props) 
               ) : (
                 <p>{t.select}</p>
               )}
-            </aside>
+            </div>
           </div>
 
           <div className="flight-safety-strip">
