@@ -7,6 +7,7 @@ from typing import Protocol
 
 from hypertrade.runtime.domain.thread_turn import (
     ThreadEventV1,
+    ThreadProjectionV1,
     ThreadSnapshotV1,
     TurnProjectionV1,
 )
@@ -23,6 +24,14 @@ class ThreadStore(Protocol):
     ) -> ThreadSnapshotV1: ...
 
     async def get(self, thread_id: str) -> ThreadSnapshotV1: ...
+
+    async def list_threads(
+        self,
+        *,
+        tenant_id: str = "default",
+        status: str = "",
+        limit: int = 20,
+    ) -> Sequence[ThreadProjectionV1]: ...
 
     async def start_turn(
         self,

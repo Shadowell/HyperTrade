@@ -58,7 +58,9 @@ from hypertrade.build_info import get_build_info
 from hypertrade.config import Settings, get_settings
 from hypertrade.connectors.registry import ConnectorRegistry
 from hypertrade.db import (
+    AgentMission,
     AgentRun,
+    AgentThread,
     Database,
     LiveOrderIntent,
     MarketTicker,
@@ -246,6 +248,9 @@ SESSION_COOKIE = "hypertrade_session"
 logger = logging.getLogger("hypertrade.main")
 # Environments that may expose the admin console and therefore must not run on repository defaults.
 _DEPLOYED_ENVIRONMENTS = frozenset({"production", "staging"})
+_OVERVIEW_MISSION_TERMINAL_STATUSES = frozenset(
+    {"completed", "failed", "canceled", "budget_exhausted"}
+)
 
 
 def refuse_builtin_admin_credentials(settings: Settings) -> None:
@@ -1138,21 +1143,26 @@ def create_app(
 
     @app.get("/api/harness/overview")
     def harness_overview() -> dict[str, Any]:
+        headless = bool(app_settings.headless_mode)
         providers_payload = ProviderRuntime(app_settings).list_providers(
             selected=str(app.state.active_chat_provider),
             selected_models=active_provider_models(),
         )
         tools_payload = [_tool_to_dict(tool) for tool in ToolRegistry.default().list_tools()]
         connectors_payload = ConnectorRegistry.default(settings=app_settings).capabilities_payload()
-        top_movers = [
-            {
-                "inst_id": row.inst_id,
-                "last": str(row.last),
-                "volume_ccy_24h": str(row.volume_ccy_24h),
-                "change_utc0_pct": str(row.change_utc0_pct),
-            }
-            for row in MarketRepository(database).top_movers(limit=8)
-        ]
+        top_movers = (
+            []
+            if headless
+            else [
+                {
+                    "inst_id": row.inst_id,
+                    "last": str(row.last),
+                    "volume_ccy_24h": str(row.volume_ccy_24h),
+                    "change_utc0_pct": str(row.change_utc0_pct),
+                }
+                for row in MarketRepository(database).top_movers(limit=8)
+            ]
+        )
         observability_summary = AgentObservabilityService(database).recent_summary()
         cognitive_counts = MemoryService(database).cognitive_counts()
         live_probe: dict[str, Any] | None = None
@@ -1170,7 +1180,6 @@ def create_app(
                 live_probe = None
 
         with database.session() as session:
-            latest_market_at = session.scalar(select(func.max(MarketTicker.updated_at)))
             latest_memory_at = session.scalar(select(func.max(MemoryItem.created_at)))
             runs = session.scalars(
                 select(AgentRun).order_by(desc(AgentRun.created_at)).limit(6)
@@ -1178,22 +1187,97 @@ def create_app(
             trace_events = session.scalars(
                 select(TraceEvent).order_by(desc(TraceEvent.created_at)).limit(12)
             ).all()
-            bitpro_contract = bitpro_capabilities()
-            return {
-                "generated_at": utc_now().isoformat(),
-                "providers": providers_payload,
-                "tools": tools_payload,
-                "connectors": connectors_payload["connectors"],
-                "market": {
+            mission_counts = {
+                str(status_value): int(count)
+                for status_value, count in session.execute(
+                    select(AgentMission.status, func.count()).group_by(AgentMission.status)
+                ).all()
+            }
+            missions_summary = {
+                "total_count": sum(mission_counts.values()),
+                "active_count": sum(
+                    count
+                    for status_value, count in mission_counts.items()
+                    if status_value not in _OVERVIEW_MISSION_TERMINAL_STATUSES
+                ),
+                "completed_count": mission_counts.get("completed", 0),
+                "failed_count": mission_counts.get("failed", 0),
+                "threads_count": _count_rows(session, AgentThread),
+            }
+            if headless:
+                market_payload: dict[str, Any] = {
+                    "ticker_count": 0,
+                    "latest_ticker_at": None,
+                    "latest_update_age_seconds": None,
+                    "top_movers": [],
+                }
+                paper_payload: dict[str, Any] = {
+                    "session": {
+                        "id": "",
+                        "status": "disabled_headless",
+                        "cash": "0",
+                        "equity": "0",
+                        "realized_pnl": "0",
+                    },
+                    "positions": [],
+                    "recent_fills": [],
+                    "recent_events": [],
+                }
+                strategy_lab_payload: dict[str, Any] = {
+                    "latest_research": None,
+                    "latest_backtest": None,
+                    "latest_experiment": None,
+                }
+                live_orders_payload: dict[str, Any] = {
+                    "total_count": 0,
+                    "pending_approval_count": 0,
+                    "recent": [],
+                }
+            else:
+                latest_market_at = session.scalar(select(func.max(MarketTicker.updated_at)))
+                market_payload = {
                     "ticker_count": _count_rows(session, MarketTicker),
                     "latest_ticker_at": _iso_or_none(latest_market_at),
                     "latest_update_age_seconds": _age_seconds(latest_market_at),
                     "top_movers": top_movers,
-                },
+                }
+                paper_payload = PaperTradingService(database, settings=app_settings).status()
+                strategy_lab_payload = {
+                    "latest_research": StrategyResearchService(database).latest(),
+                    "latest_backtest": BacktestService(database).latest(),
+                    "latest_experiment": StrategyExperimentService(database).latest(),
+                }
+                live_orders_payload = {
+                    "total_count": _count_rows(session, LiveOrderIntent),
+                    "pending_approval_count": _count_rows(
+                        session,
+                        LiveOrderIntent,
+                        LiveOrderIntent.status == "pending_approval",
+                    ),
+                    "recent": LiveOrderIntentService(database, settings=app_settings).list_recent(
+                        limit=5
+                    ),
+                }
+            bitpro_contract = bitpro_capabilities()
+            bitpro_tools = list(
+                dict.fromkeys(
+                    tool_name
+                    for group_tools in bitpro_contract["tool_groups"].values()
+                    for tool_name in group_tools
+                )
+            )
+            return {
+                "generated_at": utc_now().isoformat(),
+                "headless_mode": headless,
+                "providers": providers_payload,
+                "tools": tools_payload,
+                "connectors": connectors_payload["connectors"],
+                "market": market_payload,
                 "agent_runs": {
                     "total_count": _count_rows(session, AgentRun),
                     "recent": [_run_summary_to_dict(run) for run in runs],
                 },
+                "missions_summary": missions_summary,
                 "rag": {
                     "document_count": _count_rows(session, RagDocument),
                     "chunk_count": _count_rows(session, RagChunk),
@@ -1213,23 +1297,9 @@ def create_app(
                     "recent_events": [_trace_to_dict(event) for event in trace_events],
                 },
                 "observability": observability_summary,
-                "paper": PaperTradingService(database, settings=app_settings).status(),
-                "strategy_lab": {
-                    "latest_research": StrategyResearchService(database).latest(),
-                    "latest_backtest": BacktestService(database).latest(),
-                    "latest_experiment": StrategyExperimentService(database).latest(),
-                },
-                "live_orders": {
-                    "total_count": _count_rows(session, LiveOrderIntent),
-                    "pending_approval_count": _count_rows(
-                        session,
-                        LiveOrderIntent,
-                        LiveOrderIntent.status == "pending_approval",
-                    ),
-                    "recent": LiveOrderIntentService(database, settings=app_settings).list_recent(
-                        limit=5
-                    ),
-                },
+                "paper": paper_payload,
+                "strategy_lab": strategy_lab_payload,
+                "live_orders": live_orders_payload,
                 "bitpro": {
                     "adapter": "mcp_non_live_lifecycle",
                     "configured": bool(app_settings.bitpro_mcp_api_base),
@@ -1248,27 +1318,7 @@ def create_app(
                         "this is not BitPro runtime mode. Use BitPro live dashboard "
                         "or live read tools to inspect paper/live strategy state."
                     ),
-                    "tools": [
-                        "bitpro_capabilities",
-                        "bitpro_health",
-                        "market_klines",
-                        "strategy_search",
-                        "strategy_generate",
-                        "strategy_create",
-                        "strategy_update",
-                        "backtest_start_job",
-                        "backtest_get_job",
-                        "paper_configure",
-                        "paper_start",
-                        "paper_pause",
-                        "paper_resume",
-                        "paper_stop",
-                        "paper_dashboard",
-                        "paper_events",
-                        "paper_equity_curve",
-                        "paper_monitor_snapshot",
-                        "trading_positions",
-                    ],
+                    "tools": bitpro_tools,
                 },
                 "evals": AgentEvalSuite().status(),
             }
