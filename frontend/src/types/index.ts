@@ -1,17 +1,8 @@
 // Shared shapes of the operator console API payloads and UI state.
-// Moved verbatim out of App.tsx; nothing here changes behaviour.
 
 export type Language = "zh" | "en";
-export type NavSection =
-  | "harness"
-  | "missions"
-  | "strategy"
-  | "portfolio"
-  | "alerts"
-  | "runs"
-  | "quality"
-  | "memory"
-  | "rag";
+export type ThemeMode = "dark" | "light";
+export type NavSection = "harness" | "missions" | "knowledge" | "system";
 
 export type TraceEvent = {
   id?: string;
@@ -38,8 +29,9 @@ export type RunSummary = {
   prompt: string;
   status: string;
   created_at: string;
-  updated_at: string;
-  error: string;
+  updated_at?: string;
+  error?: string;
+  runtime?: string;
 };
 
 export type ProviderStatus = {
@@ -56,6 +48,8 @@ export type ToolStatus = {
   description: string;
   category: string;
   requires_approval: boolean;
+  policy?: Record<string, unknown>;
+  connector_origin?: Record<string, unknown>;
 };
 
 export type TickerSummary = {
@@ -108,20 +102,12 @@ export type MissionProjection = {
   unknowns?: string[];
 };
 
-export type MissionEvent = { sequence: number; event_type: string; actor?: string; payload?: Record<string, unknown>; created_at?: string };
-
-export type StrategyCardProjection = {
-  card_id: string;
-  strategy_key: string;
-  lifecycle_status?: string;
-  completeness_score?: string;
-  missing_fields?: string[];
-};
-
-export type ResearchFunnel = {
-  denominator: number;
-  denominator_unit: string;
-  stages: Record<string, number>;
+export type MissionEvent = {
+  sequence: number;
+  event_type: string;
+  actor?: string;
+  payload?: Record<string, unknown>;
+  created_at?: string;
 };
 
 export type BacktestSummary = {
@@ -182,6 +168,50 @@ export type MemoryItem = {
   created_at: string;
 };
 
+export type CognitiveMemoryCounts = {
+  episodic_count: number;
+  semantic_count: number;
+  active_semantic_count: number;
+  hypothesis_count: number;
+};
+
+export type SemanticCognitiveItem = {
+  id: string;
+  tier: "semantic";
+  kind: string;
+  status: string;
+  claim: string;
+  confidence: string;
+  regimes: string[];
+  symbols: string[];
+  timeframe: string;
+  distillation_version: number;
+  derived_episode_count: number;
+  created_at: string;
+};
+
+export type EpisodicCognitiveItem = {
+  id: string;
+  tier: "episodic";
+  kind: string;
+  mission_id: string;
+  experiment_id: string;
+  symbols: string[];
+  timeframe: string;
+  market_regime: string;
+  raw_evidence_ref: string;
+  summary: string;
+  created_at: string;
+};
+
+export type CognitiveMemoryItem = SemanticCognitiveItem | EpisodicCognitiveItem;
+
+export type MemoryPayload = {
+  items: MemoryItem[];
+  cognitive?: CognitiveMemoryCounts;
+  cognitive_items?: CognitiveMemoryItem[];
+};
+
 export type MemoryAssertion = {
   id: string;
   claim: string;
@@ -206,126 +236,6 @@ export type SkillRelease = {
   status: string;
 };
 
-export type PortfolioRecommendation = {
-  recommendation_id: string;
-  action: string;
-  strategy_card_id: string;
-  reason: string;
-  requires_human_review: boolean;
-  allocation_change_allowed: boolean;
-  trading_mutation_allowed: boolean;
-};
-
-export type PortfolioAssessment = {
-  id: string;
-  status: string;
-  policy_version: string;
-  valid_until: string;
-  strategies: Array<Record<string, unknown>>;
-  pairwise: Array<Record<string, unknown>>;
-  unknowns: string[];
-  recommendations: PortfolioRecommendation[];
-};
-
-export type PortfolioObservationWindow = {
-  id: string;
-  status: string;
-  horizon_days: number;
-  bucket_minutes: number;
-  quality: {
-    denominator: number;
-    available_count: number;
-    coverage_ratio: string;
-    gaps: string[];
-  };
-  strategies: Array<Record<string, unknown>>;
-  pairwise: Array<Record<string, unknown>>;
-  raw_series_persisted: boolean;
-};
-
-export type PaperCohort = {
-  id: string;
-  status: string;
-  version_number: number;
-  intake_count: number;
-  comparable_count: number;
-  proposal_count: number;
-  groups: Array<Record<string, unknown>>;
-  execution_authorized: boolean;
-};
-
-export type PaperIncubationMandate = {
-  id: string;
-  status: string;
-  kill_switch: boolean;
-  policy_hash: string;
-  fixed_denominator: number;
-  members: Array<{
-    id: string;
-    status: string;
-    candidate_id: string;
-    validation_id: string;
-    rejection_reasons: string[];
-  }>;
-  actions: Array<{
-    id: string;
-    action: string;
-    status: string;
-    reason: string;
-    outcome_link: string;
-  }>;
-  mutation_boundary: {
-    paper_only: boolean;
-    testnet_writes: boolean;
-    live_writes: boolean;
-    real_order_writes: boolean;
-    capital_transfer_writes: boolean;
-  };
-};
-
-export type ShadowPortfolio = {
-  id: string;
-  status: string;
-  version_number: number;
-  intake_count: number;
-  eligible_count: number;
-  scenario_count: number;
-  scenarios: Array<{ scenario_id: string; template: string }>;
-  hypothetical: boolean;
-  execution_authorized: boolean;
-  capital_authorized: boolean;
-};
-
-export type MarketRegimeSnapshotV2 = {
-  id: string;
-  status: string;
-  as_of: string;
-  confidence: string;
-  probabilities: Record<string, string>;
-  unknowns: string[];
-  execution_authorized: boolean;
-};
-
-export type RegimeShadowTargetV2 = {
-  id: string;
-  status: string;
-  version_number: number;
-  eligible_count: number;
-  intake_denominator: number;
-  selected_template: string;
-  estimated_turnover: string;
-  estimated_cost_bps: string;
-  target_weights: Array<{ card_id: string; weight: string }>;
-  eligibility: Array<{
-    card_id: string;
-    status: string;
-    reasons: string[];
-  }>;
-  unknowns: string[];
-  execution_authorized: boolean;
-  capital_authorized: boolean;
-};
-
 export type RagHit = {
   source_path: string;
   title: string;
@@ -337,6 +247,8 @@ export type RagHit = {
 export type EvalStatus = {
   status: string;
   case_count: number;
+  legacy_case_count?: number;
+  research_os_case_count?: number;
   cases: Array<{ name: string; status: string; expectation?: string }>;
   mode: string;
   research_os?: {
@@ -404,6 +316,177 @@ export type MonitorAlert = {
   source_refs?: string[];
 };
 
+export type EvolutionAlert = {
+  id: string;
+  code: string;
+  severity: string;
+  strategy_id?: number | string | null;
+  message: string;
+  status: string;
+  delivery_result?: string | null;
+  delivered_at?: string | null;
+  created_at: string;
+  delivery_verified?: boolean;
+};
+
+export type RuntimeErrorRecord = {
+  error_id: string;
+  component: string;
+  exception_type: string;
+  message: string;
+  mission_id?: string | null;
+  occurrences: number;
+  frames?: string[];
+  recent_messages?: string[];
+  context?: Record<string, unknown>;
+  first_seen_at: string;
+  last_seen_at: string;
+};
+
+export type WorkerComponentHealth = {
+  last_ok_age_seconds: number | null;
+  last_error_age_seconds: number | null;
+  last_error_type: string | null;
+  consecutive_failures: number;
+  failures_total: number;
+  restarts_total: number;
+};
+
+export type WorkerStallView = {
+  seconds: number;
+  age_seconds: number | null;
+  running: string[];
+  cause?: string;
+  [key: string]: unknown;
+};
+
+export type WorkerInstanceHealth = {
+  worker_id: string;
+  stale: boolean;
+  heartbeat_age_seconds: number;
+  uptime_seconds: number;
+  build_sha?: string | null;
+  event_loop_lag_max_seconds: number | null;
+  stalls_total: number;
+  stall_causes: Record<string, number>;
+  last_stall: WorkerStallView | null;
+  process: Record<string, unknown> | null;
+  failing_components: string[];
+  components: Record<string, WorkerComponentHealth>;
+};
+
+export type HealthzPayload = {
+  status: string;
+  timestamp: string;
+  uptime_seconds: number;
+  total_latency_ms: number;
+  database: {
+    status: string;
+    latency_ms: number;
+  };
+  build?: Record<string, unknown>;
+  adapters?: Record<string, Record<string, unknown>>;
+  workers?: {
+    status: "alive" | "stale" | "unknown" | string;
+    reason?: string;
+    failing_components?: string[];
+    instances?: WorkerInstanceHealth[];
+  };
+  paper_session?: string;
+  security?: {
+    active_tokens?: number;
+    expiring_soon_tokens?: number;
+  };
+};
+
+export type EvolutionSourceBudget = {
+  target_id: string;
+  source_strategy_id: string | number;
+  source_instance_id: string;
+  last_admitted_at?: string;
+  busy: boolean;
+  in_research: boolean;
+  observing_slots: number;
+  slot_limit: number;
+  slots_open: number;
+  active_slot_variants: Array<Record<string, unknown>>;
+  last_state?: string;
+  cooldown_at?: string;
+  cooldown_hours?: number;
+  reason?: string | null;
+  next_run_at?: string | null;
+  last_provider?: string;
+  failure_streak?: number;
+  failure_reason?: string | null;
+};
+
+export type EvolutionCycleView = {
+  id?: string;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+  summary?: string;
+  diagnostics?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+};
+
+export type EvolutionStatusPayload = {
+  config: {
+    enabled: boolean;
+    target_id?: string;
+    launch_enabled?: boolean;
+    launch_days?: number;
+    exploration_provider?: string;
+    exploration_cooldown_hours?: number;
+    paper_admission?: string;
+    paper_review_mode?: string;
+    max_research_per_day?: number;
+    max_active_research?: number;
+    max_candidates?: number;
+    [key: string]: unknown;
+  };
+  budget: {
+    period?: string;
+    period_used?: number;
+    period_limit?: number;
+    active?: number;
+    total_used?: number;
+    reason?: string | null;
+    next_run_at?: string | null;
+    sources?: Record<string, EvolutionSourceBudget>;
+    [key: string]: unknown;
+  };
+  revision: number;
+  cycles?: EvolutionCycleView[];
+  continuations?: Array<Record<string, unknown>>;
+  forward_outcomes?: Record<string, unknown>;
+};
+
+export type RaceJudgeRecord = {
+  parent_strategy_id: string | number;
+  challenger_strategy_id: string | number;
+  target_id?: string;
+  generation?: number;
+  parent_name?: string;
+  challenger_name?: string;
+  state: string;
+  eligible: boolean;
+  reason?: string;
+  observed_hours?: number | null;
+  target_hours?: number;
+  parent_net_return_pct?: number | null;
+  challenger_net_return_pct?: number | null;
+  excess_return_pct?: number | null;
+  sign_test_p?: number | null;
+  positive_days?: number;
+  paired_non_tie_days?: number;
+  slot_no?: number | null;
+  gate_alpha?: number | null;
+  cancellation_kind?: string | null;
+  cancellation_reason?: string | null;
+  updated_at?: string;
+};
+
 export type EvidenceSelection = {
   title: string;
   rows: Array<{ label: string; value: string }>;
@@ -426,10 +509,21 @@ export type ReportBlock = {
   source_refs?: unknown;
 };
 
+export type MissionsSummary = {
+  total_count: number;
+  active_count: number;
+  completed_count: number;
+  failed_count: number;
+  threads_count: number;
+};
+
 export type HarnessOverview = {
   generated_at: string;
+  headless_mode?: boolean;
+  missions_summary?: MissionsSummary;
   providers: ProviderStatus[];
   tools: ToolStatus[];
+  connectors?: Array<Record<string, unknown>>;
   market: {
     ticker_count: number;
     latest_ticker_at: string | null;
@@ -448,6 +542,7 @@ export type HarnessOverview = {
     active_count: number;
     total_count: number;
     latest_created_at: string | null;
+    cognitive?: CognitiveMemoryCounts;
   };
   trace: {
     total_count: number;
