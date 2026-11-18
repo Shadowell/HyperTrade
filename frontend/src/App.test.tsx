@@ -622,7 +622,7 @@ test("Missions & ARC Evolution tab renders 3-slot occupancy, triggers preset/sca
 
   expect(await screen.findByText("ARC 3-Slot 自主进化控制面")).toBeInTheDocument();
   expect(await screen.findByText("#1 · slot_1_momentum")).toBeInTheDocument();
-  expect(screen.getByText("#1 → #12 (Slot 1)")).toBeInTheDocument();
+  expect(await screen.findByText("#1 → #12 (Slot 1)")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "应用 production_3slot 预设" }));
   await waitFor(() =>
@@ -731,9 +731,9 @@ test("Knowledge & Memory tab loads cognitive tiers, kind/tag filters, last_used_
 
   // Auto-searched RAG with query=risk & cognitive items loaded
   expect(await screen.findByText("Funding 极端正值时趋势突破胜率下降")).toBeInTheDocument();
-  expect(screen.getByText("Slot 1 challenger #12 超越 parent #1 (+6.1%)")).toBeInTheDocument();
+  expect(await screen.findByText("Slot 1 challenger #12 超越 parent #1 (+6.1%)")).toBeInTheDocument();
   expect(await screen.findByText("Risk Gate Spec")).toBeInTheDocument();
-  expect(screen.getByText("最近复用")).toBeInTheDocument();
+  expect(await screen.findByText("最近复用")).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith(
     "/api/rag/search?query=risk",
     expect.objectContaining({ method: "GET" })
@@ -792,11 +792,11 @@ test("System & Diagnostics tab renders /api/healthz worker loops & stalls, acks 
   fireEvent.click(screen.getByRole("link", { name: "告警与诊断" }));
 
   expect(await screen.findByText("Worker 循环心跳与 Stall 矩阵")).toBeInTheDocument();
-  expect(screen.getByText("worker-alpha")).toBeInTheDocument();
-  expect(screen.getByText(/Last Stall: 18\.4s/)).toBeInTheDocument();
+  expect(await screen.findByText("worker-alpha")).toBeInTheDocument();
+  expect(await screen.findByText(/Last Stall: 18\.4s/)).toBeInTheDocument();
   expect(screen.getAllByText(/ablation_sweep/).length).toBeGreaterThanOrEqual(2);
-  expect(screen.getByText(/Slot 2 exceeded failure threshold/)).toBeInTheDocument();
-  expect(screen.getByText(/Upstream BitPro timeout/)).toBeInTheDocument();
+  expect(await screen.findByText(/Slot 2 exceeded failure threshold/)).toBeInTheDocument();
+  expect(await screen.findByText(/Upstream BitPro timeout/)).toBeInTheDocument();
 
   // Never render hardcoded misleading background-trigger claim
   expect(screen.queryByText(/后台触发保持禁用/)).not.toBeInTheDocument();

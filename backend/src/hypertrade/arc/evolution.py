@@ -15,7 +15,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from hypertrade.arc.attribution import attribution_report, collect_attribution
 from hypertrade.arc.baseline_feasibility import (
@@ -50,6 +50,7 @@ from hypertrade.arc.evolution_models import (
     _EVOLUTION_CACHE_LOCK,
     _FORWARD_OUTCOMES_CACHE,
     _STATUS_SNAPSHOT_CACHE,
+    EvolutionContinuation,
     EvolutionControl,
     EvolutionCycle,
     invalidate_evolution_caches,
@@ -417,6 +418,23 @@ _STATUS_CACHE_TTL_SEC = 5.0
 _FORWARD_OUTCOMES_CACHE_TTL_SEC = 15.0
 
 
+def _status_db_watermark(session: Any) -> tuple[Any, ...]:
+    """Cross-process DB watermark so worker/API commits invalidate local status snapshots."""
+    row = session.execute(
+        select(
+            select(func.count()).select_from(ArcMission).scalar_subquery(),
+            select(func.coalesce(func.sum(ArcMission.revision), 0)).scalar_subquery(),
+            select(func.coalesce(func.sum(ArcMission.event_count), 0)).scalar_subquery(),
+            select(func.max(ArcMission.updated_at)).scalar_subquery(),
+            select(func.count()).select_from(EvolutionCycle).scalar_subquery(),
+            select(func.max(EvolutionCycle.updated_at)).scalar_subquery(),
+            select(func.count()).select_from(EvolutionContinuation).scalar_subquery(),
+            select(func.max(EvolutionContinuation.updated_at)).scalar_subquery(),
+        )
+    ).one()
+    return tuple(v.isoformat() if hasattr(v, "isoformat") else v for v in row)
+
+
 def _copy_cycle_view(view: dict[str, Any]) -> dict[str, Any]:
     return {**view, "payload": dict(view.get("payload") or {})}
 
@@ -580,6 +598,7 @@ class EvolutionService:
             row = session.get(EvolutionControl, "global")
             revision = row.revision if row else 0
             status_key = (int(revision), bool(compact), bounded_limit, now_utc.date().isoformat())
+            db_watermark = _status_db_watermark(session) if engine is not None else ()
             if engine is not None:
                 now_mono = time.monotonic()
                 with _EVOLUTION_CACHE_LOCK:
@@ -587,8 +606,11 @@ class EvolutionService:
                     if engine_snapshots is not None:
                         cached_entry = engine_snapshots.get(status_key)
                         if cached_entry is not None:
-                            cached_at, cached_snapshot = cached_entry
-                            if 0.0 <= (now_mono - cached_at) < _STATUS_CACHE_TTL_SEC:
+                            cached_at, cached_watermark, cached_snapshot = cached_entry
+                            if (
+                                cached_watermark == db_watermark
+                                and 0.0 <= (now_mono - cached_at) < _STATUS_CACHE_TTL_SEC
+                            ):
                                 return _copy_status_snapshot(cached_snapshot)
                             engine_snapshots.pop(status_key, None)
 
@@ -610,7 +632,11 @@ class EvolutionService:
         if engine is not None:
             with _EVOLUTION_CACHE_LOCK:
                 engine_snapshots = _STATUS_SNAPSHOT_CACHE.setdefault(engine, {})
-                engine_snapshots[status_key] = (time.monotonic(), _copy_status_snapshot(snapshot))
+                engine_snapshots[status_key] = (
+                    time.monotonic(),
+                    db_watermark,
+                    _copy_status_snapshot(snapshot),
+                )
         return snapshot
 
     def forward_outcomes_summary(self) -> dict[str, Any]:
