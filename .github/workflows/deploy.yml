@@ -86,33 +86,128 @@ jobs:
         if: steps.gate.outputs.deploy == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 1
+          fetch-depth: 50
+
+      - name: Check changed paths
+        id: changes
+        if: steps.gate.outputs.deploy == 'true'
+        shell: bash
+        env:
+          DEPLOYED_SHA: ${{ steps.deployed.outputs.sha }}
+          FORCE_DEPLOY: ${{ github.event.inputs.force_deploy }}
+        run: |
+          set -euo pipefail
+          if [ "$FORCE_DEPLOY" = "true" ] || [ -z "$DEPLOYED_SHA" ] || [ "$DEPLOYED_SHA" = "$GITHUB_SHA" ]; then
+            echo "needs_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git cat-file -e "${DEPLOYED_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=200 origin "$DEPLOYED_SHA" >/dev/null 2>&1 || true
+          fi
+          if ! git cat-file -e "${DEPLOYED_SHA}^{commit}" 2>/dev/null; then
+            echo "needs_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$DEPLOYED_SHA" "$GITHUB_SHA" | python3 -c '
+          import sys
+          paths = [line.strip().lstrip("./") for line in sys.stdin if line.strip()]
+          def is_inert(p: str) -> bool:
+              return p.startswith(("docs/", ".agents/", ".claude/", ".cursor/", ".github/ISSUE_TEMPLATE/")) or p.endswith(".md")
+          sys.exit(0 if paths and all(is_inert(p) for p in paths) else 1)
+          '; then
+            echo "Docs-only change detected ($DEPLOYED_SHA..$GITHUB_SHA); recording SHA without rebuild."
+            echo "needs_deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_deploy=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Node
-        if: steps.gate.outputs.deploy == 'true'
+        if: steps.gate.outputs.deploy == 'true' && steps.changes.outputs.needs_deploy == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "25"
 
       - name: Build frontend
-        if: steps.gate.outputs.deploy == 'true'
+        if: steps.gate.outputs.deploy == 'true' && steps.changes.outputs.needs_deploy == 'true'
         shell: bash
         run: |
-          npm exec --yes pnpm@10 -- -C frontend install --frozen-lockfile
-          npm exec --yes pnpm@10 -- -C frontend build
+          set -euo pipefail
+          cache_root="${HOME}/.cache/hypertrade-ci"
+          mkdir -p "$cache_root"
+          frontend_hash="$({ git rev-parse "${GITHUB_SHA}:frontend"; sha256sum frontend/pnpm-lock.yaml frontend/package.json; } | sha256sum | awk '{print $1}')"
+          cached_dist="${cache_root}/dist-${frontend_hash}"
+          if [ -f "${cached_dist}/index.html" ]; then
+            echo "Reusing cached frontend dist (${frontend_hash})"
+            rm -rf frontend/dist
+            cp -a "${cached_dist}" frontend/dist
+            exit 0
+          fi
+
+          pnpm_bin=""
+          if command -v pnpm >/dev/null 2>&1 && pnpm --version 2>/dev/null | grep -q '^10\.'; then
+            pnpm_bin="$(command -v pnpm)"
+          elif [ -x "${cache_root}/pnpm10/node_modules/.bin/pnpm" ]; then
+            pnpm_bin="${cache_root}/pnpm10/node_modules/.bin/pnpm"
+          else
+            npm --prefix "${cache_root}/pnpm10" install --no-save pnpm@10.17.1 >/dev/null
+            pnpm_bin="${cache_root}/pnpm10/node_modules/.bin/pnpm"
+          fi
+          export PNPM_HOME="${cache_root}/pnpm-home"
+          store_dir="${cache_root}/pnpm-store"
+          mkdir -p "$PNPM_HOME" "$store_dir"
+
+          lock_hash="$(sha256sum frontend/pnpm-lock.yaml | awk '{print $1}')"
+          cached_nm="${cache_root}/nm-${lock_hash}"
+          if [ -d "${cached_nm}/node_modules" ]; then
+            rm -rf frontend/node_modules
+            cp -al "${cached_nm}/node_modules" frontend/node_modules 2>/dev/null || cp -a "${cached_nm}/node_modules" frontend/node_modules
+          fi
+          if ! [ -d frontend/node_modules ] || ! frontend/node_modules/.bin/tsc --version >/dev/null 2>&1 || ! frontend/node_modules/.bin/vite --version >/dev/null 2>&1; then
+            rm -rf "${cached_nm}" "${cached_nm}.tmp" frontend/node_modules
+            "$pnpm_bin" -C frontend install --frozen-lockfile --store-dir "$store_dir"
+            mkdir -p "${cached_nm}.tmp"
+            cp -al frontend/node_modules "${cached_nm}.tmp/node_modules" 2>/dev/null || cp -a frontend/node_modules "${cached_nm}.tmp/node_modules"
+            mv -T "${cached_nm}.tmp" "${cached_nm}"
+            python3 - "$cache_root" <<'PY'
+          import pathlib, shutil, sys
+          root = pathlib.Path(sys.argv[1])
+          old = sorted(root.glob("nm-*"), key=lambda p: p.stat().st_mtime, reverse=True)[2:]
+          for p in old:
+              shutil.rmtree(p, ignore_errors=True)
+          PY
+          fi
+
+          mkdir -p frontend/node_modules/.tmp
+          if [ -f "${cache_root}/ts-${lock_hash}.tsbuildinfo" ]; then
+            cp -f "${cache_root}/ts-${lock_hash}.tsbuildinfo" frontend/node_modules/.tmp/tsconfig.tsbuildinfo || true
+          fi
+          "$pnpm_bin" -C frontend build
+          if [ -f frontend/node_modules/.tmp/tsconfig.tsbuildinfo ]; then
+            cp -f frontend/node_modules/.tmp/tsconfig.tsbuildinfo "${cache_root}/ts-${lock_hash}.tsbuildinfo" || true
+          fi
+          rm -rf "${cached_dist}.tmp" "${cached_dist}"
+          cp -a frontend/dist "${cached_dist}.tmp"
+          mv -T "${cached_dist}.tmp" "${cached_dist}"
+          python3 - "$cache_root" <<'PY'
+          import pathlib, shutil, sys
+          root = pathlib.Path(sys.argv[1])
+          old = sorted(root.glob("dist-*"), key=lambda p: p.stat().st_mtime, reverse=True)[3:]
+          for p in old:
+              shutil.rmtree(p, ignore_errors=True)
+          PY
 
       # Written into the tree that is synced below and baked into the image, so the running API
       # can say which commit it is (GET /api/version). The hosted engine gets the same file from
       # `git archive` through the export-subst rule in .gitattributes.
       - name: Stamp build identity
-        if: steps.gate.outputs.deploy == 'true'
+        if: steps.gate.outputs.deploy == 'true' && steps.changes.outputs.needs_deploy == 'true'
         shell: bash
         env:
           BUILD_SHA: ${{ github.sha }}
         run: printf '%s\n' "$BUILD_SHA" > backend/src/hypertrade/BUILD_INFO
 
       - name: Sync release to /opt/hypertrade
-        if: steps.gate.outputs.deploy == 'true'
+        if: steps.gate.outputs.deploy == 'true' && steps.changes.outputs.needs_deploy == 'true'
         shell: bash
         run: |
           mkdir -p /opt/hypertrade/frontend/dist /opt/hypertrade/deploy
@@ -140,7 +235,7 @@ jobs:
           rsync -a --delete frontend/dist/ /opt/hypertrade/frontend/dist/
 
       - name: Deploy
-        if: steps.gate.outputs.deploy == 'true'
+        if: steps.gate.outputs.deploy == 'true' && steps.changes.outputs.needs_deploy == 'true'
         shell: bash
         run: |
           chmod +x /opt/hypertrade/deploy/deploy.sh
@@ -149,7 +244,7 @@ jobs:
       # deploy.sh only proves the API answers; this proves it is the build that was just shipped.
       # The SHA is recorded below only when it matches, so a mismatch is retried by the next run.
       - name: Verify the deployed build
-        if: steps.gate.outputs.deploy == 'true'
+        if: steps.gate.outputs.deploy == 'true' && steps.changes.outputs.needs_deploy == 'true'
         shell: bash
         env:
           EXPECTED_SHA: ${{ github.sha }}
