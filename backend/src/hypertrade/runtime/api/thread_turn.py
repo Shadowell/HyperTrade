@@ -39,6 +39,15 @@ def build_thread_turn_router(
     require_admin: Callable[[Request], str],
 ) -> APIRouter:
     router = APIRouter(prefix="/api/agent/v1/threads", tags=["agent-threads"])
+    @router.get("")
+    async def list_threads(
+        status: str = "",
+        limit: int = 20,
+        _: str = Depends(require_admin),
+    ) -> dict[str, object]:
+        items = await service.list_threads(status=status, limit=limit)
+        return {"items": [t.model_dump(mode="json") for t in items]}
+
     @router.post("")
     async def create_thread(
         payload: ThreadCreatePayload,

@@ -127,6 +127,42 @@ def record_runtime_error(
     return described
 
 
+def list_runtime_errors(
+    db: Database,
+    *,
+    limit: int = 30,
+    component: str = "",
+) -> list[dict[str, Any]]:
+    """Return bounded, redacted runtime error receipts ordered most-recently-seen first."""
+    safe_limit = max(1, min(limit, 100))
+    clean_component = component.strip()
+    statement = select(ArcRuntimeError)
+    if clean_component:
+        statement = statement.where(ArcRuntimeError.component == clean_component)
+    statement = statement.order_by(
+        ArcRuntimeError.last_seen_at.desc(),
+        ArcRuntimeError.id,
+    ).limit(safe_limit)
+    with db.session() as session:
+        rows = list(session.scalars(statement).all())
+    return [
+        {
+            "error_id": row.id,
+            "component": row.component,
+            "exception_type": row.exception_type,
+            "message": row.message,
+            "mission_id": row.mission_id,
+            "occurrences": int(row.occurrences or 0),
+            "frames": list(row.frames_json or []),
+            "recent_messages": list(row.recent_messages_json or []),
+            "context": dict(row.context_json or {}),
+            "first_seen_at": row.first_seen_at.isoformat(),
+            "last_seen_at": row.last_seen_at.isoformat(),
+        }
+        for row in rows
+    ]
+
+
 def record_model_exchange(
     mission_id: str,
     *,
