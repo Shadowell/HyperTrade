@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { ThreadProtocolRequestError } from "../agentThread";
-import { ApiError, apiGet, apiPost, isAuthError, statusOf } from "./client";
+import { ApiError, apiDelete, apiGet, apiPost, apiPut, isAuthError, statusOf } from "./client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -82,4 +82,50 @@ test("both request layers' errors are recognised as auth errors for 401 and 403 
   expect(isAuthError(new ThreadProtocolRequestError("x", 401))).toBe(true);
   expect(isAuthError(new ApiError(404, "x"))).toBe(false);
   expect(isAuthError(new ThreadProtocolRequestError("x", 409))).toBe(false);
+});
+
+test("apiPost merges custom headers and omits body when undefined", async () => {
+  const fetchMock = vi.fn(async () => respond({ ok: true }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await apiPost("/api/z", undefined, { headers: { "X-Request-Id": "req-1" } });
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/z",
+    expect.objectContaining({
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", "X-Request-Id": "req-1" },
+      body: undefined
+    })
+  );
+});
+
+test("apiPut sends PUT JSON and apiDelete sends DELETE with credentials", async () => {
+  const fetchMock = vi.fn(async () => respond({ updated: true }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(apiPut<{ updated: boolean }>("/api/item/1", { name: "alpha" })).resolves.toEqual({
+    updated: true
+  });
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    1,
+    "/api/item/1",
+    expect.objectContaining({
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "alpha" })
+    })
+  );
+
+  await expect(apiDelete<{ updated: boolean }>("/api/item/1")).resolves.toEqual({ updated: true });
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    2,
+    "/api/item/1",
+    expect.objectContaining({
+      method: "DELETE",
+      credentials: "include"
+    })
+  );
 });

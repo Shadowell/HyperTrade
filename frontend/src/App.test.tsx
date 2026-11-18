@@ -1,973 +1,812 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import App from "./App";
 
-const overview = {
-  generated_at: "2026-05-27T00:00:00+08:00",
-  providers: [
-    {
-      name: "deepseek",
-      display_name: "DeepSeek",
-      model: "deepseek-v4-flash",
-      enabled: true,
-      default: true,
-      key_status: "configured"
-    },
-    {
-      name: "qwen",
-      display_name: "Qwen",
-      model: "text-embedding-v4",
-      enabled: true,
-      default: false,
-      key_status: "configured"
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+
+function sseResponse(events: Array<{ seq: number; type: string; payload?: Record<string, unknown> }>) {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const evt of events) {
+        controller.enqueue(
+          encoder.encode(
+            `id: ${evt.seq}\nevent: ${evt.type}\ndata: ${JSON.stringify({
+              event_id: `evt_${evt.seq}`,
+              event_type: evt.type,
+              thread_sequence: evt.seq,
+              payload: evt.payload ?? {}
+            })}\n\n`
+          )
+        );
+      }
+      controller.close();
     }
-  ],
-  tools: [
-    {
-      name: "market.summary",
-      description: "Summarize OKX SWAP market state.",
-      category: "market",
-      requires_approval: false
-    },
-    {
-      name: "live.order_intent",
-      description: "Create a live/testnet order intent.",
-      category: "live",
-      requires_approval: true
-    }
-  ],
-  market: {
-    ticker_count: 344,
-    latest_ticker_at: "2026-05-27T00:00:00+08:00",
-    latest_update_age_seconds: 42,
-    top_movers: [
+  });
+  return new Response(body, { status: 200 });
+}
+
+function makeOverview(overrides: Record<string, unknown> = {}) {
+  return {
+    generated_at: "2026-11-18T10:30:00+08:00",
+    headless_mode: true,
+    providers: [
       {
-        inst_id: "BTC-USDT-SWAP",
-        last: "70000",
-        volume_ccy_24h: "20000",
-        change_utc0_pct: "4.2"
-      }
-    ]
-  },
-  agent_runs: {
-    total_count: 1,
-    recent: [
-      {
-        id: "run_live",
-        prompt: "请做行情归纳",
-        status: "completed",
-        created_at: "2026-05-27T00:00:00+08:00",
-        updated_at: "2026-05-27T00:00:00+08:00",
-        error: ""
-      }
-    ]
-  },
-  rag: {
-    document_count: 2,
-    chunk_count: 5
-  },
-  memory: {
-    active_count: 1,
-    total_count: 1,
-    latest_created_at: "2026-05-27T00:00:00+08:00"
-  },
-  trace: {
-    total_count: 3,
-    recent_events: [
-      {
-        id: "evt_1",
-        tool_name: "market.summary",
-        status: "completed",
-        created_at: "2026-05-27T00:00:00+08:00"
-      }
-    ]
-  },
-  paper: {
-    session: {
-      id: "paper_live",
-      status: "running",
-      cash: "100000",
-      equity: "100000",
-      realized_pnl: "0"
-    },
-    positions: [
-      {
-        inst_id: "AAA-USDT-SWAP",
-        side: "long",
-        quantity: "99.98",
-        entry_price: "10.002",
-        mark_price: "10.002",
-        notional: "1000",
-        unrealized_pnl: "0"
+        name: "deepseek",
+        display_name: "DeepSeek",
+        model: "deepseek-reasoner",
+        enabled: true,
+        default: true,
+        key_status: "configured"
       }
     ],
-    recent_fills: [
-      {
-        inst_id: "AAA-USDT-SWAP",
-        side: "long",
-        quantity: "99.98",
-        price: "10.002",
-        fee: "0.5",
-        created_at: "2026-05-27T00:00:00+08:00"
-      }
-    ],
-    recent_events: []
-  },
-  strategy_lab: {
-    latest_research: {
-      id: "srch_live",
-      prompt: "研究一个趋势突破策略",
-      strategy_key: "momentum_breakout_v1",
-      title: "趋势突破 V1",
-      report_markdown: "# 趋势突破 V1",
-      spec_json: {},
-      created_at: "2026-05-27T00:00:00+08:00"
-    },
-    latest_backtest: {
-      id: "bt_live",
-      research_id: "srch_live",
-      strategy_key: "momentum_breakout_v1",
-      status: "completed",
-      metrics: {
-        start_cash: "100000",
-        end_value: "100014",
-        total_return_pct: "0.014000",
-        max_drawdown_pct: "0",
-        trade_count: 1
-      },
-      report_markdown: "# Backtest Report",
-      report_json: {},
-      created_at: "2026-05-27T00:00:00+08:00"
-    },
-    latest_experiment: {
-      id: "exp_live",
-      prompt: "研究ETH趋势突破",
-      status: "completed",
-      research_id: "srch_live",
-      backtest_id: "bt_live",
-      report_markdown: "# Experiment",
-      report_json: {},
-      created_at: "2026-05-27T00:00:00+08:00"
-    }
-  },
-  live_orders: {
-    total_count: 1,
-    pending_approval_count: 1,
-    recent: [
-      {
-        id: "loi_live",
-        environment: "testnet",
-        status: "pending_approval",
-        inst_id: "ETH-USDT-SWAP",
-        side: "buy",
-        order_type: "market",
-        size: "0.01",
-        price: null,
-        reason: "fixture",
-        decision_reason: "",
-        risk_status: "allowed",
-        exchange_order_id: "",
-        created_at: "2026-05-27T00:00:00+08:00"
-      }
-    ]
-  },
-  bitpro: {
-    adapter: "mcp_non_live_lifecycle",
-    configured: true,
-    api_base: "http://127.0.0.1:8889/api/v2",
-    auth_header: "X-BitPro-MCP-Token",
-    token_configured: true,
-    token_source: "bitpro_settings_agent_token_or_server_env",
-    remote_mcp: {
-      transport: "streamable-http",
-      path_default: "/api/v2/mcp/",
-      auth_header_default: "X-BitPro-MCP-Token",
-      token_env: "BITPRO_MCP_API_TOKEN",
-      token_status_path: "/settings/mcp-token",
-      token_generate_path: "/settings/mcp-token/generate"
-    },
-    agent_auth: {
-      auth_header_default: "X-BitPro-MCP-Token",
-      static_token_env: "BITPRO_MCP_API_TOKEN",
-      token_management: {
-        settings_routes: {
-          list: "GET /api/v2/settings/mcp-agent-tokens",
-          create: "POST /api/v2/settings/mcp-agent-tokens",
-          revoke: "DELETE /api/v2/settings/mcp-agent-tokens/{token_id}"
-        },
-        plaintext_returned_once: true,
-        default_tool_groups: ["read", "research_backtest_paper_mutation", "live_diagnostic"]
-      },
-      scope_classes: {
-        R: { label: "read", tool_group: "read" },
-        W: { label: "research_backtest_paper_mutation", tool_group: "research_backtest_paper_mutation" },
-        L: { label: "live_diagnostic", tool_group: "live_diagnostic" },
-        T: { label: "live_mutation", tool_group: "live_mutation" }
-      },
-      idempotency: {
-        required_tools: ["backtest_start_job", "paper_start"]
-      }
-    },
-    tool_groups: {
-      read: ["bitpro_capabilities", "bitpro_health", "market_klines"],
-      research_backtest_paper_mutation: ["strategy_create", "backtest_start_job", "paper_start"],
-      live_diagnostic: ["live_preflight", "trading_positions"],
-      live_mutation: ["trading_futures_order"]
-    },
-    live_write_enabled: false,
-    live_write_scope: "hypertrade_mcp_live_write_gate",
     tools: [
-      "bitpro_capabilities",
-      "bitpro_health",
-      "market_klines",
-      "strategy_generate",
-      "strategy_create",
-      "backtest_start_job",
-      "paper_configure",
-      "paper_start",
-      "paper_dashboard",
-      "trading_positions"
-    ]
-  },
-  evals: {
-    status: "passed",
-    case_count: 5,
-    mode: "deterministic",
-    cases: [
-      { name: "tool_selection", status: "passed" },
-      { name: "rag_citation", status: "passed" }
-    ]
-  }
-};
+      {
+        name: "bitpro_paper_dashboard",
+        description: "Inspect BitPro Paper state",
+        category: "bitpro",
+        requires_approval: false
+      }
+    ],
+    agent_runs: {
+      total_count: 2,
+      recent: [
+        {
+          id: "mis_recent_1",
+          prompt: "诊断 3-Slot 进化预算与赛马表现",
+          status: "completed",
+          created_at: "2026-11-18T09:00:00+08:00",
+          updated_at: "2026-11-18T09:02:00+08:00",
+          error: ""
+        }
+      ]
+    },
+    missions_summary: {
+      total_count: 5,
+      active_count: 1,
+      threads_count: 3
+    },
+    rag: {
+      document_count: 4,
+      chunk_count: 19
+    },
+    memory: {
+      active_count: 12,
+      total_count: 15,
+      latest_created_at: "2026-11-18T08:00:00+08:00",
+      cognitive: {
+        active_semantic_count: 4,
+        superseded_semantic_count: 1,
+        episodic_count: 7,
+        hypothesis_count: 3
+      }
+    },
+    trace: {
+      total_count: 9,
+      recent_events: [
+        {
+          id: "evt_bp",
+          tool_name: "bitpro_paper_dashboard",
+          status: "completed",
+          output_json: { running_bots: 3 }
+        }
+      ]
+    },
+    bitpro: {
+      configured: true,
+      adapter_mode: "mcp",
+      api_base: "https://bitpro.notenap.com/mcp",
+      token_configured: true,
+      live_write_enabled: false,
+      auth_header: "Authorization: Bearer",
+      scope_groups: ["paper:read", "evolution:read"],
+      tools: ["bitpro_paper_dashboard", "bitpro_backtest_matrix"],
+      live_probe: {
+        status: "online",
+        reachable: true,
+        authenticated: true,
+        latency_ms: 42,
+        tool_count: 24,
+        hint: ""
+      }
+    },
+    evals: {
+      status: "passed",
+      case_count: 28,
+      research_os: { status: "passed" },
+      quality: { provider_baseline: "deepseek-reasoner", metric_contract: "v2.1" }
+    },
+    observability: {
+      total_tokens: 48200
+    },
+    ...overrides
+  };
+}
+
+function makeHealthz() {
+  return {
+    status: "ok",
+    service: "hypertrade-api",
+    database: { status: "ok", latency_ms: 6.4 },
+    adapters: { bitpro: { status: "ok" }, quantlab: { status: "ok" } },
+    workers: {
+      status: "alive",
+      failing_components: ["ablation_sweep"],
+      instances: [
+        {
+          worker_id: "worker-alpha",
+          status: "alive",
+          stale: false,
+          heartbeat_age_seconds: 4,
+          uptime_seconds: 7200,
+          stalls_total: 1,
+          event_loop_lag_max_seconds: 0.042,
+          failing_components: ["ablation_sweep"],
+          last_stall: {
+            seconds: 18.4,
+            age_seconds: 120,
+            cause: "slow_bitpro_probe",
+            running: ["coro: arc_evolution_loop"]
+          },
+          components: {
+            arc_evolution_loop: {
+              status: "alive",
+              stale: false,
+              age_seconds: 4,
+              in_flight: true,
+              cycles: 14,
+              consecutive_failures: 0,
+              last_error: ""
+            },
+            ablation_sweep: {
+              status: "degraded",
+              stale: false,
+              age_seconds: 95,
+              in_flight: false,
+              cycles: 3,
+              consecutive_failures: 2,
+              last_error: "Timeout while fetching klines"
+            }
+          }
+        }
+      ]
+    }
+  };
+}
+
+function makeRoutes(extra: Record<string, (url: string, init?: RequestInit) => Response | Promise<Response>> = {}) {
+  const table: Record<string, (url: string, init?: RequestInit) => Response | Promise<Response>> = {
+    "/api/harness/overview": () => jsonResponse(makeOverview()),
+    "/api/healthz": () => jsonResponse(makeHealthz()),
+    ...extra
+  };
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : String(input);
+    if (table[url]) {
+      return table[url](url, init);
+    }
+    const base = url.split("?")[0];
+    if (table[base]) {
+      return table[base](url, init);
+    }
+    return jsonResponse({ detail: `unmocked ${url}` }, 404);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+beforeEach(() => {
+  window.localStorage.clear();
+  window.history.replaceState({}, "", "/harness");
+  document.documentElement.dataset.theme = "dark";
+});
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
-  window.history.replaceState({}, "", "/harness");
+  vi.restoreAllMocks();
 });
 
-test("renders harness observability from live overview", async () => {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.endsWith("/api/auth/me")) {
-      return jsonResponse({ username: "admin" });
-    }
-    if (url.endsWith("/api/harness/overview")) {
-      return jsonResponse(overview);
-    }
-    if (url.endsWith("/api/memory")) {
+test("mounts 4-tab HyperMonitor shell cleanly with strict on-demand fetching and theme persistence", async () => {
+  const fetchMock = makeRoutes();
+
+  render(<App />);
+
+  expect(await screen.findByText("42ms")).toBeInTheDocument();
+  expect(screen.getByText("HYPER")).toBeInTheDocument();
+  expect(screen.getByText("TRADE")).toBeInTheDocument();
+  expect(screen.getByText("AGENT CONTROL PLANE")).toBeInTheDocument();
+
+  // Exact 4 nav tabs; legacy portfolio tab must not exist
+  const nav = screen.getByRole("navigation", { name: "控制平面" });
+  expect(within(nav).getByText("控制台与对话")).toBeInTheDocument();
+  expect(within(nav).getByText("任务与进化")).toBeInTheDocument();
+  expect(within(nav).getByText("记忆与治理")).toBeInTheDocument();
+  expect(within(nav).getByText("告警与诊断")).toBeInTheDocument();
+  expect(screen.queryByText("研究组合")).not.toBeInTheDocument();
+
+  // Prompt starts empty without OKX legacy prefill
+  const promptBox = screen.getByRole("textbox");
+  expect(promptBox).toHaveValue("");
+  expect(screen.queryByText(/OKX SWAP/)).not.toBeInTheDocument();
+
+  // Only /api/harness/overview and /api/healthz were called on /harness mount
+  const calledPaths = fetchMock.mock.calls.map(([u]) => String(u));
+  expect(calledPaths.every((u) => u === "/api/harness/overview" || u === "/api/healthz")).toBe(true);
+  expect(calledPaths).not.toContain("/api/auth/me");
+
+  // Theme toggle persists light -> dark in localStorage
+  const themeBtn = screen.getByRole("button", { name: "切换深浅外观" });
+  fireEvent.click(themeBtn);
+  expect(document.documentElement.dataset.theme).toBe("light");
+  expect(window.localStorage.getItem("hypertrade.theme.v1")).toBe("light");
+});
+
+test("tolerates degraded or 404 /api/healthz without breaking overview", async () => {
+  makeRoutes({
+    "/api/healthz": () => jsonResponse({ detail: "not found" }, 404)
+  });
+
+  render(<App />);
+
+  expect(await screen.findByText("42ms")).toBeInTheDocument();
+  expect(screen.queryByText("无法获取运行概览")).not.toBeInTheDocument();
+});
+
+test("redirects legacy routes to the consolidated 4 sections", async () => {
+  makeRoutes({
+    "/api/v1/arc/evolution": () =>
+      jsonResponse({
+        revision: 4,
+        config: { exploration_provider: "deepseek", max_candidates: 3, max_research_per_day: 24 },
+        budget: { period_used: 3, period_limit: 24, active_candidates: 1, sources: {} }
+      }),
+    "/api/portfolio/race-judge/status": () => jsonResponse([]),
+    "/api/agent/missions": () => jsonResponse({ missions: [] }),
+    "/api/memory": () => jsonResponse({ items: [], cognitive_items: [] }),
+    "/api/memory/assertions": () => jsonResponse({ items: [] }),
+    "/api/skills/proposals": () => jsonResponse({ items: [] }),
+    "/api/skills/releases": () => jsonResponse({ items: [] }),
+    "/api/strategy/library": () => jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] }),
+    "/api/rag/search": () => jsonResponse({ hits: [] }),
+    "/api/alerts": () => jsonResponse({ items: [] }),
+    "/api/v1/arc/evolution/alerts": () => jsonResponse({ alerts: [] }),
+    "/api/v1/arc/runtime-errors": () => jsonResponse({ items: [] })
+  });
+
+  window.history.replaceState({}, "", "/harness/portfolio");
+  const first = render(<App />);
+  expect(await screen.findByText("ARC 3-Slot 自主进化控制面")).toBeInTheDocument();
+  first.unmount();
+
+  window.history.replaceState({}, "", "/harness/rag");
+  const second = render(<App />);
+  expect(await screen.findByText("认知记忆层 (Semantic / Episodic / Hypothesis)")).toBeInTheDocument();
+  second.unmount();
+
+  window.history.replaceState({}, "", "/harness/quality");
+  render(<App />);
+  expect(await screen.findByText("Worker 循环心跳与 Stall 矩阵")).toBeInTheDocument();
+});
+
+test("Co-Pilot quick command, Cmd/Ctrl+Enter run clears prompt, auto-loads Flight Recorder, thread switcher & interrupt", async () => {
+  const threadAfterTurn = {
+    thread: {
+      thread_id: "thr_alpha",
+      title: "Alpha Session",
+      status: "active",
+      active_turn_id: "",
+      event_cursor: 4
+    },
+    turns: [
+      {
+        turn_id: "trn_1",
+        status: "completed",
+        client_message_id: "web_turn_1",
+        mission_id: "mis_flight_1",
+        resolved_context: {}
+      }
+    ],
+    items: [
+      {
+        item_id: "u1",
+        turn_id: "trn_1",
+        item_type: "user_message",
+        status: "completed",
+        sequence: 1,
+        content: { text: "检查当前 ARC 3-Slot 变体占用、冷却状态、研究预算与最新扫描诊断" }
+      },
+      {
+        item_id: "a1",
+        turn_id: "trn_1",
+        item_type: "agent_message",
+        status: "completed",
+        sequence: 4,
+        content: { text: "3-Slot 当前占用 2/3，Slot 2 健康运行。" }
+      }
+    ]
+  };
+
+  let created = false;
+  let completedTurn = false;
+  const fetchMock = makeRoutes({
+    "/api/agent/v1/threads": (_url, init) => {
+      if (init?.method === "POST") {
+        created = true;
+        return jsonResponse({
+          thread: { thread_id: "thr_alpha", title: "Web canonical workspace", status: "active", active_turn_id: "", event_cursor: 0 },
+          turns: [],
+          items: []
+        });
+      }
       return jsonResponse({
         items: [
+          { thread_id: "thr_alpha", title: "Alpha Session", status: "active", active_turn_id: "", event_cursor: 4 },
+          { thread_id: "thr_running", title: "Live Running Thread", status: "active", active_turn_id: "trn_live_9", event_cursor: 9 }
+        ]
+      });
+    },
+    "/api/agent/v1/threads/thr_alpha": () => jsonResponse(completedTurn ? threadAfterTurn : {
+      thread: { thread_id: "thr_alpha", title: "Web canonical workspace", status: "active", active_turn_id: created ? "trn_1" : "", event_cursor: 1 },
+      turns: [],
+      items: []
+    }),
+    "/api/agent/v1/threads/thr_alpha/turns": () =>
+      jsonResponse({ created: true, turn: { turn_id: "trn_1", status: "accepted" }, event_cursor: 1 }, 202),
+    "/api/agent/v1/threads/thr_alpha/events/stream": () => {
+      completedTurn = true;
+      return sseResponse([
+        { seq: 2, type: "tool_call.started", payload: { name: "bitpro_paper_dashboard" } },
+        { seq: 3, type: "agent_message.delta", payload: { delta: "3-Slot 当前占用 2/3，Slot 2 健康运行。" } },
+        { seq: 4, type: "turn.completed", payload: { mission_id: "mis_flight_1" } }
+      ]);
+    },
+    "/api/agent/v1/threads/thr_alpha/turns/trn_1": () =>
+      jsonResponse({ turn: { turn_id: "trn_1", status: "completed", mission_id: "mis_flight_1" }, items: [], event_cursor: 4 }),
+    "/api/agent/runs/mis_flight_1/observability": () =>
+      jsonResponse({
+        schema_version: "1.0",
+        run: {
+          id: "mis_flight_1",
+          status: "completed",
+          provider: "deepseek",
+          model: "deepseek-reasoner",
+          duration_ms: 1450,
+          started_at: "2026-11-18T10:30:00+08:00",
+          completed_at: "2026-11-18T10:30:01+08:00"
+        },
+        usage: {
+          reported: true,
+          total_tokens: 1234,
+          input_tokens: 800,
+          output_tokens: 434
+        },
+        models: { request_count: 1, calls: [] },
+        tools: { call_count: 1, total_execution_ms: 210 },
+        memory: { read_count: 1, write_count: 0, items: [] },
+        timeline: [],
+        categories: { model: 1 },
+        safety: {
+          private_reasoning_stored: false,
+          secrets_redacted: true,
+          payload_mode: "summary"
+        }
+      }),
+    "/api/agent/runs/mis_recent_1": () =>
+      jsonResponse({
+        id: "mis_recent_1",
+        prompt: "诊断 3-Slot 进化预算与赛马表现",
+        status: "completed",
+        report_markdown: "历史报告正文：Slot 1 胜率 62%。",
+        trace_events: [],
+        run_state_json: { current_node: "completed" }
+      }),
+    "/api/agent/runs/mis_recent_1/observability": () =>
+      jsonResponse({
+        schema_version: "1.0",
+        run: {
+          id: "mis_recent_1",
+          status: "completed",
+          provider: "deepseek",
+          model: "deepseek-reasoner",
+          duration_ms: 980,
+          started_at: "2026-11-18T09:00:00+08:00",
+          completed_at: "2026-11-18T09:00:01+08:00"
+        },
+        usage: {
+          reported: true,
+          total_tokens: 2048,
+          input_tokens: 1200,
+          output_tokens: 848
+        },
+        models: { request_count: 1, calls: [] },
+        tools: { call_count: 1, total_execution_ms: 120 },
+        memory: { read_count: 0, write_count: 0, items: [] },
+        timeline: [],
+        categories: { model: 1 },
+        safety: {
+          private_reasoning_stored: false,
+          secrets_redacted: true,
+          payload_mode: "summary"
+        }
+      }),
+    "/api/agent/v1/threads/thr_running": () =>
+      jsonResponse({
+        thread: {
+          thread_id: "thr_running",
+          title: "Live Running Thread",
+          status: "active",
+          active_turn_id: "trn_live_9",
+          event_cursor: 9
+        },
+        turns: [{ turn_id: "trn_live_9", status: "running", client_message_id: "c9", resolved_context: {} }],
+        items: []
+      }),
+    "/api/agent/v1/threads/thr_running/turns/trn_live_9/interrupt": () =>
+      jsonResponse({ turn: { turn_id: "trn_live_9", status: "interrupted" }, items: [], event_cursor: 10 })
+  });
+
+  render(<App />);
+  await screen.findByText("42ms");
+
+  // Thread list is NOT fetched before clicking History Switcher
+  expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("/api/agent/v1/threads?"), expect.anything());
+
+  // Click Quick-Command chip and submit via Ctrl+Enter
+  fireEvent.click(screen.getByRole("button", { name: "3-Slot 进化状态" }));
+  const textbox = screen.getByRole("textbox");
+  expect((textbox as HTMLTextAreaElement).value).toContain("ARC 3-Slot");
+
+  fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
+
+  // Prompt cleared immediately once turn starts and answer/flight recorder appear
+  await waitFor(() => expect(textbox).toHaveValue(""));
+  expect(await screen.findByText(/1,234/)).toBeInTheDocument();
+  expect(screen.getAllByText(/3-Slot 当前占用 2\/3/).length).toBeGreaterThanOrEqual(1);
+
+  // Clicking a recent run loads its report & observability
+  fireEvent.click(screen.getByRole("button", { name: /mis_recent_1/ }));
+  expect(await screen.findByText(/历史报告正文：Slot 1 胜率 62%/)).toBeInTheDocument();
+  expect(await screen.findByText(/2,048/)).toBeInTheDocument();
+
+  // Thread Switcher loads threads ONLY on click, and selecting active-turn thread exposes Interrupt
+  fireEvent.click(screen.getByRole("button", { name: "历史会话" }));
+  const runningThreadBtn = await screen.findByRole("button", { name: /thr_running/ });
+  fireEvent.click(runningThreadBtn);
+
+  const interruptBtn = await screen.findByRole("button", { name: "中断" });
+  fireEvent.click(interruptBtn);
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/v1/threads/thr_running/turns/trn_live_9/interrupt",
+      expect.objectContaining({ method: "POST" })
+    )
+  );
+});
+
+test("Missions & ARC Evolution tab renders 3-slot occupancy, triggers preset/scan/race-judge and Mission APIs", async () => {
+  const fetchMock = makeRoutes({
+    "/api/v1/arc/evolution": () =>
+      jsonResponse({
+        revision: 12,
+        config: {
+          enabled: true,
+          exploration_provider: "deepseek",
+          max_candidates: 3,
+          max_research_per_day: 36
+        },
+        budget: {
+          period_used: 8,
+          period_limit: 36,
+          active_candidates: 2,
+          sources: {
+            slot_1_momentum: {
+              source_strategy_id: 1,
+              target_id: "slot_1_momentum",
+              observing_slots: 2,
+              slot_limit: 3,
+              slots_open: 1,
+              cooldown_hours: 0,
+              in_research: true,
+              busy: true,
+              active_slot_variants: [{ variant_id: 12 }],
+              failure_streak: 0,
+              failure_reason: ""
+            },
+            slot_2_reversion: {
+              source_strategy_id: 2,
+              target_id: "slot_2_reversion",
+              observing_slots: 1,
+              slot_limit: 3,
+              slots_open: 2,
+              cooldown_hours: 12,
+              in_research: false,
+              busy: false,
+              active_slot_variants: [],
+              failure_streak: 2,
+              failure_reason: "recent ablation timeout"
+            }
+          }
+        }
+      }),
+    "/api/v1/arc/evolution/preset": () => jsonResponse({ ok: true }),
+    "/api/v1/arc/evolution/scan": () => jsonResponse({ queued: 1 }),
+    "/api/portfolio/race-judge/status": () =>
+      jsonResponse([
+        {
+          parent_strategy_id: 1,
+          challenger_strategy_id: 12,
+          parent_name: "Momentum Core",
+          challenger_name: "Momentum V2",
+          slot_no: 1,
+          state: "observing",
+          observed_hours: 140,
+          target_hours: 337,
+          excess_return_pct: 4.85,
+          sign_test_p: 0.0321,
+          eligible: false,
+          reason: "Awaiting 337h full window"
+        }
+      ]),
+    "/api/portfolio/race-judge/run-now": () =>
+      jsonResponse([
+        {
+          parent_strategy_id: 1,
+          challenger_strategy_id: 12,
+          parent_name: "Momentum Core",
+          challenger_name: "Momentum V2",
+          slot_no: 1,
+          state: "eligible",
+          observed_hours: 337,
+          target_hours: 337,
+          excess_return_pct: 6.12,
+          sign_test_p: 0.008,
+          eligible: true,
+          reason: "Statistically validated"
+        }
+      ]),
+    "/api/agent/missions": (_url, init) => {
+      if (init?.method === "POST") {
+        return jsonResponse({
+          mission_id: "mis_new_1",
+          objective: "验证 Slot 1 因子稳健性",
+          status: "queued",
+          current_step_index: 0,
+          plan: [],
+          unknowns: []
+        });
+      }
+      return jsonResponse({
+        missions: [
           {
-            id: "mem_live",
-            kind: "agent_note",
-            content: "**ETH** trend reviewed",
-            source_run_id: "run_live",
-            source_tool: "memory.write",
-            tags: ["agent_note"],
-            usage_count: 1,
-            created_at: "2026-05-27T00:00:00+08:00"
+            mission_id: "mis_evo_1",
+            objective: "审查 Slot 1 候选替换资格",
+            status: "running",
+            current_step_index: 0,
+            plan: [],
+            unknowns: []
           }
         ]
       });
-    }
-    return jsonResponse({}, 404);
+    },
+    "/api/agent/missions/mis_evo_1": () =>
+      jsonResponse({
+        mission_id: "mis_evo_1",
+        objective: "审查 Slot 1 候选替换资格",
+        status: "running",
+        current_step_index: 0,
+        plan: [],
+        unknowns: []
+      }),
+    "/api/agent/missions/mis_evo_1/events": () => jsonResponse({ events: [] }),
+    "/api/agent/missions/mis_new_1": () =>
+      jsonResponse({
+        mission_id: "mis_new_1",
+        objective: "验证 Slot 1 因子稳健性",
+        status: "queued",
+        current_step_index: 0,
+        plan: [],
+        unknowns: []
+      }),
+    "/api/agent/missions/mis_new_1/events": () => jsonResponse({ events: [] })
   });
-  vi.stubGlobal("fetch", fetchMock);
 
   render(<App />);
+  fireEvent.click(screen.getByRole("link", { name: "任务与进化" }));
 
-  expect(screen.getAllByText("工作台").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("工具调用链路")).toBeInTheDocument();
-  expect(screen.getAllByText("OKX SWAP").length).toBeGreaterThanOrEqual(1);
-  expect(await screen.findByText("344")).toBeInTheDocument();
-  expect(screen.getAllByText("DeepSeek / deepseek-v4-flash").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getAllByText("run_live").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("BTC-USDT-SWAP")).toBeInTheDocument();
-  expect(screen.getByText("记忆管理")).toBeInTheDocument();
-  expect((await screen.findAllByText("mem_live")).length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("报告阅读")).toBeInTheDocument();
-  expect(screen.getByText("异动榜")).toBeInTheDocument();
-  expect(screen.getAllByText("最近运行").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("BitPro MCP 接入")).toBeInTheDocument();
-  expect(screen.getByText("BitPro 设置 / 服务器环境")).toBeInTheDocument();
-  expect(screen.getAllByText("X-BitPro-MCP-Token").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("R / W / L / T")).toBeInTheDocument();
-  expect(screen.queryByText("模拟盘运行")).not.toBeInTheDocument();
-  expect(screen.queryByText("策略实验室")).not.toBeInTheDocument();
-  expect(screen.queryByText("实盘审批")).not.toBeInTheDocument();
-  expect(screen.queryByText("行情工具")).not.toBeInTheDocument();
-  expect(screen.getByText("智能体评测")).toBeInTheDocument();
-  expect(screen.queryByText("完整回测")).not.toBeInTheDocument();
-  expect(screen.queryByText("转发飞书")).not.toBeInTheDocument();
-  expect(screen.queryByText("禁用")).not.toBeInTheDocument();
-  expect(screen.queryByText("Tool Call Trace")).not.toBeInTheDocument();
-  expect(screen.queryByText("Paper Runtime")).not.toBeInTheDocument();
-  expect(screen.queryByText("Strategy Lab")).not.toBeInTheDocument();
-  expect(screen.queryByText("Live Approval")).not.toBeInTheDocument();
-  expect(fetchMock).not.toHaveBeenCalledWith("/api/auth/me", expect.anything());
-  expect(screen.queryByLabelText("密码")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
-});
+  expect(await screen.findByText("ARC 3-Slot 自主进化控制面")).toBeInTheDocument();
+  expect(await screen.findByText("#1 · slot_1_momentum")).toBeInTheDocument();
+  expect(screen.getByText("#1 → #12 (Slot 1)")).toBeInTheDocument();
 
-test("renders strategy library evidence and source drilldown ids", async () => {
-  window.history.replaceState({}, "", "/harness/strategy");
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.endsWith("/api/harness/overview")) {
-      return jsonResponse(overview);
-    }
-    if (url.endsWith("/api/memory")) {
-      return jsonResponse({ items: [] });
-    }
-    if (url.endsWith("/api/strategy/library")) {
-      return jsonResponse(strategyLibrary);
-    }
-    if (url.endsWith("/api/alerts")) {
-      return jsonResponse({ items: [] });
-    }
-    return jsonResponse({}, 404);
-  });
-  vi.stubGlobal("fetch", fetchMock);
-
-  render(<App />);
-
-  expect(await screen.findByText("策略库")).toBeInTheDocument();
-  expect(screen.getByText("memory.strategy_knowledge")).toBeInTheDocument();
-  const strategySourceCard = screen.getByText("memory.strategy_knowledge").closest(".strategy-summary-card");
-  expect(strategySourceCard).toHaveClass("operator-card", "operator-card-compact");
-  expect(strategySourceCard).toHaveAttribute("data-tone", "violet");
-  expect((await screen.findAllByText("momentum_breakout_v1")).length).toBeGreaterThanOrEqual(1);
-  expect(screen.getAllByText("momentum_breakout_v1").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("fast")).toBeInTheDocument();
-  const bestEvidenceMetric = screen.getByText("fast").closest(".evidence-metric");
-  expect(bestEvidenceMetric).toHaveClass("operator-card", "operator-card-compact");
-  expect(bestEvidenceMetric).toHaveAttribute("data-tone", "brass");
-  expect(screen.getByText("12.5%")).toBeInTheDocument();
-  expect(screen.getByText("12.5%").closest(".evidence-metric")).toHaveAttribute("data-tone", "signal");
-  expect(screen.getByText("require_non_negative_return")).toBeInTheDocument();
-  expect(screen.getByText("Test adjacent SMA windows around 3 on BitPro MCP candles.")).toBeInTheDocument();
-  expect(screen.getByText("Test adjacent SMA windows around 3 on BitPro MCP candles.").closest(".evidence-note")).toHaveClass(
-    "operator-card",
-    "operator-card-compact"
-  );
-  expect(screen.getAllByText(/mem_winning/).length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText(/exp_winning/)).toBeInTheDocument();
-  expect(screen.getByText(/bt_winning/)).toBeInTheDocument();
-  expect(screen.getAllByText("bitpro_result: 196").length).toBeGreaterThanOrEqual(1);
-
-  const strategyCard = screen.getByRole("button", { name: /momentum_breakout_v1/ });
-  expect(strategyCard).toHaveClass("operator-card");
-  expect(strategyCard).toHaveAttribute("data-tone", "brass");
-
-  fireEvent.click(strategyCard);
-
-  expect(screen.getByText("证据详情")).toBeInTheDocument();
-  expect(screen.getAllByText("memory: mem_winning").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getAllByText("experiment: exp_winning").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getAllByText("backtest: bt_winning").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getAllByText("bitpro_result: 196").length).toBeGreaterThanOrEqual(1);
-});
-
-test("renders monitor empty states and readonly approval risk status", async () => {
-  window.history.replaceState({}, "", "/harness/alerts");
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/harness/overview")) {
-        return jsonResponse(overview);
-      }
-      if (url.endsWith("/api/memory")) {
-        return jsonResponse({ items: [] });
-      }
-      if (url.endsWith("/api/strategy/library")) {
-        return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
-      }
-      if (url.endsWith("/api/alerts")) {
-        return jsonResponse({}, 404);
-      }
-      return jsonResponse({}, 404);
-    })
+  fireEvent.click(screen.getByRole("button", { name: "应用 production_3slot 预设" }));
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/arc/evolution/preset",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ preset: "production_3slot" })
+      })
+    )
   );
 
-  render(<App />);
-
-  expect(await screen.findByText("监控告警")).toBeInTheDocument();
-  expect(screen.getByText("暂无监控告警")).toBeInTheDocument();
-  expect(screen.getByText("待审批")).toBeInTheDocument();
-  expect(await screen.findByText("loi_live")).toBeInTheDocument();
-  expect(screen.getByText("allowed")).toBeInTheDocument();
-  const intentCard = screen.getByText("loi_live").closest(".status-row");
-  expect(intentCard).toHaveClass("operator-card");
-  expect(intentCard).toHaveAttribute("data-tone", "brass");
-  expect(screen.queryByText("API 404")).not.toBeInTheDocument();
-});
-
-test("loads a recent run and renders structured report blocks with audit sources", async () => {
-  window.history.replaceState({}, "", "/harness/runs");
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.endsWith("/api/harness/overview")) {
-      return jsonResponse(overview);
-    }
-    if (url.endsWith("/api/memory")) {
-      return jsonResponse({ items: [] });
-    }
-    if (url.endsWith("/api/strategy/library")) {
-      return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
-    }
-    if (url.endsWith("/api/alerts")) {
-      return jsonResponse({ items: [] });
-    }
-    if (url.endsWith("/api/agent/runs/run_live")) {
-      return jsonResponse(structuredRun);
-    }
-    return jsonResponse({}, 404);
-  });
-  vi.stubGlobal("fetch", fetchMock);
-
-  render(<App />);
-
-  fireEvent.click(await screen.findByRole("button", { name: /run_live/ }));
-
-  expect(await screen.findByText("结构化报告")).toBeInTheDocument();
-  expect(screen.getByText("监控结论")).toBeInTheDocument();
-  expect(screen.getByText("风险正常")).toBeInTheDocument();
-  expect(screen.getByText("total_pnl_pct")).toBeInTheDocument();
-  expect(screen.getByText("-3.3")).toBeInTheDocument();
-  expect(screen.getAllByText("source: tool:bitpro_paper_dashboard").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("missing: per_strategy_drawdown")).toBeInTheDocument();
-  expect(screen.getByText("Markdown fallback paragraph")).toBeInTheDocument();
-});
-
-test("renders memory composition, creation cadence, and governance signals from audited items", async () => {
-  window.history.replaceState({}, "", "/harness/memory");
-  const memoryOverview = {
-    ...overview,
-    memory: {
-      active_count: 4,
-      total_count: 4,
-      latest_created_at: "2026-05-27T00:00:00+08:00"
-    }
-  };
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/harness/overview")) {
-        return jsonResponse(memoryOverview);
-      }
-      if (url.endsWith("/api/memory")) {
-        return jsonResponse({
-          items: [
-            {
-              id: "mem_strategy_a",
-              kind: "strategy_knowledge",
-              content: "strategy evidence A",
-              source_run_id: "run_strategy",
-              source_tool: "strategy.experiment",
-              tags: ["strategy_knowledge"],
-              importance: "0.9000",
-              confidence: "0.8000",
-              usage_count: 5,
-              created_at: "2026-05-25T08:00:00Z"
-            },
-            {
-              id: "mem_strategy_b",
-              kind: "strategy_knowledge",
-              content: "strategy evidence B",
-              source_run_id: "run_strategy",
-              source_tool: "strategy.experiment",
-              tags: ["strategy_knowledge"],
-              importance: "0.7000",
-              confidence: "0.9000",
-              usage_count: 2,
-              created_at: "2026-05-26T08:00:00Z"
-            },
-            {
-              id: "mem_risk",
-              kind: "risk_note",
-              content: "risk evidence",
-              source_run_id: "run_risk",
-              source_tool: "risk.check",
-              tags: ["risk_note"],
-              importance: "0.6000",
-              confidence: "0.7000",
-              usage_count: 1,
-              created_at: "2026-05-26T12:00:00Z"
-            },
-            {
-              id: "mem_market",
-              kind: "market_observation",
-              content: "market evidence",
-              source_run_id: "run_market",
-              source_tool: "market.summary",
-              tags: ["market_observation"],
-              importance: "0.4000",
-              confidence: "0.6000",
-              usage_count: 3,
-              created_at: "2026-05-27T08:00:00Z"
-            }
-          ]
-        });
-      }
-      if (url.endsWith("/api/memory/assertions")) {
-        return jsonResponse({
-          items: [
-            {
-              id: "masrt_web_1",
-              claim: "Source-bound BTC volatility claim",
-              status: "proposed",
-              usable: false,
-              source_evidence_ids: ["evi_1"],
-              confidence: "0.8"
-            }
-          ]
-        });
-      }
-      if (url.endsWith("/api/skills/proposals")) {
-        return jsonResponse({
-          items: [
-            {
-              id: "skp_web_1",
-              skill_key: "regime_summary",
-              status: "pending_approval",
-              definition_hash: "a".repeat(64)
-            }
-          ]
-        });
-      }
-      if (url.endsWith("/api/skills/releases")) {
-        return jsonResponse({
-          items: [
-            {
-              id: "skrel_web_1",
-              skill_key: "evidence_summary",
-              version: 2,
-              status: "active"
-            }
-          ]
-        });
-      }
-      if (url.endsWith("/api/strategy/library")) {
-        return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
-      }
-      if (url.endsWith("/api/alerts")) {
-        return jsonResponse({ items: [] });
-      }
-      return jsonResponse({}, 404);
-    })
+  fireEvent.click(screen.getByRole("button", { name: "触发预扫描" }));
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/arc/evolution/scan",
+      expect.objectContaining({ method: "POST" })
+    )
   );
 
-  render(<App />);
-
-  expect(await screen.findByText("记忆态势")).toBeInTheDocument();
-  expect(await screen.findByText("容量构成")).toBeInTheDocument();
-  expect(screen.getByRole("img", { name: /容量构成/ })).toBeInTheDocument();
-  expect(screen.getByRole("img", { name: /写入节奏/ })).toBeInTheDocument();
-  expect(screen.getAllByText("strategy_knowledge").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getAllByText("risk_note").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("平均可信度")).toBeInTheDocument();
-  expect(screen.getByText("累计复用")).toBeInTheDocument();
-  expect(screen.getByText("5/26")).toBeInTheDocument();
-  expect(screen.getByText("记忆与技能治理")).toBeInTheDocument();
-  expect(screen.getByText("Source-bound BTC volatility claim")).toBeInTheDocument();
-  expect(screen.getByText("regime_summary")).toBeInTheDocument();
-  expect(screen.getByText(/evidence_summary v2/)).toBeInTheDocument();
-  expect(screen.getAllByRole("button", { name: "批准" })[0]).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "立即评判" }));
+  expect(await screen.findByText(/Statistically validated/)).toBeInTheDocument();
 });
 
-test("renders portfolio lifecycle evidence and keeps review buttons reason-gated", async () => {
-  window.history.replaceState({}, "", "/harness/portfolio");
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/harness/overview")) {
-        return jsonResponse(overview);
-      }
-      if (url.endsWith("/api/memory")) {
-        return jsonResponse({ items: [] });
-      }
-      if (url.endsWith("/api/portfolio/assessments")) {
-        return jsonResponse({
-          items: [
-            {
-              id: "pasmt_web_1",
-              status: "needs_data",
-              policy_version: "portfolio_lifecycle_policy.v1",
-              valid_until: "2026-07-15T02:00:00Z",
-              strategies: [{ card_id: "scard_web_1" }],
-              pairwise: [
-                {
-                  left_card_id: "scard_web_1",
-                  right_card_id: "scard_web_2",
-                  correlation: null,
-                  sample_count: 2
-                }
-              ],
-              unknowns: ["correlation.scard_web_1.scard_web_2.unknown"],
-              recommendations: [
-                {
-                  recommendation_id: "plrec_web_1",
-                  action: "run_targeted_research",
-                  strategy_card_id: "scard_web_1",
-                  reason: "Aligned returns are insufficient. Recommendation is research only.",
-                  requires_human_review: true,
-                  allocation_change_allowed: false,
-                  trading_mutation_allowed: false
-                }
-              ]
-            }
-          ]
-        });
-      }
-      return jsonResponse({}, 404);
-    })
-  );
-
-  render(<App />);
-
-  expect(
-    await screen.findByRole("heading", { name: "组合生命周期" })
-  ).toBeInTheDocument();
-  expect(await screen.findByText("run_targeted_research")).toBeInTheDocument();
-  expect(screen.getByText(/allocation=false/)).toBeInTheDocument();
-  expect(screen.getByText(/corr=unknown/)).toBeInTheDocument();
-  expect(screen.getAllByRole("button", { name: "批准" })[0]).toBeDisabled();
-});
-
-test("renders scoped metric strips for every routed operator page", async () => {
-  window.history.replaceState({}, "", "/harness/strategy");
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/harness/overview")) {
-        return jsonResponse(overview);
-      }
-      if (url.endsWith("/api/memory")) {
-        return jsonResponse({
-          items: [
-            {
-              id: "mem_metrics",
-              kind: "agent_note",
-              content: "metric fixture",
-              source_run_id: "run_live",
-              source_tool: "memory.write",
-              usage_count: 3,
-              created_at: "2026-05-27T00:00:00+08:00"
-            }
-          ]
-        });
-      }
-      if (url.endsWith("/api/strategy/library")) {
-        return jsonResponse(strategyLibrary);
-      }
-      if (url.endsWith("/api/research/strategy-cards")) {
-        return jsonResponse({
-          items: [
-            {
-              card_id: "scard_metrics",
-              strategy_key: "btc_trend_v1",
-              lifecycle_status: "testing",
-              completeness_score: "0.50000",
-              missing_fields: ["paper"]
-            }
-          ]
-        });
-      }
-      if (url.endsWith("/api/research/strategy-cards/funnel")) {
-        return jsonResponse({
-          denominator: 1,
-          denominator_unit: "experiment_manifest",
-          stages: { manifest: 1, paper: 0, card: 1 }
-        });
-      }
-      if (url.endsWith("/api/alerts")) {
-        return jsonResponse({
-          items: [
-            { id: "alert_metrics", severity: "high", title: "Evidence freshness" }
-          ]
-        });
-      }
-      return jsonResponse({}, 404);
-    })
-  );
-
-  render(<App />);
-
-  let metricStrip = await screen.findByRole("region", { name: "页面指标" });
-  expect(within(metricStrip).getByText("候选卡片")).toBeInTheDocument();
-  expect(within(metricStrip).getByText("不完整卡片")).toBeInTheDocument();
-  expect(within(metricStrip).getByText("Manifest 阶段")).toBeInTheDocument();
-
-  fireEvent.click(screen.getByRole("link", { name: "监控告警" }));
-  metricStrip = screen.getByRole("region", { name: "页面指标" });
-  expect(within(metricStrip).getByText("当前告警")).toBeInTheDocument();
-  expect(within(metricStrip).getByText("高优先级")).toBeInTheDocument();
-  const highRiskAlert = screen.getByText("Evidence freshness").closest(".alert-row");
-  expect(highRiskAlert).toHaveClass("operator-card");
-  expect(highRiskAlert).toHaveAttribute("data-tone", "danger");
-
-  fireEvent.click(screen.getByRole("link", { name: "记忆检索" }));
-  metricStrip = screen.getByRole("region", { name: "页面指标" });
-  expect(within(metricStrip).getByText("活跃记忆")).toBeInTheDocument();
-  expect(within(metricStrip).getByText("已加载记忆")).toBeInTheDocument();
-
-  fireEvent.click(screen.getByRole("link", { name: "知识库" }));
-  metricStrip = screen.getByRole("region", { name: "页面指标" });
-  expect(within(metricStrip).getByText("知识文档")).toBeInTheDocument();
-  expect(within(metricStrip).getByText("知识分片")).toBeInTheDocument();
-
-  fireEvent.click(screen.getByRole("link", { name: "最近运行" }));
-  metricStrip = screen.getByRole("region", { name: "页面指标" });
-  expect(within(metricStrip).getByText("运行总数")).toBeInTheDocument();
-  expect(within(metricStrip).getByText("Trace 事件")).toBeInTheDocument();
-});
-
-test("sidebar navigation keeps the clicked section active", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/auth/me")) {
-        return jsonResponse({ username: "admin" });
-      }
-      if (url.endsWith("/api/harness/overview")) {
-        return jsonResponse(overview);
-      }
-      if (url.endsWith("/api/memory")) {
-        return jsonResponse({ items: [] });
-      }
-      if (url.endsWith("/api/strategy/library")) {
-        return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
-      }
-      if (url.endsWith("/api/alerts")) {
-        return jsonResponse({ items: [] });
-      }
-      return jsonResponse({}, 404);
-    })
-  );
-
-  render(<App />);
-
-  const harnessLink = screen.getByRole("link", { name: "工作台" });
-  const runsLink = screen.getByRole("link", { name: "最近运行" });
-  const strategyLink = screen.getByRole("link", { name: "策略库" });
-  expect(harnessLink).toHaveClass("nav-item-active");
-
-  fireEvent.click(strategyLink);
-
-  expect(strategyLink).toHaveClass("nav-item-active");
-  expect(harnessLink).not.toHaveClass("nav-item-active");
-  expect(window.location.pathname).toBe("/harness/strategy");
-  fireEvent.click(runsLink);
-  expect(runsLink).toHaveClass("nav-item-active");
-  expect(strategyLink).not.toHaveClass("nav-item-active");
-  expect(window.location.pathname).toBe("/harness/runs");
-  expect(await screen.findByText("344")).toBeInTheDocument();
-});
-
-test("restores a canonical Web Thread and submits a follow-up without legacy history", async () => {
-  const values = new Map<string, string>([
-    ["hypertrade.agent.thread.v1", JSON.stringify({ threadId: "thr_web", cursor: 10 })]
-  ]);
-  const storage = {
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => values.set(key, value),
-    removeItem: (key: string) => values.delete(key),
-    clear: () => values.clear(),
-    key: (index: number) => [...values.keys()][index] ?? null,
-    get length() { return values.size; }
-  } satisfies Storage;
-  vi.stubGlobal("localStorage", storage);
-
-  const firstTurn = {
-    turn_id: "trn_1",
-    status: "completed",
-    client_message_id: "web-1",
-    mission_id: "mis_1",
-    resolved_context: {
-      subject_kind: "strategy",
-      subject_refs: ["momentum_breakout_v1", "mean_reversion_v1"]
-    }
-  };
-  const secondTurn = {
-    turn_id: "trn_2",
-    status: "completed",
-    client_message_id: "web-2",
-    mission_id: "mis_2",
-    resolved_context: {
-      subject_kind: "strategy",
-      subject_refs: ["momentum_breakout_v1", "mean_reversion_v1"],
-      resolved_subject: "mean_reversion_v1"
-    }
-  };
-  const firstItems = [
-    { item_id: "u1", turn_id: "trn_1", item_type: "user_message", status: "completed", sequence: 2, content: { text: "比较 momentum_breakout_v1 和 mean_reversion_v1" } },
-    { item_id: "a1", turn_id: "trn_1", item_type: "agent_message", status: "completed", sequence: 9, content: { text: "两项策略缺少可比数据。" } }
-  ];
-  const recovered = {
-    thread: { thread_id: "thr_web", title: "Web", status: "active", active_turn_id: "", event_cursor: 10 },
-    turns: [firstTurn],
-    items: firstItems
-  };
-  const completed = {
-    thread: { thread_id: "thr_web", title: "Web", status: "active", active_turn_id: "", event_cursor: 20 },
-    turns: [firstTurn, secondTurn],
-    items: [
-      ...firstItems,
-      { item_id: "u2", turn_id: "trn_2", item_type: "user_message", status: "completed", sequence: 11, content: { text: "后者最大回撤多少？" } },
-      { item_id: "t2", turn_id: "trn_2", item_type: "tool_call", status: "completed", sequence: 16, content: { capability_id: "strategy.performance" } },
-      { item_id: "a2", turn_id: "trn_2", item_type: "agent_message", status: "completed", sequence: 19, content: { text: "mean_reversion_v1 暂无可验证最大回撤。", unknowns: ["max_drawdown unavailable"] } }
-    ]
-  };
-  let turnStarted = false;
-  const turnBodies: Array<Record<string, unknown>> = [];
-  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-    if (url.endsWith("/api/harness/overview")) return jsonResponse(overview);
-    if (url.endsWith("/api/agent/v1/threads/thr_web/turns") && init?.method === "POST") {
-      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-      turnBodies.push(body);
-      turnStarted = true;
-      return jsonResponse({ created: true, turn: secondTurn, event_cursor: 11 }, 202);
-    }
-    if (url.includes("/api/agent/v1/threads/thr_web/events/stream")) {
-      const body = new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(
-            new TextEncoder().encode(
-              'id: 20\nevent: turn.completed\ndata: {"event_id":"e20","event_type":"turn.completed","thread_sequence":20,"payload":{"turn_id":"trn_2"}}\n\n'
-            )
-          );
-          controller.close();
-        }
-      });
-      return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
-    }
-    if (url.endsWith("/api/agent/v1/threads/thr_web/turns/trn_2")) {
-      return jsonResponse({ turn: secondTurn, items: completed.items.slice(-3), event_cursor: 20 });
-    }
-    if (url.endsWith("/api/agent/v1/threads/thr_web")) {
-      return jsonResponse(turnStarted ? completed : recovered);
-    }
-    if (url.endsWith("/api/memory")) return jsonResponse({ items: [] });
-    if (url.endsWith("/api/strategy/library")) {
-      return jsonResponse({ source: "memory.strategy_knowledge", memory_count: 0, items: [] });
-    }
-    if (url.endsWith("/api/alerts")) return jsonResponse({ items: [] });
-    return jsonResponse({}, 404);
-  });
-  vi.stubGlobal("fetch", fetchMock);
-
-  render(<App />);
-
-  expect(await screen.findByText("thr_web")).toBeInTheDocument();
-  fireEvent.change(screen.getByRole("textbox"), { target: { value: "后者最大回撤多少？" } });
-  fireEvent.click(screen.getByRole("button", { name: "发起归纳" }));
-
-  expect(
-    (await screen.findAllByText("mean_reversion_v1 暂无可验证最大回撤。")).length
-  ).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("服务端目标")).toBeInTheDocument();
-  expect(turnBodies).toHaveLength(1);
-  expect(turnBodies[0]).toEqual({
-    input: "后者最大回撤多少？",
-    client_message_id: expect.stringMatching(/^web_turn_/)
-  });
-  expect(JSON.stringify(turnBodies[0])).not.toContain("prior_turns");
-  expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/agent/runs/stream"))).toBe(false);
-  expect(readStoredCursor(storage)).toBe(20);
-});
-
-function readStoredCursor(storage: Storage): number {
-  return Number(JSON.parse(storage.getItem("hypertrade.agent.thread.v1") ?? "{}").cursor ?? 0);
-}
-
-const strategyLibrary = {
-  source: "memory.strategy_knowledge",
-  memory_count: 2,
-  items: [
-    {
-      strategy_key: "momentum_breakout_v1",
-      evidence_count: 2,
-      passed_count: 1,
-      failed_count: 1,
-      best: {
-        memory_id: "mem_winning",
-        experiment_id: "exp_winning",
-        research_id: "srch_winning",
-        backtest_id: "bt_winning",
-        bitpro_result_id: "196",
-        variant_id: "fast",
-        passed: true,
-        total_return_pct: "12.5",
-        max_drawdown_pct: "3.1",
-        trade_count: 8,
-        score: "11.75",
-        data: { source: "bitpro_mcp_market_klines", inst_id: "ETH-USDT-SWAP" },
-        gate_results: { min_trade_count: true }
-      },
-      latest: {
-        memory_id: "mem_winning",
-        experiment_id: "exp_winning",
-        backtest_id: "bt_winning",
-        variant_id: "fast"
-      },
-      variants: [
-        { variant_id: "baseline", evidence_count: 1, passed_count: 0 },
-        { variant_id: "fast", evidence_count: 1, passed_count: 1 }
-      ],
-      failure_reasons: ["require_non_negative_return"],
-      next_experiments: ["Test adjacent SMA windows around 3 on BitPro MCP candles."],
-      source_memory_ids: ["mem_losing", "mem_winning"]
-    }
-  ]
-};
-
-const structuredRun = {
-  id: "run_live",
-  status: "completed",
-  report_markdown: "# Markdown fallback\n\nMarkdown fallback paragraph",
-  report_json: {
-    report_blocks: [
-      {
-        block_type: "summary",
-        title: "监控结论",
-        notes: ["风险正常"],
-        source_refs: ["tool:bitpro_paper_dashboard"]
-      },
-      {
-        block_type: "metric_table",
-        title: "核心指标",
-        metrics: [
-          { label: "total_pnl_pct", value: "-3.3" },
-          { label: "max_drawdown_pct", value: "12.4" }
+test("Knowledge & Memory tab loads cognitive tiers, kind/tag filters, last_used_at, and auto-searches RAG", async () => {
+  const fetchMock = makeRoutes({
+    "/api/memory": (url) =>
+      jsonResponse({
+        items: [
+          {
+            id: "mem_1",
+            kind: "lesson",
+            content: url.includes("tag=btc") ? "BTC 筛选后因果规则" : "高波动窗口减仓 30%",
+            importance: 0.9,
+            confidence: 0.88,
+            usage_count: 5,
+            source_tool: "bitpro_paper_dashboard",
+            source_run_id: "run_mem_1",
+            last_used_at: "2026-11-18T08:15:00+08:00",
+            tags: ["risk", "volatility"],
+            status: "active"
+          }
         ],
-        missing: ["per_strategy_drawdown"],
-        source_refs: ["tool:bitpro_paper_dashboard"]
-      }
-    ]
-  },
-  run_state_json: { current_node: "final_report" },
-  trace_events: [
-    {
-      id: "trace_live",
-      tool_name: "bitpro_paper_dashboard",
-      status: "completed",
-      created_at: "2026-05-27T00:00:00+08:00"
-    }
-  ]
-};
+        cognitive: {
+          active_semantic_count: 4,
+          superseded_semantic_count: 1,
+          episodic_count: 7,
+          hypothesis_count: 3
+        },
+        cognitive_items: [
+          {
+            tier: "semantic",
+            id: "sem_1",
+            kind: "causal_rule",
+            claim: "Funding 极端正值时趋势突破胜率下降",
+            regimes: ["high_vol"],
+            symbols: ["BTCUSDT"],
+            timeframe: "4h",
+            confidence: 0.91,
+            distillation_version: 2,
+            derived_episode_count: 6,
+            status: "active"
+          },
+          {
+            tier: "episodic",
+            id: "ep_1",
+            kind: "race_outcome",
+            summary: "Slot 1 challenger #12 超越 parent #1 (+6.1%)",
+            market_regime: "trend_up",
+            timeframe: "1h",
+            mission_id: "mis_ep_1",
+            raw_evidence_ref: "race:1:12"
+          }
+        ]
+      }),
+    "/api/memory/assertions": () =>
+      jsonResponse({
+        items: [
+          {
+            assertion_id: "asrt_1",
+            claim: "Paper 滑点估计偏低",
+            status: "pending",
+            source_ids: ["ev_1"],
+            confidence: 0.85
+          }
+        ]
+      }),
+    "/api/skills/proposals": () => jsonResponse({ items: [] }),
+    "/api/skills/releases": () => jsonResponse({ items: [] }),
+    "/api/strategy/library": () => jsonResponse({ source: "memory.strategy_knowledge", memory_count: 1, items: [] }),
+    "/api/rag/search": () =>
+      jsonResponse({
+        hits: [
+          {
+            document_id: "doc_1",
+            title: "Risk Gate Spec",
+            excerpt: "All mainnet mutations require operator confirmation.",
+            score: 0.92
+          }
+        ]
+      })
+  });
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => body
-  } as Response;
-}
+  render(<App />);
+  fireEvent.click(screen.getByRole("link", { name: "记忆与治理" }));
+
+  // Auto-searched RAG with query=risk & cognitive items loaded
+  expect(await screen.findByText("Funding 极端正值时趋势突破胜率下降")).toBeInTheDocument();
+  expect(screen.getByText("Slot 1 challenger #12 超越 parent #1 (+6.1%)")).toBeInTheDocument();
+  expect(await screen.findByText("Risk Gate Spec")).toBeInTheDocument();
+  expect(screen.getByText("最近复用")).toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/rag/search?query=risk",
+    expect.objectContaining({ method: "GET" })
+  );
+
+  // Kind & tag filter triggers parameterized /api/memory fetch
+  fireEvent.change(screen.getByLabelText("类型过滤"), { target: { value: "lesson" } });
+  fireEvent.change(screen.getByLabelText("标签过滤"), { target: { value: "btc" } });
+  const queryButtons = screen.getAllByRole("button", { name: "查询" });
+  fireEvent.click(queryButtons[0]);
+
+  expect((await screen.findAllByText("BTC 筛选后因果规则")).length).toBeGreaterThanOrEqual(1);
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/memory?kind=lesson&tag=btc",
+    expect.objectContaining({ method: "GET" })
+  );
+});
+
+test("System & Diagnostics tab renders /api/healthz worker loops & stalls, acks ARC alerts, omits fake trigger text", async () => {
+  const fetchMock = makeRoutes({
+    "/api/alerts": () =>
+      jsonResponse({
+        items: [
+          { id: "alt_1", code: "probe_warn", title: "Probe Slow", severity: "warn", message: "Latency elevated" }
+        ]
+      }),
+    "/api/v1/arc/evolution/alerts": () =>
+      jsonResponse({
+        alerts: [
+          {
+            id: "arc_alt_1",
+            code: "slot_cooldown_stuck",
+            strategy_id: 12,
+            status: "open",
+            message: "Slot 2 exceeded failure threshold"
+          }
+        ]
+      }),
+    "/api/v1/arc/evolution/alerts/arc_alt_1/ack": () => jsonResponse({ ok: true }),
+    "/api/v1/arc/runtime-errors": () =>
+      jsonResponse({
+        items: [
+          {
+            error_id: "err_1",
+            component: "avo_runner",
+            exception_type: "TimeoutError",
+            message: "Upstream BitPro timeout",
+            occurrences: 3,
+            mission_id: "mis_err_1"
+          }
+        ]
+      })
+  });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole("link", { name: "告警与诊断" }));
+
+  expect(await screen.findByText("Worker 循环心跳与 Stall 矩阵")).toBeInTheDocument();
+  expect(screen.getByText("worker-alpha")).toBeInTheDocument();
+  expect(screen.getByText(/Last Stall: 18\.4s/)).toBeInTheDocument();
+  expect(screen.getAllByText(/ablation_sweep/).length).toBeGreaterThanOrEqual(2);
+  expect(screen.getByText(/Slot 2 exceeded failure threshold/)).toBeInTheDocument();
+  expect(screen.getByText(/Upstream BitPro timeout/)).toBeInTheDocument();
+
+  // Never render hardcoded misleading background-trigger claim
+  expect(screen.queryByText(/后台触发保持禁用/)).not.toBeInTheDocument();
+
+  // Ack open ARC alert
+  fireEvent.click(screen.getByRole("button", { name: "确认" }));
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/arc/evolution/alerts/arc_alt_1/ack",
+      expect.objectContaining({ method: "POST" })
+    )
+  );
+});
