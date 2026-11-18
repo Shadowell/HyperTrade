@@ -892,4 +892,7 @@ def admit(
                 receipt = EvolutionCycle(id="budget_denied_" + key, status="budget_denied")
                 session.add(receipt)
             receipt.payload_json = result
-            return result
+        from hypertrade.arc.evolution_models import invalidate_evolution_caches
+
+        invalidate_evolution_caches(db)
+        return result

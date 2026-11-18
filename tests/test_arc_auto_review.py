@@ -427,3 +427,26 @@ def test_missing_metrics_or_window_never_beat_baseline():
         {"net_return": 0.1, "max_drawdown": 0.01, "sharpe": 1.0}, base_entry
     )
     assert (better, reasons) == (False, ["comparison_window_missing"])
+
+
+def test_auto_review_does_not_hold_control_for_update_across_dispatch(ready):
+    from hypertrade.arc.auto_review import auto_review_once
+    from sqlalchemy import event
+
+    db, _service, _mid = ready
+    runner = Runner()
+    executed_sql: list[str] = []
+
+    def before_execute(_conn, _cursor, stmt, _params, _ctx, _many):
+        executed_sql.append(stmt.upper())
+
+    event.listen(db.engine, "before_cursor_execute", before_execute)
+    try:
+        outcome = auto_review_once(db, runner)
+    finally:
+        event.remove(db.engine, "before_cursor_execute", before_execute)
+
+    assert outcome["status"] == "paper_observing"
+    assert not any(
+        "ARC_EVOLUTION_CONTROL" in sql and "FOR UPDATE" in sql for sql in executed_sql
+    )

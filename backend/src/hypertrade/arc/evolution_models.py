@@ -1,7 +1,10 @@
 """Persistent product scheduling and diagnostic receipts; ARC owns research execution."""
 
+from collections import OrderedDict
 from datetime import datetime
+from threading import Lock
 from typing import Any
+from weakref import WeakKeyDictionary
 
 from sqlalchemy import JSON, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -176,3 +179,58 @@ class ArcAblationStep(Base, TimestampMixin):
     charged_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
+
+
+_EVOLUTION_CACHE_LOCK = Lock()
+_CYCLE_VIEW_CACHE_MAX_ENTRIES = 256
+# Per-Engine evolution read caches keyed by sqlalchemy Engine so separate DBs/tests never collide.
+_STATUS_SNAPSHOT_CACHE: WeakKeyDictionary[
+    Any, dict[tuple[int, bool, int, str], tuple[float, dict[str, Any]]]
+] = WeakKeyDictionary()
+_CYCLE_VIEW_CACHE: WeakKeyDictionary[
+    Any, OrderedDict[tuple[str, str, str, bool], dict[str, Any]]
+] = WeakKeyDictionary()
+_CYCLE_HAS_DIAGNOSTICS_CACHE: WeakKeyDictionary[
+    Any, OrderedDict[tuple[str, str, str], bool]
+] = WeakKeyDictionary()
+_FORWARD_OUTCOMES_CACHE: WeakKeyDictionary[Any, tuple[float, dict[str, Any]]] = (
+    WeakKeyDictionary()
+)
+
+
+def resolve_evolution_engine(db_or_engine: Any) -> Any:
+    if db_or_engine is None:
+        return None
+    engine = getattr(db_or_engine, "engine", db_or_engine)
+    return engine
+
+
+def invalidate_evolution_caches(
+    db_or_engine: Any = None, *, cycle_id: str | None = None, clear_cycles: bool = False
+) -> None:
+    """Drop cached status, cycle views, and forward-outcome telemetry for one Engine or all."""
+    with _EVOLUTION_CACHE_LOCK:
+        if db_or_engine is None:
+            _STATUS_SNAPSHOT_CACHE.clear()
+            _FORWARD_OUTCOMES_CACHE.clear()
+            if clear_cycles:
+                _CYCLE_VIEW_CACHE.clear()
+                _CYCLE_HAS_DIAGNOSTICS_CACHE.clear()
+            return
+        engine = resolve_evolution_engine(db_or_engine)
+        if engine is None:
+            return
+        _STATUS_SNAPSHOT_CACHE.pop(engine, None)
+        _FORWARD_OUTCOMES_CACHE.pop(engine, None)
+        if cycle_id is not None:
+            cycle_cache = _CYCLE_VIEW_CACHE.get(engine)
+            if cycle_cache:
+                for key in [k for k in cycle_cache if k[0] == cycle_id]:
+                    cycle_cache.pop(key, None)
+            diag_cache = _CYCLE_HAS_DIAGNOSTICS_CACHE.get(engine)
+            if diag_cache:
+                for diag_key in [k for k in diag_cache if k[0] == cycle_id]:
+                    diag_cache.pop(diag_key, None)
+        elif clear_cycles:
+            _CYCLE_VIEW_CACHE.pop(engine, None)
+            _CYCLE_HAS_DIAGNOSTICS_CACHE.pop(engine, None)

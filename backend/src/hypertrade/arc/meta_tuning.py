@@ -251,3 +251,6 @@ def _record_receipt(
                 payload_json={"tuning_status": status, "report": report.model_dump()},
             )
         )
+    from hypertrade.arc.evolution_models import invalidate_evolution_caches
+
+    invalidate_evolution_caches(db, cycle_id=receipt_id)

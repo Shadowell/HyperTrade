@@ -148,6 +148,9 @@ def clear_budget_usage_cache(engine: Any | None = None) -> None:
             _BUDGET_USAGE_CACHE.clear()
         else:
             _BUDGET_USAGE_CACHE.pop(engine, None)
+    from hypertrade.arc.evolution_models import invalidate_evolution_caches
+
+    invalidate_evolution_caches(engine)
 
 
 def reset_runtime() -> None:

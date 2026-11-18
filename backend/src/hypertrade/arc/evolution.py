@@ -6,6 +6,8 @@ import hashlib
 import json
 import logging
 import re
+import time
+from collections import OrderedDict
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -41,7 +43,18 @@ from hypertrade.arc.evolution_diagnostics import (
     snapshot_contract_unverified,
     upstream_read_unavailable,
 )
-from hypertrade.arc.evolution_models import EvolutionControl, EvolutionCycle
+from hypertrade.arc.evolution_models import (
+    _CYCLE_HAS_DIAGNOSTICS_CACHE,
+    _CYCLE_VIEW_CACHE,
+    _CYCLE_VIEW_CACHE_MAX_ENTRIES,
+    _EVOLUTION_CACHE_LOCK,
+    _FORWARD_OUTCOMES_CACHE,
+    _STATUS_SNAPSHOT_CACHE,
+    EvolutionControl,
+    EvolutionCycle,
+    invalidate_evolution_caches,
+    resolve_evolution_engine,
+)
 from hypertrade.arc.feedback import _timeframe_seconds, collect_windows
 from hypertrade.arc.forward_outcomes import ForwardOutcomeLedger
 from hypertrade.arc.relay_seats import relay_seats
@@ -400,40 +413,205 @@ def _heal_bitpro_fallback(
     return None
 
 
+_STATUS_CACHE_TTL_SEC = 5.0
+_FORWARD_OUTCOMES_CACHE_TTL_SEC = 15.0
+
+
+def _copy_cycle_view(view: dict[str, Any]) -> dict[str, Any]:
+    return {**view, "payload": dict(view.get("payload") or {})}
+
+
+def _copy_status_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **snapshot,
+        "config": dict(snapshot["config"]),
+        "cycles": [_copy_cycle_view(item) for item in snapshot["cycles"]],
+        "continuations": list(snapshot["continuations"]),
+    }
+
+
 class EvolutionService:
     def __init__(self, db: Database, client: Any = None):
         self.db = db
         self.client = client
         self._client_target_id: str | None = None
 
+    def _load_cycle_views(
+        self, session: Any, *, engine: Any, compact: bool, bounded_limit: int
+    ) -> list[dict[str, Any]]:
+        meta_rows = session.execute(
+            select(
+                EvolutionCycle.id,
+                EvolutionCycle.status,
+                EvolutionCycle.created_at,
+                EvolutionCycle.updated_at,
+            )
+            .where(EvolutionCycle.status.not_in(["budget_admitted", "budget_denied"]))
+            .order_by(EvolutionCycle.created_at.desc())
+            .limit(bounded_limit)
+        ).all()
+        if not meta_rows:
+            return []
+
+        meta_items = [
+            (cid, status_val, str(updated_at or created_at))
+            for cid, status_val, created_at, updated_at in meta_rows
+        ]
+        rows_by_id: dict[str, EvolutionCycle] = {}
+        has_diag_by_key: dict[tuple[str, str, str], bool] = {}
+
+        if compact:
+            missing_diag_ids: list[str] = []
+            if engine is not None:
+                with _EVOLUTION_CACHE_LOCK:
+                    diag_cache = _CYCLE_HAS_DIAGNOSTICS_CACHE.get(engine)
+                    for d_key in meta_items:
+                        if diag_cache is not None and d_key in diag_cache:
+                            diag_cache.move_to_end(d_key)
+                            has_diag_by_key[d_key] = diag_cache[d_key]
+                        else:
+                            missing_diag_ids.append(d_key[0])
+            else:
+                missing_diag_ids = [d_key[0] for d_key in meta_items]
+
+            if missing_diag_ids:
+                unique_diag_ids = list(dict.fromkeys(missing_diag_ids))
+                for row in session.scalars(
+                    select(EvolutionCycle).where(EvolutionCycle.id.in_(unique_diag_ids))
+                ).all():
+                    rows_by_id[row.id] = row
+                computed_diag: list[tuple[tuple[str, str, str], bool]] = []
+                for d_key in meta_items:
+                    if d_key in has_diag_by_key:
+                        continue
+                    cycle_row = rows_by_id.get(d_key[0])
+                    raw_diag = (
+                        (cycle_row.payload_json or {}).get("diagnostics")
+                        if cycle_row is not None
+                        else None
+                    )
+                    has_diag = bool(isinstance(raw_diag, list) and len(raw_diag) > 0)
+                    has_diag_by_key[d_key] = has_diag
+                    computed_diag.append((d_key, has_diag))
+                if engine is not None and computed_diag:
+                    with _EVOLUTION_CACHE_LOCK:
+                        diag_cache = _CYCLE_HAS_DIAGNOSTICS_CACHE.get(engine)
+                        if diag_cache is None:
+                            diag_cache = OrderedDict()
+                            _CYCLE_HAS_DIAGNOSTICS_CACHE[engine] = diag_cache
+                        for d_key, has_diag in computed_diag:
+                            diag_cache[d_key] = has_diag
+                            diag_cache.move_to_end(d_key)
+                        while len(diag_cache) > _CYCLE_VIEW_CACHE_MAX_ENTRIES:
+                            diag_cache.popitem(last=False)
+
+        specs: list[tuple[str, bool, tuple[str, str, str, bool]]] = []
+        nonempty_kept = 0
+        for cid, status_val, stamp in meta_items:
+            if not compact:
+                use_compact = False
+            elif has_diag_by_key.get((cid, status_val, stamp), False) and nonempty_kept < 2:
+                use_compact = False
+                nonempty_kept += 1
+            else:
+                use_compact = True
+            specs.append((cid, use_compact, (cid, status_val, stamp, use_compact)))
+
+        views_by_key: dict[tuple[str, str, str, bool], dict[str, Any]] = {}
+        missing: list[tuple[str, bool, tuple[str, str, str, bool]]] = []
+        if engine is not None:
+            with _EVOLUTION_CACHE_LOCK:
+                engine_cache = _CYCLE_VIEW_CACHE.get(engine)
+                if engine_cache is not None:
+                    for cid, use_compact, c_key in specs:
+                        cached = engine_cache.get(c_key)
+                        if cached is not None:
+                            engine_cache.move_to_end(c_key)
+                            views_by_key[c_key] = cached
+                        else:
+                            missing.append((cid, use_compact, c_key))
+                else:
+                    missing = list(specs)
+        else:
+            missing = list(specs)
+
+        if missing:
+            unfetched_ids = list(
+                dict.fromkeys(cid for cid, _, _ in missing if cid not in rows_by_id)
+            )
+            if unfetched_ids:
+                for row in session.scalars(
+                    select(EvolutionCycle).where(EvolutionCycle.id.in_(unfetched_ids))
+                ).all():
+                    rows_by_id[row.id] = row
+            computed: list[tuple[tuple[str, str, str, bool], dict[str, Any]]] = []
+            for cid, use_compact, c_key in missing:
+                cycle_row = rows_by_id.get(cid)
+                if cycle_row is None:
+                    continue
+                view = cycle_view(cycle_row, compact=use_compact)
+                views_by_key[c_key] = view
+                computed.append((c_key, view))
+            if engine is not None and computed:
+                with _EVOLUTION_CACHE_LOCK:
+                    engine_cache = _CYCLE_VIEW_CACHE.get(engine)
+                    if engine_cache is None:
+                        engine_cache = OrderedDict()
+                        _CYCLE_VIEW_CACHE[engine] = engine_cache
+                    for c_key, view in computed:
+                        engine_cache[c_key] = view
+                        engine_cache.move_to_end(c_key)
+                    while len(engine_cache) > _CYCLE_VIEW_CACHE_MAX_ENTRIES:
+                        engine_cache.popitem(last=False)
+
+        return [
+            _copy_cycle_view(views_by_key[c_key])
+            for _, _, c_key in specs
+            if c_key in views_by_key
+        ]
+
     def status(self, *, compact: bool = False, cycles_limit: int = 20) -> dict[str, Any]:
         from hypertrade.arc.research_budget import budget_status
 
         bounded_limit = max(1, min(int(cycles_limit), 20))
+        engine = resolve_evolution_engine(self.db)
+        now_utc = datetime.now(UTC)
         with self.db.session() as session:
             row = session.get(EvolutionControl, "global")
-            cycles = session.scalars(
-                select(EvolutionCycle)
-                .where(EvolutionCycle.status.not_in(["budget_admitted", "budget_denied"]))
-                .order_by(EvolutionCycle.created_at.desc())
-                .limit(bounded_limit)
-            ).all()
-            return {
-                "config": EvolutionConfig.model_validate(row.config_json if row else {}).model_dump(
-                    mode="json"
-                ),
+            revision = row.revision if row else 0
+            status_key = (int(revision), bool(compact), bounded_limit, now_utc.date().isoformat())
+            if engine is not None:
+                now_mono = time.monotonic()
+                with _EVOLUTION_CACHE_LOCK:
+                    engine_snapshots = _STATUS_SNAPSHOT_CACHE.get(engine)
+                    if engine_snapshots is not None:
+                        cached_entry = engine_snapshots.get(status_key)
+                        if cached_entry is not None:
+                            cached_at, cached_snapshot = cached_entry
+                            if 0.0 <= (now_mono - cached_at) < _STATUS_CACHE_TTL_SEC:
+                                return _copy_status_snapshot(cached_snapshot)
+                            engine_snapshots.pop(status_key, None)
+
+            config_model = EvolutionConfig.model_validate(row.config_json if row else {})
+            cycles = self._load_cycle_views(
+                session, engine=engine, compact=compact, bounded_limit=bounded_limit
+            )
+            snapshot = {
+                "config": config_model.model_dump(mode="json"),
                 "budget": budget_status(
                     self.db,
-                    EvolutionConfig.model_validate(row.config_json if row else {}),
-                    datetime.now(UTC),
+                    config_model,
+                    now_utc,
                 ),
-                "revision": row.revision if row else 0,
-                "cycles": [
-                    cycle_view(c, compact=compact and index >= 2)
-                    for index, c in enumerate(cycles)
-                ],
+                "revision": revision,
+                "cycles": cycles,
                 "continuations": ContinuationLedger(self.db).view(),
             }
+        if engine is not None:
+            with _EVOLUTION_CACHE_LOCK:
+                engine_snapshots = _STATUS_SNAPSHOT_CACHE.setdefault(engine, {})
+                engine_snapshots[status_key] = (time.monotonic(), _copy_status_snapshot(snapshot))
+        return snapshot
 
     def forward_outcomes_summary(self) -> dict[str, Any]:
         """Ledger aggregate for the evolution page; failures stay on the page, not raised.
@@ -441,8 +619,21 @@ class EvolutionService:
         Kept out of ``status()`` because the research scan calls that several times per
         cycle and never reads this telemetry.
         """
+        engine = resolve_evolution_engine(self.db)
+        if engine is not None:
+            now_mono = time.monotonic()
+            with _EVOLUTION_CACHE_LOCK:
+                cached = _FORWARD_OUTCOMES_CACHE.get(engine)
+                if cached is not None:
+                    cached_at, cached_summary = cached
+                    if 0.0 <= (now_mono - cached_at) < _FORWARD_OUTCOMES_CACHE_TTL_SEC:
+                        return dict(cached_summary)
         try:
-            return ForwardOutcomeLedger(self.db).summary()
+            summary = ForwardOutcomeLedger(self.db).summary()
+            if engine is not None and isinstance(summary, dict) and "error" not in summary:
+                with _EVOLUTION_CACHE_LOCK:
+                    _FORWARD_OUTCOMES_CACHE[engine] = (time.monotonic(), dict(summary))
+            return summary
         except Exception as exc:  # Read-only telemetry must never take the page down.
             return {"error": failure_text(exc)[:200]}
 
@@ -478,6 +669,7 @@ class EvolutionService:
                 row.config_json = config.model_dump(mode="json")
                 row.revision += 1
                 row.updated_by = actor
+        invalidate_evolution_caches(self.db)
         return self.status()
 
     def apply_preset(self, preset_name: str, *, actor: str) -> dict[str, Any]:
@@ -518,7 +710,9 @@ class EvolutionService:
             )
             session.add(row)
             session.flush()
-            return cycle_view(row)
+            view = cycle_view(row)
+        invalidate_evolution_caches(self.db, cycle_id=row.id)
+        return view
 
     def _save_cycle(self, cycle_id: str, status: str, payload: dict[str, Any]) -> dict[str, Any]:
         with self.db.session() as session:
@@ -526,7 +720,9 @@ class EvolutionService:
             assert row is not None
             row.status, row.payload_json = status, payload
             session.flush()
-            return cycle_view(row)
+            view = cycle_view(row)
+        invalidate_evolution_caches(self.db, cycle_id=cycle_id)
+        return view
 
     def tick(self, now: datetime | None = None) -> dict[str, Any]:
         clock_frozen = now is not None
@@ -553,6 +749,7 @@ class EvolutionService:
                                 },
                             )
                         )
+                invalidate_evolution_caches(self.db, cycle_id=cycle_id)
             with self.db.session() as session:
                 row = session.scalar(
                     select(EvolutionCycle)

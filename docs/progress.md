@@ -1,3 +1,17 @@
+## 2026-11-18：ARC 进化状态缓存、自动审核去长锁及 BitPro 来源索引优化
+
+- **背景**：生产观测（`tokyo` PostgreSQL）发现三类高延迟与锁竞争根因：① `auto_review_once()` 持有 `SELECT ... FROM arc_evolution_control WHERE id='global' FOR UPDATE` 行锁跨越整个 Mission 遍历、事件扫描与远程 `decide_paper_review` 网络调用，且将 `paper_observing` 状态纳入扫描集合触发并行全表事件扫表；② `/api/v1/arc/evolution?compact=true` 每次轮询全量拉取 20 条 `arc_evolution_cycles.payload_json`（约 4s），且仅按物理前 2 条保留完整 `diagnostics`，当最新周期无诊断（`deferred`/`queued`）时会导致前端丢失历史诊断原因；③ `/api/v1/arc/variant-status?source_strategy_id=...` 因 `cast(..., String)` 包裹与缺少 `arc_missions` PostgreSQL JSON 表达式索引触发全表顺序扫描（约 6.5s~12.1s）。
+- **交付**：
+  1. **消除 `auto_review_once()` 长锁与 `paper_observing` 无效扫描**（`arc/auto_review.py`）：
+     - 将 `"paper_observing"` 从 `_ACTIVE` 状态集合移除，不再对已进入纸盘观察期的 Mission 加锁和读取事件日志；
+     - 新增 `_read_enabled_control()` 短只读事务读取全局进化策略，彻底取消跨 Mission 循环与远程派单 I/O 的 `EvolutionControl FOR UPDATE` 行锁。
+  2. **`EvolutionService.status()`、`cycle_view` 与 `forward_outcomes_summary()` 分层引擎隔离缓存 + `compact=true` 诊断保护**（`arc/evolution_models.py`、`arc/evolution.py`、相关写路径失效）：
+     - 新增按 SQLAlchemy `Engine` 键隔离（`WeakKeyDictionary`）的 `_CYCLE_VIEW_CACHE`（轻量元数据 `(id, status, updated_at, created_at)` 先行查询、仅缺项回查 `payload_json`，LRU 上限 256 条）、`_CYCLE_HAS_DIAGNOSTICS_CACHE`、`_STATUS_SNAPSHOT_CACHE`（5s TTL，键值包含 UTC 日期）与 `_FORWARD_OUTCOMES_CACHE`（15s TTL），并在 `configure`、`queue_preview`、`_save_cycle`、`store`、`research_budget`、`ContinuationLedger`、`meta_tuning`、`ForwardOutcomeLedger` 写入提交后即时失效；
+     - `compact=true` 改为按时间倒序保留最新 2 条“含非空 `diagnostics`”的周期为完整诊断，空诊断周期不再挤占或清空最近有效诊断原因。
+  3. **`variant-status` 查询与数据库索引优化**（`arc/variant_status.py`、`db.py`、`alembic/versions/0053_arc_mission_source_idx.py`）：
+     - 去掉 `.as_string()` 外层冗余 `cast(..., String)`，并新增 Alembic 迁移 `0053_arc_mission_source_idx` 与 `Database.create_all()` 双端幂等创建 `ix_arc_missions_bitpro_source_strategy`（PostgreSQL JSONB 路径表达式索引 + `updated_at DESC, mission_id DESC`，SQLite JSON 提取表达式索引）。
+- **验证**：`ruff check backend tests`、`mypy backend/src` 及 ARC/进化/迁移回归测试全量通过，并随 PR 合并自动部署至 `tokyo` 完成线上压测验收。
+
 ## 2026-11-18：生产 Agent 全链路升级（变体生成疏通与 `production_3slot`、BitPro MCP 加固与 `MissionRuntime` 接入、认知与操作记忆闭环、死代码清理）
 
 - **背景**：生产观测发现四个制约自主研发闭环与 Agent 实效的核心瓶颈：① Worker 在未启用 `MISSION_RUNTIME_WORKER_ENABLED` 时跳过 `avo_research_loop`，且 `auto_review.py` 用全局默认 `paper_capital=100` 拦截 1000U/10000U 的 BitPro 来源变体，导致生产长期零变体入场；② `BitProMcpClient` 缺少连接池复用与实时连通探针，部分 `bitpro-mcp-v1` 协作/FactorLab/监控路径与线上 BitPro `schemas.py` 未对齐，且 `MissionRuntime` 与 `AgentKernel` 缺少变体/接力/进化查询工具；③ ARC 分层认知记忆（`ArcHypothesisNode` / `ArcEpisodicMemory` / `ArcSemanticAssertion`）未按同源母体跨 Mission 召回、未消费赛马胜负裁决，也未同步蒸馏至可搜索的 `MemoryItem` 与 `/api/memory`；④ 仓库残留早年原型 UI 与废弃 `self_healing_evolution_loop` 死代码。
