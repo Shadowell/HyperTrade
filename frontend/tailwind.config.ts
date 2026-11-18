@@ -5,16 +5,27 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: "#e8eee9",
-        paper: "#07110f",
-        brass: "#d6a24a",
-        signal: "#5ad6c4",
-        danger: "#e36b4f",
-        night: "#0d1714"
+        paper: "rgb(var(--rgb-paper) / <alpha-value>)",
+        night: "rgb(var(--rgb-night) / <alpha-value>)",
+        ink: "rgb(var(--rgb-ink) / <alpha-value>)",
+        signal: "rgb(var(--rgb-signal) / <alpha-value>)",
+        brass: "rgb(var(--rgb-brass) / <alpha-value>)",
+        danger: "rgb(var(--rgb-danger) / <alpha-value>)",
+        violet: "rgb(var(--rgb-violet) / <alpha-value>)",
+        accent: "rgb(var(--rgb-accent) / <alpha-value>)"
       },
       fontFamily: {
-        sans: ["Avenir Next", "ui-sans-serif", "system-ui"],
-        mono: ["SFMono-Regular", "Menlo", "monospace"]
+        sans: [
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "PingFang SC",
+          "Helvetica Neue",
+          "Microsoft YaHei",
+          "Noto Sans SC",
+          "Segoe UI",
+          "sans-serif"
+        ],
+        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"]
       }
     }
   },
