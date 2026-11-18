@@ -515,6 +515,9 @@ class ContinuationLedger:
                             },
                         )
                     )
+        from hypertrade.arc.evolution_models import invalidate_evolution_caches
+
+        invalidate_evolution_caches(self.db)
 
     def refresh(self, now: datetime) -> None:
         global _REFRESHED
@@ -769,6 +772,9 @@ class ContinuationLedger:
             # Only once the whole pass has committed; a mission that moved during it differs from
             # ``seen`` next time and is taken up then.
             _REFRESHED = (self.db, seen)
+            from hypertrade.arc.evolution_models import invalidate_evolution_caches
+
+            invalidate_evolution_caches(self.db)
 
 
 def acceptance_entries(projection: ARCMissionProjection, now: datetime) -> list[dict[str, Any]]:

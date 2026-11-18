@@ -248,7 +248,11 @@ class ForwardOutcomeLedger:
             row = session.get(ArcForwardOutcome, oid)
             if row is None:
                 raise RuntimeError(f"forward outcome disappeared after record: {oid}")
-            return self.view(row)
+            view = self.view(row)
+        from hypertrade.arc.evolution_models import invalidate_evolution_caches
+
+        invalidate_evolution_caches(self.db)
+        return view
 
     @staticmethod
     def _reconcile(
@@ -378,7 +382,11 @@ class ForwardOutcomeLedger:
             match = self._lineage_index(session, {challenger}).get(challenger)
             _apply_lineage(row, match)
             session.flush()
-            return self.view(row)
+            view = self.view(row)
+        from hypertrade.arc.evolution_models import invalidate_evolution_caches
+
+        invalidate_evolution_caches(self.db)
+        return view
 
     def link_pending(self, limit: int = 20) -> int:
         """Match up to ``limit`` pending rows with one mission scan for the whole batch."""
@@ -398,7 +406,11 @@ class ForwardOutcomeLedger:
             for row in rows:
                 _apply_lineage(row, index.get(str(row.challenger_strategy_id)))
             session.flush()
-            return len(rows)
+            count = len(rows)
+        from hypertrade.arc.evolution_models import invalidate_evolution_caches
+
+        invalidate_evolution_caches(self.db)
+        return count
 
     def evidence_for_lineage(
         self,
