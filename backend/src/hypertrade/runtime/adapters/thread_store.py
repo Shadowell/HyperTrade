@@ -81,6 +81,28 @@ class InMemoryThreadStore:
         except KeyError as exc:
             raise KeyError(thread_id) from exc
 
+    async def list_threads(
+        self,
+        *,
+        tenant_id: str = "default",
+        status: str = "",
+        limit: int = 20,
+    ) -> Sequence[ThreadProjectionV1]:
+        safe_limit = max(1, min(limit, 50))
+        clean_status = status.strip()
+        items: list[ThreadProjectionV1] = []
+        for snapshot in self._snapshots.values():
+            thread = snapshot.thread
+            if thread is None:
+                continue
+            if tenant_id and thread.tenant_id != tenant_id:
+                continue
+            if clean_status and thread.status.value != clean_status:
+                continue
+            items.append(thread)
+        items.sort(key=lambda row: (row.updated_at, row.thread_id), reverse=True)
+        return items[:safe_limit]
+
     async def start_turn(
         self,
         thread_id: str,
@@ -223,6 +245,28 @@ class SqlAlchemyThreadStore:
     async def get(self, thread_id: str) -> ThreadSnapshotV1:
         async with self.sessions() as session:
             return await _load_snapshot(session, thread_id)
+
+    async def list_threads(
+        self,
+        *,
+        tenant_id: str = "default",
+        status: str = "",
+        limit: int = 20,
+    ) -> Sequence[ThreadProjectionV1]:
+        safe_limit = max(1, min(limit, 50))
+        clean_status = status.strip()
+        statement = select(AgentThread)
+        if tenant_id:
+            statement = statement.where(AgentThread.tenant_id == tenant_id)
+        if clean_status:
+            statement = statement.where(AgentThread.status == clean_status)
+        statement = statement.order_by(
+            AgentThread.updated_at.desc(),
+            AgentThread.id.desc(),
+        ).limit(safe_limit)
+        async with self.sessions() as session:
+            rows = (await session.scalars(statement)).all()
+            return [_thread_projection(row) for row in rows]
 
     async def start_turn(
         self,

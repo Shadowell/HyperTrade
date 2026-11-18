@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from hashlib import sha256
 from typing import Any
 
@@ -21,6 +22,7 @@ from hypertrade.runtime.application.thread_context import compile_thread_context
 from hypertrade.runtime.domain.models import MissionStatus
 from hypertrade.runtime.domain.thread_turn import (
     TERMINAL_TURN_STATUSES,
+    ThreadProjectionV1,
     ThreadSnapshotV1,
     ThreadStatus,
     TurnProjectionV1,
@@ -84,6 +86,19 @@ class ThreadTurnService:
             owner=owner,
             title=title,
             retention=retention,
+        )
+
+    async def list_threads(
+        self,
+        *,
+        tenant_id: str = "default",
+        status: str = "",
+        limit: int = 20,
+    ) -> Sequence[ThreadProjectionV1]:
+        return await self.thread_store.list_threads(
+            tenant_id=tenant_id,
+            status=status,
+            limit=limit,
         )
 
     async def start_turn(

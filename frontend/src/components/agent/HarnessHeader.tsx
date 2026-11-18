@@ -1,9 +1,4 @@
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Eye,
-  Loader2
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, Loader2 } from "lucide-react";
 import type { Copy } from "../../i18n/messages";
 import { useNow } from "../../hooks/useNow";
 import { formatRelativeAge, formatTimestamp } from "../../lib/time";
@@ -18,7 +13,9 @@ export function HarnessHeader({
   sync,
   generatedAt,
   refreshing,
-  access
+  access,
+  headlessMode = false,
+  showAccessBadge = true
 }: {
   t: Copy;
   language: Language;
@@ -26,6 +23,8 @@ export function HarnessHeader({
   generatedAt: string | null;
   refreshing: boolean;
   access: AccessMode;
+  headlessMode?: boolean;
+  showAccessBadge?: boolean;
 }) {
   const now = useNow();
   const syncedAt = formatTimestamp(generatedAt, language);
@@ -49,15 +48,17 @@ export function HarnessHeader({
           <span className="h-1 w-1 rounded-full bg-brass/45" />
           <span>{sync === "ready" ? t.lastSync : status.label}</span>
         </div>
-        <h1 className="mt-2 text-4xl font-semibold tracking-tight max-sm:text-3xl">
+        <h1 className="mt-2 text-3xl font-extrabold tracking-tight max-sm:text-2xl">
           {t.workbenchTitle}
         </h1>
         <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-ink/55">
           <span>{t.workbenchSubtitle}</span>
           {syncedAt && generatedAt ? (
-            <time className="font-mono" dateTime={generatedAt}>
+            <time className="font-mono text-xs" dateTime={generatedAt}>
               {syncedAt}
-              {ageSeconds !== null && ageSeconds >= 0 ? ` · ${formatRelativeAge(ageSeconds, language)}` : ""}
+              {ageSeconds !== null && ageSeconds >= 0
+                ? ` · ${formatRelativeAge(ageSeconds, language)}`
+                : ""}
             </time>
           ) : null}
           {refreshing ? (
@@ -73,22 +74,24 @@ export function HarnessHeader({
           <div>
             <span>{t.systemStatus}</span>
             <strong>{status.label}</strong>
-            <span className="mt-1 font-mono">{t.okx}</span>
+            <span className="mt-1 font-mono">
+              {headlessMode ? "HEADLESS ENGINE" : t.controlPlaneTag}
+            </span>
           </div>
           {status.icon}
         </div>
-        <AccessBadge access={access} t={t} />
+        {showAccessBadge ? <AccessBadge access={access} t={t} /> : null}
       </div>
     </header>
   );
 }
 
 /** Shown only after a privileged call was refused; the console never probes the session. */
-function AccessBadge({ access, t }: { access: AccessMode; t: Copy }) {
+export function AccessBadge({ access, t }: { access: AccessMode; t: Copy }) {
   if (access !== "readonly") return null;
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded border border-brass/30 px-2 py-1 text-xs font-semibold text-brass"
+      className="inline-flex items-center gap-1.5 rounded-full border border-brass/40 bg-brass/10 px-2.5 py-1 text-xs font-semibold text-brass"
       title={t.readOnlyHint}
     >
       <Eye size={12} />

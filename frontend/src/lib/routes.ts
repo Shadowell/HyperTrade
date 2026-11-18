@@ -1,21 +1,24 @@
 import type { NavSection } from "../types";
 
-export function activeSectionFromPath(): NavSection {
-  if (typeof window === "undefined") {
-    return "harness";
+export function activeSectionFromPath(pathname?: string): NavSection {
+  const rawPath =
+    pathname ?? (typeof window === "undefined" ? "/harness" : window.location.pathname);
+  const segments = rawPath.split("/").filter(Boolean);
+  const section = segments.at(-1) ?? "harness";
+
+  if (section === "missions" || section === "portfolio") {
+    return "missions";
   }
-  const section = window.location.pathname.split("/").filter(Boolean).at(-1) ?? "harness";
   if (
-    section === "missions" ||
-    section === "strategy" ||
-    section === "portfolio" ||
-    section === "alerts" ||
-    section === "runs" ||
-    section === "quality" ||
+    section === "knowledge" ||
     section === "memory" ||
-    section === "rag"
+    section === "rag" ||
+    section === "strategy"
   ) {
-    return section;
+    return "knowledge";
+  }
+  if (section === "system" || section === "alerts" || section === "quality") {
+    return "system";
   }
   return "harness";
 }

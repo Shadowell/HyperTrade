@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 from hypertrade.arc.attribution import read_attribution
 from hypertrade.arc.auth import ARCScope, require_scope
 from hypertrade.arc.evolution import EVOLUTION_PRESETS, EvolutionConfig, EvolutionService
+from hypertrade.arc.runtime_journal import list_runtime_errors
 
 router = APIRouter()
 
@@ -140,3 +141,18 @@ async def evolution_alert_ack(alert_id: str, request: Request) -> dict[str, Any]
 )
 async def evolution_attribution(strategy_id: int = Path(gt=0)) -> dict[str, Any]:
     return await run_in_threadpool(read_attribution, strategy_id)
+
+
+@router.get("/runtime-errors", dependencies=[Depends(require_scope(ARCScope.READ))])
+async def runtime_errors(
+    request: Request,
+    limit: int = Query(default=30, ge=1, le=100),
+    component: str = Query(default=""),
+) -> dict[str, Any]:
+    items = await run_in_threadpool(
+        list_runtime_errors,
+        request.app.state.db,
+        limit=limit,
+        component=component,
+    )
+    return {"items": items}

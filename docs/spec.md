@@ -1,3 +1,18 @@
+# 035 HyperMonitor 控制面工作台重构与前后端观测闭环（2026-11-18）
+
+1. **信息架构减法与 4 路由收敛**（`frontend/src/lib/routes.ts`、`frontend/src/types/index.ts`、`frontend/src/App.tsx`）：
+   - 删除 1,179 行 `QuantumPortfolioDashboard.tsx` 与内联 `PortfolioLifecyclePanel`，下线独立的 `portfolio` 与 `strategy` 交易终端幻觉页签；将原 9 个隐藏挂载页签收敛为 4 个按需懒加载的核心控制面路由（`/harness` 控制台与对话、`/harness/missions` 任务与进化、`/harness/knowledge` 记忆与治理、`/harness/system` 告警与诊断），旧路由 `/harness/{runs,portfolio,memory,rag,strategy,alerts,quality}` 保持兼容重定向。
+   - 移除 OKX SWAP 默认提示词与硬编码副标题（`copy.*.prompt = ""`），清空冗余 `topMovers`、`live_orders` 与失真静态文案。
+2. **HyperMonitor 视觉体系与严格按需取数**（`ConsoleShell.tsx`、`HyperBrandMark.tsx`、`styles.css`、`tailwind.config.ts`、`api/client.ts`）：
+   - 移植 HyperMonitor 暗黑曜石（`:root` `#070708` / `#141416` + `#7c3aed → #db2777` 紫粉渐变）与浅紫白卡（`[data-theme="light"]` `#f3f1f8` / `#ffffff`）双主题令牌体系，采用 `.hm-topbar` / `.hm-sub-topbar`（保留 `headlessNotice` 与 BitPro `/ai-lab`、`/evolution` 直达链接）/ `.hm-layout`（唯一 sticky 左栏 `<aside className="hm-sidebar ...">` + 右侧 `.hm-signals-rail`）三层外壳。
+   - `/harness` 首屏挂载仅并发请求 `GET /api/harness/overview` 与 `GET /api/healthz`（如有本地指针则恢复当前 Thread），不主动探测 `/api/auth/me`、不预拉隐藏 Tab 数据；全站 `fetch` 统一收敛至 `apiGet`/`apiPost`/`apiPut`/`apiDelete`，通过 `React.lazy` + `<Suspense>` 与 `vite.config.ts` `manualChunks` 拆分非首屏路由。
+   - `WorkbenchPage` 集成 4 个快捷诊断芯片、`Cmd/Ctrl+Enter` 发送与清空、非破坏性多会话切换器、运行中 Turn 中断、`ThreadDetails`/`ReportReader` 去重及 `AgentFlightRecorder` 自动回放；`MissionsEvolutionPage` 暴露 ARC 3-Slot 占用、`production_3slot` 预设按钮、扫描触发与 Twin Race 状态；`KnowledgeMemoryPage` 分层展示 Operational/Semantic/Episodic 三层记忆与治理；`SystemDiagnosticsPage` 呈现 `/api/healthz` Worker Stall 取证、统一告警 Ack 与异常台账。
+3. **控制面后端 API 补齐**（`main.py`、`arc/runtime_journal.py`、`arc/evolution_router.py`、`runtime/`、`agent/observability.py`）：
+   - `GET /api/harness/overview` 新增 `headless_mode` 与 `missions_summary`（`total_count`/`active_count`/`completed_count`/`failed_count`/`threads_count`）；`headless_mode=True` 时跳过休眠的 `market`、`paper`（避免懒创建假 `PaperSession`）、`strategy_lab` 与 `live_orders` 查库；`bitpro["tools"]` 由 `bitpro_capabilities()["tool_groups"]` 动态去重生成（`Settings.headless_mode` 代码默认 `False` 不变）。
+   - 新增 `list_runtime_errors` 与 `GET /api/v1/arc/runtime-errors`（`ARCScope.READ`，`limit` 1..100，`component` 精确过滤）。
+   - 新增 `ThreadStore.list_threads` 与 `GET /api/agent/v1/threads`（`require_admin`，`status` 过滤，`limit` 1..50，`updated_at desc`）。
+   - 扩展 `AgentObservabilityService.get(run_id)` 支持 `mis_*` `AgentMission`（聚合 `AgentMissionEvent` / `AgentStepAttempt` / `AgentToolCall` / `MemoryItem`）投影为 `agent-observability-v1`，打通 `/api/agent/runs/{mission_id}/observability`。
+
 # 034 生产 Agent 运行时、变体流水线与认知记忆闭环升级（2026-11-18）
 
 1. **自主变体生成流水线与 `production_3slot` 预设**：
@@ -738,34 +753,11 @@ live-order-intent counts.
 
 ## V1 In Scope
 
-- Harness routing: sidebar destinations are independent, refreshable SPA paths
-  (`/harness`, `/harness/strategy`, `/harness/portfolio`, `/harness/alerts`,
-  `/harness/runs`, `/harness/quality`, `/harness/memory`, `/harness/rag`) rather
-  than hash-scroll targets in one
-  long workbench view.
-- Harness visual system: every routed workbench page uses a dark observability
-  console with green-black surfaces, restrained grid texture, cyan runtime
-  state, amber audit emphasis, and red risk state. This is display-only and
-  does not alter research, approval, paper, or live-execution behavior.
-- Harness Memory observability: `/harness/memory` aggregates existing audited
-  active Memory items client-side into explicitly labeled composition, creation
-  cadence, importance, confidence, and reuse visualizations. It is read-only;
-  it does not introduce a storage quota, a second Memory store, or a mutation
-  path.
-- Harness route context metrics: every routed page shows a compact, read-only
-  metric-card strip derived from the data already loaded for that surface. The
-  workbench retains global telemetry; strategy, alerts, runs, Memory, and RAG
-  show their own scoped evidence, state, or inventory counts.
-- Harness operator cards: strategy evidence, monitor alerts, approval intents,
-  Memory entries, and RAG hits use one shared dark card treatment with explicit
-  semantic rails. Passing/normal state is signal, evidence or pending review is
-  brass, and high-risk or final failed state is danger; the UI does not infer a
-  new risk decision from the visual tone.
-- Harness strategy card hierarchy: strategy summary, performance metrics,
-  provenance references, failure reasons, next-experiment guidance, and evidence
-  drilldown rows all use the compact operator-card variant. Nested cards remain
-  visually quieter than their selected evidence card, with source-bound tone
-  only and no backend or validation behavior change.
+- Harness routing: sidebar destinations are 4 consolidated, lazy-loaded SPA paths (`/harness`, `/harness/missions`, `/harness/knowledge`, `/harness/system`) rather than hash-scroll targets; legacy paths (`/harness/runs`, `/harness/portfolio`, `/harness/memory`, `/harness/rag`, `/harness/strategy`, `/harness/alerts`, `/harness/quality`) redirect transparently to the consolidated sections.
+- Harness visual system: the workbench uses the 3-tier HyperMonitor control-plane shell (`ConsoleShell`) with Obsidian Dark (`#070708`/`#141416`, violet-magenta gradient `#7c3aed → #db2777`) and Light Surface (`#f3f1f8`/`#ffffff`, `[data-theme="light"]`) themes, cyan/emerald/amber/danger semantic rails, and `lucide-react` icons. This is display-only and does not alter research, approval, paper, or live-execution behavior.
+- Harness Memory observability: `/harness/knowledge` presents operational `MemoryItem` inventory (`kind`/`tag` filters, `last_used_at`, composition, creation cadence, importance, confidence, reuse) alongside cognitive `ArcSemanticAssertion` rules and `ArcEpisodicMemory` race outcomes from `GET /api/memory`, plus auto-searched RAG and `GovernanceReview`. It does not introduce a storage quota or a second Memory store.
+- Harness route context metrics: every routed page shows a compact, read-only metric-card strip (`TelemetryGrid` on `/harness`, `RouteMetricStrip` on `/harness/{missions,knowledge,system}`) derived from data loaded on demand for that route.
+- Harness operator cards: mission slots, monitor alerts, runtime errors, cognitive items, Memory entries, RAG hits, and governance cards use one shared container treatment (`operator-card`) with explicit semantic rails (`signal`, `brass`, `violet`, `danger`); the UI never infers a new risk decision from visual tone.
 
 - FastAPI backend with public workbench observability/read endpoints and admin session auth for privileged mutations.
 - LangGraph-style AgentKernel with explicit traceable tool calls.
@@ -1023,7 +1015,7 @@ live-order-intent counts.
 
 - `./scripts/check.sh` passes.
 - `GET /api/health` returns OK.
-- `/harness` loads a simplified core workbench without rendering a login form: Agent run creation, report reading, recent runs, trace events, Flight Recorder Token/latency/Memory telemetry, RAG search, Memory search/detail, OKX top movers, and core telemetry.
+- `/harness` loads a 4-tab HyperMonitor control-plane workbench without rendering a login form: `/harness` strictly fetches `GET /api/harness/overview` and `GET /api/healthz` on mount for multi-turn Co-Pilot threads, quick diagnostic chips, `BitProCard` live probe, recent runs/missions, and `AgentFlightRecorder` (`AgentRun` and `mis_*` Mission observability); `/harness/missions`, `/harness/knowledge`, and `/harness/system` lazy-load on demand for ARC 3-slot evolution/missions, three-tier cognitive memory/RAG/governance, and worker stall/alerts/runtime-error/eval diagnostics.
 - Advanced provider switching, paper lifecycle controls, live approval/execution, strategy lab/backtest forms, eval panels, Feishu send, and Memory disable are not first-class `/harness` UI controls.
 - Privileged mutations such as provider selection, paper lifecycle control, live order approval/execution, Memory disable, and Feishu send still require admin session auth.
 - `/api/harness/tools` shows live order approval gating.

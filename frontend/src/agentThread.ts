@@ -14,6 +14,10 @@ export type ThreadProjection = {
   status: "active" | "archived" | "quarantined";
   active_turn_id: string;
   event_cursor: number;
+  owner?: string;
+  retention?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type TurnProjection = {
@@ -113,6 +117,20 @@ export function clearThreadSession(storage: Storage | undefined): void {
   storage.removeItem(THREAD_SESSION_STORAGE_KEY);
 }
 
+export async function listAgentThreads(
+  { status = "", limit = 20 }: { status?: string; limit?: number } = {},
+  fetchImpl: FetchLike = fetch
+): Promise<{ items: ThreadProjection[] }> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  params.set("limit", String(limit));
+  return requestJson<{ items: ThreadProjection[] }>(
+    fetchImpl,
+    `/api/agent/v1/threads?${params.toString()}`,
+    { credentials: "include" }
+  );
+}
+
 export async function createAgentThread(
   fetchImpl: FetchLike = fetch
 ): Promise<ThreadSnapshot> {
@@ -158,6 +176,18 @@ export async function getAgentTurn(
     fetchImpl,
     `/api/agent/v1/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}`,
     { credentials: "include" }
+  );
+}
+
+export async function interruptAgentTurn(
+  threadId: string,
+  turnId: string,
+  fetchImpl: FetchLike = fetch
+): Promise<{ turn: TurnProjection; items: ThreadItem[]; event_cursor: number }> {
+  return requestJson(
+    fetchImpl,
+    `/api/agent/v1/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}/interrupt`,
+    { method: "POST", credentials: "include" }
   );
 }
 

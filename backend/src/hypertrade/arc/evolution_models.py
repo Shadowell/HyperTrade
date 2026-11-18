@@ -185,7 +185,7 @@ _EVOLUTION_CACHE_LOCK = Lock()
 _CYCLE_VIEW_CACHE_MAX_ENTRIES = 256
 # Per-Engine evolution read caches keyed by sqlalchemy Engine so separate DBs/tests never collide.
 _STATUS_SNAPSHOT_CACHE: WeakKeyDictionary[
-    Any, dict[tuple[int, bool, int, str], tuple[float, dict[str, Any]]]
+    Any, dict[tuple[int, bool, int, str], tuple[float, tuple[Any, ...], dict[str, Any]]]
 ] = WeakKeyDictionary()
 _CYCLE_VIEW_CACHE: WeakKeyDictionary[
     Any, OrderedDict[tuple[str, str, str, bool], dict[str, Any]]
