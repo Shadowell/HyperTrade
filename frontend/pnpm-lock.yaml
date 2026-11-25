@@ -37,8 +37,8 @@ importers:
         specifier: ^16.3.3
         version: 16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@types/node':
-        specifier: ^25.0.0
-        version: 25.9.1
+        specifier: ^26.6.6
+        version: 26.6.6
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
@@ -47,7 +47,7 @@ importers:
         version: 19.3.0(@types/react@19.3.0)
       '@vitejs/plugin-react':
         specifier: ^5.1.1
-        version: 5.2.0(vite@8.3.6(@types/node@25.9.1)(esbuild@0.27.7)(jiti@1.21.7))
+        version: 5.2.0(vite@8.3.6(@types/node@26.6.6)(esbuild@0.27.7)(jiti@1.21.7))
       autoprefixer:
         specifier: ^10.6.2
         version: 10.6.2(postcss@8.5.32)
@@ -80,10 +80,10 @@ importers:
         version: 8.72.1(eslint@10.14.0(jiti@1.21.7))(typescript@5.9.3)
       vite:
         specifier: ^8.3.6
-        version: 8.3.6(@types/node@25.9.1)(esbuild@0.27.7)(jiti@1.21.7)
+        version: 8.3.6(@types/node@26.6.6)(esbuild@0.27.7)(jiti@1.21.7)
       vitest:
         specifier: ^4.0.15
-        version: 4.1.7(@types/node@25.9.1)(jsdom@27.4.0)(vite@8.3.6(@types/node@25.9.1)(esbuild@0.27.7)(jiti@1.21.7))
+        version: 4.1.7(@types/node@26.6.6)(jsdom@27.4.0)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.27.7)(jiti@1.21.7))
 
 packages:
 
@@ -179,6 +179,10 @@ packages:
 
   '@babel/runtime@7.29.13':
     resolution: {integrity: sha512-v+oN26xP4YIlQsbQ/CbTH1WG5m/l/DjKKZNy/Kp3f/AFvbgt7Em/D0FeMM3O2hX0YzeN2M16W8lOpyhIkfCBcQ==}
+    engines: {node: '>=6.9.0'}
+
+  '@babel/runtime@7.29.14':
+    resolution: {integrity: sha512-Y5tqevQaUAZhhj82BpYMNC1ssvLQTVAfwKdm8iy8qwmhvC2/CpcAu8OC+QEtjM7pMk7knx83u1Qj8gzkicyelw==}
     engines: {node: '>=6.9.0'}
 
   '@babel/template@7.29.7':
@@ -652,8 +656,8 @@ packages:
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
-  '@types/node@25.9.1':
-    resolution: {integrity: sha512-xfrlY7UD5rMJk3ZVJP8BNzS28J36YJg+xp+LPXV1TdWxr8uMH5A860QNxYDGQe/ylDSgjxE52Q9VnO7p75tJxg==}
+  '@types/node@26.6.6':
+    resolution: {integrity: sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==}
 
   '@types/react-dom@19.3.0':
     resolution: {integrity: sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q==}
@@ -1655,8 +1659,8 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
-  undici-types@7.24.6:
-    resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
+  undici-types@8.9.0:
+    resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
   update-browserslist-db@1.3.4:
     resolution: {integrity: sha512-t8wonIOdQyOjtPd2VktlBu6QjTVTks6v8bSi7kd0r2Vll8TK1JYDZtRRdbmCHOAMphkZgrzK+L+vXK4pyZ8t4A==}
@@ -1940,6 +1944,8 @@ snapshots:
 
   '@babel/runtime@7.29.13': {}
 
+  '@babel/runtime@7.29.14': {}
+
   '@babel/template@7.29.7':
     dependencies:
       '@babel/code-frame': 7.29.7
@@ -2222,7 +2228,7 @@ snapshots:
   '@testing-library/dom@10.4.1':
     dependencies:
       '@babel/code-frame': 7.29.7
-      '@babel/runtime': 7.29.13
+      '@babel/runtime': 7.29.14
       '@types/aria-query': 5.0.4
       aria-query: 5.3.0
       dom-accessibility-api: 0.5.16
@@ -2285,9 +2291,9 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
-  '@types/node@25.9.1':
+  '@types/node@26.6.6':
     dependencies:
-      undici-types: 7.24.6
+      undici-types: 8.9.0
 
   '@types/react-dom@19.3.0(@types/react@19.3.0)':
     dependencies:
@@ -2388,7 +2394,7 @@ snapshots:
       '@typescript-eslint/types': 8.72.1
       eslint-visitor-keys: 5.0.1
 
-  '@vitejs/plugin-react@5.2.0(vite@8.3.6(@types/node@25.9.1)(esbuild@0.27.7)(jiti@1.21.7))':
+  '@vitejs/plugin-react@5.2.0(vite@8.3.6(@types/node@26.6.6)(esbuild@0.27.7)(jiti@1.21.7))':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/plugin-transform-react-jsx-self': 7.29.7(@babel/core@7.29.7)
@@ -2396,7 +2402,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-rc.3
       '@types/babel__core': 7.20.5
       react-refresh: 0.18.0
-      vite: 8.3.6(@types/node@25.9.1)(esbuild@0.27.7)(jiti@1.21.7)
+      vite: 8.3.6(@types/node@26.6.6)(esbuild@0.27.7)(jiti@1.21.7)
     transitivePeerDependencies:
       - supports-color
 
@@ -2409,13 +2415,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.0
 
-  '@vitest/mocker@4.1.7(vite@8.3.6(@types/node@25.9.1)(esbuild@0.27.7)(jiti@1.21.7))':
+  '@vitest/mocker@4.1.7(vite@8.3.6(@types/node@26.6.6)(esbuild@0.27.7)(jiti@1.21.7))':
     dependencies:
       '@vitest/spy': 4.1.7
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.3.6(@types/node@25.9.1)(esbuild@0.27.7)(jiti@1.21.7)
+      vite: 8.3.6(@types/node@26.6.6)(esbuild@0.27.7)(jiti@1.21.7)
 
   '@vitest/pretty-format@4.1.7':
     dependencies:
@@ -3304,7 +3310,7 @@ snapshots:
 
   typescript@5.9.3: {}
 
-  undici-types@7.24.6: {}
+  undici-types@8.9.0: {}
 
   update-browserslist-db@1.3.4(browserslist@4.29.5):
     dependencies:
@@ -3318,7 +3324,7 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
-  vite@8.3.6(@types/node@25.9.1)(esbuild@0.27.7)(jiti@1.21.7):
+  vite@8.3.6(@types/node@26.6.6)(esbuild@0.27.7)(jiti@1.21.7):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -3326,15 +3332,15 @@ snapshots:
       rolldown: 1.2.16
       tinyglobby: 0.2.17
     optionalDependencies:
-      '@types/node': 25.9.1
+      '@types/node': 26.6.6
       esbuild: 0.27.7
       fsevents: 2.3.3
       jiti: 1.21.7
 
-  vitest@4.1.7(@types/node@25.9.1)(jsdom@27.4.0)(vite@8.3.6(@types/node@25.9.1)(esbuild@0.27.7)(jiti@1.21.7)):
+  vitest@4.1.7(@types/node@26.6.6)(jsdom@27.4.0)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.27.7)(jiti@1.21.7)):
     dependencies:
       '@vitest/expect': 4.1.7
-      '@vitest/mocker': 4.1.7(vite@8.3.6(@types/node@25.9.1)(esbuild@0.27.7)(jiti@1.21.7))
+      '@vitest/mocker': 4.1.7(vite@8.3.6(@types/node@26.6.6)(esbuild@0.27.7)(jiti@1.21.7))
       '@vitest/pretty-format': 4.1.7
       '@vitest/runner': 4.1.7
       '@vitest/snapshot': 4.1.7
@@ -3351,10 +3357,10 @@ snapshots:
       tinyexec: 1.2.2
       tinyglobby: 0.2.16
       tinyrainbow: 3.1.0
-      vite: 8.3.6(@types/node@25.9.1)(esbuild@0.27.7)(jiti@1.21.7)
+      vite: 8.3.6(@types/node@26.6.6)(esbuild@0.27.7)(jiti@1.21.7)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 25.9.1
+      '@types/node': 26.6.6
       jsdom: 27.4.0
     transitivePeerDependencies:
       - msw
